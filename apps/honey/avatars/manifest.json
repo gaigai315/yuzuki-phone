@@ -1,0 +1,28 @@
+{
+  "hostMale": [
+    "m1.png",
+    "m2.png",
+    "m3.png",
+    "m4.png",
+    "m5.png",
+    "m7.png",
+    "m8.png",
+    "m9.png"
+  ],
+  "male": [],
+  "female": [
+    "f1.png",
+    "f2.png",
+    "f3.png",
+    "f4.png",
+    "f5.png"
+  ],
+  "audience": [
+    "f1.png",
+    "f2.png",
+    "f3.png",
+    "f4.png",
+    "f5.png"
+  ],
+  "all": []
+}

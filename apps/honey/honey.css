@@ -1,0 +1,2712 @@
+/* ========================================================
+ *  柚月小手机 (Yuzuki's Little Phone)
+ *  作者 (Author): yuzuki
+ * 
+ * ⚠️ 版权声明 (Copyright Notice):
+ * 1. 禁止商业化：本项目仅供交流学习，严禁任何形式的倒卖、盈利等商业行为。
+ * 2. 禁止二改发布：严禁未经授权修改代码后作为独立项目二次发布或分发。
+ * 3. 禁止抄袭：严禁盗用本项目的核心逻辑、UI设计与相关原代码。
+ * 
+ * Copyright (c) yuzuki. All rights reserved.
+ * ======================================================== */
+/* 蜜语 APP 核心样式 (魅魔紫/通透暗黑风) */
+.honey-app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #140f13;
+    color: #fff;
+    font-family: inherit;
+    position: relative;
+    overflow: hidden;
+}
+
+.honey-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    background: #1a1217;
+    gap: 6px;
+    padding-top: 4px;
+}
+
+.honey-page-recommend .honey-content {
+    gap: 0;
+    padding-top: 0;
+    position: relative;
+}
+
+/* 修复：拥有视频时清空父级渐变背景，使用纯黑打底 */
+.honey-page-recommend .honey-content.has-bg-video {
+    background: #050505 !important;
+}
+
+/* 热门推荐动态视频背景 */
+.honey-bg-video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.85;
+    filter: saturate(110%);
+}
+
+/* 视频上方信息条：不遮挡画面 */
+.honey-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 0;
+    min-height: 34px;
+    position: absolute;
+    top: 9px;
+    left: 8px;
+    right: 8px;
+    z-index: 26;
+}
+
+.honey-nav-title-live {
+    left: 38px;
+    right: 70px;
+    transform: none;
+    width: auto;
+    max-width: none;
+    padding: 0 2px;
+}
+
+.honey-meta-host {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: max-content;
+    max-width: calc(100% - 122px);
+    flex: 0 1 auto;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    border-radius: 14px;
+    padding: 0;
+}
+
+.honey-meta-title {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    width: 100%;
+    padding: 0 2px;
+    overflow: hidden;
+}
+
+.honey-meta-title.is-marquee {
+    justify-content: flex-start;
+}
+
+.honey-meta-title-track {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    width: max-content;
+    transform: translate3d(0, 0, 0);
+    will-change: transform;
+}
+
+.honey-meta-title-text {
+    display: inline-block;
+    max-width: 100%;
+    font-size: 10px;
+    color: #ffd9ea !important;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.honey-meta-title-text-clone {
+    display: none;
+}
+
+.honey-meta-title.is-marquee .honey-meta-title-track {
+    max-width: none;
+    animation: honeyTitleMarqueeLinear var(--honey-title-marquee-duration, 8.6s) linear infinite;
+}
+
+.honey-meta-title.is-marquee .honey-meta-title-text {
+    max-width: none;
+    text-overflow: clip;
+    overflow: visible;
+}
+
+.honey-meta-title.is-marquee .honey-meta-title-text-clone {
+    display: inline-block;
+}
+
+@keyframes honeyTitleMarqueeLinear {
+    from { transform: translate3d(0, 0, 0); }
+    to { transform: translate3d(calc(-1 * var(--honey-title-cycle-distance, 0px)), 0, 0); }
+}
+
+.honey-meta-stats {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    width: auto;
+    justify-self: end;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 0;
+    overflow: visible;
+    text-align: right;
+}
+
+.honey-meta-audience-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.honey-meta-audience-avatars {
+    display: inline-flex;
+    align-items: center;
+    padding-left: 0;
+    gap: 0;
+    overflow: visible;
+}
+
+.honey-meta-audience-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    margin-left: -6px;
+    position: relative;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: #2a1d24;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+
+.honey-meta-audience-avatar:first-child {
+    margin-left: 0;
+}
+
+.honey-meta-audience-avatar.a1 {
+    z-index: 3;
+    background-image: linear-gradient(135deg, #ff7db6, #d35f9e);
+}
+
+.honey-meta-audience-avatar.a2 {
+    z-index: 2;
+    background-image: linear-gradient(135deg, #7bc8ff, #6b89ff);
+}
+
+.honey-meta-audience-avatar.a3 {
+    z-index: 1;
+    background-image: linear-gradient(135deg, #ffd071, #ff9e63);
+}
+
+.honey-meta-audience-online {
+    font-size: 10px;
+    color: #ffffff !important;
+    white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.honey-meta-collab {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.96) !important;
+    white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    margin-right: 0;
+}
+
+.honey-live-rank-mini {
+    width: 88px;
+    max-width: 88px;
+    border-radius: 7px;
+    padding: 3px 4px;
+    background: linear-gradient(145deg, rgba(44, 31, 45, 0.5), rgba(18, 13, 22, 0.34));
+    border: 1px solid rgba(255, 216, 233, 0.16);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 2px 8px rgba(8, 5, 11, 0.24);
+    backdrop-filter: blur(6px) saturate(120%);
+    -webkit-backdrop-filter: blur(6px) saturate(120%);
+    cursor: pointer;
+    transition: box-shadow 0.2s ease;
+}
+
+.honey-live-rank-mini.is-expanded {
+    width: fit-content;
+    min-width: 96px;
+    max-width: min(228px, calc(100vw - 120px));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        0 4px 14px rgba(8, 5, 11, 0.34);
+}
+
+.honey-live-rank-mini:focus-visible {
+    outline: 1px solid rgba(255, 214, 232, 0.75);
+    outline-offset: 1px;
+}
+
+.honey-live-rank-title {
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    color: #ffd9ea !important;
+    opacity: 0.96;
+    margin-bottom: 2px;
+    text-align: center;
+}
+
+.honey-live-rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.honey-live-rank-row {
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr) auto;
+    gap: 3px;
+    align-items: center;
+    min-width: 0;
+}
+
+.honey-live-rank-row.is-self {
+    margin-top: 2px;
+    padding-top: 2px;
+    border-top: 1px dashed rgba(255, 205, 227, 0.32);
+}
+
+.honey-live-rank-index {
+    font-size: 7px;
+    color: #ffc7de !important;
+    opacity: 0.95;
+    text-align: left;
+}
+
+.honey-live-rank-name {
+    font-size: 7px;
+    color: #fff0f7 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
+
+.honey-live-rank-mini.is-expanded .honey-live-rank-list {
+    gap: 2px;
+    width: 100%;
+    max-width: 100%;
+}
+
+.honey-live-rank-mini.is-expanded .honey-live-rank-row {
+    grid-template-columns: 16px minmax(0, 1fr) max-content;
+    align-items: flex-start;
+    width: 100%;
+}
+
+.honey-live-rank-mini.is-expanded .honey-live-rank-row.is-self {
+    margin-top: 3px;
+    padding-top: 3px;
+}
+
+.honey-live-rank-mini.is-expanded .honey-live-rank-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.2;
+    word-break: break-all;
+    max-width: min(16ch, calc(100vw - 218px));
+}
+
+.honey-live-rank-coins {
+    font-size: 7px;
+    color: #ffd79a !important;
+    white-space: nowrap;
+    opacity: 0.98;
+    text-align: right;
+    justify-self: end;
+    min-width: 0;
+}
+
+.honey-live-rank-mini.is-expanded .honey-live-rank-coins {
+    min-width: 44px;
+}
+
+.honey-live-rank-empty {
+    font-size: 7px;
+    color: rgba(255, 221, 238, 0.72) !important;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.honey-meta-collab-btn {
+    width: 88px;
+    max-width: 88px;
+    height: 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 219, 235, 0.26);
+    background: linear-gradient(145deg, rgba(247, 118, 176, 0.24), rgba(97, 51, 79, 0.34));
+    color: #ffdff0 !important;
+    font-size: 7px;
+    font-weight: 600;
+    line-height: 14px;
+    text-align: center;
+    padding: 0 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 2px 7px rgba(11, 7, 14, 0.24);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.honey-meta-collab-btn.is-empty {
+    background: linear-gradient(145deg, rgba(120, 108, 122, 0.24), rgba(54, 46, 58, 0.34));
+    border-color: rgba(203, 194, 206, 0.26);
+    color: #dfd7e4 !important;
+}
+
+.honey-meta-pill {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 56px;
+    font-size: 7px;
+    color: #ffd9ea !important;
+    background: rgba(255, 71, 133, 0.16);
+    border: 1px solid rgba(255, 133, 181, 0.45);
+    border-radius: 10px;
+    padding: 1px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+}
+
+@media (max-width: 360px) {
+    .honey-meta-row {
+        gap: 5px;
+        left: 6px;
+        right: 6px;
+    }
+
+    .honey-meta-title {
+        padding: 0 1px;
+    }
+
+    .honey-nav-title-live {
+        left: 34px;
+        right: 62px;
+        transform: none;
+        width: auto;
+        max-width: none;
+        padding: 0 1px;
+    }
+
+    .honey-meta-pill {
+        max-width: 52px;
+        font-size: 6px;
+        padding: 1px 3px;
+    }
+
+    .honey-live-rank-mini,
+    .honey-meta-collab-btn {
+        width: 80px;
+        max-width: 80px;
+    }
+
+    .honey-live-rank-mini.is-expanded {
+        width: fit-content;
+        max-width: min(188px, calc(100vw - 104px));
+    }
+}
+
+/* 推荐/直播/关注/占位页共用毛玻璃底板 */
+.honey-page-recommend .honey-content,
+.honey-page-live .honey-content,
+.honey-page-follow .honey-content,
+.honey-page-placeholder .honey-content {
+    background:
+        radial-gradient(130% 90% at 12% -10%, rgba(255, 205, 224, 0.18), transparent 48%),
+        radial-gradient(140% 100% at 100% 0%, rgba(163, 186, 219, 0.16), transparent 52%),
+        linear-gradient(170deg, #1d161d 0%, #171217 46%, #120f14 100%);
+}
+
+/* 热门推荐列表（金属毛玻璃卡片） */
+.honey-page-recommend .honey-content {
+    padding: 0;
+}
+
+.honey-recommend-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    position: relative;
+    border-radius: 0;
+    border: none;
+    background: linear-gradient(150deg, rgba(235, 229, 239, 0.08), rgba(39, 30, 41, 0.55));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(12px) saturate(120%);
+    -webkit-backdrop-filter: blur(12px) saturate(120%);
+}
+
+.honey-page-recommend .honey-content.has-bg-video .honey-recommend-wrap {
+    z-index: 1;
+    background: linear-gradient(150deg, rgba(20, 10, 15, 0.04), rgba(39, 30, 41, 0.22)) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.honey-recommend-wrap::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 30%),
+        radial-gradient(110% 80% at 0% 0%, rgba(255, 255, 255, 0.12), transparent 65%);
+}
+
+.honey-page-recommend .honey-content.has-bg-video .honey-recommend-wrap::before {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 28%),
+        radial-gradient(110% 80% at 0% 0%, rgba(255, 255, 255, 0.03), transparent 65%);
+}
+
+.honey-hot-list {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+    z-index: 1;
+}
+
+.honey-follow-list {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+    z-index: 1;
+}
+
+.honey-follow-item {
+    position: relative;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 214, 234, 0.18);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(56, 34, 62, 0.68));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+        0 8px 18px rgba(8, 5, 10, 0.3);
+    overflow: hidden;
+}
+
+.honey-follow-host-row {
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+
+.honey-follow-host-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    flex: 0 0 34px;
+    background: linear-gradient(135deg, #ff7db6, #a45ff0);
+    border: 1px solid rgba(255, 220, 236, 0.28);
+    box-shadow: 0 4px 12px rgba(35, 18, 43, 0.34);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.honey-follow-host-meta {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    gap: 2px;
+    flex: 1 1 auto;
+}
+
+.honey-follow-host-topline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+}
+
+.honey-follow-host-subline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    width: 100%;
+    flex-wrap: nowrap;
+}
+
+.honey-follow-host-name {
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 700;
+    color: #ffe6f2 !important;
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.honey-follow-host-figure {
+    font-size: 9px;
+    color: #ffe7f3 !important;
+    border: 1px solid rgba(255, 212, 233, 0.32);
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    padding: 1px 6px;
+    line-height: 1.5;
+    flex: 0 0 auto;
+}
+
+.honey-follow-badge {
+    font-size: 9px;
+    border-radius: 999px;
+    padding: 1px 6px;
+    line-height: 1.5;
+    border: 1px solid transparent;
+    flex: 0 0 auto;
+    letter-spacing: 0.1px;
+}
+
+.honey-follow-badge.online {
+    background: rgba(52, 199, 89, 0.15);
+    color: #4cd964 !important;
+    border: 1px solid rgba(76, 217, 100, 0.3);
+    box-shadow: 0 0 8px rgba(76, 217, 100, 0.18);
+}
+
+.honey-follow-badge.offline {
+    background: rgba(255, 255, 255, 0.08);
+    color: #999 !important;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.honey-follow-host-status {
+    font-size: 9px;
+    border-radius: 999px;
+    padding: 1px 6px;
+    line-height: 1.5;
+    border: 1px solid transparent;
+    flex: 0 0 auto;
+}
+
+.honey-follow-host-status.is-online {
+    color: #cfffe0 !important;
+    background: rgba(58, 197, 118, 0.22);
+    border-color: rgba(101, 224, 150, 0.45);
+}
+
+.honey-follow-host-status.is-offline {
+    color: #f0d8e6 !important;
+    background: rgba(124, 99, 116, 0.24);
+    border-color: rgba(193, 165, 181, 0.25);
+}
+
+.honey-follow-host-count {
+    font-size: 10px;
+    color: rgba(255, 211, 231, 0.8) !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.honey-follow-favor {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 4px;
+    margin-top: 4px;
+}
+
+.honey-follow-favor-label {
+    flex: 0 0 auto;
+    font-size: 9px;
+    color: rgba(255, 218, 236, 0.92) !important;
+    letter-spacing: 0.2px;
+}
+
+.honey-follow-favor-track {
+    flex: 1 1 auto;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02)),
+        rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 216, 237, 0.24);
+    box-shadow:
+        inset 0 1px 2px rgba(255, 255, 255, 0.12),
+        inset 0 -1px 2px rgba(0, 0, 0, 0.28);
+}
+
+.honey-follow-favor-fill {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    position: relative;
+    background: linear-gradient(90deg, #f44f9f 0%, #ff7cba 52%, #ffc4e3 100%);
+    box-shadow:
+        0 0 8px rgba(255, 122, 186, 0.36),
+        inset 0 0 4px rgba(255, 255, 255, 0.42);
+    transition: width 0.28s ease;
+}
+
+.honey-follow-favor-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 22px;
+    right: -12px;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(255, 240, 248, 0.95) 0%, rgba(255, 240, 248, 0) 75%);
+    opacity: 0.72;
+}
+
+.honey-follow-host-arrow {
+    color: rgba(255, 211, 231, 0.75) !important;
+    transition: transform 0.18s ease;
+}
+
+.honey-follow-item.is-expanded .honey-follow-host-arrow {
+    transform: rotate(180deg);
+}
+
+.honey-follow-history-wrap {
+    display: none;
+    padding: 0 10px 10px;
+    gap: 8px;
+    flex-direction: column;
+}
+
+.honey-follow-item.is-expanded .honey-follow-history-wrap {
+    display: flex;
+}
+
+.honey-goto-live-btn {
+    position: static;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 168, 213, 0.42);
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 9px;
+    color: #ffe7f3 !important;
+    background: linear-gradient(135deg, rgba(255, 86, 168, 0.8), rgba(166, 84, 214, 0.78));
+    box-shadow: 0 4px 10px rgba(34, 14, 47, 0.35);
+    cursor: pointer;
+    animation: honeyFollowPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes honeyFollowPulse {
+    0%, 100% {
+        box-shadow: 0 4px 10px rgba(34, 14, 47, 0.35);
+    }
+    50% {
+        box-shadow: 0 6px 16px rgba(255, 115, 192, 0.42);
+    }
+}
+
+.honey-follow-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: rgba(255, 214, 232, 0.82) !important;
+    margin-top: 2px;
+}
+
+.honey-history-date-item {
+    border: 1px solid rgba(202, 147, 234, 0.28);
+    border-radius: 11px;
+    background: linear-gradient(145deg, rgba(94, 47, 130, 0.38), rgba(38, 20, 54, 0.52));
+    color: #ffffff !important;
+    padding: 9px 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    font-size: 10px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.09),
+        0 6px 14px rgba(8, 4, 14, 0.28);
+}
+
+.honey-history-date-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #ffffff !important;
+}
+
+.honey-history-date-right {
+    color: #ffffff !important;
+    font-size: 10px;
+}
+
+.honey-follow-history-empty {
+    color: rgba(255, 214, 232, 0.66) !important;
+    font-size: 10px;
+    padding: 6px 2px 2px;
+}
+
+.honey-follow-video-bind-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.honey-follow-video-picker-trigger {
+    width: 100%;
+    border: 1px solid rgba(199, 150, 228, 0.28);
+    border-radius: 10px;
+    background: linear-gradient(145deg, rgba(88, 45, 120, 0.24), rgba(36, 19, 50, 0.4));
+    color: #f6deed !important;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.honey-follow-video-picker-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #f6deed !important;
+    flex: 0 0 auto;
+}
+
+.honey-follow-video-picker-current {
+    min-width: 0;
+    flex: 1 1 auto;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: rgba(255, 216, 237, 0.82) !important;
+    font-size: 10px;
+}
+
+.honey-follow-video-picker-arrow {
+    color: rgba(255, 216, 237, 0.75) !important;
+    transition: transform 0.18s ease;
+}
+
+.honey-follow-video-item {
+    border: 1px solid rgba(199, 150, 228, 0.28);
+    border-radius: 10px;
+    background: linear-gradient(145deg, rgba(88, 45, 120, 0.33), rgba(36, 19, 50, 0.5));
+    color: #f6deed !important;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10px;
+    cursor: pointer;
+}
+
+.honey-follow-video-item.is-bound {
+    border-color: rgba(248, 198, 225, 0.5);
+    background: linear-gradient(145deg, rgba(155, 78, 124, 0.44), rgba(62, 31, 73, 0.54));
+}
+
+.honey-follow-video-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #f6deed !important;
+}
+
+.honey-follow-video-left i {
+    color: #f6deed !important;
+}
+
+.honey-follow-video-right {
+    color: rgba(255, 216, 237, 0.82) !important;
+    flex: 0 0 auto;
+    margin-left: 8px;
+}
+
+.honey-follow-video-empty {
+    color: rgba(255, 214, 232, 0.68) !important;
+    font-size: 10px;
+    padding: 12px 2px;
+}
+
+.honey-follow-video-modal {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+}
+
+.honey-follow-video-modal.is-open {
+    display: block;
+}
+
+.honey-follow-video-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 2, 9, 0.62);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+.honey-follow-video-modal-panel {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    max-height: 68%;
+    border-radius: 14px;
+    border: 1px solid rgba(233, 189, 219, 0.28);
+    background: linear-gradient(160deg, rgba(54, 26, 68, 0.95), rgba(28, 15, 36, 0.95));
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.honey-follow-video-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 216, 236, 0.18);
+}
+
+.honey-follow-video-modal-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #ffe7f3 !important;
+}
+
+.honey-follow-video-modal-close {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 216, 236, 0.22);
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffe7f3 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.honey-follow-video-modal-list {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    min-height: 0;
+    color: #ffffff !important;
+}
+
+.honey-follow-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.honey-follow-action-btn {
+    flex: 1 1 0;
+    border: 1px solid rgba(255, 216, 237, 0.24);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffe4f2 !important;
+    font-size: 10px;
+    padding: 8px 8px;
+    cursor: pointer;
+}
+
+.honey-follow-action-btn.is-danger {
+    border-color: rgba(255, 150, 182, 0.4);
+    background: linear-gradient(145deg, rgba(120, 38, 68, 0.42), rgba(84, 28, 52, 0.54));
+    color: #ffd5e6 !important;
+}
+
+.honey-follow-empty {
+    border-radius: 14px;
+    border: 1px dashed rgba(255, 206, 228, 0.24);
+    background: linear-gradient(150deg, rgba(255, 255, 255, 0.08), rgba(48, 28, 58, 0.42));
+    padding: 26px 16px;
+    text-align: center;
+}
+
+.honey-follow-empty-icon {
+    font-size: 22px;
+    color: rgba(255, 190, 220, 0.76) !important;
+    margin-bottom: 8px;
+}
+
+.honey-follow-empty-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffe6f2 !important;
+    margin-bottom: 6px;
+}
+
+.honey-follow-empty-desc {
+    font-size: 10px;
+    line-height: 1.5;
+    color: rgba(255, 213, 232, 0.76) !important;
+}
+
+.honey-hot-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.35px;
+    color: rgba(255, 214, 232, 0.8) !important;
+    margin: 2px 2px -2px;
+}
+
+.honey-hot-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 221, 236, 0.2);
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.12), rgba(56, 40, 57, 0.7));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+        0 8px 18px rgba(8, 5, 10, 0.32);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.honey-page-recommend .honey-content.has-bg-video .honey-hot-item {
+    backdrop-filter: blur(2px) saturate(108%);
+    -webkit-backdrop-filter: blur(2px) saturate(108%);
+    background: linear-gradient(140deg, rgba(20, 16, 22, 0.28), rgba(44, 32, 48, 0.42));
+}
+
+.honey-hot-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 8%;
+    width: 84%;
+    height: 52%;
+    border-radius: 0 0 50% 50%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+    pointer-events: none;
+}
+
+.honey-hot-item:active {
+    transform: translateY(1px) scale(0.996);
+    border-color: rgba(255, 193, 220, 0.34);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.32),
+        0 5px 12px rgba(8, 5, 10, 0.3);
+}
+
+.honey-hot-item.is-empty {
+    cursor: default;
+}
+
+.honey-hot-item-compact {
+    padding: 8px 10px;
+    gap: 8px;
+}
+
+.honey-hot-item-compact .honey-hot-rank {
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    font-size: 10px;
+    border-radius: 7px;
+}
+
+.honey-hot-item-compact .honey-hot-title {
+    font-size: 11px;
+    line-height: 1.22;
+}
+
+.honey-hot-item-compact .honey-hot-meta {
+    margin-top: 4px;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+.honey-hot-item-compact .honey-hot-host,
+.honey-hot-item-compact .honey-hot-online,
+.honey-hot-item-compact .honey-hot-category {
+    flex: 0 0 auto;
+    min-width: 0;
+    font-size: 8px;
+    padding: 1px 5px;
+}
+
+.honey-hot-item-compact .honey-hot-host {
+    max-width: 84px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.honey-hot-follow-state {
+    margin-left: 2px;
+    font-size: 8px;
+    white-space: nowrap;
+}
+
+.honey-hot-follow-state.is-followed {
+    color: rgba(255, 205, 230, 0.95) !important;
+}
+
+.honey-hot-follow-state.is-unfollowed {
+    color: rgba(220, 196, 210, 0.7) !important;
+}
+
+.honey-hot-item-compact .honey-hot-online {
+    margin-left: auto;
+}
+
+.honey-today-card {
+    display: block;
+    padding: 12px 12px 11px;
+    min-height: 108px;
+}
+
+.honey-today-card::before {
+    left: 5%;
+    width: 90%;
+    height: 58%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0));
+}
+
+.honey-today-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.honey-today-badge,
+.honey-today-category {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 9px;
+    line-height: 1;
+    letter-spacing: 0.25px;
+}
+
+.honey-today-badge {
+    color: #fff0f7 !important;
+    background: linear-gradient(135deg, rgba(255, 95, 154, 0.86), rgba(255, 143, 191, 0.82));
+    border: 1px solid rgba(255, 199, 223, 0.45);
+}
+
+.honey-today-category {
+    color: #eef2ff !important;
+    background: rgba(120, 145, 197, 0.28);
+    border: 1px solid rgba(179, 199, 236, 0.36);
+}
+
+.honey-today-title {
+    margin-top: 9px;
+    font-size: 14px;
+    line-height: 1.28;
+    font-weight: 700;
+    color: #fff2f8 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.honey-today-intro {
+    margin-top: 6px;
+    font-size: 10px;
+    line-height: 1.45;
+    color: rgba(255, 224, 238, 0.92) !important;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.honey-today-meta {
+    margin-top: 9px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.honey-today-meta .honey-hot-arrow {
+    margin-left: auto;
+}
+
+.honey-hot-rank {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    color: rgba(255, 229, 241, 0.8);
+    text-align: center;
+    flex-shrink: 0;
+    line-height: 24px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(38, 30, 40, 0.8));
+    border: 1px solid rgba(255, 219, 236, 0.22);
+}
+
+.honey-hot-rank.top3 {
+    color: #ffd3e7;
+    background: linear-gradient(180deg, rgba(255, 174, 212, 0.35), rgba(66, 38, 55, 0.82));
+    border-color: rgba(255, 182, 217, 0.4);
+}
+
+.honey-hot-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.honey-hot-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.honey-hot-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: #ffeaf3 !important;
+    line-height: 1.3;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.honey-hot-heat {
+    font-size: 10px;
+    color: rgba(255, 220, 236, 0.72) !important;
+    margin-top: 3px;
+}
+
+.honey-hot-meta {
+    margin-top: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.honey-hot-host,
+.honey-hot-online {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 9px;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.honey-hot-category {
+    color: #e9f2ff !important;
+    background: rgba(111, 141, 197, 0.22);
+    border: 1px solid rgba(168, 191, 233, 0.28);
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 1px 6px;
+    font-size: 9px;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.honey-hot-host {
+    color: #ffdbe9 !important;
+    background: rgba(255, 135, 184, 0.18);
+    border: 1px solid rgba(255, 178, 209, 0.26);
+}
+
+.honey-hot-online {
+    color: #dfe8ff !important;
+    background: rgba(118, 148, 210, 0.2);
+    border: 1px solid rgba(174, 196, 238, 0.24);
+}
+
+.honey-hot-tag {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #ffe2ef !important;
+    border: 1px solid rgba(255, 174, 210, 0.46);
+    background: rgba(255, 95, 153, 0.2);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.honey-hot-tag.tag-explosive {
+    color: #fff0f5 !important;
+    border-color: rgba(255, 150, 186, 0.68);
+    background: rgba(255, 86, 116, 0.3);
+}
+
+.honey-hot-tag.tag-hot {
+    color: #fff0de !important;
+    border-color: rgba(255, 194, 135, 0.7);
+    background: rgba(255, 145, 62, 0.28);
+}
+
+.honey-hot-tag.tag-new {
+    color: #ecf4ff !important;
+    border-color: rgba(174, 202, 255, 0.66);
+    background: rgba(95, 151, 255, 0.26);
+}
+
+.honey-hot-arrow {
+    color: rgba(255, 226, 239, 0.92) !important;
+    font-size: 9px;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 191, 221, 0.25);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.honey-recommend-wrap {
+    scrollbar-width: none;
+}
+
+.honey-recommend-wrap::-webkit-scrollbar {
+    display: none;
+}
+
+@media (max-width: 360px) {
+    .honey-hot-list {
+        padding: 8px;
+        gap: 8px;
+    }
+
+    .honey-hot-item {
+        padding: 9px 10px;
+        gap: 8px;
+    }
+
+    .honey-hot-item-compact {
+        padding: 7px 9px;
+        gap: 7px;
+    }
+
+    .honey-hot-item-compact .honey-hot-rank {
+        width: 18px;
+        height: 18px;
+        line-height: 18px;
+        font-size: 9px;
+    }
+
+    .honey-hot-item-compact .honey-hot-host {
+        max-width: 72px;
+    }
+
+    .honey-today-card {
+        padding: 10px 10px 9px;
+        min-height: 96px;
+    }
+
+    .honey-today-title {
+        font-size: 13px;
+    }
+
+    .honey-today-intro {
+        margin-top: 5px;
+        font-size: 9px;
+    }
+
+    .honey-hot-title {
+        font-size: 11px;
+    }
+
+    .honey-hot-heat,
+    .honey-hot-host,
+    .honey-hot-online,
+    .honey-hot-tag {
+        font-size: 8px;
+    }
+}
+
+.honey-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    padding: 44px 12px 10px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
+        linear-gradient(135deg, rgba(47, 30, 44, 0.74), rgba(22, 16, 24, 0.78));
+    backdrop-filter: blur(18px) saturate(145%);
+    -webkit-backdrop-filter: blur(18px) saturate(145%);
+    z-index: 100;
+    border-bottom: 1px solid rgba(255, 191, 220, 0.28);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 6px 16px rgba(9, 5, 12, 0.28);
+}
+
+.honey-nav-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.1px;
+    color: #ffe9f4 !important;
+    background: none;
+    border: none;
+    box-shadow: none;
+    text-shadow: 0 1px 6px rgba(255, 124, 176, 0.35);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* 直播页标题：强制几何居中 */
+.honey-nav .honey-nav-title.honey-nav-title-live {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    width: calc(100% - 124px) !important;
+    max-width: calc(100% - 124px) !important;
+    padding: 0 !important;
+    text-align: center;
+}
+
+@media (max-width: 360px) {
+    .honey-nav .honey-nav-title.honey-nav-title-live {
+        width: calc(100% - 112px) !important;
+        max-width: calc(100% - 112px) !important;
+    }
+}
+
+.honey-back-btn,
+.honey-icon-btn {
+    background: none;
+    border: none;
+    color: #ffd8e8 !important;
+    font-size: 13px;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+}
+
+.honey-back-btn i,
+.honey-icon-btn i {
+    color: #ffd8e8 !important;
+    font-size: 13px !important;
+}
+
+.honey-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow: hidden;
+    padding: 7px 8px 7px;
+    gap: 4px;
+    background: linear-gradient(180deg, rgba(244, 236, 246, 0.08), rgba(24, 18, 24, 0.72));
+    border-bottom: 1px solid rgba(255, 197, 224, 0.18);
+    backdrop-filter: blur(12px) saturate(130%);
+    -webkit-backdrop-filter: blur(12px) saturate(130%);
+    flex-shrink: 0;
+}
+
+.honey-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.honey-tab {
+    font-size: 11px;
+    color: rgba(255, 225, 239, 0.84) !important;
+    white-space: nowrap;
+    cursor: pointer;
+    padding: 6px 4px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 213, 233, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.honey-tab.active {
+    color: #ffd8e8 !important;
+    font-weight: 700;
+    border-color: rgba(255, 191, 220, 0.42);
+    background: linear-gradient(180deg, rgba(255, 141, 190, 0.24), rgba(72, 43, 62, 0.72));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+        0 4px 10px rgba(11, 7, 12, 0.28);
+}
+
+.honey-tab:active {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 201, 227, 0.34);
+}
+
+.honey-live-room {
+    flex: 0 0 28%;
+    min-height: 118px;
+    position: relative;
+    background: #1a1217;
+    overflow: hidden;
+    border: none;
+    margin: 0;
+    border-radius: 0;
+}
+
+.honey-nai-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('https://picsum.photos/800/1200?blur=10') center/cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+}
+
+/* 直播间动态私密视频层 */
+.honey-live-video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.honey-nai-glass {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    background: rgba(20, 10, 15, 0.25);
+    box-shadow: inset 0 0 100px rgba(255, 71, 133, 0.1);
+    z-index: 1;
+}
+
+.honey-unlock-btn {
+    position: relative;
+    z-index: 2;
+    background: linear-gradient(135deg, rgba(244, 146, 191, 0.58), rgba(236, 132, 182, 0.54));
+    border: 1px solid rgba(245, 178, 213, 0.34);
+    border-radius: 16px;
+    padding: 7px 12px;
+    color: #fff;
+    font-weight: 600;
+    font-size: 11px;
+    box-shadow: 0 4px 14px rgba(198, 112, 154, 0.16);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.honey-live-header {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: flex;
+    align-items: center;
+    background: rgba(20, 15, 19, 0.5);
+    border-radius: 16px;
+    padding: 3px 8px 3px 3px;
+    z-index: 20;
+    backdrop-filter: blur(8px);
+}
+
+.honey-host-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ff7db6, #d35f9e);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    margin-right: 0;
+}
+
+.honey-host-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    max-width: 102px;
+    margin-right: 0;
+    padding-top: 1px;
+}
+
+.honey-host-name {
+    font-size: 10px;
+    font-weight: 600;
+    color: #fff0f6 !important;
+    line-height: 1.28;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.honey-host-viewers {
+    font-size: 8.8px;
+    color: #ffd3e7 !important;
+    line-height: 1.22;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.honey-follow-btn {
+    background: linear-gradient(135deg, rgba(236, 92, 156, 0.72), rgba(220, 86, 150, 0.68));
+    border: 1px solid rgba(228, 124, 176, 0.4);
+    border-radius: 8px;
+    color: #fff !important;
+    font-size: 8px;
+    font-weight: 600;
+    padding: 0 6px;
+    height: 18px;
+    line-height: 18px;
+    margin-left: 2px;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+.honey-follow-btn.is-followed {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #ffd3e7 !important;
+}
+
+.honey-live-tags {
+    position: absolute;
+    top: 15px;
+    right: 12px;
+    display: flex;
+    gap: 5px;
+    z-index: 20;
+}
+
+.honey-tag {
+    background: rgba(255, 71, 133, 0.2);
+    border: 1px solid #ff4785;
+    color: #ff8fbd !important;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* 直播左下角礼物动态 */
+.honey-live-intro-top {
+    position: absolute;
+    top: 40px;
+    left: 6px;
+    z-index: 23;
+    width: min(92%, 260px);
+    max-width: calc(100% - 20px);
+    pointer-events: none;
+}
+
+.honey-live-gifts {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    z-index: 22;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: none;
+    width: min(92%, 260px);
+    max-width: calc(100% - 20px);
+}
+
+.honey-live-gifts-list {
+    overflow: hidden;
+    max-height: calc(
+        var(--honey-gift-row-height, 34px) * var(--honey-gift-visible-rows, 2)
+        + 6px * (var(--honey-gift-visible-rows, 2) - 1)
+    );
+}
+
+.honey-live-gifts-track {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    will-change: transform;
+}
+
+.honey-live-gifts-list.is-scrolling .honey-live-gifts-track {
+    animation: honeyGiftFeedScroll var(--honey-gift-scroll-duration, 8s) linear infinite;
+}
+
+.honey-live-gift-item {
+    align-self: flex-start;
+    background: linear-gradient(135deg, rgba(255, 120, 176, 0.12), rgba(88, 38, 62, 0.14));
+    border: none;
+    color: #ffd9ea !important;
+    border-radius: 8px;
+    padding: 2px 6px;
+    font-size: 11px;
+    line-height: 1.25;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+    box-shadow: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    overflow: hidden;
+    position: relative;
+    isolation: isolate;
+    min-height: var(--honey-gift-row-height, 24px);
+    color: #ffd9ea !important;
+}
+
+.honey-live-gift-item::after {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+    opacity: 0;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.honey-live-gift-intro {
+    background: linear-gradient(135deg, rgba(255, 190, 100, 0.14), rgba(74, 48, 23, 0.16));
+}
+
+.honey-live-gift-reward {
+    background: linear-gradient(135deg, rgba(255, 85, 150, 0.14), rgba(112, 40, 73, 0.16));
+    padding: 1px 6px;
+    min-height: 0;
+}
+
+.honey-live-notify-icon {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    line-height: 1;
+    background: linear-gradient(135deg, rgba(255, 236, 245, 0.32), rgba(255, 194, 224, 0.3));
+    border: 1px solid rgba(255, 214, 235, 0.62);
+    box-shadow: 0 1px 3px rgba(255, 128, 182, 0.2);
+}
+
+.honey-live-gift-comment {
+    background: linear-gradient(135deg, rgba(108, 126, 152, 0.12), rgba(58, 68, 84, 0.14));
+    width: min(100%, 248px);
+    align-self: flex-start;
+    padding: 1px 6px;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    min-height: 0;
+}
+
+.honey-live-comment-rank {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    border-radius: 8px;
+    padding: 3px 5px;
+    color: #fff8de !important;
+    background: linear-gradient(135deg, rgba(255, 197, 82, 0.48), rgba(255, 148, 54, 0.44));
+    border: 1px solid rgba(255, 208, 129, 0.32);
+    box-shadow: 0 1px 4px rgba(255, 166, 56, 0.14);
+    text-shadow: none;
+    margin-top: 1px;
+}
+
+.honey-live-comment-line {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 10px;
+    line-height: 1.28;
+    color: #f3f6fb !important;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    text-align: left;
+}
+
+.honey-live-comment-user {
+    font-size: 10px;
+    font-weight: 700;
+    color: #e8eef7 !important;
+    white-space: normal;
+    display: inline;
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+.honey-live-comment-content {
+    font-size: 10px;
+    color: #f3f6fb !important;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.25;
+    opacity: 0.96;
+    display: inline;
+}
+
+.honey-live-gift-badge {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 3px 5px;
+    border-radius: 8px;
+    color: #fff !important;
+    letter-spacing: 0.3px;
+    text-shadow: none;
+}
+
+.honey-live-gift-badge.is-gift {
+    background: linear-gradient(135deg, rgba(255, 78, 145, 0.44), rgba(255, 122, 179, 0.4));
+    border: 1px solid rgba(255, 172, 212, 0.28);
+    box-shadow: 0 1px 4px rgba(255, 78, 145, 0.14);
+}
+
+.honey-live-gift-badge.is-comment {
+    background: linear-gradient(135deg, rgba(79, 143, 255, 0.42), rgba(125, 175, 255, 0.4));
+    border: 1px solid rgba(171, 205, 255, 0.26);
+    box-shadow: 0 1px 4px rgba(79, 143, 255, 0.13);
+}
+
+.honey-gift-icon {
+    margin-right: 0;
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 1;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+}
+
+.honey-live-gift-text-wrap {
+    display: inline-block;
+    min-width: 0;
+    max-width: 210px;
+    overflow: hidden;
+}
+
+.honey-live-gift-text {
+    display: inline-block;
+    position: relative;
+    z-index: 1;
+    white-space: nowrap;
+    max-width: none;
+    text-overflow: clip;
+    overflow: visible;
+    color: #ffe7f2 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+.honey-live-gift-text-reward {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.honey-gift-icon-inline {
+    margin: 0 1px;
+    vertical-align: middle;
+}
+
+.honey-live-gift-comment .honey-live-gift-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    text-overflow: clip;
+    display: block;
+    flex: 1;
+    min-width: 0;
+    line-height: 1.25;
+}
+
+.honey-live-gift-text.marquee {
+    text-overflow: clip;
+    overflow: visible;
+    animation: honeyIntroMarquee var(--honey-intro-marquee-duration, 16s) linear infinite;
+    color: #ffe7f2 !important;
+}
+
+@keyframes honeyGiftFeedScroll {
+    from { transform: translate3d(0, 0, 0); }
+    to { transform: translate3d(0, -50%, 0); }
+}
+
+@keyframes honeyIntroMarquee {
+    0%, 14% { transform: translateX(0); }
+    86%, 100% { transform: translateX(calc(-1 * var(--honey-intro-marquee-distance, 0px))); }
+}
+
+.honey-live-bottom {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    background: linear-gradient(180deg, rgba(45, 30, 40, 0.92), rgba(21, 14, 18, 0.97));
+    padding: 8px 10px 10px;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+}
+
+.honey-page-live.is-scene-collapsed .honey-live-bottom {
+    flex: 0 0 auto;
+    padding-bottom: 10px;
+}
+
+.honey-page-live.is-scene-collapsed .honey-scene-block {
+    display: none;
+}
+
+.honey-page-live.is-scene-collapsed .honey-live-room {
+    flex: 1 1 auto;
+    min-height: 220px;
+}
+
+/* 输入栏 */
+.honey-input-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.honey-refresh-btn,
+.honey-gift-btn,
+.honey-scene-toggle-btn {
+    flex: 0 0 24px;
+    width: 24px !important;
+    height: 24px !important;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px !important;
+    color: #ffddeb !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.26);
+    cursor: pointer;
+}
+
+.honey-refresh-btn i,
+.honey-gift-btn i,
+.honey-scene-toggle-btn i {
+    color: #ffddeb !important;
+    font-size: 10px !important;
+}
+
+.honey-refresh-btn:active,
+.honey-gift-btn:active,
+.honey-scene-toggle-btn:active {
+    background: rgba(255, 255, 255, 0.24);
+    transform: scale(0.97);
+}
+
+.honey-refresh-btn.is-loading i {
+    animation: honeyRefreshSpin 0.85s linear infinite;
+    transform-origin: 50% 50%;
+}
+
+@keyframes honeyRefreshSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.honey-chat-input {
+    flex: 1;
+    min-width: 0;
+    width: 0;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    padding: 8px 12px;
+    color: #fff;
+    font-size: 12px;
+    outline: none;
+}
+
+.honey-chat-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* 礼物选择面板 */
+.honey-gift-picker {
+    position: absolute;
+    right: 12px;
+    top: 48px;
+    bottom: auto;
+    z-index: 35;
+    display: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+    width: 216px;
+    padding: 6px;
+    border-radius: 10px;
+    background: rgba(20, 12, 18, 0.95);
+    border: 1px solid rgba(255, 133, 181, 0.55);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+    max-height: min(54vh, 240px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+.honey-gift-picker.show {
+    display: grid;
+}
+
+/* 折叠剧情时，礼物面板向上展开，避免被底部裁切 */
+.honey-page-live.is-scene-collapsed .honey-live-bottom {
+    overflow: visible;
+}
+
+.honey-page-live.is-scene-collapsed .honey-gift-picker {
+    top: auto;
+    bottom: 40px;
+}
+
+/* 礼物面板优先层级：展开时覆盖剧情弹窗，避免被遮挡无法点击 */
+.honey-page-live.is-gift-picker-open .honey-live-bottom {
+    z-index: 340;
+    overflow: visible;
+}
+
+.honey-page-live.is-gift-picker-open .honey-gift-picker {
+    z-index: 345;
+}
+
+.honey-gift-picker::-webkit-scrollbar {
+    display: none;
+}
+
+.honey-gift-group-title {
+    grid-column: 1 / -1;
+    font-size: 9px;
+    font-weight: 700;
+    color: #ffc3dc !important;
+    text-align: left;
+    padding: 2px 2px 0;
+    letter-spacing: 0.3px;
+}
+
+.honey-gift-option {
+    border: 1px solid rgba(255, 133, 181, 0.45);
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffd7ea !important;
+    border-radius: 7px;
+    padding: 5px 4px;
+    font-size: 9px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 1px;
+    line-height: 1.1;
+    min-height: 44px;
+}
+
+.honey-gift-option .gift-emoji {
+    font-size: 10px;
+    line-height: 1;
+}
+
+.honey-gift-option .gift-label {
+    font-size: 9px;
+    color: #ffe4f0 !important;
+}
+
+.honey-gift-option .gift-price {
+    font-size: 8px;
+    color: #ffb9d6 !important;
+}
+
+/* 电脑端礼物面板缩小一档，移动端保持原尺寸 */
+@media (hover: hover) and (pointer: fine) {
+    .honey-gift-picker {
+        width: 190px;
+        gap: 4px;
+        padding: 5px;
+        max-height: min(50vh, 212px);
+    }
+
+    .honey-gift-group-title {
+        font-size: 8px;
+    }
+
+    .honey-gift-option {
+        min-height: 38px;
+        padding: 4px 3px;
+        font-size: 8px;
+    }
+
+    .honey-gift-option .gift-emoji {
+        font-size: 9px;
+    }
+
+    .honey-gift-option .gift-label {
+        font-size: 8px;
+    }
+
+    .honey-gift-option .gift-price {
+        font-size: 7px;
+    }
+}
+
+.honey-scene-block {
+    flex: 1;
+    min-height: 0;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 133, 181, 0.35);
+    border-radius: 12px;
+    padding: 8px 9px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.honey-scene-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffc3dc !important;
+    margin-bottom: 0;
+    flex-shrink: 0;
+}
+
+.honey-scene-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+    flex-shrink: 0;
+}
+
+.honey-scene-title-row.is-titleless {
+    margin-bottom: 6px;
+}
+
+.honey-scene-tts-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 201, 224, 0.72);
+    background: rgba(255, 152, 196, 0.26);
+    color: #fff2f9;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+    flex-shrink: 0;
+}
+
+.honey-scene-tts-btn i {
+    font-size: 11px;
+    line-height: 1;
+}
+
+.honey-scene-tts-btn:hover {
+    background: rgba(255, 162, 203, 0.36);
+    border-color: rgba(255, 214, 234, 0.9);
+}
+
+.honey-scene-tts-btn:active {
+    transform: scale(0.94);
+}
+
+.honey-scene-tts-btn.is-playing {
+    background: rgba(255, 132, 183, 0.48);
+    border-color: rgba(255, 226, 240, 0.95);
+    color: #ffffff;
+}
+
+.honey-scene-tts-btn.is-loading {
+    cursor: wait;
+    opacity: 0.84;
+}
+
+.honey-scene-tts-btn:disabled {
+    opacity: 0.72;
+}
+
+.honey-scene-desc {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.55;
+    color: #ffeef6 !important;
+    text-shadow: none !important;
+    letter-spacing: 0;
+    font-family: inherit !important;
+    white-space: pre-wrap;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.honey-scene-modal {
+    position: absolute;
+    inset: 0;
+    z-index: 260;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    padding: 74px 10px 12px;
+    box-sizing: border-box;
+}
+
+.honey-scene-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(8, 5, 10, 0.52);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    cursor: pointer;
+}
+
+.honey-scene-modal-card {
+    position: relative;
+    width: 100%;
+    max-width: 360px;
+    height: min(78%, 600px);
+    max-height: calc(100% - 86px);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 174, 210, 0.4);
+    background:
+        linear-gradient(180deg, rgba(255, 224, 240, 0.14), rgba(255, 224, 240, 0.02) 18%, rgba(22, 15, 22, 0.96) 72%),
+        linear-gradient(160deg, rgba(52, 34, 47, 0.98), rgba(20, 13, 18, 0.98));
+    box-shadow:
+        0 16px 40px rgba(0, 0, 0, 0.52),
+        inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 1;
+}
+
+.honey-scene-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 10px 8px;
+    border-bottom: 1px solid rgba(255, 173, 209, 0.26);
+    background: linear-gradient(180deg, rgba(255, 190, 220, 0.16), rgba(255, 190, 220, 0.05));
+    flex-shrink: 0;
+}
+
+.honey-scene-modal-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffe7f3 !important;
+    letter-spacing: 0.3px;
+}
+
+.honey-scene-modal-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.honey-scene-modal-close-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 199, 224, 0.68);
+    background: rgba(255, 160, 201, 0.26);
+    color: #fff4fa !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.honey-scene-modal-close-btn i {
+    font-size: 12px;
+}
+
+.honey-scene-modal-desc {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 12px 14px;
+    white-space: pre-wrap;
+    font-size: 13px;
+    line-height: 1.68;
+    color: #fff0f8 !important;
+    text-shadow: none;
+    
+    /* 🔥 新增：移动端原生丝滑滚动与防事件穿透 */
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior-y: contain;
+}
+
+.honey-page-settings .honey-content {
+    overflow-y: auto;
+    padding: 10px;
+    gap: 10px;
+}
+
+.honey-settings-content {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.honey-settings-content::-webkit-scrollbar {
+    display: none;
+}
+
+.honey-settings-card {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 133, 181, 0.35);
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.honey-settings-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffd2e6 !important;
+    margin-bottom: 10px;
+}
+
+.honey-settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.honey-settings-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.honey-settings-input {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    border: 1px solid rgba(255, 133, 181, 0.38);
+    border-radius: 8px;
+    background: rgba(10, 10, 16, 0.9);
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    font-size: 12px;
+    padding: 0 10px;
+    box-sizing: border-box;
+}
+
+.honey-settings-input:-webkit-autofill,
+.honey-settings-input:-webkit-autofill:hover,
+.honey-settings-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #ffffff !important;
+    transition: background-color 9999s ease-in-out 0s;
+    box-shadow: inset 0 0 0 1000px rgba(10, 10, 16, 0.9) !important;
+}
+
+.honey-settings-input::placeholder {
+    color: rgba(255, 225, 239, 0.6) !important;
+}
+
+#honey-user-nickname.honey-settings-input {
+    background: #0a0b10 !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+}
+
+#honey-recharge-yuan.honey-settings-input {
+    background: #0a0b10 !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    caret-color: #ffffff;
+    -webkit-appearance: none;
+    appearance: textfield;
+    background-image: none !important;
+}
+
+#honey-recharge-yuan::-webkit-outer-spin-button,
+#honey-recharge-yuan::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.honey-settings-inline-btn {
+    min-width: 84px;
+    padding: 0 10px;
+}
+
+.honey-coin-balance {
+    min-width: 72px;
+    text-align: right;
+    font-size: 16px;
+    font-weight: 700;
+    color: #ffd7ea !important;
+    text-shadow: 0 1px 4px rgba(255, 102, 160, 0.28);
+}
+
+.honey-settings-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.honey-settings-desc {
+    font-size: 10px;
+    line-height: 1.4;
+    color: rgba(255, 245, 251, 0.95) !important;
+    margin-top: 4px;
+}
+
+.honey-toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    flex: 0 0 auto;
+}
+
+.honey-toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.honey-toggle-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.22);
+    border: 1px solid rgba(255, 133, 181, 0.45);
+    transition: all 0.2s ease;
+}
+
+.honey-toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 2px;
+    top: 2px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s ease;
+}
+
+.honey-toggle-switch input:checked + .honey-toggle-slider {
+    background: rgba(255, 71, 133, 0.65);
+}
+
+.honey-toggle-switch input:checked + .honey-toggle-slider::before {
+    transform: translateX(20px);
+}
+
+.honey-prompt-editor {
+    width: 100%;
+    min-height: 230px;
+    margin-top: 10px;
+    background: #0a0b10 !important;
+    background-image: none !important;
+    border: 1px solid rgba(255, 133, 181, 0.45);
+    border-radius: 10px;
+    color: #ffffff !important;
+    font-size: 11px;
+    line-height: 1.45;
+    padding: 10px;
+    resize: vertical;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.honey-prompt-editor:focus {
+    background: #0a0b10 !important;
+    color: #ffffff !important;
+}
+
+.honey-prompt-editor::placeholder {
+    color: rgba(255, 255, 255, 0.72) !important;
+}
+
+.honey-settings-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.honey-settings-btn {
+    border: none;
+    border-radius: 8px;
+    height: 32px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.honey-settings-btn-muted {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ffd8ea !important;
+}
+
+.honey-settings-btn-primary {
+    background: linear-gradient(135deg, #ff4785, #ff6b9d);
+    color: #fff !important;
+}
+
+.honey-settings-btn-danger {
+    margin-top: 10px;
+    width: 100%;
+    background: linear-gradient(135deg, #ff5f72, #ff3d53);
+    color: #fff !important;
+    box-shadow: 0 4px 10px rgba(255, 61, 83, 0.32);
+}
+
+.honey-recharge-modal {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.honey-recharge-modal.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.honey-recharge-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(4, 3, 10, 0.62);
+}
+
+.honey-recharge-panel {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-radius: 14px;
+    padding: 12px;
+    background: linear-gradient(145deg, rgba(24, 18, 34, 0.96), rgba(18, 12, 25, 0.95));
+    border: 1px solid rgba(255, 133, 181, 0.35);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
+}
+
+.honey-recharge-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffd3e7 !important;
+    margin-bottom: 8px;
+}
+
+.honey-recharge-wallet-value {
+    color: #ffffff !important;
+    font-weight: 700;
+}
+
+.honey-refresh-btn:disabled,
+.honey-chat-input:disabled {
+    opacity: 0.55;
+}
+
+/* 自定义视频池列表：强制高对比可见 */
+.honey-custom-video-empty {
+    font-size: 11px;
+    color: rgba(255, 245, 251, 0.95) !important;
+    text-align: center;
+    padding: 10px 0;
+}
+
+.honey-custom-video-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 133, 181, 0.2);
+}
+
+.honey-custom-video-name {
+    font-size: 10px;
+    color: #fff2f8 !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 80%;
+}
+
+.honey-custom-video-icon {
+    margin-right: 4px;
+    opacity: 0.8;
+    color: #fff2f8 !important;
+}
+
+.honey-delete-custom-video-btn {
+    background: none;
+    border: none;
+    color: #ff87a9 !important;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px;
+}
+
+.honey-delete-custom-video-btn i {
+    color: #ff87a9 !important;
+}
+
+.honey-custom-video-hint {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.68) !important;
+    text-align: center;
+    padding: 2px 0 0;
+}
+
+.honey-custom-video-toggle-btn {
+    margin-top: 2px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 133, 181, 0.25);
+    color: #ffd2e6 !important;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+/* 状态栏：蜜语模式下强制提亮时间/信号/电池 */
+.phone-body-panel-honey .phone-statusbar .time,
+.phone-body-panel-honey .statusbar-left .time {
+    color: #ffe9f4 !important;
+    text-shadow: 0 0 6px rgba(255, 123, 177, 0.35);
+}
+
+.phone-body-panel-honey .signal-bars .bar {
+    background: #ffd7ea !important;
+    box-shadow: 0 0 5px rgba(255, 123, 177, 0.45);
+}
+
+.phone-body-panel-honey .battery-text-v {
+    color: #ffe9f4 !important;
+}
+
+.phone-body-panel-honey .battery-body-v {
+    border-color: rgba(255, 216, 232, 0.95) !important;
+}
+

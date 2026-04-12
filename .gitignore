@@ -1,0 +1,26 @@
+# Mac 系统隐藏文件
+.DS_Store
+
+# Windows 系统隐藏文件
+Thumbs.db
+desktop.ini
+
+# 编辑器配置文件 (VSCode, WebStorm等)
+.vscode/
+.idea/
+
+# npm/Node 相关 
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.env
+
+# 临时测试文件或日志
+*.log
+temp/
+test/
+
+# 压缩包
+*.zip
+*.tar.gz
+*.rar

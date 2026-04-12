@@ -1,0 +1,2583 @@
+/* ========================================================
+ *  柚月小手机 (Yuzuki's Little Phone)
+ *  作者 (Author): yuzuki
+ * 
+ * ⚠️ 版权声明 (Copyright Notice):
+ * 1. 禁止商业化：本项目仅供交流学习，严禁任何形式的倒卖、盈利等商业行为。
+ * 2. 禁止二改发布：严禁未经授权修改代码后作为独立项目二次发布或分发。
+ * 3. 禁止抄袭：严禁盗用本项目的核心逻辑、UI设计与相关原代码。
+ * 
+ * Copyright (c) yuzuki. All rights reserved.
+ * ======================================================== */
+/* ========================================
+   🎨 颜色变量系统（支持动态修改）
+   ======================================== */
+
+:root {
+    /* 🔥 新版：统一的全局文字颜色 */
+    --phone-global-text: #000000;
+    /* 📏 手机壳缩放：宽度保持原样，高度缩小 10% */
+    --phone-shell-width-scale: 1;
+    --phone-shell-height-scale: 0.9;
+
+    /* ⚠️ 已废弃：以下变量保留以防兼容性问题，但不再使用 */
+    --phone-time-color: #ffffff;
+    --phone-app-name-color: #ffffff;
+    --phone-time-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --phone-app-name-shadow: 0 2px 8px rgba(0, 0, 0, 0.7), 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* ========================================
+   虚拟手机 - 无背景精简版 v3.3
+   ======================================== */
+
+/* ========================================
+   ⭐ 顶部图标样式（必须保留！）
+   ======================================== */
+
+#phoneDrawerIcon {
+    position: relative;
+    cursor: pointer;
+}
+
+/* ========================================
+   精准覆盖 - 只针对手机面板
+   ======================================== */
+
+/* 🔥 根绝外层容器的隐形阴影 */
+#phone-panel-holder.drawer {
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: none !important;
+}
+
+/* 🔥🔥🔥 核心修复：使用自定义类控制面板显示，避免被 SillyTavern drawer 系统干扰 🔥🔥🔥 */
+#phone-panel.phone-panel-hidden,
+#phone-panel:not(.phone-panel-open) {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    clip-path: inset(50%) !important;
+    box-shadow: none !important;
+}
+
+/* 🔥 确保隐藏状态下所有子元素也完全不可见 */
+#phone-panel.phone-panel-hidden *,
+#phone-panel:not(.phone-panel-open) * {
+    box-shadow: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+#phone-panel.drawer-content,
+#phone-panel.drawer-content::before,
+#phone-panel.drawer-content::after {
+    background: none !important;
+    background-color: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+#phone-panel.drawer-content {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
+    min-height: 100dvh !important;
+    transform: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 20px 10px 40px !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    /* 🔥 禁止外层滚动，防止手机整体移动 */
+    overflow: hidden !important;
+    z-index: 99999 !important;
+    pointer-events: auto !important;
+    box-sizing: border-box !important;
+}
+
+#phone-panel ~ .drawer-backdrop,
+#phone-panel .drawer-backdrop {
+    display: none !important;
+}
+
+#phone-panel-header {
+    display: none !important;
+}
+
+#phone-panel-content {
+    width: 100% !important;
+    height: auto !important;
+    min-height: calc(100dvh - 40px) !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    pointer-events: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+}
+
+.phone-in-panel {
+    /* 🔥 清除尺寸限制，让子元素自适应 */
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: auto !important;
+    background: transparent !important;
+    pointer-events: auto !important;
+    position: relative !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* ========================================
+   🎨 手机外壳 - 华为全面屏风格
+   ======================================== */
+
+.phone-body-panel {
+    /* 🔥 自适应后仅缩小高度 10%，宽度保持原样 */
+    width: min(
+        calc(400px * var(--phone-shell-width-scale, 1)),
+        95vw,
+        calc(92dvh * 9 / 19.5 * var(--phone-shell-width-scale, 1))
+    ) !important;
+    height: min(
+        calc(866px * var(--phone-shell-height-scale, 1)),
+        calc(92dvh * var(--phone-shell-height-scale, 1)),
+        calc(95vw * 19.5 / 9 * var(--phone-shell-height-scale, 1))
+    ) !important;
+
+    /* 🔥 彻底清除旧版的写死限制 */
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    aspect-ratio: auto !important; /* 宽高已由上方严格数学联动，不再需要此属性 */
+
+    margin: 0 auto;
+    /* 🎨 极窄边框 - 深色金属质感 */
+    background: #1a1a1a;
+    /* 🎨 圆润的全面屏圆角 */
+    border-radius: 40px;
+
+    /* 🎨 简洁的边框效果 */
+    box-shadow:
+        /* 细边框 */
+        inset 0 0 0 1px #2a2a2a,
+        /* 外部阴影 */
+        0 15px 50px rgba(0, 0, 0, 0.4),
+        0 5px 20px rgba(0, 0, 0, 0.3);
+
+    /* 🔥 适中边框：4px */
+    padding: 4px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+
+    /* 🔥 禁止滑动时选中文字 */
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    flex-direction: column;
+    box-sizing: border-box;
+    animation: phoneSlideIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* 🔥 硬件加速防掉帧 */
+    will-change: transform, opacity;
+    transform-style: preserve-3d;
+
+    /* 🔥 禁止平板/手机浏览器原生水平滑动后退手势，保留垂直滚动 */
+    touch-action: pan-y;
+}
+
+/* 🎨 移除多余的伪元素光效 */
+.phone-body-panel::before,
+.phone-body-panel::after {
+    display: none;
+}
+
+@keyframes phoneSlideIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* ========================================
+   📱 华为风格左上角药丸摄像头
+   ======================================== */
+
+.phone-punch-hole {
+    position: absolute;
+    top: 12px;
+    left: 25px;  /* 🔥 更靠右，远离边框 */
+    /* 🎨 药丸形状：双摄像头 */
+    width: 48px;
+    height: 16px;
+    background: #000000;
+    border-radius: 9px;
+    z-index: 15;
+    /* 🎨 柔和阴影 */
+    box-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* 🎨 主摄像头 */
+.phone-punch-hole::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 7px;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    background: radial-gradient(circle,
+        #1a3a52 0%,
+        #0a1a2a 50%,
+        #000 100%
+    );
+    border-radius: 50%;
+    box-shadow:
+        0 0 2px rgba(26, 77, 122, 0.5),
+        inset 0 1px 2px rgba(255, 255, 255, 0.15);
+}
+
+/* 🎨 副摄像头/传感器 */
+.phone-punch-hole::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    width: 5px;
+    height: 5px;
+    background: radial-gradient(circle,
+        #2a2a2a 0%,
+        #0a0a0a 100%
+    );
+    border-radius: 50%;
+    box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ========================================
+   📊 状态栏 - 华为风格
+   ======================================== */
+
+.phone-statusbar {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    right: 6px;
+    height: 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 8px;
+    color: #000000;
+    font-size: 12px;
+    font-weight: 600;
+    z-index: 50;  /* 🔥 提高层级，确保在APP内容之上 */
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'HarmonyOS Sans', sans-serif;
+    /* 🔥 透明背景，但点击穿透 */
+    pointer-events: none;
+}
+
+/* 🔥 左侧时间 - 避开药丸摄像头，靠右一点 */
+.statusbar-left {
+    margin-left: 75px;  /* 🔥 跟着药丸摄像头往右 */
+}
+
+.statusbar-left .time {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: #000 !important;  /* 🔥 固定黑色 */
+}
+
+/* 🔥 右侧图标组 */
+.statusbar-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 10px;  /* 🔥 往左一点 */
+}
+
+/* 📶 信号图标 - 扇形样式 */
+.signal-icon {
+    width: 14px;
+    height: 12px;
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+/* 🔥 隐藏旧的条形信号 */
+.signal-bar {
+    display: none;
+}
+
+/* 📶 新版信号强度条（4格递增） */
+.signal-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.5px;
+    height: 12px;
+}
+
+.signal-bars .bar {
+    width: 3px;
+    background: #333;
+    border-radius: 1px;
+}
+
+.signal-bars .bar-1 { height: 3px; }
+.signal-bars .bar-2 { height: 5px; }
+.signal-bars .bar-3 { height: 8px; }
+.signal-bars .bar-4 { height: 11px; }
+
+/* 📶 WiFi图标 - 扇形 */
+.wifi-icon {
+    display: flex;
+    align-items: center;
+    color: #000;
+}
+
+.wifi-icon svg {
+    width: 15px;
+    height: 15px;
+}
+
+/* 🔋 电池图标 - 横条风格（旧版，保留兼容） */
+.battery-icon {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.battery-body {
+    width: 18px;
+    height: 8px;
+    border: 1.5px solid #000;
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+}
+
+.battery-level {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    bottom: 1px;
+    background: #4cd964;  /* 🔥 绿色电量 */
+    border-radius: 1px;
+    transition: width 0.3s, background 0.3s;
+}
+
+.battery-head {
+    width: 2px;
+    height: 4px;
+    background: #000;
+    border-radius: 0 1px 1px 0;
+}
+
+.battery-text {
+    font-size: 10px;
+    font-weight: 600;
+    color: #000;
+    min-width: 28px;
+}
+
+/* 🔋 竖版电池图标 - 数字在里面 */
+.battery-vertical {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.battery-head-v {
+    width: 3px;
+    height: 1px;
+    background: #333;
+    border-radius: 1px 1px 0 0;
+}
+
+.battery-body-v {
+    width: 7px;
+    height: 11px;
+    border: 1px solid #333;
+    border-radius: 1px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.battery-level-v {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #4cd964;
+    transition: height 0.3s, background 0.3s;
+}
+
+.battery-text-v {
+    position: relative;
+    z-index: 1;
+    font-size: 5px;
+    font-weight: 700;
+    color: #333;
+}
+
+/* 🔋 充电状态 */
+.battery-icon.charging .battery-level,
+.battery-vertical.charging .battery-level-v {
+    background: #4cd964 !important;
+}
+
+/* 🔋 低电量 */
+.battery-level.low,
+.battery-level-v.low {
+    background: #ff3b30 !important;
+}
+
+/* ========================================
+   🖥️ 屏幕优化 - 全面屏适配
+   ======================================== */
+
+.phone-screen {
+    width: 100%;
+    height: 100%;  /* 🔥 屏幕填满整个手机，指示器在屏幕内 */
+    background: #ffffff;
+    /* 🎨 圆角匹配外壳 */
+    border-radius: 38px;
+    overflow: hidden;
+    position: relative;
+    margin-top: 0;  /* 🔥 移除顶部间距 */
+    /* 🎨 简洁的屏幕效果 */
+    box-shadow: none;
+    transition: all 0.4s;
+    /* 🔥 修复 WebKit 引擎下绝对定位子元素溢出圆角的问题 */
+    -webkit-mask-image: -webkit-radial-gradient(white, black);
+    isolation: isolate;
+}
+
+/* 🔥 视觉历史栈：双层视图结构 */
+.phone-view-prev,
+.phone-view-current {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: inherit;
+}
+
+.phone-view-prev {
+    z-index: 1;
+    pointer-events: none;
+}
+
+.phone-view-current {
+    z-index: 2;
+    box-shadow: -5px 0 20px rgba(0,0,0,0.15);
+}
+
+/* 🎨 移除屏幕反光效果 */
+.phone-screen::before {
+    display: none;
+}
+
+.screen-off .phone-screen {
+    background: #000;
+    opacity: 0.1;
+}
+
+/* ========================================
+   🔘 Home指示器 - 已隐藏
+   ======================================== */
+
+.phone-home-indicator {
+    display: none !important;
+}
+
+/* 🔥 三个小圆点用box-shadow实现 */
+.phone-home-indicator::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 50%;
+    box-shadow:
+        -12px 0 0 rgba(0, 0, 0, 0.2),
+        12px 0 0 rgba(0, 0, 0, 0.2);
+    transition: all 0.15s ease;
+}
+
+.phone-home-indicator:hover::before {
+    background: rgba(0, 0, 0, 0.35);
+    box-shadow:
+        -12px 0 0 rgba(0, 0, 0, 0.35),
+        12px 0 0 rgba(0, 0, 0, 0.35);
+}
+
+.phone-home-indicator:active {
+    transform: translateX(-50%) scale(0.9);
+}
+
+/* ========================================
+   🎨 壁纸动态效果
+   ======================================== */
+
+.wallpaper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* 🎨 简洁玻璃白色背景 */
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(30px) saturate(150%);
+    -webkit-backdrop-filter: blur(30px) saturate(150%);
+    /* 🔥 继承屏幕的圆角，防止四角露出 */
+    border-radius: inherit;
+    z-index: 0;
+}
+
+/* ========================================
+   🕐 时间显示优化
+   ======================================== */
+
+.home-screen {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* 🔥 继承屏幕圆角，防止四角露出 */
+    border-radius: inherit;
+}
+
+.home-time {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    padding: 15% 4% 3%;
+    /* 🔥 使用新的全局文字颜色变量 */
+    color: var(--phone-global-text);
+}
+
+.time-large {
+    /* 🔥 使用相对尺寸自适应 */
+    font-size: min(52px, 14vw, 6.5vh);
+    font-weight: 100;
+    letter-spacing: -2px;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    margin-bottom: 5px;
+    /* 🎨 新增：呼吸光效 */
+    animation: timeGlow 4s ease-in-out infinite;
+}
+
+@keyframes timeGlow {
+    0%, 100% {
+        text-shadow:
+            0 4px 20px rgba(0, 0, 0, 0.4),
+            0 2px 8px rgba(0, 0, 0, 0.3),
+            0 0 30px rgba(255, 255, 255, 0.2);
+    }
+    50% {
+        text-shadow:
+            0 4px 25px rgba(0, 0, 0, 0.5),
+            0 2px 10px rgba(0, 0, 0, 0.4),
+            0 0 40px rgba(255, 255, 255, 0.3);
+    }
+}
+
+.date {
+    /* 🔥 使用相对尺寸自适应 */
+    font-size: min(14px, 3.8vw, 1.8vh);
+    font-weight: 400;
+    opacity: 0.95;
+    margin-top: 6px;
+}
+
+/* ========================================
+   📱 APP图标美化
+   ======================================== */
+
+.app-grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 3.5%;
+    padding: 4% 5%;
+    justify-items: center;
+}
+
+.app-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    width: 100%;
+}
+
+.app-icon:hover {
+    transform: translateY(-6px) scale(1.05);
+}
+
+.app-icon:active {
+    transform: translateY(-3px) scale(0.96);
+}
+
+.app-icon-bg {
+    /* 🔥 使用相对尺寸自适应 */
+    width: min(42px, 12vw, 5.5vh);
+    height: min(42px, 12vw, 5.5vh);
+    /* 🎨 改为透明玻璃效果 */
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* 🎨 优化：玻璃质感阴影 */
+    box-shadow:
+        0 4px 16px rgba(0, 0, 0, 0.15),
+        0 2px 6px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+}
+
+/* 🎨 优化：图标高光 */
+.app-icon-bg::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
+}
+
+/* 🎨 新增：悬浮光效 */
+.app-icon-bg::after {
+    content: '';
+    position: absolute;
+    inset: -100%;
+    background: linear-gradient(
+        45deg,
+        transparent 40%,
+        rgba(255, 255, 255, 0.3) 50%,
+        transparent 60%
+    );
+    transform: translateX(-100%);
+    transition: transform 0.6s;
+}
+
+.app-icon:hover .app-icon-bg {
+    transform: scale(1.1);
+    box-shadow: 
+        0 10px 30px rgba(0, 0, 0, 0.4),
+        0 5px 15px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.app-icon:hover .app-icon-bg::after {
+    transform: translateX(100%);
+}
+
+/* 🎨 自定义图标样式 - 移除默认背景效果，支持PNG透明 */
+.app-icon-bg.custom-icon {
+    background-color: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+
+.app-icon-bg.custom-icon::before,
+.app-icon-bg.custom-icon::after {
+    display: none !important;
+}
+
+.app-icon-emoji {
+    /* 🔥 使用相对尺寸自适应 */
+    font-size: min(24px, 6.5vw, 3vh);
+    position: relative;
+    z-index: 1;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.app-name {
+    margin-top: 4px;
+    /* 🔥 使用相对尺寸自适应 */
+    font-size: min(9.5px, 2.8vw, 1.3vh);
+    font-weight: 500;
+    /* 🔥 使用新的全局文字颜色变量 */
+    color: var(--phone-global-text);
+    text-align: center;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ========================================
+   🔴 APP角标（精简版）
+   ======================================== */
+
+.app-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #ff3b30;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 8px;
+    min-width: 14px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+/* ========================================
+   🎯 Dock栏玻璃效果
+   ======================================== */
+
+.dock {
+    position: absolute;
+    bottom: 8%;  /* 🔥 使用相对定位 */
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 2%;
+    /* 🎨 优化：超级毛玻璃 */
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    padding: 1.5% 2.5%;
+    border-radius: 16px;
+    /* 🎨 优化：更深的阴影 */
+    box-shadow:
+        0 8px 30px rgba(0, 0, 0, 0.3),
+        0 4px 15px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.1),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+    z-index: 2;
+}
+
+.dock-app {
+    /* 🔥 使用相对尺寸自适应 */
+    width: min(36px, 10vw, 4.6vh);
+    height: min(36px, 10vw, 4.6vh);
+    background: rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(20px);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* 🔥 使用相对字号 */
+    font-size: min(20px, 5.5vw, 2.6vh);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+        0 3px 12px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+/* 🎨 新增：Dock图标光效 */
+.dock-app::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.3) 0%,
+        transparent 50%
+    );
+    border-radius: 14px;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.dock-app:hover {
+    transform: translateY(-10px) scale(1.12);
+    box-shadow: 
+        0 12px 35px rgba(0, 0, 0, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.dock-app:hover::before {
+    opacity: 1;
+}
+
+.dock-app:active {
+    transform: translateY(-6px) scale(1.06);
+}
+
+/* 🎨 Dock自定义图标 - 移除背景效果，支持PNG透明 */
+.dock-app.custom-icon {
+    background-color: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+}
+
+.dock-app.custom-icon::before {
+    display: none !important;
+}
+
+/* ========================================
+   🔔 通知系统美化
+   ======================================== */
+
+.badge-notification {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    min-width: 8px;
+    height: 8px;
+    background: #ff3b30;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0;  /* 隐藏数字，只显示红点 */
+    display: block;
+    padding: 0;
+    z-index: 10;
+}
+
+.phone-notification {
+    position: absolute;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 82%;
+    max-width: 240px;
+    min-height: 36px;
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(25px) saturate(200%);
+    -webkit-backdrop-filter: blur(25px) saturate(200%);
+    border-radius: 12px;
+    padding: 7px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow:
+        0 4px 16px rgba(0, 0, 0, 0.10),
+        0 1px 2px rgba(0, 0, 0, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    animation: slideDown 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+    z-index: 1000;
+    box-sizing: border-box;
+}
+
+.phone-notification.fade-out {
+    animation: fadeOut 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.notification-icon {
+    font-size: 13px;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 7px;
+    color: #555;
+}
+
+.notification-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.notification-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #1c1c1e;
+    margin-bottom: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-message {
+    font-size: 10px;
+    color: rgba(60, 60, 67, 0.75);
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.phone-notification.phone-notification-rich {
+    width: 88%;
+    max-width: 520px;
+    min-height: 72px;
+    border-radius: 22px;
+    padding: 12px 14px;
+    gap: 12px;
+    align-items: center;
+}
+
+.phone-notification-rich .notification-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ff8a00 0%, #ff5e3a 100%);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.phone-notification-rich .notification-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.phone-notification-rich .notification-avatar-text {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.phone-notification-rich .notification-content {
+    min-width: 0;
+}
+
+.phone-notification-rich .notification-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 2px;
+}
+
+.phone-notification-rich .notification-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1c1c1e;
+    margin-bottom: 0;
+}
+
+.phone-notification-rich .notification-time {
+    font-size: 11px;
+    color: rgba(60, 60, 67, 0.52);
+    flex-shrink: 0;
+}
+
+.phone-notification-rich .notification-message {
+    font-size: 14px;
+    line-height: 1.32;
+    color: rgba(60, 60, 67, 0.86);
+    -webkit-line-clamp: 2;
+}
+
+/* ========================================
+   ⚙️ 设置APP美化
+   ======================================== */
+
+.settings-app {
+    width: 100%;
+    height: 100%;
+    background: #f2f2f7;
+    overflow-y: auto;
+}
+
+.app-header {
+    background: #fff;
+    padding: 12px 14px;
+    padding-top: 40px;  /* 🔥 为状态栏留出空间 */
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    /* 🎨 优化：添加阴影 */
+    box-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.08);
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.app-back-btn {
+    background: #f5f5f5;
+    border: none;
+    color: #333;
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.3s;
+    /* 🎨 优化：添加阴影 */
+    box-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.app-back-btn:hover {
+    background: #e8e8e8;
+    transform: translateY(-1px);
+    box-shadow:
+        0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.app-back-btn:active {
+    transform: scale(0.95);
+}
+
+.app-header h2 {
+    margin: 0;
+    color: #000;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.app-body {
+    padding: 12px 10px;
+}
+
+/* 联动记录页滚动白名单（触摸手势兼容） */
+.settings-app,
+.settings-app .app-body,
+.settings-app #tab-memory {
+    touch-action: pan-y;
+}
+
+.settings-app #tab-memory {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+/* 蜜语设置页 - 自定义视频池滚动白名单（移动端手势兼容） */
+.honey-settings-content,
+#honey-custom-video-list {
+    touch-action: pan-y;
+}
+
+#honey-custom-video-list {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+#honey-custom-video-list.is-expanded {
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.setting-section {
+    background: #fff;
+    border-radius: 12px;
+    padding: 0;
+    margin-bottom: 12px;
+    overflow: hidden;
+    /* 🎨 优化：微妙阴影 */
+    box-shadow:
+        0 2px 10px rgba(0, 0, 0, 0.06),
+        0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.setting-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8e8e93;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 10px 12px 6px;
+    background: #f2f2f7;
+}
+
+.setting-item {
+    padding: 10px 12px;
+    border-bottom: 0.5px solid #e5e5ea;
+    transition: background 0.2s;
+}
+
+.setting-item:last-child {
+    border-bottom: none;
+}
+
+/* 🎨 新增：点击反馈 */
+.setting-item:active {
+    background: #f9f9f9;
+}
+
+.setting-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.setting-label {
+    font-size: 13px;
+    color: #000;
+    font-weight: 500;
+}
+
+.setting-desc {
+    font-size: 11px;
+    color: #8e8e93;
+    margin-top: 3px;
+    line-height: 1.4;
+}
+
+.setting-value {
+    font-size: 12px;
+    color: #8e8e93;
+}
+
+.setting-info {
+    font-size: 10px;
+    color: #8e8e93;
+    line-height: 1.5;
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: #f9f9f9;
+    border-radius: 6px;
+}
+
+/* ========================================
+   🔘 开关按钮优化
+   ======================================== */
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 26px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #e5e5ea;
+    transition: 0.3s;
+    border-radius: 26px;
+    /* 🎨 新增：阴影 */
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 22px;
+    width: 22px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input:checked + .toggle-slider {
+    /* 🎨 优化：渐变绿色 */
+    background: linear-gradient(135deg, #34c759 0%, #30d158 100%);
+    box-shadow:
+        inset 0 1px 3px rgba(0, 0, 0, 0.1),
+        0 0 8px rgba(52, 199, 89, 0.3);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(16px);
+}
+
+/* ========================================
+   🔘 设置按钮优化
+   ======================================== */
+
+.setting-btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.setting-btn-warning {
+    /* 🎨 优化：渐变橙色 */
+    background: linear-gradient(135deg, #ff9500 0%, #ff8c00 100%);
+    color: #fff;
+    box-shadow: 
+        0 4px 14px rgba(255, 149, 0, 0.4),
+        0 2px 6px rgba(255, 149, 0, 0.2);
+}
+
+.setting-btn-warning:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+        0 6px 20px rgba(255, 149, 0, 0.5),
+        0 3px 10px rgba(255, 149, 0, 0.3);
+}
+
+.setting-btn-danger {
+    /* 🎨 优化：渐变红色 */
+    background: linear-gradient(135deg, #ff3b30 0%, #ff1744 100%);
+    color: #fff;
+    box-shadow: 
+        0 4px 14px rgba(255, 59, 48, 0.4),
+        0 2px 6px rgba(255, 59, 48, 0.2);
+}
+
+.setting-btn-danger:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+        0 6px 20px rgba(255, 59, 48, 0.5),
+        0 3px 10px rgba(255, 59, 48, 0.3);
+}
+
+.setting-btn:active {
+    transform: translateY(0);
+}
+
+/* ========================================
+   🎨 面板控制按钮
+   ======================================== */
+
+.phone-panel-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 15px;
+    padding: 0 10px;
+}
+
+.phone-panel-btn {
+    flex: 1;
+    padding: 12px 18px;
+    /* 🎨 优化：渐变紫色 */
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* 🎨 优化：更深的阴影 */
+    box-shadow: 
+        0 5px 18px rgba(102, 126, 234, 0.5),
+        0 2px 8px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+.phone-panel-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 100%);
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.phone-panel-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 
+        0 8px 25px rgba(102, 126, 234, 0.6),
+        0 4px 12px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.phone-panel-btn:hover::before {
+    opacity: 1;
+}
+
+.phone-panel-btn:active {
+    transform: translateY(-1px);
+}
+
+/* ========================================
+   ✨ 动画效果
+   ======================================== */
+
+@keyframes slideDown {
+    from {
+        transform: translateX(-50%) translateY(-120%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    to {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-30px);
+    }
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+    20%, 40%, 60%, 80% { transform: translateX(5px); }
+}
+
+/* ========================================
+   📱 响应式设计（完全保留原版）
+   ======================================== */
+
+/* 小屏设备（手机竖屏） */
+@media (max-width: 500px) {
+    #phone-panel.drawer-content {
+        padding: 20px 10px 35px !important;
+    }
+
+    /* 🔥 已删除 .phone-body-panel 和 .phone-in-panel 的尺寸覆写，由基础样式的 min() 自动适配 */
+
+    #phone-panel-content {
+        width: 100% !important;
+        min-width: 100vw !important;
+    }
+
+   /* 🎨 通知栏响应式 */
+    .phone-notification {
+        top: 28px;
+        width: 82%;
+        max-width: 200px;
+        border-radius: 10px;
+        padding: 5px 8px;
+        gap: 6px;
+    }
+
+    .notification-icon {
+        font-size: 11px;
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+    }
+
+    .notification-title {
+        font-size: 10px;
+    }
+
+    .notification-message {
+        font-size: 9px;
+        line-height: 1.2;
+    }
+
+    .phone-notification.phone-notification-rich {
+        width: 88%;
+        max-width: 330px;
+        min-height: 62px;
+        border-radius: 18px;
+        padding: 9px 10px;
+        gap: 9px;
+    }
+
+    .phone-notification-rich .notification-avatar {
+        width: 36px;
+        height: 36px;
+    }
+
+    .phone-notification-rich .notification-avatar-text {
+        font-size: 16px;
+    }
+
+    .phone-notification-rich .notification-title {
+        font-size: 12px;
+    }
+
+    .phone-notification-rich .notification-time {
+        font-size: 10px;
+    }
+
+    .phone-notification-rich .notification-message {
+        font-size: 11px;
+        line-height: 1.25;
+    }
+
+    .phone-punch-hole {
+        width: 45px;
+        height: 16px;
+        left: 25px;
+        top: 12px;
+    }
+
+    .phone-statusbar {
+        font-size: 10px;
+        padding: 0 10px;
+        height: 28px;
+    }
+
+    .statusbar-left {
+        margin-left: 62px;
+    }
+
+    /* 🔥 已删除：app图标和dock的硬编码尺寸，由基础样式的 min() 自动适配 */
+
+    .phone-home-indicator {
+        bottom: 14px;
+    }
+
+    .phone-panel-buttons {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .phone-panel-btn {
+        padding: 10px;
+        font-size: 12px;
+    }
+}
+
+/* 🔥 已删除：平板/中等屏幕的 .phone-body-panel 尺寸覆写，由基础样式的 min() 自动适配 */
+
+/* 🔥 已删除：低矮屏幕的硬编码尺寸覆写，由基础样式的 min() 自动适配 */
+
+/* 横屏处理 - 删除 .phone-body-panel 尺寸规则 */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 500px) {
+    #phone-panel-content {
+        padding: 10px;
+    }
+
+    .phone-panel-buttons {
+        margin-top: 10px;
+    }
+}
+
+/* 🔥 已删除：超小屏幕的硬编码尺寸覆写，由基础样式的 min() 和百分比自动适配 */
+
+/* ========================================
+   🎯 优化滚动条
+   ======================================== */
+
+.home-screen::-webkit-scrollbar,
+.settings-app::-webkit-scrollbar {
+    width: 0;
+}
+
+.home-screen,
+.settings-app {
+    scroll-behavior: smooth;
+}
+
+/* ========================================
+   🎨 颜色选择器样式
+   ======================================== */
+
+.color-picker-input {
+    width: 40px;
+    height: 26px;
+    border: 2px solid #e5e5ea;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: none;
+    padding: 2px;
+}
+
+.color-picker-input:hover {
+    border-color: #667eea;
+    transform: scale(1.05);
+}
+
+.color-picker-input::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.color-picker-input::-webkit-color-swatch {
+    border: none;
+    border-radius: 4px;
+}
+
+.preset-color-btn {
+    padding: 5px 10px;
+    background: #f5f5f7;
+    border: 1px solid #d1d1d6;
+    border-radius: 5px;
+    color: #000;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.preset-color-btn:hover {
+    background: #667eea;
+    color: #fff;
+    border-color: #667eea;
+    transform: translateY(-1px);
+}
+
+.preset-color-btn:active {
+    transform: translateY(0);
+}
+
+/* ========================================
+   📱 移动端输入框防变形优化（简化版）
+   ======================================== */
+
+/* 🔥 移动端样式 */
+@media (max-width: 500px) {
+    /* 🔥 移动端基准宽度保持原样，不受高度缩放影响 */
+    .phone-body-panel {
+        width: calc(82vw * var(--phone-shell-width-scale, 1)) !important;
+    }
+
+    /* 🔥 移动端图标放大 */
+    .app-icon-bg {
+        width: min(52px, 14vw, 6.5vh) !important;
+        height: min(52px, 14vw, 6.5vh) !important;
+    }
+
+    .app-icon-emoji {
+        font-size: min(28px, 7.5vw, 3.5vh) !important;
+    }
+
+    .app-name {
+        font-size: min(11px, 3.2vw, 1.5vh) !important;
+    }
+
+    /* 🔥 Dock栏图标放大 */
+    .dock-app {
+        width: min(52px, 14vw, 6.5vh) !important;
+        height: min(52px, 14vw, 6.5vh) !important;
+        font-size: min(28px, 7.5vw, 3.5vh) !important;
+    }
+
+    /* 聊天消息区域允许滚动 */
+    .chat-messages {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    /* 输入区域 */
+    .chat-input-area {
+        flex-shrink: 0 !important;
+    }
+}
+
+/* 🔥 已删除：移动端聊天输入框的 max-width 限制，由 wechat-app.js 中的 flex 布局自动适配 */
+
+/* ========================================
+   🔥 全局文字颜色强制覆盖（新版统一颜色系统）
+   ======================================== */
+
+/* 强制覆盖手机面板内文字颜色（仅文本节点，避免 currentColor 染色背景/装饰） */
+.phone-body-panel :where(
+    p, span, strong, em, small, label, a,
+    li, dt, dd, h1, h2, h3, h4, h5, h6,
+    button, input, textarea, select, option
+),
+.phone-body-panel :where(
+    .setting-label, .setting-desc, .setting-value,
+    .wechat-chat-name, .wechat-chat-last, .wechat-chat-time,
+    .wechat-contact-name, .wechat-contact-signature,
+    .message-text, .message-time, .chat-time,
+    .app-name, .home-time, .date
+) {
+    color: var(--phone-global-text) !important;
+    text-shadow: none !important;
+}
+
+/* 通话界面元素排除全局颜色覆盖（仅通话中和来电界面，不含记录查看页） */
+.phone-call-active,
+.phone-call-active *,
+.phone-call-incoming,
+.phone-call-incoming * {
+    color: unset !important;
+}
+.phone-call-active {
+    color: #fff !important;
+}
+.phone-call-incoming {
+    color: #fff !important;
+}
+.phone-call-incoming-name {
+    color: #fff !important;
+}
+.phone-call-incoming-status {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+.phone-call-send-btn {
+    color: #34c759 !important;
+}
+.phone-call-regen-btn {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+.phone-call-hangup-btn {
+    color: #ff3b30 !important;
+}
+.phone-call-active-name {
+    color: #fff !important;
+}
+.phone-call-active-timer {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+.phone-call-active-label {
+    color: rgba(255, 255, 255, 0.6) !important;
+}
+.phone-call-typing {
+    color: rgba(255, 255, 255, 0.6) !important;
+}
+.phone-call-active .phone-call-message-ai,
+.phone-call-active .phone-call-message-user {
+    color: #fff !important;
+}
+.phone-call-input {
+    color: #333 !important;
+}
+.phone-call-input::placeholder {
+    color: rgba(0, 0, 0, 0.4) !important;
+}
+
+/* 输入框占位符颜色（带透明度） */
+.phone-body-panel ::placeholder {
+    color: var(--phone-global-text) !important;
+    opacity: 0.5 !important;
+    text-shadow: none !important;
+}
+
+/* 特殊元素保持原有颜色（避免影响背景色等） */
+.phone-body-panel .app-icon-bg,
+.phone-body-panel .dock-app,
+.phone-body-panel .phone-punch-hole {
+    color: initial !important;
+}
+
+/* 🔥 状态栏保持黑色（华为风格） */
+.phone-body-panel .phone-statusbar,
+.phone-body-panel .phone-statusbar *,
+.phone-body-panel .statusbar-left,
+.phone-body-panel .statusbar-left *,
+.phone-body-panel .statusbar-right,
+.phone-body-panel .statusbar-right * {
+    color: #000000 !important;
+    text-shadow: none !important;
+}
+
+/* 🔥 微信输入相关元素：排除全局文字颜色影响 */
+.phone-body-panel .chat-input,
+.phone-body-panel .chat-input-area,
+.phone-body-panel .chat-input-bar,
+.phone-body-panel .send-btn,
+.phone-body-panel .input-btn {
+    color: initial !important;
+    background: initial !important;
+}
+
+/* 🔥 微信输入框强制白色背景（防止被深色主题影响） */
+.phone-body-panel .chat-input {
+    background: #ffffff !important;
+    color: #000000 !important;
+}
+
+.phone-body-panel .chat-input-area {
+    background: #f7f7f7 !important;
+}
+
+/* 🔥 微信发送按钮保持绿色 */
+.phone-body-panel .send-btn {
+    background: #07c160 !important;
+    color: #ffffff !important;
+}
+
+/* 🔥 微信输入栏按钮保持灰色 */
+.phone-body-panel .input-btn {
+    color: #666666 !important;
+}
+
+/* ========================================
+   📞 通话界面全屏模式
+   ======================================== */
+
+/* 🔥 通话界面全屏样式（继承手机壳圆角，由 .phone-screen 的 overflow:hidden 裁切） */
+.call-fullscreen {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: inherit !important;
+    z-index: 100;
+}
+
+/* 🔥 通话界面内的 wechat-app 也要填满并继承圆角 */
+.call-fullscreen .wechat-app {
+    height: 100% !important;
+    border-radius: inherit !important;
+}
+
+/* ========================================
+   🔊 语音气泡播放动画（仿微信逐级波纹）
+   ======================================== */
+
+/* 默认：两条弧线正常显示 */
+.voice-bubble-playable .voice-arc-1,
+.voice-bubble-playable .voice-arc-2 {
+    opacity: 1;
+}
+
+/* 播放中：逐级闪烁动画 */
+.voice-bubble-playable.voice-playing .voice-arc-1 {
+    animation: voiceArcBlink 1s ease-in-out infinite;
+}
+.voice-bubble-playable.voice-playing .voice-arc-2 {
+    animation: voiceArcBlink 1s ease-in-out 0.33s infinite;
+}
+
+@keyframes voiceArcBlink {
+    0%, 100% { opacity: 0.15; }
+    50%      { opacity: 1; }
+}
+
+/* ========================================
+   通话APP 样式
+   ======================================== */
+
+/* 来电全屏覆盖 */
+.phone-call-incoming {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(30px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    color: #fff !important;
+    padding-top: 40px;
+}
+
+.phone-call-incoming-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.phone-call-incoming-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.phone-call-incoming-name {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #fff !important;
+}
+
+.phone-call-incoming-status {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7) !important;
+    animation: phone-calling-pulse 2s ease-in-out infinite;
+}
+
+.phone-call-incoming-btns {
+    display: flex;
+    gap: 60px;
+    margin-top: 60px;
+}
+
+/* 圆形按钮基础样式 */
+.phone-call-btn {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    color: #fff;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.phone-call-btn:active {
+    transform: scale(0.9);
+}
+
+.phone-call-btn-reject {
+    background: #ff3b30;
+    box-shadow: 0 0 20px rgba(255, 59, 48, 0.4);
+}
+
+.phone-call-btn-accept {
+    background: #34c759;
+    box-shadow: 0 0 20px rgba(52, 199, 89, 0.4);
+}
+
+/* 通话界面 */
+.phone-call-active {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: #fff !important;
+    overflow: hidden;
+}
+
+.phone-call-active-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    padding-top: 40px;
+    flex-shrink: 0;
+}
+
+.phone-call-active-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff !important;
+}
+
+.phone-call-active-timer {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.phone-call-active-avatar-area {
+    text-align: center;
+    padding: 8px 0;
+    flex-shrink: 0;
+}
+
+.phone-call-active-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    animation: phone-voice-glow 2s infinite;
+    overflow: hidden;
+}
+
+.phone-call-active-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.phone-call-active-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.6) !important;
+    margin-top: 4px;
+}
+
+/* 消息区域 */
+.phone-call-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+}
+
+.phone-call-message-user {
+    align-self: flex-end;
+    background: #34c759;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 16px 16px 4px 16px;
+    max-width: 75%;
+    font-size: 13px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.phone-call-message-ai {
+    align-self: flex-start;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 8px 12px;
+    border-radius: 16px 16px 16px 4px;
+    max-width: 75%;
+    font-size: 13px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.phone-call-message-ai.voice-playing {
+    border: 1px solid rgba(102, 126, 234, 0.6);
+    box-shadow: 0 0 8px rgba(102, 126, 234, 0.3);
+}
+
+/* 打字指示器 */
+.phone-call-typing {
+    align-self: flex-start;
+    color: rgba(255, 255, 255, 0.6) !important;
+    font-size: 12px;
+    padding: 4px 8px;
+}
+
+.phone-call-typing-dots::after {
+    content: '';
+    animation: phone-typing-dots 1.5s infinite;
+}
+
+/* 底部输入区 */
+.phone-call-bottom {
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.phone-call-input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #333 !important;
+    font-size: 13px;
+    outline: none;
+}
+
+.phone-call-input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.phone-call-send-btn,
+.phone-call-regen-btn,
+.phone-call-hangup-btn {
+    width: 34px;
+    height: 34px;
+    border: none;
+    background: transparent;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.phone-call-send-btn {
+    color: #34c759 !important;
+}
+
+.phone-call-regen-btn {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.phone-call-regen-btn:active {
+    color: #fff !important;
+}
+
+.phone-call-hangup-btn {
+    color: #ff3b30 !important;
+}
+
+/* 通话记录首页 */
+.phone-call-main {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--phone-chat-bg, #f5f5f5);
+}
+
+.phone-call-main-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    padding-top: 40px;
+    background: var(--phone-header-bg, #ededed);
+    border-bottom: 1px solid var(--phone-border-color, #ddd);
+    flex-shrink: 0;
+}
+
+.phone-call-main-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--phone-text-color, #333);
+}
+
+.phone-call-settings-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: var(--phone-text-color, #666);
+    padding: 4px;
+}
+
+.phone-call-history-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+}
+
+/* 蜜语热门推荐/关注滚动豁免：允许在手机壳内纵向下滑 */
+.phone-view-current .honey-page-recommend .honey-recommend-wrap,
+.honey-page-recommend .honey-recommend-wrap,
+.phone-view-current .honey-page-follow .honey-recommend-wrap,
+.honey-page-follow .honey-recommend-wrap {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+/* 蜜语关注-视频弹窗滚动豁免：允许弹窗列表内纵向滚动 */
+.phone-view-current .honey-page-follow .honey-follow-video-modal-panel,
+.honey-page-follow .honey-follow-video-modal-panel,
+.phone-view-current .honey-page-follow .honey-follow-video-modal-list,
+.honey-page-follow .honey-follow-video-modal-list {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+/* 蜜语充值弹窗手势豁免：允许在弹窗内正常触控与纵向滚动 */
+.phone-view-current .honey-page-settings .honey-recharge-modal,
+.honey-page-settings .honey-recharge-modal,
+.phone-view-current .honey-page-settings .honey-recharge-panel,
+.honey-page-settings .honey-recharge-panel {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+/* 蜜语剧情长卡片弹窗手势豁免：允许弹窗内稳定纵向滚动 */
+.phone-view-current .honey-page-live .honey-scene-modal,
+.honey-page-live .honey-scene-modal,
+.phone-view-current .honey-page-live .honey-scene-modal-card,
+.honey-page-live .honey-scene-modal-card,
+.phone-view-current .honey-page-live .honey-scene-modal-desc,
+.honey-page-live .honey-scene-modal-desc {
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+.phone-view-current .honey-page-live .honey-scene-modal-desc,
+.honey-page-live .honey-scene-modal-desc {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+/* 微信钱包评估弹窗滚动豁免：报告内容可在弹窗内纵向滚动 */
+.phone-view-current #wallet-eval-modal .wallet-eval-modal-panel,
+#wallet-eval-modal .wallet-eval-modal-panel,
+.phone-view-current #wallet-eval-modal .wallet-eval-modal-body,
+#wallet-eval-modal .wallet-eval-modal-body,
+.phone-view-current #wallet-eval-modal .wallet-eval-reasoning,
+#wallet-eval-modal .wallet-eval-reasoning {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+/* 微博推荐页下拉刷新手势豁免 */
+.phone-view-current .weibo-profile-wrapper,
+.weibo-profile-wrapper,
+.phone-view-current .weibo-recommend-container,
+.weibo-recommend-container,
+.phone-view-current .weibo-pull-refresh-indicator,
+.weibo-pull-refresh-indicator {
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+/* 微信聊天滚动手势豁免：保证聊天区在移动端/长截图场景可稳定纵向滚动 */
+.phone-view-current .wechat-app,
+.wechat-app,
+.phone-view-current .wechat-content,
+.wechat-content,
+.phone-view-current .chat-room,
+.chat-room {
+    touch-action: pan-y !important;
+}
+
+.phone-view-current .chat-messages,
+.chat-messages {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+    min-height: 0;
+}
+
+/* 微信微博分享弹窗滚动豁免：内容过长时允许在弹窗内纵向滑动 */
+.phone-view-current #wechat-weibo-preview-modal,
+#wechat-weibo-preview-modal,
+.phone-view-current #wechat-weibo-preview-modal > div,
+#wechat-weibo-preview-modal > div {
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+.phone-view-current #wechat-weibo-preview-modal > div,
+#wechat-weibo-preview-modal > div {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+/* 微信通话记录弹窗手势豁免：允许弹窗内纵向回看 transcript */
+.phone-view-current .wechat-call-transcript-overlay,
+.wechat-call-transcript-overlay,
+.phone-view-current .wechat-call-transcript-panel,
+.wechat-call-transcript-panel,
+.phone-view-current .wechat-call-transcript-body,
+.wechat-call-transcript-body {
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+.phone-view-current .wechat-call-transcript-body,
+.wechat-call-transcript-body {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+/* 微博转发弹窗手势豁免：联系人列表与弹窗内容区域允许稳定纵向手势 */
+.phone-view-current .weibo-forward-overlay,
+.weibo-forward-overlay,
+.phone-view-current .weibo-forward-dialog,
+.weibo-forward-dialog,
+.phone-view-current .weibo-forward-dialog-compose,
+.weibo-forward-dialog-compose,
+.phone-view-current .weibo-forward-list,
+.weibo-forward-list {
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+.phone-call-history-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--phone-border-color, #eee);
+    gap: 12px;
+}
+
+.phone-call-history-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.phone-call-history-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.phone-call-history-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--phone-text-color, #333);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.phone-call-missed .phone-call-history-name {
+    color: #ff3b30;
+}
+
+.phone-call-history-meta {
+    font-size: 12px;
+    color: var(--phone-secondary-text, #999);
+    margin-top: 2px;
+}
+
+.phone-call-history-duration {
+    font-size: 12px;
+    color: var(--phone-secondary-text, #999);
+    flex-shrink: 0;
+}
+
+.phone-call-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--phone-secondary-text, #999);
+    font-size: 14px;
+}
+
+/* 设置界面 */
+.phone-call-settings {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--phone-chat-bg, #f5f5f5);
+}
+
+.phone-call-settings-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    padding-top: 40px;
+    background: var(--phone-header-bg, #ededed);
+    border-bottom: 1px solid var(--phone-border-color, #ddd);
+    flex-shrink: 0;
+    gap: 12px;
+}
+
+.phone-call-settings-back {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: var(--phone-text-color, #333);
+    padding: 4px;
+}
+
+.phone-call-settings-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--phone-text-color, #333);
+}
+
+.phone-call-settings-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+.phone-call-settings-section {
+    margin-bottom: 20px;
+}
+
+.phone-call-settings-section-title {
+    font-size: 13px;
+    color: var(--phone-secondary-text, #999);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.phone-call-settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    background: var(--phone-header-bg, #fff);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.phone-call-settings-label {
+    font-size: 14px;
+    color: var(--phone-text-color, #333);
+}
+
+/* Toggle 开关 */
+.phone-call-toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.phone-call-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.phone-call-toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #ccc;
+    border-radius: 24px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.phone-call-toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    left: 2px;
+    bottom: 2px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.3s;
+}
+
+.phone-call-toggle input:checked + .phone-call-toggle-slider {
+    background: #34c759;
+}
+
+.phone-call-toggle input:checked + .phone-call-toggle-slider::before {
+    transform: translateX(20px);
+}
+
+/* 提示词编辑区 */
+.phone-call-prompt-textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 10px;
+    border: 1px solid var(--phone-border-color, #ddd);
+    border-radius: 8px;
+    background: var(--phone-header-bg, #fff);
+    color: var(--phone-text-color, #333);
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.phone-call-prompt-btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.phone-call-prompt-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.phone-call-prompt-btn:active {
+    opacity: 0.7;
+}
+
+.phone-call-prompt-btn-save {
+    background: #007aff;
+    color: #fff;
+}
+
+.phone-call-prompt-btn-reset {
+    background: var(--phone-border-color, #ddd);
+    color: var(--phone-text-color, #666);
+}
+
+/* 动画 */
+@keyframes phone-calling-pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+@keyframes phone-voice-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.5); }
+    50% { box-shadow: 0 0 0 10px rgba(102, 126, 234, 0); }
+}
+
+/* ========================================
+   通话记录查看页
+   ======================================== */
+
+.phone-call-transcript {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--phone-chat-bg, #f5f5f5);
+}
+
+.phone-call-transcript-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    padding-top: 40px;
+    background: var(--phone-header-bg, #ededed);
+    border-bottom: 1px solid var(--phone-border-color, #ddd);
+    flex-shrink: 0;
+    gap: 12px;
+}
+
+.phone-call-transcript-back {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: var(--phone-text-color, #333);
+    padding: 4px;
+}
+
+.phone-call-transcript-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--phone-text-color, #333);
+    flex: 1;
+}
+
+.phone-call-transcript-duration {
+    font-size: 12px;
+    color: var(--phone-secondary-text, #999);
+    flex-shrink: 0;
+}
+
+.phone-call-transcript-info {
+    padding: 12px 16px;
+    background: var(--phone-header-bg, #ededed);
+    border-top: 1px solid var(--phone-border-color, #ddd);
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.phone-call-transcript-info-text {
+    font-size: 12px;
+    color: var(--phone-secondary-text, #999);
+    line-height: 1.6;
+}
+
+/* 通话记录查看页的气泡样式覆盖（浅色背景适配） */
+.phone-call-transcript .phone-call-message-ai {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--phone-global-text, #333) !important;
+}
+.phone-call-transcript .phone-call-message-user {
+    color: #fff !important;
+}
+
+/* 可点击的通话记录项 */
+.phone-call-history-clickable {
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.phone-call-history-clickable:active {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* 长按删除按钮 */
+.phone-call-delete-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #ff3b30;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(255, 59, 48, 0.3);
+}
+
+.phone-call-delete-btn:active {
+    opacity: 0.8;
+}
+
+@keyframes phone-typing-dots {
+    0%   { content: '.'; }
+    33%  { content: '..'; }
+    66%  { content: '...'; }
+    100% { content: '.'; }
+}
+

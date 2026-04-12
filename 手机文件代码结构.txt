@@ -1,0 +1,139 @@
+📁 ST-Phone (插件根目录)
+ ├── 📄 manifest.json        [元数据] 插件的身份证
+ ├── 📄 index.js             [主枢纽] 插件核心入口，负责：顶层UI创建、手势全局监听、酒馆消息拦截、Tavern上下文强行注入、多模态发包劫持。
+ ├── 📄 phone.css            [主皮肤] 手机壳物理属性、刘海屏、动画、深色模式变量、底层防冲突样式。
+ │
+ ├── 📁 config (核心引擎大脑 - 贯穿全局)
+ │    ├── 📄 apps.js             [配置] APP的出厂清单、图标、颜色定义。
+ │    ├── 📄 storage.js          [存储] 防弹级存储总线。严格区分`单聊元数据`与`全局设置`，禁止随意使用 localStorage。
+ │    ├── 📄 prompt-manager.js   [提示词] 全局AI提示词中枢，管理线上/线下、日记、朋友圈、蜜语等所有系统提示词的下发。
+ │    ├── 📄 api-manager.js      [通信] 统一大模型 API 路由网关，负责双通道（直连/代理）、流式解析、拦截酒馆原声API兜底。
+ │    └── 📄 time-manager.js     [时钟] 全局剧情时间推算引擎（蔡勒公式、提取正文状态栏、跨日分钟推算）。
+ │
+ ├── 📁 phone (物理外壳与操作系统区)
+ │    ├── 📄 phone-shell.js      [外壳] 手机物理壳，控制状态栏、双层视图栈(Z-index)、左滑返回手势的物理运算。
+ │    └── 📄 home-screen.js      [桌面] 主屏幕桌面，渲染壁纸、时间、APP网格、Dock栏。
+ │
+ └── 📁 apps (应用程序区 - 严格遵循 MVC 架构设计)
+      │
+      ├── 📁 wechat (微信生态)
+      │    ├── 📄 wechat-app.js      [C] 控制器：四大Tab切换、子视图调度、滑动返回劫持。
+      │    ├── 📄 wechat-data.js     [M] 数据层：消息独立存储、防串味、联系人管理、群聊管理。
+      │    ├── 📄 chat-view.js       [V] 视图层：聊天UI、音视频通话逻辑、调用AI静默回复、ALAPI表情包解析、转账红包组件。
+      │    ├── 📄 contacts-view.js   [V] 视图层：通讯录字母索引、AI智能生成联系人。
+      │    └── 📄 moments-view.js    [V] 视图层：朋友圈生成与渲染、评论点赞AI互动。
+      │
+      ├── 📁 weibo (微博生态 - 高级仿生)
+      │    ├── 📄 weibo-app.js       [C] 控制器：页面路由与返回逻辑。
+      │    ├── 📄 weibo-data.js      [M] 数据层：热搜生成、推荐内容缓存、楼层追踪、API队列防并发。
+      │    ├── 📄 weibo-view.js      [V] 视图层：热搜列表、微博卡片、楼中楼评论、图片网格、转发到微信。
+      │    └── 📄 weibo.css          [S] 专属样式。
+      │
+      ├── 📁 honey (蜜语 - NSFW直播互动)
+      │    ├── 📄 honey-app.js       [C] 控制器：生命周期与返回控制。
+      │    ├── 📄 honey-data.js      [M] 数据层：直播间上下文组装、流式剧情生成、打赏礼物记录。
+      │    ├── 📄 honey-view.js      [V] 视图层：直播UI、滚动弹幕、礼物特效、NAI绘图占位。
+      │    └── 📄 honey.css          [S] 专属样式。
+      │
+      ├── 📁 diary (日记)
+      │    ├── 📄 diary-app.js       [C] 控制器。
+      │    ├── 📄 diary-data.js      [M] 数据层：分批/纯净模式调用AI静默生成日记。
+      │    ├── 📄 diary-view.js      [V] 视图层：实体书 CSS 质感、3D翻页。
+      │    └── 📄 diary.css          [S] 专属样式。
+      │
+      ├── 📁 phone (通话记录)
+      │    ├── 📄 phone-app.js       [C] 控制器。
+      │    ├── 📄 phone-data.js      [M] 数据层：通话记录(Transcript)管理。
+      │    └── 📄 phone-view.js      [V] 视图层：来电UI、通话录音展示。
+      │
+      ├── 📁 music (网易云/本地音乐)
+      │    ├── 📄 music-app.js       [C] 控制器：悬浮窗挂载与销毁。
+      │    ├── 📄 music-data.js      [M] 数据层：Audio API封装、歌单控制、自动补链搜歌。
+      │    ├── 📄 music-view.js      [V] 视图层：桌面卡片、高级毛玻璃悬浮播放器。
+      │    └── 📄 music.css          [S] 专属样式。
+      │
+      └── 📁 settings (设置与底层工具)
+           ├── 📄 settings-app.js    [V] 设置APP：壁纸修改、全局文字颜色、API配置输入、TTS引擎切换。
+           ├── 📄 image-cropper.js   [T] 工具：Canvas 缩放裁剪，支持透明 PNG。
+           └── 📄 image-upload.js    [T] 工具：劫持并极速上传图片至酒馆 `/backgrounds` 文件夹。
+
+
+⚠️ 二、AI 编程助手必读：核心联动修改规则
+当你在修改本项目的任何代码时，必须严格遵守以下法则，违背会导致整个酒馆崩溃或数据污染（串味）。
+🧠 法则 1：大模型双轨制通信（修改 AI 逻辑必看）
+虚拟手机具有两条完全物理隔离的 AI 触发轨道，如果你要修改 AI 提示词或上下文，必须找对地方：
+【线下模式 / 被动注入】（主聊天框触发）：
+文件位置： index.js 中的 CHAT_COMPLETION_PROMPT_READY 事件。
+运作方式： 拦截酒馆的 prompt 数组，将手机记录组装成 role: 'system'，通过 isPhoneMessage: true 强行塞入上下文中。如果角色忘记了手机里聊过的内容，改这里！
+【线上模式 / 主动静默】（手机内按发送键触发）：
+文件位置： chat-view.js 的 sendToAIHidden() 或各个 APP 的 Data 层（如 weibo-data.js）。
+运作方式： 不显示在主屏幕！自己构建 Array，通过 window.VirtualPhone.apiManager.callAI() 发送。如果手机内 AI 角色崩坏或回复格式错乱，改对应 APP 里的上下文组装逻辑（buildMessagesArray）。
+🗄️ 法则 2：防弹级存储总线 (修改存储逻辑必看)
+【绝对禁止】 直接使用 localStorage.setItem。因为角色切换时数据会混淆！
+文件位置： config/storage.js
+运作方式： PhoneStorage 利用正则表达式 CHAT_DATA_PATTERNS 来区分数据存在哪里。
+聊天专属（随角色卡存储）： 只要键名匹配正则（例如 wechat_msg_123、weibo_posts），就会存入酒馆的 chatMetadata。
+全局设置（全酒馆通用）： 不匹配正则的（例如 phone-global-text），会存入 extensionSettings。
+【联动修改】： 如果你增加了一个新的 APP（比如浏览器），需要持久化特定角色的数据，必须去 storage.js 的 CHAT_DATA_PATTERNS 数组中添加对应的正则（如 /^browser_/），否则刷新即丢失！
+🖼️ 法则 3：反 Base64 图片臃肿化 (修改图片上传必看)
+【绝对禁止】 将图片转为 Base64 字符串直接存入 wechat-data.js 或 storage.js 中。这会导致酒馆的存档文件突破几十MB而卡死。
+文件位置： apps/settings/image-upload.js
+运作方式： 任何用户上传的图片（壁纸、头像、朋友圈配图），必须先调用 ImageCropper 裁剪压缩，然后通过 fetch('/api/backgrounds/upload') 劫持上传到酒馆服务器本地。
+【联动修改】： 存储在 JSON 里的永远只有服务器相对路径（如 /backgrounds/phone_img_123.jpg）。如果你加了新的发图功能，请参考 moments-view.js 里的上传逻辑。
+🔄 法则 4：MVC 与 View Stack 渲染控制 (修改 UI 必看)
+DOM 不刷新原则： 尽量使用局部刷新（如 messagesDiv.innerHTML = ...），因为重新调用 this.app.render() 会导致所有的输入框失焦、滚动条重置。
+双层视图栈（Z-index）： phone-shell.js 的 setContent(html, viewId) 具有自动 diff 功能。如果传入的 HTML 和之前的不同，它会生成一个新图层，把旧图层垫在下面。
+【联动修改】： 如果你在某个子页面（如聊天内）添加了左滑返回功能，必须在对应的 xxx-app.js 的 handleSwipeBack 方法中，精准模拟点击该页面的“返回按钮”，并且加上 400ms 防抖（Ghost Click Buster）。
+⏰ 法则 5：时间引擎与跨日计算 (修改时间必看)
+全局时间是串联微信、微博、日记的核心锚点。
+更新时间： 如果 AI 输出了带时间的 <wechat> 标签，index.js 会提取时间并调用 timeManager.setTime()。
+推算时间（线上聊天）： 当你在手机里给 AI 发消息，wechat-data.js 里的 addMessage 会调用 timeManager.addMinutesToStoryTime()。
+【联动修改】： 这个函数极其复杂，内置了自动处理跨天、跨月、甚至自动顺延星期几的逻辑。如果你需要新增其他 APP 产生时间流逝（例如：在蜜语看了一场直播耗时30分钟），请直接调用 addMinutesToStoryTime(currentTime, 30)，切勿自己手写计算逻辑！
+📡 法则 6：标签正则表达式与多模态兼容
+闭合保护： 酒馆底层的流式输出或玩家的手动修改，极易破坏 XML 标签（如丢掉 </wechat>）。
+【联动修改】： 解析标签时，禁止使用贪婪匹配。在 index.js 擦除标签的代码 clearWeiboChatHistory 或大模型发包清洗拦截器中，必须使用容错性最高的切分方式，避免误删正文。
+图片代币调包： 当大模型以 Vision（视觉）模式请求图片时，index.js 会拦截 window.fetch 发包，识别带有 __ST_PHONE_IMAGE_ 前缀的占位符，将其替换为真正的多模态图片数组。这是实现“图文无限次穿插”的核心黑科技，严禁修改 fetch 拦截器。
+
+⚠️ 给 AI 助手的强制编程规范：虚拟手机路由与返回法则 ⚠️
+本项目的虚拟手机外壳 (phone-shell.js) 实现了一个原生的**“双层 Z-index 物理视图栈”**。当你在这个项目中为任何 APP 新增“二级页面、详情页、聊天页”时，绝对禁止使用绝对定位的 <div style="display:none"> 来做弹窗假页面！
+必须严格遵守以下 4 条 MVC 路由法则，否则会导致右滑手势卡死：
+法则 1：状态机驱动（State Machine）
+所有的新页面必须作为一个独立的状态存在。例如在 View 类的构造函数中添加 this.currentPage = 'xxx'。点击进入新页面时，只能修改 this.currentPage = 'xxx' 然后调用 this.render()，让底层 setContent() 自动去 diff 并推入物理栈。
+法则 2：精准的 DOM 事件代理（防残影）
+由于底层保留了上一层页面的 DOM（作为底层垫片，为了滑动动画），使用 document.getElementById 会抓到隐藏的旧页面按钮导致事件失效！
+绑定事件时，必须使用：
+const currentView = document.querySelector('.phone-view-current') || document;
+const btn = currentView.querySelector('#your-btn-id');
+法则 3：UI 层的“返回按钮”只管改状态
+在 xxx-view.js 中，返回按钮的点击事件只需要做两件事：改回上一级的状态，并重新渲染。
+例如：
+code
+JavaScript
+currentView.querySelector('#back-btn').onclick = (e) => {
+    e.preventDefault();
+    this.currentPage = 'main'; // 退回主页状态
+    this.render(); // 重新渲染触发底层弹栈
+};
+法则 4：App 层的“右滑手势”只管模拟点击（最核心！）
+物理外壳监听到右滑后，会触发 phone:swipeBack 事件交由 xxx-app.js 处理。
+在 xxx-app.js 的 handleSwipeBack() 方法中，你不需要写任何路由逻辑！ 你只需要让代码去“自动寻找当前画面上的返回按钮，并触发点击”即可。
+标准写法（直接抄）：
+code
+JavaScript
+handleSwipeBack() {
+    const now = Date.now();
+    if (this._lastSwipeTime && now - this._lastSwipeTime < 400) return; // 400ms 防抖
+    this._lastSwipeTime = now;
+
+    const currentView = document.querySelector('.phone-view-current');
+    if (!currentView || !currentView.querySelector('.your-app-class')) return;
+
+    // 智能寻找当前页面的返回按钮并模拟点击
+    const backBtn = currentView.querySelector('.wechat-back-btn, .honey-back-btn, .app-back-btn');
+    if (backBtn) {
+        backBtn.click();
+    } else {
+        // 找不到返回按钮说明在根目录，直接退回手机桌面
+        window.dispatchEvent(new CustomEvent('phone:goHome'));
+    }
+}

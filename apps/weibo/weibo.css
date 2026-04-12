@@ -1,0 +1,1483 @@
+/* ========================================================
+ *  柚月小手机 (Yuzuki's Little Phone)
+ *  作者 (Author): yuzuki
+ * 
+ * ⚠️ 版权声明 (Copyright Notice):
+ * 1. 禁止商业化：本项目仅供交流学习，严禁任何形式的倒卖、盈利等商业行为。
+ * 2. 禁止二改发布：严禁未经授权修改代码后作为独立项目二次发布或分发。
+ * 3. 禁止抄袭：严禁盗用本项目的核心逻辑、UI设计与相关原代码。
+ * 
+ * Copyright (c) yuzuki. All rights reserved.
+ * ======================================================== */
+/* ========================================
+   微博APP样式 - 高仿真微博UI
+======================================== */
+
+/* 容器 - 全屏背景图 */
+.weibo-app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #f5f5f5;
+    font-family: inherit;
+    font-size: 12px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    position: relative;
+}
+
+/* 核心修复：禁止微博内所有图片触发浏览器原生拖拽，防止打断右滑返回手势 */
+.weibo-app img {
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+    user-drag: none;
+    -webkit-touch-callout: none; /* 同时禁止手机端长按弹出系统菜单 */
+}
+
+/* 全屏背景层 */
+.weibo-bg-layer {
+    /* 核心修复：改为 fixed，让其脱离超长内容拖拽并适配屏幕尺寸 */
+    position: fixed !important; 
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-size: cover;
+    background-position: center;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* 所有内容相对于背景层 */
+.weibo-app > *:not(.weibo-bg-layer):not(input[type="file"]) {
+    position: relative;
+    z-index: 1;
+}
+
+/* ========================================
+   顶部导航栏   ======================================== */
+.weibo-nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 44px 10px 10px 10px;
+    min-height: 80px;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    flex-shrink: 0;
+}
+
+/* 首页沉浸式透明导航 */
+.weibo-app.weibo-home-mode > .weibo-nav-bar {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-bottom: none !important;
+}
+
+.weibo-nav-left {
+    width: 36px;
+    display: flex;
+    align-items: center;
+}
+
+.weibo-nav-right {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    justify-content: flex-end;
+    min-width: 36px;
+}
+
+.weibo-nav-title {
+    font-size: 15px;
+    font-weight: 400;
+    color: #000000 !important;
+    text-shadow: none;
+    text-align: center;
+    flex: 1;
+}
+
+.weibo-back-btn,
+.weibo-nav-btn {
+    background: none;
+    border: none;
+    color: #000000 !important;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-shadow: none;
+}
+
+/* ========================================
+   头像和个人信息区   ======================================== */
+/* 外层容器：不带背景，用于定位头像 */
+.weibo-profile-wrapper {
+    position: relative;
+    flex-shrink: 0;
+    z-index: 2;
+}
+
+/* Avatar wrapper */
+.weibo-avatar-wrapper {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    background: linear-gradient(135deg, #ff8200, #e85d04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    position: absolute;
+    top: -16px;
+    left: 12px;
+    z-index: 10;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.weibo-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.weibo-avatar-default {
+    font-size: 20px;
+    color: #fff;
+    border-radius: 50%;
+}
+
+.weibo-profile-section {
+    display: flex;
+    align-items: flex-start;
+    padding: 6px 14px 6px 70px;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.4) 100%);
+    backdrop-filter: blur(2px) saturate(120%);
+    -webkit-backdrop-filter: blur(2px) saturate(120%);
+    border-top: 0.5px solid rgba(255, 255, 255, 0.4);
+    min-height: 46px;
+}
+
+.weibo-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.weibo-avatar-default {
+    font-size: 20px;
+    color: #fff;
+}
+
+.weibo-avatar-edit-hint {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+}
+
+.weibo-profile-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.weibo-profile-name-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 3px;
+}
+
+.weibo-nickname {
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 400;
+    color: #1a1a1a;
+}
+
+.weibo-verify-badge {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ff8200;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    flex-shrink: 0;
+}
+
+.weibo-verify-text {
+    font-size: 11px !important;
+    color: #ff8200 !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100px;
+}
+
+.weibo-ip-location {
+    font-size: 9px !important;
+    color: #666666 !important;
+    margin-top: 4px !important;
+    margin-bottom: 0 !important;
+}
+
+.weibo-profile-stats-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+    flex-wrap: nowrap !important;
+}
+
+.weibo-profile-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 3px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+}
+
+.weibo-profile-stat-num {
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    color: #333333 !important;
+}
+
+.weibo-profile-stat-label {
+    font-size: 9px !important;
+    font-weight: 400 !important;
+    color: #666666 !important;
+}
+
+/* ========================================
+   Tab栏（毛玻璃）   ======================================== */
+.weibo-tabs {
+    display: flex;
+    position: relative;
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
+    flex-shrink: 0;
+}
+
+.weibo-tab {
+    flex: 1;
+    text-align: center;
+    padding: 8px 0;
+    font-size: 11px;
+    font-weight: 500;
+    color: #bbb;
+    cursor: pointer;
+    transition: color 0.3s;
+    position: relative;
+    z-index: 1;
+}
+
+.weibo-tab.active {
+    color: #ff8200;
+    font-weight: 600;
+}
+
+.weibo-tab-indicator {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    background: #ff8200;
+    border-radius: 1px 1px 0 0;
+    transition: transform 0.3s ease, width 0.3s ease;
+}
+
+.weibo-tab-content {
+    flex: 1;
+    overflow-y: visible;
+    overflow-x: hidden;
+    background: rgba(245, 245, 245, 0.85);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+/* ========================================
+   热搜列表   ======================================== */
+.weibo-hot-list {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.weibo-hot-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 0.5px solid rgba(0, 0, 0, 0.04);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.weibo-hot-item:active {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.weibo-hot-rank {
+    width: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #bbb;
+    flex-shrink: 0;
+    text-align: center;
+}
+
+.weibo-hot-rank.top3 {
+    color: #ff8200;
+}
+
+.weibo-hot-info {
+    flex: 1;
+    margin: 0 10px;
+    min-width: 0;
+}
+
+.weibo-hot-title {
+    font-size: 12px;
+    color: #1a1a1a;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.weibo-hot-tag {
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 9px;
+    font-weight: 600;
+    flex-shrink: 0;
+    margin-right: 4px;
+}
+
+.weibo-hot-tag.tag-explosive {
+    background: #ffe5e5;
+    color: #e23636;
+}
+
+.weibo-hot-tag.tag-hot {
+    background: #fff3e0;
+    color: #ff8200;
+}
+
+.weibo-hot-tag.tag-new {
+    background: #e3f2fd;
+    color: #4a90d9;
+}
+
+.weibo-hot-tag.tag-ad {
+    background: #f3e5f5;
+    color: #9c27b0;
+}
+
+.weibo-hot-arrow {
+    color: #ddd;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+/* ========================================
+   微博帖子卡片   ======================================== */
+.weibo-post {
+    background: rgba(255, 255, 255, 0.9);
+    margin-bottom: 6px;
+    padding: 10px 12px;
+}
+
+.weibo-post-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.weibo-post-avatar {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+
+.weibo-post-avatar-circle {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: transparent;
+    color: #666;
+    border: 1px solid #e0e0e0; /* 增加一圈浅灰边框，让头像占位更完整 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 400;
+    box-sizing: border-box;  /* 确保加边框后尺寸不膨胀 */
+}
+
+.weibo-post-meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.weibo-post-blogger {
+    font-size: 12px;
+    font-weight: 400;
+    color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.weibo-post-type {
+    font-size: 8px;
+    padding: 1px 3px;
+    border-radius: 2px;
+    background: #fff3e0;
+    color: #ff8200;
+    font-weight: 400;
+}
+
+.weibo-post-time-device {
+    font-size: 10px;
+    color: #bbb;
+    margin-top: 1px;
+}
+
+.weibo-post-content {
+    font-size: 12px;
+    color: #1a1a1a;
+    line-height: 1.5;
+    margin-bottom: 6px;
+    word-break: break-word;
+}
+
+/* 话题和@高亮 */
+.weibo-topic-link {
+    color: #576b95 !important;  /* 使用经典社交蓝 */
+    cursor: pointer;
+    text-decoration: none; /* 保持无下划线 */
+}
+
+.weibo-mention {
+    color: #576b95 !important;  /* @提及颜色统一为社交蓝 */
+    cursor: pointer;
+    text-decoration: none;
+}
+
+/* 配图区（见下方图片网格区域） */
+
+/* 数据统计栏 */
+.weibo-post-stats {
+    display: flex;
+    align-items: center;
+    padding-top: 6px;
+    border-top: 0.5px solid rgba(0, 0, 0, 0.04);
+}
+
+.weibo-stat-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #939393 !important; /* 微博经典数据灰 */
+    cursor: pointer;
+    padding: 4px 0;
+    transition: color 0.2s;
+}
+
+/* 默认未选中状态的 SVG 图标 */
+.woo-icon {
+    color: #939393 !important;
+    transition: transform 0.1s;
+}
+
+.woo-like-filled {
+    display: none; /* 默认隐藏实心爱心 */
+}
+
+/* Hover 状态互动色 */
+.weibo-stat-item:hover {
+    color: #ff8200 !important;
+}
+.weibo-stat-item:hover .woo-icon {
+    color: #ff8200 !important;
+}
+
+/* 已点赞状态样式重写 */
+.weibo-stat-item.liked {
+    color: #ff3852 !important; /* 微博爱心专属红 */
+}
+
+.weibo-stat-item.liked .woo-like-outline {
+    display: none; /* 隐藏空心 */
+}
+
+.weibo-stat-item.liked .woo-like-filled {
+    display: inline-block; /* 显示实心 */
+    color: #ff3852 !important;
+    animation: heart-burst 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* 心跳爆开动画 */
+}
+
+/* 点赞时的心跳动画 */
+@keyframes heart-burst {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.35); }
+    100% { transform: scale(1); }
+}
+
+/* ========================================
+   内嵌评论输入框   ======================================== */
+.weibo-inline-comment-box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    margin-top: 6px;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 4px;
+}
+
+.weibo-comment-input {
+    flex: 1;
+    border: none;
+    background: #fff;
+    padding: 5px 8px;
+    border-radius: 14px;
+    font-size: 11px;
+    outline: none;
+}
+
+.weibo-comment-send {
+    background: #ff8200;
+    color: #fff;
+    border: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+/* ========================================
+   话题头部（热搜详情）   ======================================== */
+.weibo-topic-header {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 10px 12px;
+    border-bottom: 6px solid rgba(0, 0, 0, 0.03);
+}
+
+.weibo-topic-tag {
+    font-size: 14px;
+    font-weight: 700;
+    color: #ff8200;
+    margin-bottom: 3px;
+}
+
+.weibo-topic-stats {
+    font-size: 10px;
+    color: #bbb;
+    display: flex;
+    gap: 10px;
+}
+
+/* ========================================
+   底部操作栏（旧版保留）   ======================================== */
+.weibo-detail-bottom {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-top: 0.5px solid rgba(0, 0, 0, 0.06);
+    position: sticky;
+    bottom: 0;
+}
+
+.weibo-action-btn {
+    flex: 1;
+    padding: 7px;
+    border: none;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: #ff8200;
+    color: #fff;
+}
+
+.weibo-action-btn:active {
+    opacity: 0.8;
+}
+
+.weibo-action-btn-secondary {
+    background: rgba(0, 0, 0, 0.05);
+    color: #666;
+}
+
+.weibo-hot-load-more-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 18px;
+}
+
+.weibo-hot-load-more-btn {
+    min-width: 94px;
+    padding: 6px 14px;
+    border-radius: 14px;
+    font-size: 10px;
+    gap: 3px;
+}
+
+/* ========================================
+   刷新样式   ======================================== */
+.weibo-refresh-bar {
+    padding: 14px;
+    text-align: center;
+}
+
+.weibo-pull-refresh-indicator {
+    height: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: height 0.2s ease;
+}
+
+.weibo-pull-refresh-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 14px;
+    font-size: 11px;
+    color: #888;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.weibo-pull-refresh-indicator.ready .weibo-pull-refresh-inner {
+    color: #ff8200;
+    border-color: rgba(255, 130, 0, 0.25);
+}
+
+.weibo-pull-refresh-indicator.loading .weibo-pull-refresh-inner {
+    color: #ff8200;
+}
+
+.weibo-pull-refresh-indicator.success .weibo-pull-refresh-inner {
+    color: #28a745;
+}
+
+.weibo-pull-refresh-indicator.error .weibo-pull-refresh-inner {
+    color: #e55353;
+}
+
+.weibo-refresh-btn {
+    padding: 7px 18px;
+    border: none;
+    border-radius: 14px;
+    background: #ff8200;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.weibo-refresh-btn:active {
+    opacity: 0.8;
+}
+
+.weibo-refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ========================================
+   空状态   ======================================== */
+.weibo-empty {
+    text-align: center;
+    padding: 28px 14px;
+    color: #bbb;
+}
+
+.weibo-empty-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+}
+
+.weibo-empty p {
+    margin: 2px 0;
+    font-size: 11px;
+}
+
+.weibo-empty-sub {
+    font-size: 10px !important;
+    color: #ccc;
+}
+
+/* ========================================
+   设置页   ======================================== */
+.weibo-settings-content {
+    padding: 0 0 20px 0;
+    background: #f2f2f2;
+}
+
+.weibo-settings-section {
+    background: #fff;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-top: 0.5px solid rgba(0, 0, 0, 0.04);
+    border-bottom: 0.5px solid rgba(0, 0, 0, 0.04);
+}
+
+.weibo-settings-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin-bottom: 8px;
+}
+
+.weibo-settings-desc {
+    font-size: 10px;
+    color: #bbb;
+    margin-bottom: 6px;
+}
+
+.weibo-settings-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 0.5px solid #f5f5f5;
+}
+
+.weibo-settings-label {
+    font-size: 12px;
+    color: #333;
+}
+
+.weibo-settings-value {
+    font-size: 12px;
+    color: #999;
+}
+
+.weibo-settings-input {
+    width: 55px;
+    height: 26px;
+    padding: 0 6px;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    text-align: center;
+    font-size: 12px;
+    background: #fafafa;
+}
+
+.weibo-settings-text-input {
+    width: 140px;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    font-size: 12px;
+    background: #fafafa;
+    text-align: right;
+    box-sizing: border-box;
+}
+
+.weibo-settings-btn {
+    width: 100%;
+    padding: 7px;
+    border: none;
+    border-radius: 5px;
+    background: #ff8200;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+}
+
+.weibo-settings-btn:active {
+    opacity: 0.8;
+}
+
+/* 设置页：所有保存类按钮 + 上传头像/背景按钮使用更浅的橙色 */
+.weibo-settings-btn[id^="weibo-save-"],
+label[for="weibo-settings-avatar-upload"].weibo-settings-btn,
+label[for="weibo-settings-banner-upload"].weibo-settings-btn {
+    background: #ff9f3d;
+}
+
+.weibo-prompt-textarea {
+    width: 100%;
+    min-height: 140px;
+    padding: 8px;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    font-size: 10px;
+    line-height: 1.4;
+    resize: vertical;
+    background: #fafafa;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+/* ========================================
+   转发弹窗   ======================================== */
+.weibo-forward-overlay {
+    position: absolute; /* 改为 absolute，贴合手机外壳容器 */
+    top: 0; left: 0; right: 0; bottom: 0;
+    height: 100%;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    overscroll-behavior: contain;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+.weibo-forward-dialog {
+    width: 100%;
+    max-width: 350px;
+    max-height: 92%;
+    background: #fff;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    animation: weibo-forward-pop 0.2s ease;
+    touch-action: auto;
+    overflow: hidden;
+}
+
+.weibo-app.weibo-forward-lock {
+    pointer-events: none;
+}
+
+.phone-screen.weibo-forward-open {
+    overscroll-behavior: contain;
+}
+
+.weibo-forward-dialog.weibo-forward-dialog-compose {
+    max-height: 86%;
+}
+
+@keyframes weibo-forward-pop {
+    from { transform: translateY(6px) scale(0.98); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.weibo-forward-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 0.5px solid #eee;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.weibo-forward-close {
+    background: none;
+    border: none;
+    font-size: 14px;
+    color: #999;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.weibo-forward-preview {
+    padding: 10px 12px;
+    background: #f5f5f5;
+}
+
+.weibo-card-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff;
+    border-radius: 6px;
+    padding: 8px;
+    border: 1px solid #eee;
+}
+
+.weibo-card-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 5px;
+    background: #ff8200;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.weibo-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.weibo-card-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: #1a1a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.weibo-card-desc {
+    font-size: 10px;
+    color: #999;
+    margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.weibo-forward-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 6px 0;
+    touch-action: pan-y !important;
+}
+
+.weibo-forward-contact {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.weibo-forward-contact:active {
+    background: #f5f5f5;
+}
+
+.weibo-forward-contact-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #f0f0f0;
+    border: 1px solid #d8d8d8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.weibo-forward-contact-name {
+    font-size: 12px;
+    color: #1a1a1a;
+}
+
+.weibo-forward-recipient-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 0.5px solid #eee;
+}
+
+.weibo-forward-recipient-row i {
+    margin-left: auto;
+    font-size: 11px;
+    color: #bbb;
+}
+
+.weibo-forward-preview.weibo-forward-preview-compact {
+    background: #f7f7f7;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+.weibo-forward-input-wrap {
+    margin: 12px;
+    background: #f2f2f2;
+    border-radius: 10px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.weibo-forward-note-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 13px;
+    color: #222;
+    font-family: inherit;
+}
+
+.weibo-forward-note-input::placeholder {
+    color: #a8a8a8;
+}
+
+.weibo-forward-input-wrap i {
+    color: #8f8f8f;
+    font-size: 18px;
+}
+
+.weibo-forward-actions {
+    margin: auto 12px 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.weibo-forward-action-btn {
+    border: none;
+    border-radius: 10px;
+    height: 38px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.weibo-forward-cancel {
+    background: #ebebeb;
+    color: #333;
+}
+
+.weibo-forward-send {
+    background: #58c06c;
+    color: #fff;
+}
+
+.weibo-forward-send:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ========================================
+   推荐容器 & 我的微博容器   ======================================== */
+.weibo-recommend-container {
+    padding-bottom: 0;
+}
+
+.weibo-mypost-container {
+    padding-bottom: 16px;
+}
+
+.weibo-recommend-container .weibo-post:last-child {
+    margin-bottom: 0;
+}
+
+/* 发微博入口（我的微博 tab 顶部） */
+.weibo-mypost-compose {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.9);
+    margin-bottom: 6px;
+    cursor: pointer;
+}
+
+/* 新增：加号按钮的独立类名，方便用户用CSS覆盖 */
+.weibo-mypost-add-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #ff9f3d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.weibo-mypost-compose-input {
+    flex: 1;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid #eee;
+    border-radius: 15px;
+    font-size: 11px;
+    color: #bbb;
+    background: #f5f5f5;
+    display: flex;
+    align-items: center;
+}
+
+/* ========================================
+   展开全文提示   ======================================== */
+.weibo-expand-text {
+    color: #ff8200;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+/* ========================================
+   图片网格（最多9宫）   ======================================== */
+.weibo-post-images {
+    display: grid;
+    gap: 3px;
+    margin-bottom: 6px;
+}
+
+.weibo-img-grid-1 { grid-template-columns: 1fr; }
+.weibo-img-grid-2 { grid-template-columns: 1fr 1fr; }
+.weibo-img-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+.weibo-img-grid-4 { grid-template-columns: 1fr 1fr; }
+.weibo-img-grid-5,
+.weibo-img-grid-6 { grid-template-columns: 1fr 1fr 1fr; }
+.weibo-img-grid-7,
+.weibo-img-grid-8,
+.weibo-img-grid-9 { grid-template-columns: 1fr 1fr 1fr; }
+
+.weibo-post-img-placeholder {
+    background: #f0f0f0;
+    border-radius: 3px;
+    aspect-ratio: 1;
+    font-size: 9px;
+    color: #bbb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    word-break: break-all;
+    overflow: hidden;
+    padding: 4px;
+}
+
+.weibo-post-img-real {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 3px;
+}
+
+/* 单图强制显示为正方形，限制宽度并水平居中 */
+.weibo-img-grid-1 {
+    max-width: 180px; 
+    margin-left: auto;  /* 左右 auto 实现水平居中 */
+    margin-right: auto; /* 左右 auto 实现水平居中 */
+}
+
+.weibo-img-grid-1 .weibo-post-img-placeholder {
+    aspect-ratio: 1; 
+    max-height: none; 
+    min-height: auto;
+}
+
+/* ========================================
+   正文详情页   ======================================== */
+.weibo-detail-page-body {
+    flex: 1;
+    padding-bottom: 20px;
+}
+
+.weibo-post-detail {
+    background: #fff;
+    padding: 14px 12px;
+}
+
+.weibo-post-detail .weibo-post-content {
+    font-size: 12px;
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+.weibo-post-detail .weibo-post-header {
+    margin-bottom: 10px;
+}
+
+.weibo-post-detail .weibo-post-avatar-circle {
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+}
+
+.weibo-post-detail .weibo-post-avatar {
+    width: 36px;
+    height: 36px;
+}
+
+.weibo-post-detail .weibo-post-blogger {
+    font-size: 14px;
+}
+
+/* 详情页评论区样式（新版高仿微博） */
+.weibo-detail-comments {
+    background: #fff;
+    border-radius: 0;
+    padding: 10px 0 20px 0;
+    margin-top: 10px;
+    border-top: 6px solid #f5f5f5;
+}
+
+.weibo-comments-title {
+    font-size: 13px; /* 标题字号调小 */
+    font-weight: 600;
+    color: #1a1a1a;
+    padding: 0 12px 10px 12px;
+    border-bottom: 0.5px solid #f0f0f0;
+    margin-bottom: 0;
+}
+
+/* 单条评论容器 */
+.weibo-new-comment {
+    display: flex;
+    padding: 14px 12px 14px 0;
+    margin-left: 12px;
+    border-bottom: 0.5px solid #f5f5f5;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.weibo-new-comment:active {
+    background: rgba(0,0,0,0.03);
+}
+
+.weibo-new-comment:last-child {
+    border-bottom: none;
+}
+
+/* 头像区域 */
+.wnc-avatar {
+    width: 32px;
+    height: 32px;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+.wnc-avatar-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #f0f0f0;
+    color: #888;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+/* 右侧主体区 */
+.wnc-main {
+    flex: 1;
+    min-width: 0;
+}
+
+/* 昵称 */
+.wnc-name {
+    font-size: 11px; /* 昵称字号调小 */
+    color: #666; 
+    font-weight: 500;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+}
+
+/* 正文 */
+.wnc-content {
+    font-size: 11px; /* 评论正文字号调小 */
+    color: #333;
+    line-height: 1.5;
+    margin-bottom: 8px;
+    word-break: break-word;
+}
+
+.wnc-reply-name {
+    color: #576b95; 
+    margin: 0 2px;
+}
+
+/* 新增：楼中楼（子评论）容器区域 */
+.wnc-sub-comments {
+    background: #f7f7f7;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-top: 4px;
+    margin-bottom: 8px;
+}
+
+/* 楼中楼单条项 */
+.wnc-sub-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    line-height: 1.5;
+    margin-bottom: 4px;
+    color: #333;
+    cursor: pointer;
+    transition: background 0.2s;
+    border-radius: 2px;
+}
+
+.wnc-sub-item:hover {
+    background: rgba(0,0,0,0.05);
+}
+
+.wnc-sub-item:active {
+    background: rgba(0,0,0,0.1);
+}
+
+.wnc-sub-item:last-child {
+    margin-bottom: 0;
+}
+
+.wnc-sub-content-wrap {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+}
+
+/* 楼中楼昵称（蓝色） */
+.wnc-sub-name {
+    color: #576b95;
+    font-weight: 500;
+}
+
+/* 底部时间和点赞 */
+.wnc-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 2px;
+    min-height: 16px;
+    gap: 8px;
+}
+
+.wnc-time-loc {
+    font-size: 11px;
+    line-height: 1.2;
+    color: #8e8e8e;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+}
+
+.wnc-like-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #999;
+    font-size: 11px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.wnc-like-btn i {
+    font-size: 12px; /* 点赞小手图标调小 */
+}
+
+.wnc-like-btn.liked {
+    color: #ff8200;
+}
+
+.wnc-sub-like-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: #999;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    line-height: 1.1;
+}
+
+.wnc-sub-like-btn i {
+    font-size: 11px;
+}
+
+.wnc-sub-like-btn.liked {
+    color: #ff8200;
+}
+
+/* ========================================
+   滚动条隐藏   ======================================== */
+.weibo-app::-webkit-scrollbar,
+.weibo-tab-content::-webkit-scrollbar,
+.weibo-detail-posts::-webkit-scrollbar {
+    display: none;
+}
+
+/* ========================================
+   子页面布局：固定导航栏，内容区独立滚动   ======================================== */
+
+.weibo-subpage {
+    overflow: hidden !important;
+}
+.weibo-settings-content, .weibo-detail-posts, .weibo-detail-page-body {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+
+

@@ -1,0 +1,887 @@
+/* ========================================================
+ *  柚月小手机 (Yuzuki's Little Phone)
+ *  作者 (Author): yuzuki
+ * 
+ * ⚠️ 版权声明 (Copyright Notice):
+ * 1. 禁止商业化：本项目仅供交流学习，严禁任何形式的倒卖、盈利等商业行为。
+ * 2. 禁止二改发布：严禁未经授权修改代码后作为独立项目二次发布或分发。
+ * 3. 禁止抄袭：严禁盗用本项目的核心逻辑、UI设计与相关原代码。
+ * 
+ * Copyright (c) yuzuki. All rights reserved.
+ * ======================================================== */
+/* ========================================
+   📔 日记APP - 实体书质感样式库
+   ======================================== */
+
+/* ==================== 封面视图 ==================== */
+.diary-app {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: rgba(245, 242, 238, 0.95);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+    position: relative;
+    overscroll-behavior: none;
+}
+
+.diary-cover {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(210, 195, 170, 0.8);
+    background-size: cover;
+    background-position: center;
+    position: relative;
+    margin: 0;
+    border-radius: 0;
+
+    overflow: visible;
+}
+
+.diary-cover::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 20px;
+    background: linear-gradient(to right, rgba(0,0,0,0.06), transparent);
+    pointer-events: none;
+}
+
+.diary-cover-title {
+    font-size: 22px;
+    letter-spacing: 4px;
+    margin-bottom: 8px;
+}
+
+.diary-cover-subtitle {
+    font-size: 12px;
+    letter-spacing: 2px;
+}
+
+.diary-cover-decoration {
+    width: 60px;
+    height: 2px;
+    background: linear-gradient(to right, transparent, #c8b8a0, transparent);
+    margin: 16px 0;
+}
+
+/* ==================== 搭扣（绕背式 + 圆形按扣 + 放大版） ==================== */
+.diary-clasp {
+    position: absolute;
+    right: -6px; /* 依然贴紧书页外侧边缘 */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 56px; /* 🌟 整体加宽 */
+    height: 42px; /* 🌟 整体加高 */
+    cursor: pointer;
+    z-index: 10;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.diary-clasp:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+/* 搭带本体（从后往前绕） */
+.diary-clasp-strap {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(10px);
+    border-radius: 21px 0 0 21px; /* 🌟 配合42px的高度，完美半圆形包边 */
+    box-shadow:
+        -4px 4px 10px rgba(0, 0, 0, 0.15),
+        inset 1px 2px 2px rgba(255, 255, 255, 0.8),
+        inset 0 -1px 2px rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-right: none;
+}
+
+/* 圆形实体按扣 - 底座 */
+.diary-clasp-strap::before {
+    content: ''; /* 去掉文字字符 */
+    position: absolute;
+    left: 8px; /* 圆扣距离左边缘的距离 */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px; /* 🌟 圆扣加大 */
+    height: 26px; /* 🌟 圆扣加大 */
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 50%;
+    box-shadow:
+        1px 2px 5px rgba(0, 0, 0, 0.2),
+        inset -1px -2px 2px rgba(0, 0, 0, 0.05),
+        inset 1px 1px 2px #ffffff;
+}
+
+/* 🌟 核心魔法：使用带圆角的纯线条画出的实体 X */
+.diary-clasp-strap::after {
+    content: '';
+    position: absolute;
+    left: 21px; /* 精准定位在 26px 大小圆扣的正中心 */
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 12px; /* 线条整体大小 */
+    height: 12px;
+    
+    /* 这里使用了纯代码绘制的圆形端点(round)的SVG线条，模拟真实的线缝或沟槽 */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 2 L10 10 M10 2 L2 10' stroke='%23a0a0a0' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-size: cover;
+    
+    /* 配合高光阴影，产生凹陷的雕刻立体感 */
+    filter: drop-shadow(0px 1px 0px rgba(255,255,255,1));
+}
+
+/* ==================== 目录视图 ==================== */
+.diary-toc {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    overflow: hidden;
+}
+
+.diary-toc-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 12px 16px;
+    padding-top: 40px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.diary-toc-title {
+    font-size: 17px;
+}
+
+.diary-toc-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.diary-toc-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.05);
+    color: #8a7a6a;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.diary-toc-btn:active {
+    background: rgba(0,0,0,0.1);
+}
+
+.diary-pencil-btn svg {
+    display: block;
+    stroke: #8a7a6a;
+}
+
+.diary-toc-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    -webkit-overflow-scrolling: touch;
+}
+
+.diary-toc-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #baa;
+    gap: 12px;
+}
+
+.diary-toc-empty-icon {
+    font-size: 48px;
+    opacity: 0.4;
+}
+
+.diary-toc-empty-text {
+    font-size: 14px;
+}
+
+.diary-toc-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    background: rgba(255, 255, 255, 0.15);
+    margin: 6px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+}
+
+.diary-toc-item:active {
+    background: rgba(255,255,255,0.25);
+}
+
+.diary-toc-item-date {
+    min-width: 42px;
+    text-align: center;
+    margin-right: 12px;
+}
+
+.diary-toc-item-year {
+    font-size: 9px;
+    opacity: 0.7;
+}
+
+.diary-toc-item-day {
+    font-size: 18px;
+    line-height: 1.1;
+}
+
+.diary-toc-item-month {
+    font-size: 9px;
+    margin-top: 1px;
+}
+
+.diary-toc-item-weekday {
+    font-size: 9px;
+    opacity: 0.6;
+    margin-top: 1px;
+}
+
+.diary-toc-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.diary-toc-item-title {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.diary-toc-item-preview {
+    font-size: 11px;
+    opacity: 0.7;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.diary-toc-item-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: rgba(255, 59, 48, 0.15);
+    color: #ff3b30;
+    border-radius: 50%;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.diary-toc-item-delete:active {
+    background: rgba(255, 59, 48, 0.3);
+}
+
+.diary-toc-item-actions {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+.diary-toc-item-edit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: rgba(0, 122, 255, 0.15);
+    color: #007aff;
+    border-radius: 50%;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.diary-toc-item-edit:active {
+    background: rgba(0, 122, 255, 0.3);
+}
+
+.diary-delete-all-btn {
+    background: rgba(255, 59, 48, 0.15) !important;
+    color: #ff3b30 !important;
+}
+
+.diary-delete-all-btn:active {
+    background: rgba(255, 59, 48, 0.3) !important;
+}
+
+/* ==================== 目录底部操作栏 ==================== */
+.diary-toc-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.diary-toc-write-btn {
+    flex: 1;
+    max-width: 200px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 20px;
+    background: rgba(180, 160, 140, 0.3);
+    color: #5a4a3a;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.diary-toc-write-btn:active {
+    background: rgba(180, 160, 140, 0.5);
+}
+
+.diary-toc-settings-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.05);
+    color: #8a7a6a;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.diary-toc-settings-btn:active {
+    background: rgba(0,0,0,0.1);
+}
+
+/* ==================== 内容页视图 ==================== */
+.diary-page {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: transparent;
+    overflow: hidden;
+    position: relative;
+    overscroll-behavior: none;
+}
+
+.diary-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    padding-top: 40px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.diary-page-back {
+    width: 30px; /* 🌟 强制宽度 30px，和右侧的设置按钮一模一样宽 */
+    height: 30px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.05);
+    color: #8a7a6a;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    padding: 0;
+}
+
+.diary-page-back:active {
+    background: rgba(0,0,0,0.1);
+}
+
+.diary-page-date {
+    font-size: 15px;
+    font-weight: 600; /* 加粗一点更有标题感 */
+    color: #5a4a3a;
+    flex: 1; /* 🌟 占据中间所有的剩余空间 */
+    text-align: center; /* 🌟 强制文字居中 */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* 文字太长自动省略号 */
+    padding: 0 10px;
+}
+
+.diary-page-settings-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.05);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.diary-page-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    -webkit-overflow-scrolling: touch;
+    position: relative;
+    overscroll-behavior: none;
+}
+
+.diary-page-body.has-bg {
+    background-image: none;
+}
+
+.diary-page-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-size: cover;
+    background-position: center;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.diary-page-content {
+    position: relative;
+    z-index: 1;
+    font-size: 15px;
+    line-height: 2;
+    padding-top: 4px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.diary-page-content .diary-date-header {
+    font-size: 14px;
+    opacity: 0.7;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed rgba(128,128,128,0.3);
+}
+
+/* ==================== 页面设置面板 ==================== */
+.diary-settings-panel {
+    position: absolute;
+    top: 44px;
+    right: 0;
+    width: 240px;
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(12px);
+    border-radius: 0 0 0 12px;
+    box-shadow: -2px 4px 16px rgba(0,0,0,0.12);
+    z-index: 100;
+    padding: 16px;
+    transform: translateX(100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
+.diary-settings-panel.visible {
+    transform: translateX(0);
+}
+
+.diary-settings-panel-title {
+    font-size: 13px;
+    margin-bottom: 14px;
+}
+
+.diary-setting-row {
+    margin-bottom: 14px;
+}
+
+.diary-setting-label {
+    font-size: 12px;
+    color: #8a7a6a;
+    margin-bottom: 6px;
+}
+
+.diary-setting-row input[type="range"] {
+    width: 100%;
+}
+
+.diary-setting-row .diary-bg-btns {
+    display: flex;
+    gap: 6px;
+}
+
+.diary-bg-btn {
+    flex: 1;
+    padding: 6px 0;
+    font-size: 11px;
+    border: 1px solid #e8e0d4;
+    border-radius: 6px;
+    background: #faf6ef;
+    color: #5a4a3a;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s;
+}
+
+.diary-bg-btn:active {
+    background: #f0e8d8;
+}
+
+/* ==================== 生成中状态 ==================== */
+.diary-generating {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    gap: 16px;
+}
+
+.diary-generating-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid #e8e0d4;
+    border-top-color: #d4a853;
+    border-radius: 50%;
+    animation: diary-spin 0.8s linear infinite;
+}
+
+@keyframes diary-spin {
+    to { transform: rotate(360deg); }
+}
+
+.diary-generating-text {
+    font-size: 14px;
+    color: #9a8a7a;
+}
+
+/* ==================== 手写按钮（手动生成） ==================== */
+.diary-write-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 16px;
+    padding: 12px;
+    background: linear-gradient(135deg, #d4a853, #c49a40);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(196, 154, 64, 0.3);
+    transition: all 0.2s;
+}
+
+.diary-write-btn:active {
+    transform: scale(0.97);
+    box-shadow: 0 1px 4px rgba(196, 154, 64, 0.3);
+}
+
+.diary-write-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ==================== 翻页动画 ==================== */
+.diary-view-enter {
+    animation: diary-slide-in 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.diary-view-exit {
+    animation: diary-slide-out 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes diary-slide-in {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes diary-slide-out {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+}
+
+/* ==================== 批量生成进度 ==================== */
+.diary-batch-progress {
+    width: 100%;
+    height: 4px;
+    background: #e8e0d4;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.diary-batch-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #d4a853, #e8c06a);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.diary-batch-info {
+    font-size: 12px;
+    color: #baa89a;
+    margin-top: 6px;
+}
+
+/* ==================== 封面底部操作按钮 ==================== */
+.diary-cover-actions {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    padding: 8px 16px 12px;
+}
+
+.diary-cover-action-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.05);
+    color: #8a7a6a;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.diary-cover-action-btn:active {
+    background: rgba(0,0,0,0.1);
+}
+
+/* ==================== 日记设置视图 ==================== */
+.diary-settings-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    overflow: hidden;
+    min-height: 0;
+}
+
+.diary-settings-view .diary-toc-header {
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.diary-settings-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
+}
+
+.diary-s-section {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.diary-s-section-title {
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.diary-s-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.diary-s-label {
+    font-size: 13px;
+}
+
+.diary-s-desc {
+    font-size: 11px;
+    opacity: 0.7;
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.diary-s-slider {
+    width: 100px;
+}
+
+.diary-s-input {
+    width: 60px;
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    text-align: center;
+    font-size: 14px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.diary-s-textarea {
+    width: 100%;
+    min-height: 200px;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.6;
+    resize: vertical;
+    font-family: monospace;
+    background: rgba(255, 255, 255, 0.2);
+    box-sizing: border-box;
+    margin-bottom: 10px;
+}
+
+.diary-s-btn-row {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.diary-s-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid #e0d8cc;
+    transition: opacity 0.15s;
+}
+
+.diary-s-btn:active {
+    opacity: 0.7;
+}
+
+.diary-s-btn-primary {
+    background: #fffef9;
+    color: #5a4a3a;
+    border: 1px solid #e0d8cc;
+}
+
+.diary-s-btn-warn {
+    background: #fffef9;
+    color: #ff9500;
+    border: 1px solid #e0d8cc;
+}
+
+/* ==================== 隐藏滚动条 ==================== */
+.diary-toc-list,
+.diary-page-body,
+.diary-settings-body {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+}
+
+.diary-toc-list::-webkit-scrollbar,
+.diary-page-body::-webkit-scrollbar,
+.diary-settings-body::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+}
+
+/* ==================== 编辑视图 ==================== */
+.diary-edit-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: rgba(245, 242, 238, 0.95);
+    overflow: hidden;
+}
+
+.diary-edit-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    overflow: hidden;
+}
+
+.diary-edit-textarea {
+    flex: 1;
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #e0d8cc;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+    resize: none;
+    font-family: inherit;
+    background: rgba(255, 255, 255, 0.8);
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.diary-edit-save-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: #d4a853;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.diary-edit-save-btn:active {
+    opacity: 0.7;
+}
+
+/* 复用手机设置的 toggle-switch（如果已有则跳过） */
+
