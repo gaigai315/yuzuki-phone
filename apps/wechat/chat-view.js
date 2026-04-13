@@ -1652,46 +1652,55 @@ export class ChatView {
         return this.getCurrentWechatRoot();
     }
 
-    // 找到这段代码，把它整块替换掉
     async captureAndSendChatSnapshot({ longCapture = false } = {}) {
         if (!this.app.currentChat) return;
 
         const actionLabel = longCapture ? '长截图' : '截图';
         
         try {
-            // 1. 先安全地关闭底部的“更多”和“表情”面板
             this.showMore = false;
             this.showEmoji = false;
-            this.app.render(); // 触发渲染，让面板真正消失
+            this.app.render(); 
 
-            // 2. 等待 UI 动画收起并稳定，彻底杜绝闪烁和错位
             await new Promise(resolve => setTimeout(resolve, 250));
 
-            // 3. 提示用户正在截图
-            this.app.phoneShell.showNotification(actionLabel, longCapture ? '正在生成长截图，请稍候...' : '正在生成截图...', '📸');
+            this.app.phoneShell.showNotification(actionLabel, longCapture ? '正在生成长图(可能需要几秒)...' : '正在生成截图...', '📸');
             
-            // 4. 获取当前微信的主容器
             const snapshotRoot = this.getCurrentWechatRoot();
             if (!snapshotRoot) throw new Error('找不到聊天截图根节点');
 
-            // 5. 调用外部方法进行无感截图 (拿到 Base64 图片数据)
+            // 拿到 Base64 图片数据
             const imageDataUrl = await captureWechatChatSnapshot(snapshotRoot, { longCapture });
             
-            // 6. 🔥🔥🔥 核心修改：不再发送给AI，而是触发浏览器下载，保存到真实手机/电脑
+            // 🔥🔥🔥 核心修复：手机端完美下载机制（将 Base64 转换为真实的二进制文件 Blob）
+            const dataURItoBlob = (dataURI) => {
+                const byteString = atob(dataURI.split(',')[1]);
+                const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                return new Blob([ab], {type: mimeString});
+            };
+
+            const blob = dataURItoBlob(imageDataUrl);
+            const blobUrl = URL.createObjectURL(blob); // 生成系统级临时文件链接
+
             const link = document.createElement('a');
-            link.href = imageDataUrl;
+            link.href = blobUrl;
             
-            // 生成一个带时间戳的文件名 (例如: WeChat_Snapshot_20231028123045.png)
             const timeStamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
             link.download = `WeChat_${longCapture ? 'Long' : ''}Snapshot_${timeStamp}.png`;
             
-            // 模拟点击下载
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
             
-            // 7. 提示用户保存成功
-            this.app.phoneShell.showNotification(actionLabel, '截图已保存到你的设备相册/下载目录', '✅');
+            // 释放内存，防止手机浏览器崩溃
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+            
+            this.app.phoneShell.showNotification(actionLabel, '截图已触发下载，请查看相册或通知栏', '✅');
         } catch (err) {
             console.error(`[ChatView] ${actionLabel}失败:`, err);
             this.app.phoneShell.showNotification('错误', `${actionLabel}失败，请看控制台`, '❌');

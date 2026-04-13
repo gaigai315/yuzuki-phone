@@ -1,6 +1,6 @@
 /* ========================================================
  *  柚月小手机 (Yuzuki's Little Phone)
- *  截图引擎核心 (防超时 + 免疫插件干扰版)
+ *  截图引擎核心 (精准去灰边 + 移动端提速版)
  * ======================================================== */
 
 async function getHtml2Canvas() {
@@ -21,6 +21,10 @@ export async function captureWechatChatSnapshot(sourceRoot, { longCapture = fals
     const sourceMessages = sourceRoot.querySelector('#chat-messages');
     if (!sourceMessages) throw new Error('找不到聊天消息容器');
 
+    // 🔥 核心修复1：获取微信APP真实的、绝对的像素宽度，不要外层的空白！
+    const exactRect = sourceRoot.getBoundingClientRect();
+    const exactWidth = exactRect.width;
+
     const ghostWrapper = document.createElement('div');
     ghostWrapper.style.cssText = `position: fixed; top: 0; left: 0; opacity: 0; pointer-events: none; z-index: -9999;`;
     document.body.appendChild(ghostWrapper);
@@ -32,7 +36,8 @@ export async function captureWechatChatSnapshot(sourceRoot, { longCapture = fals
     cloneRoot.style.top = '0';
     cloneRoot.style.left = '0';
     cloneRoot.style.margin = '0';
-    cloneRoot.style.width = sourceRoot.offsetWidth + 'px';
+    // 🔥 严格锁定宽度
+    cloneRoot.style.width = exactWidth + 'px';
     cloneRoot.style.backgroundColor = bgColor;
     cloneRoot.style.borderRadius = '0';
     cloneRoot.style.boxShadow = 'none';
@@ -67,20 +72,30 @@ export async function captureWechatChatSnapshot(sourceRoot, { longCapture = fals
     try {
         await new Promise(resolve => setTimeout(resolve, 300));
 
+        // 🔥 核心修复2：判断是否是手机端，手机端长截图自动降低一点精度，防止CPU冒烟卡死
+        const isMobile = window.innerWidth <= 768;
+        const renderScale = (isMobile && longCapture) ? 1.2 : 2; 
+
         const canvas = await html2canvas(cloneRoot, {
-            scale: 2,               
+            scale: renderScale,     // 手机端长图智能降维提速
             useCORS: true,          
             allowTaint: true,       
             backgroundColor: bgColor,
-            width: cloneRoot.offsetWidth,
+            width: exactWidth,      // 🔥 严格限制画布宽度，切断灰边
             height: cloneRoot.offsetHeight,
             x: 0, y: 0, scrollX: 0, scrollY: 0,
+            windowWidth: document.documentElement.clientWidth, // 修复移动端视口缩放干扰
             logging: false,
-            // 🔥 核心防御1：资源加载超过 3 秒直接跳过，绝不死等！
-            imageTimeout: 3000, 
-            // 🔥 核心防御2：屏蔽其他酒馆插件的注入代码，防止报错崩溃！
-            ignoreElements: (node) => {
-                return node.tagName === 'SCRIPT' || node.tagName === 'IFRAME';
+            imageTimeout: 2000, 
+            onclone: (clonedDoc) => {
+                const scripts = clonedDoc.querySelectorAll('script, iframe, object');
+                scripts.forEach(s => s.remove());
+                const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+                styles.forEach(s => {
+                    if (s.tagName === 'STYLE' && s.innerHTML.includes('catbox.moe')) {
+                        s.innerHTML = s.innerHTML.replace(/@font-face\s*\{[^}]*\}/gi, '');
+                    }
+                });
             }
         });
 

@@ -1203,16 +1203,7 @@ if (window.GGP_Loaded) {
             panel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
         } else {
             // 打开
-            panel.classList.add('phone-panel-open');
-            panel.classList.remove('phone-panel-hidden');
-            icon.classList.add('openIcon');
-            icon.classList.remove('closedIcon');
-            // 🔥 打开时设置正确的显示样式
-            panel.style.cssText = '';
-            panel.classList.add('drawer-content', 'fillRight', 'openDrawer');
-
-            // 🔥 添加点击外部关闭手机的监听
-            panel.addEventListener('click', handlePanelClick);
+            openPhonePanelWithOutsideClose(panel, icon);
 
             // 只在第一次打开时创建手机界面
             const content = document.getElementById('phone-panel-content');
@@ -1226,6 +1217,21 @@ if (window.GGP_Loaded) {
                 setTimeout(() => window.VirtualPhone.wechatApp.render(), 50);
             }
         }
+    }
+
+    function openPhonePanelWithOutsideClose(panel, icon) {
+        if (!panel || !icon) return;
+
+        panel.classList.add('phone-panel-open');
+        panel.classList.remove('phone-panel-hidden');
+        icon.classList.add('openIcon');
+        icon.classList.remove('closedIcon');
+        panel.style.cssText = '';
+        panel.classList.add('drawer-content', 'fillRight', 'openDrawer');
+
+        // 自动唤起来电/转线上时也必须补上外部点击关闭监听
+        panel.removeEventListener('click', handlePanelClick);
+        panel.addEventListener('click', handlePanelClick);
     }
 
     // 🔥 处理面板点击事件：点击手机外部关闭手机
@@ -3062,15 +3068,9 @@ if (window.GGP_Loaded) {
         // 强制展开手机抽屉
         const phonePanel = document.getElementById('phone-panel');
         const drawerIcon = document.getElementById('phoneDrawerIcon');
-        if (phonePanel) {
-            phonePanel.classList.remove('hidden', 'phone-panel-hidden');
-            phonePanel.classList.add('open', 'phone-panel-open', 'drawer-content', 'fillRight', 'openDrawer');
-            phonePanel.style.cssText = '';
-        }
-        if (drawerIcon) {
-            drawerIcon.classList.add('openIcon');
-            drawerIcon.classList.remove('closedIcon');
-        }
+        openPhonePanelWithOutsideClose(phonePanel, drawerIcon);
+        phonePanel?.classList?.remove('hidden');
+        phonePanel?.classList?.add('open');
 
         const content = document.getElementById('phone-panel-content');
         if (content && (!content.querySelector('.phone-in-panel') || !phoneShell)) {
@@ -3153,14 +3153,7 @@ if (window.GGP_Loaded) {
         const phonePanel = document.getElementById('phone-panel');
         const drawerIcon = document.getElementById('phoneDrawerIcon');
         if (phonePanel && !phonePanel.classList.contains('phone-panel-open')) {
-            phonePanel.classList.add('phone-panel-open');
-            phonePanel.classList.remove('phone-panel-hidden');
-            phonePanel.style.cssText = '';
-            phonePanel.classList.add('drawer-content', 'fillRight', 'openDrawer');
-            if (drawerIcon) {
-                drawerIcon.classList.add('openIcon');
-                drawerIcon.classList.remove('closedIcon');
-            }
+            openPhonePanelWithOutsideClose(phonePanel, drawerIcon);
 
             // 确保手机界面已创建
             const content = document.getElementById('phone-panel-content');
