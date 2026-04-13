@@ -2373,7 +2373,19 @@ export class WechatApp {
                     const shortName = this.getShortGroupName(this.currentChat.name, 6);
                     return `<span id="group-header-title" style="cursor: pointer;">${shortName}<span style="color:#666;">(${memberCount})</span></span>`;
                 }
-                return this.currentChat.name;
+                const currentContact = this.currentChat.contactId
+                    ? this.wechatData.getContact(this.currentChat.contactId)
+                    : this.wechatData.getContactByName(this.currentChat.name);
+                const isHoneyContact = currentContact?.sourceApp === 'honey' || currentContact?.sourceLabel === '蜜语';
+                if (!isHoneyContact) return this.currentChat.name;
+                return `
+                    <span style="position:relative; display:inline-flex; align-items:center; justify-content:center; line-height:1.1; overflow:visible;">
+                        <span style="position:absolute; left:50%; top:-11px; transform:translateX(-50%); display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:999px; background:rgba(255,105,180,0.14); color:#ff5fa2; font-size:8px; line-height:1; border:1px solid rgba(255,105,180,0.24); white-space:nowrap;">
+                            <i class="fa-solid fa-heart" style="font-size:7px;"></i>蜜语
+                        </span>
+                        <span>${this.currentChat.name}</span>
+                    </span>
+                `;
             }
             if (this.currentView === 'discover') return '朋友圈';
             return '微信';
@@ -3072,7 +3084,7 @@ export class WechatApp {
                         background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4);
                         padding: 8px 20px; border-radius: 20px; font-size: 13px; cursor: pointer; backdrop-filter: blur(5px);
                     ">
-                        ${isInitialized ? '<i class="fa-solid fa-rotate"></i> 重新评估资产' : '<i class="fa-solid fa-wand-magic-sparkles"></i> AI 初始资产评估'}
+                        ${isInitialized ? '<i class="fa-solid fa-rotate"></i> 重新评估资产' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 初始资产评估'}
                     </button>
                 </div>
                 

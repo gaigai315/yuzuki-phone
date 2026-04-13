@@ -1070,23 +1070,25 @@ if (window.GGP_Loaded) {
         const statusText = isEnabled ? '已启用' : '已禁用';
 
         const triggerHTML = extensionsMenu ? `
-            <div id="phoneDrawerToolEntry" class="list-group-item flex-container flexGap5 interactable"
-                 tabindex="0"
-                 role="listitem"
-                 title="虚拟手机 (${statusText})">
-                <div id="phoneDrawerIcon" class="drawer-icon fa-solid fa-mobile-screen-button fa-fw closedIcon extensionsMenuExtensionButton interactable"
-                     style="position:relative; ${iconStyle}"
+            <div id="phoneDrawerToolEntry" class="extension_container interactable" tabindex="0">
+                <div id="phoneDrawerToolRow" class="list-group-item flex-container flexGap5 interactable"
                      tabindex="0"
-                     role="button">
-                    <span id="phone-badge" class="badge-notification" style="display:none; position:absolute; top:-4px; right:-6px;">0</span>
+                     role="listitem"
+                     title="虚拟手机 (${statusText})">
+                    <div id="phoneDrawerIcon" class="fa-fw fa-solid fa-mobile-screen-button extensionsMenuExtensionButton"
+                         style="position:relative; ${iconStyle}"
+                         tabindex="0"
+                         role="button">
+                        <span id="phone-badge" class="badge-notification" style="display:none; position:absolute; top:-4px; right:-6px;">0</span>
+                    </div>
+                    <span>虚拟手机</span>
                 </div>
-                <span>虚拟手机</span>
             </div>
         ` : `
             <div id="phoneDrawerToolEntry" class="extension_container interactable" tabindex="0" role="button"
                  title="虚拟手机 (${statusText})"
                  style="position:relative; display:flex; align-items:center; justify-content:center; min-width:38px; min-height:38px;">
-                <div id="phoneDrawerIcon" class="drawer-icon fa-solid fa-mobile-screen-button fa-fw closedIcon interactable"
+                <div id="phoneDrawerIcon" class="fa-fw fa-solid fa-mobile-screen-button"
                      style="position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:100%; ${iconStyle}"
                      tabindex="0"
                      role="button">
@@ -1197,8 +1199,6 @@ if (window.GGP_Loaded) {
             // 关闭
             panel.classList.remove('phone-panel-open');
             panel.classList.add('phone-panel-hidden');
-            icon.classList.remove('openIcon');
-            icon.classList.add('closedIcon');
             // 🔥 关闭时添加强力隐藏样式
             panel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
         } else {
@@ -1224,8 +1224,6 @@ if (window.GGP_Loaded) {
 
         panel.classList.add('phone-panel-open');
         panel.classList.remove('phone-panel-hidden');
-        icon.classList.add('openIcon');
-        icon.classList.remove('closedIcon');
         panel.style.cssText = '';
         panel.classList.add('drawer-content', 'fillRight', 'openDrawer');
 
@@ -2885,14 +2883,15 @@ if (window.GGP_Loaded) {
                         import('./apps/weibo/weibo-data.js').then(module => {
                             const weiboData = window.VirtualPhone.weiboApp?.weiboData || new module.WeiboData(storage);
                             const parsed = weiboData.parseWeiboContent(text);
-                            if (parsed.posts.length > 0) {
-                                parsed.posts.forEach((post, idx) => {
-                                    post.id = Date.now().toString(36) + idx.toString(36) + Math.random().toString(36).substr(2, 4);
-                                    if (!post.likeList) post.likeList = [];
-                                    if (!post.commentList) post.commentList = [];
-                                });
+                                if (parsed.posts.length > 0) {
+                                    parsed.posts.forEach((post, idx) => {
+                                        post.id = Date.now().toString(36) + idx.toString(36) + Math.random().toString(36).substr(2, 4);
+                                        if (!post.likeList) post.likeList = [];
+                                        if (!post.commentList) post.commentList = [];
+                                    });
                                 weiboData.saveRecommendPosts(parsed.posts);
                                 if (parsed.hotSearches.length > 0) weiboData.saveHotSearches(parsed.hotSearches);
+                                window.VirtualPhone?.weiboApp?.handleExternalRecommendUpdate?.();
                                 const weiboApp = currentApps.find(a => a.id === 'weibo');
                                 if (weiboApp) { weiboApp.badge = parsed.posts.length; saveData(); }
                                 showUnifiedPhoneNotification('微博', `收到 ${parsed.posts.length} 条新微博`, '📱', {
@@ -2998,6 +2997,8 @@ if (window.GGP_Loaded) {
                             if (parsed.hotSearches.length > 0) {
                                 weiboData.saveHotSearches(parsed.hotSearches);
                             }
+
+                            window.VirtualPhone?.weiboApp?.handleExternalRecommendUpdate?.();
 
                             // 更新badge
                             const weiboApp = currentApps.find(a => a.id === 'weibo');
@@ -3478,7 +3479,11 @@ if (window.GGP_Loaded) {
 
                 // 【核心防误触】使用 composedPath 防止 DOM 刷新导致的误判
                 const path = e.composedPath();
-                const isInsidePhone = path.some(el => el.classList && (el.classList.contains('phone-in-panel') || el.classList.contains('drawer-icon')));
+                const isInsidePhone = path.some(el => {
+                    if (!el) return false;
+                    if (el.id === 'phoneDrawerIcon' || el.id === 'phoneDrawerToolEntry' || el.id === 'phoneDrawerToolRow') return true;
+                    return !!(el.classList && el.classList.contains('phone-in-panel'));
+                });
 
                 // 如果点击的是特定元素或手机内部区域，则直接忽略
                 if (

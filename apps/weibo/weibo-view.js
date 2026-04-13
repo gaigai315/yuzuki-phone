@@ -29,6 +29,7 @@ export class WeiboView {
         this._hotDetailRefreshTimer = null;
         this._cssLoaded = false;
         this._revealedDeletePostId = null;
+        this._hasPendingExternalRecommendRefresh = false;
     }
 
     // ========================================
@@ -185,6 +186,19 @@ export class WeiboView {
 
         this.app.phoneShell.setContent(html, 'weibo-home');
         this.bindHomeEvents();
+        this._hasPendingExternalRecommendRefresh = false;
+    }
+
+    markExternalRecommendUpdated() {
+        this._hasPendingExternalRecommendRefresh = true;
+        if (this.currentView !== 'home' || this.currentTab !== 'recommend') return;
+
+        const contentArea = document.querySelector('.phone-view-current .weibo-tab-content')
+            || document.querySelector('.weibo-tab-content');
+        if (!contentArea) return;
+
+        this.refreshCurrentTabContent();
+        this._hasPendingExternalRecommendRefresh = false;
     }
 
     // ========================================

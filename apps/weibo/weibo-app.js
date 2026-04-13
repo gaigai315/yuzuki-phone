@@ -68,6 +68,10 @@ export class WeiboApp {
         this.weiboView.render();
     }
 
+    handleExternalRecommendUpdate() {
+        this.weiboView?.markExternalRecommendUpdated?.();
+    }
+
     // ========================================
     // ↩️ 滑动返回处理
     // ========================================
@@ -232,4 +236,3 @@ export class WeiboApp {
         window.removeEventListener('phone:swipeBack', this._swipeHandler);
     }
 }
-

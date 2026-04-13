@@ -321,8 +321,6 @@ export class PhoneShell {
                             drawerPanel.classList.remove('openDrawer', 'phone-panel-open', 'drawer-content', 'fillRight');
                             drawerPanel.classList.add('phone-panel-hidden');
                             drawerPanel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
-                            drawerIcon.classList.remove('openIcon');
-                            drawerIcon.classList.add('closedIcon');
                         }
                         // 重置样式
                         if (target) {
@@ -455,8 +453,6 @@ export class PhoneShell {
                             drawerPanel.classList.remove('openDrawer', 'phone-panel-open', 'drawer-content', 'fillRight');
                             drawerPanel.classList.add('phone-panel-hidden');
                             drawerPanel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
-                            drawerIcon.classList.remove('openIcon');
-                            drawerIcon.classList.add('closedIcon');
                         }
                         if (target) {
                             target.style.transition = '';
@@ -670,8 +666,6 @@ export class PhoneShell {
                         drawerPanel.classList.remove('openDrawer', 'phone-panel-open', 'drawer-content', 'fillRight');
                         drawerPanel.classList.add('phone-panel-hidden');
                         drawerPanel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
-                        drawerIcon.classList.remove('openIcon');
-                        drawerIcon.classList.add('closedIcon');
                     }
                 } else {
                     this.goHome();
@@ -829,4 +823,3 @@ export class PhoneShell {
         }, 4000);
     }
 }
-

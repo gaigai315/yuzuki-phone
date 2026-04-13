@@ -438,6 +438,7 @@
 /* 推荐/直播/关注/占位页共用毛玻璃底板 */
 .honey-page-recommend .honey-content,
 .honey-page-live .honey-content,
+.honey-page-mine .honey-content,
 .honey-page-follow .honey-content,
 .honey-page-placeholder .honey-content {
     background:
@@ -1048,6 +1049,258 @@
     font-size: 10px;
     line-height: 1.5;
     color: rgba(255, 213, 232, 0.76) !important;
+}
+
+.honey-page-mine .honey-content {
+    padding: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior-y: contain;
+    scrollbar-width: none;
+}
+
+.honey-page-mine .honey-content::-webkit-scrollbar {
+    display: none;
+}
+
+.honey-mine-list {
+    padding-bottom: 14px;
+    min-height: 0;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.honey-mine-list::-webkit-scrollbar {
+    display: none;
+}
+
+.honey-mine-account-card {
+    gap: 0;
+}
+
+.honey-mine-account-head {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.honey-mine-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 214, 234, 0.26);
+    background: linear-gradient(145deg, rgba(255, 118, 184, 0.76), rgba(155, 89, 214, 0.68));
+    color: #fff3f8 !important;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(34, 16, 42, 0.28);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.honey-mine-account-meta {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.honey-mine-inline-label {
+    margin: 0 0 2px 0;
+}
+
+.honey-mine-live-nickname.honey-settings-input {
+    height: 34px;
+    padding: 0 12px;
+    margin: 0;
+}
+
+.honey-mine-start-btn {
+    min-width: 64px;
+    height: 28px;
+    padding: 0 10px;
+    font-size: 12px;
+    align-self: center;
+}
+
+.honey-mine-account-stats {
+    display: grid;
+    grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(255, 182, 214, 0.08);
+    border: 1px solid rgba(255, 196, 223, 0.14);
+}
+
+.honey-mine-account-stat {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.honey-mine-account-stat-num {
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff2f8 !important;
+}
+
+.honey-mine-account-stat-label {
+    font-size: 11px;
+    color: rgba(255, 223, 237, 0.7) !important;
+}
+
+.honey-mine-account-stat-topic {
+    border-left: 1px solid rgba(255, 210, 230, 0.12);
+    padding-left: 10px;
+}
+
+.honey-mine-stat-input.honey-settings-input {
+    height: 30px;
+    padding: 0 10px;
+    margin: 0;
+    font-size: 12px;
+}
+
+.honey-mine-request-list,
+.honey-mine-friend-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.honey-mine-request-item,
+.honey-mine-friend-item {
+    border-radius: 14px;
+    border: 1px solid rgba(255, 214, 234, 0.18);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(48, 28, 58, 0.5));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 8px 16px rgba(8, 5, 10, 0.22);
+    padding: 10px 12px;
+}
+
+.honey-mine-request-top,
+.honey-mine-friend-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.honey-mine-request-top {
+    justify-content: space-between;
+}
+
+.honey-mine-request-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    flex: 0 0 36px;
+    background: linear-gradient(135deg, #ff7db6, #a45ff0);
+    border: 1px solid rgba(255, 220, 236, 0.28);
+    box-shadow: 0 4px 12px rgba(35, 18, 43, 0.3);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.honey-mine-request-meta,
+.honey-mine-friend-meta {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    overflow: hidden;
+}
+
+.honey-mine-request-name {
+    display: block;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffe6f2 !important;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.honey-mine-friend-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+}
+
+.honey-mine-request-source {
+    display: block;
+    font-size: 9px;
+    color: rgba(255, 213, 232, 0.76) !important;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.honey-mine-friend-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(255, 105, 180, 0.18);
+    border: 1px solid rgba(255, 105, 180, 0.32);
+    color: #ff7cb8 !important;
+    -webkit-text-fill-color: #ff7cb8;
+    font-size: 10px;
+    line-height: 1;
+    vertical-align: middle;
+    white-space: nowrap;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.honey-mine-friend-badge i {
+    font-size: 9px;
+    color: inherit !important;
+    -webkit-text-fill-color: inherit;
+}
+
+.honey-mine-request-message {
+    margin: 6px 0 0;
+    font-size: 10px;
+    line-height: 1.55;
+    color: rgba(255, 232, 242, 0.86) !important;
+}
+
+.honey-mine-request-inline-actions,
+.honey-mine-friend-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+
+.honey-follow-action-btn-compact {
+    min-width: 0;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    line-height: 20px;
 }
 
 .honey-hot-section-title {
@@ -1699,6 +1952,24 @@
     color: #ffd3e7 !important;
 }
 
+.honey-live-self-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 54px;
+    height: 18px;
+    padding: 0 8px;
+    margin-left: 2px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(255, 160, 197, 0.26), rgba(176, 116, 221, 0.22));
+    border: 1px solid rgba(255, 208, 228, 0.3);
+    color: #ffe6f2 !important;
+    font-size: 8px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
 .honey-live-tags {
     position: absolute;
     top: 15px;
@@ -1739,6 +2010,44 @@
     pointer-events: none;
     width: min(92%, 260px);
     max-width: calc(100% - 20px);
+}
+
+.honey-live-user-scene-preview {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 22;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 214, 234, 0.2);
+    background: linear-gradient(160deg, rgba(36, 22, 42, 0.82), rgba(18, 12, 22, 0.84));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 8px 18px rgba(0, 0, 0, 0.26);
+    padding: 8px 10px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.honey-live-user-scene-title {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    color: rgba(255, 214, 232, 0.82) !important;
+    margin-bottom: 4px;
+}
+
+.honey-live-user-scene-body {
+    max-height: 92px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior-y: contain;
+    white-space: pre-wrap;
+    font-size: 10px;
+    line-height: 1.55;
+    color: #fff0f8 !important;
 }
 
 .honey-live-gifts-list {
@@ -2059,6 +2368,27 @@
     transform-origin: 50% 50%;
 }
 
+.honey-end-live-btn {
+    flex: 0 0 auto;
+    min-width: 68px;
+    height: 26px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 176, 201, 0.4);
+    background: linear-gradient(135deg, rgba(255, 105, 155, 0.38), rgba(255, 129, 92, 0.34));
+    color: #fff1f7;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 24px;
+    text-align: center;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+    cursor: pointer;
+}
+
+.honey-end-live-btn:active {
+    transform: scale(0.98);
+    background: linear-gradient(135deg, rgba(255, 105, 155, 0.46), rgba(255, 129, 92, 0.42));
+}
+
 @keyframes honeyRefreshSpin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
@@ -2073,13 +2403,30 @@
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 16px;
     padding: 8px 12px;
-    color: #fff;
+    color: #fff !important;
+    -webkit-text-fill-color: #fff;
+    caret-color: #ffd7e7;
     font-size: 12px;
     outline: none;
 }
 
 .honey-chat-input::placeholder {
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(255, 255, 255, 0.6) !important;
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.6);
+}
+
+.honey-chat-input:focus,
+.honey-chat-input:active {
+    color: #fff !important;
+    -webkit-text-fill-color: #fff;
+}
+
+.honey-chat-input:-webkit-autofill,
+.honey-chat-input:-webkit-autofill:hover,
+.honey-chat-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #fff !important;
+    box-shadow: 0 0 0 1000px rgba(62, 39, 58, 0.92) inset;
+    transition: background-color 9999s ease-out 0s;
 }
 
 /* 礼物选择面板 */
@@ -2400,6 +2747,185 @@
     overscroll-behavior-y: contain;
 }
 
+.honey-live-collab-modal {
+    position: absolute;
+    inset: 0;
+    z-index: 255;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.honey-live-collab-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(10, 6, 12, 0.08);
+    pointer-events: auto;
+}
+
+.honey-live-collab-modal-panel {
+    position: relative;
+    width: min(220px, calc(100% - 28px));
+    border-radius: 9px;
+    border: 1px solid rgba(255, 216, 233, 0.16);
+    background: linear-gradient(145deg, rgba(44, 31, 45, 0.5), rgba(18, 13, 22, 0.34));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 4px 14px rgba(8, 5, 11, 0.34);
+    backdrop-filter: blur(6px) saturate(120%);
+    -webkit-backdrop-filter: blur(6px) saturate(120%);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: auto;
+}
+
+.honey-live-collab-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.honey-live-collab-modal-title {
+    font-size: 9px;
+    font-weight: 700;
+    color: #ffd9ea !important;
+    letter-spacing: 0.2px;
+    opacity: 0.96;
+}
+
+.honey-live-collab-modal-close {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 216, 233, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffd9ea !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.honey-live-collab-modal-close i {
+    font-size: 9px;
+}
+
+.honey-live-collab-modal-desc {
+    font-size: 8px;
+    line-height: 1.4;
+    color: rgba(255, 221, 238, 0.72) !important;
+}
+
+.honey-live-collab-modal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.honey-live-collab-request-item {
+    width: 100%;
+    border: 1px solid rgba(255, 216, 233, 0.1);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 5px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+}
+
+.honey-live-collab-request-item:active {
+    transform: scale(0.98);
+}
+
+.honey-live-collab-request-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 216, 233, 0.2);
+}
+
+.honey-live-collab-request-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.honey-live-collab-request-name {
+    min-width: 0;
+    font-size: 8px;
+    font-weight: 700;
+    color: #fff0f7 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.honey-live-collab-request-badge {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 999px;
+    font-size: 7px;
+    font-weight: 700;
+    line-height: 1.2;
+    border: 1px solid rgba(255, 216, 233, 0.18);
+    color: #ffd9ea !important;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.honey-live-collab-request-badge.is-ranked {
+    background: rgba(255, 215, 154, 0.08);
+    border-color: rgba(255, 215, 154, 0.18);
+    color: #ffd79a !important;
+}
+
+.honey-live-collab-request-badge.is-unranked {
+    background: rgba(214, 229, 255, 0.06);
+    border-color: rgba(214, 229, 255, 0.14);
+    color: #dce9ff !important;
+}
+
+.honey-live-collab-request-badge.is-host {
+    background: rgba(255, 199, 224, 0.08);
+    border-color: rgba(255, 199, 224, 0.16);
+    color: #ffe0ef !important;
+}
+
+.honey-live-collab-request-sub {
+    font-size: 7px;
+    color: rgba(255, 229, 240, 0.72) !important;
+}
+
+.honey-live-collab-request-cta {
+    font-size: 7px;
+    font-weight: 700;
+    color: #ffd79a !important;
+}
+
+.honey-live-collab-end-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.honey-live-collab-end-actions .honey-follow-action-btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 32px;
+    font-size: 11px;
+}
+
 .honey-page-settings .honey-content {
     overflow-y: auto;
     padding: 10px;
@@ -2473,6 +2999,24 @@
     background: #0a0b10 !important;
     color: #ffffff !important;
     -webkit-text-fill-color: #ffffff !important;
+}
+
+#honey-mine-live-title.honey-settings-input {
+    background: linear-gradient(145deg, rgba(18, 16, 24, 0.96), rgba(31, 20, 34, 0.92)) !important;
+    color: #fff3f8 !important;
+    -webkit-text-fill-color: #fff3f8 !important;
+    caret-color: #fff3f8 !important;
+    border-color: rgba(255, 165, 205, 0.34) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 0 0 1px rgba(0, 0, 0, 0.04);
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: none !important;
+}
+
+#honey-mine-live-title.honey-settings-input::placeholder {
+    color: rgba(255, 221, 237, 0.58) !important;
 }
 
 #honey-recharge-yuan.honey-settings-input {
@@ -2587,6 +3131,26 @@
     color: rgba(255, 255, 255, 0.72) !important;
 }
 
+#honey-mine-intro.honey-prompt-editor,
+.honey-mine-intro.honey-prompt-editor {
+    min-height: 52px !important;
+    height: 52px !important;
+    max-height: 72px !important;
+    margin-top: 8px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+    line-height: 1.4 !important;
+    resize: none !important;
+    overflow-y: auto !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+
+#honey-mine-intro.honey-prompt-editor::-webkit-scrollbar,
+.honey-mine-intro.honey-prompt-editor::-webkit-scrollbar {
+    display: none;
+}
+
 .honey-settings-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -2675,6 +3239,8 @@
 .honey-refresh-btn:disabled,
 .honey-chat-input:disabled {
     opacity: 0.55;
+    color: rgba(255, 255, 255, 0.86) !important;
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.86);
 }
 
 /* 自定义视频池列表：强制高对比可见 */

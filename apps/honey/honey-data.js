@@ -60,7 +60,10 @@ export class HoneyData {
         const safeMax = Math.max(1, Number(maxTurns) || 200);
         return (Array.isArray(turns) ? turns : [])
             .map((turn) => {
-                const assistantContext = String(turn?.assistantContext || turn?.assistant || '')
+                const assistantContext = this._normalizeLiveAssistantContextLabel(
+                    String(turn?.assistantContext || turn?.assistant || ''),
+                    { asHistory: true }
+                )
                     .replace(/\r/g, '')
                     .trim();
                 const rawUserMessage = this._sanitizeInlineText(turn?.userMessage || turn?.user || '', 220);
@@ -70,6 +73,19 @@ export class HoneyData {
             })
             .filter(Boolean)
             .slice(-safeMax);
+    }
+
+    _normalizeLiveAssistantContextLabel(text = '', options = {}) {
+        const source = String(text || '');
+        if (!source) return '';
+        const header = options?.asHistory === true
+            ? '【直播历史】'
+            : '【当前直播间状态（请在此基础上续写）】';
+
+        return source.replace(
+            /^【(?:当前直播间状态（请在此基础上续写）|直播历史)】/u,
+            header
+        );
     }
 
     _formatLiveUserMessageForPrompt(message, nickname = '') {
@@ -85,10 +101,9 @@ export class HoneyData {
     _buildLiveRuntimeContext(options = {}) {
         const currentScene = (options?.currentScene && typeof options.currentScene === 'object') ? options.currentScene : null;
         const externalComments = Array.isArray(options?.currentComments) ? options.currentComments : null;
-        const externalUserChats = Array.isArray(options?.currentUserChats) ? options.currentUserChats : null;
         const previousDescription = String(options?.previousDescription || '').trim();
 
-        if (!currentScene && !externalComments?.length && !externalUserChats?.length && !previousDescription) return '';
+        if (!currentScene && !externalComments?.length && !previousDescription) return '';
 
         const host = this._sanitizeInlineText(this._stripFollowStateSuffix(currentScene?.host || ''), 40);
         const title = this._sanitizeInlineText(currentScene?.title || '', 60);
@@ -142,16 +157,13 @@ export class HoneyData {
             .map(line => this._sanitizeInlineText(line, 160))
             .filter(Boolean)
             .slice(-12);
-        const userChatsSource = externalUserChats || currentScene?.userChats || [];
-        const userChats = (Array.isArray(userChatsSource) ? userChatsSource : [])
-            .map(line => this._sanitizeInlineText(line, 160))
-            .filter(Boolean)
-            .slice(-200);
 
         const gifts = (Array.isArray(currentScene?.gifts) ? currentScene.gifts : [])
             .map(line => this._sanitizeInlineText(line, 100))
             .filter(Boolean)
             .slice(-6);
+        const collabInfo = this._normalizeHoneyCollabRequest(currentScene?.collabRequestInfo || null);
+        const collabRequests = this._extractHoneyCollabRequests('', currentScene?.collabRequests || []);
 
         const lines = [];
         lines.push('【当前直播间状态（请在此基础上续写）】');
@@ -159,6 +171,9 @@ export class HoneyData {
         if (title) lines.push(`标题：${title}`);
         if (viewers || fans) lines.push(`状态：在线人数:${viewers || '0'} 粉丝:${fans || '0'}`);
         if (collab) lines.push(`联播：${collab}`);
+        if (collabInfo?.name) {
+            lines.push(`联播对象信息：${collabInfo.name}${collabInfo.hostType ? `｜类型:${collabInfo.hostType}` : ''}${collabInfo.rankHint ? `｜榜单:${collabInfo.rankHint}` : ''}`);
+        }
         if (intro) lines.push(`简介：${intro}`);
         if (favorability !== null) lines.push(`当前好感度：${favorability}%`);
         if (leaderboard.length > 0) {
@@ -181,14 +196,15 @@ export class HoneyData {
             comments.forEach((line, idx) => lines.push(`${idx + 1}. ${line}`));
         }
 
-        if (userChats.length > 0) {
-            lines.push('用户互动聊天记录（按时间）：');
-            userChats.forEach((line, idx) => lines.push(`${idx + 1}. ${line}`));
-        }
-
         if (gifts.length > 0) {
             lines.push('当前打赏动态（最近）：');
             gifts.forEach((line, idx) => lines.push(`${idx + 1}. ${line}`));
+        }
+        if (collabRequests.length > 0) {
+            lines.push('待处理联播申请：');
+            collabRequests.forEach((item, idx) => {
+                lines.push(`${idx + 1}. ${item.name}${item.requestType === 'host' ? `｜其他直播间` : '｜直播间网友'}${item.hostType ? `｜类型:${item.hostType}` : ''}${item.rankHint ? `｜榜单:${item.rankHint}` : ''}`);
+            });
         }
 
         return lines.join('\n');
@@ -236,6 +252,7 @@ export class HoneyData {
         if (text === '点击刷新后由 AI 生成实时剧情。') return false;
         if (text === '点击左侧刷新按钮生成剧情。') return false;
         if (text === '回推荐页下拉刷新生成剧情。') return false;
+        if (text === '输入开场白后回车开播。未点击结束直播前，这场直播会一直保留。') return false;
         if (text === '暂无剧情描写。') return false;
         if (text === '暂无剧情描写，点击刷新后自动生成。') return false;
         if (text === '正在连线中...') return false;
@@ -532,6 +549,659 @@ export class HoneyData {
         return safe;
     }
 
+    _parseHoneyFollowerNumber(raw) {
+        if (raw === null || raw === undefined) return null;
+        let text = String(raw).trim();
+        if (!text) return null;
+
+        text = text
+            .replace(/[,\s，]/g, '')
+            .replace(/(人|位|名|个)$/u, '');
+
+        const match = text.match(/^(\d+(?:\.\d+)?)(万|[wW])?$/);
+        if (!match) return null;
+
+        let value = Number(match[1]);
+        if (!Number.isFinite(value)) return null;
+        if (match[2]) value *= 10000;
+
+        return Math.max(0, Math.round(value));
+    }
+
+    _updateHoneyUserProfileFollowers(rawValue) {
+        const parsedFollowers = this._parseHoneyFollowerNumber(rawValue);
+        if (parsedFollowers === null) return null;
+
+        const profile = this.getHoneyUserProfile();
+        const currentFollowers = Math.max(0, Number.parseInt(String(profile.followers || 0), 10) || 0);
+        if (currentFollowers !== parsedFollowers) {
+            this.saveHoneyUserProfile({ followers: parsedFollowers });
+        }
+        return parsedFollowers;
+    }
+
+    getHoneyUserProfile() {
+        const parsed = this._readJSON('honey_user_profile', {}) || {};
+        const fallbackNickname = this._sanitizeInlineText(parsed.nickname || '主播', 20) || '主播';
+        const followers = Math.max(0, Number.parseInt(String(parsed.followers || 0), 10) || 0);
+        return {
+            nickname: fallbackNickname,
+            liveTitle: this._sanitizeInlineText(parsed.liveTitle || `${fallbackNickname}的直播间`, 40) || `${fallbackNickname}的直播间`,
+            avatarUrl: String(parsed.avatarUrl || '').trim(),
+            intro: this._sanitizeInlineText(parsed.intro || '今晚来我直播间聊天。', 120) || '今晚来我直播间聊天。',
+            followers,
+            accountId: this._buildHoneyUserAccountId(parsed.accountId || fallbackNickname)
+        };
+    }
+
+    saveHoneyUserProfile(patch = {}) {
+        const current = this.getHoneyUserProfile();
+        const nextNickname = this._sanitizeInlineText(patch.nickname ?? current.nickname ?? '', 20) || current.nickname || '你';
+        const nextFollowers = Math.max(0, Number.parseInt(String(patch.followers ?? current.followers ?? 0), 10) || 0);
+        const nextProfile = {
+            nickname: nextNickname,
+            liveTitle: this._sanitizeInlineText(patch.liveTitle ?? current.liveTitle ?? `${nextNickname}的直播间`, 40) || `${nextNickname}的直播间`,
+            avatarUrl: String(patch.avatarUrl ?? current.avatarUrl ?? '').trim(),
+            intro: this._sanitizeInlineText(patch.intro ?? current.intro ?? '', 120) || '今晚来我直播间聊天。',
+            followers: nextFollowers,
+            accountId: this._buildHoneyUserAccountId(patch.accountId || current.accountId || nextNickname)
+        };
+        this.storage?.set?.('honey_user_profile', JSON.stringify(nextProfile));
+        this._scheduleFlushChatPersistence();
+        return nextProfile;
+    }
+
+    _buildHoneyUserAccountId(seed = '') {
+        const base = String(seed || this.getHoneyUserNickname() || 'user')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9_\u4e00-\u9fa5]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 24);
+        return `@${base || 'user_live'}`;
+    }
+
+    _sanitizeHoneySecret(value, maxLen = 220) {
+        return String(value || '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, maxLen);
+    }
+
+    _buildHoneyFriendSecretFallback(item = {}) {
+        const anchorName = this._sanitizeInlineText(this.getHoneyUserProfile?.()?.nickname || this.getHoneyUserNickname?.() || '用户', 24) || '用户';
+        const source = this._sanitizeInlineText(item.source || '直播间', 24) || '直播间';
+        const visibleMessage = this._sanitizeInlineText(item.message || '', 80);
+        const sourceText = source.includes('直播') ? source : `${source}直播间`;
+        const tail = visibleMessage ? `当前试探方式是“${visibleMessage}”。` : '目前想先从微信上继续接近对方。';
+        return this._sanitizeHoneySecret(`该网友是在观看用户${anchorName}的${sourceText}时进入并产生兴趣，已对用户形成初步印象，正在观察用户是否值得继续靠近。${tail}`, 220);
+    }
+
+    _parseHoneyFriendRequestLine(line, fallbackSource = '直播间') {
+        const cleaned = String(line || '').replace(/^\s*(?:[-*•]+|\d{1,2}\s*[\.、])\s*/, '').trim();
+        if (!cleaned) return null;
+
+        let raw = cleaned;
+        let hiddenBackground = '';
+
+        const hiddenPatterns = [
+            /(?:[｜|])\s*隐藏(?:背景|设定|信息|印象)?\s*[：:]\s*(.+)$/i,
+            /[【\[]\s*隐藏(?:背景|设定|信息|印象)?\s*[：:]\s*([^\]】]+)\s*[】\]]\s*$/i,
+            /[（(]\s*隐藏(?:背景|设定|信息|印象)?\s*[：:]\s*([^)）]+)\s*[)）]\s*$/i
+        ];
+
+        hiddenPatterns.some((pattern) => {
+            const match = raw.match(pattern);
+            if (!match) return false;
+            hiddenBackground = this._sanitizeHoneySecret(match[1], 220);
+            raw = raw.replace(match[0], '').trim();
+            return true;
+        });
+
+        const mainMatch = raw.match(/^([^：:\n｜|]{1,24})\s*[：:]\s*(.+)$/);
+        const name = this._sanitizeInlineText(mainMatch?.[1] || raw, 24);
+        const message = this._sanitizeInlineText(mainMatch?.[2] || '想加你为好友', 80) || '想加你为好友';
+        if (!name) return null;
+
+        return this._normalizeHoneySocialPerson({
+            name,
+            message,
+            source: fallbackSource,
+            hiddenBackground
+        }, fallbackSource);
+    }
+
+    _normalizeHoneySocialPerson(item, fallbackSource = '') {
+        if (!item || typeof item !== 'object') return null;
+        const name = this._sanitizeInlineText(item.name || item.nickname || item.user || item.hostName || '', 24);
+        if (!name) return null;
+        return {
+            name,
+            avatarUrl: String(item.avatarUrl || item.avatar || '').trim(),
+            message: this._sanitizeInlineText(item.message || item.text || item.reason || '', 80),
+            source: this._sanitizeInlineText(item.source || fallbackSource || '直播间', 24) || '直播间',
+            sourceApp: this._sanitizeInlineText(item.sourceApp || item.app || 'honey', 16) || 'honey',
+            acceptedAtPhoneTime: this._sanitizeInlineText(
+                item.acceptedAtPhoneTime
+                || item.acceptTime
+                || item.addedAtPhoneTime
+                || item.friendAddedAt
+                || '',
+                40
+            ),
+            hiddenBackground: this._sanitizeHoneySecret(
+                item.hiddenBackground
+                || item.hiddenSetting
+                || item.hidden
+                || item.secret
+                || item.secretNote
+                || item.backstory
+                || item.impression
+                || '',
+                220
+            )
+        };
+    }
+
+    _parseHoneyInteractionRecordLine(line) {
+        const cleaned = String(line || '').replace(/^\s*(?:[-*•]+|\d{1,2}\s*[\.、])\s*/, '').trim();
+        if (!cleaned) return null;
+
+        const match = cleaned.match(/^\s*(?:\[|\【)?\s*([^\]】：:\n]{1,24})\s*(?:\]|\】)?\s*[：:]\s*(.+)$/);
+        const name = this._sanitizeInlineText(match?.[1] || '', 24);
+        const summary = this._sanitizeHoneySecret(match?.[2] || '', 180);
+        if (!name || !summary) return null;
+
+        return { name, summary };
+    }
+
+    _mergeHoneyInteractionSummaryIntoHiddenBackground(hiddenBackground = '', summary = '') {
+        const safeSummary = this._sanitizeHoneySecret(summary || '', 180);
+        const base = this._sanitizeHoneySecret(hiddenBackground || '', 220);
+        if (!safeSummary) return base;
+
+        const normalizedSummary = /[。；;!！?？]$/.test(safeSummary) ? safeSummary : `${safeSummary}。`;
+        const prefix = '直播互动简要：';
+        const existingMatch = base.match(/直播互动简要：([^]*?)$/);
+        const existingSummary = this._sanitizeHoneySecret(existingMatch?.[1] || '', 160);
+        if (existingSummary === safeSummary || existingSummary === normalizedSummary.replace(/[。；;!！?？]+$/g, '')) {
+            return base;
+        }
+
+        let cleanedBase = String(base || '')
+            .replace(/直播互动简要：[^]*$/g, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+        if (cleanedBase && !/[。；;!！?？]$/.test(cleanedBase)) {
+            cleanedBase = `${cleanedBase}。`;
+        }
+        return this._sanitizeHoneySecret(`${cleanedBase}${prefix}${normalizedSummary}`, 220);
+    }
+
+    applyHoneyInteractionRecords(records = []) {
+        const normalizedRecords = (Array.isArray(records) ? records : [])
+            .map(item => this._parseHoneyInteractionRecordLine(
+                typeof item === 'string'
+                    ? item
+                    : `${this._sanitizeInlineText(item?.name || item?.nickname || '', 24)}：${this._sanitizeHoneySecret(item?.summary || item?.content || item?.text || '', 180)}`
+            ))
+            .filter(Boolean);
+        if (normalizedRecords.length === 0) {
+            return { updatedFriends: 0, updatedRequests: 0, updatedContacts: 0 };
+        }
+
+        const pendingRequests = this.getHoneyFriendRequests();
+        const friends = this.getHoneyFriends();
+        let updatedRequests = 0;
+        let updatedFriends = 0;
+        let updatedContacts = 0;
+
+        normalizedRecords.forEach((record) => {
+            const targetKey = this._normalizeHostNameKey(record.name || '');
+            if (!targetKey) return;
+
+            const requestIdx = pendingRequests.findIndex(item => this._normalizeHostNameKey(item?.name || '') === targetKey);
+            if (requestIdx >= 0) {
+                const nextHiddenBackground = this._mergeHoneyInteractionSummaryIntoHiddenBackground(
+                    pendingRequests[requestIdx].hiddenBackground || this._buildHoneyFriendSecretFallback(pendingRequests[requestIdx]),
+                    record.summary
+                );
+                if (nextHiddenBackground !== pendingRequests[requestIdx].hiddenBackground) {
+                    pendingRequests[requestIdx] = {
+                        ...pendingRequests[requestIdx],
+                        hiddenBackground: nextHiddenBackground
+                    };
+                    updatedRequests += 1;
+                }
+            }
+
+            const friendIdx = friends.findIndex(item => this._normalizeHostNameKey(item?.name || '') === targetKey);
+            if (friendIdx >= 0) {
+                const nextHiddenBackground = this._mergeHoneyInteractionSummaryIntoHiddenBackground(
+                    friends[friendIdx].hiddenBackground || this._buildHoneyFriendSecretFallback(friends[friendIdx]),
+                    record.summary
+                );
+                if (nextHiddenBackground !== friends[friendIdx].hiddenBackground) {
+                    friends[friendIdx] = {
+                        ...friends[friendIdx],
+                        hiddenBackground: nextHiddenBackground
+                    };
+                    updatedFriends += 1;
+                }
+            }
+        });
+
+        if (updatedRequests > 0) this.saveHoneyFriendRequests(pendingRequests);
+        if (updatedFriends > 0) this.saveHoneyFriends(friends);
+
+        if (updatedFriends > 0) {
+            const wechatData = this._getWechatDataBridge();
+            const contacts = wechatData.getContacts?.() || [];
+            friends.forEach((friend) => {
+                const targetKey = this._normalizeHostNameKey(friend?.name || '');
+                if (!targetKey || !friend?.hiddenBackground) return;
+                const linkedContact = contacts.find(item => this._normalizeHostNameKey(item?.name || '') === targetKey);
+                if (!linkedContact?.id) return;
+                wechatData.updateContact(linkedContact.id, {
+                    honeyHiddenBackground: friend.hiddenBackground
+                });
+                updatedContacts += 1;
+            });
+        }
+
+        return { updatedFriends, updatedRequests, updatedContacts };
+    }
+
+    _normalizeHoneyCollabRequest(item, fallbackType = 'viewer') {
+        if (!item) return null;
+        if (typeof item === 'string') {
+            return this._parseHoneyCollabRequestTag(item, fallbackType);
+        }
+        if (typeof item !== 'object') return null;
+
+        const name = this._sanitizeInlineText(item.name || item.nickname || item.user || item.hostName || '', 24);
+        if (!name) return null;
+
+        const rawType = String(item.requestType || item.sourceType || item.type || item.source || fallbackType || 'viewer').trim().toLowerCase();
+        const requestType = /host|broadcaster|anchor|streamer|主播|其他直播间/.test(rawType) ? 'host' : 'viewer';
+        const hostType = this._sanitizeInlineText(item.hostType || item.figure || item.category || item.role || '', 24);
+        const rankHint = this._sanitizeInlineText(item.rankHint || item.rankLabel || item.rank || item.leaderboard || '', 24);
+
+        return {
+            name,
+            requestType,
+            hostType,
+            rankHint
+        };
+    }
+
+    _parseHoneyCollabRequestTag(line, fallbackType = 'viewer') {
+        const raw = String(line || '').trim();
+        if (!raw) return null;
+
+        const match = raw.match(/\[\s*(联播请求|其他直播间请求联播)\s*[：:]\s*([^\]\n]+)\]/i);
+        if (!match) return null;
+
+        const tagType = String(match[1] || '').trim();
+        const body = String(match[2] || '').trim();
+        const requestType = /其他直播间/.test(tagType) ? 'host' : (String(fallbackType || '').trim().toLowerCase() === 'host' ? 'host' : 'viewer');
+        const tokens = body
+            .split(/[｜|/／]/)
+            .map(item => this._sanitizeInlineText(item, 40))
+            .filter(Boolean);
+
+        let name = this._sanitizeInlineText(tokens[0] || '', 24);
+        if (!name) {
+            const fallbackName = body.match(/^(.+?)(?:(?:是否)?在榜|是否上榜|榜单|未上榜|上榜|$)/);
+            name = this._sanitizeInlineText(fallbackName?.[1] || '', 24);
+        }
+        name = String(name || '')
+            .replace(/(?:是否在榜单上排名|是否上榜|在榜单上排名|榜单排名|榜单|上榜|未上榜)$/g, '')
+            .trim();
+        name = this._sanitizeInlineText(name, 24);
+        if (!name) return null;
+
+        const detailTokens = tokens.slice(1);
+        const rankHint = requestType === 'viewer'
+            ? this._sanitizeInlineText(
+                detailTokens.find(item => /(?:榜|上榜|未上榜|第\s*[0-9一二三四五六七八九十两]+|top)/i.test(item))
+                || '',
+                24
+            )
+            : '';
+        const hostType = requestType === 'host'
+            ? this._sanitizeInlineText(
+                detailTokens.find(item => !/(?:榜|上榜|未上榜|第\s*[0-9一二三四五六七八九十两]+|top)/i.test(item))
+                || '',
+                24
+            )
+            : '';
+
+        return {
+            name,
+            requestType,
+            hostType,
+            rankHint
+        };
+    }
+
+    _extractHoneyCollabRequests(text = '', list = []) {
+        const fromList = (Array.isArray(list) ? list : [])
+            .map(item => this._normalizeHoneyCollabRequest(item))
+            .filter(Boolean);
+        const fromText = Array.from(String(text || '').matchAll(/\[\s*(?:联播请求|其他直播间请求联播)\s*[：:]\s*[^\]\n]+\]/ig))
+            .map(match => this._parseHoneyCollabRequestTag(match[0]))
+            .filter(Boolean);
+
+        const merged = [];
+        const seen = new Set();
+        [...fromList, ...fromText].forEach((item) => {
+            const key = `${String(item?.requestType || 'viewer').trim().toLowerCase()}::${String(item?.name || '').trim().toLowerCase()}`;
+            if (!item?.name || seen.has(key)) return;
+            seen.add(key);
+            merged.push(item);
+        });
+        return merged.slice(0, 6);
+    }
+
+    getHoneyFriends() {
+        const parsed = this._readJSON('honey_my_friends', []);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map(item => this._normalizeHoneySocialPerson(item, '好友'))
+            .filter(Boolean);
+    }
+
+    saveHoneyFriends(list) {
+        const safeList = Array.isArray(list)
+            ? list.map(item => this._normalizeHoneySocialPerson(item, '好友')).filter(Boolean)
+            : [];
+        this.storage?.set?.('honey_my_friends', JSON.stringify(safeList));
+        this._scheduleFlushChatPersistence();
+        return safeList;
+    }
+
+    getHoneyFriendRequests() {
+        const parsed = this._readJSON('honey_my_friend_requests', []);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map(item => this._normalizeHoneySocialPerson(item, '直播间'))
+            .filter(Boolean);
+    }
+
+    saveHoneyFriendRequests(list) {
+        const safeList = Array.isArray(list)
+            ? list.map(item => this._normalizeHoneySocialPerson(item, '直播间')).filter(Boolean)
+            : [];
+        this.storage?.set?.('honey_my_friend_requests', JSON.stringify(safeList));
+        this._scheduleFlushChatPersistence();
+        return safeList;
+    }
+
+    mergeHoneyFriendRequests(list) {
+        const incoming = Array.isArray(list)
+            ? list.map(item => this._normalizeHoneySocialPerson(item, '直播间')).filter(Boolean)
+            : [];
+        if (incoming.length === 0) {
+            return { added: 0, list: this.getHoneyFriendRequests() };
+        }
+
+        const friends = this.getHoneyFriends();
+        const friendKeys = new Set(friends.map(item => this._normalizeHostNameKey(item?.name || '')).filter(Boolean));
+        const current = this.getHoneyFriendRequests();
+        const currentKeys = new Set(current.map(item => this._normalizeHostNameKey(item?.name || '')).filter(Boolean));
+        let added = 0;
+
+        incoming.forEach((item) => {
+            const key = this._normalizeHostNameKey(item?.name || '');
+            if (!key || friendKeys.has(key)) return;
+            if (currentKeys.has(key)) {
+                const currentIndex = current.findIndex(entry => this._normalizeHostNameKey(entry?.name || '') === key);
+                if (currentIndex >= 0) {
+                    current[currentIndex] = {
+                        ...current[currentIndex],
+                        avatarUrl: String(item.avatarUrl || current[currentIndex].avatarUrl || '').trim(),
+                        message: item.message || current[currentIndex].message || '',
+                        source: item.source || current[currentIndex].source || '直播间',
+                        sourceApp: item.sourceApp || current[currentIndex].sourceApp || 'honey',
+                        hiddenBackground: item.hiddenBackground || current[currentIndex].hiddenBackground || ''
+                    };
+                }
+                return;
+            }
+            current.push(item);
+            currentKeys.add(key);
+            added += 1;
+        });
+
+        this.saveHoneyFriendRequests(current);
+        return { added, list: current };
+    }
+
+    _getCurrentPhoneDateTimeOrSystem() {
+        const currentTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || {};
+        const rawDate = String(currentTime?.date || '').trim();
+        const rawTime = String(currentTime?.time || '').trim();
+
+        const dateChunks = rawDate.match(/\d+/g) || [];
+        const safeDate = dateChunks.length >= 3
+            ? `${dateChunks[0].padStart(4, '0').slice(-4)}-${dateChunks[1].padStart(2, '0').slice(-2)}-${dateChunks[2].padStart(2, '0').slice(-2)}`
+            : '';
+        const timeMatch = rawTime.match(/(\d{1,2})[:：](\d{2})/);
+        const safeTime = timeMatch
+            ? `${String(timeMatch[1]).padStart(2, '0')}:${timeMatch[2]}`
+            : '';
+        if (safeDate && safeTime) return `${safeDate} ${safeTime}`;
+        if (safeDate) return safeDate;
+
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+
+    _injectHoneyFriendAcceptedTime(hiddenBackground = '', acceptedAtPhoneTime = '') {
+        const acceptedTime = this._sanitizeInlineText(acceptedAtPhoneTime, 40);
+        const base = this._sanitizeHoneySecret(hiddenBackground || '', 220);
+        if (!acceptedTime) return base;
+
+        const acceptedLine = `已于手机时间${acceptedTime}通过了用户的好友申请。`;
+        const cleanedBase = String(base || '')
+            .replace(/已于手机时间[^。；;!！?？\n]{1,48}通过了用户的好友申请。?/g, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+
+        if (!cleanedBase) return acceptedLine;
+        const normalizedBase = /[。；;!！?？]$/.test(cleanedBase)
+            ? cleanedBase
+            : `${cleanedBase}。`;
+        return this._sanitizeHoneySecret(`${normalizedBase}${acceptedLine}`, 220);
+    }
+
+    acceptHoneyFriendRequest(name) {
+        const safeName = this._sanitizeInlineText(name || '', 24);
+        if (!safeName) return null;
+        const requests = this.getHoneyFriendRequests();
+        const request = requests.find(item => this._normalizeHostNameKey(item?.name || '') === this._normalizeHostNameKey(safeName));
+        if (!request) return null;
+        const acceptedAtPhoneTime = this._getCurrentPhoneDateTimeOrSystem();
+        const acceptedHiddenBackground = this._injectHoneyFriendAcceptedTime(
+            request.hiddenBackground || this._buildHoneyFriendSecretFallback(request),
+            acceptedAtPhoneTime
+        );
+
+        const nextRequests = requests.filter(item => this._normalizeHostNameKey(item?.name || '') !== this._normalizeHostNameKey(safeName));
+        this.saveHoneyFriendRequests(nextRequests);
+
+        const friends = this.getHoneyFriends();
+        const existingIndex = friends.findIndex(item => this._normalizeHostNameKey(item?.name || '') === this._normalizeHostNameKey(safeName));
+        if (existingIndex >= 0) {
+            friends[existingIndex] = {
+                ...friends[existingIndex],
+                avatarUrl: request.avatarUrl || friends[existingIndex].avatarUrl || '',
+                message: request.message || friends[existingIndex].message || '',
+                source: request.source || friends[existingIndex].source || '好友',
+                sourceApp: request.sourceApp || friends[existingIndex].sourceApp || 'honey',
+                acceptedAtPhoneTime,
+                hiddenBackground: acceptedHiddenBackground
+            };
+            this.saveHoneyFriends(friends);
+        } else {
+            friends.push({
+                name: request.name,
+                avatarUrl: request.avatarUrl,
+                message: request.message,
+                source: request.source || '好友',
+                sourceApp: request.sourceApp || 'honey',
+                acceptedAtPhoneTime,
+                hiddenBackground: acceptedHiddenBackground
+            });
+            this.saveHoneyFriends(friends);
+        }
+
+        return {
+            ...request,
+            acceptedAtPhoneTime,
+            hiddenBackground: acceptedHiddenBackground
+        };
+    }
+
+    rejectHoneyFriendRequest(name) {
+        const safeName = this._sanitizeInlineText(name || '', 24);
+        if (!safeName) return [];
+        const nextRequests = this.getHoneyFriendRequests()
+            .filter(item => this._normalizeHostNameKey(item?.name || '') !== this._normalizeHostNameKey(safeName));
+        this.saveHoneyFriendRequests(nextRequests);
+        return nextRequests;
+    }
+
+    removeHoneyFriend(name) {
+        const safeName = this._sanitizeInlineText(name || '', 24);
+        if (!safeName) return null;
+
+        const currentFriends = this.getHoneyFriends();
+        const targetKey = this._normalizeHostNameKey(safeName);
+        const removedFriend = currentFriends.find(item => this._normalizeHostNameKey(item?.name || '') === targetKey) || null;
+        if (!removedFriend) return null;
+
+        const nextFriends = currentFriends.filter(item => this._normalizeHostNameKey(item?.name || '') !== targetKey);
+        this.saveHoneyFriends(nextFriends);
+
+        const wechatData = this._getWechatDataBridge();
+        const linkedContact = wechatData.getContacts()
+            .find(item => this._normalizeHostNameKey(item?.name || '') === targetKey);
+        if (linkedContact?.id) {
+            wechatData.deleteContactAndChat(linkedContact.id);
+        }
+
+        return removedFriend;
+    }
+
+    _getWechatDataBridge() {
+        if (window.VirtualPhone?.cachedWechatData instanceof WechatData) {
+            if (window.VirtualPhone?.wechatApp && window.VirtualPhone.wechatApp.wechatData !== window.VirtualPhone.cachedWechatData) {
+                window.VirtualPhone.wechatApp.wechatData = window.VirtualPhone.cachedWechatData;
+            }
+            return window.VirtualPhone.cachedWechatData;
+        }
+
+        if (window.VirtualPhone?.wechatApp?.wechatData instanceof WechatData) {
+            window.VirtualPhone.cachedWechatData = window.VirtualPhone.wechatApp.wechatData;
+            return window.VirtualPhone.wechatApp.wechatData;
+        }
+
+        const wechatData = new WechatData(this.storage);
+        if (!window.VirtualPhone) window.VirtualPhone = {};
+        window.VirtualPhone.cachedWechatData = wechatData;
+        if (window.VirtualPhone.wechatApp) {
+            window.VirtualPhone.wechatApp.wechatData = wechatData;
+        }
+        return wechatData;
+    }
+
+    ensureHoneyFriendWechatChat(nameOrFriend) {
+        const targetName = this._sanitizeInlineText(
+            typeof nameOrFriend === 'string' ? nameOrFriend : (nameOrFriend?.name || ''),
+            24
+        );
+        const friend = (typeof nameOrFriend === 'object' && nameOrFriend)
+            ? this._normalizeHoneySocialPerson(nameOrFriend, '好友')
+            : this.getHoneyFriends().find(item => this._normalizeHostNameKey(item?.name || '') === this._normalizeHostNameKey(targetName));
+        if (!friend) return null;
+
+        const wechatData = this._getWechatDataBridge();
+        const normalizedKey = this._normalizeHostNameKey(friend.name || '');
+        const contacts = wechatData.getContacts();
+        let contact = contacts.find(item => this._normalizeHostNameKey(item?.name || '') === normalizedKey) || null;
+        const hiddenBackground = friend.hiddenBackground || this._buildHoneyFriendSecretFallback(friend);
+        const relation = '蜜语好友';
+
+        if (!contact) {
+            const contactId = `contact_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+            contact = {
+                id: contactId,
+                name: friend.name,
+                avatar: friend.avatarUrl || '👤',
+                remark: '',
+                letter: wechatData.getFirstLetter(friend.name),
+                relation,
+                sourceApp: 'honey',
+                sourceLabel: '蜜语',
+                honeySource: friend.source || '直播间',
+                honeyVisibleIntro: friend.message || '',
+                honeyHiddenBackground: hiddenBackground
+            };
+            wechatData.addContact(contact);
+            contact = wechatData.getContact(contactId) || contact;
+        } else {
+            const nextRelation = String(contact.relation || '').includes('蜜语')
+                ? contact.relation
+                : (contact.relation ? `${contact.relation} / ${relation}` : relation);
+            wechatData.updateContact(contact.id, {
+                avatar: friend.avatarUrl || contact.avatar || '👤',
+                relation: nextRelation,
+                sourceApp: 'honey',
+                sourceLabel: '蜜语',
+                honeySource: friend.source || contact.honeySource || '直播间',
+                honeyVisibleIntro: friend.message || contact.honeyVisibleIntro || '',
+                honeyHiddenBackground: hiddenBackground || contact.honeyHiddenBackground || ''
+            });
+            contact = wechatData.getContact(contact.id) || {
+                ...contact,
+                avatar: friend.avatarUrl || contact.avatar || '👤',
+                relation: nextRelation,
+                sourceApp: 'honey',
+                sourceLabel: '蜜语',
+                honeySource: friend.source || contact.honeySource || '直播间',
+                honeyVisibleIntro: friend.message || contact.honeyVisibleIntro || '',
+                honeyHiddenBackground: hiddenBackground || contact.honeyHiddenBackground || ''
+            };
+        }
+
+        let chat = wechatData.getChatByContactId(contact.id);
+        if (!chat) {
+            chat = wechatData.createChat({
+                id: `chat_${contact.id}`,
+                contactId: contact.id,
+                name: contact.name,
+                type: 'single',
+                avatar: contact.avatar || '👤'
+            });
+        } else {
+            chat.name = contact.name;
+            chat.avatar = contact.avatar || chat.avatar || '👤';
+            wechatData.saveData();
+        }
+
+        if (window.VirtualPhone?.wechatApp) {
+            window.VirtualPhone.wechatApp.wechatData = wechatData;
+            if (window.VirtualPhone.wechatApp.currentView === 'contacts' || window.VirtualPhone.wechatApp.currentChat?.contactId === contact.id) {
+                window.VirtualPhone.wechatApp.render();
+            }
+        }
+
+        return { friend, contact, chat, wechatData };
+    }
+
     getHoneyCoinBalance() {
         const raw = this.storage?.get?.('honey_coin_balance');
         const num = Number.parseFloat(raw);
@@ -638,6 +1308,50 @@ export class HoneyData {
             coinGain,
             balanceBefore,
             balanceAfter
+        };
+    }
+
+    withdrawHoneyCoinsToWechat(coinAmount) {
+        const coins = Math.max(0, Math.floor(Number.parseFloat(coinAmount) || 0));
+        if (coins <= 0) {
+            return { success: false, reason: 'invalid_amount' };
+        }
+
+        const balanceBefore = this.getHoneyCoinBalance();
+        if (balanceBefore < coins) {
+            return {
+                success: false,
+                reason: 'coin_insufficient',
+                balanceBefore,
+                coinAmount: coins
+            };
+        }
+
+        const walletInfo = this.getWechatWalletBalanceForRecharge();
+        if (!walletInfo.available) {
+            return { success: false, reason: 'wechat_unavailable' };
+        }
+        if (!walletInfo.initialized) {
+            return { success: false, reason: 'wallet_not_initialized' };
+        }
+
+        const wechatData = this._getWechatDataForRecharge();
+        if (!wechatData || typeof wechatData.updateWalletBalance !== 'function') {
+            return { success: false, reason: 'wechat_unavailable' };
+        }
+        const amountYuan = Math.round((coins / 10) * 100) / 100;
+        const balanceAfter = this.setHoneyCoinBalance(balanceBefore - coins);
+        wechatData.updateWalletBalance(amountYuan);
+        const walletAfterRaw = wechatData.getWalletBalance?.();
+        const walletAfter = Number.isFinite(Number(walletAfterRaw)) ? Number(walletAfterRaw) : amountYuan;
+
+        return {
+            success: true,
+            coinAmount: coins,
+            amountYuan,
+            balanceBefore,
+            balanceAfter,
+            walletAfter
         };
     }
 
@@ -976,6 +1690,354 @@ export class HoneyData {
         }
     }
 
+    _extractJsonPayload(rawText = '') {
+        const raw = String(rawText || '').trim();
+        if (!raw) return null;
+
+        const honeyMatch = raw.match(/<Honey>([\s\S]*?)<\/Honey>/i);
+        const source = String(honeyMatch?.[1] || raw).trim();
+        if (!source) return null;
+
+        const codeBlockMatch = source.match(/```json\s*([\s\S]*?)\s*```/i);
+        const codeJson = String(codeBlockMatch?.[1] || '').trim();
+        if (codeJson) {
+            try {
+                return JSON.parse(codeJson.replace(/,\s*([\]}])/g, '$1'));
+            } catch (e) {
+                // ignore and fallback
+            }
+        }
+
+        const directMatch = source.match(/\{[\s\S]*\}/);
+        const directJson = String(directMatch?.[0] || '').trim();
+        if (!directJson) return null;
+
+        try {
+            return JSON.parse(directJson.replace(/,\s*([\]}])/g, '$1'));
+        } catch (e) {
+            return null;
+        }
+    }
+
+    _normalizeHoneyCommentObjects(list = []) {
+        return (Array.isArray(list) ? list : [])
+            .map((item) => {
+                if (typeof item === 'string') return this._normalizeCommentLine(item);
+                if (!item || typeof item !== 'object') return '';
+                const rankRaw = this._sanitizeInlineText(item.rank || item.type || '', 12);
+                const rank = rankRaw ? `[${rankRaw}]` : '';
+                const name = this._sanitizeInlineText(item.name || item.nickname || item.user || '匿名', 24) || '匿名';
+                const text = this._sanitizeInlineText(item.text || item.content || item.message || '', 180);
+                if (!text) return '';
+                return `${rank}${name}: ${text}`.trim();
+            })
+            .map(line => this._normalizeCommentLine(line))
+            .filter(Boolean)
+            .slice(-24);
+    }
+
+    parseHoneyUserLiveContent(rawText) {
+        const raw = String(rawText || '');
+        const honeyMatch = raw.match(/<Honey>([\s\S]*?)<\/Honey>/i);
+        const text = (honeyMatch ? honeyMatch[1] : raw).replace(/\r/g, '').trim();
+        const profile = this.getHoneyUserProfile();
+        const payload = this._extractJsonPayload(rawText);
+
+        // 兼容旧版 JSON，但优先按当前 <Honey> 行结构解析
+        if ((!text || !/(?:在线人数|粉丝数|榜单|打赏记录|好友申请|互动记录|直播剧情描写|评论区)[：:]/.test(text)) && payload) {
+            const live = (payload?.live && typeof payload.live === 'object') ? payload.live : (payload || {});
+            const comments = this._normalizeHoneyCommentObjects(live?.comments);
+            const gifts = (Array.isArray(live?.gifts) ? live.gifts : [])
+                .map(item => this._sanitizeInlineText(item, 100))
+                .filter(Boolean)
+                .slice(-8);
+            const leaderboard = (Array.isArray(live?.leaderboard) ? live.leaderboard : [])
+                .map((item, idx) => {
+                    if (!item || typeof item !== 'object') return null;
+                    const name = this._sanitizeInlineText(item.name || item.nickname || '', 24);
+                    const coins = this._sanitizeInlineText(item.coins || item.score || item.gift || '', 20);
+                    if (!name) return null;
+                    return {
+                        rank: Math.max(1, Number.parseInt(String(item.rank || idx + 1), 10) || (idx + 1)),
+                        name,
+                        coins
+                    };
+                })
+                .filter(Boolean)
+                .slice(0, 3);
+            const friendRequests = (Array.isArray(live?.friendRequests) ? live.friendRequests : [])
+                .map(item => this._normalizeHoneySocialPerson(item, '直播间'))
+                .filter(Boolean)
+                .slice(0, 6);
+            const interactionRecords = (Array.isArray(live?.interactionRecords) ? live.interactionRecords : [])
+                .map(item => this._parseHoneyInteractionRecordLine(
+                    typeof item === 'string'
+                        ? item
+                        : `${this._sanitizeInlineText(item?.name || item?.nickname || '', 24)}：${this._sanitizeHoneySecret(item?.summary || item?.content || item?.text || '', 180)}`
+                ))
+                .filter(Boolean)
+                .slice(0, 8);
+            const collabRequests = this._extractHoneyCollabRequests(rawText, live?.collabRequests || payload?.collabRequests || []);
+            const collabRequestInfo = this._normalizeHoneyCollabRequest(live?.collabRequestInfo || payload?.collabRequestInfo || null);
+
+            return {
+                host: profile.nickname,
+                title: this._sanitizeInlineText(live?.title || profile.liveTitle || `${profile.nickname}的直播间`, 40) || profile.liveTitle || `${profile.nickname}的直播间`,
+                viewers: this._sanitizeInlineText(live?.viewers || live?.online || '0', 24) || '0',
+                playCount: this._sanitizeInlineText(live?.viewers || live?.online || '0', 24) || '0',
+                fans: this._sanitizeInlineText(live?.fans || live?.followers || payload?.followers || String(profile.followers || 0), 24) || String(profile.followers || 0),
+                collab: this._normalizeCollabValue(live?.collab || live?.collabUser || live?.collabName || '无'),
+                collabCost: Math.max(0, Number.parseInt(String(live?.collabCost || 0), 10) || 0),
+                leaderboard: [],
+                intro: this._sanitizeInlineText(live?.intro || profile.intro || '', 120) || profile.intro || '',
+                naiPrompt: '',
+                description: String(live?.description || live?.scene || live?.story || '').trim()
+                    || (this._normalizeCollabValue(live?.collab || live?.collabUser || live?.collabName || '无') !== '无'
+                        ? '联播已接通，互动正在持续推进。'
+                        : '当前暂无联播剧情，直播主要通过弹幕滚动推进。'),
+                comments: comments.length > 0 ? comments : ['[粉丝]系统: 直播已开启，观众正在进入房间'],
+                gifts,
+                audienceGiftTotals: {},
+                userGiftRank: null,
+                recommendTopics: [],
+                friendRequests,
+                interactionRecords,
+                collabRequests,
+                collabRequestInfo,
+                isUserLive: true
+            };
+        }
+
+        const titleMatch = text.match(/(?:^|\n)\s*(?:直播标题|标题)\s*[：:]\s*([^\n]+)\s*(?:\n|$)/i);
+        const viewersMatch = text.match(/(?:^|\n)\s*(?:在线人数|在线)\s*[：:]\s*([^\n]+)\s*(?:\n|$)/i);
+        const fansMatch = text.match(/(?:^|\n)\s*粉丝(?:数)?\s*[：:]\s*([^\n]+)\s*(?:\n|$)/i);
+        const introMatch = text.match(/(?:^|\n)\s*简介\s*[：:]\s*([^\n]+)\s*(?:\n|$)/i);
+        let collab = '无';
+        let collabCost = 0;
+
+        const sectionEndPattern = /(?:^|\n)\s*(?:在线人数|在线|粉丝数|粉丝|榜单|打赏记录(?:（[^）]*）|\([^\)]*\))?|评论区|直播剧情描写|剧情面板|直播实况|好友申请|互动记录)\s*[：:]/i;
+        const explicitCollabValues = Array.from(text.matchAll(/联播\s*(?:[（(]\s*金币\s*[：:]\s*(\d+)\s*[)）])?\s*[：:]\s*([^\]】\n]+)/ig))
+            .map(match => ({
+                name: String(match?.[2] || '').trim(),
+                cost: Number.parseInt(String(match?.[1] || '').trim(), 10)
+            }))
+            .filter(item => item.name);
+        if (explicitCollabValues.length > 0) {
+            const collabItem = explicitCollabValues.find(item => this._normalizeCollabValue(item.name) !== '无') || explicitCollabValues[0];
+            collab = this._normalizeCollabValue(collabItem?.name || '无');
+            if (Number.isFinite(collabItem?.cost) && collabItem.cost >= 0) {
+                collabCost = collabItem.cost;
+            }
+        }
+        const leaderboardSection = this._extractSectionByPatternPairs(text, [
+            { start: /(?:^|\n)\s*榜单\s*[：:]\s*/i, end: /(?:^|\n)\s*(?:打赏记录(?:（[^）]*）|\([^\)]*\))?|评论区|直播剧情描写|剧情面板|直播实况|好友申请)\s*[：:]/i }
+        ]);
+        const giftsSection = this._extractSectionByPatternPairs(text, [
+            { start: /(?:^|\n)\s*打赏记录(?:（[^）]*）|\([^\)]*\))?\s*[：:]\s*/i, end: /(?:^|\n)\s*(?:评论区|直播剧情描写|剧情面板|直播实况|好友申请)\s*[：:]/i }
+        ]);
+        const commentsSection = this._extractSectionByPatternPairs(text, [
+            { start: /(?:^|\n)\s*(?:评论区)\s*[：:]\s*/i, end: /(?:^|\n)\s*(?:直播剧情描写|剧情面板|直播实况|好友申请)\s*[：:]/i }
+        ]);
+        const storySection = this._extractSectionByPatternPairs(text, [
+            { start: /(?:^|\n)\s*(?:直播剧情描写|剧情面板|直播实况)\s*[：:]\s*/i, end: /(?:^|\n)\s*(?:好友申请|互动记录)\s*[：:]/i },
+            { start: /(?:^|\n)\s*(?:直播剧情描写|剧情面板|直播实况)\s*(?:\n|$)/i, end: /(?:^|\n)\s*(?:好友申请|互动记录)\s*[：:]/i }
+        ]);
+        const friendRequestSection = this._extractSectionByPatternPairs(text, [
+            { start: /(?:^|\n)\s*好友申请\s*[：:]\s*/i, end: /(?:^|\n)\s*互动记录\s*[：:]/i },
+            { start: /(?:^|\n)\s*好友申请\s*[：:]\s*/i, end: null }
+        ]);
+        const interactionRecordSection = this._extractSectionByPatternPairs(text, [
+            { start: /(?:^|\n)\s*互动记录\s*[：:]\s*/i, end: null }
+        ]);
+
+        const leaderboard = this._parseLeaderboardSection(leaderboardSection, 3);
+        const gifts = String(giftsSection || '')
+            .split('\n')
+            .map(line => line.replace(/^\s*(?:[-*•]+|\d{1,2}\s*[\.、])\s*/, '').trim())
+            .map(line => this._sanitizeInlineText(line, 100))
+            .filter(line => line && /(?:打赏|送出|赠送|贡献|金币|金豆|[🌹🍆🍑💋🔗⛓️📿🪢🏎️🚀💎👑🍾])/u.test(line))
+            .slice(-8);
+        const comments = String(commentsSection || '')
+            .split('\n')
+            .map(line => this._normalizeCommentLine(line))
+            .filter(Boolean)
+            .slice(-24);
+        const friendRequests = String(friendRequestSection || '')
+            .split('\n')
+            .map(line => this._parseHoneyFriendRequestLine(line, '直播间'))
+            .filter(Boolean)
+            .slice(0, 6);
+        const interactionRecords = String(interactionRecordSection || '')
+            .split('\n')
+            .map(line => this._parseHoneyInteractionRecordLine(line))
+            .filter(Boolean)
+            .slice(0, 8);
+        const collabRequests = this._extractHoneyCollabRequests(text);
+        const cleanedStory = String(storySection || '')
+            .split('\n')
+            .map(line => line.replace(/\s+$/g, ''))
+            .filter(line => !/禁止代替用户|禁止替用户|不要代替user|请为用户的直播间/.test(line))
+            .join('\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+        return {
+            host: profile.nickname,
+            title: this._sanitizeInlineText(titleMatch?.[1] || profile.liveTitle || `${profile.nickname}的直播间`, 40) || profile.liveTitle || `${profile.nickname}的直播间`,
+            viewers: this._sanitizeInlineText(viewersMatch?.[1] || '0', 24) || '0',
+            playCount: this._sanitizeInlineText(viewersMatch?.[1] || '0', 24) || '0',
+            fans: this._sanitizeInlineText(fansMatch?.[1] || String(profile.followers || 0), 24) || String(profile.followers || 0),
+            collab,
+            collabCost,
+            leaderboard: [],
+            intro: this._sanitizeInlineText(introMatch?.[1] || profile.intro || '', 120) || profile.intro || '',
+            naiPrompt: '',
+            description: cleanedStory
+                || (collab !== '无'
+                    ? '联播已接通，互动正在持续推进。'
+                    : '当前暂无联播剧情，直播主要通过弹幕滚动推进。'),
+            comments: comments.length > 0 ? comments : ['[粉丝]系统: 直播已开启，观众正在进入房间'],
+            gifts,
+            audienceGiftTotals: {},
+            userGiftRank: null,
+            recommendTopics: [],
+            friendRequests,
+            interactionRecords,
+            collabRequests,
+            collabRequestInfo: null,
+            isUserLive: true
+        };
+    }
+
+    async generateUserLiveScene(onProgress, options = {}) {
+        if (onProgress) onProgress('正在搭建你的直播间...');
+
+        const promptManager = window.VirtualPhone?.promptManager;
+        promptManager?.ensureLoaded();
+        const prompt = promptManager?.getPromptForFeature('honey', 'userLive') || '';
+        const profile = this.getHoneyUserProfile();
+        const runtimeContext = this._buildLiveRuntimeContext(options);
+        const friends = this.getHoneyFriends();
+        const pendingRequests = this.getHoneyFriendRequests();
+        const safeUserMessage = this._sanitizeInlineText(options?.userMessage || '', 220);
+        const safeUserMessageWithNick = this._formatLiveUserMessageForPrompt(safeUserMessage, profile.nickname);
+        const historyTurns = this._normalizeContinuePromptTurns(options?.promptTurns);
+        const mode = String(options?.requestMode || '').trim();
+        const currentFollowers = Math.max(0, Number.parseInt(String(profile.followers || 0), 10) || 0);
+
+        const messages = [
+            {
+                role: 'system',
+                content: String(prompt || '').trim() || '你是蜜语用户开播引擎，只返回 <Honey> 结构。',
+                isPhoneMessage: true
+            },
+            {
+                role: 'system',
+                content: [
+                    `【开播者昵称】${profile.nickname}`,
+                    `【开播者账号】${profile.accountId}`,
+                    `【今日直播主题】${profile.liveTitle || `${profile.nickname}的直播间`}`,
+                    `【开播者简介】${profile.intro || '暂无简介'}`,
+                    `【当前粉丝数量】${currentFollowers}`,
+                    '【已有好友列表】',
+                    ...(friends.length > 0 ? friends.slice(0, 50).map((item, idx) => `${idx + 1}. ${item.name}`) : ['暂无']),
+                    '【待处理好友申请】',
+                    ...(pendingRequests.length > 0
+                        ? pendingRequests.slice(0, 50).map((item, idx) => `${idx + 1}. ${item.name}${item.message ? `：${item.message}` : ''}${item.hiddenBackground ? `｜隐藏背景：${item.hiddenBackground}` : ''}`)
+                        : ['暂无']),
+                    '以上好友与申请仅用于内部参考，禁止重复生成同名好友申请。',
+                    '好友申请输出格式强制为：网友昵称：表层申请话术｜隐藏背景：该网友是在什么场景下认识用户、对用户的第一印象、目前的试探想法。隐藏背景会进入后续微信聊天设定。'
+                ].join('\n'),
+                isPhoneMessage: true
+            }
+        ];
+
+        if (mode === 'continue') {
+            messages.push({
+                role: 'system',
+                content: '这是同一场用户自己的直播，必须在已有直播状态上续写，不得重置世界线。',
+                isPhoneMessage: true
+            });
+            historyTurns.forEach((turn) => {
+                messages.push({ role: 'assistant', content: turn.assistantContext, isPhoneMessage: true });
+                messages.push({ role: 'user', content: turn.userMessage, isPhoneMessage: true });
+            });
+            if (runtimeContext) {
+                messages.push({ role: 'assistant', content: runtimeContext, isPhoneMessage: true });
+            }
+            if (safeUserMessageWithNick) {
+                messages.push({ role: 'user', content: safeUserMessageWithNick, isPhoneMessage: true });
+            }
+        } else if (mode === 'start_with_user_message') {
+            messages.push({
+                role: 'system',
+                content: '这是用户这场直播的开场阶段。请把用户刚发出的这句内容视为开场白或开播动作，据此正式生成本场直播的第一轮实时数据。',
+                isPhoneMessage: true
+            });
+            if (safeUserMessageWithNick) {
+                messages.push({ role: 'user', content: safeUserMessageWithNick, isPhoneMessage: true });
+            }
+        } else if (mode === 'idle') {
+            return {
+                host: profile.nickname,
+                title: profile.liveTitle || `${profile.nickname}的直播间`,
+                viewers: '0',
+                playCount: '0',
+                fans: String(currentFollowers),
+                collab: '无',
+                collabCost: 0,
+                leaderboard: [],
+                intro: profile.intro || '',
+                naiPrompt: '',
+                description: '输入开场白后回车开播。未点击结束直播前，这场直播会一直保留。',
+                comments: [],
+                gifts: [],
+                audienceGiftTotals: {},
+                userGiftRank: null,
+                recommendTopics: [],
+                friendRequests: [],
+                isUserLive: true,
+                promptTurns: historyTurns
+            };
+        } else {
+            messages.push({
+                role: 'user',
+                content: '请生成一场“用户自己开播”的初始直播状态，只返回符合要求的 <Honey> 结构。',
+                isPhoneMessage: true
+            });
+        }
+
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager) throw new Error('API Manager 未初始化');
+
+        const context = this._getContext();
+        const result = await apiManager.callAI(messages, {
+            max_tokens: Number.parseInt(context?.max_response_length, 10)
+                || Number.parseInt(context?.max_length, 10)
+                || Number.parseInt(context?.maxContextLength, 10)
+                || 8192,
+            preserve_roles: false,
+            appId: 'honey'
+        });
+        if (!result?.success) throw new Error(result?.error || 'AI 返回为空');
+
+        const rawText = result.summary || result.content || result.text || '';
+        const filteredText = applyPhoneTagFilter(rawText, { storage: this.storage });
+        const parsed = this.parseHoneyUserLiveContent(filteredText || rawText);
+        this._updateHoneyUserProfileFollowers(parsed?.fans);
+        if (mode === 'continue') {
+            const nextPromptTurns = [...historyTurns];
+            if (runtimeContext && safeUserMessageWithNick) {
+                nextPromptTurns.push({
+                    assistantContext: this._normalizeLiveAssistantContextLabel(runtimeContext, { asHistory: true }),
+                    userMessage: safeUserMessageWithNick
+                });
+            }
+            parsed.promptTurns = nextPromptTurns;
+        }
+        return parsed;
+    }
+
     async generateLiveScene(onProgress, options = {}) {
         if (onProgress) onProgress('正在连线直播间...');
 
@@ -1173,7 +2235,7 @@ export class HoneyData {
             const nextPromptTurns = [...historyTurns];
             if (runtimeContext && safeUserMessageWithNick) {
                 nextPromptTurns.push({
-                    assistantContext: runtimeContext,
+                    assistantContext: this._normalizeLiveAssistantContextLabel(runtimeContext, { asHistory: true }),
                     userMessage: safeUserMessageWithNick
                 });
             }
@@ -1203,7 +2265,8 @@ export class HoneyData {
             gifts: [],
             audienceGiftTotals: {},
             userGiftRank: null,
-            recommendTopics: []
+            recommendTopics: [],
+            friendRequests: []
         };
 
         const recommendSection = this._extractSectionByPatternPairs(text, [
@@ -1319,6 +2382,7 @@ export class HoneyData {
         }
 
         const commentsSection = this._extractSectionByPatternPairs(liveSection, [
+            { start: commentHeaderPattern, end: /(?:^|\n)\s*好友申请\s*[：:]/i },
             { start: commentHeaderPattern, end: null }
         ]);
         if (commentsSection) {
@@ -1333,6 +2397,17 @@ export class HoneyData {
         }
         if (!data.comments.length) {
             data.comments = ['系统公告: 连线成功，剧情已刷新。'];
+        }
+
+        const friendRequestSection = this._extractSectionByPatternPairs(liveSection, [
+            { start: /(?:^|\n)\s*好友申请\s*[：:]\s*/i, end: null }
+        ]);
+        if (friendRequestSection) {
+            data.friendRequests = String(friendRequestSection || '')
+                .split('\n')
+                .map(line => this._parseHoneyFriendRequestLine(line, data.host || '直播间'))
+                .filter(Boolean)
+                .slice(0, 4);
         }
 
         if (!Array.isArray(data.leaderboard) || data.leaderboard.length === 0) {
@@ -1392,6 +2467,7 @@ export class HoneyData {
         if (/^(?:---+|===+)$/.test(text)) return '';
         if (/^(?:互动区|打赏记录|直播剧情描写|画面|简介|主播|标题|在线人数|粉丝)[：:]/.test(text)) return '';
         if (/^\[\s*评论区\s*\]/i.test(text)) return '';
+        if (/^\[\s*(?:联播请求|其他直播间请求联播)\s*[：:]/i.test(text)) return '';
         if (/^(?:生成|不少于|至少)\d*条/.test(text)) return '';
 
         text = text

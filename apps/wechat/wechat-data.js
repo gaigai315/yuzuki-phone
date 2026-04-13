@@ -502,6 +502,40 @@ export class WechatData {
         
         return null;
     }
+
+    _getStoryTimeFallback() {
+        try {
+            const timeManager = window.VirtualPhone?.timeManager;
+            if (timeManager?.getCurrentStoryTime) {
+                const storyTime = timeManager.getCurrentStoryTime();
+                if (storyTime?.time && storyTime?.date) {
+                    const parsedTimestamp = Number.isFinite(Number(storyTime.timestamp))
+                        ? Number(storyTime.timestamp)
+                        : (typeof timeManager.parseTimeToTimestamp === 'function'
+                            ? timeManager.parseTimeToTimestamp(storyTime)
+                            : Date.now());
+                    return {
+                        time: storyTime.time,
+                        date: storyTime.date,
+                        weekday: storyTime.weekday || '星期一',
+                        timestamp: parsedTimestamp
+                    };
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ 获取剧情时间兜底失败:', e);
+        }
+
+        const now = new Date();
+        const pad = (value) => String(value).padStart(2, '0');
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        return {
+            time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+            date: `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日`,
+            weekday: weekdays[now.getDay()],
+            timestamp: now.getTime()
+        };
+    }
     
        addMessage(chatId, message) {
         // 🔥 关键修复：先触发懒加载，避免在“未打开聊天”的情况下把历史消息数组覆盖成空
@@ -587,8 +621,15 @@ export class WechatData {
         if (isDuplicate) return false; // 拦截重复
 
         // 🔥 时间戳保底机制
+        const storyTimeFallback = this._getStoryTimeFallback();
         if (!message.time) {
-            message.time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            message.time = storyTimeFallback.time;
+        }
+        if (!message.date) {
+            message.date = storyTimeFallback.date;
+        }
+        if (!message.weekday) {
+            message.weekday = storyTimeFallback.weekday;
         }
         if (!message.timestamp) {
             // 🔥 优先根据 date + time 计算剧情时间戳（修复线下转线上跨天时间不更新）
@@ -600,13 +641,13 @@ export class WechatData {
                         const dateObj = new Date(parseInt(dateParts[1]), parseInt(dateParts[2]) - 1, parseInt(dateParts[3]), parseInt(timeParts[1]), parseInt(timeParts[2]));
                         message.timestamp = dateObj.getTime();
                     } else {
-                        message.timestamp = Date.now();
+                        message.timestamp = storyTimeFallback.timestamp || Date.now();
                     }
                 } catch (e) {
-                    message.timestamp = Date.now();
+                    message.timestamp = storyTimeFallback.timestamp || Date.now();
                 }
             } else {
-                message.timestamp = Date.now();
+                message.timestamp = storyTimeFallback.timestamp || Date.now();
             }
         }
         if (!message.realTimestamp) {
@@ -639,10 +680,45 @@ export class WechatData {
         return true;
     }
 
+    updateMessageById(chatId, messageId, patch = {}) {
+        const safeChatId = String(chatId || '').trim();
+        const safeMessageId = String(messageId || '').trim();
+        if (!safeChatId || !safeMessageId || !patch || typeof patch !== 'object') return null;
+
+        const messages = this.getMessages(safeChatId);
+        if (!Array.isArray(messages) || messages.length === 0) return null;
+
+        const targetIndex = messages.findIndex(msg => String(msg?.id || '').trim() === safeMessageId);
+        if (targetIndex < 0) return null;
+
+        messages[targetIndex] = {
+            ...messages[targetIndex],
+            ...patch
+        };
+
+        const chat = this.getChat(safeChatId);
+        if (chat && targetIndex === messages.length - 1) {
+            chat.lastMessage = this.getMessagePreview(messages[targetIndex]);
+            chat.time = messages[targetIndex].time || chat.time || '';
+            chat.timestamp = messages[targetIndex].timestamp || chat.timestamp || Date.now();
+        }
+
+        this._messagesLoaded[safeChatId] = true;
+        this._messagesDirty[safeChatId] = true;
+        this._saveMessages(safeChatId);
+        this.saveData();
+        return messages[targetIndex];
+    }
+
 /**
  * 🔥 获取消息预览文本（用于聊天列表显示）
  */
 getMessagePreview(message) {
+    const stripSpeechPrefix = (text) => String(text || '')
+        .replace(/^\s*(?:\[\s*(?:语音|视频|语音通话|视频通话|通话)\s*\]|【\s*(?:语音|视频|语音通话|视频通话|通话)\s*】)\s*/i, '')
+        .replace(/^\s*(?:语音|视频)(?:通话)?\s*[：:]\s*/i, '')
+        .trim();
+
     switch (message.type) {
         case 'image':
             return '[图片]';
@@ -660,11 +736,11 @@ getMessagePreview(message) {
             return message.callType === 'video' ? '[视频通话]' : '[语音通话]';
         case 'call_text':
             const icon = message.callType === 'video' ? '📹' : '📞';
-            return `${icon} ${message.content || ''}`;
+            return `${icon} ${stripSpeechPrefix(message.content || '')}`;
         case 'weibo_card':
             return '[微博分享]';
         default:
-            return message.content || '';
+            return stripSpeechPrefix(message.content || '');
     }
 }
 
@@ -1653,10 +1729,7 @@ parseAIResponse(text) {
         // 1. 找到对应的单聊会话并删除
         const chat = this.getChatByContactId(contactId);
         if (chat && chat.type !== 'group') {
-            // 删除聊天记录
-            delete this.data.messages[chat.id];
-            // 删除聊天
-            this.data.chats = this.data.chats.filter(c => c.id !== chat.id);
+            this.deleteChat(chat.id);
         }
 
         // 2. 删除联系人
@@ -1670,7 +1743,6 @@ parseAIResponse(text) {
 
         // 3. 保存数据
         this.saveData();
-
     }
 
     // ========================================
@@ -1774,4 +1846,3 @@ deleteCustomEmoji(emojiId) {
     
    }
 }
-

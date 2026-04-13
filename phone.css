@@ -40,6 +40,30 @@
     cursor: pointer;
 }
 
+#phoneDrawerToolEntry {
+    width: 100%;
+}
+
+#phoneDrawerToolRow {
+    align-items: center;
+    justify-content: flex-start;
+}
+
+#phoneDrawerToolRow > #phoneDrawerIcon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1em;
+    line-height: 1;
+    color: inherit !important;
+    margin-left: 0;
+    transform: translateY(0.02em);
+}
+
+#phoneDrawerToolRow > span {
+    line-height: 1.2;
+}
+
 /* ========================================
    精准覆盖 - 只针对手机面板
    ======================================== */
@@ -2113,12 +2137,25 @@ input:checked + .toggle-slider:before {
 .phone-view-current .honey-page-recommend .honey-recommend-wrap,
 .honey-page-recommend .honey-recommend-wrap,
 .phone-view-current .honey-page-follow .honey-recommend-wrap,
-.honey-page-follow .honey-recommend-wrap {
+.honey-page-follow .honey-recommend-wrap,
+.phone-view-current .honey-page-mine .honey-content,
+.honey-page-mine .honey-content,
+.phone-view-current .honey-page-mine .honey-mine-list,
+.honey-page-mine .honey-mine-list {
     overflow-y: auto !important;
     overflow-x: hidden !important;
     -webkit-overflow-scrolling: touch !important;
     touch-action: pan-y !important;
     overscroll-behavior-y: contain;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+
+.phone-view-current .honey-page-mine .honey-content::-webkit-scrollbar,
+.honey-page-mine .honey-content::-webkit-scrollbar,
+.phone-view-current .honey-page-mine .honey-mine-list::-webkit-scrollbar,
+.honey-page-mine .honey-mine-list::-webkit-scrollbar {
+    display: none !important;
 }
 
 /* 蜜语关注-视频弹窗滚动豁免：允许弹窗列表内纵向滚动 */

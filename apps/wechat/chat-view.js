@@ -23,9 +23,11 @@ export class ChatView {
         this.showToolbar = false; // 工具栏默认折叠
         this.emojiTab = 'default';
         this.isSending = false;  // 🔥 发送状态
+        this._activeSendingChatId = null;
+        this._isFlushingPending = false;
         this.abortController = null;  // 🔥 用于中断请求
         this.batchTimer = null;  // 🔥 智能连发倒计时
-        this.pendingTargetChatId = null; // 🔥 记录正在等待AI回复的具体会话ID
+        this.pendingChatIds = new Set(); // 🔥 记录等待统一发送的会话队列
         this.activeQuote = null;  // 🔥 当前激活的引用消息
         this.audioPlayer = new Audio();
         this.currentPlayingMsgId = null;
@@ -45,9 +47,63 @@ export class ChatView {
         return !!val;
     }
 
+    _getPendingChatIdsOrdered(preferredChatId = null) {
+        const preferred = String(preferredChatId || '').trim();
+        const ids = Array.from(this.pendingChatIds || []).map(id => String(id || '').trim()).filter(Boolean);
+        if (!preferred) return ids;
+        const unique = [];
+        if (ids.includes(preferred)) unique.push(preferred);
+        ids.forEach((id) => {
+            if (id !== preferred) unique.push(id);
+        });
+        return unique;
+    }
+
+    _enqueuePendingChat(chatId, { shouldStartTimer = true, shouldShowStatus = true } = {}) {
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId) return;
+        this.pendingChatIds.add(safeChatId);
+
+        if (!this.isOnlineMode()) return;
+
+        if (shouldStartTimer) {
+            clearTimeout(this.batchTimer);
+            this.batchTimer = setTimeout(() => this.triggerAI(), 6000);
+        }
+
+        if (shouldShowStatus) {
+            this.showTypingStatus('等待回复', safeChatId);
+        }
+    }
+
+    _dequeuePendingChat(chatId) {
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId) return;
+        this.pendingChatIds.delete(safeChatId);
+    }
+
+    _hasPendingChat(chatId = null) {
+        if (!chatId) return this.pendingChatIds.size > 0;
+        return this.pendingChatIds.has(String(chatId || '').trim());
+    }
+
+    _restartPendingTimerIfNeeded(preferredChatId = null) {
+        if (!this.isOnlineMode() || this.pendingChatIds.size === 0) {
+            clearTimeout(this.batchTimer);
+            return;
+        }
+        clearTimeout(this.batchTimer);
+        this.batchTimer = setTimeout(() => this.triggerAI(), 6000);
+        const visibleChatId = String(preferredChatId || this.app.currentChat?.id || '').trim();
+        if (visibleChatId && this.pendingChatIds.has(visibleChatId)) {
+            this.showTypingStatus('等待回复', visibleChatId);
+        }
+    }
+
     renderChatRoom(chat) {
         const messages = this.app.wechatData.getMessages(chat.id);
         const userInfo = this.app.wechatData.getUserInfo();
+        const isCurrentChatSending = this.isSending && String(this._activeSendingChatId || '') === String(chat.id || '');
 
         return `
     <div class="chat-room" style="${chat.background && (chat.background.startsWith('data:') || chat.background.startsWith('/') || chat.background.startsWith('http')) ? `background-image: url('${chat.background}'); background-size: cover; background-position: center;` : `background: ${chat.background || '#ededed'};`}">
@@ -85,8 +141,8 @@ export class ChatView {
                             <button class="input-btn" id="emoji-btn" title="表情">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                             </button>
-                            <button class="input-btn" id="send-btn" style="color: ${this.isSending ? '#ff3b30' : '#07c160'};">
-                                ${this.isSending
+                            <button class="input-btn" id="send-btn" style="color: ${isCurrentChatSending ? '#ff3b30' : '#07c160'};">
+                                ${isCurrentChatSending
                 ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/></svg>`
                 : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`
             }
@@ -410,7 +466,7 @@ export class ChatView {
 
             default:
                 // 🔥 普通文本消息（引用在气泡外下方显示）
-                messageBody = `<div class="message-text">${this.parseEmoji(msg.content)}</div>`;
+                messageBody = `<div class="message-text">${this.parseEmoji(this._stripCallSpeechPrefix(msg.content))}</div>`;
                 break;
         }
 
@@ -992,6 +1048,55 @@ export class ChatView {
         return text;
     }
 
+    _stripCallSpeechPrefix(text) {
+        let normalized = this.cleanAbnormalSpaces(String(text || ''));
+        if (!normalized) return '';
+
+        let previous = null;
+        while (normalized !== previous) {
+            previous = normalized;
+            normalized = normalized
+                .replace(/^\s*(?:\[\s*(?:语音|视频|语音通话|视频通话|通话)\s*\]|【\s*(?:语音|视频|语音通话|视频通话|通话)\s*】)\s*/i, '')
+                .replace(/^\s*(?:语音|视频)(?:通话)?\s*[：:]\s*/i, '')
+                .trim();
+        }
+
+        return normalized;
+    }
+
+    _buildWechatPaymentStatusContext(messages = [], userName = '用户') {
+        const recentPayments = (Array.isArray(messages) ? messages : [])
+            .filter(msg => msg && (msg.type === 'transfer' || msg.type === 'redpacket'))
+            .slice(-8);
+        if (recentPayments.length === 0) return '';
+
+        const lines = ['【最近资金状态】'];
+        recentPayments.forEach((msg, index) => {
+            const isMe = msg.from === 'me' || msg.from === userName;
+            const sender = String(isMe ? userName : (msg.from || '对方')).trim() || '对方';
+            const amount = Number.parseFloat(msg.amount || 0);
+            const amountText = Number.isFinite(amount) ? `¥${amount.toFixed(2)}` : '金额未知';
+            const timeText = String(msg.time || '').trim();
+            const prefix = `${index + 1}. ${timeText ? `[${timeText}] ` : ''}`;
+
+            if (msg.type === 'transfer') {
+                const status = String(msg.status || '').trim() === 'received'
+                    ? (isMe ? '对方已收款' : '你已收款')
+                    : (isMe ? '待对方收款' : '待你收款');
+                lines.push(`${prefix}转账 ${amountText}｜发送方：${sender}｜状态：${status}`);
+                return;
+            }
+
+            const redpacketStatus = String(msg.status || '').trim() === 'opened'
+                ? (isMe ? '已被领取' : '你已领取')
+                : (isMe ? '待对方领取' : '待你领取');
+            lines.push(`${prefix}红包 ${amountText}｜发送方：${sender}｜状态：${redpacketStatus}`);
+        });
+
+        lines.push('以上资金状态是系统真实记录，必须视为当前有效事实，不得擅自篡改已领取/已收款状态。');
+        return lines.join('\n');
+    }
+
     _parseWeiboCommentLine(line) {
         if (!line) return null;
         const cleaned = String(line || '').trim();
@@ -1253,7 +1358,7 @@ export class ChatView {
             const nextSender = String(nextMsg.sender || '').trim();
             if (caller && nextSender && nextSender !== caller) break;
 
-            const nextContent = this.cleanAbnormalSpaces(nextMsg.content || '').trim();
+            const nextContent = this._stripCallSpeechPrefix(nextMsg.content || '');
             const nextSpecial = nextMsg.specialMessage || this.parseSpecialMessage(nextContent);
             if (nextSpecial) break;
 
@@ -1331,11 +1436,10 @@ export class ChatView {
                 }
             }
 
-            // 如果微博当前正在推荐页，静默刷新以显示新增置顶
+            // 即使手机面板没打开，只要微博实例已存在，也标记并刷新推荐页数据
             const weiboApp = window.VirtualPhone?.weiboApp;
-            const isWeiboActive = !!document.querySelector('.phone-view-current .weibo-app');
-            if (post && weiboApp && isWeiboActive && weiboApp.weiboView?.currentView === 'home' && weiboApp.weiboView?.currentTab === 'recommend') {
-                weiboApp.render();
+            if (post && weiboApp) {
+                weiboApp.handleExternalRecommendUpdate?.();
             }
 
             return post;
@@ -1641,10 +1745,7 @@ export class ChatView {
         this.app.render();
 
         if (this.isOnlineMode()) {
-            this.pendingTargetChatId = this.app.currentChat.id;
-            clearTimeout(this.batchTimer);
-            this.batchTimer = setTimeout(() => this.triggerAI(this.pendingTargetChatId), 6000);
-            this.showTypingStatus('等待回复', this.pendingTargetChatId);
+            this._enqueuePendingChat(this.app.currentChat.id);
         }
     }
 
@@ -1746,14 +1847,11 @@ export class ChatView {
                 const currentInput = document.getElementById('chat-input');
                 const trimmedText = String(currentInput?.value || '').trim();
                 const canRestart = trimmedText === ''
-                    && !!this.pendingTargetChatId
+                    && this._hasPendingChat()
                     && !this.showEmoji
                     && !this.showMore;
                 if (!canRestart) return;
-
-                clearTimeout(this.batchTimer);
-                this.batchTimer = setTimeout(() => this.triggerAI(this.pendingTargetChatId), 6000);
-                this.showTypingStatus('等待回复', this.pendingTargetChatId);
+                this._restartPendingTimerIfNeeded(this.app.currentChat?.id);
             };
 
             if (window.innerWidth <= 500) {
@@ -1924,10 +2022,7 @@ export class ChatView {
                         this.app.render();
 
                         if (this.isOnlineMode()) {
-                            this.pendingTargetChatId = this.app.currentChat.id;
-                            clearTimeout(this.batchTimer);
-                            this.batchTimer = setTimeout(() => this.triggerAI(this.pendingTargetChatId), 6000);
-                            this.showTypingStatus('等待回复', this.pendingTargetChatId);
+                            this._enqueuePendingChat(this.app.currentChat.id);
                         }
                         return;
                     }
@@ -2161,7 +2256,7 @@ export class ChatView {
         }
         this._lastSendClickTime = now;
 
-        if (this.isSending) {
+        if (this.isSending && String(this._activeSendingChatId || '') === String(targetChatId || '')) {
             this.abortSending();
             return;
         }
@@ -2202,30 +2297,33 @@ export class ChatView {
                 this.smartUpdateMessages(messages, userInfo);
             }
 
-            this.pendingTargetChatId = targetChatId;
+            this._enqueuePendingChat(targetChatId, {
+                shouldStartTimer: false,
+                shouldShowStatus: false
+            });
             // 🔥 核心修复：发送后若输入框仍保持焦点（移动端连续输入），不进入倒计时
             if (document.activeElement === input) {
                 clearTimeout(this.batchTimer);
                 this.hideTypingStatus();
             } else {
                 // 仅在输入框失焦时进入倒计时
-                clearTimeout(this.batchTimer);
-                this.batchTimer = setTimeout(() => this.triggerAI(targetChatId), 6000);
-                this.showTypingStatus('等待回复', targetChatId);
+                this._restartPendingTimerIfNeeded(targetChatId);
             }
 
         } else {
             // 输入框为空
-            if (this.pendingTargetChatId) {
+            if (this._hasPendingChat()) {
                 // 还在6秒倒计时内：立刻触发AI（催更）
-                this.triggerAI(this.pendingTargetChatId);
+                this.triggerAI();
             } else {
                 // 倒计时已结束，检查是否有历史消息可以重试
                 const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
                 if (messages.length > 0) {
                     // 有历史消息：强制触发重新请求（用于AI回复失败后重试）
-                    this.pendingTargetChatId = targetChatId;
-                    this.showTypingStatus('等待回复', targetChatId);
+                    this._enqueuePendingChat(targetChatId, {
+                        shouldStartTimer: false,
+                        shouldShowStatus: true
+                    });
                     this.triggerAI(targetChatId);
                 } else {
                     // 完全没聊过，输入框又是空的
@@ -2236,28 +2334,48 @@ export class ChatView {
     }
 
     // 🔥 智能连发：触发AI回复
-    triggerAI(targetChatId = null) {
-        const chatId = targetChatId || this.app.currentChat?.id;
-        // 🔥 严格校验：当前触发的 chatId 必须等于正在等待的 pendingTargetChatId
-        if (!chatId || this.pendingTargetChatId !== chatId) return;
-
-        this.pendingTargetChatId = null; // 🔥 触发后清空等待状态
+    async triggerAI(targetChatId = null) {
+        if (this._isFlushingPending) return;
+        this._isFlushingPending = true;
         clearTimeout(this.batchTimer);
 
-        if (this.isOnlineMode()) {
-            const messages = this.app.wechatData.getMessages(chatId);
-            const recentUserMessages = messages.filter(m => m.from === 'me').slice(-5);
-            const combinedMessage = recentUserMessages.map(m => m.content).join('\n');
-            this.sendToAI(combinedMessage, chatId);
-        } else {
-            this.app.phoneShell.showNotification('离线模式', '请在设置中开启在线模式', '⚠️');
-            this.hideTypingStatus();  // 🔥 离线模式未发送，清除"等待回复"状态
+        try {
+            if (!this.isOnlineMode()) {
+                this.app.phoneShell.showNotification('离线模式', '请在设置中开启在线模式', '⚠️');
+                this.hideTypingStatus();  // 🔥 离线模式未发送，清除"等待回复"状态
+                return;
+            }
+
+            const preferredChatId = String(targetChatId || this.app.currentChat?.id || '').trim();
+            const chatIds = this._getPendingChatIdsOrdered(preferredChatId);
+            if (chatIds.length === 0) return;
+
+            for (const chatId of chatIds) {
+                if (!this.pendingChatIds.has(chatId)) continue;
+
+                const messages = this.app.wechatData.getMessages(chatId);
+                const recentUserMessages = messages.filter(m => m.from === 'me').slice(-5);
+                const combinedMessage = recentUserMessages.map(m => m.content).join('\n');
+                const success = await this.sendToAI(combinedMessage, chatId);
+
+                if (success) {
+                    this._dequeuePendingChat(chatId);
+                } else {
+                    break;
+                }
+            }
+
+            if (this.pendingChatIds.size > 0) {
+                this._restartPendingTimerIfNeeded(this.app.currentChat?.id);
+            }
+        } finally {
+            this._isFlushingPending = false;
         }
     }
 
     async sendToAI(message, targetChatId = null) {
         if (!this.isOnlineMode()) {
-            return;
+            return false;
         }
 
         // 🔥🔥🔥 优先使用传入的 targetChatId，否则使用当前聊天信息
@@ -2269,11 +2387,14 @@ export class ChatView {
 
         if (!savedChatId) {
             console.error('❌ 无法获取当前聊天ID');
-            return;
+            return false;
         }
+
+        let success = false;
 
         // 🔥 设置发送状态
         this.isSending = true;
+        this._activeSendingChatId = savedChatId;
         this.abortController = new AbortController();
 
         // 🔥 核心修复：不再全局重绘，避免闪烁与输入焦点丢失
@@ -2631,6 +2752,7 @@ export class ChatView {
                 for (let bgIndex = 0; bgIndex < msgs.length; bgIndex++) {
                     const m = msgs[bgIndex];
                     const cleanContent = this.cleanAbnormalSpaces(m.content);
+                    const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent);
                     const special = m.specialMessage || this.parseSpecialMessage(cleanContent);
                     senderAvatar = this.app.wechatData.getContactByName(m.sender)?.avatar || bgChat.avatar || '👤';
                     if (special?.type === 'incoming_call') {
@@ -2647,9 +2769,9 @@ export class ChatView {
 
                     const msgData = special
                         ? { from: m.sender, ...special, time: m.time, avatar: senderAvatar }
-                        : { from: m.sender, content: cleanContent, type: 'text', time: m.time, quote: m.quote, avatar: senderAvatar };
+                        : { from: m.sender, content: normalizedTextContent, type: 'text', time: m.time, quote: m.quote, avatar: senderAvatar };
                     if (special?.type === 'redpacket') msgData.id = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-                    const candidatePreview = String((special?.content || cleanContent || '')).replace(/\s+/g, ' ').trim();
+                    const candidatePreview = String((special?.content || normalizedTextContent || '')).replace(/\s+/g, ' ').trim();
                     if (candidatePreview) {
                         bgLatestPreview = candidatePreview.length > 34 ? `${candidatePreview.slice(0, 34)}...` : candidatePreview;
                     }
@@ -2714,6 +2836,7 @@ export class ChatView {
                 // 存入数据库
                 const senderContact = this.app.wechatData.getContactByName(msg.sender);
                 const cleanContent = this.cleanAbnormalSpaces(msg.content);
+                const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent);
                 const special = msg.specialMessage || this.parseSpecialMessage(cleanContent);
                 if (special?.type === 'incoming_call') {
                     const { queuedLines, consumedCount } = this._collectIncomingCallFollowUps(parsedMessages, msgIndex);
@@ -2747,7 +2870,7 @@ export class ChatView {
 
                 const msgData = special
                     ? { from: msg.sender, ...special, time: msg.time, avatar: senderContact?.avatar || savedChatAvatar || '👤' }
-                    : { from: msg.sender, content: cleanContent, time: msg.time, type: 'text', avatar: senderContact?.avatar || savedChatAvatar || '👤', quote: msg.quote };
+                    : { from: msg.sender, content: normalizedTextContent, time: msg.time, type: 'text', avatar: senderContact?.avatar || savedChatAvatar || '👤', quote: msg.quote };
                 if (special?.type === 'redpacket') msgData.id = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
                 this.app.wechatData.addMessage(savedChatId, msgData);
                 if (special?.type === 'weibo_card' && special.weiboData) {
@@ -2821,10 +2944,6 @@ export class ChatView {
                         drawerPanel.classList.remove('phone-panel-open', 'openDrawer', 'drawer-content', 'fillRight');
                         drawerPanel.classList.add('phone-panel-hidden');
                         drawerPanel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
-                        if (drawerIcon) {
-                            drawerIcon.classList.remove('openIcon');
-                            drawerIcon.classList.add('closedIcon');
-                        }
                     }
 
                     // 2. 延迟触发酒馆的发送按钮，让剧情继续
@@ -2843,6 +2962,8 @@ export class ChatView {
                 }, 1500); // 延迟1.5秒，确保用户有时间看完最后一条微信消息
             }
 
+            success = true;
+
         } catch (error) {
             // 🔥 区分中断和其他错误，静默处理中断，彻底干掉恶心的弹窗！
             if (error.message === '已中断发送' || error.name === 'AbortError') {
@@ -2854,6 +2975,9 @@ export class ChatView {
         } finally {
             // 🔥 无论成功还是失败，都重置状态
             this.isSending = false;
+            if (String(this._activeSendingChatId || '') === String(savedChatId || '')) {
+                this._activeSendingChatId = null;
+            }
             this.abortController = null;
             this.hideTypingStatus();
             // 🔥 只有手机还开着才刷新界面（需要更新发送按钮状态）
@@ -2867,6 +2991,7 @@ export class ChatView {
                 }
             }
         }
+        return success;
     }
 
     // 🔥 中断发送方法
@@ -2887,6 +3012,7 @@ export class ChatView {
             }
         }
         this.isSending = false;
+        this._activeSendingChatId = null;
         this.hideTypingStatus();
         this.app.render();
     }
@@ -3101,6 +3227,46 @@ export class ChatView {
             });
         }
 
+        let contactProfileMessage = null;
+        if (!isGroupChat) {
+            const currentContact = targetChat?.contactId
+                ? this.app.wechatData.getContact(targetChat.contactId)
+                : this.app.wechatData.getContactByName(targetChat?.name || charName);
+            if (currentContact) {
+                const contactNotes = [
+                    `【当前聊天对象档案】`,
+                    `联系人：${currentContact.name || targetChat?.name || charName}`
+                ];
+
+                if (currentContact.relation) {
+                    contactNotes.push(`关系：${currentContact.relation}`);
+                }
+                if (currentContact.sourceApp === 'honey' || currentContact.sourceLabel === '蜜语') {
+                    contactNotes.push(`来源应用：蜜语`);
+                }
+                if (currentContact.honeySource) {
+                    contactNotes.push(`认识场景：${currentContact.honeySource}`);
+                }
+                if (currentContact.honeyVisibleIntro) {
+                    contactNotes.push(`对外申请话术：${currentContact.honeyVisibleIntro}`);
+                }
+                if (currentContact.honeyHiddenBackground) {
+                    contactNotes.push(`隐藏设定：${currentContact.honeyHiddenBackground}`);
+                    contactNotes.push('这段隐藏设定是该联系人在后续微信聊天里的持续前提。你必须记住你们是怎么认识的，但不要生硬复述成说明书。');
+                }
+                if (currentContact.remark) {
+                    contactNotes.push(`备注：${currentContact.remark}`);
+                }
+
+                contactProfileMessage = {
+                    role: 'system',
+                    content: contactNotes.join('\n'),
+                    name: 'SYSTEM (联系人设定)',
+                    isPhoneMessage: true
+                };
+            }
+        }
+
         // ========================================
         // 4️⃣ 酒馆聊天上下文（使用与记忆插件相同的方式读取）
         // ========================================
@@ -3163,9 +3329,10 @@ export class ChatView {
         // 🔥 放在提示词上面，让AI先看到历史记录再看规则
         // ========================================
         const allChats = this.app.wechatData.getChatList();
+        const isolateCurrentChatStrictly = true;
         let relatedContextStr = '';
 
-        if (!callMode) {
+        if (!callMode && !isolateCurrentChatStrictly) {
             if (isGroupChat) {
                 // 在群聊中：查找群成员的单聊记录
                 const singleChatLimit = parseInt(storage?.get('wechat-single-chat-limit')) || 200;
@@ -3236,6 +3403,13 @@ export class ChatView {
                 isPhoneMessage: true
             });
         }
+
+        messages.push({
+            role: 'system',
+            content: '【当前窗口隔离规则】你现在只能看到并回复当前这个微信窗口。绝对禁止提及、猜测、影射、总结、回应任何不属于当前窗口的好友、群聊、未读消息、其他对话内容。即使用户同时和多个人聊天，你也必须把其他窗口当作完全不可见。',
+            name: 'SYSTEM (窗口隔离)',
+            isPhoneMessage: true
+        });
 
         // ========================================
         // 5.5️⃣ 手机聊天系统提示词（线上模式）
@@ -3311,6 +3485,9 @@ export class ChatView {
         }
         const recentWechatMessages = wechatMessages.slice(startIdx);
         const aiImageDataCache = new Map();
+        const paymentStatusContext = !isGroupChat
+            ? this._buildWechatPaymentStatusContext(recentWechatMessages, userName)
+            : '';
 
         const timeManager = window.VirtualPhone?.timeManager;
         const currentTime = timeManager?.getCurrentStoryTime?.()?.time || '21:30';
@@ -3400,6 +3577,19 @@ export class ChatView {
                 });
             }
 
+            if (paymentStatusContext) {
+                messages.push({
+                    role: 'system',
+                    content: paymentStatusContext,
+                    name: 'SYSTEM (资金状态)',
+                    isPhoneMessage: true
+                });
+            }
+
+            if (contactProfileMessage) {
+                messages.push(contactProfileMessage);
+            }
+
             if (wechatTranscript) {
                 messages.push({
                     role: 'system',
@@ -3416,13 +3606,26 @@ export class ChatView {
                     isPhoneMessage: true
                 });
             }
-        } else if (wechatTranscript) {
-            messages.push({
-                role: 'system',
-                content: wechatTranscript,
-                name: 'SYSTEM (微信记录)',
-                isPhoneMessage: true
-            });
+        } else {
+            if (paymentStatusContext) {
+                messages.push({
+                    role: 'system',
+                    content: paymentStatusContext,
+                    name: 'SYSTEM (资金状态)',
+                    isPhoneMessage: true
+                });
+            }
+            if (contactProfileMessage) {
+                messages.push(contactProfileMessage);
+            }
+            if (wechatTranscript) {
+                messages.push({
+                    role: 'system',
+                    content: wechatTranscript,
+                    name: 'SYSTEM (微信记录)',
+                    isPhoneMessage: true
+                });
+            }
         }
 
         // ========================================
@@ -3580,10 +3783,7 @@ export class ChatView {
 
             // 🔥 如果开启在线模式，触发连发倒计时
             if (this.isOnlineMode()) {
-                this.pendingTargetChatId = this.app.currentChat.id;
-                clearTimeout(this.batchTimer);
-                this.batchTimer = setTimeout(() => this.triggerAI(this.pendingTargetChatId), 6000);
-                this.showTypingStatus('等待回复', this.pendingTargetChatId);
+                this._enqueuePendingChat(this.app.currentChat.id);
             }
 
             setTimeout(() => this.app.render(), 1000);
@@ -4717,8 +4917,11 @@ export class ChatView {
         this.app.render();
 
         // 🔥 重新发送请求
-        this.pendingTargetChatId = this.app.currentChat.id;
-        await this.triggerAI(this.pendingTargetChatId);
+        this._enqueuePendingChat(this.app.currentChat.id, {
+            shouldStartTimer: false,
+            shouldShowStatus: true
+        });
+        await this.triggerAI(this.app.currentChat.id);
     }
 
     // 📋 显示删除聊天确认界面
@@ -6138,6 +6341,7 @@ export class ChatView {
             .map(line => line.replace(/^\[[0-9A-Za-z:：]+\]\s*/, ''))
             .map(line => line.replace(/^from\s+\S+[：:]\s*/i, ''))
             .map(line => senderPrefixRegex ? line.replace(senderPrefixRegex, '') : line)
+            .map(line => this._stripCallSpeechPrefix(line))
             .map(line => line.trim())
             .filter(Boolean);
     }
@@ -6834,10 +7038,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
 
             // 🔥 如果开启在线模式，触发连发倒计时
             if (this.isOnlineMode()) {
-                this.pendingTargetChatId = this.app.currentChat.id;
-                clearTimeout(this.batchTimer);
-                this.batchTimer = setTimeout(() => this.triggerAI(this.pendingTargetChatId), 6000);
-                this.showTypingStatus('等待回复', this.pendingTargetChatId);
+                this._enqueuePendingChat(this.app.currentChat.id);
             }
         });
     }
@@ -7071,22 +7272,25 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
 
     // 🧧 打开红包详情界面（全新）
     openRedPacket(messageId) {
-        const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
+        const chatId = this.app.currentChat?.id;
+        if (!chatId) return;
+        const messages = this.app.wechatData.getMessages(chatId);
         const message = messages.find(m => m.id === messageId);
         if (!message) return;
 
         const isMe = message.from === 'me' || message.from === this.app.wechatData.getUserInfo().name;
-        const isOpened = message.status === 'opened';
+        let resolvedStatus = String(message.status || '').trim();
+        let isOpened = resolvedStatus === 'opened';
         const contact = this.app.wechatData.getContactByName(message.from);
 
         if (!isMe && !isOpened) {
-            message.status = 'opened';
+            const updatedMessage = this.app.wechatData.updateMessageById(chatId, messageId, { status: 'opened' });
+            resolvedStatus = String(updatedMessage?.status || 'opened').trim();
+            isOpened = resolvedStatus === 'opened';
             // 收红包，加钱
             const rpAmount = parseFloat(message.amount) || 0;
             this.app.wechatData.updateWalletBalance(rpAmount);
             this.app.phoneShell.showNotification('微信红包', `已存入零钱: ¥${rpAmount.toFixed(2)}`, '');
-            
-            this.app.wechatData.saveData();
         }
 
         const senderName = message.from === 'me' ? this.app.wechatData.getUserInfo().name : message.from;
@@ -7125,7 +7329,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             </div>
         `;
 
-        this.app.phoneShell.setContent(html);
+        this.app.phoneShell.setContent(html, 'wechat-redpacket-detail');
 
         const backBtn = document.getElementById('back-from-rp-detail');
         if (backBtn) backBtn.onclick = () => this.app.render();
@@ -7133,27 +7337,26 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
 
     // 💰 打开转账详情界面
     openTransferDetail(messageId) {
-        const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
+        const chatId = this.app.currentChat?.id;
+        if (!chatId) return;
+        const messages = this.app.wechatData.getMessages(chatId);
         const message = messages.find(m => m.id === messageId);
         if (!message) return;
 
         const isMe = message.from === 'me' || message.from === this.app.wechatData.getUserInfo().name;
         const formattedAmount = parseFloat(message.amount || 0).toFixed(2);
+        let resolvedStatus = String(message.status || '').trim();
         
         // 对方发来的转账，如果还没被收款（用 status 记录），点击后存入钱包
-        if (!isMe && message.status !== 'received') {
-            message.status = 'received';
+        if (!isMe && resolvedStatus !== 'received') {
+            const updatedMessage = this.app.wechatData.updateMessageById(chatId, messageId, { status: 'received' });
+            resolvedStatus = String(updatedMessage?.status || 'received').trim();
             this.app.wechatData.updateWalletBalance(parseFloat(formattedAmount));
-            this.app.wechatData.saveData();
-            this.app.wechatData.addMessage(this.app.currentChat.id, {
+            this.app.wechatData.addMessage(chatId, {
                 from: 'system',
                 type: 'system',
                 content: '你已收款'
             });
-            this.app.render();
-            // 局部更新气泡状态为已领取 (变浅色)
-            const msgBubble = document.querySelector(`.message-transfer[data-msg-id="${messageId}"]`);
-            if (msgBubble) msgBubble.classList.add('opened');
         }
 
         const now = new Date();
@@ -7210,7 +7413,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             </div>
         `;
 
-        this.app.phoneShell.setContent(html);
+        this.app.phoneShell.setContent(html, 'wechat-transfer-detail');
 
         const currentView = document.querySelector('.phone-view-current') || document;
         const backBtn = currentView.querySelector('#back-from-transfer-detail');
@@ -7628,7 +7831,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
     }
 
     _resolveCallTTSContent(text, callType = 'voice') {
-        let raw = this._decodeHtmlEntities(text);
+        let raw = this._stripCallSpeechPrefix(this._decodeHtmlEntities(text));
         if (callType === 'video') {
             // 视频通话：只读对白，跳过括号内的画面描写（支持中英文括号）
             let prev = '';

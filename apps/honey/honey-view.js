@@ -54,6 +54,9 @@ export class HoneyView {
         this._honeyTtsCache = new Map();
         this._honeyTtsCacheOrder = [];
         this._honeyTtsMaxCacheSize = 20;
+        this._activeLiveSettlement = null;
+        this._dismissedLiveCollabRequestFingerprint = '';
+        this._isEndCollabConfirmOpen = false;
         this._restoreSessionState();
         this._loadCSS();
     }
@@ -243,17 +246,23 @@ export class HoneyView {
         this._syncSessionState();
         if (this.currentPage !== 'live') {
             this.isScenePanelOpen = false;
+            this._isEndCollabConfirmOpen = false;
         }
+        if (this.currentPage === 'private') this.currentPage = 'mine';
         if (this.currentPage === 'settings') return this.renderSettingsPage();
         if (this.currentPage === 'live') return this.renderLivePage();
         if (this.currentPage === 'follow') return this.renderFollowPage();
         if (this.currentPage === 'history') return this.renderHistoryPage();
-        if (this.currentPage === 'private') return this.renderPlaceholderPage('private');
+        if (this.currentPage === 'mine') return this.renderMinePage();
         this.renderRecommendPage();
     }
 
     _getRecommendRefreshHintText() {
         return '回推荐页下拉刷新生成剧情。';
+    }
+
+    _getUserLiveIdleHintText() {
+        return '输入开场白后回车开播。未点击结束直播前，这场直播会一直保留。';
     }
 
     buildRecommendListHtml() {
@@ -369,7 +378,7 @@ export class HoneyView {
                     <div class="honey-tab active" id="honey-tab-recommend">推荐</div>
                     <div class="honey-tab" id="honey-tab-live">直播</div>
                     <div class="honey-tab" id="honey-tab-follow">关注</div>
-                    <div class="honey-tab" id="honey-tab-private">私密</div>
+                    <div class="honey-tab" id="honey-tab-mine">私密</div>
                 </div>
 
                 <div class="honey-content ${hasBgVideo ? 'has-bg-video' : ''}">
@@ -733,11 +742,34 @@ export class HoneyView {
             _topicTitle: activeTopicTitle,
             _topicKey: activeTopicKey
         };
-        const safeHostName = String(data.host || '').trim();
+        const isUserLive = this._isUserLiveScene(data) || this._isUserLiveScene(topic) || activeTopicKey === 'topic_user_live';
+        const userLiveProfile = isUserLive
+            ? (this.app?.honeyData?.getHoneyUserProfile?.() || {})
+            : null;
+        const resolvedHostName = String(
+            isUserLive
+                ? (userLiveProfile?.nickname || data.host || '主播')
+                : (data.host || '')
+        ).trim() || '主播';
+        const resolvedFans = String(
+            isUserLive
+                ? (data.fans || userLiveProfile?.followers || data.viewers || '0')
+                : (data.fans || '0')
+        ).trim() || '0';
+        const displayFans = this._formatAudienceCountDisplay(resolvedFans);
+        const displayViewers = this._formatAudienceCountDisplay(data.viewers || '0');
+        const safeHostName = resolvedHostName;
         const followedHosts = this.app?.honeyData?.getFollowedHosts?.() || [];
-        const isHostFollowed = followedHosts.some(item => this._isSameHostName(item?.name, safeHostName));
+        const isHostFollowed = !isUserLive && followedHosts.some(item => this._isSameHostName(item?.name, safeHostName));
         this._ensureAvatarManifestLoaded();
-        const avatarSet = this._buildLiveAvatarSet(data);
+        const avatarSeedData = isUserLive ? { ...data, host: resolvedHostName } : data;
+        const avatarSetBase = this._buildLiveAvatarSet(avatarSeedData);
+        const avatarSet = isUserLive
+            ? {
+                ...avatarSetBase,
+                hostAvatarUrl: String(userLiveProfile?.avatarUrl || '').trim() || avatarSetBase.hostAvatarUrl
+            }
+            : avatarSetBase;
         const hostAvatarStyle = avatarSet.hostAvatarUrl
             ? ` style="${this._buildAvatarInlineStyle(avatarSet.hostAvatarUrl)}"`
             : '';
@@ -758,11 +790,23 @@ export class HoneyView {
         const collabNick = this._normalizeLiveCollabName(data.collab);
         const collabCost = Math.max(0, Number.parseInt(String(data.collabCost ?? 0), 10) || 0);
         const collabLabel = collabNick === '无' ? '申请联播' : `联播：${collabNick}`;
+        const collabInfo = this._normalizeLiveCollabRequest(data?.collabRequestInfo || null);
+        const collabMetaBrief = collabInfo?.hostType
+            ? String(collabInfo.hostType).trim().slice(0, 6)
+            : String(collabInfo?.rankHint || '').trim().replace(/^榜单\s*/i, '').slice(0, 6);
+        const userLiveCollabLabel = collabNick === '无'
+            ? '暂无联播'
+            : `联播：${collabNick}${collabMetaBrief ? `·${collabMetaBrief}` : ''}`;
+        const collabTitleText = collabNick === '无'
+            ? '当前暂无联播'
+            : `当前联播：${collabNick}${collabInfo?.hostType ? `｜${collabInfo.hostType}` : ''}${collabInfo?.rankHint ? `｜${collabInfo.rankHint}` : ''}`;
         const rankExpanded = !!this._isLiveRankExpanded;
-        const honeyNickname = this.app?.honeyData?.getHoneyUserNickname?.() || '你';
+        const honeyNickname = isUserLive ? '' : (this.app?.honeyData?.getHoneyUserNickname?.() || '你');
         const audienceGiftTotals = this._getSceneAudienceGiftTotals(data);
         const userGiftTotal = Math.max(0, Math.round(Number(audienceGiftTotals[this._normalizeLeaderboardName(honeyNickname)] || 0) || 0));
-        const mergedLeaderboard = this._buildMergedLeaderboardWithUser(data?.leaderboard, honeyNickname, userGiftTotal);
+        const mergedLeaderboard = isUserLive
+            ? this._buildLeaderboardFromAudienceTotals(audienceGiftTotals)
+            : this._buildMergedLeaderboardWithUser(data?.leaderboard, honeyNickname, userGiftTotal);
         const leaderboardItems = mergedLeaderboard.top3;
         const userRankItem = mergedLeaderboard.userRank;
         const safeHoneyNickname = this._normalizeLeaderboardName(honeyNickname);
@@ -795,16 +839,18 @@ export class HoneyView {
             ? `style="--honey-gift-visible-rows:${visibleRows};--honey-gift-row-height:${giftRowStep}px;--honey-gift-scroll-duration:${Math.max(10, mixedFeed.length * 2.6)}s;"`
             : `style="--honey-gift-visible-rows:${visibleRows};--honey-gift-row-height:${giftRowStep}px;"`;
 
-        const introHtml = introTickerText ? `
-            <div class="honey-live-intro-top">
+        const introHtml = `
+            <div class="honey-live-intro-top" id="honey-live-intro-top" style="${introTickerText ? '' : 'display:none;'}">
+                ${introTickerText ? `
                 <div class="honey-live-gift-item honey-live-gift-intro">
-                <span class="honey-gift-icon">🔔</span>
-                <span class="honey-live-gift-text-wrap" id="honey-intro-ticker-wrap">
-                    <span class="honey-live-gift-text" id="honey-intro-ticker-text">简介：${introTickerText}</span>
-                </span>
+                    <span class="honey-gift-icon">🔔</span>
+                    <span class="honey-live-gift-text-wrap" id="honey-intro-ticker-wrap">
+                        <span class="honey-live-gift-text" id="honey-intro-ticker-text">简介：${this._escapeHtml(introTickerText)}</span>
+                    </span>
                 </div>
+                ` : ''}
             </div>
-        ` : '';
+        `;
 
         const giftRows = mixedFeed.map(item => {
             if (item.type === 'comment') {
@@ -835,9 +881,49 @@ export class HoneyView {
         ` : '';
 
         const liveGifts = `${giftListHtml}`;
+        const hostActionHtml = isUserLive
+            ? '<span class="honey-live-self-badge">我的直播</span>'
+            : `
+                <button
+                    class="honey-follow-btn ${isHostFollowed ? 'is-followed' : ''}"
+                    data-host-name="${this._escapeHtml(safeHostName)}"
+                    data-avatar-url="${this._escapeHtml(avatarSet.hostAvatarUrl || '')}"
+                >${isHostFollowed ? '已关注' : '关注'}</button>
+            `;
+        const collabButtonHtml = this._buildLiveCollabButtonHtml({
+            isUserLive,
+            collabNick,
+            collabTitleText,
+            userLiveCollabLabel,
+            collabLabel,
+            collabCost
+        });
+        const chatPlaceholder = honeyEnabled
+            ? (isUserLive ? '输入后回车和直播间观众互动...' : '输入后回车发送弹幕...')
+            : '蜜语已关闭，请在设置中开启';
+        const unlockButtonHtml = isUserLive
+            ? ''
+            : `
+                <button class="honey-unlock-btn" id="honey-test-nai-btn">
+                    <i class="fa-solid fa-lock"></i> 解锁私密互动
+                </button>
+            `;
+        const giftButtonHtml = isUserLive
+            ? ''
+            : '<button class="honey-gift-btn" id="honey-gift-btn" title="送礼物"><i class="fa-solid fa-gift"></i></button>';
+        const giftPickerHtml = isUserLive
+            ? ''
+            : `
+                <div class="honey-gift-picker" id="honey-gift-picker">
+                    ${this._renderGiftPickerHtml()}
+                </div>
+            `;
+        const endLiveButtonHtml = isUserLive
+            ? '<button class="honey-end-live-btn" id="honey-end-live-btn" type="button">结束直播</button>'
+            : '';
 
         const html = `
-            <div class="honey-app honey-page-live is-scene-collapsed ${this.isScenePanelOpen ? 'is-scene-modal-open' : ''}">
+            <div class="honey-app honey-page-live is-scene-collapsed ${isUserLive ? 'is-user-live' : ''} ${this.isScenePanelOpen ? 'is-scene-modal-open' : ''}">
                 <div class="honey-nav">
                     <button class="honey-back-btn" id="honey-back"><i class="fa-solid fa-chevron-left"></i></button>
                     <div class="honey-nav-title honey-meta-title honey-nav-title-live" id="honey-ui-title-top-wrap">
@@ -856,7 +942,7 @@ export class HoneyView {
                     <div class="honey-tab" id="honey-tab-recommend">推荐</div>
                     <div class="honey-tab active" id="honey-tab-live">直播</div>
                     <div class="honey-tab" id="honey-tab-follow">关注</div>
-                    <div class="honey-tab" id="honey-tab-private">私密</div>
+                    <div class="honey-tab" id="honey-tab-mine">私密</div>
                 </div>
 
                 <div class="honey-content">
@@ -865,42 +951,30 @@ export class HoneyView {
                             <div class="honey-meta-host">
                                 <div class="honey-host-avatar${avatarSet.hostAvatarUrl ? ' is-photo' : ''}"${hostAvatarStyle}></div>
                                 <div class="honey-host-info">
-                                    <span class="honey-host-name" id="honey-ui-host">${data.host}</span>
-                                    <span class="honey-host-viewers">粉丝 ${data.fans || '0'}</span>
+                                    <span class="honey-host-name" id="honey-ui-host">${this._escapeHtml(resolvedHostName)}</span>
+                                    <span class="honey-host-viewers" id="honey-ui-fans">粉丝 ${this._escapeHtml(displayFans)}</span>
                                 </div>
-                                <button
-                                    class="honey-follow-btn ${isHostFollowed ? 'is-followed' : ''}"
-                                    data-host-name="${this._escapeHtml(safeHostName)}"
-                                    data-avatar-url="${this._escapeHtml(avatarSet.hostAvatarUrl || '')}"
-                                >${isHostFollowed ? '已关注' : '关注'}</button>
+                                ${hostActionHtml}
                             </div>
                             <div class="honey-meta-stats">
                                 <div class="honey-meta-audience-row">
                                     <div class="honey-meta-audience-avatars" aria-hidden="true">
                                         ${audienceAvatarHtml}
                                     </div>
-                                    <span class="honey-meta-audience-online">${data.viewers || '0'} 在线</span>
+                                    <span class="honey-meta-audience-online" id="honey-ui-online">${this._escapeHtml(displayViewers)} 在线</span>
                                 </div>
                                 <div class="honey-live-rank-mini ${rankExpanded ? 'is-expanded' : ''}" id="honey-live-rank-mini" role="button" tabindex="0" aria-expanded="${rankExpanded ? 'true' : 'false'}" title="${rankExpanded ? '点击收起榜单' : '点击展开榜单'}">
                                     <div class="honey-live-rank-title">榜单</div>
                                     <div class="honey-live-rank-list">${leaderboardRowsHtml}${userRankHtml}</div>
                                 </div>
-                                <button
-                                    class="honey-meta-collab-btn ${collabNick === '无' ? 'is-empty' : ''}"
-                                    id="honey-collab-btn"
-                                    data-collab-name="${this._escapeHtml(collabNick)}"
-                                    data-collab-cost="${collabCost}"
-                                    type="button"
-                                >${this._escapeHtml(collabLabel)}</button>
+                                <div id="honey-ui-collab-wrap">${collabButtonHtml}</div>
                             </div>
                         </div>
 
                         <div class="honey-nai-placeholder" style="${liveVideoUrl ? 'background: #000;' : ''}">
                             ${liveVideoHtml}
                             <div class="honey-nai-glass" style="${liveVideoUrl ? 'backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(0,0,0,0.1);' : ''}"></div>
-                            <button class="honey-unlock-btn" id="honey-test-nai-btn">
-                                <i class="fa-solid fa-lock"></i> 解锁私密互动
-                            </button>
+                            ${unlockButtonHtml}
                         </div>
 
                         ${introHtml}
@@ -912,25 +986,24 @@ export class HoneyView {
 
                     <div class="honey-live-bottom">
                         <div class="honey-input-bar">
-                            <input type="text" class="honey-chat-input" id="honey-chat-input" placeholder="${honeyEnabled ? '输入后回车发送弹幕...' : '蜜语已关闭，请在设置中开启'}" ${(honeyEnabled && !this._isGeneratingScene) ? '' : 'disabled'}>
+                            <input type="text" class="honey-chat-input" id="honey-chat-input" placeholder="${this._escapeHtml(chatPlaceholder)}" ${(honeyEnabled && !this._isGeneratingScene) ? '' : 'disabled'}>
                             <button class="honey-scene-toggle-btn" id="honey-scene-toggle-btn" title="${this.isScenePanelOpen ? '关闭剧情' : '查看剧情'}">
                                 <i class="fa-solid ${this.isScenePanelOpen ? 'fa-xmark' : 'fa-align-left'}"></i>
                             </button>
-                            <button class="honey-gift-btn" id="honey-gift-btn" title="送礼物"><i class="fa-solid fa-gift"></i></button>
+                            ${endLiveButtonHtml}
+                            ${giftButtonHtml}
                         </div>
 
-                        <div class="honey-gift-picker" id="honey-gift-picker">
-                            ${this._renderGiftPickerHtml()}
-                        </div>
+                        ${giftPickerHtml}
                     </div>
                 </div>
 
                 ${this.isScenePanelOpen ? `
                 <div class="honey-scene-modal" id="honey-scene-modal">
                     <button class="honey-scene-modal-backdrop" id="honey-scene-modal-backdrop" aria-label="关闭剧情弹窗"></button>
-                    <div class="honey-scene-modal-card" id="honey-scene-modal-card" role="dialog" aria-modal="true" aria-label="剧情面板">
+                    <div class="honey-scene-modal-card" id="honey-scene-modal-card" role="dialog" aria-modal="true" aria-label="直播实况">
                         <div class="honey-scene-modal-head">
-                            <div class="honey-scene-modal-title">剧情面板</div>
+                            <div class="honey-scene-modal-title">直播实况</div>
                             <div class="honey-scene-modal-actions">
                                 <button class="honey-scene-tts-btn" id="honey-scene-tts-btn" type="button" title="播放剧情语音" aria-label="播放剧情语音">
                                     <i class="fa-solid fa-volume-high"></i>
@@ -944,12 +1017,21 @@ export class HoneyView {
                     </div>
                 </div>
                 ` : ''}
+
+                <div id="honey-live-collab-request-layer">
+                    ${this._buildLiveCollabRequestModalHtml(data)}
+                </div>
+                <div id="honey-live-collab-end-layer">
+                    ${this._buildLiveCollabEndModalHtml(data)}
+                </div>
             </div>
         `;
 
-        const liveViewId = this._liveEntrySource === 'follow'
-            ? 'honey-live-follow'
-            : (this._liveEntrySource !== 'direct' ? 'honey-live-detail' : 'honey-main');
+        const liveViewId = isUserLive
+            ? 'honey-live-user'
+            : (this._liveEntrySource === 'follow'
+                ? 'honey-live-follow'
+                : (this._liveEntrySource !== 'direct' ? 'honey-live-detail' : 'honey-main'));
         this.app.phoneShell.setContent(html, liveViewId);
         this._applyPhoneChromeTheme();
         this.bindLiveEvents();
@@ -960,6 +1042,207 @@ export class HoneyView {
             this._syncTopTitleMarquee();
             this._syncIntroTicker();
         }, 140);
+    }
+
+    _getLiveRoot(sourceRoot = null) {
+        if (sourceRoot?.classList?.contains('honey-page-live') && sourceRoot.isConnected) return sourceRoot;
+        const nestedRoot = sourceRoot?.querySelector?.('.honey-page-live');
+        if (nestedRoot?.isConnected) return nestedRoot;
+        return document.querySelector('.phone-view-current .honey-page-live')
+            || document.querySelector('.honey-page-live');
+    }
+
+    _buildLiveLeaderboardMarkup(data, isUserLive = false) {
+        const honeyNickname = isUserLive ? '' : (this.app?.honeyData?.getHoneyUserNickname?.() || '你');
+        const audienceGiftTotals = this._getSceneAudienceGiftTotals(data);
+        const userGiftTotal = Math.max(0, Math.round(Number(audienceGiftTotals[this._normalizeLeaderboardName(honeyNickname)] || 0) || 0));
+        const mergedLeaderboard = isUserLive
+            ? this._buildLeaderboardFromAudienceTotals(audienceGiftTotals)
+            : this._buildMergedLeaderboardWithUser(data?.leaderboard, honeyNickname, userGiftTotal);
+        const leaderboardItems = mergedLeaderboard.top3;
+        const userRankItem = mergedLeaderboard.userRank;
+        const safeHoneyNickname = this._normalizeLeaderboardName(honeyNickname);
+        const isUserInTop3 = leaderboardItems.some(item => this._normalizeLeaderboardName(item?.name || '') === safeHoneyNickname);
+        const shouldShowUserRankRow = !!userRankItem && !isUserInTop3 && (Number(userRankItem.rank) > 3 || !Number.isFinite(Number(userRankItem.rank)));
+        const leaderboardRowsHtml = leaderboardItems.length > 0
+            ? leaderboardItems.map(item => `
+                <div class="honey-live-rank-row">
+                    <span class="honey-live-rank-index">#${item.rank}</span>
+                    <span class="honey-live-rank-name">${this._escapeHtml(item.name)}</span>
+                    <span class="honey-live-rank-coins">${this._escapeHtml(item.coins ? ((/(?:金币|金豆|币|[gG])$/.test(item.coins) ? item.coins : `${item.coins}金币`)) : '--')}</span>
+                </div>
+            `).join('')
+            : '<div class="honey-live-rank-empty">暂无打榜</div>';
+        const userRankHtml = shouldShowUserRankRow
+            ? `
+                <div class="honey-live-rank-row is-self">
+                    <span class="honey-live-rank-index">#N</span>
+                    <span class="honey-live-rank-name">${this._escapeHtml(userRankItem.name)}</span>
+                    <span class="honey-live-rank-coins">${this._escapeHtml(userRankItem.coins)}</span>
+                </div>
+            `
+            : '';
+        return `${leaderboardRowsHtml}${userRankHtml}`;
+    }
+
+    _buildLiveTickerMarkup(data) {
+        const introTickerText = this._getLiveTickerIntro(data);
+        const mixedFeed = this._buildLiveTickerFeed(data);
+        const visibleRows = 3;
+        const shouldScrollGifts = mixedFeed.length > visibleRows;
+        const giftRowStep = 34;
+        const giftListStyle = shouldScrollGifts
+            ? `style="--honey-gift-visible-rows:${visibleRows};--honey-gift-row-height:${giftRowStep}px;--honey-gift-scroll-duration:${Math.max(10, mixedFeed.length * 2.6)}s;"`
+            : `style="--honey-gift-visible-rows:${visibleRows};--honey-gift-row-height:${giftRowStep}px;"`;
+        const introInnerHtml = introTickerText
+            ? `
+                <div class="honey-live-gift-item honey-live-gift-intro">
+                    <span class="honey-gift-icon">🔔</span>
+                    <span class="honey-live-gift-text-wrap" id="honey-intro-ticker-wrap">
+                        <span class="honey-live-gift-text" id="honey-intro-ticker-text">简介：${this._escapeHtml(introTickerText)}</span>
+                    </span>
+                </div>
+            `
+            : '';
+        const giftRows = mixedFeed.map(item => {
+            if (item.type === 'comment') {
+                return `
+                    <div class="honey-live-gift-item honey-live-gift-comment">
+                        <span class="honey-live-comment-rank">${this._escapeHtml(item.rank || '热评')}</span>
+                        <span class="honey-live-comment-line">
+                            <span class="honey-live-comment-user">${this._escapeHtml(item.user || '匿名')}</span>：<span class="honey-live-comment-content">${this._escapeHtml(item.content || '')}</span>
+                        </span>
+                    </div>
+                `;
+            }
+            return `
+                <div class="honey-live-gift-item honey-live-gift-reward">
+                    <span class="honey-live-notify-icon" aria-hidden="true">🔔</span>
+                    <span class="honey-live-gift-text honey-live-gift-text-reward">${this._renderGiftRewardTextHtml(item.text)}</span>
+                </div>
+            `;
+        }).join('');
+        const giftRowsDuplicated = shouldScrollGifts ? `${giftRows}${giftRows}` : giftRows;
+        const giftListHtml = mixedFeed.length > 0 ? `
+            <div class="honey-live-gifts-list ${shouldScrollGifts ? 'is-scrolling' : ''}" ${giftListStyle}>
+                <div class="honey-live-gifts-track">
+                    ${giftRowsDuplicated}
+                </div>
+            </div>
+        ` : '';
+
+        return {
+            introInnerHtml,
+            hasIntro: !!introTickerText,
+            giftListHtml
+        };
+    }
+
+    _refreshLivePageDom({ sourceRoot = null, scene = null } = {}) {
+        if (this.currentPage !== 'live') return;
+        const root = this._getLiveRoot(sourceRoot);
+        if (!root) return;
+
+        const topic = scene || this.currentSceneData || this.selectedTopic || this.recommendTopics[0] || this._getFallbackTopic();
+        const activeTopicTitle = String(topic?.title || this.selectedTopic?.title || '直播间').trim() || '直播间';
+        const activeTopicKey = String(topic?._topicKey || this.selectedTopic?._topicKey || this._resolveTopicKey(topic, activeTopicTitle)).trim();
+        const data = {
+            ...(this._buildBaseScene(topic || this._getFallbackTopic(), activeTopicTitle, activeTopicKey) || {}),
+            ...(topic && typeof topic === 'object' ? topic : {}),
+            _topicTitle: activeTopicTitle,
+            _topicKey: activeTopicKey
+        };
+        const isUserLive = this._isUserLiveScene(data) || activeTopicKey === 'topic_user_live';
+        const userLiveProfile = isUserLive
+            ? (this.app?.honeyData?.getHoneyUserProfile?.() || {})
+            : null;
+        const resolvedHostName = String(
+            isUserLive
+                ? (userLiveProfile?.nickname || data.host || '主播')
+                : (data.host || '')
+        ).trim() || '主播';
+        const resolvedFans = String(
+            isUserLive
+                ? (data.fans || userLiveProfile?.followers || data.viewers || '0')
+                : (data.fans || '0')
+        ).trim() || '0';
+        const displayFans = this._formatAudienceCountDisplay(resolvedFans);
+        const displayViewers = this._formatAudienceCountDisplay(data.viewers || '0');
+        const liveTitleText = this._sanitizeLiveRoomTitle(data.title || activeTopicTitle || '直播间');
+        const collabNick = this._normalizeLiveCollabName(data.collab);
+        const collabCost = Math.max(0, Number.parseInt(String(data.collabCost ?? 0), 10) || 0);
+        const collabLabel = collabNick === '无' ? '申请联播' : `联播：${collabNick}`;
+        const collabInfo = this._normalizeLiveCollabRequest(data?.collabRequestInfo || null);
+        const collabMetaBrief = collabInfo?.hostType
+            ? String(collabInfo.hostType).trim().slice(0, 6)
+            : String(collabInfo?.rankHint || '').trim().replace(/^榜单\s*/i, '').slice(0, 6);
+        const userLiveCollabLabel = collabNick === '无'
+            ? '暂无联播'
+            : `联播：${collabNick}${collabMetaBrief ? `·${collabMetaBrief}` : ''}`;
+        const collabTitleText = collabNick === '无'
+            ? '当前暂无联播'
+            : `当前联播：${collabNick}${collabInfo?.hostType ? `｜${collabInfo.hostType}` : ''}${collabInfo?.rankHint ? `｜${collabInfo.rankHint}` : ''}`;
+        const { introInnerHtml, hasIntro, giftListHtml } = this._buildLiveTickerMarkup(data);
+
+        const titleEl = root.querySelector('#honey-ui-title-top');
+        if (titleEl) titleEl.textContent = liveTitleText;
+        const hostEl = root.querySelector('#honey-ui-host');
+        if (hostEl) hostEl.textContent = resolvedHostName;
+        const fansEl = root.querySelector('#honey-ui-fans');
+        if (fansEl) fansEl.textContent = `粉丝 ${displayFans}`;
+        const onlineEl = root.querySelector('#honey-ui-online');
+        if (onlineEl) onlineEl.textContent = `${displayViewers} 在线`;
+
+        const rankMini = root.querySelector('#honey-live-rank-mini');
+        if (rankMini) {
+            rankMini.classList.toggle('is-expanded', !!this._isLiveRankExpanded);
+            rankMini.setAttribute('aria-expanded', this._isLiveRankExpanded ? 'true' : 'false');
+            rankMini.setAttribute('title', this._isLiveRankExpanded ? '点击收起榜单' : '点击展开榜单');
+            const rankList = rankMini.querySelector('.honey-live-rank-list');
+            if (rankList) {
+                rankList.innerHTML = this._buildLiveLeaderboardMarkup(data, isUserLive);
+            }
+        }
+
+        const collabWrap = root.querySelector('#honey-ui-collab-wrap');
+        if (collabWrap) {
+            collabWrap.innerHTML = this._buildLiveCollabButtonHtml({
+                isUserLive,
+                collabNick,
+                collabTitleText,
+                userLiveCollabLabel,
+                collabLabel,
+                collabCost
+            });
+        }
+
+        const introWrap = root.querySelector('#honey-live-intro-top');
+        if (introWrap) {
+            introWrap.innerHTML = introInnerHtml;
+            introWrap.style.display = hasIntro ? '' : 'none';
+        }
+
+        const giftsWrap = root.querySelector('#honey-live-gifts');
+        if (giftsWrap) {
+            giftsWrap.innerHTML = giftListHtml;
+        }
+
+        const sceneText = String(data.description || '暂无文字描写。').trim() || '暂无文字描写。';
+        const sceneModalEl = root.querySelector('#honey-ui-scene-modal');
+        if (sceneModalEl) sceneModalEl.textContent = sceneText;
+        const sceneInlineEl = root.querySelector('#honey-ui-scene');
+        if (sceneInlineEl) sceneInlineEl.textContent = sceneText;
+        const collabLayer = root.querySelector('#honey-live-collab-request-layer');
+        if (collabLayer) {
+            collabLayer.innerHTML = this._buildLiveCollabRequestModalHtml(data);
+        }
+        const collabEndLayer = root.querySelector('#honey-live-collab-end-layer');
+        if (collabEndLayer) {
+            collabEndLayer.innerHTML = this._buildLiveCollabEndModalHtml(data);
+        }
+
+        this._syncTopTitleMarquee();
+        this._syncIntroTicker();
     }
 
     renderFollowPage() {
@@ -1074,7 +1357,7 @@ export class HoneyView {
                     <div class="honey-tab" id="honey-tab-recommend">推荐</div>
                     <div class="honey-tab" id="honey-tab-live">直播</div>
                     <div class="honey-tab active" id="honey-tab-follow">关注</div>
-                    <div class="honey-tab" id="honey-tab-private">私密</div>
+                    <div class="honey-tab" id="honey-tab-mine">私密</div>
                 </div>
 
                 <div class="honey-content">
@@ -1171,14 +1454,59 @@ export class HoneyView {
         }, 50);
     }
 
-    renderPlaceholderPage(mode) {
-        const title = mode === 'private' ? '私密聊天' : '页面';
-        const hint = mode === 'private'
-            ? '私密聊天功能开发中，后续逐步优化。'
-            : '功能开发中，后续逐步优化。';
+    renderMinePage() {
+        const profile = this.app?.honeyData?.getHoneyUserProfile?.() || {
+            nickname: '主播',
+            liveTitle: '我的直播间',
+            avatarUrl: '',
+            intro: '今晚来我直播间聊天。',
+            followers: 0,
+            accountId: '@user_live'
+        };
+        const friendRequests = this.app?.honeyData?.getHoneyFriendRequests?.() || [];
+        const friends = this.app?.honeyData?.getHoneyFriends?.() || [];
+        const avatarStyle = profile.avatarUrl ? ` style="${this._buildAvatarInlineStyle(profile.avatarUrl)}"` : '';
+        const avatarPhotoClass = profile.avatarUrl ? ' is-photo' : '';
+
+        const requestHtml = friendRequests.length > 0
+            ? friendRequests.map((item) => `
+                <div class="honey-mine-request-item">
+                    <div class="honey-mine-request-top">
+                        <span class="honey-mine-request-avatar${item.avatarUrl ? ' is-photo' : ''}"${item.avatarUrl ? ` style="${this._buildAvatarInlineStyle(item.avatarUrl)}"` : ''}></span>
+                        <span class="honey-mine-request-meta">
+                            <span class="honey-mine-request-name">${this._escapeHtml(item.name)}</span>
+                            <span class="honey-mine-request-source">${this._escapeHtml(item.source || '直播间申请')}</span>
+                        </span>
+                        <span class="honey-mine-request-inline-actions">
+                            <button class="honey-follow-action-btn honey-follow-action-btn-compact" data-action="accept-honey-friend" data-name="${this._escapeHtml(item.name)}">同意</button>
+                            <button class="honey-follow-action-btn honey-follow-action-btn-compact is-danger" data-action="reject-honey-friend" data-name="${this._escapeHtml(item.name)}">拒绝</button>
+                        </span>
+                    </div>
+                    <div class="honey-mine-request-message">${this._escapeHtml(item.message || '想加你为好友')}</div>
+                </div>
+            `).join('')
+            : '<div class="honey-follow-empty-desc">当前没有新的好友申请。</div>';
+
+        const friendHtml = friends.length > 0
+            ? friends.map((item) => `
+                <div class="honey-mine-friend-item">
+                    <span class="honey-follow-host-avatar${item.avatarUrl ? ' is-photo' : ''}"${item.avatarUrl ? ` style="${this._buildAvatarInlineStyle(item.avatarUrl)}"` : ''}></span>
+                    <span class="honey-mine-friend-meta">
+                        <span class="honey-mine-friend-head">
+                            <span class="honey-follow-host-name">${this._escapeHtml(item.name)} <span class="honey-mine-friend-badge"><i class="fa-solid fa-heart"></i>蜜语</span></span>
+                            <span class="honey-mine-friend-actions">
+                                <button class="honey-follow-action-btn honey-follow-action-btn-compact" data-action="open-honey-friend-chat" data-name="${this._escapeHtml(item.name)}">聊天</button>
+                                <button class="honey-follow-action-btn honey-follow-action-btn-compact is-danger" data-action="remove-honey-friend" data-name="${this._escapeHtml(item.name)}">删除</button>
+                            </span>
+                        </span>
+                        <span class="honey-follow-host-count">${this._escapeHtml(item.message || '已成为你的蜜语好友')}</span>
+                    </span>
+                </div>
+            `).join('')
+            : '<div class="honey-follow-empty-desc">还没有通过的好友，开播后陌生网友会向你发来申请。</div>';
 
         const html = `
-            <div class="honey-app honey-page-placeholder">
+            <div class="honey-app honey-page-mine">
                 <div class="honey-nav">
                     <button class="honey-back-btn" id="honey-back"><i class="fa-solid fa-chevron-left"></i></button>
                     <div class="honey-nav-title">❤️</div>
@@ -1189,35 +1517,65 @@ export class HoneyView {
                     <div class="honey-tab" id="honey-tab-recommend">推荐</div>
                     <div class="honey-tab" id="honey-tab-live">直播</div>
                     <div class="honey-tab" id="honey-tab-follow">关注</div>
-                    <div class="honey-tab active" id="honey-tab-private">私密</div>
+                    <div class="honey-tab active" id="honey-tab-mine">私密</div>
                 </div>
 
                 <div class="honey-content">
-                    <div class="honey-recommend-wrap">
-                        <div class="honey-hot-list">
-                            <div class="honey-hot-item" style="cursor: default;">
-                                <div class="honey-hot-rank">-</div>
-                                <div class="honey-hot-info">
-                                    <div class="honey-hot-title">${title}</div>
-                                    <div class="honey-hot-heat">${hint}</div>
+                    <div class="honey-follow-list honey-mine-list">
+                        <div class="honey-settings-card honey-mine-account-card">
+                            <div class="honey-mine-account-head">
+                                <button class="honey-mine-avatar${avatarPhotoClass}" id="honey-mine-avatar-btn"${avatarStyle}>${profile.avatarUrl ? '' : this._escapeHtml(String(profile.nickname || '我').slice(0, 1))}</button>
+                                <div class="honey-mine-account-meta">
+                                    <div class="honey-settings-label honey-mine-inline-label">直播昵称</div>
+                                    <input type="text" id="honey-mine-live-nickname" class="honey-settings-input honey-mine-live-nickname" maxlength="20" value="${this._escapeHtml(profile.nickname || '')}" placeholder="输入直播昵称">
+                                </div>
+                                <button class="honey-settings-btn honey-settings-btn-primary honey-mine-start-btn" id="honey-start-my-live">开始直播</button>
+                            </div>
+                            <div class="honey-mine-account-stats">
+                                <div class="honey-mine-account-stat">
+                                    <span class="honey-mine-account-stat-num">${this._escapeHtml(this._formatAudienceCountDisplay(profile.followers || 0))}</span>
+                                    <span class="honey-mine-account-stat-label">粉丝</span>
+                                </div>
+                                <div class="honey-mine-account-stat honey-mine-account-stat-topic">
+                                    <span class="honey-mine-account-stat-label">今日直播主题</span>
+                                    <input type="text" id="honey-mine-live-title" class="honey-settings-input honey-mine-stat-input" maxlength="40" value="${this._escapeHtml(profile.liveTitle || '')}" placeholder="输入本场直播主题">
                                 </div>
                             </div>
+                            <input type="file" id="honey-mine-avatar-upload" accept="image/png,image/jpeg,image/webp,image/gif,image/*" style="display:none;">
+                            <div class="honey-settings-label">直播简介</div>
+                            <textarea id="honey-mine-intro" class="honey-prompt-editor honey-mine-intro" placeholder="介绍一下你的直播风格、营业内容和想吸引的观众">${this._escapeHtml(profile.intro || '')}</textarea>
+                            <div class="honey-settings-actions">
+                                <button class="honey-settings-btn honey-settings-btn-muted" id="honey-save-mine-profile">保存账号设置</button>
+                            </div>
+                        </div>
+
+                        <div class="honey-settings-card">
+                            <div class="honey-settings-card-title">好友申请</div>
+                            <div class="honey-settings-desc">陌生网友会在你开播互动后申请加你好友。</div>
+                            <div class="honey-mine-request-list">${requestHtml}</div>
+                        </div>
+
+                        <div class="honey-settings-card">
+                            <div class="honey-settings-card-title">好友列表</div>
+                            <div class="honey-settings-desc">通过的好友会沉淀在这里，后续可继续联动。</div>
+                            <div class="honey-mine-friend-list">${friendHtml}</div>
                         </div>
                     </div>
                 </div>
             </div>
         `;
 
-        this.app.phoneShell.setContent(html, 'honey-main');
+        this.app.phoneShell.setContent(html, 'honey-mine');
         this._applyPhoneChromeTheme();
-        this.bindPlaceholderEvents();
+        this.bindMineEvents();
     }
 
     renderSettingsPage() {
         const promptManager = this._getPromptManager();
         const promptConfig = this._getHoneyPromptConfig(promptManager);
+        const userLivePromptConfig = this._getHoneyUserLivePromptConfig(promptManager);
         const bgVideoUrl = this.app.honeyData?.getRecommendBgVideo?.() || '';
-        const honeyNickname = this.app.honeyData?.getHoneyUserNickname?.() || '你';
+        const honeyNickname = this.app.honeyData?.getHoneyUserNickname?.() || '观众';
         const honeyCoinBalance = this.app.honeyData?.getHoneyCoinBalance?.() || 0;
         const walletInfo = this.app.honeyData?.getWechatWalletBalanceForRecharge?.() || { available: false, initialized: false, balance: 0 };
         const walletText = walletInfo.available
@@ -1238,9 +1596,9 @@ export class HoneyView {
                 <div class="honey-content honey-settings-content">
                     <div class="honey-settings-card">
                         <div class="honey-settings-card-title">账户与资产</div>
-                        <div class="honey-settings-label">用户昵称</div>
+                        <div class="honey-settings-label">观众昵称</div>
                         <div class="honey-settings-inline">
-                            <input type="text" id="honey-user-nickname" class="honey-settings-input" maxlength="20" value="${this._escapeHtml(honeyNickname)}" placeholder="输入昵称">
+                            <input type="text" id="honey-user-nickname" class="honey-settings-input" maxlength="20" value="${this._escapeHtml(honeyNickname)}" placeholder="输入观众昵称">
                             <button class="honey-settings-btn honey-settings-btn-muted honey-settings-inline-btn" id="honey-save-nickname">保存</button>
                         </div>
                         <div class="honey-settings-row">
@@ -1252,6 +1610,7 @@ export class HoneyView {
                         </div>
                         <div class="honey-settings-row">
                             <button class="honey-settings-btn honey-settings-btn-primary honey-settings-inline-btn" id="honey-open-recharge" style="margin-left: auto;">充值金币</button>
+                            <button class="honey-settings-btn honey-settings-btn-muted honey-settings-inline-btn" id="honey-open-withdraw">提现到微信</button>
                         </div>
                     </div>
 
@@ -1289,6 +1648,9 @@ export class HoneyView {
                         <div class="honey-settings-label">${this._escapeHtml(promptConfig.name || '蜜语直播/视频')}</div>
                         <div class="honey-settings-desc">${this._escapeHtml(promptConfig.description || '蜜语APP直播与视频生成规则')}</div>
                         <textarea id="honey-prompt-editor" class="honey-prompt-editor">${this._escapeHtml(promptConfig.content || '')}</textarea>
+                        <div class="honey-settings-label" style="margin-top: 12px;">${this._escapeHtml(userLivePromptConfig.name || '蜜语用户开播')}</div>
+                        <div class="honey-settings-desc">${this._escapeHtml(userLivePromptConfig.description || '用户自己开播时的 JSON 输出规则')}</div>
+                        <textarea id="honey-user-live-prompt-editor" class="honey-prompt-editor">${this._escapeHtml(userLivePromptConfig.content || '')}</textarea>
                         <div class="honey-settings-actions">
                             <button class="honey-settings-btn honey-settings-btn-muted" id="honey-reset-prompt">恢复默认</button>
                             <button class="honey-settings-btn honey-settings-btn-primary" id="honey-save-prompt">保存提示词</button>
@@ -1323,6 +1685,29 @@ export class HoneyView {
         this.app.phoneShell.setContent(html, 'honey-settings');
         this._applyPhoneChromeTheme();
         this.bindSettingsEvents();
+    }
+
+    _openWechatChatFromHoney(chatId) {
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId) return;
+
+        window.dispatchEvent(new CustomEvent('phone:openApp', {
+            detail: { appId: 'wechat' }
+        }));
+
+        let attempts = 0;
+        const timer = setInterval(() => {
+            attempts += 1;
+            const wechatApp = window.VirtualPhone?.wechatApp || window.currentWechatApp || window.ggp_currentWechatApp;
+            if (wechatApp?.openChat && wechatApp?.wechatData?.getChat?.(safeChatId)) {
+                clearInterval(timer);
+                wechatApp.openChat(safeChatId);
+                return;
+            }
+            if (attempts >= 20) {
+                clearInterval(timer);
+            }
+        }, 150);
     }
 
     _renderCustomVideoList() {
@@ -1426,9 +1811,9 @@ export class HoneyView {
             this.currentPage = 'follow';
             this.render();
         });
-        root.querySelector('#honey-tab-private')?.addEventListener('click', () => {
+        root.querySelector('#honey-tab-mine')?.addEventListener('click', () => {
             this._silenceRecommendSpeaker();
-            this.currentPage = 'private';
+            this.currentPage = 'mine';
             this.render();
         });
 
@@ -1453,6 +1838,7 @@ export class HoneyView {
         if (!root) return;
         if (root.dataset.honeyLiveBound === '1') return;
         root.dataset.honeyLiveBound = '1';
+        const isUserLive = this._isUserLiveScene(this.currentSceneData || this.selectedTopic);
 
         root.querySelector('#honey-back')?.addEventListener('click', () => {
             this._silenceLiveSpeaker();
@@ -1469,9 +1855,9 @@ export class HoneyView {
             this.currentPage = 'follow';
             this.render();
         });
-        root.querySelector('#honey-tab-private')?.addEventListener('click', () => {
+        root.querySelector('#honey-tab-mine')?.addEventListener('click', () => {
             this._silenceLiveSpeaker();
-            this.currentPage = 'private';
+            this.currentPage = 'mine';
             this.render();
         });
         root.querySelector('#honey-settings-btn')?.addEventListener('click', () => {
@@ -1479,6 +1865,7 @@ export class HoneyView {
             this.openSettings();
         });
         root.querySelector('.honey-follow-btn')?.addEventListener('click', () => {
+            if (isUserLive) return;
             const hostName = String(this.currentSceneData?.host || root.querySelector('.honey-follow-btn')?.dataset?.hostName || '')
                 .replace(/\s*[（(]\s*(?:已关注|未关注)\s*[)）]\s*$/g, '')
                 .trim();
@@ -1508,6 +1895,7 @@ export class HoneyView {
             });
         }
         root.querySelector('#honey-collab-btn')?.addEventListener('click', async (e) => {
+            if (isUserLive) return;
             e.stopPropagation();
             if (this._isGeneratingScene) return;
 
@@ -1551,7 +1939,13 @@ export class HoneyView {
                 console.error('联播申请失败:', err);
                 this.app.phoneShell.showNotification('错误', err.message || String(err), '❌');
             } finally {
-                this.render();
+                const currentRoot = this._getLiveRoot(root);
+                const currentCollabBtn = currentRoot?.querySelector('#honey-collab-btn');
+                if (currentCollabBtn) {
+                    currentCollabBtn.disabled = false;
+                    currentCollabBtn.classList.remove('is-loading');
+                }
+                this._refreshLivePageDom({ sourceRoot: currentRoot });
             }
         });
         const sceneToggleBtn = root.querySelector('#honey-scene-toggle-btn');
@@ -1563,8 +1957,10 @@ export class HoneyView {
                 const now = Date.now();
                 if (now - lastSceneToggleTs < 120) return;
                 lastSceneToggleTs = now;
+                const liveInputState = this._captureLiveChatInputState(root);
                 this.isScenePanelOpen = !this.isScenePanelOpen;
                 this.render();
+                this._restoreLiveChatInputState(liveInputState);
             };
             // 屏蔽 touch 产生的合成 click，避免重复触发
             sceneToggleBtn.onclick = (e) => {
@@ -1573,19 +1969,59 @@ export class HoneyView {
             };
         }
 
+        root.querySelector('#honey-end-live-btn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this._isGeneratingScene) {
+                this.app.phoneShell.showNotification('蜜语', '剧情生成中，请稍后再结束直播', '⏳');
+                return;
+            }
+            this._showUserLiveSettlementDialog();
+        });
+
         const closeSceneModal = (e) => {
             if (e) {
                 e.preventDefault();
                 e.stopPropagation();
             }
             if (!this.isScenePanelOpen) return;
+            const liveInputState = this._captureLiveChatInputState(root);
             this.isScenePanelOpen = false;
             this.render();
+            this._restoreLiveChatInputState(liveInputState);
         };
         root.querySelector('#honey-scene-modal-close-btn')?.addEventListener('click', closeSceneModal);
         root.querySelector('#honey-scene-modal-backdrop')?.addEventListener('click', closeSceneModal);
         root.querySelector('#honey-scene-modal-card')?.addEventListener('click', (e) => {
             e.stopPropagation();
+        });
+        root.addEventListener('click', (e) => {
+            const actionEl = e.target?.closest?.('[data-live-collab-action]');
+            if (!actionEl || !root.contains(actionEl)) return;
+            const action = String(actionEl.dataset.liveCollabAction || '').trim();
+            if (!action) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (action === 'dismiss') {
+                this._dismissLiveCollabRequestModal();
+                return;
+            }
+            if (action === 'accept') {
+                this._acceptLiveCollabRequest(String(actionEl.dataset.requestKey || '').trim());
+                return;
+            }
+            if (action === 'prompt-end-collab') {
+                this._openLiveCollabEndConfirm();
+                return;
+            }
+            if (action === 'cancel-end-collab') {
+                this._closeLiveCollabEndConfirm();
+                return;
+            }
+            if (action === 'confirm-end-collab') {
+                this._endCurrentLiveCollab();
+            }
         });
 
         root.querySelector('#honey-chat-input')?.addEventListener('keydown', async (e) => {
@@ -1619,9 +2055,6 @@ export class HoneyView {
             } finally {
                 input.disabled = false;
                 input.placeholder = prevPlaceholder;
-                if (this.currentPage === 'live') {
-                    this.render();
-                }
             }
         });
 
@@ -1712,6 +2145,7 @@ export class HoneyView {
 
         root.querySelectorAll('.honey-gift-option').forEach(el => {
             el.addEventListener('click', (e) => {
+                if (isUserLive) return;
                 const name = e.currentTarget?.dataset?.gift;
                 if (!name) return;
                 const liveInputState = this._captureLiveChatInputState(root);
@@ -1749,6 +2183,9 @@ export class HoneyView {
             });
         });
 
+        if (this._outsideClickHandler) {
+            document.removeEventListener('click', this._outsideClickHandler);
+        }
         this._outsideClickHandler = (e) => {
             if (!giftPicker) return;
             const target = e.target;
@@ -1850,6 +2287,190 @@ export class HoneyView {
         }
     }
 
+    bindMineEvents() {
+        const root = document.querySelector('.phone-view-current .honey-page-mine') || document.querySelector('.honey-page-mine');
+        if (!root) return;
+        if (root.dataset.honeyMineBound === '1') return;
+        root.dataset.honeyMineBound = '1';
+
+        const saveMineProfile = (patch = {}) => {
+            const nicknameInput = root.querySelector('#honey-mine-live-nickname');
+            const liveTitleInput = root.querySelector('#honey-mine-live-title');
+            const introInput = root.querySelector('#honey-mine-intro');
+            const nextPatch = {
+                nickname: nicknameInput?.value || '',
+                liveTitle: liveTitleInput?.value || '',
+                intro: introInput?.value || '',
+                ...patch
+            };
+            const profile = this.app?.honeyData?.saveHoneyUserProfile?.(nextPatch) || null;
+            if (nicknameInput && typeof profile?.nickname === 'string') nicknameInput.value = profile.nickname;
+            if (liveTitleInput && typeof profile?.liveTitle === 'string') liveTitleInput.value = profile.liveTitle;
+            if (introInput && typeof profile?.intro === 'string') introInput.value = profile.intro;
+            this._syncUserLiveProfileDisplay(profile, nextPatch);
+            return profile;
+        };
+
+        root.querySelector('#honey-back')?.addEventListener('click', () => {
+            this.removePhoneChromeTheme();
+            window.dispatchEvent(new CustomEvent('phone:goHome'));
+        });
+        root.querySelector('#honey-settings-btn')?.addEventListener('click', () => {
+            this.openSettings();
+        });
+
+        root.querySelector('#honey-tab-recommend')?.addEventListener('click', () => {
+            this.currentPage = 'recommend';
+            this.render();
+        });
+        root.querySelector('#honey-tab-live')?.addEventListener('click', () => {
+            this.enterLiveFromTopic(this._getDirectLiveTopic(), { autoGenerateIfMissing: false, backTarget: 'home' });
+        });
+        root.querySelector('#honey-tab-follow')?.addEventListener('click', () => {
+            this.currentPage = 'follow';
+            this.render();
+        });
+        root.querySelector('#honey-tab-mine')?.addEventListener('click', () => {
+            this.currentPage = 'mine';
+            this.render();
+        });
+
+        root.querySelector('#honey-save-mine-profile')?.addEventListener('click', () => {
+            const profile = saveMineProfile();
+            this.app.phoneShell.showNotification('已保存', `${profile?.nickname || '直播账号'}设置已更新`, '✅');
+            this.render();
+        });
+        root.querySelector('#honey-mine-live-nickname')?.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            root.querySelector('#honey-save-mine-profile')?.click();
+        });
+        root.querySelector('#honey-mine-live-title')?.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            root.querySelector('#honey-save-mine-profile')?.click();
+        });
+
+        const avatarBtn = root.querySelector('#honey-mine-avatar-btn');
+        const avatarUploadInput = root.querySelector('#honey-mine-avatar-upload');
+        avatarBtn?.addEventListener('click', () => {
+            avatarUploadInput?.click();
+        });
+        avatarUploadInput?.addEventListener('change', async (e) => {
+            const file = e?.target?.files?.[0];
+            if (!file) return;
+            e.target.value = '';
+
+            const mime = String(file.type || '').toLowerCase();
+            const ext = mime.includes('png')
+                ? 'png'
+                : (mime.includes('webp')
+                    ? 'webp'
+                    : (mime.includes('gif')
+                        ? 'gif'
+                        : ((mime.includes('jpeg') || mime.includes('jpg')) ? 'jpg' : '')));
+            if (!ext) {
+                this.app.phoneShell.showNotification('提示', '请选择 PNG/JPG/WebP/GIF 图片', '⚠️');
+                return;
+            }
+            if (file.size > 10 * 1024 * 1024) {
+                this.app.phoneShell.showNotification('提示', '头像图片不能超过 10MB', '⚠️');
+                return;
+            }
+
+            this.app.phoneShell.showNotification('处理中', '正在上传直播头像...', '⏳');
+            try {
+                const filename = `phone_honey_user_avatar_${Date.now()}.${ext}`;
+                const formData = new FormData();
+                formData.append('avatar', file, filename);
+
+                const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+                delete headers['Content-Type'];
+                if (!headers['X-CSRF-Token']) {
+                    const csrfResp = await fetch('/csrf-token', { credentials: 'include' });
+                    if (csrfResp.ok) {
+                        const csrfData = await csrfResp.json().catch(() => ({}));
+                        if (csrfData?.token) headers['X-CSRF-Token'] = csrfData.token;
+                    }
+                }
+
+                const uploadResp = await fetch('/api/backgrounds/upload', {
+                    method: 'POST',
+                    body: formData,
+                    headers,
+                    credentials: 'include'
+                });
+                if (!uploadResp.ok) {
+                    const detail = await this._readUploadErrorDetail(uploadResp);
+                    throw new Error(detail ? `HTTP ${uploadResp.status}: ${detail}` : `HTTP ${uploadResp.status}`);
+                }
+                const uploadedUrl = await this._resolveUploadFinalUrl(uploadResp, filename);
+
+                saveMineProfile({ avatarUrl: uploadedUrl });
+                this.app.phoneShell.showNotification('头像已更新', '你的直播头像已保存', '✅');
+                this.render();
+            } catch (err) {
+                console.error('蜜语头像上传失败:', err);
+                this.app.phoneShell.showNotification('上传失败', err?.message || '头像上传失败', '❌');
+            }
+        });
+
+        root.querySelector('#honey-start-my-live')?.addEventListener('click', () => {
+            const profile = saveMineProfile();
+            this.enterLiveFromTopic(this._getUserLiveTopic(profile), {
+                autoGenerateIfMissing: false,
+                backTarget: 'mine'
+            });
+        });
+
+        root.addEventListener('click', (e) => {
+            const actionEl = e.target?.closest?.('[data-action]');
+            if (!actionEl) return;
+            const action = String(actionEl.dataset.action || '').trim();
+            const name = String(actionEl.dataset.name || '').trim();
+            if (!name) return;
+
+            if (action === 'accept-honey-friend') {
+                const accepted = this.app?.honeyData?.acceptHoneyFriendRequest?.(name);
+                if (accepted) {
+                    this.app?.honeyData?.ensureHoneyFriendWechatChat?.(accepted);
+                    this.app.phoneShell.showNotification('已通过', `${accepted.name} 已加入好友列表并同步到微信`, '✅');
+                }
+                this.render();
+                return;
+            }
+
+            if (action === 'open-honey-friend-chat') {
+                const linked = this.app?.honeyData?.ensureHoneyFriendWechatChat?.(name);
+                if (linked?.chat?.id) {
+                    this._openWechatChatFromHoney(linked.chat.id);
+                } else {
+                    this.app.phoneShell.showNotification('打开失败', '还没找到这个好友对应的微信聊天', '⚠️');
+                }
+                return;
+            }
+
+            if (action === 'remove-honey-friend') {
+                const ok = confirm(`确定删除好友 ${name} 吗？\n\n会同时删除：\n1) 蜜语好友列表里的该好友\n2) 微信通讯录中的对应联系人\n3) 微信里与该好友的聊天记录`);
+                if (!ok) return;
+                const removed = this.app?.honeyData?.removeHoneyFriend?.(name);
+                if (removed) {
+                    this.app.phoneShell.showNotification('已删除', `${name} 的蜜语好友和微信记录已清除`, '🗑️');
+                } else {
+                    this.app.phoneShell.showNotification('删除失败', '没找到这个好友', '⚠️');
+                }
+                this.render();
+                return;
+            }
+
+            if (action === 'reject-honey-friend') {
+                this.app?.honeyData?.rejectHoneyFriendRequest?.(name);
+                this.app.phoneShell.showNotification('已拒绝', `${name} 的好友申请已删除`, 'ℹ️');
+                this.render();
+            }
+        });
+    }
+
     bindPlaceholderEvents() {
         const root = document.querySelector('.phone-view-current .honey-page-follow')
             || document.querySelector('.honey-page-follow')
@@ -1879,8 +2500,8 @@ export class HoneyView {
             this.currentPage = 'follow';
             this.render();
         });
-        root.querySelector('#honey-tab-private')?.addEventListener('click', () => {
-            this.currentPage = 'private';
+        root.querySelector('#honey-tab-mine')?.addEventListener('click', () => {
+            this.currentPage = 'mine';
             this.render();
         });
 
@@ -2104,7 +2725,7 @@ export class HoneyView {
             const input = root.querySelector('#honey-user-nickname');
             const saved = this.app?.honeyData?.saveHoneyUserNickname?.(input?.value || '') || '';
             if (input) input.value = saved;
-            this.app.phoneShell.showNotification('已保存', '蜜语昵称已更新', '✅');
+            this.app.phoneShell.showNotification('已保存', '观众昵称已更新', '✅');
         });
 
         root.querySelector('#honey-user-nickname')?.addEventListener('keydown', (e) => {
@@ -2124,6 +2745,43 @@ export class HoneyView {
                 return;
             }
             openRechargeModal();
+        });
+
+        root.querySelector('#honey-open-withdraw')?.addEventListener('click', () => {
+            const coinBalance = this.app?.honeyData?.getHoneyCoinBalance?.() || 0;
+            if (coinBalance <= 0) {
+                this.app.phoneShell.showNotification('提现失败', '当前蜜语金币余额为 0', 'ℹ️');
+                return;
+            }
+
+            const inputText = window.prompt(`输入要提现的金币数量（当前 ${this._formatCoinDisplay(coinBalance)} 金币，10 金币 = 1 元）`, String(coinBalance));
+            if (inputText === null) return;
+
+            const withdrawCoins = Math.max(0, Math.floor(Number.parseFloat(String(inputText).trim()) || 0));
+            const result = this.app?.honeyData?.withdrawHoneyCoinsToWechat?.(withdrawCoins);
+            if (!result?.success) {
+                if (result?.reason === 'coin_insufficient') {
+                    this.app.phoneShell.showNotification('提现失败', `金币不足，当前仅 ${this._formatCoinDisplay(result.balanceBefore || 0)} 金币`, '⚠️');
+                    return;
+                }
+                if (result?.reason === 'wallet_not_initialized') {
+                    this.app.phoneShell.showNotification('提现失败', '请先到微信服务页初始化零钱余额', '⚠️');
+                    return;
+                }
+                if (result?.reason === 'wechat_unavailable') {
+                    this.app.phoneShell.showNotification('提现失败', '微信未加载，无法提现吗', '⚠️');
+                    return;
+                }
+                this.app.phoneShell.showNotification('提现失败', '请输入有效的金币数量', '⚠️');
+                return;
+            }
+
+            refreshEconomyPanel();
+            this.app.phoneShell.showNotification(
+                '提现成功',
+                `已转入微信 ¥${this._formatMoneyDisplay(result.amountYuan || 0)}，剩余 ${this._formatCoinDisplay(result.balanceAfter || 0)} 金币`,
+                '✅'
+            );
         });
 
         root.querySelector('#honey-cancel-recharge')?.addEventListener('click', closeRechargeModal);
@@ -2167,16 +2825,23 @@ export class HoneyView {
 
         root.querySelector('#honey-save-prompt')?.addEventListener('click', () => {
             const textarea = root.querySelector('#honey-prompt-editor');
+            const userLiveTextarea = root.querySelector('#honey-user-live-prompt-editor');
             const content = textarea?.value ?? '';
+            const userLiveContent = userLiveTextarea?.value ?? '';
             promptManager?.updatePrompt?.('honey', 'live', content);
+            promptManager?.updatePrompt?.('honey', 'userLive', userLiveContent);
             this.app.phoneShell.showNotification('保存成功', '蜜语提示词已更新', '✅');
         });
 
         root.querySelector('#honey-reset-prompt')?.addEventListener('click', () => {
             const defaultContent = promptManager?.getDefaultPrompts?.()?.honey?.live?.content || '';
+            const defaultUserLiveContent = promptManager?.getDefaultPrompts?.()?.honey?.userLive?.content || '';
             const textarea = root.querySelector('#honey-prompt-editor');
+            const userLiveTextarea = root.querySelector('#honey-user-live-prompt-editor');
             if (textarea) textarea.value = defaultContent;
+            if (userLiveTextarea) userLiveTextarea.value = defaultUserLiveContent;
             promptManager?.updatePrompt?.('honey', 'live', defaultContent);
+            promptManager?.updatePrompt?.('honey', 'userLive', defaultUserLiveContent);
             this.app.phoneShell.showNotification('已恢复', '已恢复默认提示词', '🔄');
         });
 
@@ -2342,6 +3007,7 @@ export class HoneyView {
 
     enterLiveFromTopic(topic, options = {}) {
         const autoGenerateIfMissing = options?.autoGenerateIfMissing === true;
+        const resetSession = options?.resetSession === true;
         const resolvedTopic = topic || this._getFallbackTopic();
         const topicTitle = String(resolvedTopic.title || '直播间').trim();
         const topicKey = this._resolveTopicKey(resolvedTopic, topicTitle);
@@ -2350,6 +3016,8 @@ export class HoneyView {
             this._liveEntrySource = 'recommend';
         } else if (this._liveBackTarget === 'follow') {
             this._liveEntrySource = 'follow';
+        } else if (this._liveBackTarget === 'mine') {
+            this._liveEntrySource = 'mine';
         } else {
             this._liveEntrySource = 'direct';
         }
@@ -2359,11 +3027,22 @@ export class HoneyView {
             title: topicTitle,
             _topicKey: topicKey
         };
+        this._dismissedLiveCollabRequestFingerprint = '';
         this.currentPage = 'live';
         this.app.honeyData?.saveSelectedTopicTitle?.(topicTitle);
         this.app.honeyData?.saveSelectedTopicKey?.(topicKey);
 
-        const cachedScene = this.app.honeyData?.getTopicScene?.(topicKey || topicTitle, topicTitle);
+        if (resetSession) {
+            this.app.honeyData?.clearTopicScene?.(topicKey || topicTitle, {
+                clearLastSceneIfMatch: true,
+                fallbackTitle: topicTitle,
+                topicKey
+            });
+        }
+
+        const cachedScene = resetSession
+            ? null
+            : this.app.honeyData?.getTopicScene?.(topicKey || topicTitle, topicTitle);
         if (cachedScene) {
             this.currentSceneData = { ...cachedScene, _topicTitle: topicTitle, _topicKey: topicKey };
             this._persistCurrentScene();
@@ -2375,12 +3054,16 @@ export class HoneyView {
         this.currentSceneData.title = topicTitle;
         this.currentSceneData.description = autoGenerateIfMissing
             ? '正在根据主题生成直播内容...'
-            : this._getRecommendRefreshHintText();
+            : (topicKey === 'topic_user_live' ? this._getUserLiveIdleHintText() : this._getRecommendRefreshHintText());
         this.currentSceneData.comments = [];
         this.currentSceneData.lastUserComment = '';
         this.currentSceneData.userChats = [];
         this.currentSceneData.promptTurns = [];
         this.currentSceneData.gifts = [];
+        this.currentSceneData.audienceGiftTotals = {};
+        this.currentSceneData.leaderboard = [];
+        this.currentSceneData.userGiftRank = null;
+        this.currentSceneData.isUserLive = topicKey === 'topic_user_live';
         this.currentPage = 'live';
         this._persistCurrentScene();
         this.render();
@@ -2388,7 +3071,7 @@ export class HoneyView {
         if (!autoGenerateIfMissing) return;
 
         this._generateCurrentTopicScene({
-            resetSession: false,
+            resetSession,
             notify: false,
             forceTopicTitle: topicTitle,
             forceTopicKey: topicKey
@@ -2805,14 +3488,408 @@ export class HoneyView {
         return safe.toLocaleString('zh-CN');
     }
 
+    _formatAudienceCountDisplay(value) {
+        const raw = String(value ?? '').trim();
+        if (!raw) return '0';
+        if (/[kKwW]$/.test(raw)) return raw;
+
+        const normalized = raw.replace(/,/g, '');
+        const num = Number.parseFloat(normalized);
+        if (!Number.isFinite(num)) return raw;
+
+        const safe = Math.max(0, num);
+        if (safe < 1000) return `${Math.floor(safe)}`;
+
+        const compact = Math.floor(safe / 100) / 10;
+        const compactText = Number.isInteger(compact) ? compact.toFixed(0) : compact.toFixed(1);
+        return `${compactText}k`;
+    }
+
     _formatMoneyDisplay(value) {
         const num = Number.parseFloat(value);
         const safe = Number.isFinite(num) ? Math.max(0, num) : 0;
         return safe.toFixed(2);
     }
 
+    _sumAudienceGiftTotals(totals = {}) {
+        const normalized = this._getSceneAudienceGiftTotals({ audienceGiftTotals: totals });
+        return Object.values(normalized).reduce((sum, value) => {
+            const amount = Math.max(0, Math.round(Number(value) || 0));
+            return sum + amount;
+        }, 0);
+    }
+
+    _extractGiftSenderFromText(text) {
+        const raw = String(text || '').trim();
+        if (!raw) return '';
+
+        const senderPatterns = [
+            /^(.{1,24}?)(?:打赏了|送出|赠送|贡献了?)/,
+            /^(.{1,24}?)\s*[：:]\s*(?:打赏|送出|赠送|贡献)/,
+            /^(.{1,24}?)\s+(?:打赏|送出|赠送|贡献)/
+        ];
+
+        for (const pattern of senderPatterns) {
+            const match = raw.match(pattern);
+            const sender = this._normalizeLeaderboardName(match?.[1] || '');
+            if (sender) return sender;
+        }
+
+        return '';
+    }
+
+    _buildLeaderboardFromAudienceTotals(totals = {}) {
+        const normalized = this._getSceneAudienceGiftTotals({ audienceGiftTotals: totals });
+        const sorted = Object.entries(normalized)
+            .map(([name, amount]) => ({
+                name,
+                amount: Math.max(0, Math.round(Number(amount) || 0))
+            }))
+            .filter(item => item.name && item.amount > 0)
+            .sort((a, b) => {
+                if (b.amount !== a.amount) return b.amount - a.amount;
+                return String(a.name).localeCompare(String(b.name), 'zh-CN');
+            });
+
+        return {
+            top3: sorted.slice(0, 3).map((item, idx) => ({
+                rank: idx + 1,
+                name: item.name,
+                coins: this._formatLeaderboardCoinsFromNumber(item.amount)
+            })),
+            userRank: null
+        };
+    }
+
+    _normalizeLiveCollabRequest(item) {
+        if (!item || typeof item !== 'object') return null;
+        const name = this._normalizeLeaderboardName(item.name || item.nickname || item.user || item.hostName || '');
+        if (!name) return null;
+        const rawType = String(item.requestType || item.sourceType || item.type || item.source || 'viewer').trim().toLowerCase();
+        const requestType = /host|主播|其他直播间|streamer|anchor|broadcaster/.test(rawType) ? 'host' : 'viewer';
+        return {
+            key: `${requestType}::${name}::${String(item.hostType || '').trim().toLowerCase()}`,
+            name,
+            requestType,
+            hostType: String(item.hostType || item.figure || item.category || item.role || '').trim().slice(0, 24),
+            rankHint: String(item.rankHint || item.rankLabel || item.rank || item.leaderboard || '').trim().slice(0, 24)
+        };
+    }
+
+    _normalizeLiveCollabRequests(list = []) {
+        return (Array.isArray(list) ? list : [])
+            .map(item => this._normalizeLiveCollabRequest(item))
+            .filter(Boolean);
+    }
+
+    _mergeLiveCollabRequests(current = [], incoming = []) {
+        const merged = [];
+        const seen = new Map();
+        [...this._normalizeLiveCollabRequests(current), ...this._normalizeLiveCollabRequests(incoming)].forEach((item) => {
+            if (!item?.key) return;
+            if (seen.has(item.key)) {
+                const prevIndex = seen.get(item.key);
+                merged[prevIndex] = { ...merged[prevIndex], ...item };
+                return;
+            }
+            seen.set(item.key, merged.length);
+            merged.push(item);
+        });
+        return merged.slice(0, 6);
+    }
+
+    _getLiveCollabRequestFingerprint(list = []) {
+        return this._normalizeLiveCollabRequests(list)
+            .map(item => item.key)
+            .sort((a, b) => String(a).localeCompare(String(b)))
+            .join('|');
+    }
+
+    _getAudienceRankMap(scene = null) {
+        const totals = this._getSceneAudienceGiftTotals(scene || this.currentSceneData);
+        const sorted = Object.entries(totals)
+            .map(([name, amount]) => ({
+                name: this._normalizeLeaderboardName(name),
+                amount: Math.max(0, Math.round(Number(amount) || 0))
+            }))
+            .filter(item => item.name && item.amount > 0)
+            .sort((a, b) => {
+                if (b.amount !== a.amount) return b.amount - a.amount;
+                return String(a.name).localeCompare(String(b.name), 'zh-CN');
+            });
+
+        const rankMap = new Map();
+        sorted.forEach((item, idx) => {
+            rankMap.set(item.name, {
+                rank: idx + 1,
+                amount: item.amount
+            });
+        });
+        return rankMap;
+    }
+
+    _getEnrichedLiveCollabRequests(scene = null) {
+        const sourceScene = scene || this.currentSceneData || {};
+        const rankMap = this._getAudienceRankMap(sourceScene);
+        return this._normalizeLiveCollabRequests(sourceScene?.collabRequests || []).map((item) => {
+            const rankInfo = rankMap.get(this._normalizeLeaderboardName(item.name));
+            let computedRankLabel = '';
+            if (rankInfo?.rank) {
+                computedRankLabel = `榜单 #${rankInfo.rank}`;
+            } else if (item.requestType === 'viewer') {
+                computedRankLabel = '未上榜';
+            }
+
+            return {
+                ...item,
+                rank: rankInfo?.rank || 0,
+                amount: rankInfo?.amount || 0,
+                rankLabel: computedRankLabel || item.rankHint || '',
+                sourceLabel: item.requestType === 'host' ? '其他直播间请求联播' : '网友申请联播',
+                typeLabel: item.requestType === 'host'
+                    ? (item.hostType || '其他主播')
+                    : (computedRankLabel || item.rankHint || '普通观众')
+            };
+        });
+    }
+
+    _shouldShowLiveCollabRequestModal(scene = null) {
+        const sourceScene = scene || this.currentSceneData || {};
+        if (!this._isUserLiveScene(sourceScene)) return false;
+        if (this._normalizeLiveCollabName(sourceScene?.collab) !== '无') return false;
+        const requests = this._normalizeLiveCollabRequests(sourceScene?.collabRequests || []);
+        if (!requests.length) return false;
+        const fingerprint = this._getLiveCollabRequestFingerprint(requests);
+        if (!fingerprint) return false;
+        return fingerprint !== this._dismissedLiveCollabRequestFingerprint;
+    }
+
+    _buildLiveCollabRequestModalHtml(scene = null) {
+        const sourceScene = scene || this.currentSceneData || {};
+        if (!this._shouldShowLiveCollabRequestModal(sourceScene)) return '';
+
+        const requestRows = this._getEnrichedLiveCollabRequests(sourceScene)
+            .sort((a, b) => {
+                const scoreA = a.requestType === 'viewer' && a.rank ? 0 : (a.requestType === 'host' ? 1 : 2);
+                const scoreB = b.requestType === 'viewer' && b.rank ? 0 : (b.requestType === 'host' ? 1 : 2);
+                if (scoreA !== scoreB) return scoreA - scoreB;
+                if ((a.rank || 0) !== (b.rank || 0)) return (a.rank || 99) - (b.rank || 99);
+                return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN');
+            })
+            .map((item) => `
+                <button class="honey-live-collab-request-item" type="button" data-live-collab-action="accept" data-request-key="${this._escapeHtml(item.key)}">
+                    <span class="honey-live-collab-request-top">
+                        <span class="honey-live-collab-request-name">${this._escapeHtml(item.name)}</span>
+                        <span class="honey-live-collab-request-badge ${item.requestType === 'host' ? 'is-host' : (item.rank ? 'is-ranked' : 'is-unranked')}">${this._escapeHtml(item.typeLabel)}</span>
+                    </span>
+                    <span class="honey-live-collab-request-sub">${this._escapeHtml(item.sourceLabel)}</span>
+                    <span class="honey-live-collab-request-cta">点击接通</span>
+                </button>
+            `)
+            .join('');
+
+        return `
+            <div class="honey-live-collab-modal" id="honey-live-collab-modal">
+                <button class="honey-live-collab-modal-backdrop" type="button" data-live-collab-action="dismiss" aria-label="关闭联播通知"></button>
+                <div class="honey-live-collab-modal-panel" role="dialog" aria-modal="true" aria-label="联播通知">
+                    <div class="honey-live-collab-modal-head">
+                        <div class="honey-live-collab-modal-title">联播通知</div>
+                        <button class="honey-live-collab-modal-close" type="button" data-live-collab-action="dismiss" aria-label="关闭联播通知">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <div class="honey-live-collab-modal-desc">有新的联播申请，已按当前榜单状态标注。选择一个即可接通。</div>
+                    <div class="honey-live-collab-modal-list">${requestRows}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    _buildLiveCollabButtonHtml({
+        isUserLive = false,
+        collabNick = '无',
+        collabTitleText = '',
+        userLiveCollabLabel = '暂无联播',
+        collabLabel = '申请联播',
+        collabCost = 0
+    } = {}) {
+        const safeTitle = this._escapeHtml(collabTitleText || '');
+        if (isUserLive) {
+            if (collabNick !== '无') {
+                return `
+                    <button
+                        class="honey-meta-collab-btn"
+                        id="honey-ui-collab"
+                        type="button"
+                        title="${safeTitle}"
+                        data-live-collab-action="prompt-end-collab"
+                        data-collab-name="${this._escapeHtml(collabNick)}"
+                    >${this._escapeHtml(userLiveCollabLabel)}</button>
+                `;
+            }
+            return `<span class="honey-meta-collab-btn is-empty" id="honey-ui-collab" title="${safeTitle}">${this._escapeHtml(userLiveCollabLabel)}</span>`;
+        }
+
+        return `
+            <button
+                class="honey-meta-collab-btn ${collabNick === '无' ? 'is-empty' : ''}"
+                id="honey-collab-btn"
+                data-collab-name="${this._escapeHtml(collabNick)}"
+                data-collab-cost="${collabCost}"
+                type="button"
+                title="${safeTitle}"
+            >${this._escapeHtml(collabLabel)}</button>
+        `;
+    }
+
+    _buildLiveCollabEndModalHtml(scene = null) {
+        const sourceScene = scene || this.currentSceneData || {};
+        const collabNick = this._normalizeLiveCollabName(sourceScene?.collab);
+        if (!this._isEndCollabConfirmOpen || !this._isUserLiveScene(sourceScene) || collabNick === '无') return '';
+
+        const collabInfo = this._normalizeLiveCollabRequest(sourceScene?.collabRequestInfo || null);
+        const metaText = collabInfo?.hostType
+            ? ` · ${collabInfo.hostType}`
+            : (collabInfo?.rankHint ? ` · ${collabInfo.rankHint}` : '');
+
+        return `
+            <div class="honey-live-collab-modal" id="honey-live-collab-end-modal">
+                <button class="honey-live-collab-modal-backdrop" type="button" data-live-collab-action="cancel-end-collab" aria-label="关闭结束联播确认"></button>
+                <div class="honey-live-collab-modal-panel" role="dialog" aria-modal="true" aria-label="结束联播确认">
+                    <div class="honey-live-collab-modal-head">
+                        <div class="honey-live-collab-modal-title">结束联播</div>
+                        <button class="honey-live-collab-modal-close" type="button" data-live-collab-action="cancel-end-collab" aria-label="关闭结束联播确认">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <div class="honey-live-collab-modal-desc">确定要与 ${this._escapeHtml(collabNick)}${this._escapeHtml(metaText)} 结束当前联播吗？挂断后直播不会结束，你可以继续自己发内容，或等待下一次联播申请。</div>
+                    <div class="honey-live-collab-end-actions">
+                        <button class="honey-follow-action-btn" type="button" data-live-collab-action="cancel-end-collab">继续联播</button>
+                        <button class="honey-follow-action-btn is-danger" type="button" data-live-collab-action="confirm-end-collab">结束联播</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    _dismissLiveCollabRequestModal() {
+        const fingerprint = this._getLiveCollabRequestFingerprint(this.currentSceneData?.collabRequests || []);
+        this._dismissedLiveCollabRequestFingerprint = fingerprint || '';
+        this._refreshLivePageDom();
+    }
+
+    _openLiveCollabEndConfirm() {
+        if (!this.currentSceneData || !this._isUserLiveScene(this.currentSceneData)) return;
+        if (this._normalizeLiveCollabName(this.currentSceneData?.collab) === '无') return;
+        const liveInputState = this._captureLiveChatInputState();
+        this._isEndCollabConfirmOpen = true;
+        this._refreshLivePageDom();
+        this._restoreLiveChatInputState(liveInputState);
+    }
+
+    _closeLiveCollabEndConfirm() {
+        if (!this._isEndCollabConfirmOpen) return;
+        const liveInputState = this._captureLiveChatInputState();
+        this._isEndCollabConfirmOpen = false;
+        this._refreshLivePageDom();
+        this._restoreLiveChatInputState(liveInputState);
+    }
+
+    _acceptLiveCollabRequest(requestKey = '') {
+        if (!this.currentSceneData || !this._isUserLiveScene(this.currentSceneData)) return;
+        const requests = this._getEnrichedLiveCollabRequests(this.currentSceneData);
+        const picked = requests.find(item => item.key === requestKey);
+        if (!picked) return;
+
+        this.currentSceneData = {
+            ...this.currentSceneData,
+            collab: picked.name,
+            collabRequestInfo: {
+                name: picked.name,
+                requestType: picked.requestType,
+                hostType: picked.hostType,
+                rankHint: picked.rankLabel || picked.rankHint || ''
+            },
+            collabRequests: [],
+            description: `已接通与${picked.name}${picked.hostType ? `（${picked.hostType}）` : ''}的联播，等待 AI 继续推进互动。`
+        };
+        if (this.selectedTopic && this._isUserLiveScene(this.selectedTopic)) {
+            this.selectedTopic = {
+                ...this.selectedTopic,
+                collab: picked.name
+            };
+        }
+        this._dismissedLiveCollabRequestFingerprint = '';
+        this._isEndCollabConfirmOpen = false;
+        this._persistCurrentScene();
+        this._refreshLivePageDom({ scene: this.currentSceneData });
+        this.app?.phoneShell?.showNotification?.('联播已接通', `${picked.name}${picked.hostType ? ` · ${picked.hostType}` : ''}`, '📡');
+    }
+
+    _endCurrentLiveCollab() {
+        if (!this.currentSceneData || !this._isUserLiveScene(this.currentSceneData)) return;
+        const previousCollab = this._normalizeLiveCollabName(this.currentSceneData?.collab);
+        if (previousCollab === '无') {
+            this._closeLiveCollabEndConfirm();
+            return;
+        }
+        const liveInputState = this._captureLiveChatInputState();
+
+        this.currentSceneData = {
+            ...this.currentSceneData,
+            collab: '无',
+            collabCost: 0,
+            collabRequestInfo: null,
+            description: '当前暂无联播剧情，直播主要通过弹幕滚动推进。'
+        };
+        if (this.selectedTopic && this._isUserLiveScene(this.selectedTopic)) {
+            this.selectedTopic = {
+                ...this.selectedTopic,
+                collab: '无'
+            };
+        }
+        this._dismissedLiveCollabRequestFingerprint = '';
+        this._isEndCollabConfirmOpen = false;
+        this._persistCurrentScene();
+        this._refreshLivePageDom({ scene: this.currentSceneData });
+        this._restoreLiveChatInputState(liveInputState);
+        this.app?.phoneShell?.showNotification?.('联播已结束', `${previousCollab} 已挂断`, '📴');
+    }
+
+    _accumulateAudienceGiftTotalsFromGiftLines(baseTotals = {}, giftLines = [], options = {}) {
+        const totals = {
+            ...this._getSceneAudienceGiftTotals({ audienceGiftTotals: baseTotals })
+        };
+        const excludedNames = new Set(
+            (Array.isArray(options?.excludeNames) ? options.excludeNames : [])
+                .map(name => this._normalizeLeaderboardName(name))
+                .filter(Boolean)
+        );
+
+        (Array.isArray(giftLines) ? giftLines : []).forEach((line) => {
+            const senderName = this._extractGiftSenderFromText(line);
+            const giftAmount = Math.max(0, Math.round(this._extractGiftAmountFromText(line)));
+            if (!senderName || giftAmount <= 0 || excludedNames.has(senderName)) return;
+            const current = Math.max(0, Math.round(Number(totals[senderName] || 0)));
+            totals[senderName] = current + giftAmount;
+        });
+
+        return totals;
+    }
+
+    _getCurrentUserLiveIncomeCoins(scene = null) {
+        return this._sumAudienceGiftTotals(this._getSceneAudienceGiftTotals(scene || this.currentSceneData));
+    }
+
     _normalizeLeaderboardName(name = '') {
         return String(name || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+    }
+
+    _normalizeGiftTokenText(text = '') {
+        return String(text || '')
+            .replace(/\uFE0F/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     _parseLeaderboardCoinsToNumber(rawValue = '') {
@@ -2825,6 +3902,10 @@ export class HoneyView {
         if (/^\d+(?:\.\d+)?WG$/.test(raw)) {
             const num = Number.parseFloat(raw.replace(/WG$/, ''));
             return Number.isFinite(num) ? Math.max(0, Math.round(num * 10000)) : 0;
+        }
+        if (/^\d+(?:\.\d+)?KG$/.test(raw)) {
+            const num = Number.parseFloat(raw.replace(/KG$/, ''));
+            return Number.isFinite(num) ? Math.max(0, Math.round(num * 1000)) : 0;
         }
         if (/^\d+(?:\.\d+)?W$/.test(raw)) {
             const num = Number.parseFloat(raw.replace(/W$/, ''));
@@ -2851,6 +3932,11 @@ export class HoneyView {
             const w = amount / 10000;
             const text = Number.isInteger(w) ? String(w) : String(Math.round(w * 10) / 10).replace(/\.0$/, '');
             return `${text}WG`;
+        }
+        if (amount >= 1000) {
+            const k = amount / 1000;
+            const text = Number.isInteger(k) ? String(k) : String(Math.round(k * 10) / 10).replace(/\.0$/, '');
+            return `${text}kG`;
         }
         return `${amount}G`;
     }
@@ -2972,9 +4058,12 @@ export class HoneyView {
             return Number.isFinite(explicitAmount) ? Math.max(0, explicitAmount) : 0;
         }
 
+        const normalizedRaw = this._normalizeGiftTokenText(raw);
         const gift = (Array.isArray(this.giftOptions) ? this.giftOptions : []).find((item) => {
             const giftName = String(item?.name || '').trim();
-            return !!giftName && raw.includes(giftName);
+            const giftIcon = this._normalizeGiftTokenText(item?.icon || '');
+            return (!!giftName && raw.includes(giftName))
+                || (!!giftIcon && normalizedRaw.includes(giftIcon));
         });
         if (!gift) return 0;
 
@@ -3141,8 +4230,11 @@ export class HoneyView {
 
     _resolveLiveBackTarget(topicKey = '', options = {}) {
         const explicit = String(options?.backTarget || '').trim().toLowerCase();
-        if (explicit === 'recommend' || explicit === 'home' || explicit === 'follow') return explicit;
-        return String(topicKey || '').trim() === 'topic_direct_live' ? 'home' : 'recommend';
+        if (explicit === 'recommend' || explicit === 'home' || explicit === 'follow' || explicit === 'mine') return explicit;
+        const safeTopicKey = String(topicKey || '').trim();
+        if (safeTopicKey === 'topic_direct_live') return 'home';
+        if (safeTopicKey === 'topic_user_live') return 'mine';
+        return 'recommend';
     }
 
     _navigateBackFromLive() {
@@ -3157,6 +4249,11 @@ export class HoneyView {
             this.render();
             return;
         }
+        if (resolvedBackTarget === 'mine') {
+            this.currentPage = 'mine';
+            this.render();
+            return;
+        }
         this.removePhoneChromeTheme();
         window.dispatchEvent(new CustomEvent('phone:goHome'));
     }
@@ -3165,16 +4262,19 @@ export class HoneyView {
         const explicit = String(this._liveBackTarget || '').trim().toLowerCase();
         if (explicit === 'follow') return 'follow';
         if (explicit === 'recommend') return 'recommend';
+        if (explicit === 'mine') return 'mine';
         if (explicit === 'home') return 'home';
 
         if (this._liveEntrySource === 'direct') return 'home';
         if (this._liveEntrySource === 'recommend') return 'recommend';
         if (this._liveEntrySource === 'follow') return 'follow';
+        if (this._liveEntrySource === 'mine') return 'mine';
         const activeKey = String(this.selectedTopic?._topicKey || this.currentSceneData?._topicKey || '').trim();
         const activeTitle = String(this.selectedTopic?.title || this.currentSceneData?._topicTitle || this.currentSceneData?.title || '').trim();
 
         // 直接点击“激情直播”进入的专属入口，始终直接返回手机主页
         if (activeKey === 'topic_direct_live') return 'home';
+        if (activeKey === 'topic_user_live') return 'mine';
 
         if (activeKey) {
             const inRecommendByKey = Array.isArray(this.recommendTopics) && this.recommendTopics.some(item => String(item?._topicKey || '').trim() === activeKey);
@@ -3194,10 +4294,13 @@ export class HoneyView {
             || document.querySelector('.phone-view-current .honey-page-live')
             || document.querySelector('.honey-page-live');
         const input = liveRoot?.querySelector?.('#honey-chat-input');
+        const hasSelection = !!input && typeof input.selectionStart === 'number' && typeof input.selectionEnd === 'number';
         return {
             value: String(input?.value || ''),
             placeholder: String(input?.placeholder || ''),
-            hadFocus: !!input && (document.activeElement === input)
+            hadFocus: !!input && (document.activeElement === input),
+            selectionStart: hasSelection ? input.selectionStart : null,
+            selectionEnd: hasSelection ? input.selectionEnd : null
         };
     }
 
@@ -3211,9 +4314,142 @@ export class HoneyView {
         if (state.placeholder) input.placeholder = state.placeholder;
         if (state.hadFocus && !input.disabled) {
             input.focus();
-            const caret = input.value.length;
-            input.setSelectionRange(caret, caret);
+            const fallbackCaret = input.value.length;
+            const selectionStart = Number.isInteger(state.selectionStart) ? state.selectionStart : fallbackCaret;
+            const selectionEnd = Number.isInteger(state.selectionEnd) ? state.selectionEnd : selectionStart;
+            input.setSelectionRange(
+                Math.max(0, Math.min(selectionStart, input.value.length)),
+                Math.max(0, Math.min(selectionEnd, input.value.length))
+            );
         }
+    }
+
+    _finalizeEndedUserLiveSession() {
+        const topicTitle = String(this.currentSceneData?._topicTitle || this.selectedTopic?.title || '').trim();
+        const topicKey = String(this.currentSceneData?._topicKey || this.selectedTopic?._topicKey || '').trim();
+
+        this.app?.honeyData?.clearTopicScene?.(topicKey || topicTitle, {
+            clearLastSceneIfMatch: true,
+            fallbackTitle: topicTitle,
+            topicKey
+        });
+        this.app?.honeyData?.saveSelectedTopicTitle?.('');
+        this.app?.honeyData?.saveSelectedTopicKey?.('');
+
+        this._activeLiveSettlement = null;
+        this.currentSceneData = null;
+        this.selectedTopic = null;
+        this.isScenePanelOpen = false;
+        this.currentPage = 'mine';
+        this.render();
+    }
+
+    _showUserLiveSettlementDialog() {
+        if (!this._isUserLiveScene(this.currentSceneData)) return;
+
+        const root = document.querySelector('.phone-view-current .honey-page-live')
+            || document.querySelector('.honey-page-live');
+        if (!root) return;
+        if (root.querySelector('#honey-live-settlement-modal')) return;
+
+        const incomeCoins = this._getCurrentUserLiveIncomeCoins(this.currentSceneData);
+        const incomeYuan = Math.round((incomeCoins / 10) * 100) / 100;
+        const balanceBefore = this.app?.honeyData?.getHoneyCoinBalance?.() || 0;
+        const balanceAfter = incomeCoins > 0
+            ? (this.app?.honeyData?.updateHoneyCoinBalance?.(incomeCoins) ?? balanceBefore)
+            : balanceBefore;
+
+        this._activeLiveSettlement = {
+            incomeCoins,
+            incomeYuan,
+            balanceAfter,
+            withdrawn: false
+        };
+
+        const settledTopicTitle = String(this.currentSceneData?._topicTitle || this.selectedTopic?.title || '').trim();
+        const settledTopicKey = String(this.currentSceneData?._topicKey || this.selectedTopic?._topicKey || '').trim();
+        this.app?.honeyData?.clearTopicScene?.(settledTopicKey || settledTopicTitle, {
+            clearLastSceneIfMatch: true,
+            fallbackTitle: settledTopicTitle,
+            topicKey: settledTopicKey
+        });
+        this.app?.honeyData?.saveSelectedTopicTitle?.('');
+        this.app?.honeyData?.saveSelectedTopicKey?.('');
+
+        const html = `
+            <div id="honey-live-settlement-modal" style="position:absolute; inset:0; z-index:2600; display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box; background:rgba(0,0,0,0.42);">
+                <div style="width:100%; max-width:320px; border-radius:18px; overflow:hidden; background:linear-gradient(180deg, rgba(34,17,28,0.98), rgba(25,12,22,0.98)); border:1px solid rgba(255,255,255,0.08); box-shadow:0 20px 50px rgba(0,0,0,0.35);">
+                    <div style="padding:18px 18px 10px; text-align:center;">
+                        <div style="font-size:18px; font-weight:700; color:#ffe3ef;">直播已结束</div>
+                        <div style="margin-top:6px; font-size:12px; color:rgba(255,227,239,0.7);">本次收益已存入蜜语金币余额</div>
+                    </div>
+                    <div style="padding:10px 18px 18px;">
+                        <div style="padding:14px 16px; border-radius:14px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); text-align:center;">
+                            <div style="font-size:12px; color:rgba(255,227,239,0.72);">本次直播收益</div>
+                            <div style="margin-top:8px; font-size:28px; font-weight:700; color:#fff0f7;">${this._formatCoinDisplay(incomeCoins)} 金币</div>
+                            <div style="margin-top:6px; font-size:12px; color:rgba(255,227,239,0.72);">约 ¥${this._formatMoneyDisplay(incomeYuan)}</div>
+                        </div>
+                        <div id="honey-live-settlement-status" style="margin-top:12px; font-size:12px; line-height:1.6; color:rgba(255,227,239,0.82);">
+                            当前蜜语余额：${this._formatCoinDisplay(balanceAfter)} 金币
+                        </div>
+                        <div style="display:flex; gap:10px; margin-top:16px;">
+                            <button id="honey-live-withdraw-btn" style="flex:1; height:38px; border:none; border-radius:10px; cursor:pointer; font-size:13px; font-weight:600; color:#fff; background:linear-gradient(135deg, #ff6fa7, #ff8a5b);">提现到微信</button>
+                            <button id="honey-live-settlement-close" style="flex:1; height:38px; border:none; border-radius:10px; cursor:pointer; font-size:13px; font-weight:600; color:#2a1120; background:#ffe4ef;">完成</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        root.insertAdjacentHTML('beforeend', html);
+        const modal = root.querySelector('#honey-live-settlement-modal');
+        const statusEl = modal?.querySelector('#honey-live-settlement-status');
+        const withdrawBtn = modal?.querySelector('#honey-live-withdraw-btn');
+        const closeBtn = modal?.querySelector('#honey-live-settlement-close');
+
+        const closeSettlement = () => {
+            modal?.remove();
+            this._finalizeEndedUserLiveSession();
+        };
+
+        modal?.addEventListener('click', (e) => {
+            if (e.target === modal) closeSettlement();
+        });
+        closeBtn?.addEventListener('click', closeSettlement);
+
+        withdrawBtn?.addEventListener('click', () => {
+            if (!this._activeLiveSettlement || this._activeLiveSettlement.withdrawn) return;
+            if (incomeCoins <= 0) {
+                this.app?.phoneShell?.showNotification?.('提现失败', '本次直播暂无可提现收益', 'ℹ️');
+                return;
+            }
+
+            const result = this.app?.honeyData?.withdrawHoneyCoinsToWechat?.(incomeCoins);
+            if (!result?.success) {
+                if (result?.reason === 'coin_insufficient') {
+                    this.app?.phoneShell?.showNotification?.('提现失败', '当前蜜语金币不足，无法提现', '⚠️');
+                    return;
+                }
+                this.app?.phoneShell?.showNotification?.('提现失败', '微信钱包暂不可用', '⚠️');
+                return;
+            }
+
+            this._activeLiveSettlement.withdrawn = true;
+            if (statusEl) {
+                statusEl.innerHTML = `当前蜜语余额：${this._formatCoinDisplay(result.balanceAfter || 0)} 金币<br>微信提现成功：¥${this._formatMoneyDisplay(result.amountYuan || 0)}，钱包余额 ¥${this._formatMoneyDisplay(result.walletAfter || 0)}`;
+            }
+            if (withdrawBtn) {
+                withdrawBtn.disabled = true;
+                withdrawBtn.textContent = '已提现';
+                withdrawBtn.style.opacity = '0.6';
+                withdrawBtn.style.cursor = 'default';
+            }
+            this.app?.phoneShell?.showNotification?.(
+                '提现成功',
+                `已转入微信钱包 ¥${this._formatMoneyDisplay(result.amountYuan || 0)}`,
+                '✅'
+            );
+        });
     }
 
     _pushLiveGift(text, options = {}) {
@@ -3652,7 +4888,7 @@ export class HoneyView {
         if (!merged.length) return [];
 
         // 仅打乱展示顺序，不改底层记录顺序
-        const shuffleSeed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
+        const shuffleSeed = this._simpleHash(JSON.stringify(merged));
         const shuffled = this._seededShuffle(merged, shuffleSeed);
         return shuffled.slice(-18);
     }
@@ -3790,6 +5026,27 @@ export class HoneyView {
         };
     }
 
+    _getHoneyUserLivePromptConfig(promptManager = null) {
+        const manager = promptManager || this._getPromptManager();
+        let prompt = manager?.prompts?.honey?.userLive;
+        if (!prompt) {
+            const defaults = manager?.getDefaultPrompts?.();
+            const defaultPrompt = defaults?.honey?.userLive;
+            if (defaultPrompt && manager?.prompts?.honey) {
+                manager.prompts.honey.userLive = { ...defaultPrompt };
+                manager.savePrompts?.();
+                prompt = manager.prompts.honey.userLive;
+            } else if (defaultPrompt) {
+                prompt = { ...defaultPrompt };
+            }
+        }
+        return prompt || {
+            name: '蜜语用户开播',
+            description: '用户自己开播时的 JSON 输出规则',
+            content: ''
+        };
+    }
+
     _isHoneyLiveEnabled(promptManager = null) {
         // 蜜语改为按用户主动触发，不再受设置页开关阻断
         return true;
@@ -3801,6 +5058,7 @@ export class HoneyView {
         if (text === '点击刷新后由 AI 生成实时剧情。') return false;
         if (text === '点击左侧刷新按钮生成剧情。') return false;
         if (text === '回推荐页下拉刷新生成剧情。') return false;
+        if (text === this._getUserLiveIdleHintText()) return false;
         if (text === '暂无剧情描写。') return false;
         if (text === '暂无剧情描写，点击刷新后自动生成。') return false;
         if (text === '正在连线中...') return false;
@@ -3827,6 +5085,8 @@ export class HoneyView {
         const aiComments = Array.isArray(aiData.comments) ? aiData.comments : [];
         const aiGifts = Array.isArray(aiData.gifts) ? aiData.gifts : [];
         const aiLeaderboard = Array.isArray(aiData.leaderboard) ? aiData.leaderboard : [];
+        const aiFriendRequests = Array.isArray(aiData.friendRequests) ? aiData.friendRequests : [];
+        const aiCollabRequests = Array.isArray(aiData.collabRequests) ? aiData.collabRequests : [];
         const aiFavorability = this._normalizeFavorability(aiData.favorability, null);
 
         const currentDescription = String(currentScene?.description || '').trim();
@@ -3840,6 +5100,8 @@ export class HoneyView {
             && aiCommentsKey !== currentCommentsKey;
         const hasGifts = aiGifts.length > 0;
         const hasLeaderboard = aiLeaderboard.length > 0;
+        const hasFriendRequests = aiFriendRequests.length > 0;
+        const hasCollabRequests = aiCollabRequests.length > 0;
         const hasFavorability = aiFavorability !== null;
 
         const hasMetaDelta = ['viewers', 'playCount', 'fans', 'collab'].some((key) => {
@@ -3857,6 +5119,8 @@ export class HoneyView {
             || hasMeaningfulComments
             || hasGifts
             || hasLeaderboard
+            || hasFriendRequests
+            || hasCollabRequests
             || hasFavorability
             || hasMetaDelta
             || hasHostOrTitleDelta
@@ -3909,6 +5173,11 @@ export class HoneyView {
                 this.currentSceneData.comments = this.selectedTopic.comments;
             }
         }
+
+        if (this._isUserLiveScene(this.selectedTopic || this.currentSceneData)) {
+            this._liveBackTarget = 'mine';
+            this._liveEntrySource = 'mine';
+        }
     }
 
     _getSessionKey() {
@@ -3960,6 +5229,8 @@ export class HoneyView {
                 coins: String(source.userGiftRank.coins || '').trim()
             }
             : null;
+        const safeCollabRequests = this._normalizeLiveCollabRequests(source?.collabRequests || []);
+        const safeCollabRequestInfo = this._normalizeLiveCollabRequest(source?.collabRequestInfo || null);
         return {
             host: source.host || '神秘主播',
             title: source.title || safeTitle || '直播间',
@@ -3978,6 +5249,8 @@ export class HoneyView {
             leaderboard: Array.isArray(source.leaderboard) ? source.leaderboard : [],
             audienceGiftTotals: safeAudienceGiftTotals,
             userGiftRank: (safeUserGiftRank && safeUserGiftRank.name) ? safeUserGiftRank : null,
+            collabRequests: safeCollabRequests,
+            collabRequestInfo: safeCollabRequestInfo,
             favorability: this._normalizeFavorability(source.favorability ?? source.affection, 0),
             _topicTitle: safeTitle,
             _topicKey: safeKey
@@ -4090,6 +5363,9 @@ export class HoneyView {
                         comments: restoredScene.comments
                     };
                     this._persistCurrentScene();
+                    if (this.currentPage === 'live') {
+                        this._refreshLivePageDom({ sourceRoot, scene: restoredScene });
+                    }
                 }
             };
 
@@ -4125,9 +5401,17 @@ export class HoneyView {
             const previousUserChats = Array.isArray(workingScene?.userChats) ? workingScene.userChats : [];
             const previousPromptTurns = Array.isArray(workingScene?.promptTurns) ? workingScene.promptTurns : [];
             const previousComments = Array.isArray(workingScene?.comments) ? workingScene.comments : [];
+            const previousGiftsForRequestMode = Array.isArray(workingScene?.gifts) ? workingScene.gifts : [];
             const previousLastUserComment = String(workingScene?.lastUserComment || '').trim();
+            const isUserLiveTopic = this._isUserLiveScene({ ...workingScene, _topicKey: topicKey, _topicTitle: topicTitle });
             const honeyNickname = this.app?.honeyData?.getHoneyUserNickname?.() || '你';
-            const localUserComment = normalizedUserMessage ? `${honeyNickname}：${normalizedUserMessage}` : '';
+            const userLiveProfile = isUserLiveTopic
+                ? (this.app?.honeyData?.getHoneyUserProfile?.() || {})
+                : null;
+            const userLiveSpeakerName = String(userLiveProfile?.nickname || honeyNickname || '你').trim() || '你';
+            const localUserComment = normalizedUserMessage
+                ? `${isUserLiveTopic ? userLiveSpeakerName : honeyNickname}：${normalizedUserMessage}`
+                : '';
             if (normalizedUserMessage) {
                 workingScene.userChats = [...previousUserChats, localUserComment].slice(-200);
                 workingScene.comments = previousComments.slice(-20);
@@ -4151,9 +5435,8 @@ export class HoneyView {
             if (isRequestStillActive()) {
                 this.currentSceneData = { ...workingScene, _topicTitle: topicTitle, _topicKey: topicKey };
                 this._persistCurrentScene();
-                // 用户回车发送后立刻刷新，让弹幕即时进入滚动区
-                if (normalizedUserMessage && this.currentPage === 'live') {
-                    this.render();
+                if (this.currentPage === 'live') {
+                    this._refreshLivePageDom({ sourceRoot, scene: this.currentSceneData });
                 }
             } else {
                 this.app?.honeyData?.saveTopicScene?.(topicKey || topicTitle, {
@@ -4169,16 +5452,35 @@ export class HoneyView {
                 return (topicKey && itemKey === topicKey) || (!!topicTitle && itemTitle === topicTitle);
             });
             const isDirectLiveTopic = topicKey === 'topic_direct_live';
-            const requestMode = normalizedUserMessage
-                ? 'continue'
-                : ((isDirectLiveTopic || !hasRecommendTopic) ? 'from_scratch' : 'recommend');
+            const hasExistingLiveState = this._hasMeaningfulSceneDescription(previousDescription)
+                || previousComments.length > 0
+                || previousUserChats.length > 0
+                || previousGiftsForRequestMode.length > 0
+                || this._getSceneAudienceGiftTotals(workingScene) && Object.keys(this._getSceneAudienceGiftTotals(workingScene)).length > 0;
+            const requestMode = isUserLiveTopic
+                ? (normalizedUserMessage
+                    ? (hasExistingLiveState ? 'continue' : 'start_with_user_message')
+                    : 'idle')
+                : (normalizedUserMessage
+                    ? 'continue'
+                    : ((isDirectLiveTopic || !hasRecommendTopic) ? 'from_scratch' : 'recommend'));
             const requestTopic = (requestMode === 'recommend' || requestMode === 'continue')
                 ? topicTitle
                 : '';
 
             let aiData = null;
             try {
-                aiData = await this.app.honeyData.generateLiveScene(null, {
+                aiData = await (isUserLiveTopic
+                    ? this.app.honeyData.generateUserLiveScene(null, {
+                        requestMode,
+                        userMessage: normalizedUserMessage,
+                        previousDescription,
+                        currentUserChats: previousUserChats,
+                        promptTurns: previousPromptTurns,
+                        currentScene: workingScene,
+                        currentComments: previousComments
+                    })
+                    : this.app.honeyData.generateLiveScene(null, {
                     requestMode,
                     topic: requestTopic,
                     userMessage: normalizedUserMessage,
@@ -4187,7 +5489,7 @@ export class HoneyView {
                     promptTurns: previousPromptTurns,
                     currentScene: workingScene,
                     currentComments: previousComments
-                });
+                }));
             } catch (err) {
                 const errMsg = String(err?.message || err || '').trim();
                 const isEmptyLikeError = /返回为空|empty|null|无内容|空响应|未返回有效内容/i.test(errMsg);
@@ -4202,7 +5504,28 @@ export class HoneyView {
                 throw err;
             }
 
-            if (!this._hasEffectiveAiSceneUpdate(aiData, sceneSnapshotBeforeRequest)) {
+            if (isUserLiveTopic && aiData && typeof aiData === 'object') {
+                aiData = {
+                    ...aiData,
+                    leaderboard: [],
+                    userGiftRank: null
+                };
+            }
+
+            const mergedFriendRequests = this.app?.honeyData?.mergeHoneyFriendRequests?.(aiData?.friendRequests || [])
+                || { added: 0, list: this.app?.honeyData?.getHoneyFriendRequests?.() || [] };
+            const mergedInteractionRecords = isUserLiveTopic
+                ? (this.app?.honeyData?.applyHoneyInteractionRecords?.(aiData?.interactionRecords || []) || { updatedFriends: 0, updatedRequests: 0, updatedContacts: 0 })
+                : { updatedFriends: 0, updatedRequests: 0, updatedContacts: 0 };
+            const previousCollabRequests = this._normalizeLiveCollabRequests(workingScene?.collabRequests || []);
+            const aiCollabRequests = isUserLiveTopic
+                ? this._normalizeLiveCollabRequests(aiData?.collabRequests || [])
+                : [];
+            const aiDataForEffectCheck = mergedFriendRequests.added > 0
+                ? aiData
+                : { ...aiData, friendRequests: [] };
+
+            if (!this._hasEffectiveAiSceneUpdate(aiDataForEffectCheck, sceneSnapshotBeforeRequest)) {
                 restoreSceneSnapshot();
                 if (isRequestStillActive()) {
                     this.app?.phoneShell?.showNotification?.('蜜语', 'AI未返回有效更新，已保留当前内容', 'ℹ️');
@@ -4212,12 +5535,12 @@ export class HoneyView {
 
             // 核心修复：只有在 "from_scratch" (直接点击激情直播盲开) 时才允许覆盖推荐列表
             // 如果是从推荐页点进来的 (recommend) 或发弹幕续写 (continue)，直接无视 AI 附带生成的推荐数据，保护原有列表！
-            if (requestMode === 'from_scratch') {
+            if (!isUserLiveTopic && requestMode === 'from_scratch') {
                 if (Array.isArray(aiData?.recommendTopics) && aiData.recommendTopics.length > 0) {
                     this.recommendTopics = this._normalizeRecommendTopics(aiData.recommendTopics);
                     this.app?.honeyData?.saveRecommendTopics?.(this.recommendTopics);
                 }
-            } else {
+            } else if (!isUserLiveTopic) {
                 console.log(`️ [蜜语防覆盖] 当前模式为 ${requestMode}，已拦截并丢弃 AI 附带生成的推荐列表，保护原有推荐页。`);
             }
 
@@ -4250,6 +5573,8 @@ export class HoneyView {
                 ...baseScene,
                 ...workingScene,
                 ...aiData,
+                isUserLive: isUserLiveTopic || aiData?.isUserLive === true,
+                friendRequests: mergedFriendRequests.list,
                 gifts: mergedGifts,
                 comments: mergedComments,
                 lastUserComment: nextLastUserComment,
@@ -4264,16 +5589,59 @@ export class HoneyView {
                 ...this._getSceneAudienceGiftTotals(workingScene),
                 ...this._getSceneAudienceGiftTotals(nextScene)
             };
-            nextScene.audienceGiftTotals = mergedAudienceGiftTotals;
-            const honeyNicknameForRank = this.app?.honeyData?.getHoneyUserNickname?.() || '你';
-            const safeHoneyNickname = this._normalizeLeaderboardName(honeyNicknameForRank);
-            const userGiftTotal = Math.max(0, Math.round(Number(mergedAudienceGiftTotals[safeHoneyNickname] || 0)));
-            const mergedLeaderboardState = this._buildMergedLeaderboardWithUser(nextScene?.leaderboard, honeyNicknameForRank, userGiftTotal);
-            nextScene.leaderboard = mergedLeaderboardState.top3;
-            nextScene.userGiftRank = mergedLeaderboardState.userRank;
+            if (isUserLiveTopic) {
+                const effectiveCollabName = this._normalizeLiveCollabName(nextScene?.collab);
+                const mergedCollabRequests = effectiveCollabName === '无'
+                    ? this._mergeLiveCollabRequests(previousCollabRequests, aiCollabRequests)
+                    : [];
+                const previousCollabInfo = this._normalizeLiveCollabRequest(workingScene?.collabRequestInfo || null);
+                const matchedAcceptedRequest = this._mergeLiveCollabRequests(previousCollabRequests, aiCollabRequests)
+                    .find(item => this._normalizeLeaderboardName(item?.name || '') === this._normalizeLeaderboardName(effectiveCollabName));
+
+                const userLiveExcludedNames = [
+                    userLiveSpeakerName,
+                    userLiveProfile?.nickname || '',
+                    '你',
+                    'user'
+                ];
+                const updatedAudienceGiftTotals = this._accumulateAudienceGiftTotalsFromGiftLines(
+                    mergedAudienceGiftTotals,
+                    aiGifts,
+                    { excludeNames: userLiveExcludedNames }
+                );
+                const userLiveLeaderboardState = this._buildLeaderboardFromAudienceTotals(updatedAudienceGiftTotals);
+                nextScene.audienceGiftTotals = updatedAudienceGiftTotals;
+                nextScene.leaderboard = userLiveLeaderboardState.top3;
+                nextScene.userGiftRank = null;
+                nextScene.collabRequests = mergedCollabRequests;
+                nextScene.collabRequestInfo = effectiveCollabName !== '无'
+                    ? (matchedAcceptedRequest || previousCollabInfo || null)
+                    : null;
+
+                const resolvedCollabState = effectiveCollabName;
+                if (resolvedCollabState === '无' && !String(aiData?.description || '').trim()) {
+                    nextScene.description = '当前暂无联播剧情，直播主要通过弹幕滚动推进。';
+                }
+            } else {
+                const updatedAudienceGiftTotals = this._accumulateAudienceGiftTotalsFromGiftLines(
+                    mergedAudienceGiftTotals,
+                    aiGifts
+                );
+                nextScene.audienceGiftTotals = updatedAudienceGiftTotals;
+                const honeyNicknameForRank = this.app?.honeyData?.getHoneyUserNickname?.() || '你';
+                const safeHoneyNickname = this._normalizeLeaderboardName(honeyNicknameForRank);
+                const userGiftTotal = Math.max(0, Math.round(Number(updatedAudienceGiftTotals[safeHoneyNickname] || 0)));
+                const mergedLeaderboardState = this._buildMergedLeaderboardWithUser(nextScene?.leaderboard, honeyNicknameForRank, userGiftTotal);
+                nextScene.leaderboard = mergedLeaderboardState.top3;
+                nextScene.userGiftRank = mergedLeaderboardState.userRank;
+            }
             if (resolvedSceneFavorability !== null) {
                 nextScene.favorability = resolvedSceneFavorability;
             }
+
+            const previousCollabRequestFingerprint = this._getLiveCollabRequestFingerprint(previousCollabRequests);
+            const nextCollabRequestFingerprint = this._getLiveCollabRequestFingerprint(nextScene?.collabRequests || []);
+            const hasNewCollabRequests = !!nextCollabRequestFingerprint && nextCollabRequestFingerprint !== previousCollabRequestFingerprint;
 
             this.app?.honeyData?.saveTopicScene?.(topicKey || topicTitle, nextScene, topicTitle);
 
@@ -4292,11 +5660,23 @@ export class HoneyView {
                     comments: this.currentSceneData.comments
                 };
 
+                if (hasNewCollabRequests) {
+                    this._dismissedLiveCollabRequestFingerprint = '';
+                }
                 this._persistCurrentScene();
+                if (this.currentPage === 'live') {
+                    this._refreshLivePageDom({ sourceRoot, scene: nextScene });
+                }
             }
 
             if (notify && isRequestStillActive()) {
                 this.app.phoneShell.showNotification('蜜语', '直播剧情已刷新', '✅');
+            }
+            if (mergedFriendRequests.added > 0 && isRequestStillActive()) {
+                this.app?.phoneShell?.showNotification?.('蜜语', `新增 ${mergedFriendRequests.added} 条好友申请`, '💌');
+            }
+            if (isUserLiveTopic && hasNewCollabRequests && isRequestStillActive() && this._normalizeLiveCollabName(this.currentSceneData?.collab) === '无') {
+                this.app?.phoneShell?.showNotification?.('联播通知', `收到 ${aiCollabRequests.length} 条新的联播申请`, '📡');
             }
         } finally {
             this._isGeneratingScene = false;
@@ -4321,6 +5701,8 @@ export class HoneyView {
             promptTurns: [],
             audienceGiftTotals: {},
             userGiftRank: null,
+            collabRequests: [],
+            collabRequestInfo: null,
             description: this._getRecommendRefreshHintText()
         };
     }
@@ -4331,6 +5713,81 @@ export class HoneyView {
             title: '直播间',
             _topicKey: 'topic_direct_live'
         };
+    }
+
+    _getUserLiveTopic(profile = null) {
+        const safeProfile = (profile && typeof profile === 'object')
+            ? profile
+            : (this.app?.honeyData?.getHoneyUserProfile?.() || {});
+        const nickname = String(safeProfile?.nickname || '主播').trim() || '主播';
+        const liveTitle = String(safeProfile?.liveTitle || `${nickname}的直播间`).trim() || `${nickname}的直播间`;
+        const followerCount = Math.max(0, Number.parseInt(String(safeProfile?.followers || 0), 10) || 0);
+        return {
+            ...this._getFallbackTopic(),
+            title: liveTitle,
+            host: nickname,
+            fans: String(followerCount),
+            viewers: '0',
+            playCount: '0',
+            intro: String(safeProfile?.intro || '').trim(),
+            isUserLive: true,
+            _topicKey: 'topic_user_live'
+        };
+    }
+
+    _syncUserLiveProfileDisplay(profile = null, patch = {}) {
+        const safeProfile = (profile && typeof profile === 'object')
+            ? profile
+            : (this.app?.honeyData?.getHoneyUserProfile?.() || null);
+        if (!safeProfile) return;
+
+        const hasTitlePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'liveTitle');
+        const hasIntroPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'intro');
+        const hasAvatarPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'avatarUrl');
+        const hasFollowerPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'followers');
+        const hasNicknamePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'nickname');
+        if (!hasTitlePatch && !hasIntroPatch && !hasAvatarPatch && !hasFollowerPatch && !hasNicknamePatch) return;
+
+        const syncedTopic = this._getUserLiveTopic(safeProfile);
+        const activeSource = this.currentSceneData || this.selectedTopic;
+        const shouldSyncActiveScene = this._isUserLiveScene(activeSource);
+
+        if (this.selectedTopic && this._isUserLiveScene(this.selectedTopic)) {
+            this.selectedTopic = {
+                ...this.selectedTopic,
+                title: syncedTopic.title,
+                host: syncedTopic.host,
+                intro: syncedTopic.intro,
+                fans: hasFollowerPatch ? syncedTopic.fans : (this.selectedTopic.fans || syncedTopic.fans),
+                _topicKey: 'topic_user_live'
+            };
+            this.app?.honeyData?.saveSelectedTopicTitle?.(this.selectedTopic.title);
+            this.app?.honeyData?.saveSelectedTopicKey?.('topic_user_live');
+        }
+
+        if (this.currentSceneData && shouldSyncActiveScene) {
+            this.currentSceneData = {
+                ...this.currentSceneData,
+                title: syncedTopic.title,
+                _topicTitle: syncedTopic.title,
+                host: syncedTopic.host,
+                intro: syncedTopic.intro,
+                fans: hasFollowerPatch ? syncedTopic.fans : (this.currentSceneData.fans || syncedTopic.fans)
+            };
+            const topicRef = this.currentSceneData._topicKey || this.currentSceneData._topicTitle || 'topic_user_live';
+            this.app?.honeyData?.saveTopicScene?.(topicRef, this.currentSceneData, syncedTopic.title);
+            this._persistCurrentScene();
+        }
+    }
+
+    _isUserLiveScene(scene = null) {
+        const source = scene && typeof scene === 'object'
+            ? scene
+            : (this.currentSceneData || this.selectedTopic || null);
+        const topicKey = String(source?._topicKey || '').trim();
+        if (topicKey === 'topic_user_live') return true;
+        if (source?.isUserLive === true) return true;
+        return false;
     }
 
     _getDefaultTopics() {

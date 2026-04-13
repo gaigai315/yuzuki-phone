@@ -55,7 +55,12 @@ export class ContactsView {
                                         <div class="contact-avatar">
                                             ${this.app.renderAvatar(contact.avatar, '👤', contact.name)}
                                         </div>
-                                        <div class="contact-name">${contact.name}</div>
+                                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex:1; min-width:0;">
+                                            <div class="contact-name" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${contact.name}</div>
+                                            ${contact.sourceApp === 'honey' || contact.sourceLabel === '蜜语'
+                                                ? '<span style="flex-shrink:0; display:inline-flex; align-items:center; gap:4px; padding:2px 6px; margin-right:16px; border-radius:999px; background:rgba(255,105,180,0.14); color:#ff5fa2; font-size:10px; line-height:1; border:1px solid rgba(255,105,180,0.24);"><i class="fa-solid fa-heart" style="font-size:9px;"></i>蜜语</span>'
+                                                : ''}
+                                        </div>
                                     </div>
                                 `).join('')}
                             </div>
@@ -964,4 +969,3 @@ export class ContactsView {
         };
     }
 }
-
