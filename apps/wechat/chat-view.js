@@ -10,6 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 import { ImageCropper } from '../settings/image-cropper.js';
+import { captureWechatChatSnapshot } from './chat-snapshot.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 // 聊天界面视图
@@ -72,8 +73,8 @@ export class ChatView {
                             <button class="input-btn" id="regenerate-btn" title="重新生成">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
                             </button>
-                            <button class="input-btn" id="emoji-btn" title="表情">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                            <button class="input-btn" id="more-btn">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
                             </button>
                         </div>
                         <div class="chat-input-wrapper" style="flex: 1; margin: 0;">
@@ -81,8 +82,8 @@ export class ChatView {
                                    placeholder="输入消息..." value="${this.inputText}">
                         </div>
                         <div style="display: flex; align-items: center; gap: 0px;">
-                            <button class="input-btn" id="more-btn">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                            <button class="input-btn" id="emoji-btn" title="表情">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                             </button>
                             <button class="input-btn" id="send-btn" style="color: ${this.isSending ? '#ff3b30' : '#07c160'};">
                                 ${this.isSending
@@ -526,6 +527,20 @@ export class ChatView {
                         <i class="fa-solid fa-camera" style="font-size: 14px;"></i>
                     </div>
                     <div class="more-name">拍照</div>
+                </div>
+
+                <div class="more-item" data-action="screenshot">
+                    <div class="more-icon">
+                        <i class="fa-solid fa-camera-retro" style="font-size: 14px;"></i>
+                    </div>
+                    <div class="more-name">截图</div>
+                </div>
+
+                <div class="more-item" data-action="longshot">
+                    <div class="more-icon">
+                        <i class="fa-solid fa-scroll" style="font-size: 14px;"></i>
+                    </div>
+                    <div class="more-name">长截图</div>
                 </div>
 
                 <div class="more-item" data-action="voice">
@@ -1589,9 +1604,114 @@ export class ChatView {
         });
     }
 
+    waitForNextPaint() {
+        return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+
+    async sendImageMessageFromDataUrl(dataUrl, filenamePrefix = 'phone_chatimg') {
+        if (!dataUrl || !this.app.currentChat) return;
+
+        let finalUrl = dataUrl;
+        try {
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+            const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+            const filename = `${filenamePrefix}_${Date.now()}.${ext}`;
+            const formData = new FormData();
+            formData.append('avatar', blob, filename);
+            const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+            delete headers['Content-Type'];
+            if (!headers['X-CSRF-Token']) {
+                const csrfResp = await fetch('/csrf-token');
+                if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
+            }
+            const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
+            if (uploadResp.ok) finalUrl = `/backgrounds/${filename}`;
+        } catch (uploadErr) {
+            console.warn('聊天图片上传服务器失败，使用本地降级:', uploadErr);
+        }
+
+        this.app.wechatData.addMessage(this.app.currentChat.id, {
+            from: 'me',
+            type: 'image',
+            content: finalUrl,
+            avatar: this.app.wechatData.getUserInfo().avatar
+        });
+
+        this.app.render();
+
+        if (this.isOnlineMode()) {
+            this.pendingTargetChatId = this.app.currentChat.id;
+            clearTimeout(this.batchTimer);
+            this.batchTimer = setTimeout(() => this.triggerAI(this.pendingTargetChatId), 6000);
+            this.showTypingStatus('等待回复', this.pendingTargetChatId);
+        }
+    }
+
+    async getSnapshotChatRoot() {
+        return this.getCurrentWechatRoot();
+    }
+
+    // 找到这段代码，把它整块替换掉
+    async captureAndSendChatSnapshot({ longCapture = false } = {}) {
+        if (!this.app.currentChat) return;
+
+        const actionLabel = longCapture ? '长截图' : '截图';
+        
+        try {
+            // 1. 先安全地关闭底部的“更多”和“表情”面板
+            this.showMore = false;
+            this.showEmoji = false;
+            this.app.render(); // 触发渲染，让面板真正消失
+
+            // 2. 等待 UI 动画收起并稳定，彻底杜绝闪烁和错位
+            await new Promise(resolve => setTimeout(resolve, 250));
+
+            // 3. 提示用户正在截图
+            this.app.phoneShell.showNotification(actionLabel, longCapture ? '正在生成长截图，请稍候...' : '正在生成截图...', '📸');
+            
+            // 4. 获取当前微信的主容器
+            const snapshotRoot = this.getCurrentWechatRoot();
+            if (!snapshotRoot) throw new Error('找不到聊天截图根节点');
+
+            // 5. 调用外部方法进行无感截图 (拿到 Base64 图片数据)
+            const imageDataUrl = await captureWechatChatSnapshot(snapshotRoot, { longCapture });
+            
+            // 6. 🔥🔥🔥 核心修改：不再发送给AI，而是触发浏览器下载，保存到真实手机/电脑
+            const link = document.createElement('a');
+            link.href = imageDataUrl;
+            
+            // 生成一个带时间戳的文件名 (例如: WeChat_Snapshot_20231028123045.png)
+            const timeStamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+            link.download = `WeChat_${longCapture ? 'Long' : ''}Snapshot_${timeStamp}.png`;
+            
+            // 模拟点击下载
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // 7. 提示用户保存成功
+            this.app.phoneShell.showNotification(actionLabel, '截图已保存到你的设备相册/下载目录', '✅');
+        } catch (err) {
+            console.error(`[ChatView] ${actionLabel}失败:`, err);
+            this.app.phoneShell.showNotification('错误', `${actionLabel}失败，请看控制台`, '❌');
+        }
+    }
+
+    getCurrentWechatRoot() {
+        return document.querySelector('.phone-view-current .wechat-app') || document.querySelector('.wechat-app');
+    }
+
+    getCurrentWechatView() {
+        return document.querySelector('.phone-view-current') || document;
+    }
+
     bindEvents() {
-        const input = document.getElementById('chat-input');
-        const sendBtn = document.getElementById('send-btn');
+        const currentView = this.getCurrentWechatView();
+        const input = currentView.querySelector('#chat-input');
+        const sendBtn = currentView.querySelector('#send-btn');
+        const query = (selector) => currentView.querySelector(selector);
+        const queryAll = (selector) => currentView.querySelectorAll(selector);
 
         // 📱 输入框聚焦：用户正在编辑，立即打断自动回复倒计时
         input?.addEventListener('focus', () => {
@@ -1691,32 +1811,32 @@ export class ChatView {
         });
 
         // 🔥 重新生成按钮
-        document.getElementById('regenerate-btn')?.addEventListener('click', () => {
+        query('#regenerate-btn')?.addEventListener('click', () => {
             this.regenerateLastAIMessage();
         });
 
         // 🔥 取消引用按钮
-        document.getElementById('cancel-quote-btn')?.addEventListener('click', () => {
+        query('#cancel-quote-btn')?.addEventListener('click', () => {
             this.activeQuote = null;
             this.app.render();
         });
 
         // 更多按钮
-        document.getElementById('more-btn')?.addEventListener('click', () => {
+        query('#more-btn')?.addEventListener('click', () => {
             this.showMore = !this.showMore;
             this.showEmoji = false;
             this.app.render();
         });
 
         // 🔥 表情按钮
-        document.getElementById('emoji-btn')?.addEventListener('click', () => {
+        query('#emoji-btn')?.addEventListener('click', () => {
             this.showEmoji = !this.showEmoji;
             this.showMore = false;
             this.app.render();
         });
 
         // 选择表情
-        document.querySelectorAll('.emoji-item').forEach(item => {
+        queryAll('.emoji-item').forEach(item => {
             item.addEventListener('click', () => {
                 const emoji = item.dataset.emoji;
                 if (!emoji) return;
@@ -1727,7 +1847,7 @@ export class ChatView {
         });
 
         // 更多功能
-        document.querySelectorAll('.more-item').forEach(item => {
+        queryAll('.more-item').forEach(item => {
             item.addEventListener('click', () => {
                 const action = item.dataset.action;
                 this.handleMoreAction(action);
@@ -1735,7 +1855,7 @@ export class ChatView {
         });
 
         // 🔥 点击消息区域空白处，收起功能面板和表情面板
-        const messagesDiv = document.getElementById('chat-messages');
+        const messagesDiv = query('#chat-messages');
         messagesDiv?.addEventListener('click', (e) => {
             // 只有点击空白区域才收起（不是点击消息气泡）
             if (this.showMore || this.showEmoji) {
@@ -1754,56 +1874,18 @@ export class ChatView {
             try {
                 this.app.phoneShell.showNotification('处理中', '正在上传图片...', '⏳');
                 const compressedBase64 = await this.compressChatImage(file);
-
-                // 🔥 核心修复：将聊天图片真实上传到酒馆服务器，而不是存 Base64 撑爆内存
-                let finalUrl = compressedBase64;
-                try {
-                    const res = await fetch(compressedBase64);
-                    const blob = await res.blob();
-                    const ext = blob.type === 'image/png' ? 'png' : 'jpg';
-                    const filename = `phone_chatimg_${Date.now()}.${ext}`;
-                    const formData = new FormData();
-                    formData.append('avatar', blob, filename);
-                    const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
-                    delete headers['Content-Type']; // 🔥 加在这里！
-                    if (!headers['X-CSRF-Token']) {
-                        const csrfResp = await fetch('/csrf-token');
-                        if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
-                    }
-                    const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                    if (uploadResp.ok) finalUrl = `/backgrounds/${filename}`;
-                } catch (uploadErr) {
-                    console.warn('聊天图片上传服务器失败，使用本地降级:', uploadErr);
-                }
-
-                // 添加图片消息
-                this.app.wechatData.addMessage(this.app.currentChat.id, {
-                    from: 'me',
-                    type: 'image',
-                    content: finalUrl, // 存入纯净的 URL
-                    avatar: this.app.wechatData.getUserInfo().avatar
-                });
-
-                this.app.render();
-
-                // 🔥 如果开启在线模式，触发连发倒计时
-                if (this.isOnlineMode()) {
-                    this.pendingTargetChatId = this.app.currentChat.id;
-                    clearTimeout(this.batchTimer);
-                    this.batchTimer = setTimeout(() => this.triggerAI(this.pendingTargetChatId), 6000);
-                    this.showTypingStatus('等待回复', this.pendingTargetChatId);
-                }
+                await this.sendImageMessageFromDataUrl(compressedBase64, 'phone_chatimg');
             } catch (err) {
                 console.error('图片处理失败:', err);
                 this.app.phoneShell.showNotification('错误', '图片处理失败', '❌');
             }
         };
 
-        document.getElementById('photo-upload-input')?.addEventListener('change', handleImageFile);
-        document.getElementById('camera-upload-input')?.addEventListener('change', handleImageFile);
+        query('#photo-upload-input')?.addEventListener('change', handleImageFile);
+        query('#camera-upload-input')?.addEventListener('change', handleImageFile);
 
         // 🔥 新增：表情标签切换
-        document.querySelectorAll('.emoji-tab').forEach(tab => {
+        queryAll('.emoji-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 this.emojiTab = tab.dataset.tab;
                 this.app.render();
@@ -1811,12 +1893,12 @@ export class ChatView {
         });
 
         // 🔥 新增：添加自定义表情
-        document.getElementById('add-custom-emoji')?.addEventListener('click', () => {
+        query('#add-custom-emoji')?.addEventListener('click', () => {
             this.showAddCustomEmojiDialog();
         });
 
         // 🔥 新增：选择自定义表情
-        document.querySelectorAll('.custom-emoji-item').forEach(item => {
+        queryAll('.custom-emoji-item').forEach(item => {
             item.addEventListener('click', () => {
                 const emojiId = item.dataset.emojiId;
                 const emoji = this.app.wechatData.getCustomEmoji(emojiId);
@@ -1843,7 +1925,7 @@ export class ChatView {
 
                     // 兼容旧数据：若图片字段为空，退回文本占位插入
                     this.inputText += `[${emoji.name}]`;
-                    const inputEl = document.getElementById('chat-input');
+                    const inputEl = query('#chat-input');
                     if (inputEl) {
                         inputEl.value = this.inputText;
                         inputEl.focus();
@@ -1856,9 +1938,10 @@ export class ChatView {
         this.bindSpecialMessageEvents();
 
         // 添加头像点击事件
-        document.querySelectorAll('.message-avatar').forEach(avatar => {
+        queryAll('.message-avatar').forEach(avatar => {
             avatar.addEventListener('click', (e) => {
                 const message = e.target.closest('.chat-message');
+                if (!message) return;
                 const isMe = message.classList.contains('message-right');
 
                 if (!isMe) {
@@ -3364,7 +3447,7 @@ export class ChatView {
         return messages;
     }
 
-    handleMoreAction(action) {
+    async handleMoreAction(action) {
         switch (action) {
             case 'emoji':
                 // 🔥 打开表情面板
@@ -3377,6 +3460,12 @@ export class ChatView {
                 break;
             case 'camera':
                 this.takePhoto();
+                break;
+            case 'screenshot':
+                await this.captureAndSendChatSnapshot({ longCapture: false });
+                break;
+            case 'longshot':
+                await this.captureAndSendChatSnapshot({ longCapture: true });
                 break;
             case 'video':
                 this.startVideoCall();

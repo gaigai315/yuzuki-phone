@@ -16,9 +16,9 @@
 :root {
     /* 🔥 新版：统一的全局文字颜色 */
     --phone-global-text: #000000;
-    /* 📏 手机壳缩放：宽度保持原样，高度缩小 10% */
+    /* 📏 手机壳缩放：宽度保持原样，高度缩小 5% */
     --phone-shell-width-scale: 1;
-    --phone-shell-height-scale: 0.9;
+    --phone-shell-height-scale: 0.95;
 
     /* ⚠️ 已废弃：以下变量保留以防兼容性问题，但不再使用 */
     --phone-time-color: #ffffff;
@@ -162,7 +162,7 @@
    ======================================== */
 
 .phone-body-panel {
-    /* 🔥 自适应后仅缩小高度 10%，宽度保持原样 */
+    /* 🔥 自适应后仅缩小高度 5%，宽度保持原样 */
     width: min(
         calc(400px * var(--phone-shell-width-scale, 1)),
         95vw,
@@ -2580,4 +2580,3 @@ input:checked + .toggle-slider:before {
     66%  { content: '...'; }
     100% { content: '.'; }
 }
-

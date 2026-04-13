@@ -309,6 +309,13 @@ export class WeiboData {
         const rangeEndRaw = parseInt(options.chatEndIndex, 10);
 
         const contextMessages = [];
+        const pushSystemMessage = (content, name = '') => {
+            const text = String(content || '').trim();
+            if (!text) return;
+            const msg = { role: 'system', content: text, isPhoneMessage: true };
+            if (name) msg.name = name;
+            contextMessages.push(msg);
+        };
 
         // 角色卡信息
         let char = null;
@@ -319,7 +326,7 @@ export class WeiboData {
             if (char.personality) charInfo += `\n性格：${char.personality}`;
             if (char.scenario) charInfo += `\n场景/背景：${char.scenario}`;
             if (char.data?.system_prompt) charInfo += `\n角色系统提示词：${char.data.system_prompt.substring(0, 500)}`;
-            contextMessages.push(charInfo);
+            pushSystemMessage(charInfo, 'SYSTEM (角色卡信息)');
         }
 
         // 世界书背景（可选）
@@ -340,7 +347,7 @@ export class WeiboData {
                     if (chunks.length >= 12) break;
                 }
                 if (chunks.length > 0) {
-                    contextMessages.push(`【世界书背景】\n${chunks.join('\n\n')}`);
+                    pushSystemMessage(`【世界书背景】\n${chunks.join('\n\n')}`, 'SYSTEM (世界书背景)');
                 }
             }
         } catch (e) {
@@ -351,12 +358,12 @@ export class WeiboData {
         const userName = context.name1 || '用户';
         const personaTextarea = document.getElementById('persona_description');
         if (personaTextarea?.value?.trim()) {
-            contextMessages.push(`【用户信息】\n用户名：${userName}\n用户设定：${personaTextarea.value.trim().substring(0, 500)}`);
+            pushSystemMessage(`【用户信息】\n用户名：${userName}\n用户设定：${personaTextarea.value.trim().substring(0, 500)}`, 'SYSTEM (用户信息)');
         } else {
-            contextMessages.push(`【用户信息】\n用户名：${userName}`);
+            pushSystemMessage(`【用户信息】\n用户名：${userName}`, 'SYSTEM (用户信息)');
         }
 
-        // 最近聊天记录
+        // 最近聊天记录：直接保留原始 user/assistant 消息，不再做摘要压缩
         if (context.chat?.length > 0) {
             const total = context.chat.length;
             const defaultStart = Math.max(0, total - contextLimit);
@@ -368,40 +375,46 @@ export class WeiboData {
                 ? forceChatLimitRaw
                 : contextLimit;
             const recentChat = scopedChat.slice(-effectiveLimit);
-            const chatLines = [];
-            recentChat.forEach(msg => {
-                if (msg.mes?.trim()) {
-                    const rawContent = msg.mes || '';
+            recentChat.forEach((msg) => {
+                if (msg?.isGaigaiPrompt || msg?.isGaigaiData || msg?.isPhoneMessage) return;
 
-                    // 私密通道过滤：微信/手机标签与私聊指令不作为微博公共舆论素材
-                    if (/<\s*\/?\s*(wechat|phone|music|weibo|回复[^>]*)\s*>/i.test(rawContent)) return;
-                    if (/\[转线下\]/.test(rawContent)) return;
+                let content = msg?.mes || msg?.content || '';
+                content = applyPhoneTagFilter(content, { storage: this.storage });
 
-                    let content = rawContent;
-                    content = applyPhoneTagFilter(content, { storage: this.storage });
-                    content = content.replace(/<[^>]*>/g, '').replace(/\*.*?\*/g, '').trim().substring(0, 200);
-                    if (content.trim()) {
-                        const speaker = msg.is_user ? userName : (context.name2 || '角色');
-                        chatLines.push(`${speaker}: ${content}`);
-                    }
-                }
+                // 清理 base64 图片，避免请求体膨胀；其他标签过滤交给现有黑白名单系统
+                content = String(content || '')
+                    .replace(/<img[^>]*src=["']data:image[^"']*["'][^>]*>/gi, '[图片]')
+                    .replace(/!\[[^\]]*\]\(data:image[^)]*\)/gi, '[图片]')
+                    .trim();
+
+                if (!content) return;
+
+                const isUser = !!msg.is_user;
+                const speaker = isUser ? userName : (context.name2 || '角色');
+                contextMessages.push({
+                    role: isUser ? 'user' : 'assistant',
+                    content: `${speaker}: ${content}`,
+                    isPhoneMessage: true
+                });
             });
-            if (chatLines.length > 0) {
-                contextMessages.push(`【最近剧情对话】（最近${chatLines.length}条）\n${chatLines.join('\n')}`);
-            }
         }
 
         // 微博隐私硬规则
-        contextMessages.push(
+        pushSystemMessage(
             `【微博生成隐私规则】\n` +
             `1. 严禁把私密聊天、微信私聊、手机通话、短信等内容直接写成公开微博。\n` +
             `2. 若剧情仅出现私密对话，微博应生成与公共可见事件相关的话题，不得泄露私聊原句与细节。\n` +
-            `3. 禁止让路人网友精准复述主角私聊内容。`
+            `3. 禁止让路人网友精准复述主角私聊内容。`,
+            'SYSTEM (微博隐私规则)'
         );
 
         // 当前账号状态（用于让 AI 在回复时感知并更新粉丝数）
         const currentFollowers = this._getCurrentFollowersCount();
-        contextMessages.push(`【微博账号状态】\n当前粉丝数量为：${currentFollowers}`);
+        const currentNickname = this._getCurrentWeiboNickname();
+        pushSystemMessage(
+            `【微博账号状态】\n当前微博账号昵称：${currentNickname}\n当前粉丝数量为：${currentFollowers}`,
+            'SYSTEM (微博账号状态)'
+        );
 
         return contextMessages;
     }
@@ -578,13 +591,28 @@ export class WeiboData {
             ? prompt
             : '请根据以上系统信息执行当前微博任务，并严格按要求格式输出。';
 
+        const normalizedContextMessages = Array.isArray(contextMessages)
+            ? contextMessages.flatMap((item) => {
+                if (typeof item === 'string') {
+                    const text = item.trim();
+                    return text ? [{ role: 'system', content: text, isPhoneMessage: true }] : [];
+                }
+
+                if (!item || typeof item !== 'object') return [];
+
+                const content = String(item.content || '').trim();
+                if (!content) return [];
+
+                const role = item.role === 'assistant' || item.role === 'system' ? item.role : 'user';
+                const normalized = { role, content, isPhoneMessage: true };
+                if (item.name) normalized.name = item.name;
+                return [normalized];
+            })
+            : [];
+
         const messages = [
             { role: 'system', content: '你是一个资深的微博生态数据生成引擎，请严格根据要求分析上下文并返回正确格式的数据，不要包含任何多余的解释说明。', isPhoneMessage: true },
-            ...(Array.isArray(contextMessages)
-                ? contextMessages
-                    .filter(text => typeof text === 'string' && text.trim())
-                    .map(text => ({ role: 'system', content: text, isPhoneMessage: true }))
-                : []),
+            ...normalizedContextMessages,
             { role: 'user', content: userPrompt, isPhoneMessage: true }
         ];
 
@@ -1309,6 +1337,8 @@ export class WeiboData {
             const userName = context?.name1 || '用户';
             const contextMessages = this._collectContextMessages();
             const currentFollowers = this._getCurrentFollowersCount();
+            const promptManager = window.VirtualPhone?.promptManager;
+            promptManager?.ensureLoaded();
 
             // 🔥🔥🔥 核心修复：处理微博图片，生成多模态代币 🔥🔥🔥
             let imageTokensStr = '';
@@ -1338,36 +1368,12 @@ export class WeiboData {
                 postContentDisplay = '[分享了图片]';
             }
 
-            const prompt = `【微博互动任务】
-
-用户"${userName}"刚在微博上发了一条动态，请模拟真实微博环境，生成陌生网友、营销号或官方号对这条微博的互动反应。
-当前粉丝数量为：${currentFollowers}
-
-用户发布的微博内容：
-"${postContentDisplay}"
-
-要求：
-1. 生成2-5个互动反应（点赞或评论）
-2. 互动者必须是【陌生网友】【营销号】【官方号】等微博上的陌生人，不要使用好友名字
-3. 网友名字要真实有微博风格（如：@爱吃糖的小猫咪、@吃瓜群众本群、@今天也要加油鸭、@路人甲没有感情）
-4. 评论内容要符合微博网感（用emoji、网络用语等）
-5. 需要体现地域IP属性
-6. 如果你判断互动会导致粉丝增长或下降，可额外返回 followers 字段（整数）；若无变化可省略
-7. 评论可选 replyTo 字段用于楼中楼（如回复某个已存在评论者）
-8. 当 comments >= 3 时，至少包含1条楼中楼回复（带 replyTo），避免全是平铺评论
-
-输出格式（只返回JSON）：
-\`\`\`json
-{
-  "comments": [
-    {"name": "@网友昵称", "text": "评论内容", "location": "省份", "replyTo": "@被回复者昵称"}
-  ],
-  "likes": ["@点赞者昵称1", "@点赞者昵称2"],
-  "followers": 1234
-}
-\`\`\`
-
-请生成互动：`;
+            let prompt = promptManager?.getPromptForFeature('weibo', 'interaction') || '';
+            prompt = prompt
+                .replace(/\{\{userName\}\}/g, userName)
+                .replace(/\{\{currentFollowers\}\}/g, String(currentFollowers))
+                .replace(/\{\{postContentDisplay\}\}/g, postContentDisplay);
+            prompt = this._injectCurrentFollowersToPrompt(prompt);
 
             const response = await this._callAI(prompt, contextMessages);
             this._updateFollowersFromText(response);
@@ -1411,6 +1417,8 @@ export class WeiboData {
             const userName = context?.name1 || '用户';
             const contextMessages = this._collectContextMessages();
             const currentFollowers = this._getCurrentFollowersCount();
+            const promptManager = window.VirtualPhone?.promptManager;
+            promptManager?.ensureLoaded();
 
             // 🔥🔥🔥 核心修复：处理微博图片，生成多模态代币 🔥🔥🔥
             let imageTokensStr = '';
@@ -1438,37 +1446,15 @@ export class WeiboData {
                 postContentDisplay = '[分享了图片]';
             }
 
-            const prompt = `【微博评论互动任务】
-
-用户"${userName}"在一条微博下发表了评论，请模拟真实微博环境，生成博主或吃瓜网友对该用户的回复。
-当前粉丝数量为：${currentFollowers}
-
-微博正文：
-"${postContentDisplay}"
-
-用户"${userName}"的评论：
-${replyTo ? `回复了 ${replyTo}：` : ''}"${userComment}"
-
-要求：
-1. 生成1-2条针对用户该条评论的回复。
-2. 回复者可以是博主本人（${post.blogger}），也可以是其他吃瓜网友或粉丝。
-3. 语气必须符合微博网感（如：吃瓜、护主、阴阳怪气、赞同等）。
-4. 必须带上地域IP属性。
-5. 如果你判断粉丝会变化，可额外返回 followers 字段（整数）；若无变化可省略。
-6. 如果是楼中楼回复，请在评论对象中提供 replyTo 字段（如 "@张三"）。
-7. 当你输出2条评论时，优先让其中1条为楼中楼（replyTo 指向评论区已出现昵称）。
-
-输出格式（只返回JSON）：
-\`\`\`json
-{
-  "comments": [
-    {"name": "回复者昵称", "text": "回复内容", "location": "省份", "replyTo": "@被回复者昵称"}
-  ],
-  "followers": 1234
-}
-\`\`\`
-
-请生成回复：`;
+            let prompt = promptManager?.getPromptForFeature('weibo', 'commentInteraction') || '';
+            prompt = prompt
+                .replace(/\{\{userName\}\}/g, userName)
+                .replace(/\{\{currentFollowers\}\}/g, String(currentFollowers))
+                .replace(/\{\{postContentDisplay\}\}/g, postContentDisplay)
+                .replace(/\{\{userCommentPrefix\}\}/g, replyTo ? `回复了 ${replyTo}：` : '')
+                .replace(/\{\{userComment\}\}/g, String(userComment || ''))
+                .replace(/\{\{postBlogger\}\}/g, String(post?.blogger || '博主'));
+            prompt = this._injectCurrentFollowersToPrompt(prompt);
 
             const response = await this._callAI(prompt, contextMessages);
             this._updateFollowersFromText(response);
@@ -1987,4 +1973,3 @@ ${replyTo ? `回复了 ${replyTo}：` : ''}"${userComment}"
         }
     }
 }
-

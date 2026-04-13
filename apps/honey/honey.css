@@ -492,6 +492,51 @@
         radial-gradient(110% 80% at 0% 0%, rgba(255, 255, 255, 0.03), transparent 65%);
 }
 
+.honey-pull-refresh-indicator {
+    height: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: height 0.2s ease;
+    position: relative;
+    z-index: 1;
+}
+
+.honey-pull-refresh-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    color: rgba(255, 226, 239, 0.82) !important;
+    background: rgba(36, 20, 31, 0.82);
+    border: 1px solid rgba(255, 191, 220, 0.18);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 4px 14px rgba(8, 5, 12, 0.24);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.honey-pull-refresh-indicator.ready .honey-pull-refresh-inner {
+    color: #ff9fc8 !important;
+    border-color: rgba(255, 159, 200, 0.35);
+}
+
+.honey-pull-refresh-indicator.loading .honey-pull-refresh-inner {
+    color: #ffb5d3 !important;
+}
+
+.honey-pull-refresh-indicator.success .honey-pull-refresh-inner {
+    color: #8ff0ba !important;
+}
+
+.honey-pull-refresh-indicator.error .honey-pull-refresh-inner {
+    color: #ff8f9c !important;
+}
+
 .honey-hot-list {
     padding: 10px;
     display: flex;
@@ -2621,6 +2666,12 @@
     font-weight: 700;
 }
 
+.honey-recharge-preview-value {
+    color: #ffcee1 !important;
+    font-weight: 700;
+    text-shadow: 0 1px 4px rgba(255, 92, 157, 0.28);
+}
+
 .honey-refresh-btn:disabled,
 .honey-chat-input:disabled {
     opacity: 0.55;
@@ -2709,4 +2760,3 @@
 .phone-body-panel-honey .battery-body-v {
     border-color: rgba(255, 216, 232, 0.95) !important;
 }
-

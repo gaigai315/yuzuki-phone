@@ -28,6 +28,7 @@ export class WeiboView {
         this._hotDetailRefreshStatus = 'idle'; // idle | loading | success | error
         this._hotDetailRefreshTimer = null;
         this._cssLoaded = false;
+        this._revealedDeletePostId = null;
     }
 
     // ========================================
@@ -323,25 +324,31 @@ export class WeiboView {
                         </div>
                     </div>
                     ${showDeleteBtn ? `
-                        <button class="weibo-delete-post-btn" data-post-id="${post.id}" title="删除微博" style="
+                        <button class="weibo-delete-post-btn" data-post-id="${post.id}" data-visible="0" title="删除微博" style="
                             margin-left: 8px;
-                            width: 22px;
-                            height: 22px;
+                            min-width: 42px;
+                            height: 24px;
+                            padding: 0 10px;
                             position: relative;
-                            top: -5px;
+                            top: -4px;
                             right: -3px;
                             border: none;
-                            border-radius: 50%;
-                            background: rgba(0,0,0,0.06);
-                            color: #999;
-                            font-size: 14px;
+                            border-radius: 999px;
+                            background: rgba(255,130,0,0.12);
+                            color: #ff8200;
+                            font-size: 12px;
+                            font-weight: 500;
                             line-height: 1;
                             cursor: pointer;
                             display: inline-flex;
                             align-items: center;
                             justify-content: center;
                             flex-shrink: 0;
-                        ">×</button>
+                            opacity: 0;
+                            pointer-events: none;
+                            transform: scale(0.92);
+                            transition: opacity 0.18s ease, transform 0.18s ease;
+                        ">删除</button>
                     ` : ''}
                 </div>
 
@@ -1301,9 +1308,9 @@ export class WeiboView {
                 }
 
                 this.app.phoneShell.showNotification('微博', '收到新互动', '💬');
-                // 如果用户还在推荐页，刷新
-                if (this.currentView === 'home' && this.currentTab === 'recommend') {
-                    this.render();
+                // 用户还在微博首页时，推荐/我的页都局部刷新，不重绘整个首页
+                if (this.currentView === 'home' && (this.currentTab === 'recommend' || this.currentTab === 'myPosts')) {
+                    this.refreshCurrentTabContent();
                 }
             }
         } catch (error) {
@@ -1834,8 +1841,7 @@ export class WeiboView {
         document.querySelectorAll('.weibo-tab').forEach(tab => {
             tab.onclick = () => {
                 const targetTab = tab.dataset.tab;
-                if (this.currentTab === targetTab) return; // 如果点击当前Tab，无视
-                this.switchTab(targetTab); // 调用局部刷新方法
+                this.switchTab(targetTab, { force: this.currentTab === targetTab });
             };
         });
 
@@ -1847,6 +1853,145 @@ export class WeiboView {
         this.bindDynamicContentEvents();
     }
 
+    _setDeleteButtonVisible(btn, visible) {
+        if (!btn) return;
+        btn.dataset.visible = visible ? '1' : '0';
+        btn.style.opacity = visible ? '1' : '0';
+        btn.style.pointerEvents = visible ? 'auto' : 'none';
+        btn.style.transform = visible ? 'scale(1)' : 'scale(0.92)';
+    }
+
+    _hideAllMyPostDeleteButtons(exceptPostId = null) {
+        const currentView = document.querySelector('.phone-view-current') || document;
+        currentView.querySelectorAll('.weibo-delete-post-btn').forEach((btn) => {
+            this._setDeleteButtonVisible(btn, btn.dataset.postId === exceptPostId);
+        });
+        this._revealedDeletePostId = exceptPostId || null;
+    }
+
+    _bindMyPostDeleteReveal() {
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const myPosts = currentView.querySelectorAll('.weibo-post[data-mode="myPosts"]');
+        if (!myPosts.length) return;
+
+        const PRESS_MS = 420;
+        const MOVE_TOLERANCE = 12;
+
+        myPosts.forEach((postEl) => {
+            if (postEl.dataset.deleteRevealBound === '1') return;
+            postEl.dataset.deleteRevealBound = '1';
+
+            let pressTimer = null;
+            let startX = 0;
+            let startY = 0;
+            let isPressing = false;
+            let longPressTriggered = false;
+            let removeMouseGlobalListeners = null;
+
+            const isIgnoredTarget = (target) => (
+                target.closest('.weibo-delete-post-btn') ||
+                target.closest('.weibo-stat-item') ||
+                target.closest('.weibo-comment') ||
+                target.closest('.weibo-inline-comment-box') ||
+                target.closest('.weibo-post-images') ||
+                target.closest('.weibo-forward-btn') ||
+                target.closest('button') ||
+                target.closest('input') ||
+                target.closest('textarea')
+            );
+
+            const resetPress = () => {
+                if (pressTimer) {
+                    clearTimeout(pressTimer);
+                    pressTimer = null;
+                }
+                isPressing = false;
+            };
+
+            const cancelPress = () => {
+                resetPress();
+                longPressTriggered = false;
+            };
+
+            const finishPress = (event = null) => {
+                const shouldReveal = longPressTriggered;
+                resetPress();
+                longPressTriggered = false;
+                if (!shouldReveal) return;
+
+                event?.preventDefault?.();
+                event?.stopPropagation?.();
+
+                const btn = postEl.querySelector('.weibo-delete-post-btn');
+                if (!btn) return;
+                this._hideAllMyPostDeleteButtons(btn.dataset.postId);
+                postEl.dataset.suppressClickUntil = String(Date.now() + 650);
+            };
+
+            const startPress = (clientX, clientY, target) => {
+                if (isIgnoredTarget(target)) return false;
+                startX = clientX;
+                startY = clientY;
+                resetPress();
+                isPressing = true;
+                longPressTriggered = false;
+                pressTimer = setTimeout(() => {
+                    if (!isPressing) return;
+                    longPressTriggered = true;
+                }, PRESS_MS);
+                return true;
+            };
+
+            const handleMove = (clientX, clientY) => {
+                if (!isPressing) return;
+                if (Math.abs(clientX - startX) > MOVE_TOLERANCE || Math.abs(clientY - startY) > MOVE_TOLERANCE) {
+                    cancelPress();
+                }
+            };
+
+            postEl.addEventListener('touchstart', (e) => {
+                const touch = e.touches?.[0];
+                if (!touch) return;
+                startPress(touch.clientX, touch.clientY, e.target);
+            }, { passive: true });
+
+            postEl.addEventListener('touchmove', (e) => {
+                const touch = e.touches?.[0];
+                if (!touch) return;
+                handleMove(touch.clientX, touch.clientY);
+            }, { passive: true });
+
+            postEl.addEventListener('touchend', (e) => finishPress(e));
+            postEl.addEventListener('touchcancel', cancelPress);
+
+            postEl.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                if (!startPress(e.clientX, e.clientY, e.target)) return;
+
+                const onMouseMove = (moveEvent) => handleMove(moveEvent.clientX, moveEvent.clientY);
+                const onMouseUp = (upEvent) => {
+                    finishPress(upEvent);
+                    removeMouseGlobalListeners?.();
+                };
+                const onWindowBlur = () => {
+                    cancelPress();
+                    removeMouseGlobalListeners?.();
+                };
+
+                removeMouseGlobalListeners = () => {
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+                    window.removeEventListener('blur', onWindowBlur);
+                    removeMouseGlobalListeners = null;
+                };
+
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', onMouseUp);
+                window.addEventListener('blur', onWindowBlur);
+            });
+        });
+    }
+
     // 🔥 新增：单独绑定列表内部的动态事件
     bindDynamicContentEvents() {
         // 我的微博tab里的发微博入口
@@ -1854,6 +1999,8 @@ export class WeiboView {
         if (myPostComposeBtn) myPostComposeBtn.onclick = () => {
             this.showPostWeiboPage();
         };
+
+        this._bindMyPostDeleteReveal();
 
         // 热搜项点击
         document.querySelectorAll('.weibo-hot-item').forEach(item => {
@@ -1875,12 +2022,6 @@ export class WeiboView {
                 if (btn.dataset.deleting === '1') return;
                 btn.dataset.deleting = '1';
 
-                const ok = confirm('确定删除这条微博吗？删除后不可恢复。');
-                if (!ok) {
-                    btn.dataset.deleting = '0';
-                    return;
-                }
-
                 this.app.phoneShell.showNotification('处理中', '正在删除微博...', '⏳');
 
                 // 获取删除结果，包含图片列表
@@ -1892,9 +2033,10 @@ export class WeiboView {
                         await this._deleteServerImages(result.images);
                     }
 
+                    this._revealedDeletePostId = null;
                     this.app.phoneShell.showNotification('微博', '微博已彻底删除', '🗑️');
                     // 删除后局部刷新，防止闪烁
-                    this.switchTab('myPosts'); 
+                    this.switchTab('myPosts', { force: true }); 
                 } else {
                     btn.dataset.deleting = '0';
                     this.app.phoneShell.showNotification('微博', '删除失败：未找到该微博', '⚠️');
@@ -1906,10 +2048,40 @@ export class WeiboView {
         this._bindPostEvents(this.currentTab === 'myPosts' ? 'recommend' : this.currentTab === 'recommend' ? 'recommend' : 'recommend');
     }
 
+    refreshCurrentTabContent() {
+        if (!(this.currentView === 'home')) return;
+
+        const contentArea = document.querySelector('.weibo-tab-content');
+        if (!contentArea) return;
+
+        const previousScrollTop = contentArea.scrollTop;
+
+        let newHtml = '';
+        if (this.currentTab === 'hotSearch') {
+            newHtml = this.renderHotSearchList();
+        } else if (this.currentTab === 'recommend') {
+            newHtml = this.renderRecommendList();
+        } else if (this.currentTab === 'myPosts') {
+            newHtml = this.renderMyPostsList();
+        }
+
+        contentArea.innerHTML = newHtml;
+        contentArea.scrollTop = previousScrollTop;
+        this.bindDynamicContentEvents();
+
+        if (this.currentTab === 'recommend') {
+            this._bindRecommendPullRefresh();
+            this._syncRecommendRefreshIndicatorByState();
+        }
+    }
+
     // ========================================
     // 🔄 局部平滑切换 Tab 核心逻辑
     // ========================================
-    switchTab(targetTab) {
+    switchTab(targetTab, options = {}) {
+        const forceRefresh = options.force === true;
+        if (this.currentTab === targetTab && !forceRefresh) return;
+
         this.currentTab = targetTab;
 
         // 1. 切换 Tab 按钮的高亮颜色
@@ -1929,26 +2101,7 @@ export class WeiboView {
         }
 
         // 3. 仅替换下方列表的 HTML（核心！不重绘整个页面）
-        const contentArea = document.querySelector('.weibo-tab-content');
-        if (contentArea) {
-            let newHtml = '';
-            if (targetTab === 'hotSearch') {
-                newHtml = this.renderHotSearchList();
-            } else if (targetTab === 'recommend') {
-                newHtml = this.renderRecommendList();
-            } else if (targetTab === 'myPosts') {
-                newHtml = this.renderMyPostsList();
-            }
-            contentArea.innerHTML = newHtml;
-        }
-
-        // 4. 因为内容区域的 HTML 被替换了，需要重新给里面的按钮绑定点击事件
-        this.bindDynamicContentEvents();
-        
-        // 5. 如果切回推荐页，恢复下拉刷新的UI状态
-        if (targetTab === 'recommend') {
-            this._syncRecommendRefreshIndicatorByState();
-        }
+        this.refreshCurrentTabContent();
     }
 
     // ========================================
@@ -2060,24 +2213,17 @@ export class WeiboView {
         const triggerArea = document.querySelector('.weibo-topic-header');
         const detailScrollEl = document.getElementById('weibo-detail-posts');
         if (!triggerArea || !detailScrollEl) return;
+        if (triggerArea.dataset.pullRefreshBound === '1') return;
+        triggerArea.dataset.pullRefreshBound = '1';
 
         let startY = 0;
         let startX = 0;
         let pullDistance = 0;
         let pressing = false;
-        let longPressReady = false;
         let pressType = '';
         let previousUserSelect = '';
-        let holdTimer = null;
         const maxPull = 92;
         const triggerThreshold = 62;
-
-        const clearHoldTimer = () => {
-            if (holdTimer) {
-                clearTimeout(holdTimer);
-                holdTimer = null;
-            }
-        };
 
         const canPull = () =>
             this.currentView === 'hotSearchDetail' &&
@@ -2090,7 +2236,6 @@ export class WeiboView {
 
             pressing = true;
             pressType = type;
-            longPressReady = false;
             pullDistance = 0;
             startX = clientX;
             startY = clientY;
@@ -2099,13 +2244,6 @@ export class WeiboView {
                 previousUserSelect = document.body.style.userSelect;
                 document.body.style.userSelect = 'none';
             }
-
-            clearHoldTimer();
-            holdTimer = setTimeout(() => {
-                if (!pressing || !canPull()) return;
-                longPressReady = true;
-                this._setHotDetailPullHint(18, '继续下拉重新生成', false);
-            }, 180);
             return true;
         };
 
@@ -2117,17 +2255,15 @@ export class WeiboView {
 
             // 横向手势（如右滑返回）优先交给 phone-shell
             if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 8) {
-                clearHoldTimer();
                 pressing = false;
-                longPressReady = false;
                 pullDistance = 0;
                 pressType = '';
                 this._syncHotDetailRefreshIndicatorByState();
                 return;
             }
 
-            if (!longPressReady) return;
             if (deltaY <= 0) return;
+            if (deltaY < 6) return;
 
             pullDistance = Math.min(maxPull, Math.round(deltaY * 0.55));
             const ready = pullDistance >= triggerThreshold;
@@ -2141,12 +2277,10 @@ export class WeiboView {
         };
 
         const endPress = () => {
-            clearHoldTimer();
             if (!pressing) return;
 
-            const shouldTrigger = longPressReady && pullDistance >= triggerThreshold;
+            const shouldTrigger = pullDistance >= triggerThreshold;
             pressing = false;
-            longPressReady = false;
             pullDistance = 0;
             if (pressType === 'mouse') {
                 document.body.style.userSelect = previousUserSelect || '';
@@ -2533,6 +2667,18 @@ export class WeiboView {
         // 点击帖子进入详情页（排除按钮区域的点击）
         document.querySelectorAll('.weibo-post').forEach(postEl => {
             postEl.onclick = (e) => {
+                const suppressUntil = parseInt(postEl.dataset.suppressClickUntil || '0', 10) || 0;
+                if (Date.now() < suppressUntil) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
+                if (this._revealedDeletePostId && !e.target.closest('.weibo-delete-post-btn')) {
+                    this._hideAllMyPostDeleteButtons();
+                    return;
+                }
+
                 if (e.target.closest('.weibo-stat-item') ||
                     e.target.closest('.weibo-comment') ||
                     e.target.closest('.weibo-inline-comment-box') ||
@@ -2700,7 +2846,7 @@ export class WeiboView {
             const isWeiboActive = document.querySelector('.phone-view-current .weibo-app');
             if (isWeiboActive && this.currentView === 'home' && this.currentTab === 'recommend') {
                 // 使用局部刷新代替全局渲染，解决下拉刷新完闪屏的问题
-                this.switchTab('recommend'); 
+                this.switchTab('recommend', { force: true }); 
             } else {
                 this._syncRecommendRefreshIndicatorByState();
             }
@@ -2730,27 +2876,18 @@ export class WeiboView {
     _bindRecommendPullRefresh() {
         if (!(this.currentView === 'home' && this.currentTab === 'recommend')) return;
 
-        const triggerArea = document.querySelector('.weibo-profile-wrapper');
         const homeScrollEl = document.querySelector('.weibo-app.weibo-home-mode');
-        if (!triggerArea || !homeScrollEl) return;
+        const triggerAreas = Array.from(document.querySelectorAll('.weibo-tabs, .weibo-profile-wrapper')).filter(Boolean);
+        if (!triggerAreas.length || !homeScrollEl) return;
 
         let startY = 0;
         let startX = 0;
         let pullDistance = 0;
         let pressing = false;
-        let longPressReady = false;
         let pressType = '';
         let previousUserSelect = '';
-        let holdTimer = null;
         const maxPull = 92;
         const triggerThreshold = 62;
-
-        const clearHoldTimer = () => {
-            if (holdTimer) {
-                clearTimeout(holdTimer);
-                holdTimer = null;
-            }
-        };
 
         const canPull = () =>
             this.currentView === 'home' &&
@@ -2763,7 +2900,6 @@ export class WeiboView {
 
             pressing = true;
             pressType = type;
-            longPressReady = false;
             pullDistance = 0;
             startX = clientX;
             startY = clientY;
@@ -2772,13 +2908,6 @@ export class WeiboView {
                 previousUserSelect = document.body.style.userSelect;
                 document.body.style.userSelect = 'none';
             }
-
-            clearHoldTimer();
-            holdTimer = setTimeout(() => {
-                if (!pressing || !canPull()) return;
-                longPressReady = true;
-                this._setRecommendPullHint(18, '继续下拉刷新推荐', false);
-            }, 180);
             return true;
         };
 
@@ -2790,17 +2919,15 @@ export class WeiboView {
 
             // 🔥 横向手势（如右滑返回）优先放行给 phone-shell
             if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 8) {
-                clearHoldTimer();
                 pressing = false;
-                longPressReady = false;
                 pullDistance = 0;
                 pressType = '';
                 this._syncRecommendRefreshIndicatorByState();
                 return;
             }
 
-            if (!longPressReady) return;
             if (deltaY <= 0) return;
+            if (deltaY < 6) return;
 
             pullDistance = Math.min(maxPull, Math.round(deltaY * 0.55));
             const ready = pullDistance >= triggerThreshold;
@@ -2814,12 +2941,10 @@ export class WeiboView {
         };
 
         const endPress = () => {
-            clearHoldTimer();
             if (!pressing) return;
 
-            const shouldTrigger = longPressReady && pullDistance >= triggerThreshold;
+            const shouldTrigger = pullDistance >= triggerThreshold;
             pressing = false;
-            longPressReady = false;
             pullDistance = 0;
             if (pressType === 'mouse') {
                 document.body.style.userSelect = previousUserSelect || '';
@@ -2885,11 +3010,15 @@ export class WeiboView {
             addMouseGlobalListeners();
         };
 
-        triggerArea.addEventListener('touchstart', onTouchStart, { passive: true });
-        triggerArea.addEventListener('touchmove', onTouchMove, { passive: false });
-        triggerArea.addEventListener('touchend', onTouchEnd);
-        triggerArea.addEventListener('touchcancel', onTouchEnd);
-        triggerArea.addEventListener('mousedown', onMouseDown);
+        triggerAreas.forEach((triggerArea) => {
+            if (triggerArea.dataset.pullRefreshBound === '1') return;
+            triggerArea.dataset.pullRefreshBound = '1';
+            triggerArea.addEventListener('touchstart', onTouchStart, { passive: true });
+            triggerArea.addEventListener('touchmove', onTouchMove, { passive: false });
+            triggerArea.addEventListener('touchend', onTouchEnd);
+            triggerArea.addEventListener('touchcancel', onTouchEnd);
+            triggerArea.addEventListener('mousedown', onMouseDown);
+        });
     }
 
     _setRecommendPullHint(height, text, ready = false) {
@@ -3037,4 +3166,3 @@ export class WeiboView {
         }
     }
 }
-

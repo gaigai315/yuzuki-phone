@@ -22,7 +22,7 @@
       │    ├── 📄 chat-view.js       [V] 视图层：聊天UI、音视频通话逻辑、调用AI静默回复、ALAPI表情包解析、转账红包组件。
       │    ├── 📄 contacts-view.js   [V] 视图层：通讯录字母索引、AI智能生成联系人。
       │    └── 📄 moments-view.js    [V] 视图层：朋友圈生成与渲染、评论点赞AI互动。
-      │
+      │               
       ├── 📁 weibo (微博生态 - 高级仿生)
       │    ├── 📄 weibo-app.js       [C] 控制器：页面路由与返回逻辑。
       │    ├── 📄 weibo-data.js      [M] 数据层：热搜生成、推荐内容缓存、楼层追踪、API队列防并发。

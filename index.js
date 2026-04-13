@@ -1052,32 +1052,52 @@ if (window.GGP_Loaded) {
 
     // 创建顶部面板按钮
     function createTopPanel() {
+        const extensionsMenu = document.getElementById('extensionsMenu');
         const topSettingsHolder = document.getElementById('top-settings-holder');
-        if (!topSettingsHolder) {
-            console.error('❌ 找不到 top-settings-holder');
+        const toolPanelHost = extensionsMenu || topSettingsHolder;
+        if (!toolPanelHost) {
+            console.error('❌ 找不到手机入口挂载点');
             return;
         }
 
         const oldPanel = document.getElementById('phone-panel-holder');
         if (oldPanel) oldPanel.remove();
+        const oldTrigger = document.getElementById('phoneDrawerToolEntry');
+        if (oldTrigger) oldTrigger.remove();
 
         const isEnabled = settings?.enabled ?? true;
         const iconStyle = isEnabled ? '' : 'opacity: 0.4; filter: grayscale(1);';
         const statusText = isEnabled ? '已启用' : '已禁用';
 
-        // 🔥 关键修改：移除 drawer-content 和 fillRight 类，避免被 SillyTavern 的 drawer 系统影响
-        // 使用自定义的 phone-panel-hidden 类来控制显示
+        const triggerHTML = extensionsMenu ? `
+            <div id="phoneDrawerToolEntry" class="list-group-item flex-container flexGap5 interactable"
+                 tabindex="0"
+                 role="listitem"
+                 title="虚拟手机 (${statusText})">
+                <div id="phoneDrawerIcon" class="drawer-icon fa-solid fa-mobile-screen-button fa-fw closedIcon extensionsMenuExtensionButton interactable"
+                     style="position:relative; ${iconStyle}"
+                     tabindex="0"
+                     role="button">
+                    <span id="phone-badge" class="badge-notification" style="display:none; position:absolute; top:-4px; right:-6px;">0</span>
+                </div>
+                <span>虚拟手机</span>
+            </div>
+        ` : `
+            <div id="phoneDrawerToolEntry" class="extension_container interactable" tabindex="0" role="button"
+                 title="虚拟手机 (${statusText})"
+                 style="position:relative; display:flex; align-items:center; justify-content:center; min-width:38px; min-height:38px;">
+                <div id="phoneDrawerIcon" class="drawer-icon fa-solid fa-mobile-screen-button fa-fw closedIcon interactable"
+                     style="position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:100%; ${iconStyle}"
+                     tabindex="0"
+                     role="button">
+                    <span id="phone-badge" class="badge-notification" style="display:none; position:absolute; top:1px; right:1px;">0</span>
+                </div>
+            </div>
+        `;
+
+        // 🔥 面板本体单独挂到根层，避免工具面板 transform 影响 fixed 抽屉定位
         const panelHTML = `
             <div id="phone-panel-holder" class="drawer" style="background:transparent!important; box-shadow:none!important; backdrop-filter:none!important; -webkit-backdrop-filter:none!important; border:none!important;">
-                <div class="drawer-toggle drawer-header">
-                    <div id="phoneDrawerIcon" class="drawer-icon fa-solid fa-mobile-screen-button fa-fw closedIcon interactable"
-                         title="虚拟手机 (${statusText})"
-                         style="${iconStyle}"
-                         tabindex="0"
-                         role="button">
-                        <span id="phone-badge" class="badge-notification" style="display:none;">0</span>
-                    </div>
-                </div>
                 <div id="phone-panel" class="phone-panel-hidden" style="display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;">
                     <div id="phone-panel-header" class="fa-solid fa-grip drag-grabber" style="display:none !important;"></div>
                     <div id="phone-panel-content">
@@ -1086,13 +1106,16 @@ if (window.GGP_Loaded) {
             </div>
         `;
 
-        topSettingsHolder.insertAdjacentHTML('afterbegin', panelHTML);
+        toolPanelHost.insertAdjacentHTML('afterbegin', triggerHTML);
+        (document.body || topSettingsHolder).insertAdjacentHTML('beforeend', panelHTML);
 
+        const drawerEntry = document.getElementById('phoneDrawerToolEntry');
         const drawerIcon = document.getElementById('phoneDrawerIcon');
         const drawerPanel = document.getElementById('phone-panel');
+        const triggerTarget = drawerEntry || drawerIcon;
 
         // 🔥 新增：长按控制全局主开关逻辑
-        if (drawerIcon && drawerPanel) {
+        if (triggerTarget && drawerIcon && drawerPanel) {
             let pressTimer;
             let isLongPress = false;
 
@@ -1143,14 +1166,26 @@ if (window.GGP_Loaded) {
 
             const cancelPress = () => clearTimeout(pressTimer);
 
+            const onKeyDown = (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                if (isPhoneFeatureEnabled()) {
+                    if (!drawerPanel.classList.contains('phone-panel-open') && !checkBetaLock()) return;
+                    toggleDrawer(drawerIcon, drawerPanel);
+                } else {
+                    showUnifiedPhoneNotification('提示', '手机已休眠，请长按图标开启', '⚠️');
+                }
+            };
+
             // 绑定鼠标和触摸事件
-            drawerIcon.addEventListener('mousedown', startPress);
-            drawerIcon.addEventListener('touchstart', startPress, { passive: true });
-            drawerIcon.addEventListener('mouseup', endPress);
-            drawerIcon.addEventListener('mouseleave', cancelPress);
-            drawerIcon.addEventListener('touchend', endPress);
-            drawerIcon.addEventListener('touchcancel', cancelPress);
-            drawerIcon.addEventListener('contextmenu', (e) => e.preventDefault()); // 禁用右键防止弹菜单
+            triggerTarget.addEventListener('mousedown', startPress);
+            triggerTarget.addEventListener('touchstart', startPress, { passive: true });
+            triggerTarget.addEventListener('mouseup', endPress);
+            triggerTarget.addEventListener('mouseleave', cancelPress);
+            triggerTarget.addEventListener('touchend', endPress);
+            triggerTarget.addEventListener('touchcancel', cancelPress);
+            triggerTarget.addEventListener('contextmenu', (e) => e.preventDefault()); // 禁用右键防止弹菜单
+            triggerTarget.addEventListener('keydown', onKeyDown);
         }
     }
 
@@ -3388,6 +3423,17 @@ if (window.GGP_Loaded) {
                 _autoWeiboSuppressUntil: 0
             };
 
+            // 🔥 关键修复：启动时就预热 TimeManager / PromptManager，
+            // 避免“未切会话、未打开手机面板”时线下注入因懒加载对象仍为 null 而失效。
+            try {
+                await Promise.all([
+                    loadTimeManager(),
+                    loadPromptManager()
+                ]);
+            } catch (bootstrapManagerErr) {
+                console.warn('⚠️ [手机插件] 预热管理器失败，后续将按需重试:', bootstrapManagerErr);
+            }
+
             // 🔥 第二阶段：轮询等待酒馆加载界面消失后再注入 DOM，解决 WebKit 渲染残留 Bug
             function injectWhenReady() {
                 const stLoader = document.getElementById('loader') || document.getElementById('loading_screen');
@@ -4617,6 +4663,3 @@ if (window.GGP_Loaded) {
     }
 
 }
-
-
-

@@ -235,6 +235,7 @@ export class HoneyData {
         if (!text) return false;
         if (text === '点击刷新后由 AI 生成实时剧情。') return false;
         if (text === '点击左侧刷新按钮生成剧情。') return false;
+        if (text === '回推荐页下拉刷新生成剧情。') return false;
         if (text === '暂无剧情描写。') return false;
         if (text === '暂无剧情描写，点击刷新后自动生成。') return false;
         if (text === '正在连线中...') return false;
@@ -1197,7 +1198,7 @@ export class HoneyData {
             leaderboard: [],
             intro: '',
             naiPrompt: '',
-            description: '暂无剧情描写，点击刷新后自动生成。',
+            description: '回推荐页下拉刷新生成剧情。',
             comments: [],
             gifts: [],
             audienceGiftTotals: {},
@@ -1313,7 +1314,7 @@ export class HoneyData {
             if (cleanedStory) data.description = cleanedStory;
         }
 
-        if (!data.description || data.description === '暂无剧情描写，点击刷新后自动生成。') {
+        if (!data.description || data.description === '暂无剧情描写，点击刷新后自动生成。' || data.description === '回推荐页下拉刷新生成剧情。') {
             if (data.intro) data.description = data.intro;
         }
 
@@ -1687,7 +1688,7 @@ export class HoneyData {
                 collabCost: 0,
                 intro: item.intro || '',
                 comments: [],
-                description: '点击左侧刷新按钮生成剧情。',
+                description: '回推荐页下拉刷新生成剧情。',
                 isTodayRecommend: !!item.isTodayRecommend,
                 recommendCategory: item.category || ''
             });
@@ -1695,4 +1696,3 @@ export class HoneyData {
         return deduped.slice(0, 24);
     }
 }
-

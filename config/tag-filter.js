@@ -228,12 +228,22 @@ export function applyPhoneTagFilter(text, options = {}) {
     let out = String(text);
     if (!out) return out;
 
-    // 记忆插件可用时，沿用记忆插件原生过滤逻辑（保持兼容）
+    const config = options.config || readPhoneTagFilterConfig(options.storage);
+
+    // 优先级规则：
+    // 1. 有记忆插件时，先跑记忆插件过滤
+    // 2. 小手机本地黑白名单开启时，再继续跑手机本地过滤
+    // 3. 没有记忆插件时，仅跑小手机本地过滤
     if (hasGaigaiTagFilter()) {
-        return applyGaigaiTagFilter(out);
+        out = applyGaigaiTagFilter(out);
+        if (!config.enabled) {
+            return out;
+        }
+        out = cleanMemoryTagsLocal(out);
+        out = filterContentByTagsLocal(out, config.blacklist, config.whitelist);
+        return String(out || '').trim();
     }
 
-    const config = options.config || readPhoneTagFilterConfig(options.storage);
     if (!config.enabled) return out;
 
     out = cleanMemoryTagsLocal(out);
