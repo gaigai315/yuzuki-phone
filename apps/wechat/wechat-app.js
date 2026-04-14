@@ -3058,6 +3058,10 @@ export class WechatApp {
         const balance = this.wechatData.getWalletBalance();
         const isInitialized = balance !== null;
         const displayBalance = isInitialized ? parseFloat(balance).toFixed(2) : '***';
+        const isEvaluating = !!this._isWalletEvaluating;
+        const walletBtnLabel = isEvaluating
+            ? '<i class="fa-solid fa-spinner fa-spin"></i> 评估中...'
+            : (isInitialized ? '<i class="fa-solid fa-rotate"></i> 重新评估资产' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 初始资产评估');
 
         const html = `
         <div class="wechat-app">
@@ -3082,9 +3086,10 @@ export class WechatApp {
                     
                     <button id="ai-eval-wallet-btn" style="
                         background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4);
-                        padding: 8px 20px; border-radius: 20px; font-size: 13px; cursor: pointer; backdrop-filter: blur(5px);
+                        padding: 8px 20px; border-radius: 20px; font-size: 13px; cursor: ${isEvaluating ? 'not-allowed' : 'pointer'}; backdrop-filter: blur(5px);
+                        opacity: ${isEvaluating ? '0.78' : '1'};
                     ">
-                        ${isInitialized ? '<i class="fa-solid fa-rotate"></i> 重新评估资产' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 初始资产评估'}
+                        ${walletBtnLabel}
                     </button>
                 </div>
                 
@@ -3098,7 +3103,22 @@ export class WechatApp {
 
         const currentView = document.querySelector('.phone-view-current') || document;
         currentView.querySelector('#back-from-wallet')?.addEventListener('click', () => this.render());
-        currentView.querySelector('#ai-eval-wallet-btn')?.addEventListener('click', () => this.evaluateWalletByAI());
+        const evalBtn = currentView.querySelector('#ai-eval-wallet-btn');
+        if (evalBtn) {
+            evalBtn.disabled = isEvaluating;
+            evalBtn.addEventListener('click', () => this.evaluateWalletByAI());
+        }
+    }
+
+    _updateWalletEvalButtonState(buttonEl, isLoading) {
+        if (!buttonEl) return;
+        const isInitialized = this.wechatData.getWalletBalance() !== null;
+        buttonEl.disabled = isLoading;
+        buttonEl.style.opacity = isLoading ? '0.78' : '';
+        buttonEl.style.cursor = isLoading ? 'not-allowed' : '';
+        buttonEl.innerHTML = isLoading
+            ? '<i class="fa-solid fa-spinner fa-spin"></i> 评估中...'
+            : (isInitialized ? '<i class="fa-solid fa-rotate"></i> 重新评估资产' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 初始资产评估');
     }
 
     // AI 评估钱包金额
@@ -3114,11 +3134,7 @@ export class WechatApp {
         this._isWalletEvaluating = true;
         const currentView = document.querySelector('.phone-view-current') || document;
         const evalBtn = currentView.querySelector('#ai-eval-wallet-btn');
-        if (evalBtn) {
-            evalBtn.disabled = true;
-            evalBtn.style.opacity = '0.7';
-            evalBtn.style.cursor = 'not-allowed';
-        }
+        this._updateWalletEvalButtonState(evalBtn, true);
 
         this.phoneShell.showNotification('资产评估中', '正在让AI查你的底细...', '⏳');
         
@@ -3171,11 +3187,7 @@ export class WechatApp {
         if (!promptTemplate) {
             this.phoneShell.showNotification('错误', '找不到钱包评估提示词', '❌');
             this._isWalletEvaluating = false;
-            if (evalBtn) {
-                evalBtn.disabled = false;
-                evalBtn.style.opacity = '';
-                evalBtn.style.cursor = '';
-            }
+            this._updateWalletEvalButtonState(evalBtn, false);
             return;
         }
 
@@ -3215,11 +3227,7 @@ export class WechatApp {
             this._isWalletEvaluating = false;
             const activeView = document.querySelector('.phone-view-current') || document;
             const activeBtn = activeView.querySelector('#ai-eval-wallet-btn');
-            if (activeBtn) {
-                activeBtn.disabled = false;
-                activeBtn.style.opacity = '';
-                activeBtn.style.cursor = '';
-            }
+            this._updateWalletEvalButtonState(activeBtn, false);
         }
     }
 
