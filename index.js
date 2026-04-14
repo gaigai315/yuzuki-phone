@@ -3330,64 +3330,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            // 🔥 全局网卡级拦截器：终极多模态发包保护（支持无限图文穿插）
-            if (!window._stPhoneFetchPatched) {
-                window._stPhoneFetchPatched = true;
-                const ogFetch = window.fetch;
-                window.fetch = async function (url, options) {
-                    // 仅拦截发往酒馆后端的 API 请求
-                    if (typeof url === 'string' && url.includes('/api/') && options && options.body && typeof options.body === 'string') {
-                        // 检查数据包里有没有我们的魔术代币
-                        if (options.body.includes('__ST_PHONE_IMAGE_')) {
-                            try {
-                                const bodyObj = JSON.parse(options.body);
-                                if (bodyObj.messages && Array.isArray(bodyObj.messages)) {
-                                    let modified = false;
-                                    bodyObj.messages.forEach(msg => {
-                                        // 🔥 只处理 role=user 的消息，system 消息保持纯文本
-                                        if (msg.role === 'user' && typeof msg.content === 'string' && msg.content.includes('__ST_PHONE_IMAGE_')) {
-
-                                            // 🔥 核心升级：利用正则分割字符串，保留代币位置！
-                                            const parts = msg.content.split(/(__ST_PHONE_IMAGE_\d+_[a-z0-9]+__)/g);
-                                            const newContent = [];
-
-                                            parts.forEach(part => {
-                                                // 如果这一段是代币，就去保险箱提货换成真图片
-                                                if (part.startsWith('__ST_PHONE_IMAGE_') && window.VirtualPhone && window.VirtualPhone._pendingImages && window.VirtualPhone._pendingImages[part]) {
-                                                    newContent.push({
-                                                        type: 'image_url',
-                                                        image_url: { url: window.VirtualPhone._pendingImages[part] }
-                                                    });
-                                                    // 用完即删，防止内存泄漏
-                                                    delete window.VirtualPhone._pendingImages[part];
-                                                }
-                                                // 如果是普通文本（且不为空），保留为文本块
-                                                else if (part && part.trim() !== '') {
-                                                    newContent.push({ type: 'text', text: part });
-                                                }
-                                            });
-
-                                            // 将处理好的图文穿插数组交还给底层
-                                            msg.content = newContent;
-                                            modified = true;
-                                        }
-                                    });
-                                    // 替换原始的发送数据包
-                                    if (modified) {
-                                        options.body = JSON.stringify(bodyObj);
-                                        console.log('🔥 [手机插件] 图片代币已成功调包为原生多模态数组');
-                                    }
-                                }
-                            } catch (e) {
-                                console.error('🔥 手机图片底层拦截器异常:', e);
-                            }
-                        }
-                    }
-                    // 放行，发送修改后的数据包
-                    return ogFetch.apply(this, arguments);
-                };
-            }
-
+            
             // 🔥 第零阶段：只加载最核心的 2 个模块
             await loadCoreModules();
 
@@ -4737,6 +4680,78 @@ if (window.GGP_Loaded) {
             } else {
                 console.warn('⚠️ 无法访问 context 或 eventSource');
             }
+
+            // ========================================================================
+            // 🚀 终极杀手锏：全局 Fetch 拦截器 (完美解决点“发送”过快导致漏变量的 Bug)
+            // ========================================================================
+            if (!window._stPhoneFetchPatched) {
+                window._stPhoneFetchPatched = true;
+                const ogFetch = window.fetch;
+                window.fetch = async function (url, options) {
+                    const isTextGeneration = (
+                        typeof url === 'string' &&
+                        (url.includes('/api/backends/chat-completions/generate') ||
+                         url.includes('/v1/chat/completions') ||
+                         (url.includes('/generate') && !url.includes('/api/sd/') && !url.includes('/api/tts/') && !url.includes('/api/images/')))
+                    );
+
+                    // 拦截正文生成请求
+                    if (isTextGeneration && options && options.body && typeof options.body === 'string') {
+                        try {
+                            let bodyObj = JSON.parse(options.body);
+                            let targetArray = null;
+
+                            // 兼容各大模型的数据结构
+                            if (Array.isArray(bodyObj.messages)) targetArray = bodyObj.messages;
+                            else if (Array.isArray(bodyObj.prompt)) targetArray = bodyObj.prompt;
+                            else if (Array.isArray(bodyObj.contents)) targetArray = bodyObj.contents;
+
+                            if (targetArray) {
+                                // 🌟 1. 核心防御：检查酒馆是否抢跑漏掉了变量
+                                const hasMacros = JSON.stringify(targetArray).match(/\{\{PHONE_PROMPT\}\}|\{\{PHONE_HISTORY\}\}|\{\{WEIBO_HISTORY\}\}|\{\{MUSIC_PROMPT\}\}/);
+
+                                if (hasMacros) {
+                                    console.log('🚨 [手机插件] 警告：酒馆发送过快导致 Hook 被无视，请求体残留变量！正在执行网卡级底层强行注入...');
+                                    
+                                    // 强行在发包前，调用注入函数再跑一遍！(因为我们在这里加了 await，浏览器会暂停发送，直到替换完美结束)
+                                    let safeEvent = { chat: targetArray, prompt: [] };
+                                    await phonePromptHandler(safeEvent);
+                                    
+                                    console.log('✅ [手机插件] 底层强行注入完毕，防抢跑成功！');
+                                }
+
+                                // 🌟 2. 处理图片占位符 (保留原有的发图功能)
+                                let modifiedImage = false;
+                                targetArray.forEach(msg => {
+                                    if (msg.role === 'user' && typeof msg.content === 'string' && msg.content.includes('__ST_PHONE_IMAGE_')) {
+                                        const parts = msg.content.split(/(__ST_PHONE_IMAGE_\d+_[a-z0-9]+__)/g);
+                                        const newContent = [];
+                                        parts.forEach(part => {
+                                            if (part.startsWith('__ST_PHONE_IMAGE_') && window.VirtualPhone?._pendingImages?.[part]) {
+                                                newContent.push({ type: 'image_url', image_url: { url: window.VirtualPhone._pendingImages[part] } });
+                                                delete window.VirtualPhone._pendingImages[part];
+                                            } else if (part && part.trim() !== '') {
+                                                newContent.push({ type: 'text', text: part });
+                                            }
+                                        });
+                                        msg.content = newContent;
+                                        modifiedImage = true;
+                                    }
+                                });
+                                if (modifiedImage) console.log('🔥 [手机插件] 图片代币已成功调包为原生多模态数组');
+
+                                // 🌟 3. 将修复好的完美数据重新打包
+                                options.body = JSON.stringify(bodyObj);
+                            }
+                        } catch (e) {
+                            console.error('🔥 手机底层拦截器异常:', e);
+                        }
+                    }
+                    // 放行，发送修改后的数据包给大模型
+                    return ogFetch.apply(this, arguments);
+                };
+            }
+            // ========================================================================
 
         } catch (e) {
             console.error('❌ 虚拟手机初始化失败:', e);
