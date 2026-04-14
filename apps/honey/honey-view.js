@@ -57,6 +57,7 @@ export class HoneyView {
         this._activeLiveSettlement = null;
         this._dismissedLiveCollabRequestFingerprint = '';
         this._isEndCollabConfirmOpen = false;
+        this._liveViewportCleanup = null;
         this._restoreSessionState();
         this._loadCSS();
     }
@@ -1838,6 +1839,7 @@ export class HoneyView {
         if (!root) return;
         if (root.dataset.honeyLiveBound === '1') return;
         root.dataset.honeyLiveBound = '1';
+        this._bindLiveKeyboardViewport(root);
         const isUserLive = this._isUserLiveScene(this.currentSceneData || this.selectedTopic);
 
         root.querySelector('#honey-back')?.addEventListener('click', () => {
@@ -4324,6 +4326,66 @@ export class HoneyView {
         }
     }
 
+    _bindLiveKeyboardViewport(root = null) {
+        if (this._liveViewportCleanup) {
+            this._liveViewportCleanup();
+            this._liveViewportCleanup = null;
+        }
+
+        const liveRoot = this._getLiveRoot(root);
+        if (!liveRoot) return;
+        const input = liveRoot.querySelector('#honey-chat-input');
+        const viewport = window.visualViewport;
+
+        const reset = () => {
+            liveRoot.style.setProperty('--honey-live-keyboard-offset', '0px');
+            liveRoot.classList.remove('is-keyboard-open');
+        };
+
+        if (!viewport || !input) {
+            reset();
+            return;
+        }
+
+        const apply = () => {
+            if (!liveRoot.isConnected || this.currentPage !== 'live') return;
+            const layoutViewportHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
+            const rawKeyboardInset = Math.max(0, Math.round(layoutViewportHeight - viewport.height - viewport.offsetTop));
+            const keyboardOffset = rawKeyboardInset > 80
+                ? Math.min(rawKeyboardInset + 10, 320)
+                : 0;
+            liveRoot.style.setProperty('--honey-live-keyboard-offset', `${keyboardOffset}px`);
+            liveRoot.classList.toggle('is-keyboard-open', keyboardOffset > 0);
+        };
+
+        const handleFocus = () => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(apply);
+            });
+        };
+        const handleBlur = () => {
+            setTimeout(() => {
+                if (document.activeElement !== input) reset();
+            }, 80);
+        };
+
+        viewport.addEventListener('resize', apply);
+        viewport.addEventListener('scroll', apply);
+        window.addEventListener('resize', apply);
+        input.addEventListener('focus', handleFocus);
+        input.addEventListener('blur', handleBlur);
+        apply();
+
+        this._liveViewportCleanup = () => {
+            viewport.removeEventListener('resize', apply);
+            viewport.removeEventListener('scroll', apply);
+            window.removeEventListener('resize', apply);
+            input.removeEventListener('focus', handleFocus);
+            input.removeEventListener('blur', handleBlur);
+            reset();
+        };
+    }
+
     _finalizeEndedUserLiveSession() {
         const topicTitle = String(this.currentSceneData?._topicTitle || this.selectedTopic?.title || '').trim();
         const topicKey = String(this.currentSceneData?._topicKey || this.selectedTopic?._topicKey || '').trim();
@@ -5795,6 +5857,10 @@ export class HoneyView {
     }
 
     _cleanupTransient() {
+        if (this._liveViewportCleanup) {
+            this._liveViewportCleanup();
+            this._liveViewportCleanup = null;
+        }
         if (this._outsideClickHandler) {
             document.removeEventListener('click', this._outsideClickHandler);
             this._outsideClickHandler = null;

@@ -586,6 +586,12 @@ export class WechatData {
         // 🔥 动态拦截表情包与语音（线上模式）
         if ((message.type === 'text' || !message.type) && message.content) {
             const contentStr = message.content.trim();
+            const imageMatch = /^\[图片\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(contentStr);
+            if (imageMatch) {
+                message.type = 'image_prompt';
+                message.imagePrompt = imageMatch[1].trim();
+                message.content = message.imagePrompt;
+            }
             const stickerMatch = /^\[表情包\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(contentStr);
             if (stickerMatch) {
                 message.type = 'sticker';
@@ -721,6 +727,11 @@ getMessagePreview(message) {
 
     switch (message.type) {
         case 'image':
+            if (message.customEmojiId || message.customEmojiName || message.customEmojiDescription) {
+                return '[表情包]';
+            }
+            return '[图片]';
+        case 'image_prompt':
             return '[图片]';
         case 'voice':
             return '[语音]';
@@ -1818,6 +1829,28 @@ getCustomEmoji(emojiId) {
     return this.data.customEmojis?.find(e => e.id === emojiId);
 }
 
+// 更新自定义表情
+updateCustomEmoji(emojiId, patch = {}) {
+    if (!this.data.customEmojis || !patch || typeof patch !== 'object') return null;
+
+    const targetIndex = this.data.customEmojis.findIndex(e => e.id === emojiId);
+    if (targetIndex < 0) return null;
+
+    const current = this.data.customEmojis[targetIndex] || {};
+    const nextName = String(patch.name ?? current.name ?? '').trim() || current.name || `表情${targetIndex + 1}`;
+    const nextDescription = String(patch.description ?? patch.name ?? current.description ?? current.name ?? '').trim() || nextName;
+
+    this.data.customEmojis[targetIndex] = {
+        ...current,
+        ...patch,
+        name: nextName,
+        description: nextDescription
+    };
+
+    this.saveData();
+    return this.data.customEmojis[targetIndex];
+}
+
 // 添加自定义表情
 addCustomEmoji(emojiData) {
     if (!this.data.customEmojis) {
@@ -1827,6 +1860,7 @@ addCustomEmoji(emojiData) {
     const emoji = {
         id: `emoji_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         name: String(emojiData?.name || '').trim() || `表情${(this.data.customEmojis?.length || 0) + 1}`,
+        description: String(emojiData?.description || emojiData?.name || '').trim() || `表情${(this.data.customEmojis?.length || 0) + 1}`,
         image: emojiData.image,
         createdAt: new Date().toISOString()
     };

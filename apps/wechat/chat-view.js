@@ -291,6 +291,9 @@ export class ChatView {
             case 'image':
                 messageBody = `<div class="message-image-box" style="position: relative; display: inline-block; line-height: 0;"><img src="${msg.content}" class="message-image"></div>`;
                 break;
+            case 'image_prompt':
+                messageBody = this.renderImagePromptCard(msg);
+                break;
             case 'voice':
                 let durationStr = msg.duration || '3"';
                 let durationNum = parseInt(durationStr.replace('"', '').replace('秒', '')) || 3;
@@ -529,7 +532,7 @@ export class ChatView {
                     ${this.emojiTab === 'custom' ? `
                         <!-- 自定义表情 -->
                         ${customEmojis.map(emoji => `
-                            <span class="emoji-item custom-emoji-item" data-emoji-type="custom" data-emoji-id="${emoji.id}" title="${emoji.name}">
+                            <span class="emoji-item custom-emoji-item" data-emoji-type="custom" data-emoji-id="${emoji.id}" title="${this.escapeHtml(String(emoji.description || emoji.name || '表情'))}">
                                 <img src="${emoji.image}" alt="${emoji.name}">
                             </span>
                         `).join('')}
@@ -556,6 +559,291 @@ export class ChatView {
             .map(ch => ch.codePointAt(0).toString(16).toLowerCase())
             .filter(cp => cp !== 'fe0f');
         return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${codePoints.join('-')}.svg`;
+    }
+
+    _getSiliconflowImageConfig() {
+        const storage = window.VirtualPhone?.storage || this.app?.storage;
+        const apiKey = String(storage?.get('siliconflow_api_key') || '').trim();
+        const model = String(storage?.get('image_generation_model') || '').trim() || 'Kwai-Kolors/Kolors';
+
+        return {
+            apiKey,
+            model,
+            endpoint: 'https://api.siliconflow.cn/v1/images/generations',
+            imageSize: '768x1024',
+            batchSize: 1,
+            numInferenceSteps: 16,
+            guidanceScale: 6.5,
+            positivePromptSuffix: '二次元插画风, 非真人, 非照片, 非写实, 动漫感, 赛璐璐上色, 游戏CG质感, 杰作, 高质量, 细节清晰, 构图完整, 光线自然, 色彩干净, 单主体突出, 人物性别特征明确, 不要中性化, 适合手机聊天展示',
+            negativePrompt: '真人, 写实, 摄影感, 照片感, 低质量, 最差质量, 模糊, 锯齿, JPEG压缩痕迹, 多余肢体, 畸形手指, 五官错位, 性别模糊, 中性外观, 文本, 水印, 签名, 用户名'
+        };
+    }
+
+    _buildSiliconflowPrompt(rawPrompt, positivePromptSuffix = '') {
+        const prompt = String(rawPrompt || '').trim();
+        const suffix = String(positivePromptSuffix || '').trim();
+        if (!prompt) return suffix;
+        if (!suffix) return prompt;
+        return `${prompt}，${suffix}`;
+    }
+
+    _refreshVisibleChatMessages(chatId) {
+        const activeChatId = String(this.app.currentChat?.id || '').trim();
+        const targetChatId = String(chatId || '').trim();
+        if (!activeChatId || !targetChatId || activeChatId !== targetChatId) return;
+
+        const messages = this.app.wechatData.getMessages(targetChatId);
+        const userInfo = this.app.wechatData.getUserInfo();
+        this.smartUpdateMessages(messages, userInfo);
+    }
+
+    _toggleImagePromptCard(cardEl, showBack) {
+        if (!cardEl) return;
+        const front = cardEl.querySelector('.message-image-prompt-front-panel');
+        const back = cardEl.querySelector('.message-image-prompt-back-panel');
+        if (!front || !back) return;
+        front.style.display = showBack ? 'none' : 'block';
+        back.style.display = showBack ? 'block' : 'none';
+    }
+
+    async generateImagePromptMessage(messageId) {
+        const chatId = String(this.app.currentChat?.id || '').trim();
+        const safeMessageId = String(messageId || '').trim();
+        if (!chatId || !safeMessageId) return;
+
+        const messages = this.app.wechatData.getMessages(chatId);
+        const message = messages.find((item) => String(item?.id || '').trim() === safeMessageId);
+        if (!message) return;
+
+        const status = String(message.imageGenStatus || '').trim();
+        if (status === 'loading') return;
+
+        const promptText = String(message.imagePrompt || message.content || '').trim();
+        if (!promptText) {
+            this.app.phoneShell?.showNotification('提示', '这条图片消息缺少描述，无法生成', '⚠️');
+            return;
+        }
+
+        const config = this._getSiliconflowImageConfig();
+        if (!config.apiKey) {
+            this.app.phoneShell?.showNotification('提示', '请先在设置里填写 SiliconFlow API Key', '⚠️');
+            return;
+        }
+
+        this.app.wechatData.updateMessageById(chatId, safeMessageId, {
+            imageGenStatus: 'loading',
+            imageGenError: '',
+            imagePrompt: promptText
+        });
+        this._refreshVisibleChatMessages(chatId);
+
+        try {
+            const response = await fetch(config.endpoint, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${config.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: config.model,
+                    prompt: this._buildSiliconflowPrompt(promptText, config.positivePromptSuffix),
+                    negative_prompt: config.negativePrompt,
+                    image_size: config.imageSize,
+                    batch_size: config.batchSize,
+                    num_inference_steps: config.numInferenceSteps,
+                    guidance_scale: config.guidanceScale
+                })
+            });
+
+            const rawText = await response.text();
+            let payload = null;
+            if (rawText) {
+                try {
+                    payload = JSON.parse(rawText);
+                } catch (parseError) {
+                    payload = null;
+                }
+            }
+
+            if (!response.ok) {
+                const serverMessage = String(
+                    payload?.message ||
+                    payload?.error?.message ||
+                    payload?.error ||
+                    rawText ||
+                    ''
+                ).trim();
+                throw new Error(`SiliconFlow 请求失败 (${response.status})${serverMessage ? `: ${serverMessage.slice(0, 160)}` : ''}`);
+            }
+
+            const imageUrl = String(payload?.images?.[0]?.url || '').trim();
+            if (!imageUrl) {
+                throw new Error('接口返回成功，但没有拿到图片地址');
+            }
+
+            this.app.wechatData.updateMessageById(chatId, safeMessageId, {
+                imagePrompt: promptText,
+                generatedImageUrl: imageUrl,
+                imageGenStatus: 'done',
+                imageGenError: '',
+                imageModel: config.model,
+                imageProvider: 'siliconflow'
+            });
+            this._refreshVisibleChatMessages(chatId);
+        } catch (error) {
+            const rawMessage = String(error?.message || '').trim();
+            const friendlyMessage = /failed to fetch|networkerror|load failed/i.test(rawMessage)
+                ? '请求失败，可能是网络异常或浏览器跨域拦截'
+                : (rawMessage || '未知错误');
+
+            console.error('微信图片生成失败:', error);
+
+            this.app.wechatData.updateMessageById(chatId, safeMessageId, {
+                imagePrompt: promptText,
+                imageGenStatus: 'failed',
+                imageGenError: friendlyMessage
+            });
+            this._refreshVisibleChatMessages(chatId);
+            this.app.phoneShell?.showNotification('生图失败', friendlyMessage, '❌');
+        }
+    }
+
+    renderImagePromptCard(msg) {
+        const promptRaw = String(msg?.imagePrompt || msg?.content || '待生成图片').trim() || '待生成图片';
+        const promptText = this._escapeHtml(promptRaw);
+        const cardId = this.escapeInlineStickerAttr(String(msg?.id || `imgprompt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`));
+        const generatedImageUrl = String(msg?.generatedImageUrl || '').trim();
+        const safeImageUrl = this.escapeInlineStickerAttr(generatedImageUrl);
+        const generationStatus = generatedImageUrl
+            ? 'done'
+            : (String(msg?.imageGenStatus || '').trim() || 'idle');
+        const statusText = generationStatus === 'loading'
+            ? '⏳ 正在生成图片中，请稍候...'
+            : generationStatus === 'failed'
+                ? '❌ 生成失败，点击重试'
+                : '点击生成图片';
+
+        return `
+            <div class="message-image-box message-image-prompt-box" data-message-id="${cardId}" style="position: relative; display: inline-block; width: 156px; max-width: 100%;">
+                <div class="message-image-prompt-front-panel" id="img-prompt-front-${cardId}" style="
+                    width: 156px;
+                    max-width: 100%;
+                    aspect-ratio: 1;
+                    border-radius: 10px;
+                    overflow: hidden;
+                    position: relative;
+                    background:
+                        linear-gradient(180deg, rgba(255,255,255,0.18), rgba(26,24,36,0.72)),
+                        linear-gradient(135deg, rgba(255, 160, 197, 0.24), rgba(130, 108, 188, 0.2));
+                    border: 1px solid rgba(255, 205, 228, 0.34);
+                    box-sizing: border-box;
+                    cursor: ${generationStatus === 'loading' ? 'progress' : 'pointer'};
+                ">
+                    ${generatedImageUrl ? `
+                        <img src="${safeImageUrl}" alt="${promptText}" style="width:100%; height:100%; object-fit:cover; display:block;">
+                        <div class="message-image-prompt-show-back" data-message-id="${cardId}" title="查看图片描述" style="
+                            position:absolute;
+                            right:6px;
+                            bottom:6px;
+                            background:rgba(0,0,0,0.55);
+                            color:#fff;
+                            border-radius:999px;
+                            padding:4px 8px;
+                            font-size:10px;
+                            line-height:1;
+                            cursor:pointer;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.18);
+                        ">描述</div>
+                    ` : `
+                        <div class="message-image-prompt-generate" data-message-id="${cardId}" title="${generationStatus === 'failed' ? '点击重试生成图片' : '点击生成图片'}" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:12px; box-sizing:border-box;">
+                            <div style="
+                                width:56px; height:56px; border-radius:18px;
+                                display:flex; align-items:center; justify-content:center;
+                                background:rgba(255,255,255,0.18);
+                                border:1px solid rgba(255,255,255,0.26);
+                                color:#fff; font-size:22px;
+                                box-shadow:0 8px 18px rgba(0,0,0,0.12);
+                            ">${generationStatus === 'loading' ? '<i class="fa-solid fa-spinner fa-spin"></i>' : '<i class="fa-regular fa-image"></i>'}</div>
+                            <div style="font-size:12px; line-height:1.35; color:#fff; text-align:center; font-weight:600;">${statusText}</div>
+                        </div>
+                        <div class="message-image-prompt-show-back" data-message-id="${cardId}" title="查看图片描述" style="
+                            position:absolute;
+                            right:6px;
+                            bottom:6px;
+                            background:rgba(0,0,0,0.5);
+                            color:#fff;
+                            border-radius:999px;
+                            padding:4px 8px;
+                            font-size:10px;
+                            line-height:1;
+                            cursor:pointer;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.18);
+                        ">描述</div>
+                    `}
+                </div>
+                <div class="message-image-prompt-back-panel" id="img-prompt-back-${cardId}" style="
+                    display:none;
+                    width:156px;
+                    max-width:100%;
+                    aspect-ratio:1;
+                    background:#f7f7f7;
+                    border:1px dashed #e0e0e0;
+                    border-radius:10px;
+                    box-sizing:border-box;
+                    position:relative;
+                    overflow:hidden;
+                ">
+                    <div style="
+                        width:100%;
+                        height:100%;
+                        padding:10px;
+                        padding-bottom:28px;
+                        overflow-y:auto;
+                        box-sizing:border-box;
+                        display:flex;
+                    ">
+                        <div style="
+                            margin:auto;
+                            font-size:11px;
+                            color:#666;
+                            line-height:1.5;
+                            word-break:break-word;
+                            white-space:pre-wrap;
+                            text-align:center;
+                            width:100%;
+                        ">${promptText}</div>
+                    </div>
+                    <div class="message-image-prompt-restore" data-message-id="${cardId}" title="恢复图片卡片正面" style="
+                        position:absolute;
+                        bottom:4px;
+                        right:4px;
+                        background:rgba(0,0,0,0.5);
+                        color:#fff;
+                        border-radius:4px;
+                        padding:3px 6px;
+                        font-size:10px;
+                        cursor:pointer;
+                        z-index:10;
+                        display:flex;
+                        align-items:center;
+                        gap:3px;
+                        box-shadow:0 2px 4px rgba(0,0,0,0.2);
+                    ">
+                        <i class="fa-regular fa-image"></i> 恢复
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    _formatMessageContentForPrompt(msg) {
+        if (!msg || typeof msg !== 'object') return '';
+        if (msg.type === 'text') return String(msg.content || '');
+        if (msg.type === 'image_prompt') {
+            const promptText = String(msg.imagePrompt || msg.content || '待生成图片').trim() || '待生成图片';
+            return `[图片]（${promptText}）`;
+        }
+        return `[${msg.type}]`;
     }
 
     renderTwemojiEmoji(emoji, size = 24, inline = true) {
@@ -1372,19 +1660,20 @@ export class ChatView {
 
     // 🔥 绑定红包/转账气泡的点击事件
     bindSpecialMessageEvents() {
-        document.querySelectorAll('.message-redpacket').forEach(rp => {
+        const currentView = this.getCurrentWechatView();
+        currentView.querySelectorAll('.message-redpacket').forEach(rp => {
             rp.addEventListener('click', (e) => {
                 const messageId = e.currentTarget.dataset.msgId;
                 if (messageId) this.openRedPacket(messageId);
             });
         });
-        document.querySelectorAll('.message-transfer').forEach(tf => {
+        currentView.querySelectorAll('.message-transfer').forEach(tf => {
             tf.addEventListener('click', (e) => {
                 const messageId = e.currentTarget.dataset.msgId;
                 if (messageId) this.openTransferDetail(messageId);
             });
         });
-        document.querySelectorAll('.message-weibo-card').forEach(card => {
+        currentView.querySelectorAll('.message-weibo-card').forEach(card => {
             card.addEventListener('click', (e) => {
                 if (Date.now() < (this._suppressWeiboCardClickUntil || 0)) {
                     e.preventDefault();
@@ -1393,6 +1682,30 @@ export class ChatView {
                 }
                 const messageId = e.currentTarget.dataset.msgId;
                 if (messageId) this.openWeiboCard(messageId);
+            });
+        });
+        currentView.querySelectorAll('.message-image-prompt-generate').forEach(card => {
+            card.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const messageId = e.currentTarget.dataset.messageId;
+                if (messageId) {
+                    await this.generateImagePromptMessage(messageId);
+                }
+            });
+        });
+        currentView.querySelectorAll('.message-image-prompt-show-back').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this._toggleImagePromptCard(e.currentTarget.closest('.message-image-prompt-box'), true);
+            });
+        });
+        currentView.querySelectorAll('.message-image-prompt-restore').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this._toggleImagePromptCard(e.currentTarget.closest('.message-image-prompt-box'), false);
             });
         });
 
@@ -2006,7 +2319,39 @@ export class ChatView {
 
         // 🔥 新增：选择自定义表情
         queryAll('.custom-emoji-item').forEach(item => {
+            let longPressTimer = null;
+            let suppressClick = false;
+            const clearLongPressTimer = () => {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+            };
+            const startManageGesture = () => {
+                clearLongPressTimer();
+                suppressClick = false;
+                longPressTimer = setTimeout(() => {
+                    const emojiId = item.dataset.emojiId;
+                    suppressClick = true;
+                    this.manageCustomEmoji(emojiId);
+                }, 520);
+            };
+
+            item.addEventListener('pointerdown', startManageGesture);
+            item.addEventListener('pointerup', clearLongPressTimer);
+            item.addEventListener('pointerleave', clearLongPressTimer);
+            item.addEventListener('pointercancel', clearLongPressTimer);
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                clearLongPressTimer();
+                suppressClick = true;
+                this.manageCustomEmoji(item.dataset.emojiId);
+            });
             item.addEventListener('click', () => {
+                if (suppressClick) {
+                    suppressClick = false;
+                    return;
+                }
                 const emojiId = item.dataset.emojiId;
                 const emoji = this.app.wechatData.getCustomEmoji(emojiId);
                 if (emoji) {
@@ -2016,6 +2361,9 @@ export class ChatView {
                             from: 'me',
                             type: 'image',
                             content: imageUrl,
+                            customEmojiId: emoji.id,
+                            customEmojiName: String(emoji.name || '').trim(),
+                            customEmojiDescription: String(emoji.description || emoji.name || '').trim(),
                             avatar: this.app.wechatData.getUserInfo().avatar
                         });
 
@@ -2391,6 +2739,7 @@ export class ChatView {
         }
 
         let success = false;
+        const responseBatchId = `wechat_ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
         // 🔥 设置发送状态
         this.isSending = true;
@@ -2768,8 +3117,8 @@ export class ChatView {
                     }
 
                     const msgData = special
-                        ? { from: m.sender, ...special, time: m.time, avatar: senderAvatar }
-                        : { from: m.sender, content: normalizedTextContent, type: 'text', time: m.time, quote: m.quote, avatar: senderAvatar };
+                        ? { from: m.sender, ...special, time: m.time, avatar: senderAvatar, replyBatchId: responseBatchId }
+                        : { from: m.sender, content: normalizedTextContent, type: 'text', time: m.time, quote: m.quote, avatar: senderAvatar, replyBatchId: responseBatchId };
                     if (special?.type === 'redpacket') msgData.id = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
                     const candidatePreview = String((special?.content || normalizedTextContent || '')).replace(/\s+/g, ' ').trim();
                     if (candidatePreview) {
@@ -2869,8 +3218,8 @@ export class ChatView {
                 }
 
                 const msgData = special
-                    ? { from: msg.sender, ...special, time: msg.time, avatar: senderContact?.avatar || savedChatAvatar || '👤' }
-                    : { from: msg.sender, content: normalizedTextContent, time: msg.time, type: 'text', avatar: senderContact?.avatar || savedChatAvatar || '👤', quote: msg.quote };
+                    ? { from: msg.sender, ...special, time: msg.time, avatar: senderContact?.avatar || savedChatAvatar || '👤', replyBatchId: responseBatchId }
+                    : { from: msg.sender, content: normalizedTextContent, time: msg.time, type: 'text', avatar: senderContact?.avatar || savedChatAvatar || '👤', quote: msg.quote, replyBatchId: responseBatchId };
                 if (special?.type === 'redpacket') msgData.id = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
                 this.app.wechatData.addMessage(savedChatId, msgData);
                 if (special?.type === 'weibo_card' && special.weiboData) {
@@ -3354,7 +3703,7 @@ export class ChatView {
                                     lastDate = m.date;
                                 }
                                 const speaker = m.from === 'me' ? userName : c.name;
-                                let text = m.type === 'text' ? m.content : `[${m.type}]`;
+                                let text = this._formatMessageContentForPrompt(m);
                                 if (m.quote) text = `「引用 ${m.quote.sender}: ${m.quote.content}」 ${text}`;
                                 relatedContextStr += `[${m.time || ''}] ${speaker}: ${text}\n`;
                             });
@@ -3384,7 +3733,7 @@ export class ChatView {
                                     lastDate = m.date;
                                 }
                                 const speaker = m.from === 'me' ? userName : (m.from === 'system' ? '系统' : (m.from || '群成员'));
-                                let text = m.type === 'text' ? m.content : `[${m.type}]`;
+                                let text = this._formatMessageContentForPrompt(m);
                                 if (m.quote) text = `「引用 ${m.quote.sender}: ${m.quote.content}」 ${text}`;
                                 relatedContextStr += `[${m.time || ''}] ${speaker}: ${text}\n`;
                             });
@@ -4878,34 +5227,63 @@ export class ChatView {
             return;
         }
 
-        // 🔥 找到用户最后一条消息的位置
+        const currentChatId = this.app.currentChat.id;
         const userInfo = this.app.wechatData.getUserInfo();
-        let lastUserMessageIndex = -1;
+        const isMyMessage = (msg) => !!msg && (msg.from === 'me' || msg.from === userInfo.name);
+        const deletableIndexes = [];
+        const tailMessage = messages[messages.length - 1];
+        const tailBatchId = String(tailMessage?.replyBatchId || '').trim();
 
-        for (let i = messages.length - 1; i >= 0; i--) {
-            const msg = messages[i];
-            const isMe = msg.from === 'me' || msg.from === userInfo.name;
-            if (isMe) {
-                lastUserMessageIndex = i;
-                break;
+        // 优先按上一轮 AI 批次精确回滚，适配“一次连发多条”
+        if (tailBatchId && !isMyMessage(tailMessage)) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+                const msg = messages[i];
+                if (String(msg?.replyBatchId || '').trim() !== tailBatchId) break;
+                deletableIndexes.push(i);
             }
         }
 
-        if (lastUserMessageIndex !== -1) {
-            // 计算用户最后一条消息之后，有几条AI的消息
-            const messagesToDelete = messages.length - 1 - lastUserMessageIndex;
+        // 兼容旧消息：没有批次标记时，回退到“删掉最后一条用户消息之后的连续回复”
+        if (deletableIndexes.length === 0) {
+            let lastUserMessageIndex = -1;
 
-            // 如果后面有AI的消息，删掉它们
-            if (messagesToDelete > 0) {
-                for (let i = 0; i < messagesToDelete; i++) {
-                    const currentMessages = this.app.wechatData.getMessages(this.app.currentChat.id);
-                    this.app.wechatData.deleteMessage(this.app.currentChat.id, currentMessages.length - 1);
+            for (let i = messages.length - 1; i >= 0; i--) {
+                if (isMyMessage(messages[i])) {
+                    lastUserMessageIndex = i;
+                    break;
                 }
             }
-            // 如果 messagesToDelete === 0，说明最后一条就是用户发的，不需要删除，直接往下走去触发AI即可
+
+            if (lastUserMessageIndex !== -1) {
+                for (let i = messages.length - 1; i > lastUserMessageIndex; i--) {
+                    if (isMyMessage(messages[i])) break;
+                    deletableIndexes.push(i);
+                }
+            } else {
+                deletableIndexes.push(messages.length - 1);
+            }
+        }
+
+        if (deletableIndexes.length === 0) {
+            this.app.phoneShell?.showNotification('提示', '上一轮没有可撤销的 AI 回复', '⚠️');
+            return;
+        }
+
+        deletableIndexes.sort((a, b) => b - a).forEach((index) => {
+            this.app.wechatData.deleteMessage(currentChatId, index);
+        });
+
+        const updatedMessages = this.app.wechatData.getMessages(currentChatId);
+        const currentView = document.querySelector('.phone-view-current .wechat-app');
+        if (currentView && this.app.currentChat?.id === currentChatId) {
+            const messagesDiv = document.getElementById('chat-messages');
+            if (messagesDiv) {
+                this.smartUpdateMessages(updatedMessages, userInfo);
+            } else {
+                this.app.render();
+            }
         } else {
-            // 如果连用户的消息都没有（全是AI自言自语），就删掉最后一条AI的消息重新生成
-            this.app.wechatData.deleteMessage(this.app.currentChat.id, messages.length - 1);
+            this.app.render();
         }
 
         // 🔥🔥🔥 通知手机外壳立即刷新左上角状态栏时间
@@ -4913,15 +5291,12 @@ export class ChatView {
             this.app.phoneShell.updateStatusBarTime();
         }
 
-        // 刷新界面
-        this.app.render();
-
         // 🔥 重新发送请求
-        this._enqueuePendingChat(this.app.currentChat.id, {
+        this._enqueuePendingChat(currentChatId, {
             shouldStartTimer: false,
             shouldShowStatus: true
         });
-        await this.triggerAI(this.app.currentChat.id);
+        await this.triggerAI(currentChatId);
     }
 
     // 📋 显示删除聊天确认界面
@@ -7125,6 +7500,13 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             selectedNameSet.add(candidate);
             return candidate;
         };
+        const sanitizeEmojiName = (value = '', fallback = '') => {
+            const trimmed = String(value || '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 20);
+            return trimmed || fallback;
+        };
 
         const renderSelectedPreview = () => {
             const preview = document.getElementById('emoji-preview');
@@ -7141,8 +7523,17 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 return;
             }
 
-            const thumbs = selectedFiles.map(item => `
-                <img src="${item.preview}" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid #eee;">
+            const thumbs = selectedFiles.map((item, index) => `
+                <div style="width:72px; display:flex; flex-direction:column; align-items:center; gap:6px;">
+                    <img src="${item.preview}" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid #eee;">
+                    <input type="text"
+                        class="emoji-name-input"
+                        data-emoji-index="${index}"
+                        value="${this.escapeHtml(String(item.name || ''))}"
+                        placeholder="表情描述"
+                        maxlength="20"
+                        style="width:100%; height:24px; border:1px solid #e5e5e5; border-radius:6px; padding:0 6px; box-sizing:border-box; font-size:11px; color:#333; background:#fafafa; text-align:center;">
+                </div>
             `).join('');
             preview.innerHTML = `
                 <div style="width:100%;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;">
@@ -7163,8 +7554,16 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             this.app.render();
         });
 
-        document.getElementById('emoji-preview')?.addEventListener('click', () => {
+        document.getElementById('emoji-preview')?.addEventListener('click', (e) => {
+            if (e.target?.closest?.('.emoji-name-input')) return;
             document.getElementById('emoji-image-upload').click();
+        });
+        document.getElementById('emoji-preview')?.addEventListener('input', (e) => {
+            const input = e.target?.closest?.('.emoji-name-input');
+            if (!input) return;
+            const index = Number.parseInt(String(input.dataset.emojiIndex || ''), 10);
+            if (!Number.isInteger(index) || !selectedFiles[index]) return;
+            selectedFiles[index].name = sanitizeEmojiName(input.value, selectedFiles[index].name || `表情${index + 1}`);
         });
 
         document.getElementById('emoji-image-upload')?.addEventListener('change', async (e) => {
@@ -7188,7 +7587,11 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                         skipped += 1;
                         continue;
                     }
-                    selectedFiles.push({ file, preview });
+                    selectedFiles.push({
+                        file,
+                        preview,
+                        name: buildEmojiName(file?.name, selectedFiles.length + 1)
+                    });
                 } catch (err) {
                     skipped += 1;
                 }
@@ -7215,6 +7618,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 const item = selectedFiles[i];
                 const file = item.file;
                 const autoName = buildEmojiName(file?.name, i + 1);
+                const emojiDescription = sanitizeEmojiName(item.name, autoName);
 
                 // 默认先保留本地 dataURL，上传失败也可降级使用
                 let finalUrl = String(item.preview || '').trim();
@@ -7239,7 +7643,8 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 }
 
                 this.app.wechatData.addCustomEmoji({
-                    name: autoName,
+                    name: emojiDescription,
+                    description: emojiDescription,
                     image: finalUrl
                 });
                 successCount += 1;
@@ -7250,6 +7655,41 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             this.emojiTab = 'custom';
             setTimeout(() => this.app.render(), 300);
         });
+    }
+
+    manageCustomEmoji(emojiId) {
+        const emoji = this.app.wechatData.getCustomEmoji(emojiId);
+        if (!emoji) return;
+
+        const currentDescription = String(emoji.description || emoji.name || '').trim();
+        const nextDescriptionRaw = window.prompt(
+            '修改这个自定义表情的线下描述。\n\n线上发送时仍然发图片；只有线下正文注入时会转成这个描述。\n\n输入 /delete 可删除该表情。',
+            currentDescription
+        );
+
+        if (nextDescriptionRaw === null) return;
+
+        const normalized = String(nextDescriptionRaw || '').replace(/\s+/g, ' ').trim().slice(0, 20);
+        if (normalized === '/delete') {
+            const ok = window.confirm(`确定删除表情“${emoji.name || currentDescription || '未命名表情'}”吗？`);
+            if (!ok) return;
+            this.app.wechatData.deleteCustomEmoji(emojiId);
+            this.app.phoneShell.showNotification('已删除', '自定义表情已删除', '🗑️');
+            this.app.render();
+            return;
+        }
+
+        if (!normalized) {
+            this.app.phoneShell.showNotification('提示', '描述不能为空', '⚠️');
+            return;
+        }
+
+        this.app.wechatData.updateCustomEmoji(emojiId, {
+            name: normalized,
+            description: normalized
+        });
+        this.app.phoneShell.showNotification('已更新', '表情描述已保存', '✅');
+        this.app.render();
     }
 
     // 🔔 通用AI通知方法

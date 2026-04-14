@@ -1915,11 +1915,13 @@ if (window.GGP_Loaded) {
             return;
         }
 
-        // [图片](描述) - 🔥 改为文本描述显示，不尝试加载图片
-        const imageMatch = /^\[图片\]\(([^)]+)\)$/.exec(content);
+        // [图片](描述) / [图片]（描述）
+        const imageMatch = /^\[图片\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(content);
         if (imageMatch) {
-            msgObj.type = 'text';  // 🔥 改为text类型
-            msgObj.content = `📷 [图片] ${imageMatch[1]}`;  // 显示为文本描述
+            const promptText = String(imageMatch[1] || '').trim();
+            msgObj.type = 'image_prompt';
+            msgObj.imagePrompt = promptText;
+            msgObj.content = promptText;
             return;
         }
 
@@ -4045,10 +4047,30 @@ if (window.GGP_Loaded) {
                                             includeHoneyOfflineRaw === '0'
                                         );
                                         const contacts = Array.isArray(wechatDataParsed.contacts) ? wechatDataParsed.contacts : [];
+                                        const customEmojis = Array.isArray(wechatDataParsed.customEmojis) ? wechatDataParsed.customEmojis : [];
                                         const contactMap = new Map(
                                             contacts
                                                 .filter(contact => contact?.id)
                                                 .map(contact => [String(contact.id), contact])
+                                        );
+                                        const normalizeCustomEmojiImageKey = (value) => {
+                                            const raw = String(value || '').trim();
+                                            if (!raw) return '';
+                                            try {
+                                                const parsed = new URL(raw, window.location?.origin || 'http://localhost');
+                                                return `${parsed.origin}${parsed.pathname}`.toLowerCase();
+                                            } catch (e) {
+                                                return raw.replace(/\\/g, '/').toLowerCase();
+                                            }
+                                        };
+                                        const customEmojiByImage = new Map(
+                                            customEmojis
+                                                .filter(item => item?.image)
+                                                .map(item => [
+                                                    normalizeCustomEmojiImageKey(item.image),
+                                                    String(item.description || item.name || '').trim()
+                                                ])
+                                                .filter(([key, description]) => key && description)
                                         );
 
                                         // 🔥 线下模式：使用线下专属的条数限制
@@ -4132,12 +4154,21 @@ if (window.GGP_Loaded) {
                                                         // 线下主聊天注入走 system 文本，Markdown 图片常被当普通文本忽略
                                                         // 这里改为显式文本标记，确保“发过图”信息稳定进入上下文
                                                         const imgUrl = String(msg.content || '').trim();
-                                                        content = imgUrl ? `[发送了图片] 图片地址: ${imgUrl}` : '[发送了图片]';
+                                                        const customEmojiDescription = String(
+                                                            msg.customEmojiDescription ||
+                                                            msg.customEmojiName ||
+                                                            customEmojiByImage.get(normalizeCustomEmojiImageKey(imgUrl)) ||
+                                                            ''
+                                                        ).trim();
+                                                        content = customEmojiDescription
+                                                            ? `[表情包]（${customEmojiDescription}）`
+                                                            : (imgUrl ? `[发送了图片] 图片地址: ${imgUrl}` : '[发送了图片]');
                                                     } else if (msg.type === 'weibo_card') {
                                                         // 微博转发卡片：直接使用完整content（含正文+评论）
                                                         content = msg.content || '[微博分享]';
                                                     } else if (msg.type !== 'text') {
                                                         const typeMap = {
+                                                            'image_prompt': `[图片]（${String(msg.imagePrompt || msg.content || '待生成图片').trim()}）`,
                                                             'voice': `[语音 ${msg.duration || '3秒'}]`,
                                                             'video': '[视频通话]',
                                                             'transfer': `[转账 ¥${msg.amount}]`,

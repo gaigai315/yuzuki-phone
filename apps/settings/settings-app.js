@@ -417,6 +417,30 @@ export class SettingsApp {
                                 </div>
                             </div>
                         </div>
+
+                        <div class="setting-section">
+                            <div class="setting-section-title">🖼️ 微信生图</div>
+                            <div class="setting-info" style="margin-bottom: 10px;">
+                                用于微信聊天里 AI 返回的 [图片]（描述）占位卡。点击后会直接调用 SiliconFlow 生图，默认走更快的小图参数。
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-label">SiliconFlow API Key</div>
+                                <input type="password" id="siliconflow-api-key"
+                                       value="${this.storage.get('siliconflow_api_key') || ''}"
+                                       placeholder="输入用于微信生图的 API Key"
+                                       style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 13px; background: #fafafa; box-sizing: border-box;">
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-label">生图模型</div>
+                                <input type="text" id="image-generation-model"
+                                       value="${this.storage.get('image_generation_model') || 'Kwai-Kolors/Kolors'}"
+                                       placeholder="Kwai-Kolors/Kolors"
+                                       style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 13px; background: #fafafa; box-sizing: border-box;">
+                                <div class="setting-desc" style="margin-top: 6px;">默认模型：Kwai-Kolors/Kolors。当前代码会自动补“二次元、非真人、性别明确”的通用提示词，并使用 Kolor 官方推荐尺寸里的较小档 768x1024。</div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="tab-content" id="tab-tts" style="${this.currentTab === 'tts' ? '' : 'display: none;'}">
@@ -1162,6 +1186,17 @@ export class SettingsApp {
             const validLimit = Math.max(1, Math.min(50, limit));
             e.target.value = validLimit;
             await this.storage.set('offline-weibo-history-limit', validLimit);
+        });
+
+        // 🖼️ 微信生图配置
+        document.getElementById('siliconflow-api-key')?.addEventListener('change', async (e) => {
+            await this.storage.set('siliconflow_api_key', String(e.target.value || '').trim());
+        });
+
+        document.getElementById('image-generation-model')?.addEventListener('change', async (e) => {
+            const nextModel = String(e.target.value || '').trim() || 'Kwai-Kolors/Kolors';
+            e.target.value = nextModel;
+            await this.storage.set('image_generation_model', nextModel);
         });
 
         // 🔊 TTS 设置事件绑定
