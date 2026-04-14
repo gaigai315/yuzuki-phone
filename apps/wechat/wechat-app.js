@@ -140,18 +140,25 @@ export class WechatApp {
    ======================================== */
 
 .wechat-header {
-    background: #ededed;
-    height: 36px;  /* 🔥 高度减小 */
-    margin-top: 32px;  /* 🔥 为状态栏留出空间 */
+    /* 🔥 同样降到15%透明度，清水玻璃 */
+    background: rgba(255, 255, 255, 0.15); 
+    backdrop-filter: blur(35px) saturate(200%);
+    -webkit-backdrop-filter: blur(35px) saturate(200%);
+    height: 68px;
+    padding-top: 32px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 12px;  /* 🔥 左右padding减小 */
-    border-bottom: 0.5px solid #d8d8d8;
+    padding-left: 12px;
+    padding-right: 12px;
+    /* 🔥 边框同样微加深 */
+    border-bottom: 0.5px solid rgba(0, 0, 0, 0.15);
     flex-shrink: 0;
     position: relative;
+    z-index: 10;
+    box-sizing: border-box;
 }
-
+    
 .wechat-header-left {
     width: 50px;  /* 🔥 宽度减小 */
 }
@@ -438,13 +445,14 @@ export class WechatApp {
    ======================================== */
 
 .chat-room {
-    position: absolute; /* 🔥核心防御：绝对定位锁死，防止容器被挤压出屏幕 */
+    position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
     display: flex;
     flex-direction: column;
+    background: transparent !important; /* 🔥 致命修复：彻底杀掉白底，让背景图透上来！ */
 }
 
 .chat-messages {
@@ -699,10 +707,28 @@ export class WechatApp {
    ======================================== */
 
 .chat-input-area {
-    flex-shrink: 0; /* 🔥核心修复3：确保输入框绝对不会被长列表挤压变形或隐藏 */
-    background: #f7f7f7 !important;
-    border-top: 0.5px solid #d8d8d8;
+    flex-shrink: 0; 
+    /* 🔥 透明度降到极限15%，近乎纯透明，拒绝白上加白 */
+    background: rgba(255, 255, 255, 0.15) !important; 
+    backdrop-filter: blur(35px) saturate(200%);       /* 🔥 加大模糊和饱和度，吸取底部颜色 */
+    -webkit-backdrop-filter: blur(35px) saturate(200%);
+    /* 🔥 边框稍微加深一点，强行勾勒出玻璃边缘 */
+    border-top: 0.5px solid rgba(0, 0, 0, 0.15);
     padding-bottom: env(safe-area-inset-bottom, 8px);
+    position: relative;
+    z-index: 10;
+}
+
+.chat-input {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.6) !important; /* 🔥 纯白改为60%半透明白 */
+    color: #000000 !important;
+    border: 0.5px solid rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+    padding: 6px 10px;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
 }
 
 /* 🔥 聊天输入栏 - 重构后的样式 */
@@ -811,16 +837,15 @@ export class WechatApp {
 
 .emoji-panel {
     padding: 8px 10px 6px;
-    background: #fff;
-    border-top: 0.5px solid #ddd;
+    background: transparent; /* 🔥 去掉死白底色 */
+    border-top: 0.5px solid rgba(0,0,0,0.1);
     max-height: 220px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     touch-action: pan-y;
-    /* 🔥 新增：隐藏滚动条 */
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
 
 /* 🔥 新增：隐藏滚动条 for Chrome, Safari */
@@ -871,8 +896,8 @@ export class WechatApp {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: #fff;
-    border-bottom: 1px solid #e5e5e5;
+    background: transparent; /* 🔥 去掉死白底色 */
+    border-bottom: 1px solid rgba(0,0,0,0.1);
 }
 
 .emoji-tab {
@@ -950,10 +975,10 @@ export class WechatApp {
    ======================================== */
 
 .more-panel {
-    padding: 10px 0 6px 0; /* 🔥 缩小上下内边距 */
-    background: #f7f7f7;
-    border-top: 0.5px solid #d8d8d8;
-    max-height: 160px; /* 🔥 缩小最大高度 */
+    padding: 10px 0 6px 0;
+    background: transparent; /* 🔥 去掉灰白底色 */
+    border-top: 0.5px solid rgba(0,0,0,0.1);
+    max-height: 160px;
     overflow-y: auto;
 }
 
@@ -2419,8 +2444,21 @@ export class WechatApp {
             `;
         };
 
+        // 🔥 新增：把背景贴在整个APP最底层
+        let appBgStyle = '';
+        if (this.currentChat) {
+            const userInfo = this.wechatData.getUserInfo();
+            const globalBg = userInfo.globalChatBackground;
+            const targetBg = this.currentChat.background || globalBg || '#ededed';
+            if (targetBg.startsWith('data:') || targetBg.startsWith('/') || targetBg.startsWith('http')) {
+                appBgStyle = `background-image: url('${targetBg}'); background-size: cover; background-position: center;`;
+            } else {
+                appBgStyle = `background: ${targetBg};`;
+            }
+        }
+
         const html = `
-            <div class="wechat-app">
+            <div class="wechat-app" style="${appBgStyle}">
                 <!-- 顶部栏 -->
                 <div class="wechat-header ${this.currentView === 'discover' ? 'moments-header-style' : ''}">
                     <div class="wechat-header-left">
@@ -2442,8 +2480,8 @@ export class WechatApp {
                     </div>
                 </div>
 
-                <!-- 内容区 -->
-                <div class="wechat-content" id="wechat-content">
+                <!-- 内容区 (如果在聊天中，让内容区变透明以透出底部背景) -->
+                <div class="wechat-content" id="wechat-content" style="${this.currentChat ? 'background: transparent;' : ''}">
                     ${this.renderContent()}
                 </div>
 

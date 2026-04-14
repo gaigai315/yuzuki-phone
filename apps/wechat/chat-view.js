@@ -99,15 +99,13 @@ export class ChatView {
             this.showTypingStatus('等待回复', visibleChatId);
         }
     }
-
-    renderChatRoom(chat) {
+renderChatRoom(chat) {
         const messages = this.app.wechatData.getMessages(chat.id);
         const userInfo = this.app.wechatData.getUserInfo();
         const isCurrentChatSending = this.isSending && String(this._activeSendingChatId || '') === String(chat.id || '');
 
         return `
-    <div class="chat-room" style="${chat.background && (chat.background.startsWith('data:') || chat.background.startsWith('/') || chat.background.startsWith('http')) ? `background-image: url('${chat.background}'); background-size: cover; background-position: center;` : `background: ${chat.background || '#ededed'};`}">
-                <!-- 消息列表 -->
+    <div class="chat-room">
                 <div class="chat-messages" id="chat-messages">
                     ${this.renderMessagesWithDateDividers(messages, userInfo)}
                 </div>
@@ -4537,6 +4535,24 @@ export class ChatView {
 
     // 🎨 显示背景选择器
     showBackgroundPicker() {
+        // 🔥 在这里配置你的本地预设壁纸路径
+        // 🔥 在这里配置你的本地预设壁纸路径
+        const presetBgs = [
+            '#ffffff', // 纯白
+            this.app._getWechatAssetUrl('backgrounds/bg1.png'),
+            this.app._getWechatAssetUrl('backgrounds/bg2.png'),
+            this.app._getWechatAssetUrl('backgrounds/bg3.png'),
+            this.app._getWechatAssetUrl('backgrounds/bg4.png')
+        ];
+
+        // 动态生成预设图的HTML
+        const presetHtml = presetBgs.map(bg => {
+            const style = bg.startsWith('#') 
+                ? `background: ${bg}; border: 1px solid #e5e5e5;` 
+                : `background-image: url('${bg}'); background-size: cover; background-position: center;`;
+            return `<div class="preset-bg" data-bg="${bg}" style="height: 100px; border-radius: 8px; ${style} cursor: pointer; position: relative;"></div>`;
+        }).join('');
+
         const html = `
             <div class="wechat-app">
                 <div class="wechat-header">
@@ -4557,11 +4573,12 @@ export class ChatView {
                         <button id="upload-bg-btn" style="
                             width: 100%;
                             padding: 12px;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                            color: #fff;
-                            border: none;
+                            background: #ffffff;
+                            color: #333;
+                            border: 1px solid #d8d8d8;
                             border-radius: 8px;
                             font-size: 14px;
+                            font-weight: 500;
                             cursor: pointer;
                         ">
                             <i class="fa-solid fa-upload"></i> 选择图片
@@ -4570,20 +4587,10 @@ export class ChatView {
                     
                     <!-- 预设背景 -->
                     <div style="background: #fff; border-radius: 10px; padding: 20px;">
-                        <div style="font-size: 14px; color: #999; margin-bottom: 12px;">预设背景</div>
+                        <div style="font-size: 14px; color: #999; margin-bottom: 4px;">预设背景</div>
+                        <div style="font-size: 11px; color: #07c160; margin-bottom: 15px;">💡 短按设为当前聊天，长按设为全局默认</div>
                         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                            <div class="preset-bg" data-bg="linear-gradient(135deg, #667eea 0%, #764ba2 100%)" 
-                                 style="height: 80px; border-radius: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); cursor: pointer;"></div>
-                            <div class="preset-bg" data-bg="linear-gradient(135deg, #f093fb 0%, #f5576c 100%)" 
-                                 style="height: 80px; border-radius: 8px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); cursor: pointer;"></div>
-                            <div class="preset-bg" data-bg="linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)" 
-                                 style="height: 80px; border-radius: 8px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); cursor: pointer;"></div>
-                            <div class="preset-bg" data-bg="linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)" 
-                                 style="height: 80px; border-radius: 8px; background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); cursor: pointer;"></div>
-                            <div class="preset-bg" data-bg="linear-gradient(135deg, #fa709a 0%, #fee140 100%)" 
-                                 style="height: 80px; border-radius: 8px; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); cursor: pointer;"></div>
-                            <div class="preset-bg" data-bg="#ffffff" 
-                                 style="height: 80px; border-radius: 8px; background: #ffffff; border: 1px solid #e5e5e5; cursor: pointer;"></div>
+                            ${presetHtml}
                         </div>
                     </div>
                 </div>
@@ -4606,8 +4613,6 @@ export class ChatView {
         document.getElementById('bg-upload')?.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-
-            // 重置input
             e.target.value = '';
 
             try {
@@ -4621,7 +4626,6 @@ export class ChatView {
 
                 const croppedImage = await cropper.open(file);
 
-                // 🔥 上传到服务端，避免 Base64 撑大存档
                 let finalUrl = croppedImage;
                 try {
                     const res = await fetch(croppedImage);
@@ -4631,7 +4635,7 @@ export class ChatView {
                     const formData = new FormData();
                     formData.append('avatar', blob, filename);
                     const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
-                    delete headers['Content-Type']; // 🔥 加在这里！
+                    delete headers['Content-Type'];
                     if (!headers['X-CSRF-Token']) {
                         const csrfResp = await fetch('/csrf-token');
                         if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
@@ -4641,11 +4645,21 @@ export class ChatView {
                         finalUrl = `/backgrounds/${filename}`;
                     }
                 } catch (uploadErr) {
-                    console.warn('[ChatView] 聊天背景上传服务端失败，使用本地Base64兜底:', uploadErr);
+                    console.warn('[ChatView] 聊天背景上传服务端失败:', uploadErr);
                 }
 
-                this.app.wechatData.setChatBackground(this.app.currentChat.id, finalUrl);
-                this.app.phoneShell.showNotification('设置成功', '聊天背景已更新', '✅');
+                // 🔥 提示用户：全局还是局部？
+                const isGlobal = confirm("上传成功！\n\n点击【确定】将此图片设为「全局默认背景」\n点击【取消】仅设为「当前聊天背景」");
+                if (isGlobal) {
+                    this.app.wechatData.setGlobalChatBackground(finalUrl);
+                    // 清空当前聊天的独立背景，让它跟随全局
+                    this.app.wechatData.setChatBackground(this.app.currentChat.id, null); 
+                    this.app.phoneShell.showNotification('设置成功', '全局背景已更新', '✅');
+                } else {
+                    this.app.wechatData.setChatBackground(this.app.currentChat.id, finalUrl);
+                    this.app.phoneShell.showNotification('设置成功', '当前聊天背景已更新', '✅');
+                }
+                
                 setTimeout(() => this.app.render(), 500);
             } catch (error) {
                 if (error.message !== '用户取消') {
@@ -4654,14 +4668,54 @@ export class ChatView {
             }
         });
 
-        // 预设背景点击
+        // 🔥 预设背景点击/长按事件绑定
         document.querySelectorAll('.preset-bg').forEach(item => {
-            item.addEventListener('click', () => {
-                const bg = item.dataset.bg;
-                this.app.wechatData.setChatBackground(this.app.currentChat.id, bg);
-                this.app.phoneShell.showNotification('设置成功', '聊天背景已更新', '✅');
-                setTimeout(() => this.app.render(), 1000);
-            });
+            const bg = item.dataset.bg;
+            let pressTimer;
+            let isLongPress = false;
+
+            const startPress = () => {
+                isLongPress = false;
+                pressTimer = setTimeout(() => {
+                    isLongPress = true;
+                    // 长按逻辑：设置为全局
+                    this.app.wechatData.setGlobalChatBackground(bg);
+                    // 清空当前聊天的局部设置，跟随全局
+                    this.app.wechatData.setChatBackground(this.app.currentChat.id, null);
+                    this.app.phoneShell.showNotification('设置成功', '已设为全局默认背景', '✅');
+                    
+                    // 触觉反馈（如果设备支持）
+                    if (navigator.vibrate) navigator.vibrate(50);
+                    
+                    setTimeout(() => this.app.render(), 800);
+                }, 600); // 600毫秒触发长按
+            };
+
+            const endPress = (e) => {
+                clearTimeout(pressTimer);
+                if (!isLongPress) {
+                    // 短按逻辑：设置为当前聊天
+                    this.app.wechatData.setChatBackground(this.app.currentChat.id, bg);
+                    this.app.phoneShell.showNotification('设置成功', '当前聊天背景已更新', '✅');
+                    setTimeout(() => this.app.render(), 800);
+                }
+            };
+
+            // 电脑端鼠标事件
+            item.addEventListener('mousedown', startPress);
+            item.addEventListener('mouseup', endPress);
+            item.addEventListener('mouseleave', () => clearTimeout(pressTimer));
+
+            // 手机端触摸事件
+            item.addEventListener('touchstart', (e) => {
+                // e.preventDefault(); // 不要阻止默认事件，否则无法滚动
+                startPress();
+            }, { passive: true });
+            item.addEventListener('touchend', endPress);
+            item.addEventListener('touchmove', () => clearTimeout(pressTimer));
+            
+            // 屏蔽右键菜单，防止长按时跳出浏览器菜单
+            item.addEventListener('contextmenu', e => { e.preventDefault(); });
         });
     }
 

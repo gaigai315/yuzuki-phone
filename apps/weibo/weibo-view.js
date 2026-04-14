@@ -303,7 +303,21 @@ export class WeiboView {
         const isListMode = (mode === 'recommend' || mode === 'myPosts' || mode === 'hotSearch');
         const isDetail = (mode === 'detail');
         const showDeleteBtn = (mode === 'myPosts' && !!post.isUserPost);
-        const avatarInitial = this._getAvatarInitial(post.blogger);
+        
+        // 🔥 新增：获取用户设置的头像
+        const profile = this.app.weiboData.getProfile();
+        // 判断这条帖子是不是用户自己发的（根据 isUserPost 标记，或者博主名字匹配）
+        const isCurrentUserPost = post.isUserPost || post.blogger === (profile.nickname || userName);
+        
+        let avatarHtml = '';
+        if (isCurrentUserPost && profile.avatar) {
+            // 如果是用户的帖子，且上传了自定义头像，则显示真实图片
+            avatarHtml = `<img src="${profile.avatar}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; border: 1px solid #e0e0e0; box-sizing: border-box;">`;
+        } else {
+            // 否则（AI模拟的其他网友）继续显示默认的文字首字母圈圈
+            const avatarInitial = this._getAvatarInitial(post.blogger);
+            avatarHtml = `<div class="weibo-post-avatar-circle">${avatarInitial}</div>`;
+        }
 
         // 正文处理：列表模式截断，详情模式完整
         let displayContent = post.content || '';
@@ -326,7 +340,7 @@ export class WeiboView {
                 <!-- 博主信息 -->
                 <div class="weibo-post-header">
                     <div class="weibo-post-avatar">
-                        <div class="weibo-post-avatar-circle">${avatarInitial}</div>
+                        ${avatarHtml}
                     </div>
                     <div class="weibo-post-meta">
                         <div class="weibo-post-blogger">
