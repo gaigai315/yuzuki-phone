@@ -3886,7 +3886,8 @@ if (window.GGP_Loaded) {
                             if (!Array.isArray(chatArray)) return;
                             const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}'];
                             chatArray.forEach(msg => {
-                                let c = msg.content || msg.mes || '';
+                                // 🌟 兼容移动端特殊请求体格式读取
+                                let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
                                 if (typeof c === 'string') {
                                     let modified = false;
                                     macros.forEach(macro => {
@@ -3896,8 +3897,10 @@ if (window.GGP_Loaded) {
                                         }
                                     });
                                     if (modified) {
+                                        // 🌟 兼容移动端特殊请求体格式写入
                                         if (msg.content !== undefined) msg.content = c;
                                         if (msg.mes !== undefined) msg.mes = c;
+                                        if (msg.parts && msg.parts[0] !== undefined) msg.parts[0].text = c;
                                     }
                                 }
                             });
@@ -4443,18 +4446,21 @@ if (window.GGP_Loaded) {
                                         // 🔥 核心修复：如果没有任何内容可注入，必须原地把占位符彻底删掉，绝不能直接 return 放任不管！
                                         if (!contentToInject) {
                                             for (let i = 0; i < messages.length; i++) {
-                                                let msgContent = messages[i].content || messages[i].mes || '';
+                                                let msgContent = messages[i].content || messages[i].mes || (messages[i].parts && messages[i].parts[0] ? messages[i].parts[0].text : '') || '';
                                                 if (typeof msgContent === 'string' && msgContent.includes(targetVar)) {
                                                     msgContent = msgContent.split(targetVar).join('').trim();
                                                     if (messages[i].content !== undefined) messages[i].content = msgContent;
                                                     if (messages[i].mes !== undefined) messages[i].mes = msgContent;
+                                                    if (messages[i].parts && messages[i].parts[0] !== undefined) messages[i].parts[0].text = msgContent;
                                                 }
                                             }
                                             return;
                                         }
+                                        const isGemini = messages.length > 0 && messages[0].parts !== undefined;
                                         const msgObj = {
-                                            role: 'system',
+                                            role: isGemini ? 'user' : 'system', // Gemini不允许塞system
                                             content: contentToInject,
+                                            parts: isGemini ? [{ text: contentToInject }] : undefined,
                                             isPhoneMessage: true,
                                             identifier: identifier,
                                             gaigaiPhoneSignal: {
@@ -4468,7 +4474,7 @@ if (window.GGP_Loaded) {
 
                                         let replaced = false;
                                         for (let i = 0; i < messages.length; i++) {
-                                            let msgContent = messages[i].content || messages[i].mes || '';
+                                                let msgContent = messages[i].content || messages[i].mes || (messages[i].parts && messages[i].parts[0] ? messages[i].parts[0].text : '') || '';
                                             if (typeof msgContent === 'string' && msgContent.includes(targetVar)) {
                                                 const varIndex = msgContent.indexOf(targetVar);
                                                 const preText = msgContent.substring(0, varIndex).trim();
@@ -4477,9 +4483,9 @@ if (window.GGP_Loaded) {
                                                 const newMessages = [];
                                                 const originalMsg = messages[i];
 
-                                                if (preText) newMessages.push({ role: originalMsg.role, content: preText, name: originalMsg.name });
+                                               if (preText) newMessages.push({ role: originalMsg.role, name: originalMsg.name, content: preText, parts: isGemini ? [{text: preText}] : undefined });
                                                 newMessages.push(msgObj);
-                                                if (postText) newMessages.push({ role: originalMsg.role, content: postText, name: originalMsg.name });
+                                                if (postText) newMessages.push({ role: originalMsg.role, name: originalMsg.name, content: postText, parts: isGemini ? [{text: postText}] : undefined });
 
                                                 messages.splice(i, 1, ...newMessages);
                                                 replaced = true;
@@ -4527,9 +4533,11 @@ if (window.GGP_Loaded) {
                                     }
 
                                     if (musicContent) {
+                                        const isGemini = messages.length > 0 && messages[0].parts !== undefined;
                                         const musicMessage = {
-                                            role: 'system',
+                                            role: isGemini ? 'user' : 'system',
                                             content: musicContent,
+                                            parts: isGemini ? [{ text: musicContent }] : undefined,
                                             isMusicMessage: true,
                                             identifier: 'music_system',
                                             gaigaiPhoneSignal: {
@@ -4546,7 +4554,7 @@ if (window.GGP_Loaded) {
 
                                         // 1️⃣ 扫描上下文，寻找 {{MUSIC_PROMPT}} 变量，执行"原地拆分注入"
                                         for (let i = 0; i < messages.length; i++) {
-                                            let msgContent = messages[i].content || messages[i].mes || '';
+                                                let msgContent = messages[i].content || messages[i].mes || (messages[i].parts && messages[i].parts[0] ? messages[i].parts[0].text : '') || '';
 
                                             if (typeof msgContent === 'string' && msgContent.includes(MUSIC_VAR)) {
                                                 const varIndex = msgContent.indexOf(MUSIC_VAR);
@@ -4560,6 +4568,7 @@ if (window.GGP_Loaded) {
                                                     newMessages.push({
                                                         role: originalMsg.role,
                                                         content: preText,
+                                                        parts: isGemini ? [{ text: preText }] : undefined,
                                                         name: originalMsg.name
                                                     });
                                                 }
@@ -4570,6 +4579,7 @@ if (window.GGP_Loaded) {
                                                     newMessages.push({
                                                         role: originalMsg.role,
                                                         content: postText,
+                                                        parts: isGemini ? [{ text: postText }] : undefined,
                                                         name: originalMsg.name
                                                     });
                                                 }
@@ -4597,7 +4607,7 @@ if (window.GGP_Loaded) {
                                     // 🔥 终极防线：无条件清洗发送给大模型的数据上下文
                                     // ========================================
                                     messages.forEach(msg => {
-                                        let c = msg.content || msg.mes || '';
+                                        let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
                                         if (typeof c === 'string') {
                                             let modified = false;
 
@@ -4647,6 +4657,7 @@ if (window.GGP_Loaded) {
                                             if (modified) {
                                                 if (msg.content !== undefined) msg.content = c;
                                                 if (msg.mes !== undefined) msg.mes = c;
+                                                if (msg.parts && msg.parts[0] !== undefined) msg.parts[0].text = c;
                                             }
                                         }
                                     });
