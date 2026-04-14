@@ -527,12 +527,12 @@ export class ChatView {
                 </div>
             </div>
 
-            <div class="emoji-scroll">
+           <div class="emoji-scroll">
                 <div class="emoji-grid">
                     ${this.emojiTab === 'custom' ? `
                         <!-- 自定义表情 -->
                         ${customEmojis.map(emoji => `
-                            <span class="emoji-item custom-emoji-item" data-emoji-type="custom" data-emoji-id="${emoji.id}" title="${this.escapeHtml(String(emoji.description || emoji.name || '表情'))}">
+                            <span class="emoji-item custom-emoji-item" data-emoji-type="custom" data-emoji-id="${emoji.id}" title="${this._escapeHtml(String(emoji.description || emoji.name || '表情'))}">
                                 <img src="${emoji.image}" alt="${emoji.name}">
                             </span>
                         `).join('')}
@@ -7532,7 +7532,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                     <input type="text"
                         class="emoji-name-input"
                         data-emoji-index="${index}"
-                        value="${this.escapeHtml(String(item.name || ''))}"
+                        value="${this._escapeHtml(String(item.name || ''))}"
                         placeholder="表情描述"
                         maxlength="20"
                         style="width:100%; height:24px; border:1px solid #e5e5e5; border-radius:6px; padding:0 6px; box-sizing:border-box; font-size:11px; color:#333; background:#fafafa; text-align:center;">
