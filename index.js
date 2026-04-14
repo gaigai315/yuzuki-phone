@@ -1074,19 +1074,19 @@ if (window.GGP_Loaded) {
                 <div id="phoneDrawerToolRow" class="list-group-item flex-container flexGap5 interactable"
                      tabindex="0"
                      role="listitem"
-                     title="虚拟手机 (${statusText})">
+                     title="柚月の手机 (${statusText})">
                     <div id="phoneDrawerIcon" class="fa-fw fa-solid fa-mobile-screen-button extensionsMenuExtensionButton"
                          style="position:relative; ${iconStyle}"
                          tabindex="0"
                          role="button">
                         <span id="phone-badge" class="badge-notification" style="display:none; position:absolute; top:-4px; right:-6px;">0</span>
                     </div>
-                    <span>虚拟手机</span>
+                    <span>柚月の手机</span>
                 </div>
             </div>
         ` : `
             <div id="phoneDrawerToolEntry" class="extension_container interactable" tabindex="0" role="button"
-                 title="虚拟手机 (${statusText})"
+                 title="柚月の手机 (${statusText})"
                  style="position:relative; display:flex; align-items:center; justify-content:center; min-width:38px; min-height:38px;">
                 <div id="phoneDrawerIcon" class="fa-fw fa-solid fa-mobile-screen-button"
                      style="position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:100%; ${iconStyle}"
@@ -1133,7 +1133,7 @@ if (window.GGP_Loaded) {
 
                     // 视觉反馈：图标变灰/点亮
                     drawerIcon.style.cssText = settings.enabled ? '' : 'opacity: 0.4; filter: grayscale(1);';
-                    drawerIcon.title = settings.enabled ? '虚拟手机 (已启用)' : '虚拟手机 (已休眠)';
+                    drawerIcon.title = settings.enabled ? '柚月の手机 (已启用)' : '柚月の手机 (已休眠)';
 
                     // 手机震动反馈
                     if (navigator.vibrate) navigator.vibrate(50);
