@@ -1087,7 +1087,7 @@
 .honey-mine-account-head {
     display: grid;
     grid-template-columns: auto 1fr auto;
-    align-items: center;
+    align-items: start;
     gap: 10px;
     margin-bottom: 12px;
 }
@@ -1121,6 +1121,52 @@
     margin: 0 0 2px 0;
 }
 
+.honey-mine-gender-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.honey-mine-gender-label {
+    margin: 0;
+    font-size: 11px;
+    color: rgba(255, 223, 237, 0.72) !important;
+}
+
+.honey-mine-gender-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.honey-mine-gender-btn {
+    min-width: 32px;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 175, 210, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 228, 240, 0.82);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 22px;
+    cursor: pointer;
+    transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.honey-mine-gender-btn.is-active {
+    background: linear-gradient(135deg, rgba(255, 109, 167, 0.36), rgba(255, 148, 112, 0.28));
+    border-color: rgba(255, 183, 214, 0.46);
+    color: #fff5f9;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.14);
+}
+
+.honey-mine-gender-btn:active {
+    transform: scale(0.97);
+}
+
 .honey-mine-live-nickname.honey-settings-input {
     height: 34px;
     padding: 0 12px;
@@ -1147,12 +1193,17 @@
     color: rgba(255, 221, 237, 0.58) !important;
 }
 
-.honey-mine-start-btn {
-    min-width: 64px;
-    height: 28px;
-    padding: 0 10px;
-    font-size: 12px;
-    align-self: center;
+.honey-settings-btn.honey-mine-start-btn {
+    min-width: 54px;
+    height: 24px !important;
+    padding: 0 8px !important;
+    font-size: 11px !important;
+    line-height: 22px !important;
+    border-radius: 999px !important;
+    align-self: start;
+    margin-top: 18px;
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 .honey-mine-account-stats {

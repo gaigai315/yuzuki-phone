@@ -764,7 +764,10 @@ export class HoneyView {
         const isHostFollowed = !isUserLive && followedHosts.some(item => this._isSameHostName(item?.name, safeHostName));
         this._ensureAvatarManifestLoaded();
         const avatarSeedData = isUserLive ? { ...data, host: resolvedHostName } : data;
-        const avatarSetBase = this._buildLiveAvatarSet(avatarSeedData);
+        const preferredAudienceGender = isUserLive
+            ? ((String(userLiveProfile?.gender || 'female').trim().toLowerCase() === 'male') ? 'female' : 'male')
+            : '';
+        const avatarSetBase = this._buildLiveAvatarSet(avatarSeedData, { preferredAudienceGender });
         const avatarSet = isUserLive
             ? {
                 ...avatarSetBase,
@@ -1462,7 +1465,8 @@ export class HoneyView {
             avatarUrl: '',
             intro: '今晚来我直播间聊天。',
             followers: 0,
-            accountId: '@user_live'
+            accountId: '@user_live',
+            gender: 'female'
         };
         const friendRequests = this.app?.honeyData?.getHoneyFriendRequests?.() || [];
         const friends = this.app?.honeyData?.getHoneyFriends?.() || [];
@@ -1529,6 +1533,14 @@ export class HoneyView {
                                 <div class="honey-mine-account-meta">
                                     <div class="honey-settings-label honey-mine-inline-label">直播昵称</div>
                                     <input type="text" id="honey-mine-live-nickname" class="honey-settings-input honey-mine-live-nickname" maxlength="20" value="${this._escapeHtml(profile.nickname || '')}" placeholder="输入直播昵称">
+                                    <div class="honey-mine-gender-row">
+                                        <span class="honey-settings-label honey-mine-gender-label">主播性别</span>
+                                        <div class="honey-mine-gender-switch" role="radiogroup" aria-label="主播性别">
+                                            <button type="button" class="honey-mine-gender-btn ${profile.gender === 'male' ? 'is-active' : ''}" data-gender="male" aria-pressed="${profile.gender === 'male' ? 'true' : 'false'}">男</button>
+                                            <button type="button" class="honey-mine-gender-btn ${profile.gender !== 'male' ? 'is-active' : ''}" data-gender="female" aria-pressed="${profile.gender !== 'male' ? 'true' : 'false'}">女</button>
+                                        </div>
+                                        <input type="hidden" id="honey-mine-gender" value="${this._escapeHtml(profile.gender || 'female')}">
+                                    </div>
                                 </div>
                                 <button class="honey-settings-btn honey-settings-btn-primary honey-mine-start-btn" id="honey-start-my-live">开始直播</button>
                             </div>
@@ -2299,16 +2311,19 @@ export class HoneyView {
             const nicknameInput = root.querySelector('#honey-mine-live-nickname');
             const liveTitleInput = root.querySelector('#honey-mine-live-title');
             const introInput = root.querySelector('#honey-mine-intro');
+            const genderInput = root.querySelector('#honey-mine-gender');
             const nextPatch = {
                 nickname: nicknameInput?.value || '',
                 liveTitle: liveTitleInput?.value || '',
                 intro: introInput?.value || '',
+                gender: genderInput?.value || 'female',
                 ...patch
             };
             const profile = this.app?.honeyData?.saveHoneyUserProfile?.(nextPatch) || null;
             if (nicknameInput && typeof profile?.nickname === 'string') nicknameInput.value = profile.nickname;
             if (liveTitleInput && typeof profile?.liveTitle === 'string') liveTitleInput.value = profile.liveTitle;
             if (introInput && typeof profile?.intro === 'string') introInput.value = profile.intro;
+            if (genderInput && typeof profile?.gender === 'string') genderInput.value = profile.gender;
             this._syncUserLiveProfileDisplay(profile, nextPatch);
             return profile;
         };
@@ -2351,6 +2366,18 @@ export class HoneyView {
             if (e.key !== 'Enter') return;
             e.preventDefault();
             root.querySelector('#honey-save-mine-profile')?.click();
+        });
+        root.querySelectorAll('.honey-mine-gender-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const nextGender = String(btn.dataset.gender || '').trim() === 'male' ? 'male' : 'female';
+                const genderInput = root.querySelector('#honey-mine-gender');
+                if (genderInput) genderInput.value = nextGender;
+                root.querySelectorAll('.honey-mine-gender-btn').forEach((item) => {
+                    const isActive = String(item.dataset.gender || '').trim() === nextGender;
+                    item.classList.toggle('is-active', isActive);
+                    item.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+                });
+            });
         });
 
         const avatarBtn = root.querySelector('#honey-mine-avatar-btn');
@@ -4860,7 +4887,7 @@ export class HoneyView {
         return basename.trim().toLowerCase();
     }
 
-    _buildLiveAvatarSet(data) {
+    _buildLiveAvatarSet(data, options = {}) {
         const manifest = this._avatarManifest || {};
         const seedBase = `${data?._topicKey || data?.title || 'honey'}|${data?.host || ''}|${data?.viewers || ''}`;
 
@@ -4870,9 +4897,27 @@ export class HoneyView {
             : '';
         const hostKey = this._avatarIdentityKey(hostAvatarUrl);
 
-        const audienceSource = manifest.audience?.length
-            ? manifest.audience
-            : [...(manifest.all || []), ...(manifest.male || []), ...(manifest.female || [])];
+        const preferredAudienceGender = String(options?.preferredAudienceGender || '').trim().toLowerCase();
+        const primaryAudiencePool = preferredAudienceGender === 'male'
+            ? (manifest.male || [])
+            : preferredAudienceGender === 'female'
+                ? (manifest.female || [])
+                : [];
+        const secondaryAudiencePool = preferredAudienceGender === 'male'
+            ? (manifest.female || [])
+            : preferredAudienceGender === 'female'
+                ? (manifest.male || [])
+                : [];
+        const audienceSource = primaryAudiencePool.length
+            ? [
+                ...primaryAudiencePool,
+                ...(manifest.audience || []),
+                ...secondaryAudiencePool,
+                ...(manifest.all || [])
+            ]
+            : (manifest.audience?.length
+                ? manifest.audience
+                : [...(manifest.all || []), ...(manifest.male || []), ...(manifest.female || [])]);
         const audiencePool = [];
         const audienceSeen = new Set();
         for (const rawUrl of audienceSource) {
@@ -5826,7 +5871,8 @@ export class HoneyView {
         const hasAvatarPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'avatarUrl');
         const hasFollowerPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'followers');
         const hasNicknamePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'nickname');
-        if (!hasTitlePatch && !hasIntroPatch && !hasAvatarPatch && !hasFollowerPatch && !hasNicknamePatch) return;
+        const hasGenderPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'gender');
+        if (!hasTitlePatch && !hasIntroPatch && !hasAvatarPatch && !hasFollowerPatch && !hasNicknamePatch && !hasGenderPatch) return;
 
         const syncedTopic = this._getUserLiveTopic(safeProfile);
         const activeSource = this.currentSceneData || this.selectedTopic;

@@ -7,22 +7,43 @@
     "m5.png",
     "m7.png",
     "m8.png",
-    "m9.png"
+    "m9.png",
+    "m10.png",
+    "m11.png",
+    "m12.png"
   ],
-  "male": [],
+  "male": [
+    "m1.png",
+    "m2.png",
+    "m3.png",
+    "m4.png",
+    "m5.png",
+    "m7.png",
+    "m8.png",
+    "m9.png",
+    "m10.png",
+    "m11.png",
+    "m12.png"
+  ],
   "female": [
     "f1.png",
     "f2.png",
     "f3.png",
     "f4.png",
-    "f5.png"
+    "f5.png",
+    "f6.png",
+    "f7.png",
+    "f8.png"
   ],
   "audience": [
     "f1.png",
     "f2.png",
     "f3.png",
     "f4.png",
-    "f5.png"
+    "f5.png",
+    "f6.png",
+    "f7.png",
+    "f8.png"
   ],
   "all": []
 }

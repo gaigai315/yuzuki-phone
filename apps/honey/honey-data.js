@@ -584,13 +584,16 @@ export class HoneyData {
         const parsed = this._readJSON('honey_user_profile', {}) || {};
         const fallbackNickname = this._sanitizeInlineText(parsed.nickname || '主播', 20) || '主播';
         const followers = Math.max(0, Number.parseInt(String(parsed.followers || 0), 10) || 0);
+        const rawGender = String(parsed.gender || '').trim().toLowerCase();
+        const gender = rawGender === 'male' || rawGender === 'female' ? rawGender : 'female';
         return {
             nickname: fallbackNickname,
             liveTitle: this._sanitizeInlineText(parsed.liveTitle || `${fallbackNickname}的直播间`, 40) || `${fallbackNickname}的直播间`,
             avatarUrl: String(parsed.avatarUrl || '').trim(),
             intro: this._sanitizeInlineText(parsed.intro || '今晚来我直播间聊天。', 120) || '今晚来我直播间聊天。',
             followers,
-            accountId: this._buildHoneyUserAccountId(parsed.accountId || fallbackNickname)
+            accountId: this._buildHoneyUserAccountId(parsed.accountId || fallbackNickname),
+            gender
         };
     }
 
@@ -598,13 +601,16 @@ export class HoneyData {
         const current = this.getHoneyUserProfile();
         const nextNickname = this._sanitizeInlineText(patch.nickname ?? current.nickname ?? '', 20) || current.nickname || '你';
         const nextFollowers = Math.max(0, Number.parseInt(String(patch.followers ?? current.followers ?? 0), 10) || 0);
+        const rawGender = String(patch.gender ?? current.gender ?? 'female').trim().toLowerCase();
+        const nextGender = rawGender === 'male' || rawGender === 'female' ? rawGender : 'female';
         const nextProfile = {
             nickname: nextNickname,
             liveTitle: this._sanitizeInlineText(patch.liveTitle ?? current.liveTitle ?? `${nextNickname}的直播间`, 40) || `${nextNickname}的直播间`,
             avatarUrl: String(patch.avatarUrl ?? current.avatarUrl ?? '').trim(),
             intro: this._sanitizeInlineText(patch.intro ?? current.intro ?? '', 120) || '今晚来我直播间聊天。',
             followers: nextFollowers,
-            accountId: this._buildHoneyUserAccountId(patch.accountId || current.accountId || nextNickname)
+            accountId: this._buildHoneyUserAccountId(patch.accountId || current.accountId || nextNickname),
+            gender: nextGender
         };
         this.storage?.set?.('honey_user_profile', JSON.stringify(nextProfile));
         this._scheduleFlushChatPersistence();
