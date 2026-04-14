@@ -1754,12 +1754,25 @@ export class WeiboData {
 
     clearAllData() {
         this.clearCache();
-        // 仅清理会话数据；美化项(头像/背景/头像框)保留为全局配置
-        this.storage.remove(this._profileKey);
-        this.storage.remove('weibo_recommend_posts');
-        this.storage.remove('weibo_hot_searches');
-        this.storage.remove('weibo_floor_settings');
-        this.storage.remove('weibo_auto_last_floor');
+
+        // 当前聊天下的微博数据可能包含动态详情键/楼层键，直接按前缀彻底清空，避免“清空后残留旧微博”。
+        const chatStore = this.storage?._getChatMetadataStore?.();
+        if (chatStore && typeof chatStore === 'object') {
+            Object.keys(chatStore).forEach((key) => {
+                if (/^weibo_/i.test(key)) {
+                    this.storage.remove(key);
+                }
+            });
+        } else {
+            this.storage.remove(this._profileKey);
+            this.storage.remove('weibo_recommend_posts');
+            this.storage.remove('weibo_hot_searches');
+            this.storage.remove('weibo_floor_settings');
+            this.storage.remove('weibo_auto_last_floor');
+        }
+
+        // “彻底清空”时同步重置全局微博美化配置，防止危险 CSS 在后续会话继续污染界面。
+        this.storage.remove(this._globalBeautifyKey);
     }
 
     // ========================================

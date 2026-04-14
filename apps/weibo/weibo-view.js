@@ -2598,13 +2598,19 @@ export class WeiboView {
                 if (confirm('⚠️ 警告：此操作将清空当前所有微博数据，并从酒馆聊天记录中永久擦除所有 <Weibo> 标签！\\n\\n此操作不可逆，是否继续？')) {
                     this.app.phoneShell.showNotification('清理中', '正在擦除数据...', '⏳');
                     
-                    // 1. 清空插件数据库的缓存和设置
+                    // 1. 清空插件数据库、动态缓存与全局微博美化 CSS
                     this.app.weiboData.clearAllData();
+                    this._applyCustomAvatarFrame('');
+
+                    const cssTextarea = document.getElementById('weibo-avatar-frame-css');
+                    if (cssTextarea) {
+                        cssTextarea.value = '';
+                    }
                     
                     // 2. 深入酒馆源文件擦除遗留标签
                     await this.app.weiboData.clearWeiboChatHistory();
                     
-                    this.app.phoneShell.showNotification('清理完成', '微博数据及历史标签已彻底清空', '✅');
+                    this.app.phoneShell.showNotification('清理完成', '微博数据、自定义 CSS 与历史标签已彻底清空', '✅');
                     
                     // 刷新回首页
                     this.currentView = 'home';

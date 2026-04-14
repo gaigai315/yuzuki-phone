@@ -7481,9 +7481,12 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
     `;
 
         this.app.phoneShell.setContent(html);
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const query = (selector) => currentView.querySelector(selector);
 
         const selectedFiles = [];
         const selectedNameSet = new Set();
+        const previewUrls = new Set();
         const buildEmojiName = (fileName = '', fallbackIndex = 1) => {
             const base = String(fileName || '')
                 .replace(/\.[^.]+$/, '')
@@ -7509,8 +7512,8 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         };
 
         const renderSelectedPreview = () => {
-            const preview = document.getElementById('emoji-preview');
-            const hint = document.getElementById('emoji-select-hint');
+            const preview = query('#emoji-preview');
+            const hint = query('#emoji-select-hint');
             if (!preview) return;
             if (selectedFiles.length === 0) {
                 preview.innerHTML = `
@@ -7549,16 +7552,30 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             reader.onerror = () => reject(new Error('读取图片失败'));
             reader.readAsDataURL(file);
         });
+        const createPreviewUrl = (file) => {
+            const objectUrl = URL.createObjectURL(file);
+            previewUrls.add(objectUrl);
+            return objectUrl;
+        };
+        const cleanupPreviewUrls = () => {
+            previewUrls.forEach((url) => {
+                try {
+                    URL.revokeObjectURL(url);
+                } catch (err) { }
+            });
+            previewUrls.clear();
+        };
 
-        document.getElementById('back-from-add-emoji')?.addEventListener('click', () => {
+        query('#back-from-add-emoji')?.addEventListener('click', () => {
+            cleanupPreviewUrls();
             this.app.render();
         });
 
-        document.getElementById('emoji-preview')?.addEventListener('click', (e) => {
+        query('#emoji-preview')?.addEventListener('click', (e) => {
             if (e.target?.closest?.('.emoji-name-input')) return;
-            document.getElementById('emoji-image-upload').click();
+            query('#emoji-image-upload')?.click();
         });
-        document.getElementById('emoji-preview')?.addEventListener('input', (e) => {
+        query('#emoji-preview')?.addEventListener('input', (e) => {
             const input = e.target?.closest?.('.emoji-name-input');
             if (!input) return;
             const index = Number.parseInt(String(input.dataset.emojiIndex || ''), 10);
@@ -7566,7 +7583,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             selectedFiles[index].name = sanitizeEmojiName(input.value, selectedFiles[index].name || `表情${index + 1}`);
         });
 
-        document.getElementById('emoji-image-upload')?.addEventListener('change', async (e) => {
+        query('#emoji-image-upload')?.addEventListener('change', async (e) => {
             const files = Array.from(e?.target?.files || []);
             e.target.value = '';
             if (!files.length) return;
@@ -7582,15 +7599,17 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                     continue;
                 }
                 try {
-                    const preview = await readFileAsDataURL(file);
+                    const preview = createPreviewUrl(file);
                     if (!preview) {
                         skipped += 1;
                         continue;
                     }
+                    const autoName = buildEmojiName(file?.name, selectedFiles.length + 1);
                     selectedFiles.push({
                         file,
                         preview,
-                        name: buildEmojiName(file?.name, selectedFiles.length + 1)
+                        autoName,
+                        name: autoName
                     });
                 } catch (err) {
                     skipped += 1;
@@ -7603,57 +7622,66 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             }
         });
 
-        document.getElementById('save-custom-emoji')?.addEventListener('click', async () => { // 🔥 注意这里加上了 async
+        query('#save-custom-emoji')?.addEventListener('click', async () => { // 🔥 注意这里加上了 async
             if (selectedFiles.length === 0) {
                 this.app.phoneShell.showNotification('提示', '请先选择至少一张图片', '⚠️');
                 return;
             }
 
             this.app.phoneShell.showNotification('处理中', `正在上传 ${selectedFiles.length} 张表情...`, '⏳');
-            const saveBtn = document.getElementById('save-custom-emoji');
+            const saveBtn = query('#save-custom-emoji');
             if (saveBtn) saveBtn.disabled = true;
 
             let successCount = 0;
-            for (let i = 0; i < selectedFiles.length; i += 1) {
-                const item = selectedFiles[i];
-                const file = item.file;
-                const autoName = buildEmojiName(file?.name, i + 1);
-                const emojiDescription = sanitizeEmojiName(item.name, autoName);
+            try {
+                for (let i = 0; i < selectedFiles.length; i += 1) {
+                    const item = selectedFiles[i];
+                    const file = item.file;
+                    const autoName = String(item.autoName || '').trim() || `表情${i + 1}`;
+                    const emojiDescription = sanitizeEmojiName(item.name, autoName);
 
-                // 默认先保留本地 dataURL，上传失败也可降级使用
-                let finalUrl = String(item.preview || '').trim();
-                try {
-                    const ext = file.type === 'image/png'
-                        ? 'png'
-                        : (file.type === 'image/webp' ? 'webp' : (file.type === 'image/gif' ? 'gif' : 'jpg'));
-                    const filename = `phone_emoji_${Date.now()}_${i + 1}.${ext}`;
-                    const formData = new FormData();
-                    formData.append('avatar', file, filename);
+                    let finalUrl = '';
+                    try {
+                        const ext = file.type === 'image/png'
+                            ? 'png'
+                            : (file.type === 'image/webp' ? 'webp' : (file.type === 'image/gif' ? 'gif' : 'jpg'));
+                        const filename = `phone_emoji_${Date.now()}_${i + 1}.${ext}`;
+                        const formData = new FormData();
+                        formData.append('avatar', file, filename);
 
-                    const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
-                    delete headers['Content-Type'];
-                    if (!headers['X-CSRF-Token']) {
-                        const csrfResp = await fetch('/csrf-token');
-                        if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
+                        const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+                        delete headers['Content-Type'];
+                        if (!headers['X-CSRF-Token']) {
+                            const csrfResp = await fetch('/csrf-token');
+                            if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
+                        }
+                        const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
+                        if (uploadResp.ok) {
+                            finalUrl = `/backgrounds/${filename}`;
+                        }
+                    } catch (err) {
+                        console.warn('表情包上传失败，准备使用本地兜底:', err);
                     }
-                    const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                    if (uploadResp.ok) finalUrl = `/backgrounds/${filename}`;
-                } catch (err) {
-                    console.warn('表情包上传失败，使用本地降级:', err);
+
+                    if (!finalUrl) {
+                        finalUrl = await readFileAsDataURL(file);
+                    }
+
+                    this.app.wechatData.addCustomEmoji({
+                        name: emojiDescription,
+                        description: emojiDescription,
+                        image: finalUrl
+                    });
+                    successCount += 1;
                 }
 
-                this.app.wechatData.addCustomEmoji({
-                    name: emojiDescription,
-                    description: emojiDescription,
-                    image: finalUrl
-                });
-                successCount += 1;
+                cleanupPreviewUrls();
+                this.app.phoneShell.showNotification('添加成功', `已添加 ${successCount} 张表情`, '✅');
+                this.emojiTab = 'custom';
+                setTimeout(() => this.app.render(), 300);
+            } finally {
+                if (saveBtn) saveBtn.disabled = false;
             }
-
-            if (saveBtn) saveBtn.disabled = false;
-            this.app.phoneShell.showNotification('添加成功', `已添加 ${successCount} 张表情`, '✅');
-            this.emojiTab = 'custom';
-            setTimeout(() => this.app.render(), 300);
         });
     }
 
