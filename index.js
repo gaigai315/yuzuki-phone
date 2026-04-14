@@ -3965,7 +3965,7 @@ if (window.GGP_Loaded) {
                             }
 
                             // 📱 收集手机活动记录
-                            const phoneActivities = [];
+                            const wechatOfflineChats = [];
                             const storage = window.VirtualPhone.storage;
                             const offlinePerms = { allowSummary: true, allowTable: true, allowVector: true, allowPrompt: true };
                             const isPhoneEnabled = isPhoneFeatureEnabled();
@@ -4028,16 +4028,42 @@ if (window.GGP_Loaded) {
                                     }
 
                                     if (wechatDataParsed) {
-                                        const allChats = wechatDataParsed.chats || [];
+                                        const allChats = Array.isArray(wechatDataParsed.chats)
+                                            ? [...wechatDataParsed.chats].sort((a, b) => (b?.timestamp || 0) - (a?.timestamp || 0))
+                                            : [];
 
                                         // 🔥 性能优化：在循环外获取context和limit配置，避免重复调用
                                         const ctx = getContext();
                                         const userName = ctx?.name1 || '用户';
                                         const singleLimit = parseInt(storage.get('offline-single-chat-limit')) || 5;
                                         const groupLimit = parseInt(storage.get('offline-group-chat-limit')) || 10;
+                                        const includeHoneyOfflineRaw = storage.get('offline-honey-chat-enabled');
+                                        const includeHoneyOffline = !(
+                                            includeHoneyOfflineRaw === false ||
+                                            includeHoneyOfflineRaw === 'false' ||
+                                            includeHoneyOfflineRaw === 0 ||
+                                            includeHoneyOfflineRaw === '0'
+                                        );
+                                        const contacts = Array.isArray(wechatDataParsed.contacts) ? wechatDataParsed.contacts : [];
+                                        const contactMap = new Map(
+                                            contacts
+                                                .filter(contact => contact?.id)
+                                                .map(contact => [String(contact.id), contact])
+                                        );
 
                                         // 🔥 线下模式：使用线下专属的条数限制
                                         allChats.forEach(chat => {
+                                            const linkedContact = chat?.contactId
+                                                ? contactMap.get(String(chat.contactId))
+                                                : null;
+                                            const isHoneyChat = chat?.sourceApp === 'honey' ||
+                                                chat?.sourceLabel === '蜜语' ||
+                                                linkedContact?.sourceApp === 'honey' ||
+                                                linkedContact?.sourceLabel === '蜜语';
+                                            if (!includeHoneyOffline && isHoneyChat) {
+                                                return;
+                                            }
+
                                             let chatMessages = [];
 
                                             // 方式1：优先走 WechatData.getMessages（兼容懒加载与独立存储）
@@ -4072,6 +4098,7 @@ if (window.GGP_Loaded) {
                                                 const isGroup = chat.type === 'group';
                                                 const limit = isGroup ? groupLimit : singleLimit;
                                                 const recentMessages = chatMessages.slice(-limit);
+                                                const formattedMessages = [];
 
                                                 recentMessages.forEach(msg => {
                                                     // 🔥 修复：群聊发送者名称判断
@@ -4120,14 +4147,21 @@ if (window.GGP_Loaded) {
                                                         content = typeMap[msg.type] || `[${msg.type}]`;
                                                     }
 
-                                                    phoneActivities.push({
-                                                        chatName: chat.name,
-                                                        speaker: speaker,
-                                                        content: content,
+                                                    formattedMessages.push({
+                                                        speaker,
+                                                        content,
                                                         time: msg.time,
-                                                        date: msg.date || ''  // 🔥 新增：读取日期
+                                                        date: msg.date || ''
                                                     });
                                                 });
+
+                                                if (formattedMessages.length > 0) {
+                                                    wechatOfflineChats.push({
+                                                        chatId: chat.id,
+                                                        chatName: chat.name,
+                                                        messages: formattedMessages
+                                                    });
+                                                }
                                             }
                                         });
                                     }
@@ -4137,7 +4171,7 @@ if (window.GGP_Loaded) {
                             }
 
                             // 📱 注入手机消息块（🔥 修改：只要手机功能启用就注入）
-                            if (phoneActivities.length > 0 || isPhoneEnabled) {
+                            if (wechatOfflineChats.length > 0 || isPhoneEnabled) {
                                 const messages = eventData.chat;
 
                                 if (messages && Array.isArray(messages)) {
@@ -4258,20 +4292,14 @@ if (window.GGP_Loaded) {
                                     }
 
                                     // 3️⃣ 添加微信聊天记录（按会话窗口分组显示，含日期）
-                                    if (phoneActivities.length > 0) {
+                                    if (wechatOfflineChats.length > 0) {
                                         phoneHistoryContent += `【 手机微信已有消息】\n`;
                                         phoneHistoryContent += `以下是用户手机里已经存在的消息记录，AI回复时严禁重复内容，必须根据已有的内容自然衔接。\n\n`;
 
-                                        const groupedByChat = {};
-                                        phoneActivities.forEach(activity => {
-                                            if (!groupedByChat[activity.chatName]) groupedByChat[activity.chatName] = [];
-                                            groupedByChat[activity.chatName].push(activity);
-                                        });
-
-                                        Object.entries(groupedByChat).forEach(([chatName, messages]) => {
-                                            phoneHistoryContent += `━━━ ${chatName} 的聊天记录 ━━━\n`;
+                                        wechatOfflineChats.forEach(chatHistory => {
+                                            phoneHistoryContent += `━━━ ${chatHistory.chatName} 的聊天记录 ━━━\n`;
                                             let lastDate = '';
-                                            messages.forEach(msg => {
+                                            chatHistory.messages.forEach(msg => {
                                                 if (msg.date && msg.date !== lastDate) {
                                                     phoneHistoryContent += `--- ${msg.date} ---\n`;
                                                     lastDate = msg.date;
@@ -4607,7 +4635,7 @@ if (window.GGP_Loaded) {
                                     });
 
                                 }  // 结束 if (messages && Array.isArray(messages))
-                            }      // 结束 if (phoneActivities.length > 0 || settings.enabled)
+                            }      // 结束 if (wechatOfflineChats.length > 0 || settings.enabled)
 
                         } catch (e) {
                             // 🔥 第三层防线：错误处理 - 只打印日志，不中断酒馆进程

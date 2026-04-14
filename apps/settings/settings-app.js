@@ -116,6 +116,105 @@ export class SettingsApp {
                             </div>
                         </div>
 
+                        <!-- 消息记录设置 -->
+                        <div class="setting-section">
+                            <div class="setting-section-title">📨 消息记录</div>
+
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">正文上下文楼层</span>
+                                <input type="number" id="phone-context-limit" min="1" max="9999"
+                                       value="${this.storage.get('phone-context-limit') || 20}"
+                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+                        </div>
+
+                        <!-- 线上模式 -->
+                        <div class="setting-section">
+                            <div class="setting-section-title">📱 线上模式（手机内聊天）</div>
+
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">单聊发送条数</span>
+                                <input type="number" id="wechat-single-chat-limit" min="1" max="9999"
+                                       value="${this.storage.get('wechat-single-chat-limit') || 200}"
+                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">群聊发送条数</span>
+                                <input type="number" id="wechat-group-chat-limit" min="1" max="9999"
+                                       value="${this.storage.get('wechat-group-chat-limit') || 200}"
+                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+                        </div>
+
+                        <!-- 电话通话 -->
+                        <div class="setting-section">
+                            <div class="setting-section-title">📞 电话通话</div>
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">通话发送条数</span>
+                                <input type="number" id="phone-call-limit" min="1" max="9999"
+                                       value="${this.storage.get('phone-call-limit') || 10}"
+                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+                        </div>
+
+                        <!-- 微博注入 -->
+                        <div class="setting-section">
+                            <div class="setting-section-title">🧾 微博注入（线下模式）</div>
+
+                            <div class="setting-item setting-toggle">
+                                <div>
+                                    <div class="setting-label">注入用户微博与评论</div>
+                                    <div class="setting-desc">将用户最近发布的微博及对应评论注入到线下提示词</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="offline-weibo-history-enabled" ${this.storage.get('offline-weibo-history-enabled') ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">最近微博条数</span>
+                                <input type="number" id="offline-weibo-history-limit" min="1" max="50"
+                                       value="${this.storage.get('offline-weibo-history-limit') || 5}"
+                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+
+                            <div class="setting-info">
+                                同时附带注入微博最新热搜条目（不注入热搜正文详情）
+                            </div>
+                        </div>
+
+                        <!-- 线下模式 -->
+                        <div class="setting-section">
+                            <div class="setting-section-title">📴 线下模式（酒馆正文注入）</div>
+
+                            <div class="setting-item setting-toggle">
+                                <div>
+                                    <div class="setting-label">蜜语会话注入线下</div>
+                                    <div class="setting-desc">关闭后，所有标记为蜜语的微信会话都不再注入酒馆正文</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="offline-honey-chat-enabled" ${(this.storage.get('offline-honey-chat-enabled') === false || this.storage.get('offline-honey-chat-enabled') === 'false') ? '' : 'checked'}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">单聊发送条数</span>
+                                <input type="number" id="offline-single-chat-limit" min="1" max="9999"
+                                       value="${this.storage.get('offline-single-chat-limit') || 5}"
+                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">群聊发送条数</span>
+                                <input type="number" id="offline-group-chat-limit" min="1" max="9999"
+                                       value="${this.storage.get('offline-group-chat-limit') || 10}"
+                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+                        </div>
+
                         <!-- 个性化设置 -->
                         <div class="setting-section">
                             <div class="setting-section-title">🎨 个性化</div>
@@ -237,94 +336,6 @@ export class SettingsApp {
                     <div class="tab-content" id="tab-memory" style="${this.currentTab === 'memory' ? '' : 'display: none;'}">
                         ${this.renderMemoryPermissionSection()}
                         ${this.renderTagFilterSection()}
-
-                        <!-- 消息记录设置 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📨 消息记录</div>
-
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">正文上下文楼层</span>
-                                <input type="number" id="phone-context-limit" min="1" max="9999"
-                                       value="${this.storage.get('phone-context-limit') || 20}"
-                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
-                            </div>
-                        </div>
-
-                        <!-- 线上模式 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📱 线上模式（手机内聊天）</div>
-
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">单聊发送条数</span>
-                                <input type="number" id="wechat-single-chat-limit" min="1" max="9999"
-                                       value="${this.storage.get('wechat-single-chat-limit') || 200}"
-                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
-                            </div>
-
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">群聊发送条数</span>
-                                <input type="number" id="wechat-group-chat-limit" min="1" max="9999"
-                                       value="${this.storage.get('wechat-group-chat-limit') || 200}"
-                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
-                            </div>
-                        </div>
-
-                        <!-- 电话通话 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📞 电话通话</div>
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">通话发送条数</span>
-                                <input type="number" id="phone-call-limit" min="1" max="9999"
-                                       value="${this.storage.get('phone-call-limit') || 10}"
-                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
-                            </div>
-                        </div>
-
-                        <!-- 微博注入 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">🧾 微博注入（线下模式）</div>
-
-                            <div class="setting-item setting-toggle">
-                                <div>
-                                    <div class="setting-label">注入用户微博与评论</div>
-                                    <div class="setting-desc">将用户最近发布的微博及对应评论注入到线下提示词</div>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="offline-weibo-history-enabled" ${this.storage.get('offline-weibo-history-enabled') ? 'checked' : ''}>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">最近微博条数</span>
-                                <input type="number" id="offline-weibo-history-limit" min="1" max="50"
-                                       value="${this.storage.get('offline-weibo-history-limit') || 5}"
-                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
-                            </div>
-
-                            <div class="setting-info">
-                                同时附带注入微博最新热搜条目（不注入热搜正文详情）
-                            </div>
-                        </div>
-
-                        <!-- 线下模式 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📴 线下模式（酒馆正文注入）</div>
-
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">单聊发送条数</span>
-                                <input type="number" id="offline-single-chat-limit" min="1" max="9999"
-                                       value="${this.storage.get('offline-single-chat-limit') || 5}"
-                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
-                            </div>
-
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">群聊发送条数</span>
-                                <input type="number" id="offline-group-chat-limit" min="1" max="9999"
-                                       value="${this.storage.get('offline-group-chat-limit') || 10}"
-                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
-                            </div>
-                        </div>
                     </div>
 
                     <div class="tab-content" id="tab-llm" style="${this.currentTab === 'llm' ? '' : 'display: none;'}">
@@ -1126,6 +1137,10 @@ export class SettingsApp {
             const validLimit = Math.max(1, Math.min(9999, limit));
             e.target.value = validLimit;
             await this.storage.set('offline-group-chat-limit', validLimit);
+        });
+
+        document.getElementById('offline-honey-chat-enabled')?.addEventListener('change', async (e) => {
+            await this.storage.set('offline-honey-chat-enabled', !!e.target.checked);
         });
 
         // 📞 通话发送条数设置
