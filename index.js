@@ -4465,7 +4465,18 @@ if (window.GGP_Loaded) {
 
                                     // 🔥 辅助函数：原地拆分注入
                                     const injectIntoMessages = (targetVar, contentToInject, identifier) => {
-                                        if (!contentToInject) return;
+                                        // 🔥 核心修复：如果没有任何内容可注入，必须原地把占位符彻底删掉，绝不能直接 return 放任不管！
+                                        if (!contentToInject) {
+                                            for (let i = 0; i < messages.length; i++) {
+                                                let msgContent = messages[i].content || messages[i].mes || '';
+                                                if (typeof msgContent === 'string' && msgContent.includes(targetVar)) {
+                                                    msgContent = msgContent.split(targetVar).join('').trim();
+                                                    if (messages[i].content !== undefined) messages[i].content = msgContent;
+                                                    if (messages[i].mes !== undefined) messages[i].mes = msgContent;
+                                                }
+                                            }
+                                            return;
+                                        }
                                         const msgObj = {
                                             role: 'system',
                                             content: contentToInject,
@@ -4628,7 +4639,7 @@ if (window.GGP_Loaded) {
                                                 c = c.split(HISTORY_VAR).join('');
                                                 modified = true;
                                             }
-                                            if (weiboInjectEnabled && c.includes(WEIBO_VAR)) {
+                                            if (c.includes(WEIBO_VAR)) {
                                                 c = c.split(WEIBO_VAR).join('');
                                                 modified = true;
                                             }

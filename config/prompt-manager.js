@@ -107,6 +107,7 @@ export class PromptManager {
             } catch (e) {
                 console.error('❌ 提示词加载失败，使用默认配置');
                 this.storage.set('phone-prompts', JSON.stringify(defaults));
+                return defaults; // 🔥 核心修复：必须返回默认值，否则会导致后续读取 undefined 引起连环崩溃！
             }
         }
 
