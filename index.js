@@ -3932,12 +3932,40 @@ if (window.GGP_Loaded) {
 
                 // 🟢🟢🟢 手机消息注入监听器 (升级现代 Hook，解决移动端时序丢失) 🟢🟢🟢
                 // ========================================
-                const phonePromptHandler = (eventData) => {
+                // 🔥 核心修复：加上 async 关键字，让它有能力等待异步加载
+                const phonePromptHandler = async (eventData) => {
+                        // 🔥 强制等待核心管理器就绪 (防止由于休眠或点太快导致的 null)
+                        if (!promptManager) await loadPromptManager();
+                        if (!timeManager) await loadTimeManager();
+
+                        // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
+                        const forceFallbackCleanup = (chatArray) => {
+                            if (!Array.isArray(chatArray)) return;
+                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}'];
+                            chatArray.forEach(msg => {
+                                let c = msg.content || msg.mes || '';
+                                if (typeof c === 'string') {
+                                    let modified = false;
+                                    macros.forEach(macro => {
+                                        if (c.includes(macro)) {
+                                            c = c.split(macro).join('').trim();
+                                            modified = true;
+                                        }
+                                    });
+                                    if (modified) {
+                                        if (msg.content !== undefined) msg.content = c;
+                                        if (msg.mes !== undefined) msg.mes = c;
+                                    }
+                                }
+                            });
+                        };
+
                         // 🔥 第二层防线：全量捕获异常
                         try {
                             // 检查全局对象
                             if (!window.VirtualPhone || !window.VirtualPhone.storage) {
                                 console.warn('⚠️ [手机插件] 全局对象未初始化，跳过注入');
+                                forceFallbackCleanup(eventData.chat);
                                 return;
                             }
 
@@ -3946,6 +3974,7 @@ if (window.GGP_Loaded) {
                                 // 1. 检查是否是手机内部（线上模式）发出的请求，如果是，直接跳过线下注入
                                 const lastMsg = eventData.chat[eventData.chat.length - 1];
                                 if (lastMsg && lastMsg.isPhoneMessage && lastMsg.gaigaiPhoneSignal) {
+                                    forceFallbackCleanup(eventData.chat);
                                     return;
                                 }
                                 
@@ -3972,8 +4001,11 @@ if (window.GGP_Loaded) {
                             const offlinePerms = { allowSummary: true, allowTable: true, allowVector: true, allowPrompt: true };
                             const isPhoneEnabled = isPhoneFeatureEnabled();
 
-                            // 🔥 手机休眠时：不注入任何手机上下文
-                            if (!isPhoneEnabled) return;
+                            // 🔥 手机休眠或功能关闭时：不注入任何手机上下文，但必须强制清洗掉占位符！
+                            if (!isPhoneEnabled) {
+                                forceFallbackCleanup(eventData.chat);
+                                return;
+                            }
 
                             // ⏪⏪⏪ 核心修复 2：发送给AI之前，彻底斩断幽灵数据（完美兼容重新生成与滑动）！ ⏪⏪⏪
                             // 🔥 终极数学判定法：
@@ -4683,16 +4715,18 @@ if (window.GGP_Loaded) {
                             // 🔥 第三层防线：错误处理 - 只打印日志，不中断酒馆进程
                             console.error('❌ [手机插件] 注入逻辑异常 (已拦截):', e.message);
                             console.error('📍 [手机插件] 错误堆栈:', e.stack);
+                            forceFallbackCleanup(eventData.chat); // 哪怕代码崩溃了，也必须把占位符擦掉！
                             // 不抛出异常，避免影响酒馆主流程
                         }
                 }; // 结束 phonePromptHandler 定义
 
                 // 🔥 移动端终极修复：回归同步过滤器，防止酒馆在手机端丢弃异步上下文
                 if (window.hooks && typeof window.hooks.addFilter === 'function') {
-                    window.hooks.addFilter('chat_completion_prompt_ready', (chat) => {
+                    // 🔥 核心修复：加上 async 和 await，强迫酒馆发包前必须等我们的变量替换彻底完成！
+                    window.hooks.addFilter('chat_completion_prompt_ready', async (chat) => {
                         // 包装成旧版 eventData 格式兼容原有代码
                         let eventData = { chat: chat, prompt: [] };
-                        phonePromptHandler(eventData);
+                        await phonePromptHandler(eventData); 
                         return eventData.chat; // 必须返回修改后的数组给酒馆
                     });
                 } else {
@@ -4709,25 +4743,11 @@ if (window.GGP_Loaded) {
         }
     }  // 结束 init() 函数
 
-    // 🔥 修复：改进初始化流程（使用 requestIdleCallback 或 setTimeout 延迟启动）
-    if (typeof requestIdleCallback !== 'undefined') {
-        requestIdleCallback(() => {
-            init().then(() => {
-                // 更新全局对象（UI 模块按需加载，这里不创建）
-                if (window.VirtualPhone && modulesLoaded) {
-                    window.VirtualPhone.version = '1.0.0';
-                }
-            });
-        }, { timeout: 2000 });
-    } else {
-        setTimeout(() => {
-            init().then(() => {
-                // 更新全局对象（UI 模块按需加载，这里不创建）
-                if (window.VirtualPhone && modulesLoaded) {
-                    window.VirtualPhone.version = '1.0.0';
-                }
-            });
-        }, 1000);
-    }
+    // 🔥 终极修复：绝对禁止人为延迟！必须立刻执行，否则会错过酒馆的第一次发送事件！
+    init().then(() => {
+        if (window.VirtualPhone && modulesLoaded) {
+            window.VirtualPhone.version = '1.0.0';
+        }
+    });
 
 }
