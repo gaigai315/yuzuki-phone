@@ -4347,12 +4347,26 @@ export class HoneyView {
             return;
         }
 
+        let baselineLayoutHeight = Math.max(
+            window.innerHeight || 0,
+            document.documentElement?.clientHeight || 0,
+            Math.round((viewport.height || 0) + (viewport.offsetTop || 0))
+        );
+
         const apply = () => {
             if (!liveRoot.isConnected || this.currentPage !== 'live') return;
-            const layoutViewportHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
-            const rawKeyboardInset = Math.max(0, Math.round(layoutViewportHeight - viewport.height - viewport.offsetTop));
+            const currentLayoutHeight = Math.max(
+                window.innerHeight || 0,
+                document.documentElement?.clientHeight || 0,
+                Math.round((viewport.height || 0) + (viewport.offsetTop || 0))
+            );
+            const candidateInset = Math.max(0, Math.round(baselineLayoutHeight - viewport.height - viewport.offsetTop));
+            if (candidateInset <= 24) {
+                baselineLayoutHeight = Math.max(baselineLayoutHeight, currentLayoutHeight);
+            }
+            const rawKeyboardInset = Math.max(0, Math.round(baselineLayoutHeight - viewport.height - viewport.offsetTop));
             const keyboardOffset = rawKeyboardInset > 80
-                ? Math.min(rawKeyboardInset + 10, 320)
+                ? Math.min(Math.max(0, rawKeyboardInset - 8), 360)
                 : 0;
             liveRoot.style.setProperty('--honey-live-keyboard-offset', `${keyboardOffset}px`);
             liveRoot.classList.toggle('is-keyboard-open', keyboardOffset > 0);
@@ -4361,6 +4375,10 @@ export class HoneyView {
         const handleFocus = () => {
             requestAnimationFrame(() => {
                 requestAnimationFrame(apply);
+                setTimeout(() => {
+                    apply();
+                    liveRoot.querySelector('.honey-live-bottom')?.scrollIntoView({ block: 'end', inline: 'nearest' });
+                }, 120);
             });
         };
         const handleBlur = () => {
