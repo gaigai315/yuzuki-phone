@@ -4362,72 +4362,33 @@ export class HoneyView {
         const liveRoot = this._getLiveRoot(root);
         if (!liveRoot) return;
         const input = liveRoot.querySelector('#honey-chat-input');
-        const viewport = window.visualViewport;
+        if (!input) return;
 
-        const reset = () => {
-            liveRoot.style.setProperty('--honey-live-keyboard-offset', '0px');
-            liveRoot.classList.remove('is-keyboard-open');
-        };
-
-        if (!viewport || !input) {
-            reset();
-            return;
-        }
-
-        let baselineLayoutHeight = Math.max(
-            window.innerHeight || 0,
-            document.documentElement?.clientHeight || 0,
-            Math.round((viewport.height || 0) + (viewport.offsetTop || 0))
-        );
-
-        const apply = () => {
-            if (!liveRoot.isConnected || this.currentPage !== 'live') return;
-            const currentLayoutHeight = Math.max(
-                window.innerHeight || 0,
-                document.documentElement?.clientHeight || 0,
-                Math.round((viewport.height || 0) + (viewport.offsetTop || 0))
-            );
-            const candidateInset = Math.max(0, Math.round(baselineLayoutHeight - viewport.height - viewport.offsetTop));
-            if (candidateInset <= 24) {
-                baselineLayoutHeight = Math.max(baselineLayoutHeight, currentLayoutHeight);
-            }
-            const rawKeyboardInset = Math.max(0, Math.round(baselineLayoutHeight - viewport.height - viewport.offsetTop));
-            const keyboardOffset = rawKeyboardInset > 80
-                ? Math.min(Math.max(0, rawKeyboardInset - 8), 360)
-                : 0;
-            liveRoot.style.setProperty('--honey-live-keyboard-offset', `${keyboardOffset}px`);
-            liveRoot.classList.toggle('is-keyboard-open', keyboardOffset > 0);
-        };
-
+        // 🔥 核心修复：彻底抛弃导致黑屏崩溃的视觉视口计算，
+        // 采用和微信完全一致的原生 Flexbox 自动适应 + body 状态标记方案
         const handleFocus = () => {
-            requestAnimationFrame(() => {
-                requestAnimationFrame(apply);
-                setTimeout(() => {
-                    apply();
-                    liveRoot.querySelector('.honey-live-bottom')?.scrollIntoView({ block: 'end', inline: 'nearest' });
-                }, 120);
-            });
-        };
-        const handleBlur = () => {
-            setTimeout(() => {
-                if (document.activeElement !== input) reset();
-            }, 80);
+            if (window.innerWidth <= 500) {
+                document.body.classList.add('phone-input-active');
+            }
         };
 
-        viewport.addEventListener('resize', apply);
-        viewport.addEventListener('scroll', apply);
-        window.addEventListener('resize', apply);
+        const handleBlur = () => {
+            if (window.innerWidth <= 500) {
+                setTimeout(() => {
+                    if (document.activeElement !== input) {
+                        document.body.classList.remove('phone-input-active');
+                    }
+                }, 100);
+            }
+        };
+
         input.addEventListener('focus', handleFocus);
         input.addEventListener('blur', handleBlur);
-        apply();
 
         this._liveViewportCleanup = () => {
-            viewport.removeEventListener('resize', apply);
-            viewport.removeEventListener('scroll', apply);
-            window.removeEventListener('resize', apply);
             input.removeEventListener('focus', handleFocus);
             input.removeEventListener('blur', handleBlur);
-            reset();
+            document.body.classList.remove('phone-input-active');
         };
     }
 

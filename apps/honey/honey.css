@@ -2398,14 +2398,6 @@
     padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
 }
 
-.honey-page-live.is-keyboard-open .honey-live-bottom {
-    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px) + var(--honey-live-keyboard-offset, 0px));
-}
-
-.honey-page-live.is-keyboard-open .honey-live-room {
-    min-height: 136px;
-}
-
 .honey-page-live.is-scene-collapsed .honey-scene-block {
     display: none;
 }
