@@ -275,7 +275,8 @@ renderChatRoom(chat) {
                 if (senderContact && senderContact.avatar) {
                     senderAvatar = senderContact.avatar;
                 } else {
-                    senderAvatar = msg.avatar || '👤';
+                    // 🔥 核心修复1：群聊中如果没有专属头像，强制置空，绝对不能继承 msg.avatar（因为那往往携带的是群头像）
+                    senderAvatar = ''; 
                 }
             } else {
                 // 单聊：使用当前聊天的头像
@@ -3101,7 +3102,8 @@ renderChatRoom(chat) {
                     const cleanContent = this.cleanAbnormalSpaces(m.content);
                     const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent);
                     const special = m.specialMessage || this.parseSpecialMessage(cleanContent);
-                    senderAvatar = this.app.wechatData.getContactByName(m.sender)?.avatar || bgChat.avatar || '👤';
+                    // 🔥 核心修复2：如果是群聊，绝不能拿群聊头像(bgChat.avatar)给个人用
+                    senderAvatar = this.app.wechatData.getContactByName(m.sender)?.avatar || (isGroupChat ? '' : bgChat.avatar) || '👤';
                     if (special?.type === 'incoming_call') {
                         const { queuedLines, consumedCount } = this._collectIncomingCallFollowUps(msgs, bgIndex);
                         bgIndex += consumedCount;
@@ -3216,8 +3218,9 @@ renderChatRoom(chat) {
                 }
 
                 const msgData = special
-                    ? { from: msg.sender, ...special, time: msg.time, avatar: senderContact?.avatar || savedChatAvatar || '👤', replyBatchId: responseBatchId }
-                    : { from: msg.sender, content: normalizedTextContent, time: msg.time, type: 'text', avatar: senderContact?.avatar || savedChatAvatar || '👤', quote: msg.quote, replyBatchId: responseBatchId };
+                    // 🔥 核心修复3：如果是群聊，禁止 fallback 到 savedChatAvatar
+                    ? { from: msg.sender, ...special, time: msg.time, avatar: senderContact?.avatar || (isGroupChat ? '' : savedChatAvatar) || '👤', replyBatchId: responseBatchId }
+                    : { from: msg.sender, content: normalizedTextContent, time: msg.time, type: 'text', avatar: senderContact?.avatar || (isGroupChat ? '' : savedChatAvatar) || '👤', quote: msg.quote, replyBatchId: responseBatchId };
                 if (special?.type === 'redpacket') msgData.id = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
                 this.app.wechatData.addMessage(savedChatId, msgData);
                 if (special?.type === 'weibo_card' && special.weiboData) {

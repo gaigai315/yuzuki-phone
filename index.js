@@ -2247,6 +2247,9 @@ if (window.GGP_Loaded) {
                     const senderContact = wechatData.getContactByName(msg.sender);
                     if (senderContact && senderContact.avatar) {
                         senderAvatar = senderContact.avatar;
+                    } else {
+                        // 🔥 核心修复4：强制置空，阻止继承 data.avatar（避免把群头像套到个人头上）
+                        senderAvatar = '';
                     }
                 }
 
