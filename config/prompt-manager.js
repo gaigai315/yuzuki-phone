@@ -96,6 +96,22 @@ export class PromptManager {
                         isUpdated = true;
                     }
                 }
+                const wechatOfflineContent = parsed?.wechat?.offline?.content;
+                if (typeof wechatOfflineContent === 'string') {
+                    const upgraded = this._upgradeWechatOfflinePromptContent(wechatOfflineContent);
+                    if (upgraded !== wechatOfflineContent) {
+                        parsed.wechat.offline.content = upgraded;
+                        isUpdated = true;
+                    }
+                }
+                const wechatGroupChatContent = parsed?.wechat?.groupChat?.content;
+                if (typeof wechatGroupChatContent === 'string') {
+                    const upgraded = this._upgradeWechatGroupChatPromptContent(wechatGroupChatContent);
+                    if (upgraded !== wechatGroupChatContent) {
+                        parsed.wechat.groupChat.content = upgraded;
+                        isUpdated = true;
+                    }
+                }
 
                 // 🔥 修复：如果有更新，直接使用 storage.set 保存，而不是调用 savePrompts
                 // 因为此时 this.prompts 还未赋值
@@ -216,6 +232,61 @@ export class PromptManager {
             );
         }
 
+        if (!text.includes('{{customEmojiList}}')) {
+            text = `${text}
+💡 你可以使用用户上传的本地专属表情包，当前可用清单：{{customEmojiList}}。
+💡 使用本地专属表情包时，格式：发送者: [表情包](表情名称)；若清单里没有合适项，也可继续使用关键词搜索。`;
+        }
+
+        return text;
+    }
+
+    _upgradeWechatOfflinePromptContent(content) {
+        let text = String(content || '');
+        if (!text) return text;
+
+        if (!text.includes('[HH:MM] [拨打微信群语音]')) {
+            text = text.replace(
+                '[HH:MM] [拨打微信视频]',
+                `[HH:MM] [拨打微信视频]
+[HH:MM] [拨打微信群语音]
+[HH:MM] [拨打微信群视频]`
+            );
+        }
+
+        if (!text.includes('微信群语音通话')) {
+            text = text.replace(
+                '💡 如果你想主动和{{user}}视频通话，请输出 [HH:MM] [拨打微信视频]',
+                `💡 如果你想主动和{{user}}视频通话，请输出 [HH:MM] [拨打微信视频]
+💡 如果你想主动发起微信群语音通话，请输出 [HH:MM] [拨打微信群语音]（兼容 [发起群语音通话]）。
+💡 如果你想主动发起微信群视频通话，请输出 [HH:MM] [拨打微信群视频]（兼容 [发起群视频通话]）。`
+            );
+        }
+
+        return text;
+    }
+
+    _upgradeWechatGroupChatPromptContent(content) {
+        let text = String(content || '');
+        if (!text) return text;
+
+        if (!text.includes('发送者: [拨打微信群语音]')) {
+            text = text.replace(
+                '发送者: [表情包](关键词) （直接发送表情包）',
+                `发送者: [表情包](关键词) （直接发送表情包）
+发送者: [拨打微信群语音]
+发送者: [拨打微信群视频]`
+            );
+        }
+
+        if (!text.includes('主动发起群语音/视频通话')) {
+            text = text.replace(
+                '💡 提示：优先根据角色状态直接发送emoji（如 😀😂🥺😭😡😅）；仅在明确要发图片表情包时才使用 [表情包](关键词)。',
+                `💡 提示：优先根据角色状态直接发送emoji（如 😀😂🥺😭😡😅）；仅在明确要发图片表情包时才使用 [表情包](关键词)。
+💡 当剧情需要时，你可以主动发起群语音/视频通话，格式为：发送者: [拨打微信群语音] 或 发送者: [拨打微信群视频]。`
+            );
+        }
+
         return text;
     }
     
@@ -290,9 +361,13 @@ date:{{STORY_DATE}}
 [HH:MM] 直接发送emoji（如 😀😭😅）
 [HH:MM] [表情包](关键词) （直接发送表情包）
 [HH:MM] [拨打微信视频]
+[HH:MM] [拨打微信群语音]
+[HH:MM] [拨打微信群视频]
 💡 提示：优先根据角色状态直接发送emoji（如 😀😂🥺😭😡😅）；仅在明确要发图片表情包时才使用 [表情包](关键词)。
 💡 如果你想主动和{{user}}语音通话，请输出 [HH:MM] [拨打微信语音]
 💡 如果你想主动和{{user}}视频通话，请输出 [HH:MM] [拨打微信视频]
+💡 如果你想主动发起微信群语音通话，请输出 [HH:MM] [拨打微信群语音]（兼容 [发起群语音通话]）。
+💡 如果你想主动发起微信群视频通话，请输出 [HH:MM] [拨打微信群视频]（兼容 [发起群视频通话]）。
 
 【特殊微信代发格式规则】
 1. 触发条件：当且仅当剧情中出现“其他角色拿走/使用user的手机，代替user给其他人发送微信消息”的情节时，必须触发此特定格式。
@@ -402,6 +477,8 @@ from:林晓雨: 在呢
 发送者: [表情包](关键词) （直接发送表情包）
 发送者: [图片]（图片描述）
 💡 提示：优先根据角色状态直接发送emoji（如 😀😂🥺😭😡😅）；仅在明确要发图片表情包时才使用 [表情包](关键词)。
+💡 你可以使用用户上传的本地专属表情包，当前可用清单：{{customEmojiList}}。
+💡 使用本地专属表情包时，格式：发送者: [表情包](表情名称)；若清单里没有合适项，也可继续使用关键词搜索。
 💡 当你主动给{{user}}打微信语音或视频时，先输出：发送者: [拨打微信语音] 或 [拨打微信视频]。
 💡 当你要主动给{{user}}打微信语音时，先输出：发送者: [拨打微信语音]。如果你要补充“接通后会说的话”，就在后续继续按普通消息行输出（系统会在接通界面展示；若对方拒绝则不会展示这些后续行）。
 💡 图片描述规则：当你要发送图片时，必须使用 [图片]（描述） 格式。如描述里出现人物、角色、拟人对象、少年、少女、男生、女生、男人、女人、帅哥、美女、老师、同学、主播、偶像、精灵、猫娘、狐娘等任何有人形特征的对象，就必须明确写出性别，至少出现“男/男性/男生/少年”或“女/女性/女生/少女”等词之一，绝对禁止性别模糊。图片默认应为二次元插画、动漫、游戏CG风格，禁止真人照片、禁止写实摄影感。
@@ -765,7 +842,10 @@ from:林晓雨: 在呢
 发送者: [图片](图片描述)
 发送者: 直接发送emoji（如 😀😭😅）
 发送者: [表情包](关键词) （直接发送表情包）
+发送者: [拨打微信群语音]
+发送者: [拨打微信群视频]
 💡 提示：优先根据角色状态直接发送emoji（如 😀😂🥺😭😡😅）；仅在明确要发图片表情包时才使用 [表情包](关键词)。
+💡 当剧情需要时，你可以主动发起群语音/视频通话，格式为：发送者: [拨打微信群语音] 或 发送者: [拨打微信群视频]。
 
 
 💡 跨聊天多窗口回复：

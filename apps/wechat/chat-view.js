@@ -1861,6 +1861,24 @@ renderChatRoom(chat) {
         return { text: replaced, tokenMap };
     }
 
+    _parseIncomingCallMarker(content) {
+        const source = String(content || '');
+        if (!source) return null;
+
+        const callMatch = source.match(/(?:\[\s*(?:拨打|发起)\s*(?:微信)?(群)?(语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(群)?(语音|视频)(?:通话)?\s*】)/i);
+        if (!callMatch) return null;
+
+        const callTypeStr = callMatch[2] || callMatch[4] || '语音';
+        const callType = callTypeStr === '视频' ? 'video' : 'voice';
+        const isGroupCall = Boolean((callMatch[1] || callMatch[3] || '').trim());
+
+        return {
+            callType,
+            callTypeStr,
+            isGroupCall
+        };
+    }
+
     // 🔥 解析AI返回的特殊消息格式（转账/红包/微博新闻/来电）
     parseSpecialMessage(content) {
         if (!content || typeof content !== 'string') return null;
@@ -1896,14 +1914,16 @@ renderChatRoom(chat) {
             };
         }
 
-        const callMatch = content.match(/(?:\[\s*拨打微信(语音|视频)\s*\]|【\s*拨打微信(语音|视频)\s*】)/);
-        if (callMatch) {
-            const callTypeStr = callMatch[1] || callMatch[2];
-            const callType = callTypeStr === '视频' ? 'video' : 'voice';
+        const callMarker = this._parseIncomingCallMarker(content);
+        if (callMarker) {
+            const callContent = callMarker.isGroupCall
+                ? `[拨打微信群${callMarker.callTypeStr}]`
+                : `[拨打微信${callMarker.callTypeStr}]`;
             return {
                 type: 'incoming_call',
-                callType: callType,
-                content: `[拨打微信${callTypeStr}]`
+                callType: callMarker.callType,
+                isGroupCall: callMarker.isGroupCall,
+                content: callContent
             };
         }
 
@@ -1921,7 +1941,7 @@ renderChatRoom(chat) {
         const rawContent = String(message.content || '');
         if (!rawContent.trim()) return [message];
 
-        const inlineSpecialRegex = /\[转账\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\)|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\))?|(?:\[\s*拨打微信(?:语音|视频)\s*\]|【\s*拨打微信(?:语音|视频)\s*】)/g;
+        const inlineSpecialRegex = /\[转账\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\)|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\))?|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
         let hasMatch = false;
         let lastIndex = 0;
         let usedQuote = false;
@@ -2962,12 +2982,14 @@ renderChatRoom(chat) {
         }
         this._lastSendClickTime = now;
 
-        if (this.isSending && String(this._activeSendingChatId || '') === String(targetChatId || '')) {
+        const targetChatId = String(this.app?.currentChat?.id || '').trim();  // 🔥 快照绑定：防止倒计时期间切换窗口导致串味
+        if (!targetChatId) return;
+
+        if (this.isSending && String(this._activeSendingChatId || '') === targetChatId) {
             this.abortSending();
             return;
         }
-        
-        const targetChatId = this.app.currentChat.id;  // 🔥 快照绑定：防止倒计时期间切换窗口导致串味
+
         const text = input.value.trim();
 
         // 🔥 组词保护：打开表情面板时，空输入不触发“催更/重试/空提示”逻辑
@@ -4131,6 +4153,11 @@ renderChatRoom(chat) {
         // 🔥 放在跨聊天上下文之后，让AI先看历史再看规则
         // ========================================
         const promptManager = window.VirtualPhone?.promptManager;
+        const myCustomEmojis = this.app.wechatData.getCustomEmojis();
+        const customEmojiNames = Array.isArray(myCustomEmojis)
+            ? myCustomEmojis.map(e => String(e?.description || e?.name || '').trim()).filter(Boolean)
+            : [];
+        const customEmojiList = customEmojiNames.length > 0 ? customEmojiNames.join('、') : '暂无可用自定义表情包';
         let systemPrompt = '';
 
         // 🔥 根据模式选择提示词（非通话模式时）
@@ -4155,7 +4182,9 @@ renderChatRoom(chat) {
                     systemPrompt = promptManager.getPromptForFeature('wechat', 'online') || '';
                     // 🔥 替换单聊窗口名变量
                     const chatName = targetChat?.name || charName;
-                    systemPrompt = systemPrompt.replace(/\{\{chatName\}\}/g, chatName);
+                    systemPrompt = systemPrompt
+                        .replace(/\{\{chatName\}\}/g, chatName)
+                        .replace(/\{\{customEmojiList\}\}/g, customEmojiList);
                 }
             } catch (e) {
                 console.warn('⚠️ 获取微信聊天提示词失败:', e);
@@ -4362,21 +4391,6 @@ renderChatRoom(chat) {
             }
         }
 
-        // 🌟🌟🌟 新增：将本地自定义表情包列表告诉AI 🌟🌟🌟
-        const myCustomEmojis = this.app.wechatData.getCustomEmojis();
-        if (myCustomEmojis && myCustomEmojis.length > 0 && !callMode) {
-            const emojiNames = myCustomEmojis.map(e => e.description || e.name).filter(Boolean);
-            if (emojiNames.length > 0) {
-                const customEmojiPrompt = `【我的表情包库】\n你也可以使用以下用户上传的本地专属表情包来表达情绪。使用格式为：[表情包]（表情名称）\n可用表情名称列表：${emojiNames.join('、')}\n注：如果以上没有你想用的，你也可以直接写其他词汇如 [表情包]（小狗叹气），系统会自动从网络搜索。`;
-                messages.push({
-                    role: 'system',
-                    content: customEmojiPrompt,
-                    name: 'SYSTEM (本地表情包)',
-                    isPhoneMessage: true
-                });
-            }
-        }
-
         // ========================================
         // 7️⃣ 末尾追加模式强化提示
         // ========================================
@@ -4386,6 +4400,14 @@ renderChatRoom(chat) {
         else if (isGroupChat) currentModeName = '微信群聊';
 
         let finalUserContent = `现在你处于${currentModeName}的模式，请根据以上所有信息，遵守回复格式，继续微信回复。`;
+        if (!callMode) {
+            if (isGroupChat) {
+                finalUserContent += '\n如果剧情需要你主动发起通话，请单独输出一行通话指令：[拨打微信群语音] 或 [拨打微信群视频]。';
+                finalUserContent += '\n群聊场景下，通话前后的发言仍需使用“发送者: 内容”格式，且发送者必须是群成员。';
+            } else {
+                finalUserContent += '\n如果剧情需要你主动发起通话，请单独输出一行通话指令：[拨打微信语音] 或 [拨打微信视频]。';
+            }
+        }
 
         // 🔥 把所有待发送的图片代币附加到 user 消息末尾（多模态只能在 user 消息中生效）
         if (window.VirtualPhone?._pendingImages) {
@@ -6308,7 +6330,7 @@ renderChatRoom(chat) {
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
                 const senderLabelHtml = isGroupCall
-                    ? `<div style="font-size:10px; color:rgba(255,255,255,0.86); margin:0 0 4px 2px;">${entry.sender}</div>`
+                    ? `<div class="call-msg-sender-label" style="font-size:10px; color:rgba(255,255,255,0.86); margin:0 0 4px 2px;">${entry.sender}</div>`
                     : '';
                 const aiMsgHtml = `
                     <div class="call-msg-row" style="display: flex; justify-content: flex-start;">
@@ -7553,7 +7575,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
                 const senderLabelHtml = isGroupCall
-                    ? `<div style="font-size:10px; color:rgba(0,0,0,0.48); margin:0 0 4px 2px;">${entry.sender}</div>`
+                    ? `<div class="call-msg-sender-label" style="font-size:10px; color:rgba(0,0,0,0.48); margin:0 0 4px 2px;">${entry.sender}</div>`
                     : '';
                 const aiMsgHtml = `
                     <div class="call-msg-row" style="display: flex; justify-content: flex-start;">
@@ -8903,6 +8925,21 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         return raw;
     }
 
+    _resolveCallBubbleSenderName(bubble = null) {
+        const normalizeName = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+        if (!bubble) return normalizeName(this.app?.currentChat?.name || '对方') || '对方';
+
+        let senderName = normalizeName(this._decodeHtmlEntities(bubble.dataset?.sender || ''));
+        if (senderName) return senderName;
+
+        const row = bubble.closest('.call-msg-row');
+        const senderLabel = row?.querySelector('.call-msg-sender-label') || bubble.parentElement?.querySelector('.call-msg-sender-label');
+        senderName = normalizeName(senderLabel?.textContent || senderLabel?.innerText || '');
+        if (senderName) return senderName;
+
+        return normalizeName(this.app?.currentChat?.name || '对方') || '对方';
+    }
+
     // 停止微信通话的TTS播放
     stopWechatCallTTS() {
         this.currentTtsRound = null; // 打断任何正在进行的队列
@@ -8927,11 +8964,13 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         const model = storage.get('phone-tts-model');
         // 🔥 核心修改：拦截通话全局音色，强制要求专属音色
         let finalVoice = this._getGlobalTtsVoice();
-        const isMe = bubble && bubble.parentElement && bubble.parentElement.style.justifyContent === 'flex-end';
+        const row = bubble?.closest?.('.call-msg-row');
+        const isMe = !!(bubble && !bubble.classList.contains('wechat-call-ai-bubble')) ||
+            (row && String(row.style?.justifyContent || '').trim() === 'flex-end');
         
         if (!isMe) {
-            // 通话中对方说话，取当前聊天对象的名字
-            const senderName = bubble ? (bubble.dataset.sender || this.app.currentChat?.name) : this.app.currentChat?.name;
+            // 通话中对方说话，优先使用气泡绑定的发送者，再回退到发送者标签
+            const senderName = this._resolveCallBubbleSenderName(bubble);
             if (senderName) {
                 const { voice } = this._resolveWechatBoundVoiceByName(senderName);
                 if (voice) {

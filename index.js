@@ -1922,12 +1922,14 @@ if (window.GGP_Loaded) {
     function parseMessageType(msgObj) {
         const content = msgObj.content;
 
-        // [拨打微信语音] / [拨打微信视频]（兼容全角方括号【】）
-        const wechatCallMatch = String(content || '').match(/[［\[]\s*拨打微信(语音|视频)\s*[］\]]|【\s*拨打微信(语音|视频)\s*】/);
+        // [拨打微信语音] / [拨打微信群语音] / [发起群视频通话]（兼容全角方括号【】）
+        const wechatCallMatch = String(content || '').match(/[［\[]\s*(?:拨打|发起)\s*(?:微信)?(群)?(语音|视频)(?:通话)?\s*[］\]]|【\s*(?:拨打|发起)\s*(?:微信)?(群)?(语音|视频)(?:通话)?\s*】/);
         if (wechatCallMatch) {
-            const callLabel = wechatCallMatch[1] || wechatCallMatch[2];
+            const callLabel = wechatCallMatch[2] || wechatCallMatch[4];
+            const isGroupCall = Boolean((wechatCallMatch[1] || wechatCallMatch[3] || '').trim());
             msgObj.type = 'incoming_call';
             msgObj.callType = callLabel === '视频' ? 'video' : 'voice';
+            msgObj.isGroupCall = isGroupCall;
             return;
         }
 
