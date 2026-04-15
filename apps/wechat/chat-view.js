@@ -426,8 +426,25 @@ renderChatRoom(chat) {
                 break;
 
             // 表情包消息：优先走 ALAPI 图片，失败自动降级为 emoji
-            case 'sticker':
+           case 'sticker':
                 const stickerKeyword = msg.keyword || '发呆';
+                
+                // 🌟🌟🌟 新增核心：优先检查是否匹配本地“我的表情” 🌟🌟🌟
+                const customEmojis = this.app.wechatData.getCustomEmojis();
+                const matchedCustomEmoji = customEmojis.find(e => 
+                    e.name === stickerKeyword || e.description === stickerKeyword
+                );
+
+                if (matchedCustomEmoji && matchedCustomEmoji.image) {
+                    // 匹配到了用户自定义表情，直接渲染本地图片，跳过 ALAPI！
+                    messageBody = `
+                    <div class="message-sticker-box" style="line-height:1.2;">
+                        <img src="${matchedCustomEmoji.image}" alt="${this._escapeHtml(matchedCustomEmoji.name)}" style="max-width: 140px; max-height: 140px; border-radius: 8px; object-fit: contain;">
+                    </div>`;
+                    break;
+                }
+
+                // 没有匹配到自定义表情，走原有的 API / 系统表情兜底逻辑
                 const mappedStickerEmoji = this.getSystemEmojiByStickerKeyword(stickerKeyword);
                 const finalStickerEmoji = mappedStickerEmoji || '🙂';
                 const stickerCacheKey = this.buildStickerCacheKey(stickerKeyword);
@@ -3973,6 +3990,21 @@ renderChatRoom(chat) {
                     role: 'system',
                     content: wechatTranscript,
                     name: 'SYSTEM (微信记录)',
+                    isPhoneMessage: true
+                });
+            }
+        }
+
+        // 🌟🌟🌟 新增：将本地自定义表情包列表告诉AI 🌟🌟🌟
+        const myCustomEmojis = this.app.wechatData.getCustomEmojis();
+        if (myCustomEmojis && myCustomEmojis.length > 0 && !callMode) {
+            const emojiNames = myCustomEmojis.map(e => e.description || e.name).filter(Boolean);
+            if (emojiNames.length > 0) {
+                const customEmojiPrompt = `【我的表情包库】\n你也可以使用以下用户上传的本地专属表情包来表达情绪。使用格式为：[表情包]（表情名称）\n可用表情名称列表：${emojiNames.join('、')}\n注：如果以上没有你想用的，你也可以直接写其他词汇如 [表情包]（小狗叹气），系统会自动从网络搜索。`;
+                messages.push({
+                    role: 'system',
+                    content: customEmojiPrompt,
+                    name: 'SYSTEM (本地表情包)',
                     isPhoneMessage: true
                 });
             }

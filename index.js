@@ -4297,6 +4297,11 @@ if (window.GGP_Loaded) {
                                                     .replace(/\{\{STORY_TIME\+1\}\}/g, nextMinute)
                                                     .replace(/\{\{wechatContacts\}\}/g, wechatContactsList);
                                                 phoneRulesContent += `【微信线下模式】\n${wechatPrompt}\n\n`;
+                                                // 🌟🌟🌟 新增：将本地自定义表情包列表注入线下提示词 🌟🌟🌟
+                                            const validCustomEmojis = customEmojis.map(e => e.description || e.name).filter(Boolean);
+                                            if (validCustomEmojis.length > 0) {
+                                                phoneRulesContent += `【可用本地专属表情包】\n你可以随时使用以下专属表情包，将列表名称替换到括号内的表情名称即可，格式为：[表情包]（表情名称）\n可用列表：${validCustomEmojis.join('、')}\n\n`;
+                                            }
                                             }
                                         } catch (e) {
                                             console.warn('⚠️ [手机] 获取微信线下提示词失败');
