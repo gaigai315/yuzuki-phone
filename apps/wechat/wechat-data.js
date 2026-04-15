@@ -593,10 +593,11 @@ export class WechatData {
         // 🔥 动态拦截表情包与语音（线上模式）
         if ((message.type === 'text' || !message.type) && message.content) {
             const contentStr = message.content.trim();
-            const imageMatch = /^\[图片\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(contentStr);
+            const imageMatch = /^\[(图片|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(contentStr);
             if (imageMatch) {
                 message.type = 'image_prompt';
-                message.imagePrompt = imageMatch[1].trim();
+                message.mediaType = imageMatch[1]; // 记录是图片还是视频
+                message.imagePrompt = imageMatch[2].trim();
                 message.content = message.imagePrompt;
             }
             const stickerMatch = /^\[表情包\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(contentStr);
@@ -738,8 +739,8 @@ getMessagePreview(message) {
                 return '[表情包]';
             }
             return '[图片]';
-        case 'image_prompt':
-            return '[图片]';
+       case 'image_prompt':
+            return `[${message.mediaType || '图片'}]`;
         case 'voice':
             return '[语音]';
         case 'video':

@@ -733,11 +733,17 @@ renderChatRoom(chat) {
         const generationStatus = generatedImageUrl
             ? 'done'
             : (String(msg?.imageGenStatus || '').trim() || 'idle');
+            
+        // 🔥 根据是图片还是视频，动态显示不同的提示和图标
+        const isVideo = msg?.mediaType === '视频';
+        const actionText = isVideo ? '生成视频封面' : '生成图片';
+        const defaultIcon = isVideo ? '<i class="fa-solid fa-video"></i>' : '<i class="fa-regular fa-image"></i>';
+
         const statusText = generationStatus === 'loading'
-            ? '⏳ 正在生成图片中，请稍候...'
+            ? `⏳ 正在${actionText}中，请稍候...`
             : generationStatus === 'failed'
                 ? '❌ 生成失败，点击重试'
-                : '点击生成图片';
+                : `点击${actionText}`;
 
         return `
             <div class="message-image-box message-image-prompt-box" data-message-id="${cardId}" style="position: relative; display: inline-block; width: 156px; max-width: 100%;">
@@ -757,7 +763,8 @@ renderChatRoom(chat) {
                 ">
                     ${generatedImageUrl ? `
                         <img src="${safeImageUrl}" alt="${promptText}" style="width:100%; height:100%; object-fit:cover; display:block;">
-                        <div class="message-image-prompt-show-back" data-message-id="${cardId}" title="查看图片描述" style="
+                        ${isVideo ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none;"><div style="width:40px; height:40px; border-radius:50%; background:rgba(0,0,0,0.5); border:2px solid #fff; display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px; padding-left:4px;"><i class="fa-solid fa-play"></i></div></div>` : ''}
+                        <div class="message-image-prompt-show-back" data-message-id="${cardId}" title="查看${msg.mediaType || '图片'}描述" style="
                             position:absolute;
                             right:6px;
                             bottom:6px;
@@ -771,7 +778,7 @@ renderChatRoom(chat) {
                             box-shadow:0 2px 8px rgba(0,0,0,0.18);
                         ">描述</div>
                     ` : `
-                        <div class="message-image-prompt-generate" data-message-id="${cardId}" title="${generationStatus === 'failed' ? '点击重试生成图片' : '点击生成图片'}" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:12px; box-sizing:border-box;">
+                        <div class="message-image-prompt-generate" data-message-id="${cardId}" title="${generationStatus === 'failed' ? '点击重试' : `点击${actionText}`}" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:12px; box-sizing:border-box;">
                             <div style="
                                 width:56px; height:56px; border-radius:18px;
                                 display:flex; align-items:center; justify-content:center;
@@ -779,10 +786,10 @@ renderChatRoom(chat) {
                                 border:1px solid rgba(255,255,255,0.26);
                                 color:#fff; font-size:22px;
                                 box-shadow:0 8px 18px rgba(0,0,0,0.12);
-                            ">${generationStatus === 'loading' ? '<i class="fa-solid fa-spinner fa-spin"></i>' : '<i class="fa-regular fa-image"></i>'}</div>
+                            ">${generationStatus === 'loading' ? '<i class="fa-solid fa-spinner fa-spin"></i>' : defaultIcon}</div>
                             <div style="font-size:12px; line-height:1.35; color:#fff; text-align:center; font-weight:600;">${statusText}</div>
                         </div>
-                        <div class="message-image-prompt-show-back" data-message-id="${cardId}" title="查看图片描述" style="
+                        <div class="message-image-prompt-show-back" data-message-id="${cardId}" title="查看${msg.mediaType || '图片'}描述" style="
                             position:absolute;
                             right:6px;
                             bottom:6px;
@@ -829,7 +836,7 @@ renderChatRoom(chat) {
                             width:100%;
                         ">${promptText}</div>
                     </div>
-                    <div class="message-image-prompt-restore" data-message-id="${cardId}" title="恢复图片卡片正面" style="
+                    <div class="message-image-prompt-restore" data-message-id="${cardId}" title="恢复卡片正面" style="
                         position:absolute;
                         bottom:4px;
                         right:4px;
@@ -845,7 +852,7 @@ renderChatRoom(chat) {
                         gap:3px;
                         box-shadow:0 2px 4px rgba(0,0,0,0.2);
                     ">
-                        <i class="fa-regular fa-image"></i> 恢复
+                        ${defaultIcon} 恢复
                     </div>
                 </div>
             </div>
@@ -857,7 +864,16 @@ renderChatRoom(chat) {
         if (msg.type === 'text') return String(msg.content || '');
         if (msg.type === 'image_prompt') {
             const promptText = String(msg.imagePrompt || msg.content || '待生成图片').trim() || '待生成图片';
-            return `[图片]（${promptText}）`;
+            const mediaType = msg.mediaType || '图片';
+            return `[${mediaType}]（${promptText}）`;
+        }
+        if (msg.type === 'transfer') {
+            const status = String(msg.status || '').trim() === 'received' ? '已收款' : '未收款';
+            return `[转账 ¥${msg.amount}]（状态：${status}）`;
+        }
+        if (msg.type === 'redpacket') {
+            const status = String(msg.status || '').trim() === 'opened' ? '已领取' : '未领取';
+            return `[红包 ¥${msg.amount}]（状态：${status}）`;
         }
         return `[${msg.type}]`;
     }
@@ -3914,6 +3930,19 @@ renderChatRoom(chat) {
                     } else {
                         wechatTranscript += `${timeStr}${speaker}: ${quoteStr}[发送了一张图片]\n`;
                     }
+                } else if (msg.type === 'image_prompt') {
+                    // 🔥 修复：将 [图片/视频] 标签原样包裹回去
+                    const mediaType = msg.mediaType || '图片';
+                    const promptText = msg.imagePrompt || msg.content || '';
+                    wechatTranscript += `${timeStr}${speaker}: ${quoteStr}[${mediaType}]（${promptText}）\n`;
+                } else if (msg.type === 'transfer') {
+                    // 🔥 修复：直接将转账状态贴在文字后面
+                    const status = String(msg.status || '').trim() === 'received' ? '已收款' : '未收款';
+                    wechatTranscript += `${timeStr}${speaker}: ${quoteStr}[转账 ¥${msg.amount}]（状态：${status}）\n`;
+                } else if (msg.type === 'redpacket') {
+                    // 🔥 修复：直接将红包状态贴在文字后面
+                    const status = String(msg.status || '').trim() === 'opened' ? '已领取' : '未领取';
+                    wechatTranscript += `${timeStr}${speaker}: ${quoteStr}[红包 ¥${msg.amount}]（状态：${status}）\n`;
                 } else {
                     wechatTranscript += `${timeStr}${speaker}: ${quoteStr}${msg.content || ''}\n`;
                 }

@@ -1915,11 +1915,12 @@ if (window.GGP_Loaded) {
             return;
         }
 
-        // [图片](描述) / [图片]（描述）
-        const imageMatch = /^\[图片\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(content);
+        // [图片/视频](描述) / [图片/视频]（描述）
+        const imageMatch = /^\[(图片|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(content);
         if (imageMatch) {
-            const promptText = String(imageMatch[1] || '').trim();
+            const promptText = String(imageMatch[2] || '').trim();
             msgObj.type = 'image_prompt';
+            msgObj.mediaType = imageMatch[1]; // 记录是图片还是视频
             msgObj.imagePrompt = promptText;
             msgObj.content = promptText;
             return;
