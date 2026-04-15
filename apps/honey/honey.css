@@ -2084,6 +2084,7 @@
     position: absolute;
     left: 10px;
     bottom: 10px;
+    transform: translateX(0); /* 🔥 设定位置锚点，为飞向居中做准备 */
     z-index: 22;
     display: flex;
     flex-direction: column;
@@ -2091,10 +2092,12 @@
     pointer-events: none; /* 外框穿透 */
     width: min(92%, 260px);
     max-width: calc(100% - 20px);
-    /* 🔥 修复1：去掉 height 的动画，只过渡 bottom，防止整个容器抽搐 */
-    transition: bottom 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+    /* 🔥 新增 left, transform 和 width 的平滑动画，实现丝滑漂移 */
+    transition: bottom 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+                left 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+                transform 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+                width 0.35s cubic-bezier(0.25, 1, 0.5, 1);
 }
-
 .honey-live-user-scene-preview {
     position: absolute;
     left: 10px;
@@ -2150,6 +2153,10 @@
 /* 🔥 展开状态下的外框（不设 height，靠内部子元素撑开） */
 .honey-live-gifts.is-expanded {
     bottom: 60px; /* 稍微抬高，避开底部的输入框 */
+    left: 50%; /* 🔥 水平锚点放到屏幕正中间 */
+    transform: translateX(-50%); /* 🔥 自身向左平移一半，实现绝对居中 */
+    width: 94%; /* 🔥 展开时适当变宽，让阅读更舒服 */
+    max-width: 380px; 
     pointer-events: auto; /* 展开后整个区域拦截点击 */
     z-index: 300; /* 提高层级，盖住其他UI */
 }
