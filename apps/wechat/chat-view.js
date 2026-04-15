@@ -47,6 +47,35 @@ export class ChatView {
         return !!val;
     }
 
+    _stripWechatCommentWrapper(text) {
+        let out = String(text || '').replace(/\r\n/g, '\n').trim();
+        if (!out) return '';
+
+        const wrappedMatch = out.match(/^<!--\s*([\s\S]*?)\s*-->$/);
+        if (wrappedMatch) {
+            out = String(wrappedMatch[1] || '');
+        }
+
+        return out
+            .replace(/^\s*<!--\s*/i, '')
+            .replace(/\s*-->\s*$/i, '')
+            .replace(/^\s*<!--\s*$/gim, '')
+            .replace(/^\s*-->\s*$/gim, '')
+            .trim();
+    }
+
+    _extractWechatTagPayload(text) {
+        const match = String(text || '').match(/<\s*wechat\b[^>]*>([\s\S]*?)<\s*\/\s*wechat\s*>/i);
+        if (!match) return '';
+        return this._stripWechatCommentWrapper(match[1]);
+    }
+
+    _extractWechatTagPayloadOrSelf(text) {
+        const payload = this._extractWechatTagPayload(text);
+        if (payload) return payload;
+        return this._stripWechatCommentWrapper(text);
+    }
+
     _getPendingChatIdsOrdered(preferredChatId = null) {
         const preferred = String(preferredChatId || '').trim();
         const ids = Array.from(this.pendingChatIds || []).map(id => String(id || '').trim()).filter(Boolean);
@@ -212,13 +241,8 @@ export class ChatView {
 
     _parseCallReplyEntries(rawText, { contactName = '', participants = [], groupName = '', isGroupCall = false } = {}) {
         const groupCall = isGroupCall === true || (Array.isArray(participants) && participants.length > 0);
-        let content = String(rawText || '').replace(/\r\n/g, '\n').trim();
+        let content = this._extractWechatTagPayloadOrSelf(rawText);
         if (!content) return [];
-
-        const wechatMatch = content.match(/<wechat>([\s\S]*?)<\/wechat>/i);
-        if (wechatMatch) {
-            content = String(wechatMatch[1] || '').trim();
-        }
 
         if (groupCall) {
             content = this._extractWechatBlockByName(content, groupName);
@@ -3161,7 +3185,7 @@ renderChatRoom(chat) {
             let parsedMessages = []; // 属于当前打开窗口的消息
             let backgroundMessages = {}; // 属于后台其他窗口的消息 { "窗口名": [消息数组] }
 
-            let aiRawText = aiResponse.trim();
+            let aiRawText = this._extractWechatTagPayloadOrSelf(aiResponse);
             
             // 🔥 新增：拦截线下联动标签
             let triggerOffline = false;
@@ -3178,8 +3202,7 @@ renderChatRoom(chat) {
 
             // 如果AI使用了跨聊天多开标签 <wechat> 或包含了 --- 分隔符
             if (aiRawText.includes('---')) {
-                // 移除外层 wechat 标签
-                aiRawText = aiRawText.replace(/<\/?wechat[^>]*>/gi, '').trim();
+                aiRawText = aiRawText.trim();
                 const blocks = aiRawText.split(/(?=---.+---)/); // 按分隔符拆分块
 
                 blocks.forEach(block => {
@@ -3264,9 +3287,9 @@ renderChatRoom(chat) {
             // 修复：只有当既没有解析到当前窗口消息，也没有解析到任何后台消息时，才触发纯文本兜底
             // 防止 AI 只回复了后台好友时，后台消息被错误地当作纯文本塞进当前聊天窗口
             if (parsedMessages.length === 0 && Object.keys(backgroundMessages).length === 0) {
-                // 兜底：清理所有的 wechat 标签，提取纯文本作为当前窗口消息
-                let fallbackText = aiRawText.replace(/<\/?wechat[^>]*>/gi, '').trim();
-                if (!fallbackText) fallbackText = aiRawText.split('---')[0].replace(/<\/?wechat[^>]*>/gi, '').trim();
+                // 兜底：提取纯文本作为当前窗口消息
+                let fallbackText = this._stripWechatCommentWrapper(aiRawText).trim();
+                if (!fallbackText) fallbackText = this._stripWechatCommentWrapper(aiRawText.split('---')[0]).trim();
 
                 if (fallbackText) {
                     // 走原有的基础清理逻辑
@@ -6627,9 +6650,8 @@ ${groupParticipants.join('、') || '暂无成员'}
             const aiResponse = await this.sendToAIHidden(prompt, context, callType);
 
             // 🔥 解析 <wechat> 标签格式
-            const wechatMatch = aiResponse.match(/<wechat>([\s\S]*?)<\/wechat>/i);
-            if (wechatMatch) {
-                const content = wechatMatch[1].trim();
+            const content = this._extractWechatTagPayloadOrSelf(aiResponse);
+            if (content) {
                 const lines = content.split('\n').map(l => l.trim()).filter(l => l);
 
                 if (lines.length > 0) {
@@ -6710,9 +6732,8 @@ ${groupParticipants.join('、') || '暂无成员'}
         );
 
         // 方式1: 处理 <wechat> 格式
-        const wechatMatch = normalizedResponse.match(/<wechat>([\s\S]*?)<\/wechat>/i);
-        if (wechatMatch) {
-            const wechatContent = wechatMatch[1].trim();
+        const wechatContent = this._extractWechatTagPayload(normalizedResponse) || this._stripWechatCommentWrapper(normalizedResponse);
+        if (wechatContent) {
 
             // 1a: 尝试找到当前联系人的 ---name--- 区块
             const contactBlockRegex = new RegExp(`---${contactName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}---([\\s\\S]*?)(?=---[^-]+---|$)`, 'i');
@@ -6750,6 +6771,7 @@ ${groupParticipants.join('、') || '暂无成员'}
                 .replace(/date:\d{1,6}年\d{1,2}月\d{1,2}日/gi, '') // 移除日期
                 .replace(/\[[0-9A-Za-z:：]+\]/g, '') // 移除时间戳
                 .trim();
+            cleanText = this._stripWechatCommentWrapper(cleanText);
 
             if (cleanText) {
                 messages = cleanText.split('\n').map(l => l.trim()).filter(l => l && l.length > 0);
@@ -7278,7 +7300,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
 
             // 如果提取失败，尝试简单清理
             if (!cleanedResponse) {
-                cleanedResponse = aiResponse.trim();
+                cleanedResponse = this._extractWechatTagPayloadOrSelf(aiResponse).trim();
             }
 
             if (isGroupCall) {

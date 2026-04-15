@@ -209,6 +209,29 @@ if (window.GGP_Loaded) {
     const MUSIC_TAG_REGEX = /<\s*music\b[^>]*>([\s\S]*?)<\/\s*music\s*>/gi;
 
     const _fallbackNotificationQueue = [];
+
+    function stripWechatCommentWrapper(text) {
+        let out = String(text || '').replace(/\r\n/g, '\n').trim();
+        if (!out) return '';
+
+        const wrappedMatch = out.match(/^<!--\s*([\s\S]*?)\s*-->$/);
+        if (wrappedMatch) {
+            out = String(wrappedMatch[1] || '');
+        }
+
+        return out
+            .replace(/^\s*<!--\s*/i, '')
+            .replace(/\s*-->\s*$/i, '')
+            .replace(/^\s*<!--\s*$/gim, '')
+            .replace(/^\s*-->\s*$/gim, '')
+            .trim();
+    }
+
+    function extractWechatTagPayload(text) {
+        const match = String(text || '').match(/<\s*wechat\b[^>]*>([\s\S]*?)<\s*\/\s*wechat\s*>/i);
+        if (!match) return '';
+        return stripWechatCommentWrapper(match[1]);
+    }
     let _isFallbackNotificationShowing = false;
     let _currentFallbackNotificationData = null;
     let _currentFallbackNotificationEl = null;
@@ -1657,7 +1680,7 @@ if (window.GGP_Loaded) {
                 messages.push({
                     chatId: match[1],
                     from: match[2],
-                    content: match[3].trim()
+                    content: stripWechatCommentWrapper(match[3])
                 });
             } catch (e) {
                 console.error('❌ 微信消息解析失败:', e);
@@ -1701,7 +1724,7 @@ if (window.GGP_Loaded) {
         let match;
 
         while ((match = WECHAT_TAG_REGEX_NEW.exec(normalizedText)) !== null) {
-            let content = match[1].trim();
+            let content = extractWechatTagPayload(match[0]) || stripWechatCommentWrapper(match[1]);
 
             if (!content) {
                 continue;
