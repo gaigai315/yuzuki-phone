@@ -4537,11 +4537,25 @@ if (window.GGP_Loaded) {
 
                                         // 2. 准备要插入的系统块
                                         const isGemini = messages.length > 0 && messages[0].parts !== undefined;
+                                        const resolveInjectedSystemName = (id, text) => {
+                                            if (id === 'weibo_system_history') return 'SYSTEM (微博)';
+                                            if (id === 'phone_system_history') return 'SYSTEM (微信历史)';
+                                            if (id === 'phone_system_rules') {
+                                                const source = String(text || '');
+                                                const tags = [];
+                                                if (source.includes('【🎵 音乐状态栏】') || source.includes('音乐状态栏')) tags.push('音乐');
+                                                if (source.includes('【微博') || source.includes('微博')) tags.push('微博');
+                                                if (source.includes('【微信线下模式】')) tags.push('微信线下');
+                                                return tags.length > 0 ? `SYSTEM (${Array.from(new Set(tags)).join('+')})` : 'SYSTEM (手机规则)';
+                                            }
+                                            return 'SYSTEM (系统)';
+                                        };
                                         const msgObj = {
                                             role: isGemini ? 'user' : 'system', // Gemini不允许塞system
                                             content: contentToInject,
                                             isPhoneMessage: true,
                                             identifier: identifier,
+                                            name: resolveInjectedSystemName(identifier, contentToInject),
                                             gaigaiPhoneSignal: {
                                                 appName: '手机(主视口)',
                                                 allowSummary: offlinePerms.allowSummary,
@@ -4626,6 +4640,7 @@ if (window.GGP_Loaded) {
                                             parts: isGemini ? [{ text: musicContent }] : undefined,
                                             isMusicMessage: true,
                                             identifier: 'music_system',
+                                            name: 'SYSTEM (音乐)',
                                             gaigaiPhoneSignal: {
                                                 appName: '手机(主视口)',
                                                 allowSummary: offlinePerms.allowSummary,
