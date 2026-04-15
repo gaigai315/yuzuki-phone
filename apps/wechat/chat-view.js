@@ -4176,7 +4176,8 @@ renderChatRoom(chat) {
                     systemPrompt = systemPrompt
                         .replace(/\{\{groupName\}\}/g, groupName)
                         .replace(/\{\{groupMembers\}\}/g, groupMembers)
-                        .replace(/\{\{wechatContacts\}\}/g, wechatContactsList);
+                        .replace(/\{\{wechatContacts\}\}/g, wechatContactsList)
+                        .replace(/\{\{customEmojiList\}\}/g, customEmojiList);
                 } else if (promptManager?.isEnabled?.('wechat', 'online')) {
                     // 单聊模式
                     systemPrompt = promptManager.getPromptForFeature('wechat', 'online') || '';

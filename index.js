@@ -917,7 +917,11 @@ if (window.GGP_Loaded) {
                     ];
 
                     // 移除旧菜单
-                    document.getElementById('phone-inline-reply-menu-pop')?.remove();
+                    const oldMenu = document.getElementById('phone-inline-reply-menu-pop');
+                    if (oldMenu) {
+                        oldMenu._stPhoneDispose?.();
+                        oldMenu.remove();
+                    }
 
                     const menu = document.createElement('div');
                     menu.id = 'phone-inline-reply-menu-pop';
@@ -956,23 +960,43 @@ if (window.GGP_Loaded) {
                     menu.innerHTML = html;
                     document.body.appendChild(menu);
 
-                    // 🔥 核心修复2：利用 translateY 抛弃 window.innerHeight 的错误计算，完美适配移动端
-                    const rect = btn.getBoundingClientRect();
+                    const positionMenuCentered = () => {
+                        const vv = window.visualViewport;
+                        const viewWidth = vv?.width || window.innerWidth;
+                        const viewHeight = vv?.height || window.innerHeight;
+                        const offsetLeft = vv?.offsetLeft || 0;
+                        const offsetTop = vv?.offsetTop || 0;
 
-                    if (rect.top > window.innerHeight / 2) {
-                        // 按钮在屏幕下半区 -> 向上弹出
-                        menu.style.top = (rect.top - 10) + 'px';
+                        menu.style.left = `${offsetLeft + (viewWidth / 2)}px`;
+                        menu.style.top = `${offsetTop + (viewHeight / 2)}px`;
                         menu.style.bottom = 'auto';
-                        // 利用 -100% 把菜单自身的高度整个提上去，稳稳贴在按钮上方
-                        menu.style.transform = 'translate(-50%, -100%)';
-                        menu.style.maxHeight = Math.max(150, rect.top - 20) + 'px';
-                    } else {
-                        // 按钮在屏幕上半区 -> 向下弹出
-                        menu.style.top = (rect.bottom + 10) + 'px';
-                        menu.style.bottom = 'auto';
-                        menu.style.transform = 'translate(-50%, 0)';
-                        menu.style.maxHeight = Math.max(150, window.innerHeight - rect.bottom - 20) + 'px';
+                        menu.style.transform = 'translate(-50%, -50%)';
+                        menu.style.maxHeight = `${Math.max(150, viewHeight - 24)}px`;
+                    };
+
+                    const positioningController = new AbortController();
+                    const repositionMenu = () => {
+                        if (!menu.isConnected) {
+                            positioningController.abort();
+                            return;
+                        }
+                        positionMenuCentered();
+                    };
+                    positionMenuCentered();
+
+                    window.addEventListener('resize', repositionMenu, { passive: true, signal: positioningController.signal });
+                    if (window.visualViewport) {
+                        window.visualViewport.addEventListener('resize', repositionMenu, { passive: true, signal: positioningController.signal });
+                        window.visualViewport.addEventListener('scroll', repositionMenu, { passive: true, signal: positioningController.signal });
                     }
+
+                    const closeMenuSafely = () => {
+                        positioningController.abort();
+                        if (menu.isConnected) {
+                            menu.remove();
+                        }
+                    };
+                    menu._stPhoneDispose = closeMenuSafely;
 
                     // 绑定空状态点击
                     const emptyBtn = menu.querySelector('#open-phone-empty-btn');
@@ -980,7 +1004,7 @@ if (window.GGP_Loaded) {
                         const onEmptyClick = (ev) => {
                             ev.stopPropagation();
                             ev.preventDefault();
-                            menu.remove();
+                            closeMenuSafely();
                             const phoneIcon = document.getElementById('phoneDrawerIcon');
                             if (phoneIcon) {
                                 phoneIcon.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
@@ -1013,7 +1037,7 @@ if (window.GGP_Loaded) {
 
                                 textarea.dispatchEvent(new Event('input', { bubbles: true }));
                             }
-                            menu.remove();
+                            closeMenuSafely();
                         };
                         el.addEventListener('click', onItemClick);
                     });
@@ -1022,7 +1046,7 @@ if (window.GGP_Loaded) {
                     setTimeout(() => {
                         const closeMenu = (ev) => {
                             if (!menu.contains(ev.target)) {
-                                menu.remove();
+                                closeMenuSafely();
                                 // 移除监听
                                 document.removeEventListener('mousedown', closeMenu);
                                 document.removeEventListener('touchstart', closeMenu);
@@ -4323,11 +4347,6 @@ if (window.GGP_Loaded) {
                                                     .replace(/\{\{STORY_TIME\+1\}\}/g, nextMinute)
                                                     .replace(/\{\{wechatContacts\}\}/g, wechatContactsList);
                                                 phoneRulesContent += `【微信线下模式】\n${wechatPrompt}\n\n`;
-                                                // 🌟🌟🌟 新增：将本地自定义表情包列表注入线下提示词 🌟🌟🌟
-                                            const validCustomEmojis = customEmojis.map(e => e.description || e.name).filter(Boolean);
-                                            if (validCustomEmojis.length > 0) {
-                                                phoneRulesContent += `【可用本地专属表情包】\n你可以随时使用以下专属表情包，将列表名称替换到括号内的表情名称即可，格式为：[表情包]（表情名称）\n可用列表：${validCustomEmojis.join('、')}\n\n`;
-                                            }
                                             }
                                         } catch (e) {
                                             console.warn('⚠️ [手机] 获取微信线下提示词失败');
