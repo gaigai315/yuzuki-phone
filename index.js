@@ -3913,23 +3913,29 @@ if (window.GGP_Loaded) {
                                 return;
                             }
 
-                            // 🔥 核心修复 1：清理重绘缓存与精准区分请求来源
+                            // 🔥 核心修复 1：精准区分请求来源（防止误杀正文变量）
+                            
+                            // 1. 如果是手机内部发起的请求（比如在手机里点发送）
+                            if (window.VirtualPhone?._isInternalRequest) {
+                                // 既然线上聊天不该有线下变量，直接执行清洗并退出
+                                forceFallbackCleanup(eventData.chat);
+                                return; 
+                            }
+
+                            // 2. 如果是酒馆正文发起的请求（比如点击正文发送、重新生成、继续生成）
                             if (eventData.chat && Array.isArray(eventData.chat)) {
-                                // 1. 检查是否是手机内部（线上模式）发出的请求，如果是，直接跳过线下注入
-                                const lastMsg = eventData.chat[eventData.chat.length - 1];
-                                if (lastMsg && lastMsg.isPhoneMessage && lastMsg.gaigaiPhoneSignal) {
-                                    forceFallbackCleanup(eventData.chat);
-                                    return;
-                                }
-                                
-                                // 2. 如果是酒馆正文的重新生成，把上次缓存残留在数组里的手机规则剔除，准备重新注入最新状态
+                                // 🧹 清理重绘缓存：
+                                // 如果是重新生成，数组里可能残留着上一次插件注入的 system 提示块。
+                                // 我们必须先砍掉旧的，后面才会重新注入带有最新数据的块。
                                 for (let i = eventData.chat.length - 1; i >= 0; i--) {
                                     const msg = eventData.chat[i];
-                                    if (msg.isPhoneMessage && msg.role === 'system' && msg.identifier) {
+                                    // 🔥 修复：去掉 role === 'system' 的限制，兼容 Gemini 的 user 伪装注入
+                                    if (msg.isPhoneMessage && msg.identifier) {
                                         eventData.chat.splice(i, 1);
                                     }
                                 }
                             }
+                            // 注意：此处不写 return！让代码继续往下跑后面的“收集数据”和“替换变量”逻辑。
                             if (eventData.prompt && Array.isArray(eventData.prompt)) {
                                 for (let i = eventData.prompt.length - 1; i >= 0; i--) {
                                     const msg = eventData.prompt[i];
@@ -4754,15 +4760,33 @@ if (window.GGP_Loaded) {
                             else if (Array.isArray(bodyObj.contents)) targetArray = bodyObj.contents;
 
                             if (targetArray) {
-                                // 🌟 1. 核心防御：检查酒馆是否抢跑漏掉了变量
-                                const hasMacros = JSON.stringify(targetArray).match(/\{\{PHONE_PROMPT\}\}|\{\{PHONE_HISTORY\}\}|\{\{WEIBO_HISTORY\}\}|\{\{MUSIC_PROMPT\}\}/);
+                                // 🌟 1. 核心防御：连同外层 bodyObj 一起检查，防止变量被移动端或 Claude 抽离到 system 字段
+                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{PHONE_PROMPT\}\}|\{\{PHONE_HISTORY\}\}|\{\{WEIBO_HISTORY\}\}|\{\{MUSIC_PROMPT\}\}/);
 
                                 if (hasMacros) {
                                     console.log('🚨 [手机插件] 警告：酒馆发送过快导致 Hook 被无视，请求体残留变量！正在执行网卡级底层强行注入...');
                                     
-                                    // 强行在发包前，调用注入函数再跑一遍！(因为我们在这里加了 await，浏览器会暂停发送，直到替换完美结束)
                                     let safeEvent = { chat: targetArray, prompt: [] };
+                                    
+                                    // 🔥 移动端/Claude 绝杀：如果变量被抽到了 system 字段，强行把它塞回头部当做临时消息，处理完再还原
+                                    let hasSystemField = !!bodyObj.system;
+                                    if (hasSystemField) {
+                                        let sysContent = typeof bodyObj.system === 'string' ? bodyObj.system : JSON.stringify(bodyObj.system);
+                                        safeEvent.chat.unshift({ role: 'system', content: sysContent, isTempSystem: true });
+                                    }
+
+                                    // 强行在发包前，调用注入函数再跑一遍！
                                     await phonePromptHandler(safeEvent);
+                                    
+                                    // 🔥 处理完毕后，把临时的 system 抽离还原回去
+                                    if (hasSystemField && safeEvent.chat[0] && safeEvent.chat[0].isTempSystem) {
+                                        let processedSys = safeEvent.chat.shift();
+                                        if (typeof bodyObj.system === 'string') {
+                                            bodyObj.system = processedSys.content;
+                                        } else {
+                                            try { bodyObj.system = JSON.parse(processedSys.content); } catch(e){}
+                                        }
+                                    }
                                     
                                     console.log('✅ [手机插件] 底层强行注入完毕，防抢跑成功！');
                                 }

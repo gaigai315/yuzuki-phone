@@ -122,6 +122,7 @@ export class ApiManager {
      */
     async callAI(messages, options = {}) {
         this._activeRequestCount += 1;
+        if (window.VirtualPhone) window.VirtualPhone._isInternalRequest = true;
         try {
         // 获取当前调用 AI 的 App 标识，默认 phone_online
         const appId = options.appId || 'phone_online';
@@ -189,6 +190,8 @@ export class ApiManager {
         }
         } finally {
             this._activeRequestCount = Math.max(0, this._activeRequestCount - 1);
+
+            if (window.VirtualPhone) window.VirtualPhone._isInternalRequest = false;
         }
     }
 
