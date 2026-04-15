@@ -2866,7 +2866,8 @@ if (window.GGP_Loaded) {
                 if (phoneTagMatch) {
                     const phoneContent = phoneTagMatch[1];
                     const callMatch = phoneContent.match(PHONE_CALL_REGEX);
-                    if (callMatch) handleIncomingPhoneCall(callMatch[1].trim());
+                    // 旧楼层重放/刷新时只保留通话记录数据，不应再次触发来电弹窗。
+                    if (callMatch && !isHistoryReplay) handleIncomingPhoneCall(callMatch[1].trim());
                 }
 
                 // 兼容旧版微信标签
