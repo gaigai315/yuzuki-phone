@@ -4368,7 +4368,7 @@ if (window.GGP_Loaded) {
                                             const weiboLimitRaw = parseInt(storage?.get('offline-weibo-history-limit'));
                                             const weiboLimit = Math.max(1, Math.min(50, Number.isFinite(weiboLimitRaw) ? weiboLimitRaw : 5));
 
-                                            let recommendPosts = [];
+                                            let userPostsList = [];
                                             let hotSearches = [];
 
                                             const weiboData = window.VirtualPhone?.weiboApp?.weiboData;
@@ -4387,17 +4387,20 @@ if (window.GGP_Loaded) {
                                             };
 
                                             if (weiboData) {
-                                                recommendPosts = parseMaybeArray(weiboData.getRecommendPosts?.());
+                                                // 精准读取专属的 UserPosts 池子
+                                                userPostsList = parseMaybeArray(weiboData.getUserPosts?.());
                                                 hotSearches = parseMaybeArray(weiboData.getHotSearches?.());
                                             } else {
-                                                recommendPosts = parseMaybeArray(storage?.get('weibo_recommend_posts'));
+                                                userPostsList = parseMaybeArray(storage?.get('weibo_user_posts'));
                                                 hotSearches = parseMaybeArray(storage?.get('weibo_hot_searches'));
                                             }
 
                                             const cleanText = (text, maxLen = 220) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
                                             const userName = context?.name1 || '用户';
-                                            const userPosts = recommendPosts.filter(p => p?.isUserPost).slice(0, weiboLimit);
-                                            // 热搜始终注入全部，不受“最近微博条数”限制
+                                            
+                                            // 🔥 核心逻辑：设置的限制数字仅用来截取最新的 N 条用户微博
+                                            const userPosts = userPostsList.slice(0, weiboLimit);
+                                            // 热搜不受限制，全量注入
                                             const hotTop = hotSearches;
 
                                             if (userPosts.length > 0 || hotTop.length > 0) {
@@ -4406,17 +4409,18 @@ if (window.GGP_Loaded) {
                                                     userPosts.forEach((post, idx) => {
                                                         const blogger = cleanText(post.blogger || userName, 40);
                                                         const content = cleanText(post.content || '');
+                                                        
+                                                        // 🔥 解除限制：获取该条微博的所有评论，全量注入！
                                                         const comments = Array.isArray(post.commentList) ? post.commentList : [];
-                                                        const recentComments = comments.slice(-Math.min(5, weiboLimit));
 
                                                         weiboHistoryContent += `--- 微博${idx + 1} ---\n`;
                                                         if (post.time) weiboHistoryContent += `时间: ${cleanText(post.time, 20)}\n`;
                                                         weiboHistoryContent += `博主: ${blogger}\n`;
                                                         weiboHistoryContent += `正文: ${content || '[空内容]'}\n`;
 
-                                                        if (recentComments.length > 0) {
+                                                        if (comments.length > 0) {
                                                             weiboHistoryContent += `评论:\n`;
-                                                            recentComments.forEach(c => {
+                                                            comments.forEach(c => {
                                                                 const cName = cleanText(c?.name || '网友', 40);
                                                                 const cText = cleanText(c?.text || '', 140);
                                                                 if (!cText) return;
