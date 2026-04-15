@@ -4451,26 +4451,48 @@ if (window.GGP_Loaded) {
                                         console.warn('⚠️ [手机] 注入微博记录失败:', e);
                                     }
 
-                                    // 🔥 辅助函数：原地拆分注入
+                                    // 🌟 辅助函数：深拷贝并保留多模态属性的切割器
+                                    const cloneSplitMessage = (originalMsg, newText) => {
+                                        // 深拷贝原消息，保留图片、扩展数据等所有原生属性
+                                        const cloned = JSON.parse(JSON.stringify(originalMsg));
+                                        
+                                        // 覆盖文本字段
+                                        if (cloned.content !== undefined) cloned.content = newText;
+                                        if (cloned.mes !== undefined) cloned.mes = newText;
+                                        if (cloned.text !== undefined) cloned.text = newText;
+                                        
+                                        // 针对 Gemini 的 parts 结构特殊处理，防止图片丢失
+                                        if (Array.isArray(cloned.parts) && cloned.parts.length > 0) {
+                                            // 假设文本总是在第一个 part
+                                            if (cloned.parts[0].text !== undefined) {
+                                                cloned.parts[0].text = newText;
+                                            }
+                                        }
+                                        return cloned;
+                                    };
+
+                                    // 🔥 辅助函数：原地拆分注入 (Gaigai 终极防弹版)
                                     const injectIntoMessages = (targetVar, contentToInject, identifier) => {
-                                        // 🔥 核心修复：如果没有任何内容可注入，必须原地把占位符彻底删掉，绝不能直接 return 放任不管！
+                                        // 1. 如果没有内容要注入，执行安全清洗，把占位符彻底删掉
                                         if (!contentToInject) {
                                             for (let i = 0; i < messages.length; i++) {
-                                                let msgContent = messages[i].content || messages[i].mes || (messages[i].parts && messages[i].parts[0] ? messages[i].parts[0].text : '') || '';
+                                                let msg = messages[i];
+                                                let msgContent = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
                                                 if (typeof msgContent === 'string' && msgContent.includes(targetVar)) {
-                                                    msgContent = msgContent.split(targetVar).join('').trim();
-                                                    if (messages[i].content !== undefined) messages[i].content = msgContent;
-                                                    if (messages[i].mes !== undefined) messages[i].mes = msgContent;
-                                                    if (messages[i].parts && messages[i].parts[0] !== undefined) messages[i].parts[0].text = msgContent;
+                                                    let cleanedText = msgContent.split(targetVar).join('').trim();
+                                                    if (msg.content !== undefined) msg.content = cleanedText;
+                                                    if (msg.mes !== undefined) msg.mes = cleanedText;
+                                                    if (msg.parts && msg.parts[0] !== undefined) msg.parts[0].text = cleanedText;
                                                 }
                                             }
                                             return;
                                         }
+
+                                        // 2. 准备要插入的系统块
                                         const isGemini = messages.length > 0 && messages[0].parts !== undefined;
                                         const msgObj = {
                                             role: isGemini ? 'user' : 'system', // Gemini不允许塞system
                                             content: contentToInject,
-                                            parts: isGemini ? [{ text: contentToInject }] : undefined,
                                             isPhoneMessage: true,
                                             identifier: identifier,
                                             gaigaiPhoneSignal: {
@@ -4481,29 +4503,36 @@ if (window.GGP_Loaded) {
                                                 allowPrompt: offlinePerms.allowPrompt
                                             }
                                         };
+                                        if (isGemini) msgObj.parts = [{ text: contentToInject }];
 
+                                        // 3. 开始遍历并原地切割注入
                                         let replaced = false;
                                         for (let i = 0; i < messages.length; i++) {
-                                                let msgContent = messages[i].content || messages[i].mes || (messages[i].parts && messages[i].parts[0] ? messages[i].parts[0].text : '') || '';
+                                            let msg = messages[i];
+                                            let msgContent = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
+                                            
                                             if (typeof msgContent === 'string' && msgContent.includes(targetVar)) {
                                                 const varIndex = msgContent.indexOf(targetVar);
                                                 const preText = msgContent.substring(0, varIndex).trim();
                                                 const postText = msgContent.substring(varIndex + targetVar.length).trim();
 
                                                 const newMessages = [];
-                                                const originalMsg = messages[i];
-
-                                               if (preText) newMessages.push({ role: originalMsg.role, name: originalMsg.name, content: preText, parts: isGemini ? [{text: preText}] : undefined });
+                                                
+                                                // 压入前半段（保留所有原生属性）
+                                                if (preText) newMessages.push(cloneSplitMessage(msg, preText));
+                                                // 压入手机系统块
                                                 newMessages.push(msgObj);
-                                                if (postText) newMessages.push({ role: originalMsg.role, name: originalMsg.name, content: postText, parts: isGemini ? [{text: postText}] : undefined });
+                                                // 压入后半段
+                                                if (postText) newMessages.push(cloneSplitMessage(msg, postText));
 
+                                                // 🌟 神之一手：原地替换，数组长度自动扩容
                                                 messages.splice(i, 1, ...newMessages);
                                                 replaced = true;
-                                                break;
+                                                break; // 替换完成，立刻跳出循环
                                             }
                                         }
 
-                                        // 兜底策略：如果没找到变量，默认插入到最后一条 user 消息之前
+                                        // 4. 兜底策略：如果没找到变量，默认插入到最后一条 user 消息之前
                                         if (!replaced) {
                                             let insertPos = messages.length;
                                             for (let i = messages.length - 1; i >= 0; i--) {
