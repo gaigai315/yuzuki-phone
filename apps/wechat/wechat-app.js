@@ -2471,7 +2471,7 @@ export class WechatApp {
                     <div class="wechat-header-title">
                         <span class="wechat-header-title-text">
                             ${getHeaderTitle()}
-                            ${this.currentChat ? `<span class="status-dot dot-green"></span>` : ''}
+                            ${this.currentChat ? `<span class="status-dot ${this.chatView?.getHeaderStatusDotClass?.(this.currentChat.id) || 'dot-green'}"></span>` : ''}
                         </span>
                         ${unreadCount > 0 && !this.currentChat && this.currentView !== 'discover' ? `<span class="header-badge">(${unreadCount})</span>` : ''}
                     </div>
@@ -4110,7 +4110,55 @@ export class WechatApp {
                                 ">编辑提示词</button>
                             </div>
 
-                            <!-- 子项4：群聊 -->
+                            <!-- 子项4：群语音通话 -->
+                            <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                    <span style="font-size: 14px;">👥📞 群语音通话</span>
+                                    <label class="toggle-switch" onclick="event.stopPropagation();">
+                                        <input type="checkbox" class="feature-toggle" data-feature="groupVoiceCall"
+                                               ${prompts.groupVoiceCall?.enabled !== false ? 'checked' : ''}>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div style="font-size: 11px; color: #999; margin-bottom: 8px;">
+                                    ${prompts.groupVoiceCall?.description || '微信群语音通话规则'}
+                                </div>
+                                <button class="edit-prompt-btn" data-feature="groupVoiceCall" style="
+                                    padding: 5px 10px;
+                                    background: #fff;
+                                    border: 1px solid #e0e0e0;
+                                    border-radius: 4px;
+                                    font-size: 11px;
+                                    color: #333;
+                                    cursor: pointer;
+                                ">编辑提示词</button>
+                            </div>
+
+                            <!-- 子项5：群视频通话 -->
+                            <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                    <span style="font-size: 14px;">👥📹 群视频通话</span>
+                                    <label class="toggle-switch" onclick="event.stopPropagation();">
+                                        <input type="checkbox" class="feature-toggle" data-feature="groupVideoCall"
+                                               ${prompts.groupVideoCall?.enabled !== false ? 'checked' : ''}>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div style="font-size: 11px; color: #999; margin-bottom: 8px;">
+                                    ${prompts.groupVideoCall?.description || '微信群视频通话规则'}
+                                </div>
+                                <button class="edit-prompt-btn" data-feature="groupVideoCall" style="
+                                    padding: 5px 10px;
+                                    background: #fff;
+                                    border: 1px solid #e0e0e0;
+                                    border-radius: 4px;
+                                    font-size: 11px;
+                                    color: #333;
+                                    cursor: pointer;
+                                ">编辑提示词</button>
+                            </div>
+
+                            <!-- 子项6：群聊 -->
                             <div style="background: #f9f9f9; border-radius: 8px; padding: 12px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">👥 群聊</span>

@@ -794,7 +794,7 @@ export class PhoneCallView {
         const apiKey = this.app.storage.get('phone-tts-key') || '';
         const apiUrl = this.app.storage.get('phone-tts-url');
         const model = this.app.storage.get('phone-tts-model');
-        const voice = this.app.storage.get('phone-tts-voice');
+        const voice = this._resolveCallerTtsVoice(this.currentCaller, { allowGlobalFallback: true });
 
         if (!apiKey || !apiUrl) {
             console.warn('📞 [TTS] 配置缺失 → provider:', provider, 'apiKey:', apiKey ? '***' : '空', 'apiUrl:', apiUrl);
@@ -897,16 +897,39 @@ export class PhoneCallView {
         });
     }
 
+    _resolveWechatContact(callerName) {
+        try {
+            const wechatData = window.VirtualPhone?.wechatApp?.wechatData;
+            if (!wechatData) return null;
+            return wechatData.findContactByNameLoose?.(callerName, { includeChats: true })
+                || wechatData.getContactByName?.(callerName)
+                || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    _resolveCallerTtsVoice(callerName, { allowGlobalFallback = true } = {}) {
+        const globalVoice = String(this.app.storage.get('phone-tts-voice') || '').trim();
+        try {
+            const wechatData = window.VirtualPhone?.wechatApp?.wechatData;
+            if (wechatData?.resolveTtsVoiceByName) {
+                const resolved = wechatData.resolveTtsVoiceByName(callerName, { includeChats: true });
+                const boundVoice = String(resolved?.voice || '').trim();
+                if (boundVoice) return boundVoice;
+            }
+        } catch (e) {
+            // ignore
+        }
+        return allowGlobalFallback ? globalVoice : '';
+    }
+
     _getCallerAvatar(callerName) {
         // 尝试从微信联系人匹配头像
         try {
-            const wechatApp = window.VirtualPhone?.wechatApp;
-            if (wechatApp?.wechatData) {
-                const contacts = wechatApp.wechatData.getContacts?.() || [];
-                const contact = contacts.find(c => c.name === callerName);
-                if (contact?.avatar) {
-                    return `<img src="${contact.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
-                }
+            const contact = this._resolveWechatContact(callerName);
+            if (contact?.avatar) {
+                return `<img src="${contact.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
             }
         } catch (e) { /* ignore */ }
         return '👤';
@@ -952,4 +975,3 @@ export class PhoneCallView {
         return div.innerHTML;
     }
 }
-

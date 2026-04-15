@@ -510,6 +510,62 @@ export class WechatData {
         return null;
     }
 
+    _normalizeLookupName(name) {
+        return String(name || '')
+            .trim()
+            .replace(/\s+/g, '')
+            .replace(/[（(][^（）()]*[）)]/g, '')
+            .toLowerCase();
+    }
+
+    findContactByNameLoose(name, { includeChats = true } = {}) {
+        const rawName = String(name || '').trim();
+        const normalizedName = this._normalizeLookupName(rawName);
+        if (!rawName && !normalizedName) return null;
+
+        const pickFromList = (list = []) => {
+            if (!Array.isArray(list) || list.length === 0) return null;
+
+            let exact = list.find(item => String(item?.name || '').trim() === rawName);
+            if (exact) return exact;
+
+            exact = list.find(item => this._normalizeLookupName(item?.name) === normalizedName);
+            if (exact) return exact;
+
+            if (!normalizedName) return null;
+
+            return list.find(item => {
+                const itemName = this._normalizeLookupName(item?.name);
+                return itemName && (itemName.includes(normalizedName) || normalizedName.includes(itemName));
+            }) || null;
+        };
+
+        const contact = pickFromList(this.data.contacts);
+        if (contact) return contact;
+
+        if (includeChats) {
+            const chat = pickFromList(this.data.chats);
+            if (chat) return chat;
+        }
+
+        const userInfo = this.data.userInfo || {};
+        const userName = String(userInfo.name || '').trim();
+        if (rawName === 'me' || rawName === userName || this._normalizeLookupName(userName) === normalizedName) {
+            return userInfo;
+        }
+
+        return null;
+    }
+
+    resolveTtsVoiceByName(name, { includeChats = true } = {}) {
+        const contact = this.findContactByNameLoose(name, { includeChats });
+        const voice = String(contact?.ttsVoice || '').trim();
+        return {
+            contact,
+            voice
+        };
+    }
+
     _getStoryTimeFallback() {
         try {
             const timeManager = window.VirtualPhone?.timeManager;

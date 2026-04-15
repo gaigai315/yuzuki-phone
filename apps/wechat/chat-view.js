@@ -87,6 +87,238 @@ export class ChatView {
         return this.pendingChatIds.has(String(chatId || '').trim());
     }
 
+    getHeaderStatusDotColor(chatId = null) {
+        const safeChatId = String(chatId || this.app.currentChat?.id || '').trim();
+        if (!safeChatId) return 'green';
+
+        if (this.isSending && String(this._activeSendingChatId || '').trim() === safeChatId) {
+            return 'red';
+        }
+
+        if (this._hasPendingChat(safeChatId)) {
+            return 'yellow';
+        }
+
+        return 'green';
+    }
+
+    getHeaderStatusDotClass(chatId = null) {
+        const color = this.getHeaderStatusDotColor(chatId);
+        if (color === 'red') return 'dot-red';
+        if (color === 'yellow') return 'dot-yellow';
+        return 'dot-green';
+    }
+
+    _getGlobalTtsVoice() {
+        return String(window.VirtualPhone?.storage?.get('phone-tts-voice') || '').trim();
+    }
+
+    _resolveWechatBoundVoiceByName(name, { allowGlobalFallback = false } = {}) {
+        const wechatData = this.app?.wechatData;
+        const resolved = wechatData?.resolveTtsVoiceByName?.(name, { includeChats: true }) || null;
+        const voice = String(resolved?.voice || '').trim();
+        if (voice) {
+            return {
+                voice,
+                contact: resolved.contact || null
+            };
+        }
+
+        if (allowGlobalFallback) {
+            return {
+                voice: this._getGlobalTtsVoice(),
+                contact: resolved?.contact || null
+            };
+        }
+
+        return {
+            voice: '',
+            contact: resolved?.contact || null
+        };
+    }
+
+    _escapeRegExp(text) {
+        return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    _getGroupChatParticipants(chat = null) {
+        const targetChat = chat || this.app.currentChat;
+        if (!targetChat || targetChat.type !== 'group') return [];
+
+        const names = [];
+        const seen = new Set();
+        const pushName = (rawName) => {
+            const name = String(rawName || '').trim();
+            if (!name || name === 'me' || name === 'system' || seen.has(name)) return;
+            seen.add(name);
+            names.push(name);
+        };
+
+        (targetChat.members || []).forEach(pushName);
+
+        try {
+            const messages = this.app.wechatData.getMessages(targetChat.id) || [];
+            messages.forEach(msg => pushName(msg?.from));
+        } catch (e) {
+            // ignore
+        }
+
+        return names;
+    }
+
+    _normalizeGroupParticipantName(name, participants = []) {
+        const rawName = String(name || '').trim();
+        if (!rawName) return '';
+        if (participants.includes(rawName)) return rawName;
+
+        const contact = this.app.wechatData?.findContactByNameLoose?.(rawName, { includeChats: true });
+        const contactName = String(contact?.name || '').trim();
+        if (contactName && participants.includes(contactName)) return contactName;
+
+        const normalize = (value) => String(value || '')
+            .trim()
+            .replace(/\s+/g, '')
+            .replace(/[（(][^（）()]*[）)]/g, '')
+            .toLowerCase();
+
+        const rawKey = normalize(rawName);
+        if (!rawKey) return rawName;
+
+        const fuzzy = participants.find(item => {
+            const itemKey = normalize(item);
+            return itemKey && (itemKey === rawKey || itemKey.includes(rawKey) || rawKey.includes(itemKey));
+        });
+
+        return fuzzy || rawName;
+    }
+
+    _getCallPromptFeature(callMode, targetChat = null) {
+        const chat = targetChat || this.app.currentChat;
+        if (chat?.type === 'group') {
+            return callMode === 'video' ? 'groupVideoCall' : 'groupVoiceCall';
+        }
+        return callMode === 'video' ? 'videoCall' : 'voiceCall';
+    }
+
+    _extractWechatBlockByName(content, blockName = '') {
+        const source = String(content || '').trim();
+        const safeName = String(blockName || '').trim();
+        if (!source || !safeName || !source.includes('---')) return source;
+
+        const blockRegex = new RegExp(`---${this._escapeRegExp(safeName)}---([\\s\\S]*?)(?=---[^-]+---|$)`, 'i');
+        const matched = source.match(blockRegex);
+        return matched ? String(matched[1] || '').trim() : source;
+    }
+
+    _parseCallReplyEntries(rawText, { contactName = '', participants = [], groupName = '', isGroupCall = false } = {}) {
+        const groupCall = isGroupCall === true || (Array.isArray(participants) && participants.length > 0);
+        let content = String(rawText || '').replace(/\r\n/g, '\n').trim();
+        if (!content) return [];
+
+        const wechatMatch = content.match(/<wechat>([\s\S]*?)<\/wechat>/i);
+        if (wechatMatch) {
+            content = String(wechatMatch[1] || '').trim();
+        }
+
+        if (groupCall) {
+            content = this._extractWechatBlockByName(content, groupName);
+        }
+
+        const lines = content
+            .split(/\|\|\||\n+/)
+            .map(line => String(line || '').trim())
+            .filter(Boolean);
+
+        const entries = [];
+        const fallbackSender = groupCall ? (participants[0] || contactName || '群成员') : (contactName || '对方');
+        let pendingSender = '';
+
+        for (let line of lines) {
+            if (/^(接听|answer)$/i.test(line)) continue;
+            if (/^(拒绝|reject)$/i.test(line)) continue;
+            if (/^type[：:]/i.test(line) || /^date[：:]/i.test(line)) continue;
+
+            const senderOnlyMatch = /^([^:：]{1,20})[：:]\s*$/.exec(line);
+            if (groupCall && senderOnlyMatch) {
+                pendingSender = this._normalizeGroupParticipantName(senderOnlyMatch[1], participants);
+                continue;
+            }
+
+            let sender = '';
+            let text = '';
+
+            const timedGroupMatch = /^\[[0-9A-Za-z:：]+\]\s*([^:：]{1,20})[：:]\s*(.+)$/.exec(line);
+            const simpleGroupMatch = /^([^:：]{1,20})[：:]\s*(.+)$/.exec(line);
+
+            if (groupCall && timedGroupMatch) {
+                sender = this._normalizeGroupParticipantName(timedGroupMatch[1], participants);
+                text = timedGroupMatch[2];
+            } else if (groupCall && simpleGroupMatch) {
+                sender = this._normalizeGroupParticipantName(simpleGroupMatch[1], participants);
+                text = simpleGroupMatch[2];
+            } else if (groupCall) {
+                sender = pendingSender || fallbackSender;
+                text = line;
+            } else {
+                sender = fallbackSender;
+                text = line;
+                if (contactName) {
+                    const senderPrefixRegex = new RegExp(`^${this._escapeRegExp(contactName)}\\s*[：:]\\s*`);
+                    text = text.replace(senderPrefixRegex, '');
+                }
+            }
+
+            text = String(text || '')
+                .replace(/^\[[0-9A-Za-z:：]+\]\s*/, '')
+                .replace(/^from\s+\S+[：:]\s*/i, '');
+            text = this._stripCallSpeechPrefix(text).trim();
+            if (!text) {
+                pendingSender = '';
+                continue;
+            }
+
+            entries.push({
+                sender: sender || fallbackSender,
+                text
+            });
+            pendingSender = '';
+        }
+
+        return entries;
+    }
+
+    _renderGroupCallParticipantsStrip(chat = null) {
+        const targetChat = chat || this.app.currentChat;
+        if (!targetChat || targetChat.type !== 'group') return '';
+
+        const userInfo = this.app.wechatData.getUserInfo?.() || {};
+        const members = this._getGroupChatParticipants(targetChat);
+        const participantItems = [
+            {
+                name: userInfo.name || '我',
+                avatar: userInfo.avatar || '',
+                isSelf: true
+            },
+            ...members.map(name => ({
+                name,
+                avatar: this.app.wechatData.findContactByNameLoose?.(name, { includeChats: true })?.avatar || ''
+            }))
+        ].slice(0, 8);
+
+        return `
+            <div style="display:flex; gap:8px; overflow-x:auto; padding:6px 0 2px; -ms-overflow-style:none; scrollbar-width:none;">
+                ${participantItems.map(item => `
+                    <div style="display:flex; flex-direction:column; align-items:center; min-width:44px; flex-shrink:0;">
+                        <div class="call-avatar-fix" style="width:34px; height:34px; border-radius:50%; overflow:hidden; background:rgba(255,255,255,0.72); box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                            ${this.app.renderAvatar(item.avatar, item.isSelf ? '😊' : '👤', item.name)}
+                        </div>
+                        <div style="margin-top:4px; font-size:9px; color:rgba(0,0,0,0.58); max-width:52px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
     _restartPendingTimerIfNeeded(preferredChatId = null) {
         if (!this.isOnlineMode() || this.pendingChatIds.size === 0) {
             clearTimeout(this.batchTimer);
@@ -932,6 +1164,9 @@ renderChatRoom(chat) {
     }
 
     renderMorePanel() {
+        const isGroupChat = this.app.currentChat?.type === 'group';
+        const voiceLabel = isGroupChat ? '群语音' : '语音';
+        const videoLabel = isGroupChat ? '群视频' : '视频';
         return `
         <div class="more-panel">
             <div class="more-grid">
@@ -968,14 +1203,14 @@ renderChatRoom(chat) {
                     <div class="more-icon">
                         <i class="fa-solid fa-phone" style="font-size: 14px;"></i>
                     </div>
-                    <div class="more-name">语音</div>
+                    <div class="more-name">${voiceLabel}</div>
                 </div>
 
                 <div class="more-item" data-action="video">
                     <div class="more-icon">
                         <i class="fa-solid fa-video" style="font-size: 14px;"></i>
                     </div>
-                    <div class="more-name">视频</div>
+                    <div class="more-name">${videoLabel}</div>
                 </div>
 
                 <!-- 第二排：转账、红包 -->
@@ -2516,7 +2751,29 @@ renderChatRoom(chat) {
 
                 const apiUrl = storage.get('phone-tts-url');
                 const model = storage.get('phone-tts-model');
-                const voice = storage.get('phone-tts-voice');
+                
+                // 🔥 核心修改：动态判定发送者音色
+                let finalVoice = this._getGlobalTtsVoice(); // 默认拿全局音色兜底（对自己有效）
+                const msgNode = bubble.closest('.chat-message');
+                const isMe = msgNode && msgNode.classList.contains('message-right');
+
+                if (!isMe) {
+                    // 如果是对方发来的，必须找对方的专属音色
+                    let senderName = this.app.currentChat.name;
+                    // 如果是群聊，找具体的发送者名字
+                    const senderEl = msgNode.querySelector('.message-sender');
+                    if (senderEl) senderName = senderEl.innerText;
+
+                    const { voice } = this._resolveWechatBoundVoiceByName(senderName);
+                    if (voice) {
+                        finalVoice = voice;
+                    } else {
+                        // ❌ 没有绑定音色，强制拦截并弹窗
+                        this.app.phoneShell.showNotification('无法播放', `请先在通讯录编辑[${senderName}]，绑定专属音色`, '⚠️');
+                        return; // 中止播放
+                    }
+                }
+                const voice = finalVoice;
 
                 try {
                     bubble.style.opacity = '0.5'; // 加载中视觉反馈
@@ -2785,6 +3042,7 @@ renderChatRoom(chat) {
 
                 if (success) {
                     this._dequeuePendingChat(chatId);
+                    this.syncHeaderStatusDot(chatId);
                 } else {
                     break;
                 }
@@ -2809,6 +3067,9 @@ renderChatRoom(chat) {
         const savedChatName = targetChat?.name || this.app.currentChat?.name;
         const savedChatAvatar = targetChat?.avatar || this.app.currentChat?.avatar;
         const savedChatType = targetChat?.type || this.app.currentChat?.type;
+        
+        // 🔥 修复1：在这里定义 isGroupChat 变量！
+        const isGroupChat = savedChatType === 'group';
 
         if (!savedChatId) {
             console.error('❌ 无法获取当前聊天ID');
@@ -3399,6 +3660,9 @@ renderChatRoom(chat) {
             } else {
                 console.error('❌ 发送手机消息失败:', error);
                 this.app.phoneShell?.showNotification('发送失败', error.message, '❌');
+                
+                // 🔥 修复2：发生严重代码报错时，强制把它从连发等待队列里踢出去，彻底杜绝死循环！
+                this._dequeuePendingChat(savedChatId);
             }
         } finally {
             // 🔥 无论成功还是失败，都重置状态
@@ -3998,7 +4262,10 @@ renderChatRoom(chat) {
         // 🔥 通话模式：将通话规则、当前微信聊天历史、本次通话输入分开注入
         if (callMode) {
             const promptManager = window.VirtualPhone?.promptManager;
-            const promptFeature = callMode === 'video' ? 'videoCall' : 'voiceCall';
+            const promptFeature = this._getCallPromptFeature(callMode, targetChat);
+            const contacts = this.app.wechatData.getContacts() || [];
+            const contactNames = contacts.map(c => c.name).filter(Boolean);
+            const wechatContactsList = contactNames.length > 0 ? contactNames.join('、') : '暂无好友';
 
             let callSystemPrompt = '';
             if (promptManager?.isEnabled?.('wechat', promptFeature)) {
@@ -4007,13 +4274,16 @@ renderChatRoom(chat) {
 
             callSystemPrompt = callSystemPrompt
                 .replace(/\{\{user\}\}/g, userName)
-                .replace(/\{\{char\}\}/g, targetChat.name);
+                .replace(/\{\{char\}\}/g, targetChat.name)
+                .replace(/\{\{groupName\}\}/g, groupName)
+                .replace(/\{\{groupMembers\}\}/g, groupMembers)
+                .replace(/\{\{wechatContacts\}\}/g, wechatContactsList);
 
             if (callSystemPrompt) {
                 messages.push({
                     role: 'system',
                     content: callSystemPrompt,
-                    name: `SYSTEM (${callMode === 'video' ? '视频' : '语音'}通话)`,
+                    name: `SYSTEM (${isGroupChat ? '群' : ''}${callMode === 'video' ? '视频' : '语音'}通话)`,
                     isPhoneMessage: true
                 });
             }
@@ -4088,8 +4358,8 @@ renderChatRoom(chat) {
         // 7️⃣ 末尾追加模式强化提示
         // ========================================
         let currentModeName = '微信单聊';
-        if (callMode === 'video') currentModeName = '微信视频通话';
-        else if (callMode === 'voice') currentModeName = '微信语音通话';
+        if (callMode === 'video') currentModeName = isGroupChat ? '微信群视频通话' : '微信视频通话';
+        else if (callMode === 'voice') currentModeName = isGroupChat ? '微信群语音通话' : '微信语音通话';
         else if (isGroupChat) currentModeName = '微信群聊';
 
         let finalUserContent = `现在你处于${currentModeName}的模式，请根据以上所有信息，遵守回复格式，继续微信回复。`;
@@ -4545,6 +4815,10 @@ renderChatRoom(chat) {
         dot.classList.add('dot-green');
     }
 
+    syncHeaderStatusDot(targetChatId = null) {
+        this._setHeaderStatusDot(this.getHeaderStatusDotColor(targetChatId), targetChatId);
+    }
+
     showTypingStatus(statusText = '正在输入', targetChatId = null) {
         const text = String(statusText || '').trim();
         if (/等待回复/.test(text)) {
@@ -4559,7 +4833,7 @@ renderChatRoom(chat) {
     }
 
     hideTypingStatus() {
-        this._setHeaderStatusDot('green');
+        this.syncHeaderStatusDot();
     }
     // 🔧 显示聊天设置菜单
     showChatMenu() {
@@ -5608,6 +5882,8 @@ renderChatRoom(chat) {
         }
 
         const contact = this.app.currentChat;
+        const isGroupCall = contact?.type === 'group';
+        const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
 
         // ========================================
         // 阶段1：呼叫界面 - 白色玻璃风格
@@ -5620,7 +5896,7 @@ renderChatRoom(chat) {
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
                     <button class="wechat-back-btn" id="overlay-hidden-back" style="display:none;"></button>
                 </div>
-                <div class="wechat-header-title" style="color: #333;">视频通话</div>
+                <div class="wechat-header-title" style="color: #333;">${isGroupCall ? '群视频通话' : '视频通话'}</div>
                 <div class="wechat-header-right"></div>
             </div>
 
@@ -5643,9 +5919,10 @@ renderChatRoom(chat) {
                 <div style="font-size: 24px; font-weight: 600; color: #333; margin-bottom: 8px;">
                     ${contact.name}
                 </div>
+                ${groupParticipantsStrip}
 
                 <div id="call-status" style="font-size: 15px; color: rgba(0,0,0,0.5); margin-bottom: 50px;">
-                    正在呼叫...
+                    ${isGroupCall ? '正在呼叫群成员...' : '正在呼叫...'}
                 </div>
 
                 <button id="cancel-call-btn" style="
@@ -5715,7 +5992,7 @@ renderChatRoom(chat) {
                 stStopBtn.click();
             }
             this.addCallRecord('video', 'cancelled', '0分0秒');
-            this.app.phoneShell.showNotification('已取消', '视频通话已取消', '📹');
+            this.app.phoneShell.showNotification('已取消', isGroupCall ? '群视频通话已取消' : '视频通话已取消', '📹');
             setTimeout(() => this.app.render(), 500);
         });
 
@@ -5738,14 +6015,14 @@ renderChatRoom(chat) {
                 // 拒绝
                 const statusDiv = document.getElementById('call-status');
                 if (statusDiv) {
-                    statusDiv.textContent = '对方已拒绝';
+                    statusDiv.textContent = isGroupCall ? '群成员未接听' : '对方已拒绝';
                     statusDiv.style.color = '#ff3b30';
                 }
 
                 this.addCallRecord('video', 'rejected', '0分0秒');
 
                 setTimeout(() => {
-                    this.app.phoneShell.showNotification('通话结束', '对方拒绝了视频通话', '❌');
+                    this.app.phoneShell.showNotification('通话结束', isGroupCall ? '群成员未接听视频通话' : '对方拒绝了视频通话', '❌');
                     setTimeout(() => this.app.render(), 1000);
                 }, 2000);
 
@@ -5777,6 +6054,9 @@ renderChatRoom(chat) {
         const callStartTime = timeManager
             ? timeManager.getCurrentStoryTime()
             : { time: '21:30', date: '2044年10月28日' };
+        const isGroupCall = contact?.type === 'group';
+        const groupParticipants = this._getGroupChatParticipants(contact);
+        const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
 
         const html = `
         <div class="call-fullscreen">
@@ -5787,7 +6067,7 @@ renderChatRoom(chat) {
                     <button class="wechat-back-btn" id="overlay-hidden-back" style="display:none;"></button>
                 </div>
                 <div class="wechat-header-title" style="color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">
-                    <span class="wechat-header-title-text">${contact.name}<span class="status-dot dot-green" id="video-call-status-dot"></span></span>
+                    <span class="wechat-header-title-text">${contact.name}${isGroupCall ? '<span style="font-size:11px; margin-left:4px; opacity:0.88;">(群视频)</span>' : ''}<span class="status-dot dot-green" id="video-call-status-dot"></span></span>
                 </div>
                 <div class="wechat-header-right">
                     <span id="video-timer" style="font-size: 13px; color: rgba(255,255,255,0.9);">00:00</span>
@@ -5815,6 +6095,7 @@ renderChatRoom(chat) {
                             ${this.app.renderAvatar(contact.avatar, '👤', contact.name)}
                         </div>
                         <div style="font-size: 14px; font-weight: 500; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">${contact.name}</div>
+                        ${groupParticipantsStrip}
                     </div>
 
                     <!-- 小窗口（自己） -->
@@ -5975,15 +6256,20 @@ renderChatRoom(chat) {
         };
 
         const renderVideoAiLinesSequentially = async (lines, roundId) => {
-            const bubbleIds = [];
+            const bubbleMetas = [];
             const renderLines = Array.isArray(lines) ? lines : [];
 
             for (let i = 0; i < renderLines.length; i++) {
                 const messagesDiv = getVideoMessages();
                 if (!messagesDiv) break;
 
-                const line = String(renderLines[i] || '').trim();
-                if (!line) continue;
+                const entry = typeof renderLines[i] === 'string'
+                    ? { sender: contact.name, text: String(renderLines[i] || '').trim() }
+                    : {
+                        sender: String(renderLines[i]?.sender || contact.name).trim() || contact.name,
+                        text: String(renderLines[i]?.text || '').trim()
+                    };
+                if (!entry.text) continue;
 
                 document.getElementById('video-typing-indicator')?.remove();
                 const typingHtml = `
@@ -5994,23 +6280,29 @@ renderChatRoom(chat) {
                 messagesDiv.insertAdjacentHTML('beforeend', typingHtml);
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
-                await new Promise(resolve => setTimeout(resolve, getVideoCallTypingDelay(line)));
+                await new Promise(resolve => setTimeout(resolve, getVideoCallTypingDelay(entry.text)));
                 document.getElementById('video-typing-indicator')?.remove();
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
+                const senderLabelHtml = isGroupCall
+                    ? `<div style="font-size:10px; color:rgba(255,255,255,0.86); margin:0 0 4px 2px;">${entry.sender}</div>`
+                    : '';
                 const aiMsgHtml = `
                     <div class="call-msg-row" style="display: flex; justify-content: flex-start;">
-                        <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="video" data-round-id="${roundId}" data-text="${this._escapeHtml(line)}" style="max-width: 75%; padding: 8px 12px; background: rgba(255,255,255,0.85); color: #333; border-radius: 12px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${line}</div>
+                        <div style="max-width: 75%; display:flex; flex-direction:column; align-items:flex-start;">
+                            ${senderLabelHtml}
+                            <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="video" data-round-id="${roundId}" data-sender="${this._escapeHtml(entry.sender)}" data-text="${this._escapeHtml(entry.text)}" style="max-width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.85); color: #333; border-radius: 12px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${entry.text}</div>
+                        </div>
                     </div>
                 `;
                 messagesDiv.insertAdjacentHTML('beforeend', aiMsgHtml);
-                chatMessages.push({ from: contact.name, text: line });
-                bubbleIds.push(bubbleId);
+                chatMessages.push({ from: entry.sender, text: entry.text });
+                bubbleMetas.push({ id: bubbleId, sender: entry.sender, text: entry.text });
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
             }
 
             document.getElementById('video-typing-indicator')?.remove();
-            return bubbleIds;
+            return bubbleMetas;
         };
 
         // 聊天消息记录
@@ -6027,18 +6319,23 @@ renderChatRoom(chat) {
                 cleanedGreeting = cleanedGreeting.replace(/\[微信\][^:：]*[：:]\s*/g, ''); // 移除 [微信] xxx: 格式
                 cleanedGreeting = cleanedGreeting.replace(/^from\s+\S+[：:]\s*/gmi, ''); // 移除 from xxx: 格式
 
-                const msgLines = this._normalizeCallReplyLines(cleanedGreeting, contact.name);
+                const msgLines = this._parseCallReplyEntries(cleanedGreeting, {
+                    contactName: contact.name,
+                    participants: isGroupCall ? groupParticipants : [],
+                    groupName: contact.name,
+                    isGroupCall
+                });
                 const roundId = 'round_greeting_' + Date.now();
                 (async () => {
-                    const bubbleIds = await renderVideoAiLinesSequentially(msgLines, roundId);
+                    const bubbleMetas = await renderVideoAiLinesSequentially(msgLines, roundId);
                     this.bindCallBubbleClickEvents(messagesDiv);
                     const autoTTS = window.VirtualPhone?.storage?.get('phone-call-auto-tts') !== false;
                     this.currentTtsRound = roundId;
                     if (autoTTS) {
-                        for (let i = 0; i < bubbleIds.length; i++) {
+                        for (let i = 0; i < bubbleMetas.length; i++) {
                             if (this.currentTtsRound !== roundId) break;
-                            const bubble = document.getElementById(bubbleIds[i]);
-                            const ttsText = this._resolveCallTTSContent(msgLines[i], 'video');
+                            const bubble = document.getElementById(bubbleMetas[i].id);
+                            const ttsText = this._resolveCallTTSContent(bubbleMetas[i].text, 'video');
                             if (!ttsText) continue;
                             await this.playWechatCallTTS(ttsText, bubble);
                         }
@@ -6093,18 +6390,23 @@ renderChatRoom(chat) {
                 document.getElementById('video-typing-indicator')?.remove();
 
                 const roundId = 'round_' + Date.now();
-                const aiLines = this._normalizeCallReplyLines(aiReply, contact.name);
-                const renderLines = aiLines.length > 0 ? aiLines : ['...'];
-                const bubbleIds = await renderVideoAiLinesSequentially(renderLines, roundId);
+                const aiEntries = this._parseCallReplyEntries(aiReply, {
+                    contactName: contact.name,
+                    participants: isGroupCall ? groupParticipants : [],
+                    groupName: contact.name,
+                    isGroupCall
+                });
+                const renderLines = aiEntries.length > 0 ? aiEntries : [{ sender: contact.name, text: '...' }];
+                const bubbleMetas = await renderVideoAiLinesSequentially(renderLines, roundId);
 
                 this.bindCallBubbleClickEvents(messagesDiv);
                 const autoTTS = window.VirtualPhone?.storage?.get('phone-call-auto-tts') !== false;
                 this.currentTtsRound = roundId;
                 if (autoTTS) {
-                    for (let i = 0; i < bubbleIds.length; i++) {
+                    for (let i = 0; i < bubbleMetas.length; i++) {
                         if (this.currentTtsRound !== roundId) break;
-                        const bubble = document.getElementById(bubbleIds[i]);
-                        const ttsText = this._resolveCallTTSContent(renderLines[i], 'video');
+                        const bubble = document.getElementById(bubbleMetas[i].id);
+                        const ttsText = this._resolveCallTTSContent(bubbleMetas[i].text, 'video');
                         if (!ttsText) continue;
                         await this.playWechatCallTTS(ttsText, bubble);
                     }
@@ -6269,7 +6571,7 @@ renderChatRoom(chat) {
                 this.notifyAI(`刚才和你视频通话了${durationText}`);
             }
 
-            this.app.phoneShell.showNotification('通话结束', `视频通话 ${durationText}`, '📹');
+            this.app.phoneShell.showNotification('通话结束', `${isGroupCall ? '群视频通话' : '视频通话'} ${durationText}`, '📹');
             setTimeout(() => this.app.render(), 1000);
         });
     }
@@ -6283,8 +6585,30 @@ renderChatRoom(chat) {
             }
 
             const callTypeName = callType === 'video' ? '视频通话' : '语音通话';
+            const targetChat = this.app.currentChat;
+            const isGroupCall = targetChat?.type === 'group';
+            const groupParticipants = this._getGroupChatParticipants(targetChat);
 
-            const prompt = `【剧情事件】${context.name1 || '用户'}向你发起了${callTypeName}请求。
+            const prompt = isGroupCall
+                ? `【剧情事件】${context.name1 || '用户'}向微信群"${contactName}"发起了${callTypeName}请求。
+
+当前可接听成员白名单：
+${groupParticipants.join('、') || '暂无成员'}
+
+你需要根据当前剧情和群成员状态，决定是否有人接听。
+
+如果接听，请用<wechat>标签回复。允许1-4人发言，且每一句必须使用“发送者: 内容”格式：
+<wechat>
+接听
+张三: 第一位成员的开场白
+李四: 第二位成员的开场白
+</wechat>
+
+如果拒绝或无人接听，请回复：
+<wechat>
+拒绝
+</wechat>`.trim()
+                : `【剧情事件】${context.name1 || '用户'}向你发起了${callTypeName}请求。
 
 你现在扮演${contactName}，请根据当前剧情和角色性格决定是否接听。
 
@@ -6346,7 +6670,11 @@ renderChatRoom(chat) {
             } catch (e) { /* 忽略 JSON 解析失败 */ }
 
             // 最终容错：提取任何可用文本作为开场白
-            let firstMessage = this.extractContactMessageFromResponse(aiResponse, contactName);
+            let firstMessage = this.extractContactMessageFromResponse(aiResponse, contactName, {
+                isGroupCall,
+                groupName: contactName,
+                participants: groupParticipants
+            });
             if (!firstMessage) {
                 throw new Error('无法从AI回复中解析出有效的通话决策');
             }
@@ -6360,7 +6688,21 @@ renderChatRoom(chat) {
     }
 
     // 🔥 从AI回复中提取指定联系人的消息（处理 <wechat> 格式等）
-    extractContactMessageFromResponse(response, contactName) {
+    extractContactMessageFromResponse(response, contactName, options = {}) {
+        const isGroupCall = options?.isGroupCall === true;
+        const participants = Array.isArray(options?.participants) ? options.participants : [];
+        const groupName = String(options?.groupName || contactName || '').trim();
+
+        if (isGroupCall) {
+            const groupEntries = this._parseCallReplyEntries(response, {
+                contactName,
+                participants,
+                groupName,
+                isGroupCall
+            });
+            return groupEntries.map(item => `${item.sender}: ${item.text}`).join('\n');
+        }
+
         let messages = [];
         const normalizedResponse = String(response || '').replace(
             /^\s*(?:-{3,}|—{2,}|－{2,}|─{2,}|━{2,}|_{3,})\s*(.+?)\s*(?:-{3,}|—{2,}|－{2,}|─{2,}|━{2,}|_{3,})\s*$/gm,
@@ -6443,6 +6785,8 @@ renderChatRoom(chat) {
     async showIncomingVoiceCall(contact, queuedAiLines = []) {
         const safeContact = contact || this.app.currentChat || { name: '对方', avatar: '👤' };
         const contactName = safeContact.name || '对方';
+        const isGroupCall = safeContact?.type === 'group';
+        const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(safeContact) : '';
         const incomingHtml = `
         <div class="call-fullscreen">
         <div class="wechat-app" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 50%, #d299c2 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;">
@@ -6451,7 +6795,7 @@ renderChatRoom(chat) {
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
                     <button class="wechat-back-btn" id="overlay-hidden-back" style="display:none;"></button>
                 </div>
-                <div class="wechat-header-title" style="color: #333;">语音来电</div>
+                <div class="wechat-header-title" style="color: #333;">${isGroupCall ? '群语音来电' : '语音来电'}</div>
                 <div class="wechat-header-right"></div>
             </div>
 
@@ -6474,8 +6818,9 @@ renderChatRoom(chat) {
                 <div style="font-size: 18px; font-weight: 600; color: #333; margin-bottom: 6px;">
                     ${contactName}
                 </div>
+                ${groupParticipantsStrip}
                 <div style="font-size: 13px; color: rgba(0,0,0,0.52); margin-bottom: 44px;">
-                    邀请你语音通话...
+                    ${isGroupCall ? '邀请你加入群语音通话...' : '邀请你语音通话...'}
                 </div>
 
                 <div style="display: flex; align-items: center; gap: 36px;">
@@ -6554,7 +6899,7 @@ renderChatRoom(chat) {
 
             document.getElementById('incoming-call-reject-btn')?.addEventListener('click', () => {
                 this.addCallRecord('voice', 'rejected', '0分0秒');
-                this.app.phoneShell?.showNotification('已拒绝', `你拒绝了${contactName}的语音通话`, '📞');
+                this.app.phoneShell?.showNotification('已拒绝', `你拒绝了${contactName}的${isGroupCall ? '群语音通话' : '语音通话'}`, '📞');
                 this.app.render();
                 done(false);
             });
@@ -6573,6 +6918,8 @@ renderChatRoom(chat) {
     async showIncomingVideoCall(contact, queuedAiLines = []) {
         const safeContact = contact || this.app.currentChat || { name: '对方', avatar: '👤' };
         const contactName = safeContact.name || '对方';
+        const isGroupCall = safeContact?.type === 'group';
+        const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(safeContact) : '';
         const incomingHtml = `
         <div class="call-fullscreen">
         <div class="wechat-app" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 50%, #d299c2 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;">
@@ -6581,7 +6928,7 @@ renderChatRoom(chat) {
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
                     <button class="wechat-back-btn" id="overlay-hidden-back" style="display:none;"></button>
                 </div>
-                <div class="wechat-header-title" style="color: #333;">视频来电</div>
+                <div class="wechat-header-title" style="color: #333;">${isGroupCall ? '群视频来电' : '视频来电'}</div>
                 <div class="wechat-header-right"></div>
             </div>
 
@@ -6604,8 +6951,9 @@ renderChatRoom(chat) {
                 <div style="font-size: 18px; font-weight: 600; color: #333; margin-bottom: 6px;">
                     ${contactName}
                 </div>
+                ${groupParticipantsStrip}
                 <div style="font-size: 13px; color: rgba(0,0,0,0.52); margin-bottom: 44px;">
-                    邀请你视频通话...
+                    ${isGroupCall ? '邀请你加入群视频通话...' : '邀请你视频通话...'}
                 </div>
 
                 <div style="display: flex; align-items: center; gap: 36px;">
@@ -6684,7 +7032,7 @@ renderChatRoom(chat) {
 
             document.getElementById('incoming-call-reject-btn')?.addEventListener('click', () => {
                 this.addCallRecord('video', 'rejected', '0分0秒');
-                this.app.phoneShell?.showNotification('已拒绝', `你拒绝了${contactName}的视频通话`, '📞');
+                this.app.phoneShell?.showNotification('已拒绝', `你拒绝了${contactName}的${isGroupCall ? '群视频通话' : '视频通话'}`, '📞');
                 this.app.render();
                 done(false);
             });
@@ -6712,6 +7060,8 @@ renderChatRoom(chat) {
         }
 
         const contact = this.app.currentChat;
+        const isGroupCall = contact?.type === 'group';
+        const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
 
         // 呼叫界面 - 白色玻璃风格
         const callingHtml = `
@@ -6722,7 +7072,7 @@ renderChatRoom(chat) {
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
                     <button class="wechat-back-btn" id="overlay-hidden-back" style="display:none;"></button>
                 </div>
-                <div class="wechat-header-title" style="color: #333;">语音通话</div>
+                <div class="wechat-header-title" style="color: #333;">${isGroupCall ? '群语音通话' : '语音通话'}</div>
                 <div class="wechat-header-right"></div>
             </div>
 
@@ -6745,9 +7095,10 @@ renderChatRoom(chat) {
                 <div style="font-size: 18px; font-weight: 600; color: #333; margin-bottom: 6px;">
                     ${contact.name}
                 </div>
+                ${groupParticipantsStrip}
 
                 <div id="call-status" style="font-size: 13px; color: rgba(0,0,0,0.5); margin-bottom: 40px;">
-                    正在呼叫...
+                    ${isGroupCall ? '正在呼叫群成员...' : '正在呼叫...'}
                 </div>
 
                 <button id="cancel-call-btn" style="
@@ -6817,7 +7168,7 @@ renderChatRoom(chat) {
                 stStopBtn.click();
             }
             this.addCallRecord('voice', 'cancelled', '0分0秒');
-            this.app.phoneShell.showNotification('已取消', '语音通话已取消', '📞');
+            this.app.phoneShell.showNotification('已取消', isGroupCall ? '群语音通话已取消' : '语音通话已取消', '📞');
             setTimeout(() => this.app.render(), 500);
         });
 
@@ -6834,14 +7185,14 @@ renderChatRoom(chat) {
             if (decision.action === 'reject') {
                 const statusDiv = document.getElementById('call-status');
                 if (statusDiv) {
-                    statusDiv.textContent = '对方已拒绝';
+                    statusDiv.textContent = isGroupCall ? '群成员未接听' : '对方已拒绝';
                     statusDiv.style.color = '#ff3b30';
                 }
 
                 this.addCallRecord('voice', 'rejected', '0分0秒');
 
                 setTimeout(() => {
-                    this.app.phoneShell.showNotification('通话结束', '对方拒绝了语音通话', '❌');
+                    this.app.phoneShell.showNotification('通话结束', isGroupCall ? '群成员未接听语音通话' : '对方拒绝了语音通话', '❌');
                     setTimeout(() => this.app.render(), 1000);
                 }, 2000);
 
@@ -6892,9 +7243,22 @@ renderChatRoom(chat) {
 
             const callTypeName = callType === 'video' ? '视频' : '语音';
             const userName = context.name1 || '用户';
+            const targetChat = this.app.currentChat;
+            const isGroupCall = targetChat?.type === 'group';
+            const groupParticipants = this._getGroupChatParticipants(targetChat);
 
             // 🔥 精简的通话提示词 - 只包含必要信息
-            const prompt = `【${callTypeName}通话中】
+            const prompt = isGroupCall
+                ? `【微信群${callTypeName}通话中】
+当前群聊：${contactName}
+可发言成员：${groupParticipants.join('、') || '暂无成员'}
+${userName}说：${message}
+
+最近通话记录：
+${chatHistory.slice(-8).map(h => `${h.from === 'me' ? userName : h.from}: ${h.text}`).join('\n')}
+
+请以群成员的身份继续通话。回复时必须使用“发送者: 内容”格式，且发送者必须来自可发言成员名单。`
+                : `【${callTypeName}通话中】
 ${userName}说：${message}
 
 通话记录：
@@ -6906,11 +7270,28 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             const aiResponse = await this.sendToAIHidden(prompt, context, callType);
 
             // 🔥 使用统一方法提取当前联系人的消息
-            let cleanedResponse = this.extractContactMessageFromResponse(aiResponse, contactName);
+            let cleanedResponse = this.extractContactMessageFromResponse(aiResponse, contactName, {
+                isGroupCall,
+                groupName: contactName,
+                participants: groupParticipants
+            });
 
             // 如果提取失败，尝试简单清理
             if (!cleanedResponse) {
                 cleanedResponse = aiResponse.trim();
+            }
+
+            if (isGroupCall) {
+                const groupEntries = this._parseCallReplyEntries(cleanedResponse, {
+                    contactName,
+                    participants: groupParticipants,
+                    groupName: contactName,
+                    isGroupCall
+                });
+                if (groupEntries.length > 0) {
+                    return groupEntries.map(item => `${item.sender}: ${item.text}`).join('\n');
+                }
+                return String(cleanedResponse || '').trim() || '...';
             }
 
             const lines = this._normalizeCallReplyLines(cleanedResponse, contactName);
@@ -6934,6 +7315,9 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         const callStartTime = timeManager
             ? timeManager.getCurrentStoryTime()
             : { time: '21:30', date: '2044年10月28日' };
+        const isGroupCall = contact?.type === 'group';
+        const groupParticipants = this._getGroupChatParticipants(contact);
+        const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
 
         const html = `
         <div class="call-fullscreen">
@@ -6944,7 +7328,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                     <button class="wechat-back-btn" id="overlay-hidden-back" style="display:none;"></button>
                 </div>
                 <div class="wechat-header-title" style="color: #333;">
-                    <span class="wechat-header-title-text">${contact.name}<span class="status-dot dot-green" id="voice-call-status-dot"></span></span>
+                    <span class="wechat-header-title-text">${contact.name}${isGroupCall ? '<span style="font-size:11px; margin-left:4px; opacity:0.78;">(群语音)</span>' : ''}<span class="status-dot dot-green" id="voice-call-status-dot"></span></span>
                 </div>
                 <div class="wechat-header-right">
                     <span id="call-timer" style="font-size: 13px; color: #666;">00:00</span>
@@ -6971,7 +7355,8 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                     ">
                         ${this.app.renderAvatar(contact.avatar, '👤', contact.name)}
                     </div>
-                    <div style="font-size: 9px; color: rgba(0,0,0,0.5); margin-top: 3px;">语音通话中</div>
+                    <div style="font-size: 9px; color: rgba(0,0,0,0.5); margin-top: 3px;">${isGroupCall ? '群语音通话中' : '语音通话中'}</div>
+                    ${groupParticipantsStrip}
                 </div>
 
                 <!-- 中间：聊天消息区域 -->
@@ -7117,15 +7502,20 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         };
 
         const renderVoiceAiLinesSequentially = async (lines, roundId) => {
-            const bubbleIds = [];
+            const bubbleMetas = [];
             const renderLines = Array.isArray(lines) ? lines : [];
 
             for (let i = 0; i < renderLines.length; i++) {
                 const messagesDiv = getVoiceMessages();
                 if (!messagesDiv) break;
 
-                const line = String(renderLines[i] || '').trim();
-                if (!line) continue;
+                const entry = typeof renderLines[i] === 'string'
+                    ? { sender: contact.name, text: String(renderLines[i] || '').trim() }
+                    : {
+                        sender: String(renderLines[i]?.sender || contact.name).trim() || contact.name,
+                        text: String(renderLines[i]?.text || '').trim()
+                    };
+                if (!entry.text) continue;
 
                 document.getElementById('voice-typing-indicator')?.remove();
                 const typingHtml = `
@@ -7136,23 +7526,29 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 messagesDiv.insertAdjacentHTML('beforeend', typingHtml);
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
-                await new Promise(resolve => setTimeout(resolve, getVoiceCallTypingDelay(line)));
+                await new Promise(resolve => setTimeout(resolve, getVoiceCallTypingDelay(entry.text)));
                 document.getElementById('voice-typing-indicator')?.remove();
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
+                const senderLabelHtml = isGroupCall
+                    ? `<div style="font-size:10px; color:rgba(0,0,0,0.48); margin:0 0 4px 2px;">${entry.sender}</div>`
+                    : '';
                 const aiMsgHtml = `
                     <div class="call-msg-row" style="display: flex; justify-content: flex-start;">
-                        <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="voice" data-round-id="${roundId}" data-text="${this._escapeHtml(line)}" style="max-width: 80%; padding: 6px 10px; background: rgba(255,255,255,0.85); color: #333; border-radius: 10px; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${line}</div>
+                        <div style="max-width: 80%; display:flex; flex-direction:column; align-items:flex-start;">
+                            ${senderLabelHtml}
+                            <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="voice" data-round-id="${roundId}" data-sender="${this._escapeHtml(entry.sender)}" data-text="${this._escapeHtml(entry.text)}" style="max-width: 100%; padding: 6px 10px; background: rgba(255,255,255,0.85); color: #333; border-radius: 10px; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${entry.text}</div>
+                        </div>
                     </div>
                 `;
                 messagesDiv.insertAdjacentHTML('beforeend', aiMsgHtml);
-                chatMessages.push({ from: contact.name, text: line });
-                bubbleIds.push(bubbleId);
+                chatMessages.push({ from: entry.sender, text: entry.text });
+                bubbleMetas.push({ id: bubbleId, sender: entry.sender, text: entry.text });
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
             }
 
             document.getElementById('voice-typing-indicator')?.remove();
-            return bubbleIds;
+            return bubbleMetas;
         };
 
         // 计时器
@@ -7180,18 +7576,23 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 cleanedGreeting = cleanedGreeting.replace(/\[微信\][^:：]*[：:]\s*/g, '');
                 cleanedGreeting = cleanedGreeting.replace(/^from\s+\S+[：:]\s*/gmi, '');
 
-                const msgLines = this._normalizeCallReplyLines(cleanedGreeting, contact.name);
+                const msgLines = this._parseCallReplyEntries(cleanedGreeting, {
+                    contactName: contact.name,
+                    participants: isGroupCall ? groupParticipants : [],
+                    groupName: contact.name,
+                    isGroupCall
+                });
                 const roundId = 'round_greeting_' + Date.now();
                 (async () => {
-                    const bubbleIds = await renderVoiceAiLinesSequentially(msgLines, roundId);
+                    const bubbleMetas = await renderVoiceAiLinesSequentially(msgLines, roundId);
                     this.bindCallBubbleClickEvents(messagesDiv);
                     const autoTTS = window.VirtualPhone?.storage?.get('phone-call-auto-tts') !== false;
                     this.currentTtsRound = roundId;
                     if (autoTTS) {
-                        for (let i = 0; i < bubbleIds.length; i++) {
+                        for (let i = 0; i < bubbleMetas.length; i++) {
                             if (this.currentTtsRound !== roundId) break;
-                            const bubble = document.getElementById(bubbleIds[i]);
-                            await this.playWechatCallTTS(msgLines[i], bubble);
+                            const bubble = document.getElementById(bubbleMetas[i].id);
+                            await this.playWechatCallTTS(bubbleMetas[i].text, bubble);
                         }
                     }
                 })();
@@ -7232,18 +7633,23 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 document.getElementById('voice-typing-indicator')?.remove();
 
                 const roundId = 'round_' + Date.now();
-                const aiLines = this._normalizeCallReplyLines(aiReply, contact.name);
-                const renderLines = aiLines.length > 0 ? aiLines : ['...'];
-                const bubbleIds = await renderVoiceAiLinesSequentially(renderLines, roundId);
+                const aiEntries = this._parseCallReplyEntries(aiReply, {
+                    contactName: contact.name,
+                    participants: isGroupCall ? groupParticipants : [],
+                    groupName: contact.name,
+                    isGroupCall
+                });
+                const renderLines = aiEntries.length > 0 ? aiEntries : [{ sender: contact.name, text: '...' }];
+                const bubbleMetas = await renderVoiceAiLinesSequentially(renderLines, roundId);
 
                 this.bindCallBubbleClickEvents(messagesDiv);
                 const autoTTS = window.VirtualPhone?.storage?.get('phone-call-auto-tts') !== false;
                 this.currentTtsRound = roundId;
                 if (autoTTS) {
-                    for (let i = 0; i < bubbleIds.length; i++) {
+                    for (let i = 0; i < bubbleMetas.length; i++) {
                         if (this.currentTtsRound !== roundId) break;
-                        const bubble = document.getElementById(bubbleIds[i]);
-                        await this.playWechatCallTTS(renderLines[i], bubble);
+                        const bubble = document.getElementById(bubbleMetas[i].id);
+                        await this.playWechatCallTTS(bubbleMetas[i].text, bubble);
                     }
                 }
             } catch (error) {
@@ -7405,7 +7811,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 this.notifyAI(`刚才和你语音通话了${durationText}`);
             }
 
-            this.app.phoneShell.showNotification('通话结束', `语音通话 ${durationText}`, '📞');
+            this.app.phoneShell.showNotification('通话结束', `${isGroupCall ? '群语音通话' : '语音通话'} ${durationText}`, '📞');
             setTimeout(() => this.app.render(), 1000);
         });
     }
@@ -8497,7 +8903,25 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         const apiKey = storage.get('phone-tts-key') || '';
         const apiUrl = storage.get('phone-tts-url');
         const model = storage.get('phone-tts-model');
-        const voice = storage.get('phone-tts-voice');
+        // 🔥 核心修改：拦截通话全局音色，强制要求专属音色
+        let finalVoice = this._getGlobalTtsVoice();
+        const isMe = bubble && bubble.parentElement && bubble.parentElement.style.justifyContent === 'flex-end';
+        
+        if (!isMe) {
+            // 通话中对方说话，取当前聊天对象的名字
+            const senderName = bubble ? (bubble.dataset.sender || this.app.currentChat?.name) : this.app.currentChat?.name;
+            if (senderName) {
+                const { voice } = this._resolveWechatBoundVoiceByName(senderName);
+                if (voice) {
+                    finalVoice = voice;
+                } else {
+                    // ❌ 未绑定音色，拦截提示并跳过当前语音的生成
+                    this.app.phoneShell.showNotification('静音警告', `[${senderName}] 未绑定专属音色，无法发声`, '⚠️');
+                    return; 
+                }
+            }
+        }
+        const voice = finalVoice;
 
         if (!apiKey || !apiUrl) return;
 

@@ -290,12 +290,57 @@ export class ContactsView {
                                 border-radius: 6px;
                                 font-size: 13px;
                                 box-sizing: border-box;
+                                margin-bottom: 6px;
                             ">
+                            <div style="font-size: 11px; color: #999;">备注请直接写在昵称里（例如：张三（同事））</div>
                         </div>
 
-                        <div style="font-size: 11px; color: #999;">
-                            备注请直接写在昵称里（例如：张三（同事））
+                        <!-- 🔥 新增：专属音色绑定 -->
+                        <div style="margin-top: 15px; border-top: 1px solid #f0f0f0; padding-top: 15px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <div style="font-size: 12px; color: #000; font-weight: 500;">🎙️ 专属语音音色</div>
+                               <!-- 获取历史音色记录（终极兼容版） -->
+                                <select id="edit-contact-tts-select" style="border:none; background:#f5f5f5; border-radius:4px; font-size:11px; padding:2px 4px; color:#666; outline:none; max-width: 100px;">
+                                    <option value="">-- 历史音色 --</option>
+                                    ${(() => {
+                                        try {
+                                            const store = this.app.storage;
+                                            // 兼容不同的命名习惯（横杠或下划线）
+                                            let raw = store.get('phone-tts-voice-history') || store.get('phone_tts_voice_history');
+                                            if (!raw) return '';
+                                            
+                                            let historyList = [];
+                                            // 兼容数据格式：可能是 JSON 数组，也可能是逗号分隔的字符串
+                                            if (typeof raw === 'string') {
+                                                if (raw.startsWith('[')) {
+                                                    historyList = JSON.parse(raw);
+                                                } else {
+                                                    historyList = raw.split(',').map(s => s.trim()).filter(Boolean);
+                                                }
+                                            } else if (Array.isArray(raw)) {
+                                                historyList = raw;
+                                            }
+                                            // 去重并生成选项
+                                            return [...new Set(historyList)].map(v => `<option value="${v}">${v}</option>`).join('');
+                                        } catch(e) { 
+                                            console.warn('读取音色历史失败:', e);
+                                            return ''; 
+                                        }
+                                    })()}
+                                </select>
+                            </div>
+                            <input type="text" id="edit-contact-tts-input" placeholder="请填入 TTS Voice ID"
+                                   value="${contact.ttsVoice || ''}" style="
+                                width: 100%;
+                                padding: 8px 10px;
+                                border: 1px solid #e5e5e5;
+                                border-radius: 6px;
+                                font-size: 13px;
+                                box-sizing: border-box;
+                            ">
+                            <div style="font-size: 10px; color: #ff3b30; margin-top: 4px;">未绑定音色时，该角色将无法发送/接听语音及视频通话。</div>
                         </div>
+
                     </div>
 
                     <button id="save-edit-contact-btn" style="
@@ -320,6 +365,14 @@ export class ContactsView {
         document.getElementById('back-from-edit-contact')?.addEventListener('click', () => {
             this.app.currentView = 'contacts';
             this.app.render();
+        });
+
+        // 🔥 下拉框选择后，自动把选中的音色填入输入框
+        document.getElementById('edit-contact-tts-select')?.addEventListener('change', (e) => {
+            const selectedVoice = e.target.value;
+            if (selectedVoice) {
+                document.getElementById('edit-contact-tts-input').value = selectedVoice;
+            }
         });
 
         document.getElementById('upload-edit-contact-avatar')?.addEventListener('click', () => {
@@ -392,10 +445,14 @@ export class ContactsView {
                 return;
             }
 
+            // 🔥 新增：读取音色 ID
+            const ttsVoice = document.getElementById('edit-contact-tts-input').value.trim();
+
             this.app.wechatData.updateContact(contactId, {
                 name: name,
                 avatar: selectedAvatar,
-                letter: this.app.wechatData.getFirstLetter(name)
+                letter: this.app.wechatData.getFirstLetter(name),
+                ttsVoice: ttsVoice // 🔥 保存音色
             });
 
             this.app.wechatData.syncContactAvatar(contactId, selectedAvatar);
