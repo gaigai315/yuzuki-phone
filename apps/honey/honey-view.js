@@ -4364,11 +4364,18 @@ export class HoneyView {
         const input = liveRoot.querySelector('#honey-chat-input');
         if (!input) return;
 
-        // 🔥 核心修复：彻底抛弃导致黑屏崩溃的视觉视口计算，
         // 采用和微信完全一致的原生 Flexbox 自动适应 + body 状态标记方案
         const handleFocus = () => {
             if (window.innerWidth <= 500) {
                 document.body.classList.add('phone-input-active');
+                
+                // 🔥 延迟 300 毫秒等键盘完全升起后，呼叫浏览器原生 API，强制把输入框推入可视区域
+                setTimeout(() => {
+                    const bottomBar = liveRoot.querySelector('.honey-live-bottom');
+                    if (bottomBar) {
+                        bottomBar.scrollIntoView({ block: 'end', inline: 'nearest' });
+                    }
+                }, 300);
             }
         };
 

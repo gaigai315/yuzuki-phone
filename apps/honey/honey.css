@@ -3407,3 +3407,8 @@
 .phone-body-panel-honey .battery-body-v {
     border-color: rgba(255, 216, 232, 0.95) !important;
 }
+
+/* 🔥 终极输入法防遮挡补偿：当输入法弹起时，强行给底部垫高 24px */
+body.phone-input-active .honey-page-live .honey-live-bottom {
+    padding-bottom: 24px !important;
+}
