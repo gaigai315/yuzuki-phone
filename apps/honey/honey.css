@@ -2088,9 +2088,11 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    pointer-events: none;
+    pointer-events: none; /* 外框穿透 */
     width: min(92%, 260px);
     max-width: calc(100% - 20px);
+    /* 🔥 修复1：去掉 height 的动画，只过渡 bottom，防止整个容器抽搐 */
+    transition: bottom 0.35s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .honey-live-user-scene-preview {
@@ -2131,12 +2133,53 @@
     color: #fff0f8 !important;
 }
 
+/* 允许弹幕列表自身接收点击 */
 .honey-live-gifts-list {
+    pointer-events: auto;
+    cursor: pointer;
+    border-radius: 8px;
+    /* 🔥 修复2：只过渡 max-height 和背景，使用平滑曲线，绝对不加 height 过渡 */
+    transition: max-height 0.35s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.3s, backdrop-filter 0.3s;
     overflow: hidden;
     max-height: calc(
         var(--honey-gift-row-height, 34px) * var(--honey-gift-visible-rows, 2)
         + 6px * (var(--honey-gift-visible-rows, 2) - 1)
     );
+}
+
+/* 🔥 展开状态下的外框（不设 height，靠内部子元素撑开） */
+.honey-live-gifts.is-expanded {
+    bottom: 60px; /* 稍微抬高，避开底部的输入框 */
+    pointer-events: auto; /* 展开后整个区域拦截点击 */
+    z-index: 300; /* 提高层级，盖住其他UI */
+}
+
+/* 展开后，内部列表允许上下滑动，并加入磨砂玻璃背景 */
+.honey-live-gifts.is-expanded .honey-live-gifts-list {
+    /* 🔥 修复3：只改变 max-height 为 45vh，去掉 height: 100% 的毒瘤 */
+    max-height: 45vh !important;
+    overflow-y: auto;
+    /* 🔥 移动端原生防穿透手势 */
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 10px;
+    border: 1px solid rgba(255, 133, 181, 0.35);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* 隐藏展开后的滚动条，保持美观 */
+.honey-live-gifts.is-expanded .honey-live-gifts-list::-webkit-scrollbar {
+    display: none;
+}
+
+/* 展开时：强制停止原本的自动向上滚动动画，允许用户自由手滑 */
+.honey-live-gifts.is-expanded .honey-live-gifts-track {
+    animation: none !important;
+    transform: translateY(0) !important;
 }
 
 .honey-live-gifts-track {

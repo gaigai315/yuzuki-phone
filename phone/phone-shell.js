@@ -207,7 +207,7 @@ export class PhoneShell {
                 '.contact-list', '.chat-list', '.diary-toc-list', '.diary-page-body',
                 '.diary-settings-body', '.diary-edit-body',
                 '.music-settings-body',
-                '.honey-gift-picker',
+                '.honey-gift-picker','.honey-live-gifts-list',
                 '.honey-scene-desc', '#honey-ui-scene',
                 '.honey-recommend-wrap', '.honey-content', '#honey-custom-video-list',
                 '.honey-follow-video-modal-panel', '.honey-follow-video-modal-list',

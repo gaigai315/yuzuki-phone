@@ -2038,6 +2038,25 @@ export class HoneyView {
             }
         });
 
+        // 🔥 新增：弹幕区域点击展开/收起交互
+        const giftsWrap = root.querySelector('#honey-live-gifts');
+        if (giftsWrap) {
+            giftsWrap.addEventListener('click', (e) => {
+                e.stopPropagation();
+                giftsWrap.classList.toggle('is-expanded');
+                
+                // 当展开时，自动把滚动条拉到底部，让用户优先看到最新的弹幕
+                if (giftsWrap.classList.contains('is-expanded')) {
+                    const listEl = giftsWrap.querySelector('.honey-live-gifts-list');
+                    if (listEl) {
+                        setTimeout(() => {
+                            listEl.scrollTop = listEl.scrollHeight;
+                        }, 50);
+                    }
+                }
+            });
+        }
+
         root.querySelector('#honey-chat-input')?.addEventListener('keydown', async (e) => {
             if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
             e.preventDefault();
