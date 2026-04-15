@@ -106,25 +106,36 @@ if (window.GGP_Loaded) {
 
         const startTime = performance.now();
 
-        // 🔥 同时加载 3 个最核心的模块
+        // 🔥 彻底废弃懒加载，将最核心的5个大脑模块在启动时一口气全部读入内存！
         const [
             appsModule,
             storageModule,
-            apiManagerModule // 🔥 新增
+            apiManagerModule,
+            timeManagerModule,      // 👈 新增：时间推算引擎
+            promptManagerModule     // 👈 新增：全局提示词中枢
         ] = await Promise.all([
             import('./config/apps.js'),
             import('./config/storage.js'),
-            import('./config/api-manager.js') // 🔥 新增
+            import('./config/api-manager.js'),
+            import('./config/time-manager.js'),    // 👈 取消懒加载
+            import('./config/prompt-manager.js')   // 👈 取消懒加载
         ]);
 
         APPS = appsModule.APPS;
         PhoneStorage = storageModule.PhoneStorage;
-        ApiManager = apiManagerModule.ApiManager; // 🔥 新增
+        ApiManager = apiManagerModule.ApiManager;
+        TimeManager = timeManagerModule.TimeManager;       // 👈 绑定类
+        PromptManager = promptManagerModule.PromptManager; // 👈 绑定类
 
         // 初始化核心对象
         currentApps = JSON.parse(JSON.stringify(APPS));
         storage = new PhoneStorage();
         settings = storage.loadSettings();
+
+        // 🔥 立即实例化时间和提示词，拔除任何延迟隐患！
+        timeManager = new TimeManager(storage);
+        promptManager = new PromptManager(storage);
+        promptManager.ensureLoaded(); // 强制把所有提示词立即读入内存待命
 
         modulesLoaded = true;
 
@@ -163,31 +174,13 @@ if (window.GGP_Loaded) {
 
     // 🔥 按需加载 TimeManager
     async function loadTimeManager() {
-        if (!TimeManager) {
-            const module = await import('./config/time-manager.js');
-            TimeManager = module.TimeManager;
-        }
-        if (!timeManager && storage) {
-            timeManager = new TimeManager(storage);
-            if (window.VirtualPhone) {
-                window.VirtualPhone.timeManager = timeManager;
-            }
-        }
+        if (window.VirtualPhone) window.VirtualPhone.timeManager = timeManager;
         return timeManager;
     }
 
     // 🔥 按需加载 PromptManager
     async function loadPromptManager() {
-        if (!PromptManager) {
-            const module = await import('./config/prompt-manager.js');
-            PromptManager = module.PromptManager;
-        }
-        if (!promptManager && storage) {
-            promptManager = new PromptManager(storage);
-            if (window.VirtualPhone) {
-                window.VirtualPhone.promptManager = promptManager;
-            }
-        }
+        if (window.VirtualPhone) window.VirtualPhone.promptManager = promptManager;
         return promptManager;
     }
 
