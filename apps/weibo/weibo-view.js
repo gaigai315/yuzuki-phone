@@ -108,7 +108,7 @@ export class WeiboView {
         const nickname = profile.nickname || userName;
         const following = profile.following ?? 25;
         const followers = profile.followers ?? 0;
-        const postsCount = this.app.weiboData.getRecommendPosts().filter(p => p.isUserPost).length;
+        const postsCount = this.app.weiboData.getUserPosts().length;
         const ipLocation = profile.ipLocation || 'IP属地：未知';
         const verifyText = profile.verifyText || '微博个人认证';
 
@@ -247,7 +247,7 @@ export class WeiboView {
     // ========================================
 
     renderRecommendList() {
-        const posts = this.app.weiboData.getRecommendPosts();
+        const posts = this.app.weiboData.getFeedPosts();
 
         return `
             <div class="weibo-recommend-container">
@@ -270,7 +270,7 @@ export class WeiboView {
     // ========================================
 
     renderMyPostsList() {
-        const posts = this.app.weiboData.getRecommendPosts().filter(p => p.isUserPost);
+        const posts = this.app.weiboData.getUserPosts();
 
         return `
             <div class="weibo-mypost-container">
@@ -388,83 +388,110 @@ export class WeiboView {
                     <div class="weibo-post-images weibo-img-grid-${Math.min(images.length, 9)}">
                         ${images.map((img, index) => {
                             const imageStr = String(img || '').trim();
-                            const isDirectImage = /^data:image|^https?:\/\/|^\/backgrounds\//i.test(imageStr);
+                            const parsedMedia = this._parseWeiboMediaItem(imageStr);
+                            const mediaType = parsedMedia.mediaType;
+                            const realUrl = parsedMedia.realUrl;
+                            const isVideoProcessed = parsedMedia.isVideoProcessed;
+                            const isDirectImage = parsedMedia.isDirectImage;
+                            const imageState = this._getWeiboPostImageState(post, index);
 
-                            // 统一提取“图片背后的字”
-                            let promptText = imageStr.replace(/\[图片\][（(]?|[）)]?|[\[\]【】]/g, '').trim();
-                            if (/^data:image|^https?:\/\/|^\/backgrounds\//i.test(promptText)) {
-                                promptText = '';
-                            }
+                            // 获取文字描述
+                            let promptText = parsedMedia.promptText || String(imageState?.prompt || '').trim();
                             if (!promptText || promptText.length < 2) {
-                                promptText = "分享图片";
+                                promptText = "分享" + mediaType;
                             }
                             const safePromptText = this._escapeHtml(promptText);
+                            const generationStatus = isDirectImage
+                                ? 'done'
+                                : (String(imageState?.status || '').trim() || 'idle');
+                            const generationError = this._escapeHtml(String(imageState?.error || '').trim());
 
-                            // 对描述图使用稳定随机配图；对真实图片URL使用原图
-                            const seed = encodeURIComponent(post.id + '_' + index);
-                            const displayUrl = isDirectImage ? imageStr : `https://picsum.photos/seed/${seed}/400/400`;
-                            
-                            return `
-                            <div class="weibo-post-img-container" style="position: relative; width: 100%; height: 100%; aspect-ratio: 1;">
-                                <img src="${displayUrl}" class="weibo-post-img-real" 
-                                     style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px; background: #f9f9f9; cursor: pointer;"
-                                     title="点击查看图片描述"
-                                     onclick="this.style.display='none'; const textLayer = this.closest('.weibo-post-img-container')?.querySelector('.weibo-post-img-text'); if (textLayer) textLayer.style.display='block';"
-                                     onerror="this.style.display='none'; const textLayer = this.closest('.weibo-post-img-container')?.querySelector('.weibo-post-img-text'); if (textLayer) textLayer.style.display='block';">
+                            if (isDirectImage) {
+                                // 已经生成成功/或直接上传的真实图片 URL
+                                return `
+                                <div class="weibo-post-img-container weibo-image-prompt-box" style="position: relative; width: 100%; height: 100%; aspect-ratio: 1;">
+                                    <div class="weibo-image-prompt-front-panel" style="width: 100%; height: 100%; aspect-ratio: 1; border-radius: 4px; overflow: hidden; position: relative;">
+                                        <img src="${realUrl}" class="weibo-post-img-real" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px; background: #f9f9f9;">
+                                        ${isVideoProcessed ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none;"><div style="width:32px; height:32px; border-radius:50%; background:rgba(0,0,0,0.5); border:1.5px solid #fff; display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; padding-left:3px;"><i class="fa-solid fa-play"></i></div></div>` : ''}
+                                        <div class="weibo-image-prompt-show-back" title="查看${mediaType}描述" style="
+                                            position:absolute; right:4px; bottom:4px; background:rgba(0,0,0,0.55); color:#fff;
+                                            border-radius:999px; padding:2px 6px; font-size:9px; line-height:1; cursor:pointer;
+                                            box-shadow:0 2px 8px rgba(0,0,0,0.18);
+                                        ">描述</div>
+                                    </div>
+                                    <div class="weibo-image-prompt-back-panel" style="
+                                        display:none; width: 100%; height: 100%; aspect-ratio: 1; background: #f7f7f7;
+                                        border: 1px dashed #e0e0e0; border-radius: 4px; box-sizing: border-box;
+                                        position: relative; overflow: hidden;
+                                    ">
+                                        <div style="width: 100%; height: 100%; padding: 6px; padding-bottom: 20px; overflow-y: auto; box-sizing: border-box; display: flex;">
+                                            <div style="margin: auto; font-size: 10px; color: #666; line-height: 1.4; word-break: break-word; white-space: pre-wrap; text-align: center; width: 100%;">${safePromptText}</div>
+                                        </div>
+                                        <div class="weibo-image-prompt-restore" title="恢复卡片正面" style="
+                                            position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,0.5); color:#fff;
+                                            border-radius:3px; padding:2px 4px; font-size:9px; cursor:pointer; z-index:10; display:flex; align-items:center; gap:2px;
+                                        ">${isVideoProcessed ? '<i class="fa-solid fa-video"></i>' : '<i class="fa-regular fa-image"></i>'} 恢复</div>
+                                    </div>
+                                </div>`;
+                            } else {
+                                // 🔥 待生成的生图卡片
+                                const isVideo = mediaType === '视频';
+                                const actionText = isVideo ? '生成视频封面' : '生成图片';
+                                const defaultIcon = isVideo ? '<i class="fa-solid fa-video"></i>' : '<i class="fa-regular fa-image"></i>';
+                                const previewSeed = encodeURIComponent(`${post.id || 'weibo'}_${index}_${promptText}`);
+                                const previewUrl = `https://picsum.photos/seed/${previewSeed}/480/480`;
+                                const statusText = generationStatus === 'loading'
+                                    ? '正在生成...'
+                                    : generationStatus === 'failed'
+                                        ? '生成失败，点击重试'
+                                        : actionText;
+                                const displayIcon = generationStatus === 'loading'
+                                    ? '<i class="fa-solid fa-spinner fa-spin"></i>'
+                                    : defaultIcon;
                                 
-                                <div class="weibo-post-img-text" style="
-                                    display: none; 
-                                    width: 100%; 
-                                    height: 100%; 
-                                    background: #f7f7f7; 
-                                    border: 1px dashed #e0e0e0; 
-                                    border-radius: 4px; 
-                                    box-sizing: border-box; 
-                                    position: relative;
-                                ">
-                                    <!-- 文字内容容器（开启 Flex 布局以实现居中） -->
-                                    <div style="
-                                        width: 100%;
-                                        height: 100%;
-                                        padding: 8px;
-                                        padding-bottom: 24px; /* 给底部按钮留出空间 */
-                                        overflow-y: auto; 
-                                        box-sizing: border-box;
-                                        display: flex;
+                                return `
+                                <div class="weibo-post-img-container weibo-image-prompt-box" style="position: relative; width: 100%; height: 100%; aspect-ratio: 1;">
+                                    <div class="weibo-image-prompt-front-panel" style="
+                                        width: 100%; height: 100%; aspect-ratio: 1; border-radius: 4px; overflow: hidden; position: relative;
+                                        background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(18,18,24,0.24)), linear-gradient(135deg, rgba(255, 160, 197, 0.24), rgba(130, 108, 188, 0.2));
+                                        border: 1px solid rgba(255, 205, 228, 0.34); box-sizing: border-box; cursor: ${generationStatus === 'loading' ? 'progress' : 'pointer'};
                                     ">
-                                        <!-- 真正的文字文本（margin: auto 是垂直/水平居中的魔法，text-align: center 让多行文字也居中） -->
-                                        <div style="
-                                            margin: auto; 
-                                            font-size: 11px; 
-                                            color: #666; 
-                                            line-height: 1.5; 
-                                        word-break: break-word;
-                                        white-space: pre-wrap;
-                                        text-align: center;
-                                        width: 100%;
-                                        ">${safePromptText}</div>
+                                        <img src="${previewUrl}" alt="${safePromptText}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; filter:${generationStatus === 'failed' ? 'grayscale(0.12) saturate(0.88)' : 'none'};">
+                                        <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.48));"></div>
+                                        <div class="weibo-image-prompt-generate" data-post-id="${post.id}" data-index="${index}" data-prompt="${this._escapeAttr(promptText)}" data-type="${mediaType}" title="${generationStatus === 'failed' ? '点击重试' : `点击${actionText}`}" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:12px; box-sizing:border-box;">
+                                            <div class="generate-icon-container" style="
+                                                width:36px; height:36px; border-radius:10px;
+                                                display:flex; align-items:center; justify-content:center;
+                                                background:rgba(255,255,255,0.18); border:1px solid rgba(255,255,255,0.26);
+                                                color:#fff; font-size:16px; box-shadow:0 4px 10px rgba(0,0,0,0.12);
+                                            ">${displayIcon}</div>
+                                            <div class="generate-text-container" style="font-size:10px; line-height:1.2; color:#fff; text-align:center; font-weight:600;">${statusText}</div>
+                                            ${generationStatus === 'failed' && generationError ? `
+                                                <div style="font-size:9px; line-height:1.25; color:rgba(255,255,255,0.88); text-align:center; max-width:100%; word-break:break-word;">
+                                                    ${generationError}
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                        <div class="weibo-image-prompt-show-back" title="查看${mediaType}描述" style="
+                                            position:absolute; right:4px; bottom:4px; background:rgba(0,0,0,0.55); color:#fff;
+                                            border-radius:999px; padding:2px 6px; font-size:9px; line-height:1; cursor:pointer;
+                                        ">描述</div>
                                     </div>
-                                    
-                                    <div title="恢复显示图片" onclick="const wrap = this.closest('.weibo-post-img-container'); const textLayer = wrap?.querySelector('.weibo-post-img-text'); const img = wrap?.querySelector('.weibo-post-img-real'); if (textLayer) textLayer.style.display='none'; if (img) img.style.display='block';" style="
-                                        position: absolute;
-                                        bottom: 4px;
-                                        right: 4px;
-                                        background: rgba(0,0,0,0.5);
-                                        color: #fff;
-                                        border-radius: 4px;
-                                        padding: 3px 6px;
-                                        font-size: 10px;
-                                        cursor: pointer;
-                                        z-index: 10;
-                                        display: flex;
-                                        align-items: center;
-                                        gap: 3px;
-                                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                                    <div class="weibo-image-prompt-back-panel" style="
+                                        display:none; width: 100%; height: 100%; aspect-ratio: 1; background: #f7f7f7;
+                                        border: 1px dashed #e0e0e0; border-radius: 4px; box-sizing: border-box;
+                                        position: relative; overflow: hidden;
                                     ">
-                                        <i class="fa-regular fa-image"></i> 恢复
+                                        <div style="width: 100%; height: 100%; padding: 6px; padding-bottom: 20px; overflow-y: auto; box-sizing: border-box; display: flex;">
+                                            <div style="margin: auto; font-size: 10px; color: #666; line-height: 1.4; word-break: break-word; white-space: pre-wrap; text-align: center; width: 100%;">${safePromptText}</div>
+                                        </div>
+                                        <div class="weibo-image-prompt-restore" title="恢复卡片正面" style="
+                                            position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,0.5); color:#fff;
+                                            border-radius:3px; padding:2px 4px; font-size:9px; cursor:pointer; z-index:10; display:flex; align-items:center; gap:2px;
+                                        ">${defaultIcon} 恢复</div>
                                     </div>
-                                </div>
-                            </div>`;
+                                </div>`;
+                            }
                         }).join('')}
                     </div>
                 ` : ''}
@@ -612,8 +639,11 @@ export class WeiboView {
     renderPostDetail(postId, mode = 'recommend') {
         // 查找帖子
         let post;
-        if (mode === 'recommend' || mode === 'myPosts') {
+        if (mode === 'recommend') {
             const posts = this.app.weiboData.getRecommendPosts();
+            post = posts?.find(p => p.id === postId);
+        } else if (mode === 'myPosts') {
+            const posts = this.app.weiboData.getUserPosts();
             post = posts?.find(p => p.id === postId);
         } else if (mode === 'hotSearch') {
             const detail = this.app.weiboData.getHotSearchDetail(this.currentHotSearchTitle);
@@ -726,7 +756,8 @@ export class WeiboView {
         });
 
         // 帖子交互（详情页内的点赞、评论、转发）
-        this._bindPostEvents(mode === 'myPosts' ? 'recommend' : mode);
+        this._bindPostEvents(mode);
+        this._bindWeiboMediaCardEvents();
 
         // 加载更多评论
         document.getElementById('load-more-comments-btn')?.addEventListener('click', async (e) => {
@@ -736,7 +767,7 @@ export class WeiboView {
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 正在加载...';
 
             try {
-                const source = (mode === 'myPosts') ? 'recommend' : mode;
+                const source = (mode === 'myPosts') ? 'user' : mode;
                 const hotTitle = mode === 'hotSearch' ? this.currentHotSearchTitle : null;
                 await this.app.weiboData.generateMoreComments(postId, source, hotTitle);
                 this.renderPostDetail(postId, mode);
@@ -767,7 +798,7 @@ export class WeiboView {
                 const replyTo = this.currentReplyTo;
 
                 if (mode === 'recommend' || mode === 'myPosts') {
-                    this.app.weiboData.addComment(postId, text, replyTo, 'recommend');
+                    this.app.weiboData.addComment(postId, text, replyTo, mode === 'myPosts' ? 'user' : 'recommend');
                 } else {
                     this.app.weiboData.addCommentHotSearch(postId, text, replyTo, this.currentHotSearchTitle);
                 }
@@ -1319,11 +1350,11 @@ export class WeiboView {
                     await new Promise(r => setTimeout(r, 800 + Math.random() * 1500));
 
                     const aiReplyTo = c.replyTo ? String(c.replyTo).trim() : null;
-                    this.app.weiboData.addComment(post.id, c.text, aiReplyTo || null, 'recommend', c.name, c.location || '');
+                    this.app.weiboData.addComment(post.id, c.text, aiReplyTo || null, 'user', c.name, c.location || '');
                 }
 
                 for (const likeName of (result.likes || [])) {
-                    const posts = this.app.weiboData.getRecommendPosts();
+                    const posts = this.app.weiboData.getUserPosts();
                     const updatedPost = posts.find(p => p.id === post.id);
                     if (updatedPost) {
                         if (!updatedPost.likeList) updatedPost.likeList = [];
@@ -1331,7 +1362,8 @@ export class WeiboView {
                             updatedPost.likeList.push(likeName);
                             updatedPost.likes = updatedPost.likeList.length;
                         }
-                        this.app.weiboData.saveRecommendPosts(posts);
+                        this.app.weiboData.saveUserPosts(posts);
+                        this.app.weiboData._syncUserPostMirror(updatedPost);
                     }
                 }
 
@@ -1611,8 +1643,8 @@ export class WeiboView {
             const text = input.value?.trim();
             if (!text) return;
 
-            if (mode === 'recommend') {
-                this.app.weiboData.addComment(postId, text, replyTo);
+            if (mode === 'recommend' || mode === 'myPosts') {
+                this.app.weiboData.addComment(postId, text, replyTo, mode === 'myPosts' ? 'user' : 'recommend');
             } else {
                 this.app.weiboData.addCommentHotSearch(postId, text, replyTo, this.currentHotSearchTitle);
             }
@@ -1622,7 +1654,9 @@ export class WeiboView {
             // 局部更新评论区
             const updatedPosts = mode === 'recommend'
                 ? this.app.weiboData.getRecommendPosts()
-                : this.app.weiboData.getHotSearchDetail(this.currentHotSearchTitle)?.posts;
+                : mode === 'myPosts'
+                    ? this.app.weiboData.getUserPosts()
+                    : this.app.weiboData.getHotSearchDetail(this.currentHotSearchTitle)?.posts;
 
             const updatedPost = updatedPosts?.find(p => p.id === postId);
             if (updatedPost) {
@@ -1796,6 +1830,8 @@ export class WeiboView {
             let post;
             if (mode === 'recommend') {
                 post = this.app.weiboData.getRecommendPosts().find(p => p.id === postId);
+            } else if (mode === 'myPosts') {
+                post = this.app.weiboData.getUserPosts().find(p => p.id === postId);
             } else {
                 post = this.app.weiboData.getHotSearchDetail(this.currentHotSearchTitle)?.posts?.find(p => p.id === postId);
             }
@@ -1824,8 +1860,15 @@ export class WeiboView {
                     const aiReplyTo = c.replyTo ? String(c.replyTo).trim() : null;
                     const finalReplyTo = aiReplyTo || replyTarget;
 
-                    if (mode === 'recommend') {
-                        this.app.weiboData.addComment(postId, c.text, finalReplyTo, 'recommend', c.name || '热心网友', c.location || '');
+                    if (mode === 'recommend' || mode === 'myPosts') {
+                        this.app.weiboData.addComment(
+                            postId,
+                            c.text,
+                            finalReplyTo,
+                            mode === 'myPosts' ? 'user' : 'recommend',
+                            c.name || '热心网友',
+                            c.location || ''
+                        );
                     } else {
                         this.app.weiboData.addCommentHotSearch(postId, c.text, finalReplyTo, this.currentHotSearchTitle, c.name || '热心网友', c.location || '');
                     }
@@ -2072,8 +2115,151 @@ export class WeiboView {
             };
         });
 
+        this._bindWeiboMediaCardEvents();
+
         // 绑定帖子交互事件 (点赞、评论等)
-        this._bindPostEvents(this.currentTab === 'myPosts' ? 'recommend' : this.currentTab === 'recommend' ? 'recommend' : 'recommend');
+        this._bindPostEvents(this.currentTab === 'myPosts' ? 'myPosts' : 'recommend');
+    }
+
+    _bindWeiboMediaCardEvents() {
+        // 🔥 微博卡片翻转事件
+        document.querySelectorAll('.weibo-image-prompt-show-back').forEach(btn => {
+            btn.onclick = (e) => {
+                e.preventDefault(); e.stopPropagation();
+                const box = e.currentTarget.closest('.weibo-image-prompt-box');
+                if (box) {
+                    box.querySelector('.weibo-image-prompt-front-panel').style.display = 'none';
+                    box.querySelector('.weibo-image-prompt-back-panel').style.display = 'block';
+                }
+            };
+        });
+
+        document.querySelectorAll('.weibo-image-prompt-restore').forEach(btn => {
+            btn.onclick = (e) => {
+                e.preventDefault(); e.stopPropagation();
+                const box = e.currentTarget.closest('.weibo-image-prompt-box');
+                if (box) {
+                    box.querySelector('.weibo-image-prompt-back-panel').style.display = 'none';
+                    box.querySelector('.weibo-image-prompt-front-panel').style.display = 'block';
+                }
+            };
+        });
+
+        // 🔥 微博生图请求调用 API
+        document.querySelectorAll('.weibo-image-prompt-generate').forEach(btn => {
+            btn.onclick = async (e) => {
+                e.preventDefault(); e.stopPropagation();
+                const postId = btn.dataset.postId;
+                const index = parseInt(btn.dataset.index, 10);
+                const promptText = btn.dataset.prompt;
+                const mediaType = btn.dataset.type; // 记录是图片还是视频
+                
+                if (!postId || isNaN(index) || !promptText) return;
+
+                const { posts, post, source } = this._getPostMediaTarget(postId);
+                if (!post) return;
+
+                const currentState = this._getWeiboPostImageState(post, index);
+                if (currentState?.status === 'loading') return;
+
+                const config = this._getSiliconflowImageConfig();
+                if (!config.apiKey) {
+                    this._setWeiboPostImageState(post, index, {
+                        status: 'failed',
+                        error: '请先在设置里填写 SiliconFlow API Key',
+                        prompt: promptText,
+                        mediaType,
+                        imageModel: config.model,
+                        imageProvider: 'siliconflow'
+                    });
+                    this._persistPostMediaTarget(posts, source, post);
+                    this._refreshPostMediaUI(postId);
+                    this.app.phoneShell.showNotification('提示', '请先在微信设置里填写 SiliconFlow API Key', '⚠️');
+                    return;
+                }
+
+                this._setWeiboPostImageState(post, index, {
+                    status: 'loading',
+                    error: '',
+                    prompt: promptText,
+                    mediaType,
+                    imageModel: config.model,
+                    imageProvider: 'siliconflow'
+                });
+                this._persistPostMediaTarget(posts, source, post);
+                this._refreshPostMediaUI(postId);
+
+                try {
+                    const response = await fetch(config.endpoint, {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${config.apiKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: config.model,
+                            prompt: this._buildSiliconflowPositivePrompt(promptText, config),
+                            negative_prompt: this._buildSiliconflowNegativePrompt(promptText, config.negativePrompt, config.noPeopleNegativePrompt),
+                            image_size: config.imageSize,
+                            batch_size: config.batchSize,
+                            num_inference_steps: config.numInferenceSteps,
+                            guidance_scale: config.guidanceScale
+                        })
+                    });
+
+                    const rawText = await response.text();
+                    let payload = null;
+                    if (rawText) {
+                        try { payload = JSON.parse(rawText); } catch (parseError) { payload = null; }
+                    }
+
+                    if (!response.ok) {
+                        const serverMsg = String(
+                            payload?.message ||
+                            payload?.error?.message ||
+                            payload?.error ||
+                            rawText ||
+                            ''
+                        ).trim();
+                        throw new Error(`SiliconFlow 请求失败 (${response.status})${serverMsg ? `: ${serverMsg.slice(0, 160)}` : ''}`);
+                    }
+
+                    const imageUrl = String(payload?.images?.[0]?.url || '').trim();
+                    if (!imageUrl) throw new Error('生图成功但未返回图片URL');
+
+                    // 🔥 替换原有的图片数组中的 prompt 为真实的 URL (带上前缀以便区分是否带视频小标)
+                    const finalTag = mediaType === '视频' ? '[视频]' : '[图片]';
+                    post.images[index] = `${finalTag}${imageUrl}`;
+                    this._setWeiboPostImageState(post, index, {
+                        status: 'done',
+                        error: '',
+                        prompt: promptText,
+                        mediaType,
+                        generatedImageUrl: imageUrl,
+                        imageModel: config.model,
+                        imageProvider: 'siliconflow'
+                    });
+
+                    this._persistPostMediaTarget(posts, source, post);
+                    this._refreshPostMediaUI(postId);
+                    this.app.phoneShell.showNotification('成功', '配图生成完成', '✅');
+
+                } catch (error) {
+                    const friendlyMessage = this._normalizeSiliconflowErrorMessage(error);
+                    this._setWeiboPostImageState(post, index, {
+                        status: 'failed',
+                        error: friendlyMessage,
+                        prompt: promptText,
+                        mediaType,
+                        imageModel: config.model,
+                        imageProvider: 'siliconflow'
+                    });
+                    this._persistPostMediaTarget(posts, source, post);
+                    this._refreshPostMediaUI(postId);
+                    this.app.phoneShell.showNotification('生图失败', friendlyMessage, '❌');
+                }
+            };
+        });
     }
 
     refreshCurrentTabContent() {
@@ -2730,7 +2916,7 @@ export class WeiboView {
                     this.entrySource = null;
                 }
                 this.currentPostId = postId;
-                this.currentPostMode = mode === 'hotSearch' ? 'hotSearch' : 'recommend';
+                this.currentPostMode = mode === 'hotSearch' ? 'hotSearch' : (mode === 'myPosts' ? 'myPosts' : 'recommend');
                 this.currentView = 'postDetail';
                 this.render();
             };
@@ -2743,8 +2929,8 @@ export class WeiboView {
                 const postId = btn.dataset.postId;
 
                 let updatedPost;
-                if (mode === 'recommend') {
-                    updatedPost = this.app.weiboData.toggleLike(postId);
+                if (mode === 'recommend' || mode === 'myPosts') {
+                    updatedPost = this.app.weiboData.toggleLike(postId, mode === 'myPosts' ? 'user' : 'recommend');
                 } else {
                     updatedPost = this.app.weiboData.toggleLikeHotSearch(postId, this.currentHotSearchTitle);
                 }
@@ -2775,7 +2961,7 @@ export class WeiboView {
                         this.entrySource = null;
                     }
                     this.currentPostId = postId;
-                    this.currentPostMode = mode === 'hotSearch' ? 'hotSearch' : 'recommend';
+                    this.currentPostMode = mode === 'hotSearch' ? 'hotSearch' : (mode === 'myPosts' ? 'myPosts' : 'recommend');
                     this.currentView = 'postDetail';
                     this.render();
                     return;
@@ -2799,7 +2985,7 @@ export class WeiboView {
                 const commentIndex = btn.dataset.commentIndex;
                 if (!postId || commentIndex === undefined) return;
 
-                const source = mode === 'hotSearch' ? 'hotSearch' : 'recommend';
+                const source = mode === 'hotSearch' ? 'hotSearch' : (mode === 'myPosts' ? 'user' : 'recommend');
                 const result = this.app.weiboData.toggleCommentLike(
                     postId,
                     commentIndex,
@@ -2847,7 +3033,9 @@ export class WeiboView {
 
                 const posts = mode === 'recommend'
                     ? this.app.weiboData.getRecommendPosts()
-                    : this.app.weiboData.getHotSearchDetail(this.currentHotSearchTitle)?.posts;
+                    : mode === 'myPosts'
+                        ? this.app.weiboData.getUserPosts()
+                        : this.app.weiboData.getHotSearchDetail(this.currentHotSearchTitle)?.posts;
 
                 const post = posts?.find(p => p.id === postId);
                 if (post) {
@@ -3115,6 +3303,211 @@ export class WeiboView {
         if (num >= 10000) return (num / 10000).toFixed(1) + '万';
         if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
         return num.toString();
+    }
+
+    _isDirectWeiboMediaUrl(value) {
+        return /^(data:image\/|https?:\/\/|\/backgrounds\/)/i.test(String(value || '').trim());
+    }
+
+    _parseWeiboMediaItem(rawValue) {
+        const imageStr = String(rawValue || '').trim();
+        let mediaType = '图片';
+        let body = imageStr;
+
+        const taggedMatch = imageStr.match(/^\[(图片|视频)\]\s*([\s\S]*)$/);
+        if (taggedMatch) {
+            mediaType = taggedMatch[1];
+            body = String(taggedMatch[2] || '').trim();
+        }
+
+        const unwrappedBody = body.replace(/^[（(]\s*|\s*[)）]$/g, '').trim();
+        const directUrl = this._isDirectWeiboMediaUrl(body)
+            ? body
+            : (this._isDirectWeiboMediaUrl(unwrappedBody) ? unwrappedBody : '');
+
+        let promptText = '';
+        if (!directUrl) {
+            promptText = unwrappedBody || body;
+            if (!taggedMatch && /^\[[^\]]+\]$/.test(imageStr)) {
+                promptText = imageStr.slice(1, -1).trim();
+            }
+        }
+
+        return {
+            mediaType,
+            realUrl: directUrl,
+            isDirectImage: !!directUrl,
+            isVideoProcessed: mediaType === '视频' && !!directUrl,
+            promptText: promptText.trim()
+        };
+    }
+
+    _getWeiboPostImageState(post, index) {
+        if (!post || !Array.isArray(post.imageGenerationStates)) return null;
+        const state = post.imageGenerationStates[index];
+        return (state && typeof state === 'object') ? state : null;
+    }
+
+    _setWeiboPostImageState(post, index, nextState) {
+        if (!post || !Number.isInteger(index) || index < 0) return null;
+        if (!Array.isArray(post.imageGenerationStates)) {
+            post.imageGenerationStates = [];
+        }
+
+        if (nextState === null) {
+            delete post.imageGenerationStates[index];
+            return null;
+        }
+
+        const prevState = this._getWeiboPostImageState(post, index) || {};
+        post.imageGenerationStates[index] = {
+            ...prevState,
+            ...nextState
+        };
+        return post.imageGenerationStates[index];
+    }
+
+    _getPostMediaTarget(postId) {
+        const safePostId = String(postId || '').trim();
+        if (!safePostId) return { posts: null, post: null, source: 'recommend' };
+
+        let posts = null;
+        let source = 'recommend';
+        const mode = this.currentView === 'postDetail'
+            ? (this.currentPostMode || 'recommend')
+            : (this.currentView === 'hotSearchDetail' ? 'hotSearch' : (this.currentTab === 'myPosts' ? 'myPosts' : 'recommend'));
+
+        if (mode === 'hotSearch') {
+            const detail = this.app.weiboData.getHotSearchDetail(this.currentHotSearchTitle);
+            posts = detail?.posts || null;
+            source = 'hotSearch';
+        } else if (mode === 'myPosts') {
+            posts = this.app.weiboData.getUserPosts();
+            source = 'myPosts';
+        } else {
+            posts = this.app.weiboData.getRecommendPosts();
+        }
+
+        const post = Array.isArray(posts)
+            ? posts.find(item => String(item?.id || '').trim() === safePostId)
+            : null;
+
+        return { posts, post, source };
+    }
+
+    _persistPostMediaTarget(posts, source = 'recommend', post = null) {
+        if (!Array.isArray(posts)) return;
+        if (source === 'hotSearch') {
+            const detail = this.app.weiboData.getHotSearchDetail(this.currentHotSearchTitle);
+            if (!detail) return;
+            detail.posts = posts;
+            this.app.weiboData.saveHotSearchDetail(this.currentHotSearchTitle, detail);
+            return;
+        }
+        if (source === 'myPosts') {
+            this.app.weiboData.saveUserPosts(posts);
+            const targetPost = post || posts.find(item => String(item?.id || '').trim() === String(this.currentPostId || '').trim());
+            if (targetPost?.isUserPost) {
+                this.app.weiboData._syncUserPostMirror(targetPost);
+            }
+            return;
+        }
+        this.app.weiboData.saveRecommendPosts(posts);
+    }
+
+    _refreshPostMediaUI(postId) {
+        if (this.currentView === 'postDetail' && this.currentPostId === postId) {
+            this.renderPostDetail(postId, this.currentPostMode || 'recommend');
+            return;
+        }
+
+        if (this.currentView === 'hotSearchDetail' && this.currentHotSearchTitle) {
+            this.renderHotSearchDetail(this.currentHotSearchTitle);
+            return;
+        }
+
+        if (this.currentView === 'home') {
+            this.refreshCurrentTabContent();
+        }
+    }
+
+    _getSiliconflowImageConfig() {
+        const storage = window.VirtualPhone?.storage || this.app?.storage;
+        const apiKey = String(storage?.get('siliconflow_api_key') || '').trim();
+        const model = String(storage?.get('image_generation_model') || '').trim() || 'Kwai-Kolors/Kolors';
+
+        return {
+            apiKey,
+            model,
+            endpoint: 'https://api.siliconflow.cn/v1/images/generations',
+            imageSize: '768x1024',
+            batchSize: 1,
+            numInferenceSteps: 16,
+            guidanceScale: 6.5,
+            positivePromptSuffix: '二次元插画风, 非真人, 非照片, 非写实, 动漫感, 赛璐璐上色, 游戏CG质感, 杰作, 高质量, 细节清晰, 构图完整, 光线自然, 色彩干净, 单主体突出, 适合手机展示',
+            characterPositivePromptSuffix: '人物性别特征明确, 不要中性化, 主体明确, 面部与肢体自然',
+            scenePositivePromptSuffix: '纯场景构图, 纯物体特写或空镜画面, 画面中不要出现人物, 不要出现角色, 不要出现路人, 不要出现人形轮廓, 不要出现手脚或身体局部',
+            negativePrompt: '真人, 写实, 摄影感, 照片感, 低质量, 最差质量, 模糊, 锯齿, JPEG压缩痕迹, 多余肢体, 畸形手指, 五官错位, 性别模糊, 中性外观, 文本, 水印, 签名, 用户名',
+            noPeopleNegativePrompt: '人物, 人类, 角色, 路人, 肖像, 半身像, 全身像, 人脸, 头部特写, 手, 手臂, 腿, 脚, 身体局部, 拟人化角色'
+        };
+    }
+
+    _buildSiliconflowPrompt(rawPrompt, positivePromptSuffix = '') {
+        const prompt = String(rawPrompt || '').trim();
+        const suffix = String(positivePromptSuffix || '').trim();
+        if (!prompt) return suffix;
+        if (!suffix) return prompt;
+        return `${prompt}，${suffix}`;
+    }
+
+    _promptLikelyNeedsCharacter(rawPrompt) {
+        const prompt = String(rawPrompt || '').trim();
+        if (!prompt) return false;
+
+        const humanIndicators = [
+            '人物', '角色', '人像', '肖像', '少年', '少女', '男生', '女生', '男人', '女人', '男孩', '女孩',
+            '帅哥', '美女', '男主', '女主', '主角', '偶像', '主播', '老师', '同学', '妈妈', '爸爸', '情侣',
+            'coser', '模特', '骑士', '公主', '王子', '精灵', '猫娘', '狐娘', '兽耳', '女仆', '拟人',
+            'character', 'person', 'people', 'girl', 'boy', 'man', 'woman', 'portrait', 'human'
+        ];
+
+        return humanIndicators.some(token => prompt.toLowerCase().includes(token.toLowerCase()));
+    }
+
+    _buildSiliconflowNegativePrompt(rawPrompt, baseNegativePrompt = '', noPeopleNegativePrompt = '') {
+        const negatives = [
+            String(baseNegativePrompt || '').trim()
+        ];
+
+        if (!this._promptLikelyNeedsCharacter(rawPrompt)) {
+            negatives.push(String(noPeopleNegativePrompt || '').trim());
+        }
+
+        return negatives.filter(Boolean).join(', ');
+    }
+
+    _buildSiliconflowPositivePrompt(rawPrompt, config = {}) {
+        const prompt = String(rawPrompt || '').trim();
+        const parts = [
+            prompt,
+            String(config.positivePromptSuffix || '').trim()
+        ];
+
+        if (this._promptLikelyNeedsCharacter(prompt)) {
+            parts.push(String(config.characterPositivePromptSuffix || '').trim());
+        } else {
+            parts.push(String(config.scenePositivePromptSuffix || '').trim());
+        }
+
+        return parts.filter(Boolean).join('，');
+    }
+
+    _normalizeSiliconflowErrorMessage(error) {
+        const rawMessage = String(error?.message || '').trim();
+        if (/failed to fetch|networkerror|load failed/i.test(rawMessage)) {
+            return '请求失败，可能是网络异常或浏览器跨域拦截';
+        }
+        return rawMessage || '未知错误';
     }
 
     _getAvatarInitial(name) {

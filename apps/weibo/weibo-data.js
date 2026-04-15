@@ -19,6 +19,7 @@ export class WeiboData {
         this.storage = storage;
         this._profileKey = 'weibo_profile';
         this._globalBeautifyKey = 'global_weibo_beautify';
+        this._userPostsKey = 'weibo_user_posts';
         this._beautifyFields = ['avatar', 'banner', 'avatarFrameCss'];
 
         // API调用队列（防并发）
@@ -28,6 +29,7 @@ export class WeiboData {
         // 缓存
         this._recommendCache = null;
         this._hotSearchCache = null;
+        this._userPostsCache = null;
 
         // 批量生成控制
         this.stopBatch = false;
@@ -154,6 +156,60 @@ export class WeiboData {
     saveRecommendPosts(posts) {
         this._recommendCache = posts;
         this.storage.set('weibo_recommend_posts', JSON.stringify(posts));
+    }
+
+    getFeedPosts() {
+        return this.getRecommendPosts();
+    }
+
+    getUserPosts() {
+        if (this._userPostsCache) return this._userPostsCache;
+        const saved = this.storage.get(this._userPostsKey);
+        if (saved) {
+            try {
+                this._userPostsCache = typeof saved === 'string' ? JSON.parse(saved) : saved;
+                return this._userPostsCache;
+            } catch (e) { }
+        }
+        return [];
+    }
+
+    saveUserPosts(posts) {
+        this._userPostsCache = posts;
+        this.storage.set(this._userPostsKey, JSON.stringify(posts));
+    }
+
+    _replaceOrInsertPost(posts, nextPost) {
+        const list = Array.isArray(posts) ? [...posts] : [];
+        const targetId = String(nextPost?.id || '').trim();
+        if (!targetId) return list;
+
+        const idx = list.findIndex(item => String(item?.id || '').trim() === targetId);
+        if (idx >= 0) {
+            list[idx] = nextPost;
+        } else {
+            list.unshift(nextPost);
+        }
+        return list;
+    }
+
+    _removePostById(posts, postId) {
+        const targetId = String(postId || '').trim();
+        if (!targetId) return Array.isArray(posts) ? [...posts] : [];
+        return (Array.isArray(posts) ? posts : []).filter(item => String(item?.id || '').trim() !== targetId);
+    }
+
+    _syncUserPostMirror(post) {
+        if (!post?.isUserPost) return;
+        const nextUserPosts = this._replaceOrInsertPost(this.getUserPosts(), post);
+        this.saveUserPosts(nextUserPosts);
+
+        const nextRecommend = this.getRecommendPosts();
+        const idx = nextRecommend.findIndex(item => String(item?.id || '').trim() === String(post.id || '').trim());
+        if (idx >= 0) {
+            nextRecommend[idx] = post;
+            this.saveRecommendPosts(nextRecommend);
+        }
     }
 
     // 获取热搜列表缓存
@@ -645,10 +701,6 @@ export class WeiboData {
             const rawResponse = await this._callAI(recommendPromptWithFollowers, contextMessages);
             const parsed = this.parseWeiboContent(rawResponse);
 
-            // 刷新推荐时保留用户自己发布的微博（“我的”页数据），只替换系统推荐内容
-            const existingPosts = this.getRecommendPosts();
-            const userPosts = (existingPosts || []).filter(p => p && p.isUserPost);
-
             // 为每条微博添加ID
             parsed.posts.forEach((post, idx) => {
                 post.id = Date.now().toString(36) + idx.toString(36) + Math.random().toString(36).substr(2, 4);
@@ -656,8 +708,8 @@ export class WeiboData {
                 if (!post.commentList) post.commentList = [];
             });
 
-            // 覆盖推荐流（保留用户微博），并同步清理旧热搜详情缓存，避免堆积
-            this.saveRecommendPosts([...userPosts, ...parsed.posts]);
+            // 覆盖推荐流；用户自己的微博单独保存在 myPosts 存储中
+            this.saveRecommendPosts(parsed.posts);
             const newHotSearches = Array.isArray(parsed.hotSearches) ? parsed.hotSearches : [];
             if (newHotSearches.length > 0) {
                 this.cleanupOldHotSearchDetails(newHotSearches);
@@ -1034,7 +1086,7 @@ export class WeiboData {
     // ========================================
 
     toggleLike(postId, source = 'recommend') {
-        const posts = source === 'recommend' ? this.getRecommendPosts() : null;
+        const posts = source === 'user' ? this.getUserPosts() : (source === 'recommend' ? this.getRecommendPosts() : null);
         if (!posts) return;
 
         const post = posts.find(p => p.id === postId);
@@ -1054,7 +1106,13 @@ export class WeiboData {
             post.likes = Math.max(0, (post.likes || 0) - 1);
         }
 
-        this.saveRecommendPosts(posts);
+        if (source === 'user') {
+            this.saveUserPosts(posts);
+            this._syncUserPostMirror(post);
+        } else {
+            this.saveRecommendPosts(posts);
+            if (post?.isUserPost) this._syncUserPostMirror(post);
+        }
         return post;
     }
 
@@ -1091,6 +1149,9 @@ export class WeiboData {
 
         if (source === 'recommend') {
             posts = this.getRecommendPosts();
+            post = posts?.find(p => p.id === postId);
+        } else if (source === 'user') {
+            posts = this.getUserPosts();
             post = posts?.find(p => p.id === postId);
         } else {
             detail = this.getHotSearchDetail(hotSearchTitle);
@@ -1136,6 +1197,10 @@ export class WeiboData {
 
         if (source === 'recommend') {
             this.saveRecommendPosts(posts);
+            if (post?.isUserPost) this._syncUserPostMirror(post);
+        } else if (source === 'user') {
+            this.saveUserPosts(posts);
+            this._syncUserPostMirror(post);
         } else {
             this.saveHotSearchDetail(hotSearchTitle, detail);
         }
@@ -1144,7 +1209,7 @@ export class WeiboData {
     }
 
     addComment(postId, text, replyTo = null, source = 'recommend', commenterName = null, location = '本地') {
-        const posts = source === 'recommend' ? this.getRecommendPosts() : null;
+        const posts = source === 'user' ? this.getUserPosts() : (source === 'recommend' ? this.getRecommendPosts() : null);
         if (!posts) return;
 
         const post = posts.find(p => p.id === postId);
@@ -1163,7 +1228,13 @@ export class WeiboData {
         });
         post.comments = post.commentList.length;
 
-        this.saveRecommendPosts(posts);
+        if (source === 'user') {
+            this.saveUserPosts(posts);
+            this._syncUserPostMirror(post);
+        } else {
+            this.saveRecommendPosts(posts);
+            if (post?.isUserPost) this._syncUserPostMirror(post);
+        }
         return post;
     }
 
@@ -1201,24 +1272,46 @@ export class WeiboData {
         const profile = this.getProfile();
         const nickname = profile.nickname || userName;
 
+        let processedText = String(text || '');
+        const parsedImages = [...(images || [])];
+
+        // 🔥 提取用户输入在正文里的 [图片]（描述） 或 [视频]（描述）
+        const mediaRegex = /\[(图片|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）]/g;
+        let match;
+        while ((match = mediaRegex.exec(processedText)) !== null) {
+            parsedImages.push(match[0]); // 将完整的 [图片/视频]（描述） 存入配图数组
+        }
+        
+        // 从微博正文文字中清理掉这些标签，保持纯净文本
+        processedText = processedText.replace(mediaRegex, '').trim();
+
         const newPost = {
             id: Date.now().toString(36) + Math.random().toString(36).substr(2, 6),
             blogger: nickname,
             bloggerType: '博主',
             time: '刚刚',
             device: 'iPhone 15 Pro',
-            content: text,
-            // 🔥 核心修复：认出真实服务器图片路径，不再将它们转为纯文本 [文字描述]
-            images: images.map(img => (img.startsWith('data:') || img.startsWith('/') || img.startsWith('http')) ? img : `[${img}]`),
+            content: processedText, // 使用处理后的干净文本
+            // 处理附加图片
+            images: parsedImages.map(img => {
+                if (img.startsWith('data:') || img.startsWith('/') || img.startsWith('http')) return img;
+                if (/^\[(图片|视频)\]/.test(img)) return img;
+                return `[${img}]`;
+            }),
             forward: 0,
             comments: 0,
             likes: 0,
             likeList: [],
             commentList: [],
+            imageGenerationStates: [],
             isUserPost: true
         };
 
-        // 插入到推荐列表最前面
+        // 插入到“我的微博”持久化列表，并临时镜像到推荐流顶部
+        const userPosts = this.getUserPosts();
+        userPosts.unshift(newPost);
+        this.saveUserPosts(userPosts);
+
         const posts = this.getRecommendPosts();
         posts.unshift(newPost);
         this.saveRecommendPosts(posts);
@@ -1234,12 +1327,12 @@ export class WeiboData {
     deleteUserPost(postId) {
         if (!postId) return { success: false };
 
-        let posts = this.getRecommendPosts();
+        let posts = this.getUserPosts();
         let idx = posts.findIndex(p => p.id === postId && p.isUserPost);
 
         // 兜底：某些时机缓存可能与持久化暂时不同步，回退到存储层再尝试一次
         if (idx === -1) {
-            const saved = this.storage.get('weibo_recommend_posts');
+            const saved = this.storage.get(this._userPostsKey);
             if (saved) {
                 try {
                     const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
@@ -1260,7 +1353,10 @@ export class WeiboData {
         const imagesToDelete = Array.isArray(deletedPost.images) ? [...deletedPost.images] : [];
 
         posts.splice(idx, 1);
-        this.saveRecommendPosts(posts);
+        this.saveUserPosts(posts);
+
+        const recommendPosts = this._removePostById(this.getRecommendPosts(), postId);
+        this.saveRecommendPosts(recommendPosts);
 
         // 同步修正“动态数”，避免显示不一致
         const profile = this.getProfile();
@@ -1499,6 +1595,9 @@ export class WeiboData {
             if (source === 'recommend') {
                 posts = this.getRecommendPosts();
                 post = posts?.find(p => p.id === postId);
+            } else if (source === 'user') {
+                posts = this.getUserPosts();
+                post = posts?.find(p => p.id === postId);
             } else {
                 const detail = this.getHotSearchDetail(hotSearchTitle);
                 posts = detail?.posts;
@@ -1526,6 +1625,10 @@ export class WeiboData {
                 // 保存
                 if (source === 'recommend') {
                     this.saveRecommendPosts(posts);
+                    if (post?.isUserPost) this._syncUserPostMirror(post);
+                } else if (source === 'user') {
+                    this.saveUserPosts(posts);
+                    this._syncUserPostMirror(post);
                 } else {
                     const detail = this.getHotSearchDetail(hotSearchTitle);
                     this.saveHotSearchDetail(hotSearchTitle, detail);
@@ -1749,6 +1852,7 @@ export class WeiboData {
     clearCache() {
         this._recommendCache = null;
         this._hotSearchCache = null;
+        this._userPostsCache = null;
         this.stopBatch = false;
     }
 
@@ -1764,11 +1868,12 @@ export class WeiboData {
                 }
             });
         } else {
-            this.storage.remove(this._profileKey);
-            this.storage.remove('weibo_recommend_posts');
-            this.storage.remove('weibo_hot_searches');
-            this.storage.remove('weibo_floor_settings');
-            this.storage.remove('weibo_auto_last_floor');
+                this.storage.remove(this._profileKey);
+                this.storage.remove('weibo_recommend_posts');
+                this.storage.remove(this._userPostsKey);
+                this.storage.remove('weibo_hot_searches');
+                this.storage.remove('weibo_floor_settings');
+                this.storage.remove('weibo_auto_last_floor');
         }
 
         // “彻底清空”时同步重置全局微博美化配置，防止危险 CSS 在后续会话继续污染界面。

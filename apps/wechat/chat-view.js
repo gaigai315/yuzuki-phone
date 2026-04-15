@@ -590,8 +590,11 @@ renderChatRoom(chat) {
             batchSize: 1,
             numInferenceSteps: 16,
             guidanceScale: 6.5,
-            positivePromptSuffix: '二次元插画风, 非真人, 非照片, 非写实, 动漫感, 赛璐璐上色, 游戏CG质感, 杰作, 高质量, 细节清晰, 构图完整, 光线自然, 色彩干净, 单主体突出, 人物性别特征明确, 不要中性化, 适合手机聊天展示',
-            negativePrompt: '真人, 写实, 摄影感, 照片感, 低质量, 最差质量, 模糊, 锯齿, JPEG压缩痕迹, 多余肢体, 畸形手指, 五官错位, 性别模糊, 中性外观, 文本, 水印, 签名, 用户名'
+            positivePromptSuffix: '二次元插画风, 非真人, 非照片, 非写实, 动漫感, 赛璐璐上色, 游戏CG质感, 杰作, 高质量, 细节清晰, 构图完整, 光线自然, 色彩干净, 单主体突出, 适合手机聊天展示',
+            characterPositivePromptSuffix: '人物性别特征明确, 不要中性化, 主体明确, 面部与肢体自然',
+            scenePositivePromptSuffix: '纯场景构图, 纯物体特写或空镜画面, 画面中不要出现人物, 不要出现角色, 不要出现路人, 不要出现人形轮廓, 不要出现手脚或身体局部',
+            negativePrompt: '真人, 写实, 摄影感, 照片感, 低质量, 最差质量, 模糊, 锯齿, JPEG压缩痕迹, 多余肢体, 畸形手指, 五官错位, 性别模糊, 中性外观, 文本, 水印, 签名, 用户名',
+            noPeopleNegativePrompt: '人物, 人类, 角色, 路人, 肖像, 半身像, 全身像, 人脸, 头部特写, 手, 手臂, 腿, 脚, 身体局部, 拟人化角色'
         };
     }
 
@@ -601,6 +604,48 @@ renderChatRoom(chat) {
         if (!prompt) return suffix;
         if (!suffix) return prompt;
         return `${prompt}，${suffix}`;
+    }
+
+    _promptLikelyNeedsCharacter(rawPrompt) {
+        const prompt = String(rawPrompt || '').trim();
+        if (!prompt) return false;
+
+        const humanIndicators = [
+            '人物', '角色', '人像', '肖像', '少年', '少女', '男生', '女生', '男人', '女人', '男孩', '女孩',
+            '帅哥', '美女', '男主', '女主', '主角', '偶像', '主播', '老师', '同学', '妈妈', '爸爸', '情侣',
+            'coser', '模特', '骑士', '公主', '王子', '精灵', '猫娘', '狐娘', '兽耳', '女仆', '拟人',
+            'character', 'person', 'people', 'girl', 'boy', 'man', 'woman', 'portrait', 'human'
+        ];
+
+        return humanIndicators.some(token => prompt.toLowerCase().includes(token.toLowerCase()));
+    }
+
+    _buildSiliconflowNegativePrompt(rawPrompt, baseNegativePrompt = '', noPeopleNegativePrompt = '') {
+        const negatives = [
+            String(baseNegativePrompt || '').trim()
+        ];
+
+        if (!this._promptLikelyNeedsCharacter(rawPrompt)) {
+            negatives.push(String(noPeopleNegativePrompt || '').trim());
+        }
+
+        return negatives.filter(Boolean).join(', ');
+    }
+
+    _buildSiliconflowPositivePrompt(rawPrompt, config = {}) {
+        const prompt = String(rawPrompt || '').trim();
+        const parts = [
+            prompt,
+            String(config.positivePromptSuffix || '').trim()
+        ];
+
+        if (this._promptLikelyNeedsCharacter(prompt)) {
+            parts.push(String(config.characterPositivePromptSuffix || '').trim());
+        } else {
+            parts.push(String(config.scenePositivePromptSuffix || '').trim());
+        }
+
+        return parts.filter(Boolean).join('，');
     }
 
     _refreshVisibleChatMessages(chatId) {
@@ -662,8 +707,8 @@ renderChatRoom(chat) {
                 },
                 body: JSON.stringify({
                     model: config.model,
-                    prompt: this._buildSiliconflowPrompt(promptText, config.positivePromptSuffix),
-                    negative_prompt: config.negativePrompt,
+                    prompt: this._buildSiliconflowPositivePrompt(promptText, config),
+                    negative_prompt: this._buildSiliconflowNegativePrompt(promptText, config.negativePrompt, config.noPeopleNegativePrompt),
                     image_size: config.imageSize,
                     batch_size: config.batchSize,
                     num_inference_steps: config.numInferenceSteps,
