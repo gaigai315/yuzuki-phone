@@ -3913,11 +3913,11 @@ if (window.GGP_Loaded) {
                                 return;
                             }
 
-                            // 🔥 核心修复 1：精准区分请求来源（防止误杀正文变量）
+                            // 🔥 核心修复 1：精准区分请求来源（防止异步后台任务误杀正文变量）
                             
-                            // 1. 如果是手机内部发起的请求（比如在手机里点发送）
-                            if (window.VirtualPhone?._isInternalRequest) {
-                                // 既然线上聊天不该有线下变量，直接执行清洗并退出
+                            // 1. 如果是手机内部独立API发起的请求（认准特定消息上的标记，绝不使用全局变量）
+                            const lastMsg = eventData.chat[eventData.chat.length - 1];
+                            if (lastMsg && lastMsg.isVirtualPhoneApiCall) {
                                 forceFallbackCleanup(eventData.chat);
                                 return; 
                             }
@@ -4768,27 +4768,26 @@ if (window.GGP_Loaded) {
                                     
                                     let safeEvent = { chat: targetArray, prompt: [] };
                                     
-                                    // 🔥 移动端/Claude 绝杀：如果变量被抽到了 system 字段，强行把它塞回头部当做临时消息，处理完再还原
-                                    let hasSystemField = !!bodyObj.system;
+                                    // 🔥 移动端/Claude 绝杀：如果变量被抽到了 system 字段，强行把它塞回头部当做临时消息
+                                    let hasSystemField = typeof bodyObj.system === 'string';
                                     if (hasSystemField) {
-                                        let sysContent = typeof bodyObj.system === 'string' ? bodyObj.system : JSON.stringify(bodyObj.system);
-                                        safeEvent.chat.unshift({ role: 'system', content: sysContent, isTempSystem: true });
+                                        safeEvent.chat.unshift({ role: 'system', content: bodyObj.system, isTempSystem: true });
                                     }
 
                                     // 强行在发包前，调用注入函数再跑一遍！
                                     await phonePromptHandler(safeEvent);
                                     
-                                    // 🔥 处理完毕后，把临时的 system 抽离还原回去
-                                    if (hasSystemField && safeEvent.chat[0] && safeEvent.chat[0].isTempSystem) {
-                                        let processedSys = safeEvent.chat.shift();
-                                        if (typeof bodyObj.system === 'string') {
-                                            bodyObj.system = processedSys.content;
-                                        } else {
-                                            try { bodyObj.system = JSON.parse(processedSys.content); } catch(e){}
+                                    // 🔥 处理完毕后，完美缝合：把刚刚塞进去的、以及插件新注入的系统块，全部抽出来重新拼接回 system 字段
+                                    if (hasSystemField) {
+                                        let newSysParts = [];
+                                        while (safeEvent.chat.length > 0 && (safeEvent.chat[0].isTempSystem || safeEvent.chat[0].isPhoneMessage || safeEvent.chat[0].isMusicMessage || safeEvent.chat[0].role === 'system')) {
+                                            let popped = safeEvent.chat.shift();
+                                            if (popped.content) newSysParts.push(popped.content);
                                         }
+                                        bodyObj.system = newSysParts.join('\n\n');
                                     }
                                     
-                                    console.log('✅ [手机插件] 底层强行注入完毕，防抢跑成功！');
+                                    console.log('✅ [手机插件] 底层强行注入完毕，完美缝合防抢跑！');
                                 }
 
                                 // 🌟 2. 处理图片占位符 (保留原有的发图功能)

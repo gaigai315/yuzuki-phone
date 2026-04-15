@@ -122,7 +122,6 @@ export class ApiManager {
      */
     async callAI(messages, options = {}) {
         this._activeRequestCount += 1;
-        if (window.VirtualPhone) window.VirtualPhone._isInternalRequest = true;
         try {
         // 获取当前调用 AI 的 App 标识，默认 phone_online
         const appId = options.appId || 'phone_online';
@@ -153,6 +152,7 @@ export class ApiManager {
                 allowPrompt: currentPerms.allowPrompt
             };
             messages[messages.length - 1].isPhoneMessage = true;
+            messages[messages.length - 1].isVirtualPhoneApiCall = true; // 🔥 绝杀：专门贴上手机API专用标签
         }
 
         // 1. 获取 API 配置 (优先读取 options 中传入的临时配置，用于测试按钮)
@@ -223,6 +223,9 @@ export class ApiManager {
                     }
                     if (m?.isPhoneMessage) {
                         normalized.isPhoneMessage = true;
+                    }
+                    if (m?.isVirtualPhoneApiCall) {
+                        normalized.isVirtualPhoneApiCall = true; // 🔥 确保标签在原生请求中不丢失
                     }
                     return normalized;
                 })
