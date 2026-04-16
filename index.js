@@ -4476,6 +4476,44 @@ if (window.GGP_Loaded) {
                                             }
 
                                             const cleanText = (text, maxLen = 220) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
+                                            const formatWeiboMediaForOfflineContext = (rawMedia) => {
+                                                const mediaText = String(rawMedia || '').trim();
+                                                if (!mediaText) return '';
+
+                                                // 支持格式：[图片]（描述）/[图片](描述)/[视频]（描述）/[视频](描述)
+                                                const taggedWithDesc = mediaText.match(/^\[(图片|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/);
+                                                if (taggedWithDesc) {
+                                                    const mediaType = taggedWithDesc[1];
+                                                    const mediaDesc = cleanText(taggedWithDesc[2], 120);
+                                                    return mediaDesc ? `[${mediaType}](${mediaDesc})` : `[${mediaType}]`;
+                                                }
+
+                                                // 兼容只有标签无描述（如 [图片]）
+                                                const taggedOnly = mediaText.match(/^\[(图片|视频)\]\s*$/);
+                                                if (taggedOnly) {
+                                                    return `[${taggedOnly[1]}]`;
+                                                }
+
+                                                // URL/base64 等真实文件路径，给线下上下文做轻量提示，避免塞入长 URL 污染上下文
+                                                if (/^(data:image\/|https?:\/\/|\/)/i.test(mediaText)) {
+                                                    const looksLikeVideo = /\.(mp4|mov|webm|m4v)(?:[?#]|$)/i.test(mediaText);
+                                                    return looksLikeVideo ? '[视频](用户上传文件)' : '[图片](用户上传文件)';
+                                                }
+
+                                                // 兜底：把纯文本当成图片描述
+                                                const fallbackDesc = cleanText(mediaText.replace(/^\[|\]$/g, ''), 120);
+                                                return fallbackDesc ? `[图片](${fallbackDesc})` : '';
+                                            };
+                                            const buildWeiboMediaSummary = (post) => {
+                                                const medias = Array.isArray(post?.images) ? post.images : [];
+                                                if (medias.length === 0) return '';
+
+                                                const normalized = medias
+                                                    .map(formatWeiboMediaForOfflineContext)
+                                                    .filter(Boolean)
+                                                    .slice(0, 9);
+                                                return normalized.join(' ');
+                                            };
                                             const userName = context?.name1 || '用户';
                                             
                                             // 🔥 核心逻辑：设置的限制数字仅用来截取最新的 N 条用户微博
@@ -4489,6 +4527,7 @@ if (window.GGP_Loaded) {
                                                     userPosts.forEach((post, idx) => {
                                                         const blogger = cleanText(post.blogger || userName, 40);
                                                         const content = cleanText(post.content || '');
+                                                        const mediaSummary = buildWeiboMediaSummary(post);
                                                         
                                                         // 🔥 解除限制：获取该条微博的所有评论，全量注入！
                                                         const comments = Array.isArray(post.commentList) ? post.commentList : [];
@@ -4497,6 +4536,9 @@ if (window.GGP_Loaded) {
                                                         if (post.time) weiboHistoryContent += `时间: ${cleanText(post.time, 20)}\n`;
                                                         weiboHistoryContent += `博主: ${blogger}\n`;
                                                         weiboHistoryContent += `正文: ${content || '[空内容]'}\n`;
+                                                        if (mediaSummary) {
+                                                            weiboHistoryContent += `配图: ${mediaSummary}\n`;
+                                                        }
 
                                                         if (comments.length > 0) {
                                                             weiboHistoryContent += `评论:\n`;
