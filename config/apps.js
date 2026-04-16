@@ -55,6 +55,16 @@ export const APPS = [
             installed: ['2048', '贪吃蛇', '俄罗斯方块']
         }
     },
+    {
+        id: 'mofo',
+        name: '魔坊',
+        icon: '🪄',
+        color: '#1677ff',
+        data: {
+            scenes: [],
+            presets: []
+        }
+    },
     // 第二行
     {
         id: 'phone',
@@ -103,4 +113,3 @@ export const PHONE_CONFIG = {
     position: 'right',
     size: 'medium'
 };
-

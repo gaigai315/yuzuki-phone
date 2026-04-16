@@ -3248,6 +3248,10 @@ if (window.GGP_Loaded) {
             if (window.VirtualPhone.weiboApp) {
                 window.VirtualPhone.weiboApp.clearCache();
             }
+            // 🪄 清空魔坊缓存
+            if (window.VirtualPhone.mofoApp) {
+                window.VirtualPhone.mofoApp.clearCache();
+            }
             // 🎵 音乐：清空缓存 + 刷新悬浮窗 + 扫描当前会话卡片
             if (window.VirtualPhone.musicApp) {
                 window.VirtualPhone.musicApp.onChatChanged(storage);
@@ -3393,6 +3397,7 @@ if (window.GGP_Loaded) {
                 promptManager: null,
                 home: null,
                 wechatApp: null,
+                mofoApp: null,
                 notify: showUnifiedPhoneNotification,
                 triggerWechatIncomingCall: triggerWechatIncomingCall,
                 loadTimeManager: loadTimeManager,
@@ -3679,6 +3684,23 @@ if (window.GGP_Loaded) {
                             console.error('❌ 导入 honey-app.js 失败:', importError);
                             phoneShell?.showNotification('错误', '蜜语模块加载失败', '❌');
                         });
+                } else if (appId === 'mofo') {
+                    import('./apps/mofo/mofo-app.js')
+                        .then(module => {
+                            try {
+                                if (!window.VirtualPhone.mofoApp) {
+                                    window.VirtualPhone.mofoApp = new module.MofoApp(phoneShell, storage);
+                                }
+                                window.VirtualPhone.mofoApp.render();
+                            } catch (initError) {
+                                console.error('❌ 魔坊APP初始化失败:', initError);
+                                phoneShell?.showNotification('错误', '魔坊加载失败', '❌');
+                            }
+                        })
+                        .catch(importError => {
+                            console.error('❌ 导入 mofo-app.js 失败:', importError);
+                            phoneShell?.showNotification('错误', '魔坊模块加载失败', '❌');
+                        });
                 } else {
                     phoneShell?.showNotification('APP', `${appId} 功能开发中...`, '🚧');
                 }
@@ -3749,6 +3771,10 @@ if (window.GGP_Loaded) {
                     if (window.VirtualPhone.diaryApp) window.VirtualPhone.diaryApp.clearCache();
                     if (window.VirtualPhone.phoneApp) window.VirtualPhone.phoneApp.clearCache();
                     if (window.VirtualPhone.weiboApp) window.VirtualPhone.weiboApp.clearCache();
+                    if (window.VirtualPhone.mofoApp) {
+                        window.VirtualPhone.mofoApp.clearCache();
+                        window.VirtualPhone.mofoApp = null;
+                    }
                     if (window.VirtualPhone.musicApp) {
                         window.VirtualPhone.musicApp.clearCache();
                         window.VirtualPhone.musicApp.view.destroyFloatingWidget();
@@ -3793,6 +3819,10 @@ if (window.GGP_Loaded) {
                     if (window.VirtualPhone.weiboApp) {
                         window.VirtualPhone.weiboApp.clearCache();
                         window.VirtualPhone.weiboApp = null;
+                    }
+                    if (window.VirtualPhone.mofoApp) {
+                        window.VirtualPhone.mofoApp.clearCache();
+                        window.VirtualPhone.mofoApp = null;
                     }
                     if (window.VirtualPhone.musicApp) {
                         window.VirtualPhone.musicApp.clearCache();
