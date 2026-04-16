@@ -47,6 +47,8 @@ export class HoneyView {
         this.isScenePanelOpen = false;
         this._recommendRefreshStatus = 'idle'; // idle | loading | success | error
         this._recommendRefreshTimer = null;
+        this._liveRefreshStatus = 'idle'; // idle | loading | success | error
+        this._liveRefreshTimer = null;
         this._honeyTtsAudio = new Audio();
         this._honeyTtsPlayingBtn = null;
         this._honeyTtsActiveBlobUrl = '';
@@ -694,6 +696,255 @@ export class HoneyView {
         inner.innerHTML = '';
     }
 
+    _resolveLivePullRefreshElements(sourceRoot = null) {
+        const liveRoot = this._getLiveRoot(sourceRoot);
+        if (!liveRoot) return { wrap: null, inner: null };
+        return {
+            wrap: liveRoot.querySelector('#honey-live-pull-refresh-indicator'),
+            inner: liveRoot.querySelector('#honey-live-pull-refresh-inner')
+        };
+    }
+
+    _setLivePullHint(height, text, ready = false, sourceRoot = null) {
+        const { wrap, inner } = this._resolveLivePullRefreshElements(sourceRoot);
+        if (!wrap || !inner) return;
+
+        wrap.classList.remove('loading', 'success', 'error');
+        wrap.classList.toggle('ready', !!ready);
+        wrap.style.height = `${Math.max(0, height)}px`;
+        inner.innerHTML = `<i class="fa-solid fa-arrow-down"></i> ${text}`;
+    }
+
+    _syncLiveRefreshIndicatorByState(sourceRoot = null) {
+        const { wrap, inner } = this._resolveLivePullRefreshElements(sourceRoot);
+        if (!wrap || !inner) return;
+
+        wrap.classList.remove('ready', 'loading', 'success', 'error');
+
+        if (this._liveRefreshStatus === 'loading') {
+            wrap.classList.add('loading');
+            wrap.style.height = '40px';
+            inner.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 正在刷新当前直播...';
+            return;
+        }
+
+        if (this._liveRefreshStatus === 'success') {
+            wrap.classList.add('success');
+            wrap.style.height = '40px';
+            inner.innerHTML = '<i class="fa-solid fa-circle-check"></i> 当前直播已刷新';
+            return;
+        }
+
+        if (this._liveRefreshStatus === 'error') {
+            wrap.classList.add('error');
+            wrap.style.height = '40px';
+            inner.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> 刷新失败';
+            return;
+        }
+
+        wrap.style.height = '0px';
+        inner.innerHTML = '';
+    }
+
+    async handleLivePullRefresh({ sourceRoot = null } = {}) {
+        if (!this._isHoneyLiveEnabled()) {
+            this.app.phoneShell.showNotification('蜜语已关闭', '请先在设置中开启蜜语功能', '⚠️');
+            return;
+        }
+
+        const liveRoot = this._getLiveRoot(sourceRoot);
+        if (!liveRoot) return;
+        if (this._isUserLiveScene(this.currentSceneData || this.selectedTopic)) return;
+        if (this._isGeneratingScene || this._liveRefreshStatus === 'loading') return;
+
+        clearTimeout(this._liveRefreshTimer);
+        this._liveRefreshStatus = 'loading';
+        this._syncLiveRefreshIndicatorByState(liveRoot);
+
+        try {
+            await this._generateCurrentTopicScene({
+                resetSession: true,
+                notify: false,
+                sourceRoot: liveRoot,
+                suppressRecommendListUpdate: true
+            });
+            this._liveRefreshStatus = 'success';
+            this._syncLiveRefreshIndicatorByState(liveRoot);
+            this.app.phoneShell.showNotification('蜜语', '当前直播内容已刷新', '✅');
+        } catch (err) {
+            console.error('蜜语直播下拉刷新失败:', err);
+            this._liveRefreshStatus = 'error';
+            this._syncLiveRefreshIndicatorByState(liveRoot);
+            this.app.phoneShell.showNotification('错误', err?.message || String(err), '❌');
+        } finally {
+            clearTimeout(this._liveRefreshTimer);
+            this._liveRefreshTimer = setTimeout(() => {
+                this._liveRefreshStatus = 'idle';
+                this._syncLiveRefreshIndicatorByState(liveRoot);
+            }, this._liveRefreshStatus === 'success' ? 1200 : 1600);
+        }
+    }
+
+    _bindLivePullRefresh(sourceRoot = null, isUserLive = false) {
+        const root = this._getLiveRoot(sourceRoot);
+        if (!root || isUserLive) return;
+
+        const triggerArea = root.querySelector('.honey-tabs');
+        if (!triggerArea) return;
+        if (triggerArea.dataset.honeyLivePullBound === '1') return;
+        triggerArea.dataset.honeyLivePullBound = '1';
+
+        const triggerThreshold = 56;
+        const maxPull = 92;
+        let holdTimer = null;
+        let pressing = false;
+        let longPressReady = false;
+        let pullDistance = 0;
+        let startX = 0;
+        let startY = 0;
+        let pressType = '';
+        let previousUserSelect = '';
+
+        const canPull = () => (
+            this.currentPage === 'live'
+            && !this._isUserLiveScene(this.currentSceneData || this.selectedTopic)
+            && this._liveRefreshStatus !== 'loading'
+            && !this._isGeneratingScene
+        );
+
+        const clearHoldTimer = () => {
+            if (!holdTimer) return;
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        };
+
+        const resetState = () => {
+            clearHoldTimer();
+            pressing = false;
+            longPressReady = false;
+            pullDistance = 0;
+            if (pressType === 'mouse') {
+                document.body.style.userSelect = previousUserSelect || '';
+                previousUserSelect = '';
+            }
+            pressType = '';
+        };
+
+        const startPress = (clientX, clientY, type) => {
+            if (!canPull()) return false;
+            pressing = true;
+            longPressReady = false;
+            pullDistance = 0;
+            pressType = type;
+            startX = clientX;
+            startY = clientY;
+
+            if (type === 'mouse') {
+                previousUserSelect = document.body.style.userSelect;
+                document.body.style.userSelect = 'none';
+            }
+
+            clearHoldTimer();
+            holdTimer = setTimeout(() => {
+                if (!pressing || !canPull()) return;
+                longPressReady = true;
+                this._setLivePullHint(18, '继续下拉刷新当前直播', false, root);
+            }, 180);
+            return true;
+        };
+
+        const movePress = (clientX, clientY, e) => {
+            if (!pressing) return;
+
+            const deltaX = clientX - startX;
+            const deltaY = clientY - startY;
+
+            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 8) {
+                resetState();
+                this._syncLiveRefreshIndicatorByState(root);
+                return;
+            }
+
+            if (!longPressReady || deltaY <= 0) return;
+
+            pullDistance = Math.min(maxPull, Math.round(deltaY * 0.55));
+            const ready = pullDistance >= triggerThreshold;
+            this._setLivePullHint(
+                pullDistance,
+                ready ? '松手刷新当前直播' : '下拉刷新当前直播',
+                ready,
+                root
+            );
+
+            if (e?.cancelable) e.preventDefault();
+        };
+
+        const endPress = () => {
+            const shouldTrigger = pressing && longPressReady && pullDistance >= triggerThreshold;
+            resetState();
+            if (shouldTrigger) {
+                this.handleLivePullRefresh({ sourceRoot: root });
+            } else {
+                this._syncLiveRefreshIndicatorByState(root);
+            }
+        };
+
+        const onTouchStart = (e) => {
+            if (!e.touches || e.touches.length === 0) return;
+            startPress(e.touches[0].clientX, e.touches[0].clientY, 'touch');
+        };
+        const onTouchMove = (e) => {
+            if (!e.touches || e.touches.length === 0) return;
+            movePress(e.touches[0].clientX, e.touches[0].clientY, e);
+        };
+        const onTouchEnd = () => {
+            if (pressType !== 'touch') return;
+            endPress();
+        };
+
+        let removeMouseGlobalListeners = null;
+        const addMouseGlobalListeners = () => {
+            const onMouseMove = (e) => {
+                if (pressType !== 'mouse') return;
+                movePress(e.clientX, e.clientY, e);
+            };
+            const onMouseUp = () => {
+                if (pressType !== 'mouse') return;
+                if (removeMouseGlobalListeners) removeMouseGlobalListeners();
+                endPress();
+            };
+            const onWindowBlur = () => {
+                if (pressType !== 'mouse') return;
+                if (removeMouseGlobalListeners) removeMouseGlobalListeners();
+                endPress();
+            };
+
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+            window.addEventListener('blur', onWindowBlur);
+
+            removeMouseGlobalListeners = () => {
+                window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mouseup', onMouseUp);
+                window.removeEventListener('blur', onWindowBlur);
+                removeMouseGlobalListeners = null;
+            };
+        };
+
+        const onMouseDown = (e) => {
+            if (e.button !== 0) return;
+            if (!startPress(e.clientX, e.clientY, 'mouse')) return;
+            e.preventDefault();
+            addMouseGlobalListeners();
+        };
+
+        triggerArea.addEventListener('touchstart', onTouchStart, { passive: true });
+        triggerArea.addEventListener('touchmove', onTouchMove, { passive: false });
+        triggerArea.addEventListener('touchend', onTouchEnd);
+        triggerArea.addEventListener('touchcancel', onTouchEnd);
+        triggerArea.addEventListener('mousedown', onMouseDown);
+    }
+
     renderLivePage() {
         const topic = this.selectedTopic || this.recommendTopics[0] || this._getFallbackTopic();
         const honeyEnabled = this._isHoneyLiveEnabled();
@@ -925,6 +1176,13 @@ export class HoneyView {
         const endLiveButtonHtml = isUserLive
             ? '<button class="honey-end-live-btn" id="honey-end-live-btn" type="button">结束直播</button>'
             : '';
+        const livePullRefreshHtml = isUserLive
+            ? ''
+            : `
+                <div class="honey-pull-refresh-indicator honey-live-pull-refresh-indicator" id="honey-live-pull-refresh-indicator">
+                    <div class="honey-pull-refresh-inner" id="honey-live-pull-refresh-inner"></div>
+                </div>
+            `;
 
         const html = `
             <div class="honey-app honey-page-live is-scene-collapsed ${isUserLive ? 'is-user-live' : ''} ${this.isScenePanelOpen ? 'is-scene-modal-open' : ''}">
@@ -950,6 +1208,7 @@ export class HoneyView {
                 </div>
 
                 <div class="honey-content">
+                    ${livePullRefreshHtml}
                     <div class="honey-live-room">
                         <div class="honey-meta-row">
                             <div class="honey-meta-host">
@@ -1849,10 +2108,12 @@ export class HoneyView {
     bindLiveEvents() {
         const root = document.querySelector('.phone-view-current .honey-page-live') || document.querySelector('.honey-page-live');
         if (!root) return;
+        const isUserLive = this._isUserLiveScene(this.currentSceneData || this.selectedTopic);
+        this._bindLivePullRefresh(root, isUserLive);
+        this._syncLiveRefreshIndicatorByState(root);
         if (root.dataset.honeyLiveBound === '1') return;
         root.dataset.honeyLiveBound = '1';
         this._bindLiveKeyboardViewport(root);
-        const isUserLive = this._isUserLiveScene(this.currentSceneData || this.selectedTopic);
 
         root.querySelector('#honey-back')?.addEventListener('click', () => {
             this._silenceLiveSpeaker();
@@ -5419,7 +5680,7 @@ export class HoneyView {
         this.app?.honeyData?.saveHostHistory?.(persistedHostName, sceneDate, scene);
     }
 
-    async _generateCurrentTopicScene({ resetSession = false, notify = false, forceTopicTitle = '', forceTopicKey = '', sourceRoot = null, userMessage = '' } = {}) {
+    async _generateCurrentTopicScene({ resetSession = false, notify = false, forceTopicTitle = '', forceTopicKey = '', sourceRoot = null, userMessage = '', suppressRecommendListUpdate = false } = {}) {
         const topicTitle = String(forceTopicTitle || this._getActiveTopicTitle()).trim();
         const topicKey = String(forceTopicKey || this._getActiveTopicKey()).trim();
         const normalizedUserMessage = String(userMessage || '').trim();
@@ -5645,13 +5906,15 @@ export class HoneyView {
                 return;
             }
 
-            // 核心修复：只有在 "from_scratch" (直接点击激情直播盲开) 时才允许覆盖推荐列表
-            // 如果是从推荐页点进来的 (recommend) 或发弹幕续写 (continue)，直接无视 AI 附带生成的推荐数据，保护原有列表！
-            if (!isUserLiveTopic && requestMode === 'from_scratch') {
+            // 核心修复：只有在 "from_scratch" 且允许覆盖时，才更新推荐列表
+            // 直播页内的局部刷新会显式传 suppressRecommendListUpdate=true，避免误刷新推荐池。
+            if (!isUserLiveTopic && requestMode === 'from_scratch' && !suppressRecommendListUpdate) {
                 if (Array.isArray(aiData?.recommendTopics) && aiData.recommendTopics.length > 0) {
                     this.recommendTopics = this._normalizeRecommendTopics(aiData.recommendTopics);
                     this.app?.honeyData?.saveRecommendTopics?.(this.recommendTopics);
                 }
+            } else if (!isUserLiveTopic && requestMode === 'from_scratch' && suppressRecommendListUpdate) {
+                console.log('️ [蜜语防覆盖] 直播页局部刷新已拦截 AI 附带推荐列表更新。');
             } else if (!isUserLiveTopic) {
                 console.log(`️ [蜜语防覆盖] 当前模式为 ${requestMode}，已拦截并丢弃 AI 附带生成的推荐列表，保护原有推荐页。`);
             }
