@@ -4477,21 +4477,46 @@ if (window.GGP_Loaded) {
 
                                             const cleanText = (text, maxLen = 220) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
                                             const formatWeiboMediaForOfflineContext = (rawMedia) => {
-                                                const mediaText = String(rawMedia || '').trim();
+                                                const mediaText = String(rawMedia || '').replace(/\s+/g, ' ').trim();
                                                 if (!mediaText) return '';
+
+                                                const buildTaggedDesc = (type, desc) => {
+                                                    const cleanDesc = cleanText(desc, 120);
+                                                    return cleanDesc ? `[${type}](${cleanDesc})` : `[${type}](未提供描述)`;
+                                                };
 
                                                 // 支持格式：[图片]（描述）/[图片](描述)/[视频]（描述）/[视频](描述)
                                                 const taggedWithDesc = mediaText.match(/^\[(图片|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/);
                                                 if (taggedWithDesc) {
                                                     const mediaType = taggedWithDesc[1];
                                                     const mediaDesc = cleanText(taggedWithDesc[2], 120);
-                                                    return mediaDesc ? `[${mediaType}](${mediaDesc})` : `[${mediaType}]`;
+                                                    if (/^(data:image\/|https?:\/\/|\/)/i.test(mediaDesc)) {
+                                                        return `[${mediaType}](用户上传文件)`;
+                                                    }
+                                                    return buildTaggedDesc(mediaType, mediaDesc);
+                                                }
+
+                                                // 兼容异常格式：[图片]https://... / [视频]/path/to/file
+                                                const taggedLoose = mediaText.match(/^\[(图片|视频)\]\s*(.+)\s*$/);
+                                                if (taggedLoose) {
+                                                    const mediaType = taggedLoose[1];
+                                                    let looseDesc = String(taggedLoose[2] || '').trim();
+                                                    // 清理重复前缀，避免出现 [图片][图片]https://... 这类脏数据
+                                                    looseDesc = looseDesc.replace(/^(?:\[(?:图片|视频)\]\s*)+/, '').trim();
+                                                    // 清理一层包裹括号
+                                                    const wrapped = looseDesc.match(/^[（(]\s*([^)）]+?)\s*[)）]$/);
+                                                    if (wrapped) looseDesc = String(wrapped[1] || '').trim();
+
+                                                    if (/^(data:image\/|https?:\/\/|\/)/i.test(looseDesc)) {
+                                                        return `[${mediaType}](用户上传文件)`;
+                                                    }
+                                                    return buildTaggedDesc(mediaType, looseDesc || '未提供描述');
                                                 }
 
                                                 // 兼容只有标签无描述（如 [图片]）
                                                 const taggedOnly = mediaText.match(/^\[(图片|视频)\]\s*$/);
                                                 if (taggedOnly) {
-                                                    return `[${taggedOnly[1]}]`;
+                                                    return `[${taggedOnly[1]}](未提供描述)`;
                                                 }
 
                                                 // URL/base64 等真实文件路径，给线下上下文做轻量提示，避免塞入长 URL 污染上下文
