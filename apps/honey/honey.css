@@ -3488,3 +3488,8 @@
 body.phone-input-active .honey-page-live .honey-live-bottom {
     padding-bottom: 24px !important;
 }
+
+/* 用户直播页额外保留安全区，避免移动端键盘弹起时输入框被底部遮挡 */
+body.phone-input-active .honey-page-live.is-user-live .honey-live-bottom {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+}
