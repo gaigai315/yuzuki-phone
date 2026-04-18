@@ -1945,11 +1945,38 @@ input:checked + .toggle-slider:before {
     font-size: 16px;
     font-weight: 600;
     color: #fff !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .phone-call-active-timer {
     font-size: 13px;
     color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.phone-call-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.phone-dot-green {
+    background: #34c759;
+    box-shadow: 0 0 4px rgba(52, 199, 89, 0.6);
+}
+
+.phone-dot-yellow {
+    background: #ffcc00;
+    box-shadow: 0 0 4px rgba(255, 204, 0, 0.6);
+}
+
+.phone-dot-red {
+    background: #ff3b30;
+    box-shadow: 0 0 4px rgba(255, 59, 48, 0.62);
 }
 
 .phone-call-active-avatar-area {
@@ -2381,6 +2408,10 @@ input:checked + .toggle-slider:before {
 .phone-call-settings-body {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior-y: contain;
     padding: 16px;
 }
 
@@ -2471,6 +2502,11 @@ input:checked + .toggle-slider:before {
     outline: none;
     box-sizing: border-box;
     font-family: inherit;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 .phone-call-prompt-btns {

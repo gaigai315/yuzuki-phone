@@ -218,7 +218,12 @@ export class PhoneShell {
                 '.weibo-profile-wrapper', '.weibo-recommend-container', '.weibo-pull-refresh-indicator',
                 '.weibo-forward-overlay', '.weibo-forward-dialog', '.weibo-forward-dialog-compose', '.weibo-forward-list',
                 '#wechat-weibo-preview-modal', '#wechat-weibo-preview-modal > div',
-                '.wechat-call-transcript-overlay', '.wechat-call-transcript-panel', '.wechat-call-transcript-body'
+                '.wechat-call-transcript-overlay', '.wechat-call-transcript-panel', '.wechat-call-transcript-body',
+                '.phone-call-history-list', '.phone-call-main', '.phone-call-transcript', '#phone-call-transcript-messages',
+                '.phone-call-settings', '.phone-call-settings-body', '.phone-call-settings-section',
+                '.phone-call-prompt-textarea', '#phone-call-call-prompt',
+                '.phone-call-active', '.phone-call-messages', '.phone-call-bottom',
+                '.honey-live-gifts', '.honey-live-gifts-list', '.honey-live-bottom'
             ];
 
             const isInScrollableArea = scrollableAreas.some(selector => target.closest(selector));

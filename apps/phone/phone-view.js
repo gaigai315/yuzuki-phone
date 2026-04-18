@@ -295,31 +295,41 @@ export class PhoneCallView {
 
     _bindSettingsEvents() {
         const pm = this._getPromptManager();
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const query = (selector) => currentView.querySelector(selector);
 
         // 返回（用 onclick 覆盖式绑定，防止 DOM Diffing 导致重复监听）
-        const backBtn = document.getElementById('phone-call-settings-back');
+        const backBtn = query('#phone-call-settings-back');
         if (backBtn) backBtn.onclick = () => this.renderMain();
 
         // 保存通话提示词
-        const saveBtn = document.getElementById('phone-call-save-call');
+        const saveBtn = query('#phone-call-save-call');
         if (saveBtn) saveBtn.onclick = () => {
-            const content = document.getElementById('phone-call-call-prompt')?.value || '';
+            const content = query('#phone-call-call-prompt')?.value || '';
             if (pm) pm.updatePrompt('phone', 'call', content);
             this.app.phoneShell.showNotification('已保存', '通话提示词已更新', '✅');
         };
 
         // 恢复通话默认
-        const resetBtn = document.getElementById('phone-call-reset-call');
+        const resetBtn = query('#phone-call-reset-call');
         if (resetBtn) resetBtn.onclick = () => {
             if (pm) {
                 const defaults = pm.getDefaultPrompts();
                 const defaultContent = defaults.phone?.call?.content || '';
                 pm.updatePrompt('phone', 'call', defaultContent);
-                const textarea = document.getElementById('phone-call-call-prompt');
+                const textarea = query('#phone-call-call-prompt');
                 if (textarea) textarea.value = defaultContent;
                 this.app.phoneShell.showNotification('已恢复', '通话提示词已恢复默认', '✅');
             }
         };
+
+        // 移动端手势豁免：在提示词框内滑动/选字时，不让外层手机壳手势抢事件
+        const textarea = query('#phone-call-call-prompt');
+        if (textarea) {
+            textarea.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+            textarea.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
+            textarea.addEventListener('touchend', (e) => e.stopPropagation(), { passive: true });
+        }
     }
 
     // ========================================
@@ -381,7 +391,7 @@ export class PhoneCallView {
         const html = `
             <div class="phone-call-active">
                 <div class="phone-call-active-header">
-                    <div class="phone-call-active-name">${callerName}</div>
+                    <div class="phone-call-active-name">${callerName}<span class="phone-call-status-dot phone-dot-green" id="phone-call-status-dot"></span></div>
                     <div class="phone-call-active-timer" id="phone-call-timer">00:00</div>
                 </div>
 
@@ -437,6 +447,48 @@ export class PhoneCallView {
             // 只要有AI消息就显示重新生成按钮
             const hasAiMsg = this.chatMessages.some(m => m.from !== 'me');
             regenBtn.style.display = hasAiMsg ? '' : 'none';
+        };
+
+        const setCallStatus = (color = 'green') => {
+            const dot = document.getElementById('phone-call-status-dot');
+            if (!dot) return;
+            dot.classList.remove('phone-dot-green', 'phone-dot-yellow', 'phone-dot-red');
+            if (color === 'red') {
+                dot.classList.add('phone-dot-red');
+                return;
+            }
+            if (color === 'yellow') {
+                dot.classList.add('phone-dot-yellow');
+                return;
+            }
+            dot.classList.add('phone-dot-green');
+        };
+
+        let callBatchTimer = null;
+        let callPendingUserLines = [];
+        let isCallSending = false;
+
+        const clearCallBatchTimer = () => {
+            clearTimeout(callBatchTimer);
+            callBatchTimer = null;
+        };
+
+        const restartCallPendingTimerIfNeeded = () => {
+            const input = document.getElementById('phone-call-input');
+            const text = String(input?.value || '').trim();
+            const isEditing = !!input && document.activeElement === input;
+            const canRestart = !isEditing && text === '' && callPendingUserLines.length > 0 && !isCallSending;
+            if (!canRestart) {
+                if (isEditing && !isCallSending) {
+                    setCallStatus('green');
+                }
+                return;
+            }
+            clearCallBatchTimer();
+            callBatchTimer = setTimeout(() => {
+                triggerCallAI();
+            }, 6000);
+            setCallStatus('yellow');
         };
 
         // 发送消息并获取AI回复（核心逻辑，复用于发送和重新生成）
@@ -496,25 +548,74 @@ export class PhoneCallView {
             }
         };
 
+        const triggerCallAI = async () => {
+            if (isCallSending || callPendingUserLines.length === 0) return;
+
+            isCallSending = true;
+            clearCallBatchTimer();
+            setCallStatus('red');
+            const messageToSend = callPendingUserLines.join('\n');
+            callPendingUserLines = [];
+
+            try {
+                await requestAIReply(messageToSend);
+            } finally {
+                isCallSending = false;
+                if (callPendingUserLines.length > 0) {
+                    restartCallPendingTimerIfNeeded();
+                } else {
+                    setCallStatus('green');
+                }
+            }
+        };
+
         // 发送消息
         const sendMessage = async () => {
+            this.audioPlayer.pause();
+            this.audioPlayer.src = '';
+
             const input = document.getElementById('phone-call-input');
             const messagesDiv = document.getElementById('phone-call-messages');
             if (!input || !messagesDiv) return;
 
             const text = input.value.trim();
-            if (!text) return;
+            if (text) {
+                // 显示用户气泡
+                messagesDiv.insertAdjacentHTML('beforeend',
+                    `<div class="phone-call-message-user">${this._escapeHtml(text)}</div>`
+                );
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
-            // 显示用户气泡
-            messagesDiv.insertAdjacentHTML('beforeend',
-                `<div class="phone-call-message-user">${this._escapeHtml(text)}</div>`
-            );
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                this.chatMessages.push({ from: 'me', text });
+                callPendingUserLines.push(text);
+                input.value = '';
 
-            this.chatMessages.push({ from: 'me', text: text });
-            input.value = '';
+                if (document.activeElement === input) {
+                    clearCallBatchTimer();
+                    setCallStatus('green');
+                } else {
+                    restartCallPendingTimerIfNeeded();
+                }
+                return;
+            }
 
-            await requestAIReply(text);
+            if (callPendingUserLines.length > 0) {
+                await triggerCallAI();
+                return;
+            }
+
+            const recentUserLines = this.chatMessages
+                .filter(m => m.from === 'me')
+                .slice(-5)
+                .map(m => m.text)
+                .filter(Boolean);
+            if (recentUserLines.length > 0) {
+                callPendingUserLines = recentUserLines;
+                await triggerCallAI();
+                return;
+            }
+
+            this.app.phoneShell.showNotification('提示', '请先输入内容', '⚠️');
         };
 
         // 重新生成：删除最后一轮AI回复，重新发送
@@ -549,15 +650,71 @@ export class PhoneCallView {
             }
 
             updateRegenBtn();
-            await requestAIReply(lastUserMsg);
+
+            clearCallBatchTimer();
+            callPendingUserLines = [];
+            isCallSending = true;
+            setCallStatus('red');
+            try {
+                await requestAIReply(lastUserMsg);
+            } finally {
+                isCallSending = false;
+                setCallStatus('green');
+            }
         };
 
         // 绑定事件
-        document.getElementById('phone-call-send')?.addEventListener('click', sendMessage);
-        document.getElementById('phone-call-input')?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
+        const phoneInput = document.getElementById('phone-call-input');
+        const phoneSendBtn = document.getElementById('phone-call-send');
+
+        phoneInput?.addEventListener('focus', () => {
+            clearCallBatchTimer();
+            setCallStatus('green');
+        });
+
+        phoneInput?.addEventListener('blur', () => {
+            restartCallPendingTimerIfNeeded();
+        });
+
+        phoneInput?.addEventListener('input', (e) => {
+            const text = String(e.target.value || '').trim();
+            if (text !== '') {
+                clearCallBatchTimer();
+                setCallStatus('green');
+                return;
+            }
+            if (document.activeElement === e.target) return;
+            restartCallPendingTimerIfNeeded();
+        });
+
+        let isHandlingCallSend = false;
+        const executeCallSend = (e) => {
+            if (e) e.preventDefault();
+            if (isHandlingCallSend) return;
+            isHandlingCallSend = true;
+            sendMessage();
+            setTimeout(() => {
+                isHandlingCallSend = false;
+            }, 300);
+        };
+
+        phoneSendBtn?.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+        phoneSendBtn?.addEventListener('touchend', executeCallSend);
+        phoneSendBtn?.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+        });
+        phoneSendBtn?.addEventListener('click', executeCallSend);
+
+        phoneInput?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
         });
         document.getElementById('phone-call-regen')?.addEventListener('click', regenerate);
+        setCallStatus('green');
 
         // 挂断
         document.getElementById('phone-call-hangup')?.addEventListener('click', () => {
@@ -565,6 +722,9 @@ export class PhoneCallView {
                 clearInterval(this.callTimer);
                 this.callTimer = null;
             }
+            clearCallBatchTimer();
+            callPendingUserLines = [];
+            isCallSending = false;
 
             // 停止音频播放
             this.audioPlayer.pause();

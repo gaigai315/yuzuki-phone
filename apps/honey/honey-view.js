@@ -60,6 +60,9 @@ export class HoneyView {
         this._dismissedLiveCollabRequestFingerprint = '';
         this._isEndCollabConfirmOpen = false;
         this._liveViewportCleanup = null;
+        this._liveBatchTimer = null;
+        this._livePendingUserLines = [];
+        this._liveSendInFlight = false;
         this._restoreSessionState();
         this._loadCSS();
     }
@@ -248,6 +251,12 @@ export class HoneyView {
         this._cleanupTransient();
         this._syncSessionState();
         if (this.currentPage !== 'live') {
+            if (this._liveBatchTimer) {
+                clearTimeout(this._liveBatchTimer);
+                this._liveBatchTimer = null;
+            }
+            this._livePendingUserLines = [];
+            this._liveSendInFlight = false;
             this.isScenePanelOpen = false;
             this._isEndCollabConfirmOpen = false;
         }
@@ -1193,6 +1202,7 @@ export class HoneyView {
                             <span class="honey-meta-title-text" id="honey-ui-title-top">${this._escapeHtml(liveTitleText || '直播间')}</span>
                             <span class="honey-meta-title-text honey-meta-title-text-clone" id="honey-ui-title-top-clone" aria-hidden="true"></span>
                         </span>
+                        <span class="honey-live-status-dot honey-live-status-green" id="honey-live-status-dot"></span>
                     </div>
                     <div style="display: flex; gap: 8px; align-items: center;">
                         ${liveVideoUrl ? `<button class="honey-icon-btn" id="honey-live-sound-btn" title="开启/关闭声音" style="font-size: 15px;"><i class="fa-solid fa-volume-xmark"></i></button>` : ''}
@@ -2115,6 +2125,110 @@ export class HoneyView {
         root.dataset.honeyLiveBound = '1';
         this._bindLiveKeyboardViewport(root);
 
+        const getLiveInput = () => root.querySelector('#honey-chat-input');
+        const setLiveStatusDot = (color = 'green') => {
+            const dot = root.querySelector('#honey-live-status-dot');
+            if (!dot) return;
+            dot.classList.remove('honey-live-status-green', 'honey-live-status-yellow', 'honey-live-status-red');
+            if (color === 'red') {
+                dot.classList.add('honey-live-status-red');
+                return;
+            }
+            if (color === 'yellow') {
+                dot.classList.add('honey-live-status-yellow');
+                return;
+            }
+            dot.classList.add('honey-live-status-green');
+        };
+        const clearLiveBatchTimer = () => {
+            clearTimeout(this._liveBatchTimer);
+            this._liveBatchTimer = null;
+        };
+        const syncLiveStatusDot = () => {
+            const input = getLiveInput();
+            const isEditing = !!input && document.activeElement === input;
+            if (this._liveSendInFlight || this._isGeneratingScene) {
+                setLiveStatusDot('red');
+                return;
+            }
+            if (this._liveBatchTimer && !isEditing) {
+                setLiveStatusDot('yellow');
+                return;
+            }
+            setLiveStatusDot('green');
+        };
+        const restartLivePendingTimerIfNeeded = () => {
+            const input = getLiveInput();
+            const text = String(input?.value || '').trim();
+            const isEditing = !!input && document.activeElement === input;
+            const canRestart = !isEditing
+                && text === ''
+                && Array.isArray(this._livePendingUserLines)
+                && this._livePendingUserLines.length > 0
+                && !this._liveSendInFlight
+                && !this._isGeneratingScene;
+            if (!canRestart) {
+                if (text !== '' || isEditing || this._isGeneratingScene) {
+                    clearLiveBatchTimer();
+                }
+                syncLiveStatusDot();
+                return;
+            }
+            clearLiveBatchTimer();
+            this._liveBatchTimer = setTimeout(() => {
+                flushPendingLiveMessages();
+            }, 6000);
+            syncLiveStatusDot();
+        };
+        const flushPendingLiveMessages = async () => {
+            if (this._liveSendInFlight || this._isGeneratingScene) return;
+            if (!Array.isArray(this._livePendingUserLines) || this._livePendingUserLines.length === 0) return;
+            if (!this._isHoneyLiveEnabled()) {
+                this.app.phoneShell.showNotification('蜜语已关闭', '请先在设置中开启蜜语功能', '⚠️');
+                clearLiveBatchTimer();
+                this._livePendingUserLines = [];
+                syncLiveStatusDot();
+                return;
+            }
+
+            this._liveSendInFlight = true;
+            clearLiveBatchTimer();
+            syncLiveStatusDot();
+
+            const combinedMessage = this._livePendingUserLines.join('\n');
+            this._livePendingUserLines = [];
+            const input = getLiveInput();
+            const prevPlaceholder = String(input?.placeholder || '');
+            if (input) {
+                input.value = '';
+                input.disabled = true;
+                input.placeholder = 'AI 正在根据你的弹幕推进剧情...';
+            }
+
+            try {
+                await this._generateCurrentTopicScene({
+                    resetSession: false,
+                    notify: false,
+                    sourceRoot: root,
+                    userMessage: combinedMessage
+                });
+            } catch (err) {
+                console.error('蜜语互动续写失败:', err);
+                this.app.phoneShell.showNotification('错误', err.message || String(err), '❌');
+            } finally {
+                if (input) {
+                    input.disabled = false;
+                    input.placeholder = prevPlaceholder || '输入后回车发送弹幕...';
+                }
+                this._liveSendInFlight = false;
+                if (Array.isArray(this._livePendingUserLines) && this._livePendingUserLines.length > 0) {
+                    restartLivePendingTimerIfNeeded();
+                } else {
+                    syncLiveStatusDot();
+                }
+            }
+        };
+
         root.querySelector('#honey-back')?.addEventListener('click', () => {
             this._silenceLiveSpeaker();
             this._navigateBackFromLive();
@@ -2318,39 +2432,63 @@ export class HoneyView {
             });
         }
 
-        root.querySelector('#honey-chat-input')?.addEventListener('keydown', async (e) => {
+        const liveInput = getLiveInput();
+        liveInput?.addEventListener('focus', () => {
+            clearLiveBatchTimer();
+            syncLiveStatusDot();
+        });
+        liveInput?.addEventListener('blur', () => {
+            restartLivePendingTimerIfNeeded();
+        });
+        liveInput?.addEventListener('input', (e) => {
+            const text = String(e.target.value || '').trim();
+            if (text !== '') {
+                clearLiveBatchTimer();
+                syncLiveStatusDot();
+                return;
+            }
+            if (document.activeElement === e.target) {
+                syncLiveStatusDot();
+                return;
+            }
+            restartLivePendingTimerIfNeeded();
+        });
+        liveInput?.addEventListener('keydown', async (e) => {
             if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
             e.preventDefault();
 
             const input = e.currentTarget;
             const text = String(input.value || '').trim();
-            if (!text) return;
-            if (!this._isHoneyLiveEnabled()) {
-                this.app.phoneShell.showNotification('蜜语已关闭', '请先在设置中开启蜜语功能', '⚠️');
+
+            if (text) {
+                if (!this._isHoneyLiveEnabled()) {
+                    this.app.phoneShell.showNotification('蜜语已关闭', '请先在设置中开启蜜语功能', '⚠️');
+                    return;
+                }
+                if (this._isGeneratingScene || this._liveSendInFlight) return;
+
+                this._livePendingUserLines.push(text);
+                input.value = '';
+
+                if (document.activeElement === input) {
+                    clearLiveBatchTimer();
+                    syncLiveStatusDot();
+                } else {
+                    restartLivePendingTimerIfNeeded();
+                }
                 return;
             }
-            if (this._isGeneratingScene) return;
 
-            const prevPlaceholder = input.placeholder;
-            input.value = '';
-            input.disabled = true;
-            input.placeholder = 'AI 正在根据你的弹幕推进剧情...';
-
-            try {
-                await this._generateCurrentTopicScene({
-                    resetSession: false,
-                    notify: false,
-                    sourceRoot: root,
-                    userMessage: text
-                });
-            } catch (err) {
-                console.error('蜜语互动续写失败:', err);
-                this.app.phoneShell.showNotification('错误', err.message || String(err), '❌');
-            } finally {
-                input.disabled = false;
-                input.placeholder = prevPlaceholder;
+            if (Array.isArray(this._livePendingUserLines) && this._livePendingUserLines.length > 0) {
+                await flushPendingLiveMessages();
+                return;
             }
         });
+        if (Array.isArray(this._livePendingUserLines) && this._livePendingUserLines.length > 0) {
+            restartLivePendingTimerIfNeeded();
+        } else {
+            syncLiveStatusDot();
+        }
 
         const sceneTtsBtn = root.querySelector('#honey-scene-tts-btn');
         if (sceneTtsBtn) {
@@ -6171,6 +6309,10 @@ export class HoneyView {
     }
 
     _cleanupTransient() {
+        if (this._liveBatchTimer) {
+            clearTimeout(this._liveBatchTimer);
+            this._liveBatchTimer = null;
+        }
         if (this._liveViewportCleanup) {
             this._liveViewportCleanup();
             this._liveViewportCleanup = null;

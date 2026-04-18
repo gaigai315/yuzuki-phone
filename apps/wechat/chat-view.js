@@ -116,6 +116,27 @@ export class ChatView {
         return this.pendingChatIds.has(String(chatId || '').trim());
     }
 
+    _isComposingInCurrentChat(chatId = null) {
+        const safeChatId = String(chatId || this.app.currentChat?.id || '').trim();
+        const currentChatId = String(this.app.currentChat?.id || '').trim();
+        if (!safeChatId || !currentChatId || safeChatId !== currentChatId) {
+            return false;
+        }
+
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
+        const isInputFocused = !!input && document.activeElement === input;
+        const hasInputText = !!input && String(input.value || this.inputText || '').trim() !== '';
+        const isPanelOpen = !!(this.showEmoji || this.showMore);
+        return isInputFocused || hasInputText || isPanelOpen;
+    }
+
+    _isPendingChatSendable(chatId = null) {
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId) return false;
+        return !this._isComposingInCurrentChat(safeChatId);
+    }
+
     getHeaderStatusDotColor(chatId = null) {
         const safeChatId = String(chatId || this.app.currentChat?.id || '').trim();
         if (!safeChatId) return 'green';
@@ -125,6 +146,9 @@ export class ChatView {
         }
 
         if (this._hasPendingChat(safeChatId)) {
+            if (!this._isPendingChatSendable(safeChatId)) {
+                return 'green';
+            }
             return 'yellow';
         }
 
@@ -348,11 +372,23 @@ export class ChatView {
             clearTimeout(this.batchTimer);
             return;
         }
+
+        const pendingIds = Array.from(this.pendingChatIds || []).map(id => String(id || '').trim()).filter(Boolean);
+        const sendableIds = pendingIds.filter(id => this._isPendingChatSendable(id));
         clearTimeout(this.batchTimer);
+        if (sendableIds.length === 0) {
+            this.hideTypingStatus();
+            return;
+        }
+
         this.batchTimer = setTimeout(() => this.triggerAI(), 6000);
         const visibleChatId = String(preferredChatId || this.app.currentChat?.id || '').trim();
         if (visibleChatId && this.pendingChatIds.has(visibleChatId)) {
-            this.showTypingStatus('等待回复', visibleChatId);
+            if (this._isPendingChatSendable(visibleChatId)) {
+                this.showTypingStatus('等待回复', visibleChatId);
+            } else {
+                this.hideTypingStatus();
+            }
         }
     }
 renderChatRoom(chat) {
@@ -2892,6 +2928,12 @@ renderChatRoom(chat) {
                 }
             });
         }
+
+        if (this._hasPendingChat(this.app.currentChat?.id)) {
+            this._restartPendingTimerIfNeeded(this.app.currentChat?.id);
+        } else {
+            this.hideTypingStatus();
+        }
     }
 
     // 🔥 抽取为独立方法：绑定消息长按事件（性能优化版：事件委托）
@@ -3080,6 +3122,7 @@ renderChatRoom(chat) {
 
             for (const chatId of chatIds) {
                 if (!this.pendingChatIds.has(chatId)) continue;
+                if (!this._isPendingChatSendable(chatId)) continue;
 
                 const messages = this.app.wechatData.getMessages(chatId);
                 const recentUserMessages = messages.filter(m => m.from === 'me').slice(-5);
@@ -6287,8 +6330,14 @@ renderChatRoom(chat) {
         const restartVideoPendingTimerIfNeeded = () => {
             const input = getVideoInput();
             const text = String(input?.value || '').trim();
-            const canRestart = text === '' && videoPendingUserLines.length > 0 && !isVideoSending;
-            if (!canRestart) return;
+            const isEditing = !!input && document.activeElement === input;
+            const canRestart = !isEditing && text === '' && videoPendingUserLines.length > 0 && !isVideoSending;
+            if (!canRestart) {
+                if (isEditing && !isVideoSending) {
+                    setVideoCallStatus('green');
+                }
+                return;
+            }
             clearVideoBatchTimer();
             videoBatchTimer = setTimeout(() => {
                 triggerVideoAI();
@@ -7532,8 +7581,14 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         const restartVoicePendingTimerIfNeeded = () => {
             const input = getVoiceInput();
             const text = String(input?.value || '').trim();
-            const canRestart = text === '' && voicePendingUserLines.length > 0 && !isVoiceSending;
-            if (!canRestart) return;
+            const isEditing = !!input && document.activeElement === input;
+            const canRestart = !isEditing && text === '' && voicePendingUserLines.length > 0 && !isVoiceSending;
+            if (!canRestart) {
+                if (isEditing && !isVoiceSending) {
+                    setVoiceCallStatus('green');
+                }
+                return;
+            }
             clearVoiceBatchTimer();
             voiceBatchTimer = setTimeout(() => {
                 triggerVoiceAI();

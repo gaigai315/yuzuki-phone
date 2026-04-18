@@ -78,6 +78,32 @@
     width: auto;
     max-width: none;
     padding: 0 2px;
+    position: relative;
+    gap: 6px;
+}
+
+.honey-live-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.honey-live-status-green {
+    background: #34c759;
+    box-shadow: 0 0 4px rgba(52, 199, 89, 0.6);
+}
+
+.honey-live-status-yellow {
+    background: #ffcc00;
+    box-shadow: 0 0 4px rgba(255, 204, 0, 0.6);
+}
+
+.honey-live-status-red {
+    background: #ff3b30;
+    box-shadow: 0 0 4px rgba(255, 59, 48, 0.62);
 }
 
 .honey-meta-host {
