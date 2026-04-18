@@ -10,6 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 import { WechatData } from '../wechat/wechat-data.js';
+import { GlobalSocialStore } from '../../config/global-social-store.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 export class HoneyData {
@@ -22,6 +23,8 @@ export class HoneyData {
         this._selectedTopicCache = null;
         this._lastSceneCache = null;
         this._flushTimer = null;
+        this.globalSocialStore = new GlobalSocialStore(storage);
+        this._bootstrapHoneyGlobalSocialData();
     }
 
     _getContext() {
@@ -41,6 +44,156 @@ export class HoneyData {
             .replace(/\s+/g, '')
             .trim()
             .toLowerCase();
+    }
+
+    _resolveHoneyStorageKey(key) {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return '';
+        if (/^global_honey_/i.test(safeKey)) return safeKey;
+        if (/^honey_/i.test(safeKey)) return `global_${safeKey}`;
+        return safeKey;
+    }
+
+    _getStored(key, fallback = null) {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return fallback;
+        const globalKey = this._resolveHoneyStorageKey(safeKey);
+
+        let value = this.storage?.get?.(globalKey);
+        if ((value === null || value === undefined || value === '') && globalKey !== safeKey) {
+            value = this.storage?.get?.(safeKey);
+        }
+        if (value === null || value === undefined || value === '') return fallback;
+        return value;
+    }
+
+    _setStored(key, value) {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        const globalKey = this._resolveHoneyStorageKey(safeKey);
+        this.storage?.set?.(globalKey, value);
+    }
+
+    _getStoredRaw(key, fallback = null) {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return fallback;
+        const value = this.storage?.get?.(safeKey);
+        if (value === null || value === undefined || value === '') return fallback;
+        return value;
+    }
+
+    _removeStoredRaw(key) {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        this.storage?.remove?.(safeKey);
+    }
+
+    _removeStored(key, alsoLegacy = true) {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        const globalKey = this._resolveHoneyStorageKey(safeKey);
+        this.storage?.remove?.(globalKey);
+        if (alsoLegacy && globalKey !== safeKey) {
+            this.storage?.remove?.(safeKey);
+        }
+    }
+
+    _getHoneyGlobalContactId(personLike) {
+        const key = this._normalizeHostNameKey(personLike?.name || personLike?.nickname || '');
+        if (!key) return '';
+        return `honey_friend_${key}`;
+    }
+
+    _bootstrapHoneyGlobalSocialData() {
+        try {
+            const localFriends = this._readJSON('honey_my_friends', []);
+            const localRequests = this._readJSON('honey_my_friend_requests', []);
+            if (Array.isArray(localFriends) && localFriends.length > 0) {
+                this._syncHoneyPeopleToGlobalStore(localFriends, 'friend');
+            }
+            if (Array.isArray(localRequests) && localRequests.length > 0) {
+                this._syncHoneyPeopleToGlobalStore(localRequests, 'request');
+            }
+        } catch (e) {
+            console.warn('⚠️ [蜜语] 本地好友迁移到全局主库失败:', e);
+        }
+    }
+
+    _syncHoneyPeopleToGlobalStore(list = [], scope = 'friend') {
+        const safeList = Array.isArray(list) ? list : [];
+        safeList.forEach((item) => {
+            const person = this._normalizeHoneySocialPerson(item, scope === 'friend' ? '好友' : '直播间');
+            if (!person?.name) return;
+            this.globalSocialStore?.upsertContact?.({
+                app: 'honey',
+                appContactId: this._getHoneyGlobalContactId(person),
+                name: person.name,
+                avatar: person.avatarUrl || '',
+                relation: scope === 'friend' ? '蜜语好友' : '蜜语候选好友',
+                extra: {
+                    sourceApp: person.sourceApp || 'honey',
+                    sourceLabel: person.source || (scope === 'friend' ? '好友' : '直播间'),
+                    honeySource: person.source || '',
+                    honeyVisibleIntro: person.message || '',
+                    honeyHiddenBackground: person.hiddenBackground || '',
+                    acceptedAtPhoneTime: person.acceptedAtPhoneTime || '',
+                    honeyScope: scope
+                }
+            });
+        });
+    }
+
+    _mergeHoneyPeopleFromGlobalStore(localList = [], scope = 'friend') {
+        const locals = (Array.isArray(localList) ? localList : [])
+            .map(item => this._normalizeHoneySocialPerson(item, scope === 'friend' ? '好友' : '直播间'))
+            .filter(Boolean);
+
+        const merged = new Map();
+        locals.forEach((item) => {
+            const key = this._normalizeHostNameKey(item?.name || '');
+            if (!key) return;
+            merged.set(key, item);
+        });
+
+        const globalList = this.globalSocialStore?.getContactsByApp?.('honey') || [];
+        globalList.forEach((entry) => {
+            const relationText = String(entry?.relation || '').trim();
+            const inferredScope = relationText.includes('候选') ? 'request' : 'friend';
+            const scopeTag = String(entry?.extra?.honeyScope || inferredScope).trim().toLowerCase();
+            const targetScope = scope === 'friend' ? 'friend' : 'request';
+            if (scopeTag && scopeTag !== targetScope) return;
+
+            const person = this._normalizeHoneySocialPerson({
+                name: entry?.name,
+                avatarUrl: entry?.avatar,
+                message: entry?.extra?.honeyVisibleIntro || '',
+                source: entry?.extra?.sourceLabel || (scope === 'friend' ? '好友' : '直播间'),
+                sourceApp: entry?.extra?.sourceApp || 'honey',
+                acceptedAtPhoneTime: entry?.extra?.acceptedAtPhoneTime || '',
+                hiddenBackground: entry?.extra?.honeyHiddenBackground || ''
+            }, scope === 'friend' ? '好友' : '直播间');
+            if (!person) return;
+
+            const key = this._normalizeHostNameKey(person.name || '');
+            if (!key) return;
+            if (!merged.has(key)) {
+                merged.set(key, person);
+                return;
+            }
+
+            const current = merged.get(key);
+            merged.set(key, this._normalizeHoneySocialPerson({
+                ...current,
+                avatarUrl: current.avatarUrl || person.avatarUrl,
+                message: current.message || person.message,
+                source: current.source || person.source,
+                sourceApp: current.sourceApp || person.sourceApp,
+                acceptedAtPhoneTime: current.acceptedAtPhoneTime || person.acceptedAtPhoneTime,
+                hiddenBackground: current.hiddenBackground || person.hiddenBackground
+            }, scope === 'friend' ? '好友' : '直播间'));
+        });
+
+        return Array.from(merged.values()).filter(Boolean);
     }
 
     _stripFollowStateSuffix(name = '') {
@@ -211,7 +364,7 @@ export class HoneyData {
     }
 
     _readJSON(key, fallback) {
-        const saved = this.storage?.get?.(key);
+        const saved = this._getStored(key, null);
         if (saved === null || saved === undefined || saved === '') return fallback;
         try {
             return typeof saved === 'string' ? JSON.parse(saved) : saved;
@@ -320,12 +473,12 @@ export class HoneyData {
     saveRecommendTopics(topics) {
         const safeTopics = Array.isArray(topics) ? topics : [];
         this._recommendCache = safeTopics;
-        this.storage?.set?.('honey_recommend_topics', JSON.stringify(safeTopics));
+        this._setStored('honey_recommend_topics', JSON.stringify(safeTopics));
         this._scheduleFlushChatPersistence();
     }
 
     getRecommendBgVideo() {
-        const saved = this.storage?.get?.('global_honey_bg_video');
+        const saved = this._getStored('global_honey_bg_video', '');
         const safe = typeof saved === 'string' ? saved.trim() : '';
         return safe || null;
     }
@@ -333,9 +486,9 @@ export class HoneyData {
     saveRecommendBgVideo(url) {
         const safe = String(url || '').trim();
         if (safe) {
-            this.storage?.set?.('global_honey_bg_video', safe);
+            this._setStored('global_honey_bg_video', safe);
         } else {
-            this.storage?.remove?.('global_honey_bg_video');
+            this._removeStored('global_honey_bg_video', false);
         }
         this._scheduleFlushChatPersistence();
     }
@@ -350,7 +503,7 @@ export class HoneyData {
     saveTopicScenes(scenes) {
         const safe = scenes && typeof scenes === 'object' ? scenes : {};
         this._topicScenesCache = safe;
-        this.storage?.set?.('honey_topic_scenes', JSON.stringify(safe));
+        this._setStored('honey_topic_scenes', JSON.stringify(safe));
         this._scheduleFlushChatPersistence();
     }
 
@@ -412,7 +565,7 @@ export class HoneyData {
             const keyMatch = !!targetKey && lastKey === targetKey;
             if (last && (titleMatch || keyMatch)) {
                 this._lastSceneCache = null;
-                this.storage?.remove?.('honey_last_scene');
+                this._removeStored('honey_last_scene');
                 this._scheduleFlushChatPersistence();
             }
         }
@@ -420,7 +573,7 @@ export class HoneyData {
 
     getSelectedTopicTitle() {
         if (typeof this._selectedTopicCache === 'string') return this._selectedTopicCache;
-        const saved = this.storage?.get?.('honey_selected_topic');
+        const saved = this._getStored('honey_selected_topic', '');
         this._selectedTopicCache = typeof saved === 'string' ? saved : '';
         return this._selectedTopicCache;
     }
@@ -428,18 +581,18 @@ export class HoneyData {
     saveSelectedTopicTitle(topicTitle) {
         const safe = String(topicTitle || '').trim();
         this._selectedTopicCache = safe;
-        this.storage?.set?.('honey_selected_topic', safe);
+        this._setStored('honey_selected_topic', safe);
         this._scheduleFlushChatPersistence();
     }
 
     getSelectedTopicKey() {
-        const saved = this.storage?.get?.('honey_selected_topic_key');
+        const saved = this._getStored('honey_selected_topic_key', '');
         return typeof saved === 'string' ? saved.trim() : '';
     }
 
     saveSelectedTopicKey(topicKey) {
         const safe = String(topicKey || '').trim();
-        this.storage?.set?.('honey_selected_topic_key', safe);
+        this._setStored('honey_selected_topic_key', safe);
         this._scheduleFlushChatPersistence();
     }
 
@@ -469,11 +622,11 @@ export class HoneyData {
     }
 
     getCustomLiveVideos() {
-        const globalRaw = this.storage?.get?.(this.customLiveVideosGlobalKey, null);
+        const globalRaw = this._getStored(this.customLiveVideosGlobalKey, null);
         const globalList = this._normalizeCustomVideoList(globalRaw);
 
         // 兼容旧版：从聊天专属 key 读取并迁移到全局 key
-        const legacyRaw = this.storage?.get?.(this.customLiveVideosLegacyKey, null);
+        const legacyRaw = this._getStoredRaw(this.customLiveVideosLegacyKey, null);
         const legacyList = this._normalizeCustomVideoList(legacyRaw);
 
         const merged = [];
@@ -488,14 +641,14 @@ export class HoneyData {
             const mergedJson = JSON.stringify(merged);
             const globalJson = JSON.stringify(globalList);
             if (mergedJson !== globalJson) {
-                this.storage?.set?.(this.customLiveVideosGlobalKey, mergedJson);
+                this._setStored(this.customLiveVideosGlobalKey, mergedJson);
                 this._scheduleFlushChatPersistence();
             }
         }
 
         // 完成迁移后清空 legacy，避免删除时被旧 key 再次“回灌”到列表末尾
         if (legacyList.length > 0) {
-            this.storage?.remove?.(this.customLiveVideosLegacyKey);
+            this._removeStoredRaw(this.customLiveVideosLegacyKey);
         }
 
         return merged;
@@ -507,7 +660,7 @@ export class HoneyData {
         const videos = this.getCustomLiveVideos();
         if (!videos.includes(safeUrl)) {
             videos.push(safeUrl);
-            this.storage?.set?.(this.customLiveVideosGlobalKey, JSON.stringify(videos));
+            this._setStored(this.customLiveVideosGlobalKey, JSON.stringify(videos));
             this._scheduleFlushChatPersistence();
         }
     }
@@ -516,22 +669,15 @@ export class HoneyData {
         const safeUrl = String(url || '').trim();
         if (!safeUrl) return;
         const videos = this.getCustomLiveVideos().filter(v => v !== safeUrl);
-        this.storage?.set?.(this.customLiveVideosGlobalKey, JSON.stringify(videos));
-
-        // 同步清理 legacy key（历史数据），防止被 getCustomLiveVideos 再合并回来
-        const legacyRaw = this.storage?.get?.(this.customLiveVideosLegacyKey, null);
-        const legacyVideos = this._normalizeCustomVideoList(legacyRaw).filter(v => v !== safeUrl);
-        if (legacyVideos.length > 0) {
-            this.storage?.set?.(this.customLiveVideosLegacyKey, JSON.stringify(legacyVideos));
-        } else {
-            this.storage?.remove?.(this.customLiveVideosLegacyKey);
-        }
+        this._setStored(this.customLiveVideosGlobalKey, JSON.stringify(videos));
+        // 迁移后不再保留 legacy
+        this._removeStoredRaw(this.customLiveVideosLegacyKey);
 
         this._scheduleFlushChatPersistence();
     }
 
     getHoneyUserNickname() {
-        const saved = String(this.storage?.get?.('honey_user_nickname') || '').trim();
+        const saved = String(this._getStored('honey_user_nickname', '') || '').trim();
         if (saved) return saved;
         const context = this._getContext();
         const fallback = String(context?.name1 || '').trim();
@@ -544,7 +690,7 @@ export class HoneyData {
             .replace(/\s+/g, ' ')
             .trim()
             .slice(0, 20);
-        this.storage?.set?.('honey_user_nickname', safe);
+        this._setStored('honey_user_nickname', safe);
         this._scheduleFlushChatPersistence();
         return safe;
     }
@@ -612,9 +758,92 @@ export class HoneyData {
             accountId: this._buildHoneyUserAccountId(patch.accountId || current.accountId || nextNickname),
             gender: nextGender
         };
-        this.storage?.set?.('honey_user_profile', JSON.stringify(nextProfile));
+        this._setStored('honey_user_profile', JSON.stringify(nextProfile));
+        this._syncUserLiveTopicCaches(nextProfile);
         this._scheduleFlushChatPersistence();
         return nextProfile;
+    }
+
+    _syncUserLiveTopicCaches(profile = null) {
+        const safeProfile = (profile && typeof profile === 'object')
+            ? profile
+            : this.getHoneyUserProfile();
+        const nickname = this._sanitizeInlineText(safeProfile?.nickname || '主播', 20) || '主播';
+        const title = this._sanitizeInlineText(safeProfile?.liveTitle || `${nickname}的直播间`, 40) || `${nickname}的直播间`;
+        const intro = this._sanitizeInlineText(safeProfile?.intro || '', 120);
+        const followers = Math.max(0, Number.parseInt(String(safeProfile?.followers || 0), 10) || 0);
+        const fans = String(followers);
+        const userLiveTopicKey = 'topic_user_live';
+
+        const cachedScene = this.getTopicScene(userLiveTopicKey, title) || {};
+        const nextScene = {
+            ...cachedScene,
+            host: nickname,
+            title,
+            _topicTitle: title,
+            _topicKey: userLiveTopicKey,
+            intro: intro || String(cachedScene?.intro || '').trim(),
+            fans,
+            playCount: String(cachedScene?.playCount || cachedScene?.viewers || '0'),
+            viewers: String(cachedScene?.viewers || '0'),
+            collab: String(cachedScene?.collab || '无').trim() || '无',
+            isUserLive: true
+        };
+        this.saveTopicScene(userLiveTopicKey, nextScene, title);
+
+        const lastScene = this.getLastSceneData();
+        const lastTopicKey = String(lastScene?._topicKey || '').trim();
+        if (lastScene && (lastTopicKey === userLiveTopicKey || lastScene?.isUserLive === true)) {
+            this.saveLastSceneData({
+                ...lastScene,
+                host: nickname,
+                title,
+                _topicTitle: title,
+                _topicKey: userLiveTopicKey,
+                intro: intro || String(lastScene?.intro || '').trim(),
+                fans,
+                isUserLive: true
+            });
+        }
+
+        const selectedTopicKey = this.getSelectedTopicKey();
+        if (selectedTopicKey === userLiveTopicKey) {
+            this.saveSelectedTopicTitle(title);
+            this.saveSelectedTopicKey(userLiveTopicKey);
+        }
+
+        const recommendTopics = this.getRecommendTopics();
+        if (Array.isArray(recommendTopics) && recommendTopics.length > 0) {
+            const idx = recommendTopics.findIndex(item => {
+                const key = String(item?._topicKey || '').trim();
+                return key === userLiveTopicKey || item?.isUserLive === true;
+            });
+            if (idx >= 0) {
+                recommendTopics[idx] = {
+                    ...recommendTopics[idx],
+                    _topicKey: userLiveTopicKey,
+                    host: nickname,
+                    title,
+                    intro: intro || String(recommendTopics[idx]?.intro || '').trim(),
+                    fans,
+                    isUserLive: true
+                };
+                this.saveRecommendTopics(recommendTopics);
+            }
+        }
+    }
+
+    _syncHoneyUserProfileFromUserLiveScene(scene = null) {
+        if (!scene || typeof scene !== 'object') return this.getHoneyUserProfile();
+        const nextPatch = {};
+        const safeTitle = this._sanitizeInlineText(scene.title || '', 40);
+        const safeIntro = this._sanitizeInlineText(scene.intro || '', 120);
+        const parsedFollowers = this._parseHoneyFollowerNumber(scene.fans);
+        if (safeTitle) nextPatch.liveTitle = safeTitle;
+        if (safeIntro) nextPatch.intro = safeIntro;
+        if (parsedFollowers !== null) nextPatch.followers = parsedFollowers;
+        if (Object.keys(nextPatch).length <= 0) return this.getHoneyUserProfile();
+        return this.saveHoneyUserProfile(nextPatch);
     }
 
     _buildHoneyUserAccountId(seed = '') {
@@ -914,34 +1143,36 @@ export class HoneyData {
     getHoneyFriends() {
         const parsed = this._readJSON('honey_my_friends', []);
         if (!Array.isArray(parsed)) return [];
-        return parsed
+        const localList = parsed
             .map(item => this._normalizeHoneySocialPerson(item, '好友'))
             .filter(Boolean);
+        return this._mergeHoneyPeopleFromGlobalStore(localList, 'friend');
     }
 
     saveHoneyFriends(list) {
         const safeList = Array.isArray(list)
             ? list.map(item => this._normalizeHoneySocialPerson(item, '好友')).filter(Boolean)
             : [];
-        this.storage?.set?.('honey_my_friends', JSON.stringify(safeList));
-        this._scheduleFlushChatPersistence();
+        this._syncHoneyPeopleToGlobalStore(safeList, 'friend');
+        // 全局主库模式：不再持续写入会话键，避免污染聊天会话。
         return safeList;
     }
 
     getHoneyFriendRequests() {
         const parsed = this._readJSON('honey_my_friend_requests', []);
         if (!Array.isArray(parsed)) return [];
-        return parsed
+        const localList = parsed
             .map(item => this._normalizeHoneySocialPerson(item, '直播间'))
             .filter(Boolean);
+        return this._mergeHoneyPeopleFromGlobalStore(localList, 'request');
     }
 
     saveHoneyFriendRequests(list) {
         const safeList = Array.isArray(list)
             ? list.map(item => this._normalizeHoneySocialPerson(item, '直播间')).filter(Boolean)
             : [];
-        this.storage?.set?.('honey_my_friend_requests', JSON.stringify(safeList));
-        this._scheduleFlushChatPersistence();
+        this._syncHoneyPeopleToGlobalStore(safeList, 'request');
+        // 全局主库模式：不再持续写入会话键，避免污染聊天会话。
         return safeList;
     }
 
@@ -1091,6 +1322,7 @@ export class HoneyData {
 
         const nextFriends = currentFriends.filter(item => this._normalizeHostNameKey(item?.name || '') !== targetKey);
         this.saveHoneyFriends(nextFriends);
+        this.globalSocialStore?.removeAppContact?.('honey', this._getHoneyGlobalContactId(removedFriend));
 
         const wechatData = this._getWechatDataBridge();
         const linkedContact = wechatData.getContacts()
@@ -1205,11 +1437,42 @@ export class HoneyData {
             }
         }
 
+        this.globalSocialStore?.upsertContact?.({
+            app: 'honey',
+            appContactId: this._getHoneyGlobalContactId(friend),
+            name: friend.name,
+            avatar: friend.avatarUrl || '',
+            relation: '蜜语好友',
+            extra: {
+                sourceApp: friend.sourceApp || 'honey',
+                sourceLabel: friend.source || '好友',
+                honeySource: friend.source || '',
+                honeyVisibleIntro: friend.message || '',
+                honeyHiddenBackground: hiddenBackground || '',
+                acceptedAtPhoneTime: friend.acceptedAtPhoneTime || '',
+                honeyScope: 'friend'
+            }
+        });
+        this.globalSocialStore?.upsertContact?.({
+            app: 'wechat',
+            appContactId: String(contact.id || ''),
+            name: contact.name || friend.name,
+            avatar: contact.avatar || friend.avatarUrl || '',
+            relation: contact.relation || '蜜语好友',
+            extra: {
+                sourceApp: 'honey',
+                sourceLabel: '蜜语',
+                honeySource: friend.source || '',
+                honeyVisibleIntro: friend.message || '',
+                honeyHiddenBackground: hiddenBackground || ''
+            }
+        });
+
         return { friend, contact, chat, wechatData };
     }
 
     getHoneyCoinBalance() {
-        const raw = this.storage?.get?.('honey_coin_balance');
+        const raw = this._getStored('honey_coin_balance', 0);
         const num = Number.parseFloat(raw);
         if (!Number.isFinite(num) || num < 0) return 0;
         return Math.floor(num);
@@ -1218,7 +1481,7 @@ export class HoneyData {
     setHoneyCoinBalance(amount) {
         const num = Number.parseFloat(amount);
         const safe = Number.isFinite(num) ? Math.max(0, Math.floor(num)) : 0;
-        this.storage?.set?.('honey_coin_balance', safe);
+        this._setStored('honey_coin_balance', safe);
         this._scheduleFlushChatPersistence();
         return safe;
     }
@@ -1229,7 +1492,7 @@ export class HoneyData {
         const next = Number.isFinite(parsed)
             ? Math.max(0, Math.floor(current + parsed))
             : current;
-        this.storage?.set?.('honey_coin_balance', next);
+        this._setStored('honey_coin_balance', next);
         this._scheduleFlushChatPersistence();
         return next;
     }
@@ -1375,7 +1638,10 @@ export class HoneyData {
                     figure: String(item.figure || item.figureLabel || '魅魔').trim() || '魅魔',
                     boundVideoUrl: String(item.boundVideoUrl || '').trim(),
                     lastActiveAt: Number(item.lastActiveAt) || 0,
-                    favorability: this._clampFavorability(item.favorability ?? item.affection, 0)
+                    favorability: this._clampFavorability(item.favorability ?? item.affection, 0),
+                    liveTitle: this._sanitizeInlineText(item.liveTitle || item.title || '', 40),
+                    intro: this._sanitizeInlineText(item.intro || '', 120),
+                    fans: this._sanitizeInlineText(item.fans || item.followers || '', 24)
                 };
             })
             .filter(Boolean);
@@ -1394,12 +1660,15 @@ export class HoneyData {
                         figure: String(item.figure || item.figureLabel || '魅魔').trim() || '魅魔',
                         boundVideoUrl: String(item.boundVideoUrl || '').trim(),
                         lastActiveAt: Number(item.lastActiveAt) || 0,
-                        favorability: this._clampFavorability(item.favorability ?? item.affection, 0)
+                        favorability: this._clampFavorability(item.favorability ?? item.affection, 0),
+                        liveTitle: this._sanitizeInlineText(item.liveTitle || item.title || '', 40),
+                        intro: this._sanitizeInlineText(item.intro || '', 120),
+                        fans: this._sanitizeInlineText(item.fans || item.followers || '', 24)
                     };
                 })
                 .filter(Boolean)
             : [];
-        this.storage?.set?.('honey_followed_hosts', JSON.stringify(safeList));
+        this._setStored('honey_followed_hosts', JSON.stringify(safeList));
         this._scheduleFlushChatPersistence();
     }
 
@@ -1460,7 +1729,10 @@ export class HoneyData {
             figure: String((patch.figure ?? list[idx].figure) || '魅魔').trim() || '魅魔',
             boundVideoUrl: String((patch.boundVideoUrl ?? list[idx].boundVideoUrl) || '').trim(),
             lastActiveAt: Number(patch.lastActiveAt ?? list[idx].lastActiveAt) || 0,
-            favorability: this._clampFavorability(patch.favorability ?? patch.affection ?? list[idx].favorability, 0)
+            favorability: this._clampFavorability(patch.favorability ?? patch.affection ?? list[idx].favorability, 0),
+            liveTitle: this._sanitizeInlineText(patch.liveTitle ?? patch.title ?? list[idx].liveTitle, 40),
+            intro: this._sanitizeInlineText(patch.intro ?? list[idx].intro, 120),
+            fans: this._sanitizeInlineText(patch.fans ?? patch.followers ?? list[idx].fans, 24)
         };
         this.saveFollowedHosts(list);
         return list[idx];
@@ -1513,7 +1785,7 @@ export class HoneyData {
         const lastHostKey = this._normalizeHostNameForMatch(lastScene?.host || '');
         if (lastScene && lastHostKey && lastHostKey === hostKey) {
             this._lastSceneCache = null;
-            this.storage?.remove?.('honey_last_scene');
+            this._removeStored('honey_last_scene');
             this._scheduleFlushChatPersistence();
         }
     }
@@ -1524,7 +1796,7 @@ export class HoneyData {
 
         const historyKey = this._hostHistoryStorageKey(safeHostName);
         if (historyKey) {
-            this.storage?.remove?.(historyKey);
+            this._removeStored(historyKey);
         }
         this._clearHostRelatedSceneCache(safeHostName);
     }
@@ -1566,7 +1838,7 @@ export class HoneyData {
         const dateKey = this._normalizeSceneDate(dateStr);
         const history = this.getHostHistory(hostName);
         history[dateKey] = this._deepCloneSceneData(sceneData);
-        this.storage?.set?.(key, JSON.stringify(history));
+        this._setStored(key, JSON.stringify(history));
         this._scheduleFlushChatPersistence();
     }
 
@@ -1580,7 +1852,7 @@ export class HoneyData {
     saveLastSceneData(scene) {
         if (!scene || typeof scene !== 'object') return;
         this._lastSceneCache = scene;
-        this.storage?.set?.('honey_last_scene', JSON.stringify(scene));
+        this._setStored('honey_last_scene', JSON.stringify(scene));
         this._scheduleFlushChatPersistence();
     }
 
@@ -1629,25 +1901,25 @@ export class HoneyData {
             if (!hostName) return;
             const historyKey = this._hostHistoryStorageKey(hostName);
             if (!historyKey) return;
-            this.storage?.remove?.(historyKey);
+            this._removeStored(historyKey);
         });
-        this.storage?.remove?.('honey_followed_hosts');
+        this._removeStored('honey_followed_hosts');
 
         // 兜底：清理异常残留的 honey_history_* 键（例如已丢失关注列表但历史还在）
         const chatStore = this.storage?._getChatMetadataStore?.();
         if (chatStore && typeof chatStore === 'object') {
             Object.keys(chatStore)
-                .filter(key => /^honey_history_/i.test(String(key || '')))
-                .forEach((key) => this.storage?.remove?.(key));
+                .filter(key => /^(?:honey_history_|global_honey_history_)/i.test(String(key || '')))
+                .forEach((key) => this._removeStored(key));
         }
 
         this._topicScenesCache = {};
         this._selectedTopicCache = '';
         this._lastSceneCache = null;
-        this.storage?.remove?.('honey_topic_scenes');
-        this.storage?.remove?.('honey_selected_topic');
-        this.storage?.remove?.('honey_selected_topic_key');
-        this.storage?.remove?.('honey_last_scene');
+        this._removeStored('honey_topic_scenes');
+        this._removeStored('honey_selected_topic');
+        this._removeStored('honey_selected_topic_key');
+        this._removeStored('honey_last_scene');
         this._scheduleFlushChatPersistence();
     }
 
@@ -2030,7 +2302,7 @@ export class HoneyData {
         const rawText = result.summary || result.content || result.text || '';
         const filteredText = applyPhoneTagFilter(rawText, { storage: this.storage });
         const parsed = this.parseHoneyUserLiveContent(filteredText || rawText);
-        this._updateHoneyUserProfileFollowers(parsed?.fans);
+        this._syncHoneyUserProfileFromUserLiveScene(parsed);
         if (mode === 'continue') {
             const nextPromptTurns = [...historyTurns];
             if (runtimeContext && safeUserMessageWithNick) {

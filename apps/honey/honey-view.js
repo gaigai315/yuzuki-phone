@@ -1803,8 +1803,8 @@ export class HoneyView {
                                     <div class="honey-settings-label honey-mine-inline-label">直播昵称</div>
                                     <input type="text" id="honey-mine-live-nickname" class="honey-settings-input honey-mine-live-nickname" maxlength="20" value="${this._escapeHtml(profile.nickname || '')}" placeholder="输入直播昵称">
                                     <div class="honey-mine-gender-row">
-                                        <span class="honey-settings-label honey-mine-gender-label">主播性别</span>
-                                        <div class="honey-mine-gender-switch" role="radiogroup" aria-label="主播性别">
+                                        <span class="honey-settings-label honey-mine-gender-label">性别</span>
+                                        <div class="honey-mine-gender-switch" role="radiogroup" aria-label="性别">
                                             <button type="button" class="honey-mine-gender-btn ${profile.gender === 'male' ? 'is-active' : ''}" data-gender="male" aria-pressed="${profile.gender === 'male' ? 'true' : 'false'}">男</button>
                                             <button type="button" class="honey-mine-gender-btn ${profile.gender !== 'male' ? 'is-active' : ''}" data-gender="female" aria-pressed="${profile.gender !== 'male' ? 'true' : 'false'}">女</button>
                                         </div>
@@ -5813,6 +5813,11 @@ export class HoneyView {
         const persistedHostName = String(matchedFollowedHost?.name || sceneHostName).trim();
         if (!persistedHostName) return;
 
+        this.app?.honeyData?.updateFollowedHost?.(persistedHostName, {
+            liveTitle: String(scene?.title || '').trim(),
+            intro: String(scene?.intro || '').trim(),
+            fans: String(scene?.fans || '').trim()
+        });
         const sceneDate = this._getCurrentStoryDateOrSystem();
         this.app?.honeyData?.markHostActive?.(persistedHostName, Date.now());
         this.app?.honeyData?.saveHostHistory?.(persistedHostName, sceneDate, scene);

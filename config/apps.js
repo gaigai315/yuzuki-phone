@@ -47,15 +47,6 @@ export const APPS = [
         }
     },
     {
-        id: 'games',
-        name: '游戏',
-        icon: '🎮',
-        color: '#722ed1',
-        data: {
-            installed: ['2048', '贪吃蛇', '俄罗斯方块']
-        }
-    },
-    {
         id: 'mofo',
         name: '魔坊',
         icon: '🪄',
@@ -95,6 +86,16 @@ export const APPS = [
             nowPlaying: null
         }
     },
+    {
+        id: 'games',
+        name: '游戏',
+        icon: '🎮',
+        color: '#722ed1',
+        data: {
+            installed: ['2048', '贪吃蛇', '俄罗斯方块']
+        }
+    },
+    // 第三行
     {
         id: 'settings',
         name: '设置',

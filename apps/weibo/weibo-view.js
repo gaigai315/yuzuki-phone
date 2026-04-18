@@ -415,7 +415,7 @@ export class WeiboView {
                                         ${isVideoProcessed ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none;"><div style="width:32px; height:32px; border-radius:50%; background:rgba(0,0,0,0.5); border:1.5px solid #fff; display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; padding-left:3px;"><i class="fa-solid fa-play"></i></div></div>` : ''}
                                         <div class="weibo-image-prompt-show-back" title="查看${mediaType}描述" style="
                                             position:absolute; right:4px; bottom:4px; background:rgba(0,0,0,0.55); color:#fff;
-                                            border-radius:999px; padding:2px 6px; font-size:9px; line-height:1; cursor:pointer;
+                                            border-radius:999px; padding:3px 7px; font-size:11px; line-height:1; cursor:pointer;
                                             box-shadow:0 2px 8px rgba(0,0,0,0.18);
                                         ">描述</div>
                                     </div>
@@ -474,7 +474,7 @@ export class WeiboView {
                                         </div>
                                         <div class="weibo-image-prompt-show-back" title="查看${mediaType}描述" style="
                                             position:absolute; right:4px; bottom:4px; background:rgba(0,0,0,0.55); color:#fff;
-                                            border-radius:999px; padding:2px 6px; font-size:9px; line-height:1; cursor:pointer;
+                                            border-radius:999px; padding:3px 7px; font-size:11px; line-height:1; cursor:pointer;
                                         ">描述</div>
                                     </div>
                                     <div class="weibo-image-prompt-back-panel" style="

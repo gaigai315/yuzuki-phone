@@ -280,6 +280,9 @@ export class PhoneCallView {
                     <div class="phone-call-settings-section">
                         <div class="phone-call-settings-section-title">通话中提示词</div>
                         <textarea class="phone-call-prompt-textarea" id="phone-call-call-prompt" placeholder="通话中回复规则...">${this._escapeHtml(callPrompt)}</textarea>
+                        <div style="margin-top:6px; font-size:11px; color:var(--phone-secondary-text, #999); line-height:1.5;">
+                            可用变量：<code>{{user}}</code>、<code>{{callerName}}</code>（同义：<code>{{caller}}</code> / <code>{{char}}</code>）
+                        </div>
                         <div class="phone-call-prompt-btns">
                             <button class="phone-call-prompt-btn phone-call-prompt-btn-save" id="phone-call-save-call">保存</button>
                             <button class="phone-call-prompt-btn phone-call-prompt-btn-reset" id="phone-call-reset-call">恢复默认</button>
@@ -762,11 +765,12 @@ export class PhoneCallView {
             if (!context) return '...';
 
             const userName = context.name1 || '用户';
-            let charName = callerName;
+            const callRoleName = String(callerName || '').trim() || '对方';
+            let contextCharacterName = callRoleName;
 
             // 优先使用 characterId 获取真实角色名
             if (context.characterId !== undefined && context.characters && context.characters[context.characterId]) {
-                charName = context.characters[context.characterId].name || callerName;
+                contextCharacterName = context.characters[context.characterId].name || callRoleName;
             }
 
             const storage = window.VirtualPhone?.storage;
@@ -777,7 +781,7 @@ export class PhoneCallView {
             // ========================================
             if (context.characterId !== undefined && context.characters && context.characters[context.characterId]) {
                 const char = context.characters[context.characterId];
-                let charInfo = `【角色信息】\n角色名: ${char.name || charName}\n`;
+                let charInfo = `【角色信息】\n角色卡主体: ${char.name || contextCharacterName}\n当前电话来电角色: ${callRoleName}\n`;
 
                 if (char.description) charInfo += `描述: ${char.description}\n`;
                 if (char.personality) charInfo += `性格: ${char.personality}\n`;
@@ -857,7 +861,7 @@ export class PhoneCallView {
 
                     if (content) {
                         const isUser = msg.is_user;
-                        const speaker = isUser ? userName : charName;
+                        const speaker = isUser ? userName : callRoleName;
                         messages.push({
                             role: isUser ? 'user' : 'assistant',
                             content: `${speaker}: ${content}`,
@@ -877,6 +881,17 @@ export class PhoneCallView {
                 isPhoneMessage: true
             });
 
+            messages.push({
+                role: 'system',
+                content: [
+                    '【通话身份锁定】',
+                    `你必须严格根据角色设定，扮演“${callRoleName}”与${userName}通话。`,
+                    `当前来电方姓名：${callRoleName}。`,
+                    '严禁切换成其他角色名称回复，严禁使用不确定的“你/某人/角色A/B”代称。'
+                ].join('\n'),
+                isPhoneMessage: true
+            });
+
             // ========================================
             // 5️⃣ 通话提示词（phone.call）
             // ========================================
@@ -884,7 +899,10 @@ export class PhoneCallView {
             const callPrompt = pm?.getPromptForFeature('phone', 'call') || '';
             if (callPrompt) {
                 const processedPrompt = callPrompt
-                    .replace(/\{\{char\}\}/gi, callerName)
+                    .replace(/\{\{char\}\}/gi, callRoleName)
+                    .replace(/\{\{callerName\}\}/gi, callRoleName)
+                    .replace(/\{\{caller\}\}/gi, callRoleName)
+                    .replace(/\{\{roleName\}\}/gi, callRoleName)
                     .replace(/\{\{user\}\}/gi, userName);
                 messages.push({
                     role: 'system',
@@ -901,7 +919,7 @@ export class PhoneCallView {
             if (recentMessages.length > 0) {
                 let historyText = '【📞 当前通话记录】\n';
                 recentMessages.forEach(h => {
-                    const speaker = h.from === 'me' ? userName : callerName;
+                    const speaker = h.from === 'me' ? userName : callRoleName;
                     historyText += `${speaker}: ${h.text}\n`;
                 });
                 messages.push({

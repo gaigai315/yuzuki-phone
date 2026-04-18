@@ -513,6 +513,141 @@ if (window.GGP_Loaded) {
         _drainFallbackNotificationQueue();
     }
 
+    async function getOrCreateMofoData() {
+        if (!window.VirtualPhone) window.VirtualPhone = {};
+        if (window.VirtualPhone.cachedMofoData) {
+            if (window.VirtualPhone.mofoApp && window.VirtualPhone.mofoApp.mofoData !== window.VirtualPhone.cachedMofoData) {
+                window.VirtualPhone.mofoApp.mofoData = window.VirtualPhone.cachedMofoData;
+            }
+            return window.VirtualPhone.cachedMofoData;
+        }
+
+        if (window.VirtualPhone.mofoApp?.mofoData) {
+            window.VirtualPhone.cachedMofoData = window.VirtualPhone.mofoApp.mofoData;
+            return window.VirtualPhone.cachedMofoData;
+        }
+
+        const module = await import('./apps/mofo/mofo-data.js');
+        window.VirtualPhone.cachedMofoData = new module.MofoData(storage);
+        if (window.VirtualPhone.mofoApp && window.VirtualPhone.mofoApp.mofoData !== window.VirtualPhone.cachedMofoData) {
+            window.VirtualPhone.mofoApp.mofoData = window.VirtualPhone.cachedMofoData;
+        }
+        return window.VirtualPhone.cachedMofoData;
+    }
+
+    function insertTextToSendTextarea(text, cursorOffset = null) {
+        const textarea = document.getElementById('send_textarea');
+        if (!textarea) return false;
+
+        const safeText = String(text || '');
+        const startPos = textarea.selectionStart || textarea.value.length;
+        const endPos = textarea.selectionEnd || textarea.value.length;
+        const textBefore = textarea.value.substring(0, startPos);
+        const textAfter = textarea.value.substring(endPos, textarea.value.length);
+
+        textarea.value = textBefore + safeText + textAfter;
+        const offset = Number.isInteger(cursorOffset) ? cursorOffset : safeText.length;
+        const newCursorPos = startPos + Math.max(0, Math.min(offset, safeText.length));
+        textarea.selectionStart = newCursorPos;
+        textarea.selectionEnd = newCursorPos;
+        textarea.focus();
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+    }
+
+    async function processMofoTags(rawText, { source = 'assistant', messageIndex = null } = {}) {
+        const safeText = String(rawText || '').trim();
+        if (!safeText) return [];
+
+        try {
+            const mofoData = await getOrCreateMofoData();
+            if (!mofoData || typeof mofoData.applyTagUpdatesFromText !== 'function') return [];
+            return mofoData.applyTagUpdatesFromText(safeText, { source, messageIndex });
+        } catch (e) {
+            console.warn('⚠️ [魔坊] 标签解析失败:', e);
+            return [];
+        }
+    }
+
+    async function buildMofoOfflinePromptContent() {
+        try {
+            const mofoData = await getOrCreateMofoData();
+            if (!mofoData) return '';
+
+            const items = (typeof mofoData.getOfflinePromptItems === 'function')
+                ? mofoData.getOfflinePromptItems()
+                : ((typeof mofoData.getItems === 'function' ? mofoData.getItems() : []) || [])
+                    .filter(item => item && item.offlinePromptEnabled !== false && String(item.promptTemplate || '').trim());
+
+            if (!Array.isArray(items) || items.length === 0) return '';
+
+            const stringifyState = (value) => {
+                if (value === null) return 'null';
+                if (typeof value === 'undefined') return '';
+                if (typeof value === 'object') {
+                    try { return JSON.stringify(value); } catch (e) { return '[object]'; }
+                }
+                return String(value);
+            };
+            const buildStateLines = (stateObj) => {
+                const entries = Object.entries(stateObj || {});
+                if (entries.length === 0) return '暂无状态';
+                return entries.map(([k, v]) => `${k}: ${stringifyState(v)}`).join('\n');
+            };
+            const formatUpdatedAt = (ts) => {
+                const n = Number(ts || 0);
+                if (!Number.isFinite(n) || n <= 0) return '未知';
+                const d = new Date(n);
+                if (Number.isNaN(d.getTime())) return '未知';
+                return d.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            };
+
+            const blocks = items.map(item => {
+                const name = String(item?.name || '魔坊').trim() || '魔坊';
+                const tagName = String(item?.tagName || name).trim() || name;
+                const stateObj = (item?.state && typeof item.state === 'object' && !Array.isArray(item.state))
+                    ? item.state
+                    : {};
+                const stateJson = (() => {
+                    try { return JSON.stringify(stateObj, null, 2); } catch (e) { return '{}'; }
+                })();
+                const stateLines = buildStateLines(stateObj);
+                const lastPayload = String(item?.lastPayload || '').trim() || '无';
+                const updatedAt = formatUpdatedAt(item?.updatedAt);
+
+                let tpl = String(item?.promptTemplate || '').trim();
+                tpl = tpl
+                    .replace(/\{\{mofoName\}\}/gi, name)
+                    .replace(/\{\{mofoTag\}\}/gi, tagName)
+                    .replace(/\{\{mofoState\}\}/gi, stateLines)
+                    .replace(/\{\{mofoStateJson\}\}/gi, stateJson)
+                    .replace(/\{\{mofoLastPayload\}\}/gi, lastPayload)
+                    .replace(/\{\{mofoUpdatedAt\}\}/gi, updatedAt);
+
+                return [
+                    `【魔坊条目】${name}`,
+                    `标签: <${tagName}>`,
+                    `更新时间: ${updatedAt}`,
+                    `当前状态:`,
+                    stateLines,
+                    `提示词模板:`,
+                    tpl
+                ].join('\n');
+            });
+
+            return `【魔坊线下提示词】\n${blocks.join('\n\n')}\n`;
+        } catch (e) {
+            console.warn('⚠️ [魔坊] 构建线下提示词失败:', e);
+            return '';
+        }
+    }
+
     // 🔥 新增：在底部栏创建内嵌回复按钮（全局守护进程）
     function createInlineReplyButton() {
         const btnId = 'st-phone-inline-reply-btn';
@@ -533,7 +668,7 @@ if (window.GGP_Loaded) {
                 .remote-ctrl-btn.active { opacity: 1 !important; color: var(--qc-accent); }
                 .st-phone-inline-reply-wrapper { display: flex; align-items: center; }
     #phone-inline-reply-menu-pop {
-    position: fixed; z-index: 2147483647;
+    position: fixed; z-index: 2147483645;
     background: linear-gradient(180deg,
         rgba(243,248,255,0.72) 0%,
         rgba(233,240,252,0.66) 62%,
@@ -544,10 +679,12 @@ if (window.GGP_Loaded) {
     border-radius: 12px;
     box-shadow: 0 14px 38px rgba(20,35,70,0.32), inset 0 1px 0 rgba(255,255,255,0.65);
     padding: 8px; 
-    overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+    overflow: hidden; display: flex; flex-direction: column; gap: 6px;
     
     left: 50%;
-    width: clamp(150px, 60vw, 220px); 
+    width: clamp(240px, 82vw, 420px); 
+    height: clamp(280px, 68vh, 460px);
+    max-height: calc(100dvh - 20px);
     box-sizing: border-box;
 
     /* 🔥 新增：移动端手势豁免，允许上下滑动，屏蔽左右滑动误触侧边栏，防止滚动穿透 */
@@ -598,8 +735,7 @@ if (window.GGP_Loaded) {
     background: rgba(255,255,255,0.08);
     font-size: 16px;
 }
-                #phone-inline-reply-menu-pop::-webkit-scrollbar { width: 4px; }
-                #phone-inline-reply-menu-pop::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+                #phone-inline-reply-menu-pop::-webkit-scrollbar { width: 0; height: 0; }
                 .inline-reply-menu-item {
                     display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px;
                     border: 1px solid rgba(151,171,207,0.46);
@@ -622,6 +758,197 @@ if (window.GGP_Loaded) {
                     overflow: hidden;
                     text-overflow: ellipsis;
                     white-space: nowrap;
+                }
+                .inline-reply-tabbar {
+                    display: flex;
+                    gap: 6px;
+                    margin-bottom: 8px;
+                    flex-shrink: 0;
+                    position: sticky;
+                    top: 0;
+                    z-index: 4;
+                    background: linear-gradient(180deg, rgba(235,242,252,0.95), rgba(235,242,252,0.78));
+                    padding-bottom: 6px;
+                }
+                .inline-reply-tab-btn {
+                    flex: 1;
+                    border: 1px solid rgba(129, 151, 192, 0.5);
+                    border-radius: 8px;
+                    background: rgba(255,255,255,0.35);
+                    font-size: 12px;
+                    color: #2e456f;
+                    font-weight: 700;
+                    padding: 7px 8px;
+                    cursor: pointer;
+                }
+                .inline-reply-tab-btn.is-active {
+                    background: linear-gradient(135deg, rgba(87,132,223,0.28), rgba(79,121,208,0.42));
+                    border-color: rgba(66, 104, 183, 0.78);
+                    color: #17315a;
+                }
+                .inline-reply-page {
+                    display: none;
+                    flex: 1;
+                    min-height: 0;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    scrollbar-width: none;
+                    -ms-overflow-style: none;
+                    touch-action: pan-y !important;
+                    overscroll-behavior-y: contain;
+                }
+                .inline-reply-page::-webkit-scrollbar { width: 0; height: 0; display: none; }
+                .inline-reply-page.is-active { display: block; }
+                .inline-reply-section-title {
+                    font-size: 12px;
+                    color: #6b7894;
+                    padding: 2px 8px 6px;
+                    border-bottom: 1px solid rgba(139,160,198,0.28);
+                    margin-bottom: 6px;
+                    font-weight: 700;
+                    text-align: center;
+                    letter-spacing: 0.5px;
+                }
+                .mofo-toolbar {
+                    display: flex;
+                    gap: 6px;
+                    margin-bottom: 8px;
+                }
+                .mofo-toolbar-btn {
+                    flex: 1;
+                    border: 1px solid rgba(116, 139, 184, 0.55);
+                    border-radius: 8px;
+                    background: rgba(255,255,255,0.34);
+                    color: #264672;
+                    font-size: 11px;
+                    padding: 6px 8px;
+                    cursor: pointer;
+                    font-weight: 700;
+                }
+                .mofo-entry {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    border: 1px solid rgba(151,171,207,0.46);
+                    border-radius: 8px;
+                    background: rgba(255,255,255,0.24);
+                    padding: 9px 10px;
+                    margin-bottom: 6px;
+                    cursor: pointer;
+                }
+                .mofo-entry.is-active {
+                    border-color: rgba(89, 121, 187, 0.85);
+                    background: rgba(125, 164, 234, 0.28);
+                }
+                .mofo-entry-name {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: #21436f;
+                }
+                .mofo-entry-head {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                }
+                .mofo-entry-toggle {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    font-size: 10px;
+                    color: #43618f;
+                    cursor: pointer;
+                    user-select: none;
+                }
+                .mofo-entry-toggle input {
+                    margin: 0;
+                    accent-color: #4f7fd5;
+                    cursor: pointer;
+                }
+                .mofo-entry-tag {
+                    font-size: 11px;
+                    color: #5372a1;
+                }
+                .mofo-entry-status {
+                    font-size: 10px;
+                }
+                .mofo-preview-wrap {
+                    margin-top: 8px;
+                    border: 1px solid rgba(116, 139, 184, 0.45);
+                    border-radius: 10px;
+                    background: rgba(255,255,255,0.28);
+                    padding: 8px;
+                }
+                .mofo-preview-head {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    margin-bottom: 6px;
+                    gap: 8px;
+                }
+                .mofo-preview-title {
+                    font-size: 12px;
+                    color: #21436f;
+                    font-weight: 700;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .mofo-preview-tag {
+                    font-size: 10px;
+                    color: #5f7da9;
+                    white-space: nowrap;
+                }
+                .mofo-preview-card {
+                    border-radius: 9px;
+                    border: 1px solid rgba(120, 141, 181, 0.35);
+                    background: rgba(255,255,255,0.25);
+                    padding: 8px;
+                }
+                .mofo-kv-row {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 6px;
+                    font-size: 11px;
+                    padding: 5px 6px;
+                    border-radius: 7px;
+                    background: rgba(255,255,255,0.34);
+                    margin-bottom: 5px;
+                }
+                .mofo-kv-key {
+                    color: #355986;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .mofo-kv-val {
+                    color: #14345b;
+                    font-weight: 700;
+                    max-width: 56%;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    text-align: right;
+                }
+                .mofo-preview-actions {
+                    display: flex;
+                    gap: 6px;
+                    margin-top: 7px;
+                }
+                .mofo-action-btn {
+                    flex: 1;
+                    border: 1px solid rgba(116, 139, 184, 0.55);
+                    border-radius: 8px;
+                    background: rgba(255,255,255,0.35);
+                    color: #284a76;
+                    font-size: 11px;
+                    padding: 6px 8px;
+                    cursor: pointer;
+                    font-weight: 700;
+                }
+                .mofo-action-btn.delete {
+                    border-color: rgba(188, 92, 117, 0.7);
+                    color: #a33c57;
                 }
             `;
             document.head.appendChild(style);
@@ -902,19 +1229,23 @@ if (window.GGP_Loaded) {
                         return null; // 啥都没有就返回 null，让后面降级渲染 Emoji
                     };
 
-                    // 组合列表
+                    // 组合微信列表
                     const combinedList = [
                         ...contacts.map(c => ({
                             name: c.name,
-                            avatar: resolveAvatar(c.id, c.avatar), // 完美获取真实头像
+                            avatar: resolveAvatar(c.id, c.avatar),
                             fallbackIcon: '👤'
                         })),
                         ...groups.map(g => ({
                             name: g.name,
-                            avatar: resolveAvatar(g.id, g.avatar), // 群聊一般没自动分配，但保留判断接口
+                            avatar: resolveAvatar(g.id, g.avatar),
                             fallbackIcon: '👥'
                         }))
                     ];
+
+                    const mofoData = await getOrCreateMofoData();
+                    let mofoItems = (typeof mofoData?.getItems === 'function') ? mofoData.getItems() : [];
+                    let activeMofoId = mofoItems[0]?.id || '';
 
                     // 移除旧菜单
                     const oldMenu = document.getElementById('phone-inline-reply-menu-pop');
@@ -932,32 +1263,204 @@ if (window.GGP_Loaded) {
                         return div.innerHTML;
                     };
 
-                    let html = `<div style="font-size:12px; color:#6b7894; padding: 4px 8px; border-bottom: 1px solid rgba(139,160,198,0.28); margin-bottom: 6px; font-weight: 700; text-align: center; letter-spacing: 0.5px;">插入回复标签</div>`;
+                    const stringifyState = (value) => {
+                        if (value === null) return 'null';
+                        if (typeof value === 'undefined') return '';
+                        if (typeof value === 'object') {
+                            try { return JSON.stringify(value); } catch (e) { return '[object]'; }
+                        }
+                        return String(value);
+                    };
 
-                    if (combinedList.length === 0) {
-                        html += `
-                            <div class="inline-reply-menu-item" id="open-phone-empty-btn" style="color: #ff9800; justify-content: center;">
-                                <span>⚠️</span>
-                                <span>通讯录为空，点击打开手机</span>
-                            </div>
-                        `;
-                    } else {
+                    const buildWechatListHtml = () => {
+                        let html = '<div class="inline-reply-section-title">插入回复标签</div>';
+                        if (combinedList.length === 0) {
+                            html += `
+                                <div class="inline-reply-menu-item" id="open-phone-empty-btn" style="color: #ff9800; justify-content: center;">
+                                    <span>⚠️</span>
+                                    <span>通讯录为空，点击打开手机</span>
+                                </div>
+                            `;
+                            return html;
+                        }
                         combinedList.forEach(item => {
-                            // 🔥 如果有真实头像，就渲染 <img> 标签；如果没有，就渲染备用的 emoji 符号
                             const avatarHtml = item.avatar
                                 ? `<img src="${item.avatar}" class="inline-reply-avatar" alt="${escapeHtml(item.name)}">`
                                 : `<span>${item.fallbackIcon}</span>`;
-
                             html += `
-            <div class="inline-reply-menu-item" data-name="${escapeHtml(item.name)}">
-                ${avatarHtml}
-                <span class="inline-reply-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
-            </div>
-        `;
+                                <div class="inline-reply-menu-item" data-name="${escapeHtml(item.name)}">
+                                    ${avatarHtml}
+                                    <span class="inline-reply-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
+                                </div>
+                            `;
                         });
-                    }
+                        return html;
+                    };
 
-                    menu.innerHTML = html;
+                    const getMofoById = (id) => mofoItems.find(item => String(item.id) === String(id)) || null;
+
+                    const buildMofoListHtml = () => {
+                        if (!Array.isArray(mofoItems) || mofoItems.length === 0) {
+                            return `
+                                <div style="font-size:11px; color:#5d78a4; line-height:1.6; border-radius:8px; padding:10px; background:rgba(255,255,255,0.26); border:1px dashed rgba(116,139,184,0.55);">
+                                    还没有魔坊条目。点击上方“新建”创建。
+                                </div>
+                            `;
+                        }
+                        return mofoItems.map(item => `
+                            <div class="mofo-entry" data-mofo-id="${escapeHtml(item.id)}">
+                                <div class="mofo-entry-head">
+                                    <div class="mofo-entry-name">${escapeHtml(item.name)}</div>
+                                    <div style="display:inline-flex; align-items:center; gap:8px;">
+                                        <label class="mofo-entry-toggle" title="勾选后为累计追加；取消勾选为替换当前状态">
+                                            <input type="checkbox" class="mofo-update-mode-toggle" data-mofo-id="${escapeHtml(item.id)}" ${(item.updateMode || 'append') === 'replace' ? '' : 'checked'}>
+                                            <span>累计</span>
+                                        </label>
+                                        <label class="mofo-entry-toggle" title="启用线下提示词注入">
+                                        <input type="checkbox" class="mofo-offline-toggle" data-mofo-id="${escapeHtml(item.id)}" ${item.offlinePromptEnabled === false ? '' : 'checked'}>
+                                        <span>线下</span>
+                                    </label>
+                                    </div>
+                                </div>
+                                <div style="display:flex; gap:6px; margin-top:6px;">
+                                    <button type="button" class="mofo-inline-action-btn" data-mofo-action="edit" data-mofo-id="${escapeHtml(item.id)}" style="flex:1; border:1px solid rgba(116, 139, 184, 0.55); border-radius:8px; background:rgba(255,255,255,0.35); color:#284a76; font-size:11px; padding:6px 8px; cursor:pointer; font-weight:700;">编辑</button>
+                                    <button type="button" class="mofo-inline-action-btn" data-mofo-action="clear-session" data-mofo-id="${escapeHtml(item.id)}" style="flex:1; border:1px solid rgba(83, 128, 201, 0.6); border-radius:8px; background:rgba(255,255,255,0.35); color:#2c5da8; font-size:11px; padding:6px 8px; cursor:pointer; font-weight:700;">清理本会话</button>
+                                    <button type="button" class="mofo-inline-action-btn" data-mofo-action="delete-global" data-mofo-id="${escapeHtml(item.id)}" style="flex:1; border:1px solid rgba(188, 92, 117, 0.7); border-radius:8px; background:rgba(255,255,255,0.35); color:#a33c57; font-size:11px; padding:6px 8px; cursor:pointer; font-weight:700;">全局删除</button>
+                                </div>
+                            </div>
+                        `).join('');
+                    };
+
+                    const buildMofoPageHtml = () => `
+                        <div class="inline-reply-section-title">魔坊列表</div>
+                        <div class="mofo-toolbar">
+                            <button class="mofo-toolbar-btn" id="mofo-create-btn">新建</button>
+                            <button class="mofo-toolbar-btn" id="mofo-refresh-btn">刷新</button>
+                        </div>
+                        <div id="mofo-list-wrap">${buildMofoListHtml()}</div>
+                    `;
+
+                    const buildMofoDetailHtml = (current) => {
+                        if (!current) {
+                            return `
+                                <div id="mofo-detail-page">
+                                    <div class="inline-reply-section-title" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                                        <button type="button" id="mofo-detail-back-btn" style="border:1px solid rgba(116, 139, 184, 0.55); border-radius:7px; background:rgba(255,255,255,0.34); color:#264672; font-size:11px; padding:4px 8px; cursor:pointer;">← 返回</button>
+                                        <span>魔坊详情</span>
+                                        <span style="width:52px;"></span>
+                                    </div>
+                                    <div style="font-size:11px; color:#5d78a4; border-radius:10px; padding:10px; border:1px dashed rgba(116,139,184,0.55); background:rgba(255,255,255,0.24);">
+                                        条目不存在或已删除。
+                                    </div>
+                                </div>
+                            `;
+                        }
+
+                        const safeCss = String(current.cssText || '').replace(/<\/style/gi, '<\\/style');
+                        const stateEntries = Object.entries(current.state || {});
+                        const rows = stateEntries.length > 0
+                            ? stateEntries.map(([k, v]) => `
+                                <div class="mofo-kv-row">
+                                    <span class="mofo-kv-key">${escapeHtml(k)}</span>
+                                    <span class="mofo-kv-val" title="${escapeHtml(stringifyState(v))}">${escapeHtml(stringifyState(v))}</span>
+                                </div>
+                            `).join('')
+                            : '<div style="font-size:11px; color:#5d78a4;">暂无抓取值</div>';
+
+                        return `
+                            <style>${safeCss}</style>
+                            <div id="mofo-detail-page">
+                                <div class="inline-reply-section-title" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                                    <button type="button" id="mofo-detail-back-btn" style="border:1px solid rgba(116, 139, 184, 0.55); border-radius:7px; background:rgba(255,255,255,0.34); color:#264672; font-size:11px; padding:4px 8px; cursor:pointer;">← 返回</button>
+                                    <span>${escapeHtml(current.name || '魔坊详情')}</span>
+                                    <span style="width:52px;"></span>
+                                </div>
+                                <div class="mofo-preview-wrap">
+                                    <div class="mofo-preview-head">
+                                        <span class="mofo-preview-title">${escapeHtml(current.name || '未命名')}</span>
+                                        <span class="mofo-preview-tag">&lt;${escapeHtml(current.tagName || '')}&gt;</span>
+                                    </div>
+                                    <div style="font-size:10px; color:${current.offlinePromptEnabled === false ? '#9a6a76' : '#2f6a54'}; margin-bottom:6px;">
+                                        线下提示词注入：${current.offlinePromptEnabled === false ? '未启用' : '已启用'}
+                                    </div>
+                                    <div class="mofo-preview-card">${rows}</div>
+                                    <div style="margin-top:7px; font-size:10px; color:#5876a4; line-height:1.5; white-space:pre-wrap; max-height:100px; overflow:auto;">${escapeHtml(current.promptTemplate || '未设置提示词模板')}</div>
+                                    <div style="display:flex; gap:6px; margin-top:8px;">
+                                        <button type="button" id="mofo-detail-edit-btn" style="flex:1; border:1px solid rgba(116, 139, 184, 0.55); border-radius:8px; background:rgba(255,255,255,0.35); color:#284a76; font-size:11px; padding:6px 8px; cursor:pointer; font-weight:700;">编辑</button>
+                                        <button type="button" id="mofo-detail-clear-session-btn" style="flex:1; border:1px solid rgba(83, 128, 201, 0.6); border-radius:8px; background:rgba(255,255,255,0.35); color:#2c5da8; font-size:11px; padding:6px 8px; cursor:pointer; font-weight:700;">清理本会话</button>
+                                        <button type="button" id="mofo-detail-delete-global-btn" style="flex:1; border:1px solid rgba(188, 92, 117, 0.7); border-radius:8px; background:rgba(255,255,255,0.35); color:#a33c57; font-size:11px; padding:6px 8px; cursor:pointer; font-weight:700;">全局删除</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    };
+
+                    const buildMofoEditorHtml = (current = null) => {
+                        const oldName = String(current?.name || '').trim();
+                        const oldTag = String(current?.tagName || current?.name || '').trim();
+                        const oldCss = String(current?.cssText || '');
+                        const oldPrompt = String(current?.promptTemplate || '');
+                        const oldOfflinePromptEnabled = current?.offlinePromptEnabled !== false;
+                        const oldInitial = (() => {
+                            try {
+                                const source = current?.initialState;
+                                if (!source || typeof source !== 'object' || Array.isArray(source)) return '';
+                                if (Object.keys(source).length === 0) return '';
+                                return JSON.stringify(source, null, 2);
+                            } catch (e) { return ''; }
+                        })();
+                        const title = current ? '编辑魔坊' : '新建魔坊';
+                        const saveText = current ? '保存' : '创建';
+
+                        return `
+                            <div class="inline-reply-section-title" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                                <button type="button" class="mofo-editor-back-btn" style="border:1px solid rgba(116, 139, 184, 0.55); border-radius:7px; background:rgba(255,255,255,0.34); color:#264672; font-size:11px; padding:4px 8px; cursor:pointer;">← 返回</button>
+                                <span>${escapeHtml(title)}</span>
+                                <span style="width:52px;"></span>
+                            </div>
+                            <div class="mofo-editor-inline" style="display:grid; gap:7px; min-height:0;">
+                                <label style="display:grid; gap:4px;">
+                                    <span style="font-size:11px; color:#4d638a; font-weight:600;">名称</span>
+                                    <input type="text" id="mofo-editor-name" maxlength="40" value="${escapeHtml(oldName)}" placeholder="输入魔坊名称" style="height:32px; border:1px solid #d7e2f4; border-radius:8px; padding:0 8px; font-size:12px; outline:none; color:#213454; background:#fbfdff;">
+                                </label>
+                                <label style="display:grid; gap:4px;">
+                                    <span style="font-size:11px; color:#4d638a; font-weight:600;">标签</span>
+                                    <input type="text" id="mofo-editor-tag" maxlength="40" value="${escapeHtml(oldTag)}" placeholder="对应 <标签></标签>" style="height:32px; border:1px solid #d7e2f4; border-radius:8px; padding:0 8px; font-size:12px; outline:none; color:#213454; background:#fbfdff;">
+                                </label>
+                                <label style="display:grid; gap:4px;">
+                                    <span style="font-size:11px; color:#4d638a; font-weight:600;">CSS</span>
+                                    <textarea id="mofo-editor-css" placeholder="输入用于展示卡片的样式（可留空）" style="min-height:60px; border:1px solid #d7e2f4; border-radius:8px; padding:8px; font-size:11px; line-height:1.45; outline:none; resize:vertical; color:#213454; background:#fbfdff;">${escapeHtml(oldCss)}</textarea>
+                                </label>
+                                <label style="display:grid; gap:4px;">
+                                    <span style="font-size:11px; color:#4d638a; font-weight:600;">初始值</span>
+                                    <textarea id="mofo-editor-initial" placeholder="支持 JSON 或 key:value 多行" style="min-height:60px; border:1px solid #d7e2f4; border-radius:8px; padding:8px; font-size:11px; line-height:1.45; outline:none; resize:vertical; color:#213454; background:#fbfdff;">${escapeHtml(oldInitial)}</textarea>
+                                </label>
+                                <label style="display:grid; gap:4px;">
+                                    <span style="font-size:11px; color:#4d638a; font-weight:600;">提示词模板</span>
+                                    <textarea id="mofo-editor-prompt" placeholder="建议约束 AI 只输出对应标签内容" style="min-height:72px; border:1px solid #d7e2f4; border-radius:8px; padding:8px; font-size:11px; line-height:1.45; outline:none; resize:vertical; color:#213454; background:#fbfdff;">${escapeHtml(oldPrompt)}</textarea>
+                                </label>
+                                <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:#35527f; background:#f6f9ff; border:1px solid #dbe5f7; border-radius:8px; padding:8px 10px;">
+                                    <input type="checkbox" id="mofo-editor-offline-enabled" ${oldOfflinePromptEnabled ? 'checked' : ''} style="accent-color:#4f7fd5;">
+                                    <span>启用该条目线下提示词注入（{{MOFO_PROMPT}}）</span>
+                                </label>
+                                <div style="display:flex; gap:6px; padding-top:2px;">
+                                    <button type="button" id="mofo-editor-cancel-btn" style="flex:1; border:1px solid rgba(116, 139, 184, 0.55); border-radius:8px; background:rgba(255,255,255,0.34); color:#264672; font-size:11px; padding:7px 8px; cursor:pointer; font-weight:700;">返回</button>
+                                    <button type="button" id="mofo-editor-save-btn" style="flex:1; border:1px solid rgba(89, 121, 187, 0.75); border-radius:8px; background:rgba(146, 178, 238, 0.35); color:#1d3f6b; font-size:11px; padding:7px 8px; cursor:pointer; font-weight:700;">${escapeHtml(saveText)}</button>
+                                </div>
+                            </div>
+                        `;
+                    };
+
+                    menu.innerHTML = `
+                        <div class="inline-reply-tabbar">
+                            <button class="inline-reply-tab-btn is-active" data-tab-target="wechat">微信</button>
+                            <button class="inline-reply-tab-btn" data-tab-target="mofo">魔坊</button>
+                        </div>
+                        <div class="inline-reply-page is-active" data-tab-page="wechat">${buildWechatListHtml()}</div>
+                        <div class="inline-reply-page" data-tab-page="mofo">
+                            <div id="mofo-page-root"></div>
+                        </div>
+                    `;
                     document.body.appendChild(menu);
 
                     const positionMenuCentered = () => {
@@ -971,7 +1474,6 @@ if (window.GGP_Loaded) {
                         menu.style.top = `${offsetTop + (viewHeight / 2)}px`;
                         menu.style.bottom = 'auto';
                         menu.style.transform = 'translate(-50%, -50%)';
-                        menu.style.maxHeight = `${Math.max(150, viewHeight - 24)}px`;
                     };
 
                     const positioningController = new AbortController();
@@ -990,6 +1492,10 @@ if (window.GGP_Loaded) {
                         window.visualViewport.addEventListener('scroll', repositionMenu, { passive: true, signal: positioningController.signal });
                     }
 
+                    let mofoEditorMode = 'list';
+                    let mofoEditingId = '';
+                    let mofoEditorReturnMode = 'list';
+
                     const closeMenuSafely = () => {
                         positioningController.abort();
                         if (menu.isConnected) {
@@ -998,10 +1504,391 @@ if (window.GGP_Loaded) {
                     };
                     menu._stPhoneDispose = closeMenuSafely;
 
-                    // 绑定空状态点击
-                    const emptyBtn = menu.querySelector('#open-phone-empty-btn');
-                    if (emptyBtn) {
-                        const onEmptyClick = (ev) => {
+                    const openMofoStandalonePreview = (itemInput) => {
+                        if (!itemInput) return;
+                        const item = JSON.parse(JSON.stringify(itemInput));
+
+                        const hostDoc = (() => {
+                            let hostWindow = window;
+                            try {
+                                let probe = window;
+                                while (probe.parent && probe.parent !== probe) {
+                                    const next = probe.parent;
+                                    if (!next.document?.body) break;
+                                    probe = next;
+                                }
+                                hostWindow = probe;
+                            } catch (e) {}
+                            try {
+                                return hostWindow.document || document;
+                            } catch (e) {
+                                return document;
+                            }
+                        })();
+
+                        const stringifyValue = (value) => {
+                            if (value === null) return 'null';
+                            if (typeof value === 'undefined') return '';
+                            if (typeof value === 'object') {
+                                try { return JSON.stringify(value); } catch (e) { return '[object]'; }
+                            }
+                            return String(value);
+                        };
+
+                        const toScopeToken = (value, fallback = 'item') => {
+                            const raw = String(value || '').trim().toLowerCase();
+                            const normalized = raw
+                                .replace(/[^a-z0-9_-]+/g, '-')
+                                .replace(/-+/g, '-')
+                                .replace(/^-+|-+$/g, '')
+                                .slice(0, 48);
+                            if (normalized) return normalized;
+                            const fb = String(fallback || '').trim().toLowerCase()
+                                .replace(/[^a-z0-9_-]+/g, '-')
+                                .replace(/-+/g, '-')
+                                .replace(/^-+|-+$/g, '')
+                                .slice(0, 48);
+                            return fb || 'item';
+                        };
+                        const scopeToken = toScopeToken(item.tagName || item.name || item.id, item.id || 'item');
+                        const safeCss = String(item.cssText || '').replace(/<\/style/gi, '<\\/style');
+                        const buildStateRowHtml = (key, value) => {
+                            return `
+                                <div class="mofo-kv-row" data-mofo-key="${escapeHtml(key)}">
+                                    <span class="mofo-kv-key">${escapeHtml(key)}</span>
+                                    <span class="mofo-kv-val" title="${escapeHtml(stringifyValue(value))}">${escapeHtml(stringifyValue(value))}</span>
+                                    <button type="button" class="mofo-delete-trigger" data-mofo-action="delete-key" data-mofo-key="${escapeHtml(key)}" data-mofo-delete-mode="key" aria-label="delete"></button>
+                                </div>
+                            `;
+                        };
+                        const buildStateRowsHtml = (stateObj = {}) => {
+                            const entries = Object.entries(stateObj || {});
+                            if (entries.length === 0) {
+                                return '<div class="mofo-runtime-empty">暂无抓取值</div>';
+                            }
+                            return entries.map(([k, v]) => buildStateRowHtml(k, v)).join('');
+                        };
+                        const runtimeStateHtml = `<div class="mofo-preview-card" id="mofo-preview-card">${buildStateRowsHtml(item.state || {})}</div>`;
+
+                        const runtimeBaseStyle = `
+                            #mofo-standalone-preview-root{
+                                --mofo-overlay-bg:transparent;
+                            }
+                            .mofo-runtime-backdrop{position:fixed; inset:0; background:var(--mofo-overlay-bg);}
+                            .mofo-runtime-pop{
+                                position:fixed;
+                                left:50%;
+                                top:50%;
+                                transform:translate(-50%, -50%);
+                                width:var(--mofo-preview-width, auto);
+                                height:var(--mofo-preview-height, auto);
+                                min-width:var(--mofo-preview-min-width, 0);
+                                max-width:min(94vw, var(--mofo-preview-max-width, 94vw));
+                                max-height:calc(100dvh - var(--mofo-preview-safe-margin, 0px));
+                                overflow:auto;
+                                touch-action:pan-y;
+                                overscroll-behavior:contain;
+                                box-sizing:border-box;
+                            }
+                            .mofo-runtime-view{display:block; box-sizing:border-box;}
+                            .mofo-delete-trigger{
+                                display:none;
+                                border:0;
+                                background:transparent;
+                                padding:0;
+                            }
+                        `;
+
+                        const oldRoot = hostDoc.getElementById('mofo-standalone-preview-root');
+                        oldRoot?.remove();
+
+                        const root = hostDoc.createElement('div');
+                        root.id = 'mofo-standalone-preview-root';
+                        root.style.cssText = [
+                            'position:fixed',
+                            'inset:0',
+                            'z-index:2147483647',
+                            'pointer-events:auto',
+                            'touch-action:pan-y'
+                        ].join(';');
+                        root.style.setProperty('position', 'fixed', 'important');
+                        root.style.setProperty('inset', '0', 'important');
+                        root.style.setProperty('z-index', '2147483647', 'important');
+                        root.style.setProperty('pointer-events', 'auto', 'important');
+                        root.style.setProperty('isolation', 'isolate', 'important');
+                        root.classList.add(`mofo-scope-${scopeToken}`);
+                        root.setAttribute('data-mofo-id', String(item.id || ''));
+                        root.setAttribute('data-mofo-name', String(item.name || ''));
+                        root.setAttribute('data-mofo-tag', String(item.tagName || ''));
+                        root.setAttribute('data-mofo-scope', scopeToken);
+
+                        root.innerHTML = `
+                            <style>${runtimeBaseStyle}${safeCss}</style>
+                            <div id="mofo-standalone-preview-backdrop" class="mofo-runtime-backdrop"></div>
+                            <div id="mofo-standalone-preview-pop" class="mofo-runtime-pop">
+                                <div class="mofo-runtime-view" data-mofo-id="${escapeHtml(item.id || '')}" data-mofo-name="${escapeHtml(item.name || '')}" data-mofo-tag="${escapeHtml(item.tagName || '')}" data-mofo-scope="${escapeHtml(scopeToken)}">
+                                    ${runtimeStateHtml}
+                                </div>
+                            </div>
+                        `;
+
+                        const pop = root.querySelector('#mofo-standalone-preview-pop');
+                        const backdrop = root.querySelector('#mofo-standalone-preview-backdrop');
+                        const positionController = new AbortController();
+                        const positionPop = () => {
+                            if (!pop?.isConnected) {
+                                positionController.abort();
+                                return;
+                            }
+                            const vv = hostDoc.defaultView?.visualViewport;
+                            const viewWidth = vv?.width || hostDoc.defaultView?.innerWidth || window.innerWidth;
+                            const viewHeight = vv?.height || hostDoc.defaultView?.innerHeight || window.innerHeight;
+                            const offsetLeft = vv?.offsetLeft || 0;
+                            const offsetTop = vv?.offsetTop || 0;
+                            const rootStyle = hostDoc.defaultView?.getComputedStyle(root);
+                            const safeMargin = Math.max(0, Number.parseFloat(rootStyle?.getPropertyValue('--mofo-preview-safe-margin')) || 10);
+                            const fitMinWidth = Math.max(0, Number.parseFloat(rootStyle?.getPropertyValue('--mofo-fit-min-width')) || 160);
+                            const fitMinHeight = Math.max(0, Number.parseFloat(rootStyle?.getPropertyValue('--mofo-fit-min-height')) || 160);
+                            pop.style.maxWidth = `${Math.max(fitMinWidth, viewWidth - (safeMargin * 2))}px`;
+                            pop.style.maxHeight = `${Math.max(fitMinHeight, viewHeight - (safeMargin * 2))}px`;
+                            pop.style.left = `${offsetLeft + (viewWidth / 2)}px`;
+                            pop.style.top = `${offsetTop + (viewHeight / 2)}px`;
+                            pop.style.transform = 'translate(-50%, -50%)';
+
+                            const rect = pop.getBoundingClientRect();
+                            if (rect.height > (viewHeight - (safeMargin * 2))) {
+                                pop.style.top = `${offsetTop + safeMargin}px`;
+                                pop.style.transform = 'translate(-50%, 0)';
+                            }
+                        };
+
+                        const onEsc = (e) => {
+                            if (e.key === 'Escape') {
+                                e.preventDefault();
+                                close();
+                            }
+                        };
+                        hostDoc.defaultView?.addEventListener('resize', positionPop, { passive: true, signal: positionController.signal });
+                        hostDoc.defaultView?.addEventListener('keydown', onEsc, { signal: positionController.signal });
+                        if (hostDoc.defaultView?.visualViewport) {
+                            hostDoc.defaultView.visualViewport.addEventListener('resize', positionPop, { passive: true, signal: positionController.signal });
+                            hostDoc.defaultView.visualViewport.addEventListener('scroll', positionPop, { passive: true, signal: positionController.signal });
+                        }
+
+                        const close = () => {
+                            positionController.abort();
+                            root.remove();
+                        };
+                        const shouldCloseOnOutside = () => {
+                            try {
+                                const raw = String(hostDoc.defaultView?.getComputedStyle(root)?.getPropertyValue('--mofo-close-on-outside') || '')
+                                    .trim()
+                                    .toLowerCase();
+                                if (!raw) return true;
+                                return !['0', 'false', 'off', 'no', 'disabled'].includes(raw);
+                            } catch (e) {
+                                return true;
+                            }
+                        };
+                        const closeByOutside = (e) => {
+                            if (!shouldCloseOnOutside()) return;
+                            const target = e?.target;
+                            if (!target) return;
+                            if (target === root || target === backdrop || target === pop || !pop?.contains(target)) {
+                                close();
+                            }
+                        };
+                        const closeByDocOutside = (e) => {
+                            if (!shouldCloseOnOutside()) return;
+                            const target = e?.target;
+                            if (!target) return;
+                            if (pop?.contains(target)) return;
+                            close();
+                        };
+                        const persistMofoState = (nextState) => {
+                            const normalizedState = (nextState && typeof nextState === 'object' && !Array.isArray(nextState))
+                                ? JSON.parse(JSON.stringify(nextState))
+                                : {};
+                            item.state = normalizedState;
+                            if (item.id && mofoData?.updateItem) {
+                                mofoData.updateItem(item.id, { state: normalizedState });
+                            }
+                        };
+                        const rerenderStateCard = () => {
+                            const card = root.querySelector('#mofo-preview-card');
+                            if (!card) return;
+                            card.innerHTML = buildStateRowsHtml(item.state || {});
+                        };
+                        root.addEventListener('click', (e) => {
+                            const trigger = e.target?.closest?.('[data-mofo-action]');
+                            if (!trigger) return;
+                            const action = String(trigger.getAttribute('data-mofo-action') || '').trim();
+                            if (action !== 'delete-key') return;
+                            e.stopPropagation();
+                            e.preventDefault();
+                            const rowHost = trigger.closest?.('[data-mofo-key]');
+                            const key = String(
+                                trigger.getAttribute('data-mofo-key')
+                                || trigger.getAttribute('data-mofo-target-key')
+                                || rowHost?.getAttribute?.('data-mofo-key')
+                                || ''
+                            ).trim();
+                            if (!key) return;
+                            const currentState = (item.state && typeof item.state === 'object' && !Array.isArray(item.state))
+                                ? JSON.parse(JSON.stringify(item.state))
+                                : {};
+                            if (!Object.prototype.hasOwnProperty.call(currentState, key)) return;
+                            const deleteMode = String(trigger.getAttribute('data-mofo-delete-mode') || 'auto').trim().toLowerCase();
+                            const explicitGroup = String(
+                                trigger.getAttribute('data-mofo-group')
+                                || trigger.getAttribute('data-mofo-prefix')
+                                || ''
+                            ).trim();
+                            const groupToken = explicitGroup;
+                            const shouldDeleteGroup = (
+                                deleteMode === 'group'
+                                || (deleteMode === 'auto' && !!explicitGroup)
+                            );
+
+                            if (shouldDeleteGroup) {
+                                const prefixes = [];
+                                if (groupToken) {
+                                    prefixes.push(`${groupToken}_`, groupToken);
+                                } else {
+                                    prefixes.push(key);
+                                }
+                                Object.keys(currentState).forEach((stateKey) => {
+                                    if (prefixes.some(prefix => stateKey === prefix || stateKey.startsWith(prefix))) {
+                                        delete currentState[stateKey];
+                                    }
+                                });
+                            } else {
+                                delete currentState[key];
+                            }
+                            persistMofoState(currentState);
+                            rerenderStateCard();
+                        });
+                        root.addEventListener('pointerdown', closeByOutside, true);
+                        root.addEventListener('mousedown', closeByOutside, true);
+                        root.addEventListener('touchstart', closeByOutside, { passive: true, capture: true });
+                        backdrop?.addEventListener('click', closeByOutside);
+                        hostDoc.addEventListener('pointerdown', closeByDocOutside, { capture: true, signal: positionController.signal });
+                        hostDoc.addEventListener('mousedown', closeByDocOutside, { capture: true, signal: positionController.signal });
+                        hostDoc.addEventListener('touchstart', closeByDocOutside, { passive: true, capture: true, signal: positionController.signal });
+                        (hostDoc.body || hostDoc.documentElement).appendChild(root);
+                        positionPop();
+                    };
+
+                    const getEditingMofo = () => mofoItems.find(item => String(item.id) === String(mofoEditingId)) || null;
+                    const closeMofoEditor = () => {
+                        mofoEditorMode = 'list';
+                        mofoEditingId = '';
+                        mofoEditorReturnMode = 'list';
+                    };
+
+                    const readMofoEditorDraft = () => {
+                        const nameInput = menu.querySelector('#mofo-editor-name');
+                        const tagInput = menu.querySelector('#mofo-editor-tag');
+                        const cssInput = menu.querySelector('#mofo-editor-css');
+                        const initialInput = menu.querySelector('#mofo-editor-initial');
+                        const promptInput = menu.querySelector('#mofo-editor-prompt');
+                        const offlineEnabledInput = menu.querySelector('#mofo-editor-offline-enabled');
+
+                        return {
+                            name: String(nameInput?.value || '').trim(),
+                            tagName: String(tagInput?.value || '').trim(),
+                            cssText: String(cssInput?.value || ''),
+                            initialStateRaw: String(initialInput?.value || ''),
+                            promptTemplate: String(promptInput?.value || ''),
+                            offlinePromptEnabled: !!offlineEnabledInput?.checked
+                        };
+                    };
+                    const getCanonicalJson = (value) => {
+                        try {
+                            return JSON.stringify(value ?? {});
+                        } catch (e) {
+                            return '';
+                        }
+                    };
+                    const parseInitialDraftToState = (rawText = '') => {
+                        const text = String(rawText ?? '');
+                        try {
+                            if (typeof mofoData?._parseStatePayload === 'function') {
+                                const parsed = mofoData._parseStatePayload(text, {});
+                                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+                                return {};
+                            }
+                        } catch (e) {}
+                        const trimmed = text.trim();
+                        if (!trimmed) return {};
+                        try {
+                            const parsed = JSON.parse(trimmed);
+                            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+                        } catch (e) {}
+                        return {};
+                    };
+                    const isInitialDraftChanged = (currentItem, draft) => {
+                        if (!currentItem || !draft || !Object.prototype.hasOwnProperty.call(draft, 'initialStateRaw')) {
+                            return false;
+                        }
+                        const currentInitial = (currentItem.initialState && typeof currentItem.initialState === 'object' && !Array.isArray(currentItem.initialState))
+                            ? currentItem.initialState
+                            : {};
+                        const nextInitial = parseInitialDraftToState(draft.initialStateRaw);
+                        return getCanonicalJson(currentInitial) !== getCanonicalJson(nextInitial);
+                    };
+
+                    const focusMofoEditorName = () => {
+                        const nameInput = menu.querySelector('#mofo-editor-name');
+                        if (!nameInput) return;
+                        nameInput.focus();
+                        nameInput.setSelectionRange?.(nameInput.value.length, nameInput.value.length);
+                    };
+
+                    const renderMofoPane = () => {
+                        const mofoPageRoot = menu.querySelector('#mofo-page-root');
+                        if (!mofoPageRoot) return;
+
+                        if (mofoEditorMode === 'create') {
+                            mofoPageRoot.innerHTML = buildMofoEditorHtml(null);
+                        } else if (mofoEditorMode === 'detail') {
+                            const current = getEditingMofo();
+                            if (!current) {
+                                closeMofoEditor();
+                                mofoPageRoot.innerHTML = buildMofoPageHtml();
+                            } else {
+                                mofoPageRoot.innerHTML = buildMofoDetailHtml(current);
+                            }
+                        } else if (mofoEditorMode === 'edit') {
+                            const current = getEditingMofo();
+                            if (!current) {
+                                closeMofoEditor();
+                                mofoPageRoot.innerHTML = buildMofoPageHtml();
+                            } else {
+                                mofoPageRoot.innerHTML = buildMofoEditorHtml(current);
+                            }
+                        } else {
+                            mofoPageRoot.innerHTML = buildMofoPageHtml();
+                        }
+
+                        bindMofoEvents();
+                        positionMenuCentered();
+                    };
+
+                    const rerenderMofoPane = ({ keepEditor = true } = {}) => {
+                        mofoItems = (typeof mofoData?.getItems === 'function') ? mofoData.getItems() : [];
+                        if (mofoItems.length === 0) activeMofoId = '';
+                        if (!keepEditor) {
+                            closeMofoEditor();
+                        } else if ((mofoEditorMode === 'edit' || mofoEditorMode === 'detail') && !getEditingMofo()) {
+                            closeMofoEditor();
+                        }
+                        renderMofoPane();
+                    };
+
+                    const bindWechatEvents = () => {
+                        const emptyBtn = menu.querySelector('#open-phone-empty-btn');
+                        emptyBtn?.addEventListener('click', (ev) => {
                             ev.stopPropagation();
                             ev.preventDefault();
                             closeMenuSafely();
@@ -1009,53 +1896,231 @@ if (window.GGP_Loaded) {
                             if (phoneIcon) {
                                 phoneIcon.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
                             }
-                        };
-                        emptyBtn.addEventListener('click', onEmptyClick);
-                    }
+                        });
 
-                    // 绑定常规列表项点击 (同样使用 mouseup/touchend)
-                    menu.querySelectorAll('.inline-reply-menu-item[data-name]').forEach(el => {
-                        const onItemClick = (ev) => {
+                        menu.querySelectorAll('.inline-reply-menu-item[data-name]').forEach(el => {
+                            el.addEventListener('click', (ev) => {
+                                ev.stopPropagation();
+                                ev.preventDefault();
+                                const name = String(el.dataset.name || '').trim();
+                                if (!name) return;
+                                const tagStr = `\n<回复${name}>\n\n</回复${name}>\n`;
+                                const cursorPos = `\n<回复${name}>\n`.length;
+                                insertTextToSendTextarea(tagStr, cursorPos);
+                                closeMenuSafely();
+                            });
+                        });
+                    };
+
+                    const bindMofoEvents = () => {
+                        if (menu.querySelector('#mofo-detail-page')) {
+                            menu.querySelector('#mofo-detail-back-btn')?.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                mofoEditorMode = 'list';
+                                mofoEditingId = '';
+                                mofoEditorReturnMode = 'list';
+                                renderMofoPane();
+                            });
+                            menu.querySelector('#mofo-detail-edit-btn')?.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                if (!mofoEditingId) return;
+                                mofoEditorMode = 'edit';
+                                mofoEditorReturnMode = 'detail';
+                                renderMofoPane();
+                            });
+                            menu.querySelector('#mofo-detail-clear-session-btn')?.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                const current = getEditingMofo();
+                                if (!current) return;
+                                const ok = confirm(`清理魔坊「${current.name}」在当前会话的数据？\n条目会保留。`);
+                                if (!ok) return;
+                                mofoData.clearItemSessionData(current.id);
+                                rerenderMofoPane({ keepEditor: true });
+                            });
+                            menu.querySelector('#mofo-detail-delete-global-btn')?.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                const current = getEditingMofo();
+                                if (!current) return;
+                                const ok = confirm(`全局删除魔坊「${current.name}」？\n会删除条目定义，并清理各会话里的对应运行态数据。`);
+                                if (!ok) return;
+                                mofoData.removeItem(current.id);
+                                rerenderMofoPane({ keepEditor: false });
+                            });
+                            return;
+                        }
+
+                        if (menu.querySelector('.mofo-editor-inline')) {
+                            const backToPrev = (ev) => {
+                                ev?.stopPropagation?.();
+                                ev?.preventDefault?.();
+                                if (mofoEditorReturnMode === 'detail' && getEditingMofo()) {
+                                    mofoEditorMode = 'detail';
+                                } else {
+                                    mofoEditorMode = 'list';
+                                    mofoEditingId = '';
+                                }
+                                mofoEditorReturnMode = 'list';
+                                renderMofoPane();
+                            };
+
+                            menu.querySelector('.mofo-editor-back-btn')?.addEventListener('click', backToPrev);
+                            menu.querySelector('#mofo-editor-cancel-btn')?.addEventListener('click', backToPrev);
+                            menu.querySelector('#mofo-editor-save-btn')?.addEventListener('click', () => {
+                                const draft = readMofoEditorDraft();
+                                if (!draft.name) {
+                                    alert('名称不能为空');
+                                    return;
+                                }
+                                try {
+                                    if (mofoEditorMode === 'edit') {
+                                        const targetId = String(mofoEditingId || '').trim();
+                                        if (!targetId) return;
+                                        const currentItem = getEditingMofo();
+                                        if (!isInitialDraftChanged(currentItem, draft)) {
+                                            delete draft.initialStateRaw;
+                                        }
+                                        mofoData.updateItem(targetId, draft);
+                                        activeMofoId = targetId;
+                                        mofoEditorMode = mofoEditorReturnMode === 'detail' ? 'detail' : 'list';
+                                        mofoEditorReturnMode = 'list';
+                                    } else {
+                                        const created = mofoData.createItem(draft);
+                                        activeMofoId = created?.id || activeMofoId;
+                                        mofoEditorMode = 'list';
+                                        mofoEditingId = '';
+                                        mofoEditorReturnMode = 'list';
+                                    }
+                                    rerenderMofoPane({ keepEditor: true });
+                                } catch (err) {
+                                    alert(err?.message || '保存失败');
+                                }
+                            });
+                            focusMofoEditorName();
+                            return;
+                        }
+
+                        menu.querySelectorAll('.mofo-entry[data-mofo-id]').forEach(entry => {
+                            entry.addEventListener('click', () => {
+                                const id = String(entry.getAttribute('data-mofo-id') || '').trim();
+                                if (!id) return;
+                                const current = getMofoById(id);
+                                if (!current) return;
+                                closeMenuSafely();
+                                openMofoStandalonePreview(current);
+                            });
+                        });
+                        menu.querySelectorAll('.mofo-offline-toggle[data-mofo-id]').forEach(input => {
+                            input.addEventListener('click', (e) => e.stopPropagation());
+                            input.addEventListener('change', (e) => {
+                                e.stopPropagation();
+                                const id = String(input.getAttribute('data-mofo-id') || '').trim();
+                                if (!id) return;
+                                mofoData.updateItem(id, { offlinePromptEnabled: !!input.checked });
+                                rerenderMofoPane();
+                            });
+                        });
+                        menu.querySelectorAll('.mofo-update-mode-toggle[data-mofo-id]').forEach(input => {
+                            input.addEventListener('click', (e) => e.stopPropagation());
+                            input.addEventListener('change', (e) => {
+                                e.stopPropagation();
+                                const id = String(input.getAttribute('data-mofo-id') || '').trim();
+                                if (!id) return;
+                                mofoData.updateItem(id, { updateMode: input.checked ? 'append' : 'replace' });
+                                rerenderMofoPane();
+                            });
+                        });
+                        menu.querySelectorAll('.mofo-entry-toggle').forEach(label => {
+                            label.addEventListener('click', (e) => e.stopPropagation());
+                        });
+
+                        menu.querySelector('#mofo-refresh-btn')?.addEventListener('click', () => {
+                            rerenderMofoPane();
+                        });
+
+                        menu.querySelector('#mofo-create-btn')?.addEventListener('click', () => {
+                            mofoEditorMode = 'create';
+                            mofoEditingId = '';
+                            mofoEditorReturnMode = 'list';
+                            renderMofoPane();
+                        });
+                        menu.querySelectorAll('.mofo-inline-action-btn[data-mofo-action][data-mofo-id]').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                const action = String(btn.getAttribute('data-mofo-action') || '').trim();
+                                const id = String(btn.getAttribute('data-mofo-id') || '').trim();
+                                if (!action || !id) return;
+
+                                const current = getMofoById(id);
+                                if (!current) return;
+                                activeMofoId = id;
+
+                                if (action === 'edit') {
+                                    mofoEditorMode = 'edit';
+                                    mofoEditingId = id;
+                                    mofoEditorReturnMode = 'list';
+                                    renderMofoPane();
+                                    return;
+                                }
+
+                                if (action === 'clear-session') {
+                                    const ok = confirm(`清理魔坊「${current.name}」在当前会话的数据？\n条目会保留。`);
+                                    if (!ok) return;
+                                    mofoData.clearItemSessionData(id);
+                                    rerenderMofoPane();
+                                    return;
+                                }
+
+                                if (action === 'delete-global' || action === 'delete') {
+                                    const ok = confirm(`全局删除魔坊「${current.name}」？\n会删除条目定义，并清理各会话里的对应运行态数据。`);
+                                    if (!ok) return;
+                                    mofoData.removeItem(id);
+                                    rerenderMofoPane();
+                                    return;
+                                }
+
+                            });
+                        });
+                    };
+
+                    const switchTab = (tabName = 'wechat') => {
+                        menu.querySelectorAll('.inline-reply-tab-btn[data-tab-target]').forEach(btn => {
+                            btn.classList.toggle('is-active', btn.dataset.tabTarget === tabName);
+                        });
+                        menu.querySelectorAll('.inline-reply-page[data-tab-page]').forEach(page => {
+                            page.classList.toggle('is-active', page.dataset.tabPage === tabName);
+                        });
+                        positionMenuCentered();
+                    };
+
+                    menu.querySelectorAll('.inline-reply-tab-btn[data-tab-target]').forEach(btn => {
+                        btn.addEventListener('click', (ev) => {
                             ev.stopPropagation();
                             ev.preventDefault();
-                            const name = el.dataset.name;
-                            const textarea = document.getElementById('send_textarea');
-
-                            if (textarea) {
-                                const tagStr = `\n<回复${name}>\n\n</回复${name}>\n`;
-                                const startPos = textarea.selectionStart || textarea.value.length;
-                                const endPos = textarea.selectionEnd || textarea.value.length;
-
-                                const textBefore = textarea.value.substring(0, startPos);
-                                const textAfter = textarea.value.substring(endPos, textarea.value.length);
-                                textarea.value = textBefore + tagStr + textAfter;
-
-                                const newCursorPos = startPos + `\n<回复${name}>\n`.length;
-                                textarea.selectionStart = newCursorPos;
-                                textarea.selectionEnd = newCursorPos;
-                                textarea.focus();
-
-                                textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                            }
-                            closeMenuSafely();
-                        };
-                        el.addEventListener('click', onItemClick);
+                            switchTab(String(btn.dataset.tabTarget || 'wechat'));
+                        });
                     });
+
+                    bindWechatEvents();
+                    rerenderMofoPane({ keepEditor: false });
+                    switchTab('wechat');
 
                     // 🔥 核心修复3：解决移动端 300ms 点击延迟导致的“幽灵秒关”问题
                     setTimeout(() => {
                         const closeMenu = (ev) => {
                             if (!menu.contains(ev.target)) {
                                 closeMenuSafely();
-                                // 移除监听
                                 document.removeEventListener('mousedown', closeMenu);
                                 document.removeEventListener('touchstart', closeMenu);
                             }
                         };
-                        // 抛弃 click，使用 mousedown 和 touchstart 监听外围点击，彻底避开冒泡冲突
                         document.addEventListener('mousedown', closeMenu);
                         document.addEventListener('touchstart', closeMenu, { passive: true });
-                    }, 50); // 稍微延迟 50ms，确保护盾生效
+                    }, 50);
 
                 } catch (e) {
                     console.error('📱 [手机插件] 快捷回复执行异常:', e);
@@ -2885,6 +3950,7 @@ if (window.GGP_Loaded) {
                 // 🔥 新增：让 AI 也能使用 <回复xx> 标签替用户发消息
                 if (!isHistoryReplay) {
                     processUserReplyTags(text, index, currentBatchId); // 🔥 传入 index 和 batchId
+                    processMofoTags(text, { source: 'assistant', messageIndex: index }).catch(() => {});
                 }
                 // 解析微信标签
                 const wechatTagDataList = parseLightweightWechatTag(text);
@@ -3236,6 +4302,7 @@ if (window.GGP_Loaded) {
         if (window.VirtualPhone) {
             window.VirtualPhone.wechatApp = null;
             window.VirtualPhone.cachedWechatData = null;
+            window.VirtualPhone.cachedMofoData = null;
             // 🔥 清空日记缓存，防止切换聊天后数据串味
             if (window.VirtualPhone.diaryApp) {
                 window.VirtualPhone.diaryApp.clearCache();
@@ -3398,6 +4465,7 @@ if (window.GGP_Loaded) {
                 home: null,
                 wechatApp: null,
                 mofoApp: null,
+                cachedMofoData: null,
                 notify: showUnifiedPhoneNotification,
                 triggerWechatIncomingCall: triggerWechatIncomingCall,
                 loadTimeManager: loadTimeManager,
@@ -3691,6 +4759,11 @@ if (window.GGP_Loaded) {
                                 if (!window.VirtualPhone.mofoApp) {
                                     window.VirtualPhone.mofoApp = new module.MofoApp(phoneShell, storage);
                                 }
+                                if (window.VirtualPhone.cachedMofoData) {
+                                    window.VirtualPhone.mofoApp.mofoData = window.VirtualPhone.cachedMofoData;
+                                } else if (window.VirtualPhone.mofoApp?.mofoData) {
+                                    window.VirtualPhone.cachedMofoData = window.VirtualPhone.mofoApp.mofoData;
+                                }
                                 window.VirtualPhone.mofoApp.render();
                             } catch (initError) {
                                 console.error('❌ 魔坊APP初始化失败:', initError);
@@ -3768,6 +4841,7 @@ if (window.GGP_Loaded) {
                 if (window.VirtualPhone) {
                     window.VirtualPhone.wechatApp = null;
                     window.VirtualPhone.cachedWechatData = null;
+                    window.VirtualPhone.cachedMofoData = null;
                     if (window.VirtualPhone.diaryApp) window.VirtualPhone.diaryApp.clearCache();
                     if (window.VirtualPhone.phoneApp) window.VirtualPhone.phoneApp.clearCache();
                     if (window.VirtualPhone.weiboApp) window.VirtualPhone.weiboApp.clearCache();
@@ -3813,6 +4887,7 @@ if (window.GGP_Loaded) {
                 if (window.VirtualPhone) {
                     window.VirtualPhone.wechatApp = null;
                     window.VirtualPhone.cachedWechatData = null;
+                    window.VirtualPhone.cachedMofoData = null;
                     window.VirtualPhone.imageManager = null;
                     if (window.VirtualPhone.diaryApp) window.VirtualPhone.diaryApp.clearCache();
                     if (window.VirtualPhone.phoneApp) window.VirtualPhone.phoneApp.clearCache();
@@ -3961,7 +5036,7 @@ if (window.GGP_Loaded) {
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}'];
+                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
                                 let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
@@ -4092,7 +5167,7 @@ if (window.GGP_Loaded) {
 
                                     if (wechatDataParsed) {
                                         const allChats = Array.isArray(wechatDataParsed.chats)
-                                            ? [...wechatDataParsed.chats].sort((a, b) => (b?.timestamp || 0) - (a?.timestamp || 0))
+                                            ? [...wechatDataParsed.chats].sort((a, b) => (a?.timestamp || 0) - (b?.timestamp || 0))
                                             : [];
 
                                         // 🔥 性能优化：在循环外获取context和limit配置，避免重复调用
@@ -4133,6 +5208,28 @@ if (window.GGP_Loaded) {
                                                 ])
                                                 .filter(([key, description]) => key && description)
                                         );
+                                        const parseDateTimeToTs = (dateText, timeText) => {
+                                            const dateRaw = String(dateText || '').trim();
+                                            const timeRaw = String(timeText || '').trim().replace('：', ':');
+                                            if (!dateRaw || !timeRaw) return NaN;
+                                            const dateMatch = dateRaw.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+                                            const timeMatch = timeRaw.match(/(\d{1,2}):(\d{2})/);
+                                            if (!dateMatch || !timeMatch) return NaN;
+                                            const year = Number(dateMatch[1]);
+                                            const month = Number(dateMatch[2]);
+                                            const day = Number(dateMatch[3]);
+                                            const hour = Number(timeMatch[1]);
+                                            const minute = Number(timeMatch[2]);
+                                            if (![year, month, day, hour, minute].every(Number.isFinite)) return NaN;
+                                            return new Date(year, month - 1, day, hour, minute).getTime();
+                                        };
+                                        const getMessageSortTs = (msg, fallbackIndex) => {
+                                            const directTs = Number(msg?.timestamp || 0);
+                                            if (Number.isFinite(directTs) && directTs > 0) return directTs;
+                                            const fallbackTs = parseDateTimeToTs(msg?.date, msg?.time);
+                                            if (Number.isFinite(fallbackTs) && fallbackTs > 0) return fallbackTs;
+                                            return Number(fallbackIndex) || 0;
+                                        };
 
                                         // 🔥 线下模式：使用线下专属的条数限制
                                         allChats.forEach(chat => {
@@ -4180,7 +5277,18 @@ if (window.GGP_Loaded) {
                                             if (chatMessages && chatMessages.length > 0) {
                                                 const isGroup = chat.type === 'group';
                                                 const limit = isGroup ? groupLimit : singleLimit;
-                                                const recentMessages = chatMessages.slice(-limit);
+                                                const recentMessages = [...chatMessages]
+                                                    .map((msg, index) => ({
+                                                        msg,
+                                                        index,
+                                                        sortTs: getMessageSortTs(msg, index)
+                                                    }))
+                                                    .sort((a, b) => {
+                                                        if (a.sortTs !== b.sortTs) return a.sortTs - b.sortTs;
+                                                        return a.index - b.index;
+                                                    })
+                                                    .slice(-limit)
+                                                    .map(entry => entry.msg);
                                                 const formattedMessages = [];
 
                                                 recentMessages.forEach(msg => {
@@ -4298,6 +5406,7 @@ if (window.GGP_Loaded) {
                                     let phoneRulesContent = '';
                                     let phoneHistoryContent = '';
                                     let weiboHistoryContent = '';
+                                    let mofoPromptContent = '';
                                     let weiboInjectEnabled = false;
 
                                     // 🔥 确保 promptManager 已加载（修复懒加载导致的 null 问题）
@@ -4383,6 +5492,14 @@ if (window.GGP_Loaded) {
                                         }
                                     }
 
+                                    // 2.5️⃣ 魔坊线下提示词注入（按条目勾选过滤）
+                                    try {
+                                        mofoPromptContent = await buildMofoOfflinePromptContent();
+                                    } catch (e) {
+                                        mofoPromptContent = '';
+                                        console.warn('⚠️ [手机] 获取魔坊线下提示词失败');
+                                    }
+
                                     // 3️⃣ 添加微信聊天记录（按会话窗口分组显示，含日期）
                                     if (wechatOfflineChats.length > 0) {
                                         phoneHistoryContent += `【 手机微信已有消息】\n`;
@@ -4419,7 +5536,36 @@ if (window.GGP_Loaded) {
                                         if (callHistory && callHistory.length > 0) {
                                             const callLimit = storage ? (parseInt(storage.get('phone-call-limit')) || 10) : 10;
                                             const userName = context?.name1 || '用户';
-                                            const answeredCalls = callHistory.filter(r => r.status === 'answered' && r.transcript && r.transcript.length > 0);
+                                            const parseCallDateTimeToTs = (dateText, timeText) => {
+                                                const dateRaw = String(dateText || '').trim();
+                                                const timeRaw = String(timeText || '').trim().replace('：', ':');
+                                                if (!dateRaw || !timeRaw) return NaN;
+                                                const dateMatch = dateRaw.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+                                                const timeMatch = timeRaw.match(/(\d{1,2}):(\d{2})/);
+                                                if (!dateMatch || !timeMatch) return NaN;
+                                                const year = Number(dateMatch[1]);
+                                                const month = Number(dateMatch[2]);
+                                                const day = Number(dateMatch[3]);
+                                                const hour = Number(timeMatch[1]);
+                                                const minute = Number(timeMatch[2]);
+                                                if (![year, month, day, hour, minute].every(Number.isFinite)) return NaN;
+                                                return new Date(year, month - 1, day, hour, minute).getTime();
+                                            };
+                                            const parseCallSortTs = (record, fallbackIndex) => {
+                                                const idTs = Number(record?.id || 0);
+                                                if (Number.isFinite(idTs) && idTs > 0) return idTs;
+                                                const fallbackTs = parseCallDateTimeToTs(record?.date, record?.time);
+                                                if (Number.isFinite(fallbackTs) && fallbackTs > 0) return fallbackTs;
+                                                return Number(fallbackIndex) || 0;
+                                            };
+                                            const answeredCalls = callHistory
+                                                .map((record, index) => ({ record, index, sortTs: parseCallSortTs(record, index) }))
+                                                .filter(item => item.record?.status === 'answered' && item.record?.transcript && item.record.transcript.length > 0)
+                                                .sort((a, b) => {
+                                                    if (a.sortTs !== b.sortTs) return a.sortTs - b.sortTs;
+                                                    return a.index - b.index;
+                                                })
+                                                .map(item => item.record);
 
                                             if (answeredCalls.length > 0) {
                                                 phoneHistoryContent += `【 手机通话记录】\n`;
@@ -4637,6 +5783,7 @@ if (window.GGP_Loaded) {
                                         const resolveInjectedSystemName = (id, text) => {
                                             if (id === 'weibo_system_history') return 'SYSTEM (微博)';
                                             if (id === 'phone_system_history') return 'SYSTEM (微信历史)';
+                                            if (id === 'mofo_system_prompt') return 'SYSTEM (魔坊)';
                                             if (id === 'phone_system_rules') {
                                                 const source = String(text || '');
                                                 const tags = [];
@@ -4709,6 +5856,7 @@ if (window.GGP_Loaded) {
                                     if (weiboInjectEnabled) {
                                         injectIntoMessages('{{WEIBO_HISTORY}}', weiboHistoryContent, 'weibo_system_history');
                                     }
+                                    injectIntoMessages('{{MOFO_PROMPT}}', mofoPromptContent, 'mofo_system_prompt');
 
                                     // ============================
                                     // 🎵 {{MUSIC_PROMPT}} 独立注入
@@ -4814,6 +5962,7 @@ if (window.GGP_Loaded) {
                                             const HISTORY_VAR = '{{PHONE_HISTORY}}';
                                             const WEIBO_VAR = '{{WEIBO_HISTORY}}';
                                             const MUSIC_VAR = '{{MUSIC_PROMPT}}';
+                                            const MOFO_VAR = '{{MOFO_PROMPT}}';
                                             if (c.includes(TARGET_VAR)) {
                                                 c = c.split(TARGET_VAR).join('');
                                                 modified = true;
@@ -4828,6 +5977,10 @@ if (window.GGP_Loaded) {
                                             }
                                             if (c.includes(MUSIC_VAR)) {
                                                 c = c.split(MUSIC_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (c.includes(MOFO_VAR)) {
+                                                c = c.split(MOFO_VAR).join('');
                                                 modified = true;
                                             }
 
@@ -4917,7 +6070,7 @@ if (window.GGP_Loaded) {
 
                             if (targetArray) {
                                 // 🌟 1. 核心防御：连同外层 bodyObj 一起检查，防止变量被移动端或 Claude 抽离到 system 字段
-                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{PHONE_PROMPT\}\}|\{\{PHONE_HISTORY\}\}|\{\{WEIBO_HISTORY\}\}|\{\{MUSIC_PROMPT\}\}/);
+                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{PHONE_PROMPT\}\}|\{\{PHONE_HISTORY\}\}|\{\{WEIBO_HISTORY\}\}|\{\{MUSIC_PROMPT\}\}|\{\{MOFO_PROMPT\}\}/);
 
                                 if (hasMacros) {
                                     console.log('🚨 [手机插件] 警告：酒馆发送过快导致 Hook 被无视，请求体残留变量！正在执行网卡级底层强行注入...');

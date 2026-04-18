@@ -223,7 +223,11 @@ export class PhoneShell {
                 '.phone-call-settings', '.phone-call-settings-body', '.phone-call-settings-section',
                 '.phone-call-prompt-textarea', '#phone-call-call-prompt',
                 '.phone-call-active', '.phone-call-messages', '.phone-call-bottom',
-                '.honey-live-gifts', '.honey-live-gifts-list', '.honey-live-bottom'
+                '.honey-live-gifts', '.honey-live-gifts-list', '.honey-live-bottom',
+                '.mofo-app', '.mofo-list-col', '.mofo-detail-col',
+                '.mofo-editor-overlay', '.mofo-editor-panel', '.mofo-editor-body',
+                '#phone-inline-reply-menu-pop', '.inline-reply-tabbar', '.inline-reply-page',
+                '#mofo-list-wrap', '#mofo-preview-wrap'
             ];
 
             const isInScrollableArea = scrollableAreas.some(selector => target.closest(selector));

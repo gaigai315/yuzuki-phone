@@ -2319,6 +2319,30 @@ input:checked + .toggle-slider:before {
     overscroll-behavior-y: contain;
 }
 
+/* 魔坊主界面/编辑弹窗手势豁免：允许移动端纵向滚动，避免与全局侧滑冲突 */
+.phone-view-current .mofo-app,
+.mofo-app,
+.phone-view-current .mofo-editor-overlay,
+.mofo-editor-overlay,
+.phone-view-current .mofo-editor-panel,
+.mofo-editor-panel {
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
+.phone-view-current .mofo-list-col,
+.mofo-list-col,
+.phone-view-current .mofo-detail-col,
+.mofo-detail-col,
+.phone-view-current .mofo-editor-body,
+.mofo-editor-body {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+}
+
 .phone-call-history-item {
     display: flex;
     align-items: center;
