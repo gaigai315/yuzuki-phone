@@ -757,6 +757,12 @@ export class WechatData {
                 message.imagePrompt = imageMatch[2].trim();
                 message.content = message.imagePrompt;
             }
+            const locationMatch = /^\[定位\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(contentStr);
+            if (locationMatch) {
+                message.type = 'location';
+                message.locationText = locationMatch[1].trim();
+                message.content = message.locationText;
+            }
             const stickerMatch = /^\[表情包\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(contentStr);
             if (stickerMatch) {
                 message.type = 'sticker';
@@ -772,24 +778,27 @@ export class WechatData {
             }
         }
 
-        // 🔥 防重复检测：避免 AI 重复输出导致消息重影
-        const recentMessages = this.data.messages[chatId].slice(-30);
-        const msgType = String(message.type || 'text');
-        const msgFrom = String(message.from || '');
-        const msgContent = String(message.content || '');
+        // 🔥 防重复检测：仅用于正文标签同步，避免 AI 流式/重算导致消息重影
+        // 注意：手动发送（from=me）也可能出现同内容连发，不能被这里吞掉。
+        if (message.fromMainChatTag) {
+            const recentMessages = this.data.messages[chatId].slice(-30);
+            const msgType = String(message.type || 'text');
+            const msgFrom = String(message.from || '');
+            const msgContent = String(message.content || '');
 
-        const isDuplicate = recentMessages.some(m => {
-            if (String(m.from || '') !== msgFrom) return false;
-            if (String(m.content || '') !== msgContent) return false;
-            if (String(m.type || 'text') !== msgType) return false;
+            const isDuplicate = recentMessages.some(m => {
+                if (String(m.from || '') !== msgFrom) return false;
+                if (String(m.content || '') !== msgContent) return false;
+                if (String(m.type || 'text') !== msgType) return false;
 
-            // 只要同楼层且内容完全一致，必定是重复触发
-            if (message.tavernMessageIndex !== undefined && m.tavernMessageIndex !== undefined) {
-                return Number(m.tavernMessageIndex) === Number(message.tavernMessageIndex);
-            }
-            return false;
-        });
-        if (isDuplicate) return false; // 拦截重复
+                // 只要同楼层且内容完全一致，必定是重复触发
+                if (message.tavernMessageIndex !== undefined && m.tavernMessageIndex !== undefined) {
+                    return Number(m.tavernMessageIndex) === Number(message.tavernMessageIndex);
+                }
+                return false;
+            });
+            if (isDuplicate) return false; // 拦截重复
+        }
 
         // 🔥 时间戳保底机制
         const storyTimeFallback = this._getStoryTimeFallback();
@@ -898,6 +907,8 @@ getMessagePreview(message) {
             return '[图片]';
        case 'image_prompt':
             return `[${message.mediaType || '图片'}]`;
+        case 'location':
+            return `[定位] ${stripSpeechPrefix(message.content || message.locationText || '')}`.trim();
         case 'voice':
             return '[语音]';
         case 'video':

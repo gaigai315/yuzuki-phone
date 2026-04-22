@@ -585,6 +585,24 @@ renderChatRoom(chat) {
             case 'image_prompt':
                 messageBody = this.renderImagePromptCard(msg);
                 break;
+            case 'location': {
+                const locationRaw = String(msg.locationText || msg.locationAddress || msg.content || '').trim() || '未知位置';
+                const locationTitleRaw = locationRaw.length > 22 ? `${locationRaw.slice(0, 22)}...` : locationRaw;
+                const locationTitle = this._escapeHtml(locationTitleRaw);
+                const locationDetail = this._escapeHtml(locationRaw);
+                messageBody = `
+                <div class="message-location" style="width: 220px; max-width: 100%; background: #fff; border: 1px solid #e8edf5; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.08);">
+                    <div style="height: 88px; background: linear-gradient(135deg, #e7f4ff 0%, #d8ecff 48%, #f5fbff 100%); display: flex; align-items: center; justify-content: center;">
+                        <div style="width: 34px; height: 34px; border-radius: 50%; background: #2e8dfb; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 4px 8px rgba(46,141,251,0.3);">📍</div>
+                    </div>
+                    <div style="padding: 8px 10px 9px;">
+                        <div style="font-size: 13px; color: #1f2329; font-weight: 600; line-height: 1.35; word-break: break-word;">${locationTitle}</div>
+                        <div style="font-size: 11px; color: #8a93a0; margin-top: 3px; line-height: 1.35; word-break: break-word;">${locationDetail}</div>
+                    </div>
+                </div>
+            `;
+                break;
+            }
             case 'voice':
                 let durationStr = msg.duration || '3"';
                 let durationNum = parseInt(durationStr.replace('"', '').replace('秒', '')) || 3;
@@ -1915,7 +1933,7 @@ renderChatRoom(chat) {
         };
     }
 
-    // 🔥 解析AI返回的特殊消息格式（转账/红包/微博新闻/来电）
+    // 🔥 解析AI返回的特殊消息格式（转账/红包/定位/微博新闻/来电）
     parseSpecialMessage(content) {
         if (!content || typeof content !== 'string') return null;
 
@@ -1923,6 +1941,19 @@ renderChatRoom(chat) {
         if (content.includes('[微博新闻]') && content.includes('[/微博新闻]')) {
             const parsedWeibo = this._parseWeiboNewsCard(content);
             if (parsedWeibo) return parsedWeibo;
+        }
+
+        // 匹配 [定位](地理位置) / [定位]（地理位置）/ 【定位】(地理位置)
+        const locationMatch = content.match(/(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*([^)）]+?)\s*[)）]/);
+        if (locationMatch) {
+            const locationText = String(locationMatch[1] || '').trim();
+            if (locationText) {
+                return {
+                    type: 'location',
+                    locationText,
+                    content: locationText
+                };
+            }
         }
 
         // 匹配 [转账](金额：xx元) 或 [转账] ¥xx
@@ -1968,7 +1999,7 @@ renderChatRoom(chat) {
 
     /**
      * 🔥 混合消息拆分器：
-     * 支持 "普通文本 + [转账]/[红包]标签 + 普通文本" 的行内拆分，
+     * 支持 "普通文本 + [转账]/[红包]/[定位]标签 + 普通文本" 的行内拆分，
      * 将标签转换为独立特殊消息，同时保留其余文字内容。
      */
     splitMixedSpecialMessage(message) {
@@ -1977,7 +2008,7 @@ renderChatRoom(chat) {
         const rawContent = String(message.content || '');
         if (!rawContent.trim()) return [message];
 
-        const inlineSpecialRegex = /\[转账\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\)|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\))?|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
+        const inlineSpecialRegex = /\[转账\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\)|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\))?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
         let hasMatch = false;
         let lastIndex = 0;
         let usedQuote = false;
@@ -2940,7 +2971,7 @@ renderChatRoom(chat) {
     bindMessageLongPressEvents() {
         const messagesDiv = document.getElementById('chat-messages');
         if (!messagesDiv) return;
-        const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card';
+        const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card';
 
         // 🔥 性能核武器：确保整个聊天列表只绑定 1 次事件
         // 不再随消息数量增多而造成几何级卡顿！
@@ -4348,6 +4379,9 @@ renderChatRoom(chat) {
                     // 🔥 修复：直接将红包状态贴在文字后面
                     const status = String(msg.status || '').trim() === 'opened' ? '已领取' : '未领取';
                     wechatTranscript += `${timeStr}${speaker}: ${quoteStr}[红包 ¥${msg.amount}]（状态：${status}）\n`;
+                } else if (msg.type === 'location') {
+                    const locationText = String(msg.locationText || msg.locationAddress || msg.content || '').trim();
+                    wechatTranscript += `${timeStr}${speaker}: ${quoteStr}[定位]（${locationText || '未知位置'}）\n`;
                 } else {
                     wechatTranscript += `${timeStr}${speaker}: ${quoteStr}${msg.content || ''}\n`;
                 }
@@ -5210,7 +5244,7 @@ renderChatRoom(chat) {
         if (!contentEl) return;
 
         // 找到气泡元素（包括图片）
-        const bubbleEl = contentEl.querySelector('.message-text, .message-voice, .message-redpacket, .message-image-box, .message-transfer, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card');
+        const bubbleEl = contentEl.querySelector('.message-text, .message-voice, .message-redpacket, .message-image-box, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card');
         if (!bubbleEl) return;
 
         // 设置气泡为相对定位（用于菜单绝对定位的参考）
