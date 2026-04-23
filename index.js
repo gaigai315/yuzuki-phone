@@ -5567,40 +5567,26 @@ if (window.GGP_Loaded) {
                         if (!promptManager) await loadPromptManager();
                         if (!timeManager) await loadTimeManager();
 
-                        const normalizeMacroName = (raw) => String(raw || '')
-                            .replace(/[{}]/g, '')
-                            .trim()
-                            .toUpperCase();
-                        const buildMacroRegex = (macroName, global = false) => {
-                            const safeName = String(macroName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                            return new RegExp(`\\{\\{\\s*${safeName}\\s*\\}\\}`, global ? 'gi' : 'i');
-                        };
-                        const replaceMacroToken = (text, macroName, replacement = '') => {
-                            return String(text || '').replace(buildMacroRegex(macroName, true), replacement);
-                        };
-                        const findMacroToken = (text, macroName) => {
-                            const source = String(text || '');
-                            const m = source.match(buildMacroRegex(macroName, false));
-                            if (!m || typeof m.index !== 'number') return null;
-                            return { index: m.index, length: m[0].length };
-                        };
-
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['PHONE_PROMPT', 'PHONE_HISTORY', 'WEIBO_HISTORY', 'MUSIC_PROMPT', 'MOFO_PROMPT'];
+                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
                                 let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
                                 if (typeof c === 'string') {
                                     let modified = false;
                                     macros.forEach(macro => {
-                                        const cleaned = replaceMacroToken(c, macro, '');
-                                        if (cleaned !== c) {
-                                            c = cleaned.trim();
+                                        if (c.includes(macro)) {
+                                            c = c.split(macro).join('').trim();
                                             modified = true;
                                         }
                                     });
+                                    // 兼容 {{ MOFO_PROMPT }}（含空格）
+                                    if (/\{\{\s*MOFO_PROMPT\s*\}\}/i.test(c)) {
+                                        c = c.replace(/\{\{\s*MOFO_PROMPT\s*\}\}/gi, '').trim();
+                                        modified = true;
+                                    }
                                     if (modified) {
                                         // 🌟 兼容移动端特殊请求体格式写入
                                         if (msg.content !== undefined) msg.content = c;
@@ -6349,15 +6335,20 @@ if (window.GGP_Loaded) {
 
                                     // 🔥 辅助函数：原地拆分注入 (Gaigai 终极防弹版)
                                     const injectIntoMessages = (targetVar, contentToInject, identifier) => {
-                                        const targetMacroName = normalizeMacroName(targetVar);
                                         // 1. 如果没有内容要注入，执行安全清洗，把占位符彻底删掉
                                         if (!contentToInject) {
                                             for (let i = 0; i < messages.length; i++) {
                                                 let msg = messages[i];
                                                 let msgContent = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
-                                                if (typeof msgContent === 'string') {
-                                                    let cleanedText = replaceMacroToken(msgContent, targetMacroName, '').trim();
-                                                    if (cleanedText === msgContent) continue;
+                                                if (typeof msgContent === 'string' && msgContent.includes(targetVar)) {
+                                                    let cleanedText = msgContent.split(targetVar).join('').trim();
+                                                    if (msg.content !== undefined) msg.content = cleanedText;
+                                                    if (msg.mes !== undefined) msg.mes = cleanedText;
+                                                    if (msg.parts && msg.parts[0] !== undefined) msg.parts[0].text = cleanedText;
+                                                }
+                                                // 兼容 {{ MOFO_PROMPT }}（含空格）
+                                                if (typeof msgContent === 'string' && targetVar === '{{MOFO_PROMPT}}' && /\{\{\s*MOFO_PROMPT\s*\}\}/i.test(msgContent)) {
+                                                    const cleanedText = msgContent.replace(/\{\{\s*MOFO_PROMPT\s*\}\}/gi, '').trim();
                                                     if (msg.content !== undefined) msg.content = cleanedText;
                                                     if (msg.mes !== undefined) msg.mes = cleanedText;
                                                     if (msg.parts && msg.parts[0] !== undefined) msg.parts[0].text = cleanedText;
@@ -6404,11 +6395,10 @@ if (window.GGP_Loaded) {
                                             let msg = messages[i];
                                             let msgContent = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
 
-                                            if (typeof msgContent === 'string') {
-                                                const macroMatch = findMacroToken(msgContent, targetMacroName);
-                                                if (!macroMatch) continue;
-                                                const preText = msgContent.substring(0, macroMatch.index).trim();
-                                                const postText = msgContent.substring(macroMatch.index + macroMatch.length).trim();
+                                            if (typeof msgContent === 'string' && msgContent.includes(targetVar)) {
+                                                const varIndex = msgContent.indexOf(targetVar);
+                                                const preText = msgContent.substring(0, varIndex).trim();
+                                                const postText = msgContent.substring(varIndex + targetVar.length).trim();
 
                                                 const newMessages = [];
                                                 
@@ -6423,6 +6413,26 @@ if (window.GGP_Loaded) {
                                                 messages.splice(i, 1, ...newMessages);
                                                 replaced = true;
                                                 break; // 替换完成，立刻跳出循环
+                                            }
+                                            // 兼容 {{ MOFO_PROMPT }}（含空格）
+                                            if (
+                                                typeof msgContent === 'string'
+                                                && targetVar === '{{MOFO_PROMPT}}'
+                                                && /\{\{\s*MOFO_PROMPT\s*\}\}/i.test(msgContent)
+                                            ) {
+                                                const match = msgContent.match(/\{\{\s*MOFO_PROMPT\s*\}\}/i);
+                                                if (!match || typeof match.index !== 'number') continue;
+                                                const varIndex = match.index;
+                                                const varLen = match[0].length;
+                                                const preText = msgContent.substring(0, varIndex).trim();
+                                                const postText = msgContent.substring(varIndex + varLen).trim();
+                                                const newMessages = [];
+                                                if (preText) newMessages.push(cloneSplitMessage(msg, preText));
+                                                newMessages.push(msgObj);
+                                                if (postText) newMessages.push(cloneSplitMessage(msg, postText));
+                                                messages.splice(i, 1, ...newMessages);
+                                                replaced = true;
+                                                break;
                                             }
                                         }
 
@@ -6485,17 +6495,16 @@ if (window.GGP_Loaded) {
                                         };
 
                                         let musicReplaced = false;
-                                        const MUSIC_VAR = 'MUSIC_PROMPT';
+                                        const MUSIC_VAR = '{{MUSIC_PROMPT}}';
 
                                         // 1️⃣ 扫描上下文，寻找 {{MUSIC_PROMPT}} 变量，执行"原地拆分注入"
                                         for (let i = 0; i < messages.length; i++) {
                                                 let msgContent = messages[i].content || messages[i].mes || (messages[i].parts && messages[i].parts[0] ? messages[i].parts[0].text : '') || '';
 
-                                            if (typeof msgContent === 'string') {
-                                                const macroMatch = findMacroToken(msgContent, MUSIC_VAR);
-                                                if (!macroMatch) continue;
-                                                const preText = msgContent.substring(0, macroMatch.index).trim();
-                                                const postText = msgContent.substring(macroMatch.index + macroMatch.length).trim();
+                                            if (typeof msgContent === 'string' && msgContent.includes(MUSIC_VAR)) {
+                                                const varIndex = msgContent.indexOf(MUSIC_VAR);
+                                                const preText = msgContent.substring(0, varIndex).trim();
+                                                const postText = msgContent.substring(varIndex + MUSIC_VAR.length).trim();
 
                                                 const newMessages = [];
                                                 const originalMsg = messages[i];
@@ -6548,14 +6557,36 @@ if (window.GGP_Loaded) {
                                             let modified = false;
 
                                             // 1. 清洗占位符变量残骸
-                                            const macroNames = ['PHONE_PROMPT', 'PHONE_HISTORY', 'WEIBO_HISTORY', 'MUSIC_PROMPT', 'MOFO_PROMPT'];
-                                            macroNames.forEach((macroName) => {
-                                                const cleaned = replaceMacroToken(c, macroName, '');
-                                                if (cleaned !== c) {
-                                                    c = cleaned;
-                                                    modified = true;
-                                                }
-                                            });
+                                            const TARGET_VAR = '{{PHONE_PROMPT}}';
+                                            const HISTORY_VAR = '{{PHONE_HISTORY}}';
+                                            const WEIBO_VAR = '{{WEIBO_HISTORY}}';
+                                            const MUSIC_VAR = '{{MUSIC_PROMPT}}';
+                                            const MOFO_VAR = '{{MOFO_PROMPT}}';
+                                            if (c.includes(TARGET_VAR)) {
+                                                c = c.split(TARGET_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (c.includes(HISTORY_VAR)) {
+                                                c = c.split(HISTORY_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (c.includes(WEIBO_VAR)) {
+                                                c = c.split(WEIBO_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (c.includes(MUSIC_VAR)) {
+                                                c = c.split(MUSIC_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (c.includes(MOFO_VAR)) {
+                                                c = c.split(MOFO_VAR).join('');
+                                                modified = true;
+                                            }
+                                            // 兼容 {{ MOFO_PROMPT }}（含空格）
+                                            if (/\{\{\s*MOFO_PROMPT\s*\}\}/i.test(c)) {
+                                                c = c.replace(/\{\{\s*MOFO_PROMPT\s*\}\}/gi, '');
+                                                modified = true;
+                                            }
 
                                             // 2. 抹除所有隐秘标签 (仅限 assistant 角色)
                                             if (msg.role === 'assistant') {
@@ -6643,7 +6674,7 @@ if (window.GGP_Loaded) {
 
                             if (targetArray) {
                                 // 🌟 1. 核心防御：连同外层 bodyObj 一起检查，防止变量被移动端或 Claude 抽离到 system 字段
-                                const hasMacros = /\{\{\s*(PHONE_PROMPT|PHONE_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT)\s*\}\}/i.test(JSON.stringify(bodyObj));
+                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{PHONE_PROMPT\}\}|\{\{PHONE_HISTORY\}\}|\{\{WEIBO_HISTORY\}\}|\{\{MUSIC_PROMPT\}\}|\{\{MOFO_PROMPT\}\}|\{\{\s*MOFO_PROMPT\s*\}\}/i);
 
                                 if (hasMacros) {
                                     console.log('🚨 [手机插件] 警告：酒馆发送过快导致 Hook 被无视，请求体残留变量！正在执行网卡级底层强行注入...');
