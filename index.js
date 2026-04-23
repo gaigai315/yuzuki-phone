@@ -569,6 +569,412 @@ if (window.GGP_Loaded) {
         }
     }
 
+    // ==========================================
+    //  新增：魔坊动态更新气泡 & 全局速览弹窗
+    // ==========================================
+    if (!window.VirtualPhone) window.VirtualPhone = {};
+    window.VirtualPhone.showMofoUpdateBubble = async function (mofoId) {
+        try {
+            const mofoData = await getOrCreateMofoData();
+            const item = mofoData?.getItemById?.(mofoId);
+            if (!item) return;
+
+            const hostDoc = (() => {
+                let hostWindow = window;
+                try {
+                    let probe = window;
+                    while (probe.parent && probe.parent !== probe) {
+                        const next = probe.parent;
+                        if (!next.document?.body) break;
+                        probe = next;
+                    }
+                    hostWindow = probe;
+                } catch (e) {}
+                try {
+                    return hostWindow.document || document;
+                } catch (e) {
+                    return document;
+                }
+            })();
+            const hostWin = hostDoc.defaultView || window;
+
+            const escapeHtml = (text) => String(text ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+            const sanitizePreviewHtml = (html) => String(html || '')
+                .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+                .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+                .replace(/\son[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '')
+                .replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\2/gi, ' $1="#"');
+
+            // 1. 注入气泡和弹窗的基础 CSS (只注入一次)
+            {
+                let style = hostDoc.getElementById('mofo-global-bubble-style');
+                if (!style) {
+                    style = hostDoc.createElement('style');
+                    style.id = 'mofo-global-bubble-style';
+                    (hostDoc.head || hostDoc.documentElement).appendChild(style);
+                }
+                style.textContent = `
+                    #mofo-global-bubble-root {
+                        position: fixed;
+                        inset: 0;
+                        z-index: 2147483646;
+                        pointer-events: none;
+                        isolation: isolate;
+                    }
+                    .mofo-update-bubble {
+                        position: fixed;
+                        width: max-content;
+                        min-width: 142px;
+                        max-width: min(78vw, 260px);
+                        min-height: 46px;
+                        padding: 5px 6px;
+                        transform: translate(-50%, -50%) scale(0.9);
+                        border-radius: 8px;
+                        display: flex;
+                        align-items: stretch;
+                        justify-content: stretch;
+                        background: linear-gradient(180deg,
+                            rgba(243,248,255,0.84) 0%,
+                            rgba(233,240,252,0.8) 62%,
+                            rgba(214,226,246,0.86) 100%);
+                        backdrop-filter: blur(10px) saturate(118%);
+                        -webkit-backdrop-filter: blur(10px) saturate(118%);
+                        border: 1px solid rgba(255,255,255,0.58);
+                        box-shadow:
+                            inset 0 1px 0 rgba(255,255,255,0.65),
+                            0 10px 22px rgba(20,35,70,0.24);
+                        box-sizing: border-box;
+                        z-index: 2147483646;
+                        cursor: pointer;
+                        opacity: 0;
+                        pointer-events: auto;
+                        user-select: none;
+                        transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+                    }
+                    .mofo-update-bubble::before {
+                        content: '';
+                        position: absolute;
+                        inset: 0;
+                        border-radius: inherit;
+                        background: linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 100%);
+                        pointer-events: none;
+                    }
+                    .mofo-update-bubble::after {
+                        content: '';
+                        position: absolute;
+                        inset: 0;
+                        border-radius: inherit;
+                        border: 1px solid rgba(132, 156, 194, 0.34);
+                        opacity: 0.7;
+                        pointer-events: none;
+                    }
+                    .mofo-update-bubble.show {
+                        transform: translate(-50%, -50%) scale(1);
+                        opacity: 1;
+                        animation: mofoRankFloat 2.6s ease-in-out infinite;
+                    }
+                    .mofo-update-bubble:hover {
+                        transform: translate(-50%, -50%) scale(1.025);
+                        filter: brightness(1.02);
+                        box-shadow:
+                            inset 0 1px 0 rgba(255,255,255,0.74),
+                            0 14px 28px rgba(20,35,70,0.28);
+                    }
+                    .mofo-update-bubble:active { transform: translate(-50%, -50%) scale(0.98); }
+                    .mofo-bubble-rank-mini {
+                        position: relative;
+                        z-index: 1;
+                        width: 100%;
+                        border-radius: 7px;
+                        padding: 6px 7px;
+                        background: linear-gradient(145deg, rgba(255,255,255,0.24), rgba(223,234,250,0.2));
+                        border: 1px solid rgba(255,255,255,0.5);
+                        box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
+                    }
+                    .mofo-bubble-rank-row {
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        align-items: center;
+                        min-width: 0;
+                    }
+                    .mofo-bubble-rank-name {
+                        font-size: 11px;
+                        color: #355986;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        text-align: center;
+                        font-weight: 700;
+                        max-width: 100%;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 2px 10px;
+                        background: rgba(255,255,255,0.62);
+                        border: 1px solid rgba(136,168,214,0.52);
+                        border-radius: 999px;
+                        box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
+                    }
+                    #mofo-global-preview-overlay {
+                        position: fixed;
+                        inset: 0;
+                        background: rgba(0,0,0,0.4);
+                        z-index: 2147483647;
+                        opacity: 0;
+                        transition: opacity 0.2s ease;
+                        backdrop-filter: blur(3px);
+                        -webkit-backdrop-filter: blur(3px);
+                    }
+                    #mofo-global-preview-pop {
+                        position: fixed;
+                        left: 50%;
+                        top: 50%;
+                        transform: translate(-50%, -50%);
+                        max-width: min(92vw, 920px);
+                        max-height: 85vh;
+                        overflow: auto;
+                        box-sizing: border-box;
+                        animation: mofoPopIn 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+                    }
+                    @keyframes mofoRankFloat {
+                        0%, 100% { transform: translate(-50%, -50%) scale(1); }
+                        50% { transform: translate(-50%, calc(-50% - 3px)) scale(1.012); }
+                    }
+                    @keyframes mofoPopIn { 0% { transform: translate(-50%, -50%) scale(0.94); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+                `;
+            }
+
+            let bubbleRoot = hostDoc.getElementById('mofo-global-bubble-root');
+            if (!bubbleRoot) {
+                bubbleRoot = hostDoc.createElement('div');
+                bubbleRoot.id = 'mofo-global-bubble-root';
+                (hostDoc.documentElement || hostDoc.body).appendChild(bubbleRoot);
+            }
+
+            const oldBubble = bubbleRoot.querySelector('.mofo-update-bubble');
+            if (oldBubble) oldBubble.remove();
+            window.VirtualPhone._mofoBubblePositionController?.abort?.();
+            window.VirtualPhone._mofoBubbleDismissController?.abort?.();
+
+            const bubblePositionController = new AbortController();
+            window.VirtualPhone._mofoBubblePositionController = bubblePositionController;
+            const bubbleDismissController = new AbortController();
+            window.VirtualPhone._mofoBubbleDismissController = bubbleDismissController;
+
+            // 2. 创建气泡 DOM
+            const bubble = hostDoc.createElement('div');
+            bubble.className = 'mofo-update-bubble';
+            bubble.innerHTML = `
+                <div class="mofo-bubble-rank-mini">
+                    <div class="mofo-bubble-rank-row">
+                        <span class="mofo-bubble-rank-name">${escapeHtml(item.name)}</span>
+                    </div>
+                </div>
+            `;
+            bubbleRoot.appendChild(bubble);
+
+            const positionBubble = () => {
+                if (!bubble.isConnected) {
+                    bubblePositionController.abort();
+                    return;
+                }
+                const vv = hostWin.visualViewport;
+                const viewWidth = vv?.width || hostWin.innerWidth || window.innerWidth;
+                const viewHeight = vv?.height || hostWin.innerHeight || window.innerHeight;
+                const offsetLeft = vv?.offsetLeft || 0;
+                const offsetTop = vv?.offsetTop || 0;
+                const pickAnchorRect = () => {
+                    const candidates = [
+                        hostDoc.querySelector('#send_textarea'),
+                        hostDoc.querySelector('#send_form'),
+                        hostDoc.querySelector('#form_sheld')
+                    ].filter(Boolean);
+                    let best = null;
+                    for (const el of candidates) {
+                        const rect = el.getBoundingClientRect?.();
+                        if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+                        const inLowerHalf = rect.top >= (viewHeight * 0.45);
+                        if (!inLowerHalf) continue;
+                        if (!best || rect.top > best.top) {
+                            best = rect;
+                        }
+                    }
+                    return best;
+                };
+                const anchorRect = pickAnchorRect();
+                const hasAnchor = !!anchorRect;
+                const bubbleHalfWidth = Math.max(24, (bubble.offsetWidth || 120) / 2);
+                const bubbleHalfHeight = Math.max(20, (bubble.offsetHeight || 48) / 2);
+
+                let targetX = offsetLeft + (viewWidth / 2);
+                let targetY = offsetTop + viewHeight - bubbleHalfHeight - 22;
+
+                if (hasAnchor) {
+                    targetX = offsetLeft + anchorRect.left + (anchorRect.width / 2);
+                    targetY = offsetTop + anchorRect.top - bubbleHalfHeight - 10;
+                }
+
+                const minX = offsetLeft + bubbleHalfWidth + 8;
+                const maxX = offsetLeft + viewWidth - bubbleHalfWidth - 8;
+                const minY = offsetTop + bubbleHalfHeight + 8;
+                const maxY = offsetTop + viewHeight - bubbleHalfHeight - 8;
+                targetX = Math.max(minX, Math.min(maxX, targetX));
+                targetY = Math.max(minY, Math.min(maxY, targetY));
+
+                bubble.style.left = `${targetX}px`;
+                bubble.style.top = `${targetY}px`;
+            };
+
+            hostWin.addEventListener('resize', positionBubble, { passive: true, signal: bubblePositionController.signal });
+            if (hostWin.visualViewport) {
+                hostWin.visualViewport.addEventListener('resize', positionBubble, { passive: true, signal: bubblePositionController.signal });
+                hostWin.visualViewport.addEventListener('scroll', positionBubble, { passive: true, signal: bubblePositionController.signal });
+            }
+            positionBubble();
+
+            // 动画滑入
+            setTimeout(() => bubble.classList.add('show'), 40);
+
+            const hideBubble = () => {
+                bubble.classList.remove('show');
+                setTimeout(() => {
+                    bubble.remove();
+                    bubblePositionController.abort();
+                    bubbleDismissController.abort();
+                    if (window.VirtualPhone._mofoBubblePositionController === bubblePositionController) {
+                        window.VirtualPhone._mofoBubblePositionController = null;
+                    }
+                    if (window.VirtualPhone._mofoBubbleDismissController === bubbleDismissController) {
+                        window.VirtualPhone._mofoBubbleDismissController = null;
+                    }
+                }, 220);
+            };
+
+            // 点击空白处关闭（不自动消失）
+            const closeByOutside = (e) => {
+                const target = e?.target;
+                if (!target) return;
+                if (bubble.contains(target)) return;
+                hideBubble();
+            };
+            hostDoc.addEventListener('pointerdown', closeByOutside, { capture: true, signal: bubbleDismissController.signal });
+            hostDoc.addEventListener('mousedown', closeByOutside, { capture: true, signal: bubbleDismissController.signal });
+            hostDoc.addEventListener('touchstart', closeByOutside, { passive: true, capture: true, signal: bubbleDismissController.signal });
+
+            // 3. 点击气泡 -> 打开全屏速览
+            bubble.onclick = () => {
+                hideBubble();
+
+                // --- 解析模板与CSS ---
+                const htmlTemplate = String(item['html模板'] ?? item.htmlTemplate ?? item.templateHtml ?? '').trim();
+                let innerHtml = '';
+                if (htmlTemplate && typeof mofoData.renderTemplate === 'function') {
+                    const rendered = mofoData.renderTemplate(htmlTemplate, item.state || {});
+                    innerHtml = sanitizePreviewHtml(rendered);
+                }
+                if (!innerHtml.trim()) {
+                    // 兜底渲染（针对没有写HTML模板或模板渲染为空的条目）
+                    const rows = Object.entries(item.state || {}).map(([k, v]) => `
+                        <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:6px; padding:8px; background:#f5f8ff; border-radius:8px;">
+                            <span style="color:#3c5277; font-size:12px;">${escapeHtml(k)}</span>
+                            <strong style="color:#1f2f46; font-size:12px;">${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v ?? ''))}</strong>
+                        </div>
+                    `).join('');
+                    innerHtml = `<div class="mofo-preview-card" style="padding:12px; background:#fff; border-radius:12px;">
+                        <div style="font-size:14px; font-weight:bold; margin-bottom:10px;">${escapeHtml(item.name)}</div>
+                        ${rows || '<div class="mofo-runtime-empty" style="text-align:center; color:#999; padding:20px;">暂无数据</div>'}
+                    </div>`;
+                }
+
+                // 为了防止 CSS 污染，包裹一个特定的作用域 class
+                const scopeClass = 'mofo-global-scope-' + Date.now();
+                const cssTextRaw = String(item.cssText || '').replace(/<\/style/gi, '<\\/style');
+                const cssText = cssTextRaw.replace(/(^|[{}])(\s*[^@{}][^{}]*?)\{/g, (match, p1, p2) => {
+                    const scoped = String(p2 || '')
+                        .split(',')
+                        .map((sel) => {
+                            const selector = String(sel || '').trim();
+                            if (!selector) return '';
+                            if (/^(from|to|\d+%)$/i.test(selector)) return selector;
+                            if (/^(html|body|:root)$/i.test(selector)) return `.${scopeClass}`;
+                            if (selector.startsWith(`.${scopeClass}`)) return selector;
+                            return `.${scopeClass} ${selector}`;
+                        })
+                        .filter(Boolean)
+                        .join(', ');
+                    return scoped ? `${p1}${scoped}{` : match;
+                });
+
+                // --- 创建遮罩层与卡片 ---
+                const oldOverlay = hostDoc.getElementById('mofo-global-preview-overlay');
+                oldOverlay?.remove();
+                const overlay = hostDoc.createElement('div');
+                overlay.id = 'mofo-global-preview-overlay';
+
+                const pop = hostDoc.createElement('div');
+                pop.id = 'mofo-global-preview-pop';
+                pop.className = scopeClass;
+                pop.innerHTML = `<style>${cssText}</style>${innerHtml}`;
+                overlay.appendChild(pop);
+                (hostDoc.documentElement || hostDoc.body).appendChild(overlay);
+
+                const positionPop = () => {
+                    if (!pop.isConnected) return;
+                    const vv = hostWin.visualViewport;
+                    const viewWidth = vv?.width || hostWin.innerWidth || window.innerWidth;
+                    const viewHeight = vv?.height || hostWin.innerHeight || window.innerHeight;
+                    const offsetLeft = vv?.offsetLeft || 0;
+                    const offsetTop = vv?.offsetTop || 0;
+                    pop.style.left = `${offsetLeft + (viewWidth / 2)}px`;
+                    pop.style.top = `${offsetTop + (viewHeight / 2)}px`;
+                    pop.style.maxHeight = `${Math.max(240, viewHeight - 28)}px`;
+                };
+                positionPop();
+
+                const previewController = new AbortController();
+                hostWin.addEventListener('resize', positionPop, { passive: true, signal: previewController.signal });
+                if (hostWin.visualViewport) {
+                    hostWin.visualViewport.addEventListener('resize', positionPop, { passive: true, signal: previewController.signal });
+                    hostWin.visualViewport.addEventListener('scroll', positionPop, { passive: true, signal: previewController.signal });
+                }
+
+                // 淡入
+                setTimeout(() => { overlay.style.opacity = '1'; }, 10);
+
+                let overlayClosed = false;
+                const closeOverlay = () => {
+                    if (overlayClosed) return;
+                    overlayClosed = true;
+                    previewController.abort();
+                    overlay.style.opacity = '0';
+                    setTimeout(() => overlay.remove(), 200);
+                };
+
+                // 点击空白处关闭
+                const closeByOutside = (e) => {
+                    const target = e?.target;
+                    if (!target) return;
+                    if (pop.contains(target)) return;
+                    closeOverlay();
+                };
+                overlay.addEventListener('pointerdown', closeByOutside, true);
+                overlay.addEventListener('mousedown', closeByOutside, true);
+                overlay.addEventListener('touchstart', closeByOutside, { passive: true, capture: true });
+                hostDoc.addEventListener('pointerdown', closeByOutside, { capture: true, signal: previewController.signal });
+                hostDoc.addEventListener('mousedown', closeByOutside, { capture: true, signal: previewController.signal });
+                hostDoc.addEventListener('touchstart', closeByOutside, { passive: true, capture: true, signal: previewController.signal });
+            };
+        } catch (e) {
+            console.error('魔坊气泡生成失败:', e);
+        }
+    };
+
     async function buildMofoOfflinePromptContent() {
         try {
             const mofoData = await getOrCreateMofoData();
@@ -1271,6 +1677,94 @@ if (window.GGP_Loaded) {
                         }
                         return String(value);
                     };
+                    const sanitizePreviewHtml = (html) => {
+                        return String(html || '')
+                            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+                            .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+                            .replace(/\son[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '')
+                            .replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\2/gi, ' $1="#"');
+                    };
+                    const normalizeTemplateExprPath = (expr = '') => {
+                        return String(expr ?? '')
+                            .trim()
+                            .replace(/\[(\d+)\]/g, '.$1')
+                            .replace(/\[['"]([^'"[\]]+)['"]\]/g, '.$1')
+                            .replace(/^\.+|\.+$/g, '');
+                    };
+                    const resolveTemplateExpr = (stateObj, expr = '') => {
+                        const path = normalizeTemplateExprPath(expr);
+                        if (!path) return { exists: false, value: '' };
+                        const segments = path.split('.').map(seg => seg.trim()).filter(Boolean);
+                        if (segments.length === 0) return { exists: false, value: '' };
+                        let current = stateObj;
+                        for (const seg of segments) {
+                            if (current === null || typeof current === 'undefined') {
+                                return { exists: false, value: '' };
+                            }
+                            if (Array.isArray(current)) {
+                                if (!/^\d+$/.test(seg)) return { exists: false, value: '' };
+                                const index = Number(seg);
+                                if (index < 0 || index >= current.length) return { exists: false, value: '' };
+                                current = current[index];
+                                continue;
+                            }
+                            if (typeof current === 'object' && Object.prototype.hasOwnProperty.call(current, seg)) {
+                                current = current[seg];
+                                continue;
+                            }
+                            return { exists: false, value: '' };
+                        }
+                        if (typeof current === 'undefined') return { exists: false, value: '' };
+                        return { exists: true, value: current };
+                    };
+                    const extractTemplateExprList = (template = '') => {
+                        const text = String(template || '');
+                        if (!text) return [];
+                        const unique = new Set();
+                        const regex = /\{\{\s*([^{}]+?)\s*\}\}/g;
+                        let match = regex.exec(text);
+                        while (match) {
+                            const expr = String(match[1] || '').trim();
+                            if (expr) unique.add(expr);
+                            match = regex.exec(text);
+                        }
+                        return Array.from(unique);
+                    };
+                    const renderMofoTemplatePreview = (template, stateObj = {}) => {
+                        const rawTemplate = String(template ?? '').trim();
+                        if (!rawTemplate) return { ok: false, html: '' };
+                        const safeState = (stateObj && typeof stateObj === 'object' && !Array.isArray(stateObj))
+                            ? stateObj
+                            : {};
+                        const exprList = extractTemplateExprList(rawTemplate);
+                        const hasMissingExpr = exprList.some(expr => !resolveTemplateExpr(safeState, expr).exists);
+                        if (hasMissingExpr) return { ok: false, html: '' };
+                        const rendered = (typeof mofoData?.renderTemplate === 'function')
+                            ? mofoData.renderTemplate(rawTemplate, safeState)
+                            : rawTemplate;
+                        const safeHtml = sanitizePreviewHtml(rendered);
+                        if (!String(safeHtml || '').trim()) return { ok: false, html: '' };
+                        return { ok: true, html: safeHtml };
+                    };
+                    const scopeMofoCssText = (cssText = '', scopeSelector = '.mofo-runtime-view') => {
+                        const source = String(cssText || '').replace(/<\/style/gi, '<\\/style');
+                        if (!source.trim()) return '';
+                        return source.replace(/(^|[{}])(\s*[^@{}][^{}]*?)\{/g, (_all, boundary, selectorGroup) => {
+                            const scopedSelectors = String(selectorGroup || '')
+                                .split(',')
+                                .map((part) => {
+                                    const selector = String(part || '').trim();
+                                    if (!selector) return '';
+                                    if (/^(from|to|\d+%)$/i.test(selector)) return selector;
+                                    if (/^(html|body|:root)$/i.test(selector)) return scopeSelector;
+                                    if (selector.startsWith(scopeSelector)) return selector;
+                                    return `${scopeSelector} ${selector}`;
+                                })
+                                .filter(Boolean);
+                            if (scopedSelectors.length === 0) return _all;
+                            return `${boundary}${scopedSelectors.join(', ')}{`;
+                        });
+                    };
 
                     const buildWechatListHtml = () => {
                         let html = '<div class="inline-reply-section-title">插入回复标签</div>';
@@ -1399,6 +1893,7 @@ if (window.GGP_Loaded) {
                         const oldName = String(current?.name || '').trim();
                         const oldTag = String(current?.tagName || current?.name || '').trim();
                         const oldCss = String(current?.cssText || '');
+                        const oldHtmlTemplate = String(current?.['html模板'] ?? current?.htmlTemplate ?? current?.templateHtml ?? '');
                         const oldPrompt = String(current?.promptTemplate || '');
                         const oldOfflinePromptEnabled = current?.offlinePromptEnabled !== false;
                         const oldInitial = (() => {
@@ -1430,6 +1925,10 @@ if (window.GGP_Loaded) {
                                 <label style="display:grid; gap:4px;">
                                     <span style="font-size:11px; color:#4d638a; font-weight:600;">CSS</span>
                                     <textarea id="mofo-editor-css" placeholder="输入用于展示卡片的样式（可留空）" style="min-height:60px; border:1px solid #d7e2f4; border-radius:8px; padding:8px; font-size:11px; line-height:1.45; outline:none; resize:vertical; color:#213454; background:#fbfdff;">${escapeHtml(oldCss)}</textarea>
+                                </label>
+                                <label style="display:grid; gap:4px;">
+                                    <span style="font-size:11px; color:#4d638a; font-weight:600;">HTML 模板</span>
+                                    <textarea id="mofo-editor-html-template" placeholder="可使用 {{key}} / {{a.b}} 变量；留空则按键值对显示" style="min-height:82px; border:1px solid #d7e2f4; border-radius:8px; padding:8px; font-size:11px; line-height:1.45; outline:none; resize:vertical; color:#213454; background:#fbfdff;">${escapeHtml(oldHtmlTemplate)}</textarea>
                                 </label>
                                 <label style="display:grid; gap:4px;">
                                     <span style="font-size:11px; color:#4d638a; font-weight:600;">初始值</span>
@@ -1551,7 +2050,9 @@ if (window.GGP_Loaded) {
                             return fb || 'item';
                         };
                         const scopeToken = toScopeToken(item.tagName || item.name || item.id, item.id || 'item');
-                        const safeCss = String(item.cssText || '').replace(/<\/style/gi, '<\\/style');
+                        const scopeSelector = `#mofo-standalone-preview-root[data-mofo-scope="${scopeToken}"] .mofo-runtime-view`;
+                        const safeCss = scopeMofoCssText(item.cssText || '', scopeSelector);
+                        const htmlTemplate = String(item?.['html模板'] ?? item?.htmlTemplate ?? item?.templateHtml ?? '').trim();
                         const buildStateRowHtml = (key, value) => {
                             return `
                                 <div class="mofo-kv-row" data-mofo-key="${escapeHtml(key)}">
@@ -1568,14 +2069,24 @@ if (window.GGP_Loaded) {
                             }
                             return entries.map(([k, v]) => buildStateRowHtml(k, v)).join('');
                         };
-                        const runtimeStateHtml = `<div class="mofo-preview-card" id="mofo-preview-card">${buildStateRowsHtml(item.state || {})}</div>`;
+                        const buildRuntimePreviewBodyHtml = (stateObj = {}) => {
+                            const normalizedState = (stateObj && typeof stateObj === 'object' && !Array.isArray(stateObj))
+                                ? stateObj
+                                : {};
+                            const renderedTemplate = renderMofoTemplatePreview(htmlTemplate, normalizedState);
+                            if (renderedTemplate.ok) {
+                                return `<div class="mofo-template-preview">${renderedTemplate.html}</div>`;
+                            }
+                            return `<div class="mofo-preview-card" id="mofo-preview-card">${buildStateRowsHtml(normalizedState)}</div>`;
+                        };
+                        const runtimeStateHtml = buildRuntimePreviewBodyHtml(item.state || {});
 
                         const runtimeBaseStyle = `
                             #mofo-standalone-preview-root{
                                 --mofo-overlay-bg:transparent;
                             }
-                            .mofo-runtime-backdrop{position:fixed; inset:0; background:var(--mofo-overlay-bg);}
-                            .mofo-runtime-pop{
+                            #mofo-standalone-preview-root .mofo-runtime-backdrop{position:fixed; inset:0; background:var(--mofo-overlay-bg);}
+                            #mofo-standalone-preview-root .mofo-runtime-pop{
                                 position:fixed;
                                 left:50%;
                                 top:50%;
@@ -1590,8 +2101,8 @@ if (window.GGP_Loaded) {
                                 overscroll-behavior:contain;
                                 box-sizing:border-box;
                             }
-                            .mofo-runtime-view{display:block; box-sizing:border-box;}
-                            .mofo-delete-trigger{
+                            #mofo-standalone-preview-root .mofo-runtime-view{display:block; box-sizing:border-box;}
+                            #mofo-standalone-preview-root .mofo-delete-trigger{
                                 display:none;
                                 border:0;
                                 background:transparent;
@@ -1714,10 +2225,10 @@ if (window.GGP_Loaded) {
                                 mofoData.updateItem(item.id, { state: normalizedState });
                             }
                         };
-                        const rerenderStateCard = () => {
-                            const card = root.querySelector('#mofo-preview-card');
-                            if (!card) return;
-                            card.innerHTML = buildStateRowsHtml(item.state || {});
+                        const rerenderRuntimeView = () => {
+                            const view = root.querySelector('.mofo-runtime-view');
+                            if (!view) return;
+                            view.innerHTML = buildRuntimePreviewBodyHtml(item.state || {});
                         };
                         root.addEventListener('click', (e) => {
                             const trigger = e.target?.closest?.('[data-mofo-action]');
@@ -1766,7 +2277,7 @@ if (window.GGP_Loaded) {
                                 delete currentState[key];
                             }
                             persistMofoState(currentState);
-                            rerenderStateCard();
+                            rerenderRuntimeView();
                         });
                         root.addEventListener('pointerdown', closeByOutside, true);
                         root.addEventListener('mousedown', closeByOutside, true);
@@ -1790,6 +2301,7 @@ if (window.GGP_Loaded) {
                         const nameInput = menu.querySelector('#mofo-editor-name');
                         const tagInput = menu.querySelector('#mofo-editor-tag');
                         const cssInput = menu.querySelector('#mofo-editor-css');
+                        const htmlTemplateInput = menu.querySelector('#mofo-editor-html-template');
                         const initialInput = menu.querySelector('#mofo-editor-initial');
                         const promptInput = menu.querySelector('#mofo-editor-prompt');
                         const offlineEnabledInput = menu.querySelector('#mofo-editor-offline-enabled');
@@ -1798,6 +2310,7 @@ if (window.GGP_Loaded) {
                             name: String(nameInput?.value || '').trim(),
                             tagName: String(tagInput?.value || '').trim(),
                             cssText: String(cssInput?.value || ''),
+                            htmlTemplate: String(htmlTemplateInput?.value || ''),
                             initialStateRaw: String(initialInput?.value || ''),
                             promptTemplate: String(promptInput?.value || ''),
                             offlinePromptEnabled: !!offlineEnabledInput?.checked
@@ -1836,6 +2349,13 @@ if (window.GGP_Loaded) {
                             : {};
                         const nextInitial = parseInitialDraftToState(draft.initialStateRaw);
                         return getCanonicalJson(currentInitial) !== getCanonicalJson(nextInitial);
+                    };
+                    const isHtmlTemplateDraftChanged = (currentItem, draft) => {
+                        if (!currentItem || !draft || !Object.prototype.hasOwnProperty.call(draft, 'htmlTemplate')) {
+                            return false;
+                        }
+                        const currentTemplate = String(currentItem['html模板'] ?? currentItem.htmlTemplate ?? currentItem.templateHtml ?? '');
+                        return currentTemplate !== String(draft.htmlTemplate ?? '');
                     };
 
                     const focusMofoEditorName = () => {
@@ -1982,6 +2502,9 @@ if (window.GGP_Loaded) {
                                         const currentItem = getEditingMofo();
                                         if (!isInitialDraftChanged(currentItem, draft)) {
                                             delete draft.initialStateRaw;
+                                        }
+                                        if (!isHtmlTemplateDraftChanged(currentItem, draft)) {
+                                            delete draft.htmlTemplate;
                                         }
                                         mofoData.updateItem(targetId, draft);
                                         activeMofoId = targetId;
@@ -3950,7 +4473,14 @@ if (window.GGP_Loaded) {
                 // 🔥 新增：让 AI 也能使用 <回复xx> 标签替用户发消息
                 if (!isHistoryReplay) {
                     processUserReplyTags(text, index, currentBatchId); // 🔥 传入 index 和 batchId
-                    processMofoTags(text, { source: 'assistant', messageIndex: index }).catch(() => {});
+                    processMofoTags(text, { source: 'assistant', messageIndex: index }).then(updates => {
+                        // 只要有魔坊条目匹配到更新，优先弹 changed 的；否则弹第一个匹配项
+                        if (!Array.isArray(updates) || updates.length === 0) return;
+                        const preferred = updates.find(u => u && u.changed && u.id) || updates.find(u => u && u.id);
+                        if (preferred && window.VirtualPhone?.showMofoUpdateBubble) {
+                            window.VirtualPhone.showMofoUpdateBubble(preferred.id);
+                        }
+                    }).catch(e => console.warn('Mofo tag process error:', e));
                 }
                 // 解析微信标签
                 const wechatTagDataList = parseLightweightWechatTag(text);
@@ -4455,8 +4985,12 @@ if (window.GGP_Loaded) {
             // 🔥 第一阶段：核心数据初始化
             loadData();
 
-            // 🔥 VirtualPhone 全局对象
+            // 🔥 VirtualPhone 全局对象（保留已挂载的方法，避免被覆盖）
+            const previousVirtualPhone = (window.VirtualPhone && typeof window.VirtualPhone === 'object')
+                ? window.VirtualPhone
+                : {};
             window.VirtualPhone = {
+                ...previousVirtualPhone,
                 storage: storage,
                 settings: settings,
                 extensionBaseUrl: ST_PHONE_BASE_URL,
@@ -5033,18 +5567,37 @@ if (window.GGP_Loaded) {
                         if (!promptManager) await loadPromptManager();
                         if (!timeManager) await loadTimeManager();
 
+                        const normalizeMacroName = (raw) => String(raw || '')
+                            .replace(/[{}]/g, '')
+                            .trim()
+                            .toUpperCase();
+                        const buildMacroRegex = (macroName, global = false) => {
+                            const safeName = String(macroName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            return new RegExp(`\\{\\{\\s*${safeName}\\s*\\}\\}`, global ? 'gi' : 'i');
+                        };
+                        const replaceMacroToken = (text, macroName, replacement = '') => {
+                            return String(text || '').replace(buildMacroRegex(macroName, true), replacement);
+                        };
+                        const findMacroToken = (text, macroName) => {
+                            const source = String(text || '');
+                            const m = source.match(buildMacroRegex(macroName, false));
+                            if (!m || typeof m.index !== 'number') return null;
+                            return { index: m.index, length: m[0].length };
+                        };
+
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}'];
+                            const macros = ['PHONE_PROMPT', 'PHONE_HISTORY', 'WEIBO_HISTORY', 'MUSIC_PROMPT', 'MOFO_PROMPT'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
                                 let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
                                 if (typeof c === 'string') {
                                     let modified = false;
                                     macros.forEach(macro => {
-                                        if (c.includes(macro)) {
-                                            c = c.split(macro).join('').trim();
+                                        const cleaned = replaceMacroToken(c, macro, '');
+                                        if (cleaned !== c) {
+                                            c = cleaned.trim();
                                             modified = true;
                                         }
                                     });
@@ -5796,13 +6349,15 @@ if (window.GGP_Loaded) {
 
                                     // 🔥 辅助函数：原地拆分注入 (Gaigai 终极防弹版)
                                     const injectIntoMessages = (targetVar, contentToInject, identifier) => {
+                                        const targetMacroName = normalizeMacroName(targetVar);
                                         // 1. 如果没有内容要注入，执行安全清洗，把占位符彻底删掉
                                         if (!contentToInject) {
                                             for (let i = 0; i < messages.length; i++) {
                                                 let msg = messages[i];
                                                 let msgContent = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
-                                                if (typeof msgContent === 'string' && msgContent.includes(targetVar)) {
-                                                    let cleanedText = msgContent.split(targetVar).join('').trim();
+                                                if (typeof msgContent === 'string') {
+                                                    let cleanedText = replaceMacroToken(msgContent, targetMacroName, '').trim();
+                                                    if (cleanedText === msgContent) continue;
                                                     if (msg.content !== undefined) msg.content = cleanedText;
                                                     if (msg.mes !== undefined) msg.mes = cleanedText;
                                                     if (msg.parts && msg.parts[0] !== undefined) msg.parts[0].text = cleanedText;
@@ -5848,11 +6403,12 @@ if (window.GGP_Loaded) {
                                         for (let i = 0; i < messages.length; i++) {
                                             let msg = messages[i];
                                             let msgContent = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
-                                            
-                                            if (typeof msgContent === 'string' && msgContent.includes(targetVar)) {
-                                                const varIndex = msgContent.indexOf(targetVar);
-                                                const preText = msgContent.substring(0, varIndex).trim();
-                                                const postText = msgContent.substring(varIndex + targetVar.length).trim();
+
+                                            if (typeof msgContent === 'string') {
+                                                const macroMatch = findMacroToken(msgContent, targetMacroName);
+                                                if (!macroMatch) continue;
+                                                const preText = msgContent.substring(0, macroMatch.index).trim();
+                                                const postText = msgContent.substring(macroMatch.index + macroMatch.length).trim();
 
                                                 const newMessages = [];
                                                 
@@ -5929,16 +6485,17 @@ if (window.GGP_Loaded) {
                                         };
 
                                         let musicReplaced = false;
-                                        const MUSIC_VAR = '{{MUSIC_PROMPT}}';
+                                        const MUSIC_VAR = 'MUSIC_PROMPT';
 
                                         // 1️⃣ 扫描上下文，寻找 {{MUSIC_PROMPT}} 变量，执行"原地拆分注入"
                                         for (let i = 0; i < messages.length; i++) {
                                                 let msgContent = messages[i].content || messages[i].mes || (messages[i].parts && messages[i].parts[0] ? messages[i].parts[0].text : '') || '';
 
-                                            if (typeof msgContent === 'string' && msgContent.includes(MUSIC_VAR)) {
-                                                const varIndex = msgContent.indexOf(MUSIC_VAR);
-                                                const preText = msgContent.substring(0, varIndex).trim();
-                                                const postText = msgContent.substring(varIndex + MUSIC_VAR.length).trim();
+                                            if (typeof msgContent === 'string') {
+                                                const macroMatch = findMacroToken(msgContent, MUSIC_VAR);
+                                                if (!macroMatch) continue;
+                                                const preText = msgContent.substring(0, macroMatch.index).trim();
+                                                const postText = msgContent.substring(macroMatch.index + macroMatch.length).trim();
 
                                                 const newMessages = [];
                                                 const originalMsg = messages[i];
@@ -5991,31 +6548,14 @@ if (window.GGP_Loaded) {
                                             let modified = false;
 
                                             // 1. 清洗占位符变量残骸
-                                            const TARGET_VAR = '{{PHONE_PROMPT}}';
-                                            const HISTORY_VAR = '{{PHONE_HISTORY}}';
-                                            const WEIBO_VAR = '{{WEIBO_HISTORY}}';
-                                            const MUSIC_VAR = '{{MUSIC_PROMPT}}';
-                                            const MOFO_VAR = '{{MOFO_PROMPT}}';
-                                            if (c.includes(TARGET_VAR)) {
-                                                c = c.split(TARGET_VAR).join('');
-                                                modified = true;
-                                            }
-                                            if (c.includes(HISTORY_VAR)) {
-                                                c = c.split(HISTORY_VAR).join('');
-                                                modified = true;
-                                            }
-                                            if (c.includes(WEIBO_VAR)) {
-                                                c = c.split(WEIBO_VAR).join('');
-                                                modified = true;
-                                            }
-                                            if (c.includes(MUSIC_VAR)) {
-                                                c = c.split(MUSIC_VAR).join('');
-                                                modified = true;
-                                            }
-                                            if (c.includes(MOFO_VAR)) {
-                                                c = c.split(MOFO_VAR).join('');
-                                                modified = true;
-                                            }
+                                            const macroNames = ['PHONE_PROMPT', 'PHONE_HISTORY', 'WEIBO_HISTORY', 'MUSIC_PROMPT', 'MOFO_PROMPT'];
+                                            macroNames.forEach((macroName) => {
+                                                const cleaned = replaceMacroToken(c, macroName, '');
+                                                if (cleaned !== c) {
+                                                    c = cleaned;
+                                                    modified = true;
+                                                }
+                                            });
 
                                             // 2. 抹除所有隐秘标签 (仅限 assistant 角色)
                                             if (msg.role === 'assistant') {
@@ -6103,7 +6643,7 @@ if (window.GGP_Loaded) {
 
                             if (targetArray) {
                                 // 🌟 1. 核心防御：连同外层 bodyObj 一起检查，防止变量被移动端或 Claude 抽离到 system 字段
-                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{PHONE_PROMPT\}\}|\{\{PHONE_HISTORY\}\}|\{\{WEIBO_HISTORY\}\}|\{\{MUSIC_PROMPT\}\}|\{\{MOFO_PROMPT\}\}/);
+                                const hasMacros = /\{\{\s*(PHONE_PROMPT|PHONE_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT)\s*\}\}/i.test(JSON.stringify(bodyObj));
 
                                 if (hasMacros) {
                                     console.log('🚨 [手机插件] 警告：酒馆发送过快导致 Hook 被无视，请求体残留变量！正在执行网卡级底层强行注入...');

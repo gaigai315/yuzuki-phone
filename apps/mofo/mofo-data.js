@@ -159,6 +159,58 @@ export class MofoData {
         return !!fallback;
     }
 
+    _resolveTemplatePathValue(state = {}, expr = '') {
+        const path = String(expr || '').trim();
+        if (!path) return '';
+
+        const normalizedPath = path
+            .replace(/\[(\d+)\]/g, '.$1')
+            .replace(/^\.+|\.+$/g, '');
+        if (!normalizedPath) return '';
+
+        const segments = normalizedPath.split('.').map(s => String(s || '').trim()).filter(Boolean);
+        if (segments.length === 0) return '';
+
+        let current = state;
+        for (const seg of segments) {
+            if (current === null || current === undefined) return '';
+            if (Array.isArray(current)) {
+                const idx = Number(seg);
+                if (!Number.isInteger(idx) || idx < 0 || idx >= current.length) return '';
+                current = current[idx];
+                continue;
+            }
+            if (typeof current === 'object' && Object.prototype.hasOwnProperty.call(current, seg)) {
+                current = current[seg];
+                continue;
+            }
+            return '';
+        }
+        return current;
+    }
+
+    _templateValueToString(value) {
+        if (value === null || value === undefined) return '';
+        if (typeof value === 'object') {
+            try {
+                return JSON.stringify(value);
+            } catch (e) {
+                return '';
+            }
+        }
+        return String(value);
+    }
+
+    renderTemplate(template, state = {}) {
+        const source = String(template || '');
+        if (!source) return '';
+        const safeState = (state && typeof state === 'object') ? state : {};
+        return source.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, expr) => {
+            const rawValue = this._resolveTemplatePathValue(safeState, expr);
+            return this._templateValueToString(rawValue);
+        });
+    }
+
     _normalizeUpdateMode(value, fallback = 'append') {
         const text = String(value ?? '').trim().toLowerCase();
         if (['append', 'accumulate', 'list', 'persist', 'persistent', '累计', '累积', '追加'].includes(text)) {
@@ -388,6 +440,7 @@ export class MofoData {
         const name = String(rawItem.name || rawItem.title || '未命名魔坊').trim() || '未命名魔坊';
         const tagName = this._normalizeTagName(rawItem.tagName || rawItem.tag || name, name);
         const cssText = String(rawItem.cssText || rawItem.css || '').trim();
+        const htmlTemplate = String(rawItem['html模板'] ?? rawItem.htmlTemplate ?? rawItem.templateHtml ?? '').trim();
         const promptTemplate = String(rawItem.promptTemplate || rawItem.prompt || '').trim();
         const offlinePromptEnabled = this._parseBoolean(
             rawItem.offlinePromptEnabled ?? rawItem.enableOfflinePrompt ?? rawItem.promptEnabled,
@@ -413,6 +466,8 @@ export class MofoData {
             name,
             tagName,
             cssText,
+            htmlTemplate,
+            'html模板': htmlTemplate,
             promptTemplate,
             offlinePromptEnabled,
             updateMode,
@@ -759,6 +814,9 @@ export class MofoData {
             || Object.prototype.hasOwnProperty.call(patch, 'tag')
             || Object.prototype.hasOwnProperty.call(patch, 'cssText')
             || Object.prototype.hasOwnProperty.call(patch, 'css')
+            || Object.prototype.hasOwnProperty.call(patch, 'htmlTemplate')
+            || Object.prototype.hasOwnProperty.call(patch, 'templateHtml')
+            || Object.prototype.hasOwnProperty.call(patch, 'html模板')
             || Object.prototype.hasOwnProperty.call(patch, 'promptTemplate')
             || Object.prototype.hasOwnProperty.call(patch, 'prompt')
             || Object.prototype.hasOwnProperty.call(patch, 'offlinePromptEnabled')
