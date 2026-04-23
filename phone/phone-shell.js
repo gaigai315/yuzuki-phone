@@ -240,9 +240,13 @@ export class PhoneShell {
 
         // 触摸开始
         phoneBody.addEventListener('touchstart', (e) => {
-            // 🔥 核心修复：如果按住的是输入框或文本域，放弃全局滑动判断，让用户专心选字复制
-            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
-                this.touchStartX = undefined; 
+            // 🔥 核心修复：输入中（含光标拖拽手柄）时放弃全局滑动判断，避免抢占文本光标拖动
+            const targetTag = String(e.target?.tagName || '').toUpperCase();
+            const activeTag = String(document.activeElement?.tagName || '').toUpperCase();
+            const hasFocusedTextInput = (activeTag === 'INPUT' || activeTag === 'TEXTAREA')
+                && phoneBody.contains(document.activeElement);
+            if (targetTag === 'TEXTAREA' || targetTag === 'INPUT' || hasFocusedTextInput) {
+                this.touchStartX = undefined;
                 return;
             }
 

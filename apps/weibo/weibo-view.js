@@ -899,11 +899,22 @@ export class WeiboView {
                     <!-- 提示词设置 -->
                     <div class="weibo-settings-section">
                         <div class="weibo-settings-title">热搜提示词</div>
-                        <textarea id="weibo-hot-prompt" class="weibo-prompt-textarea"
-                                  placeholder="热搜内容生成提示词...">${hotSearchPrompt}</textarea>
-                        <button class="weibo-settings-btn" id="weibo-save-hot-prompt">
-                            <i class="fa-solid fa-check"></i> 保存提示词
-                        </button>
+                        <div class="phone-prompt-fold" data-default-open="false">
+                            <div class="phone-prompt-fold-header">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">🔥 热搜内容生成规则</div>
+                                    <div class="phone-prompt-fold-desc">默认折叠，展开后编辑热搜生成提示词。</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content">
+                                <textarea id="weibo-hot-prompt" class="weibo-prompt-textarea"
+                                          placeholder="热搜内容生成提示词...">${hotSearchPrompt}</textarea>
+                                <button class="weibo-settings-btn" id="weibo-save-hot-prompt" style="margin-top: 8px;">
+                                    <i class="fa-solid fa-check"></i> 保存提示词
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1037,34 +1048,57 @@ export class WeiboView {
                                 <i class="fa-solid fa-check"></i> 保存自定义 CSS
                             </button>
                         </div>
+                    </div>
 
                     <!-- 推荐提示词 -->
                     <div class="weibo-settings-section">
                         <div class="weibo-settings-title">推荐生成提示词</div>
-                        <textarea id="weibo-recommend-prompt" class="weibo-prompt-textarea"
-                                  placeholder="推荐内容生成提示词...">${recommendPrompt}</textarea>
-                        <div style="display: flex; gap: 6px; margin-top: 6px;">
-                            <button class="weibo-settings-btn" id="weibo-save-recommend-prompt" style="flex: 1;">
-                                <i class="fa-solid fa-check"></i> 保存
-                            </button>
-                            <button class="weibo-settings-btn" id="weibo-reset-recommend-prompt" style="flex: 1; background: #f5f5f5; color: #666;">
-                                <i class="fa-solid fa-rotate-left"></i> 恢复默认
-                            </button>
+                        <div class="phone-prompt-fold" data-default-open="false">
+                            <div class="phone-prompt-fold-header">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">🏠 推荐流提示词</div>
+                                    <div class="phone-prompt-fold-desc">默认折叠，展开后编辑推荐微博生成规则。</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content">
+                                <textarea id="weibo-recommend-prompt" class="weibo-prompt-textarea"
+                                          placeholder="推荐内容生成提示词...">${recommendPrompt}</textarea>
+                                <div style="display: flex; gap: 6px; margin-top: 6px;">
+                                    <button class="weibo-settings-btn" id="weibo-save-recommend-prompt" style="flex: 1;">
+                                        <i class="fa-solid fa-check"></i> 保存
+                                    </button>
+                                    <button class="weibo-settings-btn" id="weibo-reset-recommend-prompt" style="flex: 1; background: #f5f5f5; color: #666;">
+                                        <i class="fa-solid fa-rotate-left"></i> 恢复默认
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- 热搜提示词 -->
                     <div class="weibo-settings-section">
                         <div class="weibo-settings-title">热搜详情提示词</div>
-                        <textarea id="weibo-hotsearch-prompt" class="weibo-prompt-textarea"
-                                  placeholder="热搜详情生成提示词...">${hotSearchPrompt}</textarea>
-                        <div style="display: flex; gap: 6px; margin-top: 6px;">
-                            <button class="weibo-settings-btn" id="weibo-save-hotsearch-prompt" style="flex: 1;">
-                                <i class="fa-solid fa-check"></i> 保存
-                            </button>
-                            <button class="weibo-settings-btn" id="weibo-reset-hotsearch-prompt" style="flex: 1; background: #f5f5f5; color: #666;">
-                                <i class="fa-solid fa-rotate-left"></i> 恢复默认
-                            </button>
+                        <div class="phone-prompt-fold" data-default-open="false">
+                            <div class="phone-prompt-fold-header">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">📈 热搜详情提示词</div>
+                                    <div class="phone-prompt-fold-desc">默认折叠，展开后编辑热搜详情生成规则。</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content">
+                                <textarea id="weibo-hotsearch-prompt" class="weibo-prompt-textarea"
+                                          placeholder="热搜详情生成提示词...">${hotSearchPrompt}</textarea>
+                                <div style="display: flex; gap: 6px; margin-top: 6px;">
+                                    <button class="weibo-settings-btn" id="weibo-save-hotsearch-prompt" style="flex: 1;">
+                                        <i class="fa-solid fa-check"></i> 保存
+                                    </button>
+                                    <button class="weibo-settings-btn" id="weibo-reset-hotsearch-prompt" style="flex: 1; background: #f5f5f5; color: #666;">
+                                        <i class="fa-solid fa-rotate-left"></i> 恢复默认
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -2614,7 +2648,27 @@ export class WeiboView {
     // 🎯 事件绑定 - 设置页
     // ========================================
 
+    _bindPromptFoldToggles(root = document) {
+        if (!root) return;
+        root.querySelectorAll('.phone-prompt-fold').forEach(fold => {
+            if (fold.dataset.foldInited !== '1') {
+                fold.dataset.foldInited = '1';
+                fold.classList.toggle('is-open', String(fold.dataset.defaultOpen || '').toLowerCase() === 'true');
+            }
+        });
+        root.querySelectorAll('.phone-prompt-fold-header').forEach(header => {
+            if (header.dataset.foldBound === '1') return;
+            header.dataset.foldBound = '1';
+            header.addEventListener('click', () => {
+                const fold = header.closest('.phone-prompt-fold');
+                if (!fold) return;
+                fold.classList.toggle('is-open');
+            });
+        });
+    }
+
     bindSettingsEvents() {
+        this._bindPromptFoldToggles(document.querySelector('.phone-view-current .weibo-app') || document);
         document.getElementById('weibo-settings-back')?.addEventListener('click', () => {
             this.currentView = 'home';
             this.render();
@@ -2825,6 +2879,7 @@ export class WeiboView {
     // ========================================
 
     bindHotSearchSettingsEvents() {
+        this._bindPromptFoldToggles(document.querySelector('.phone-view-current .weibo-app') || document);
         document.getElementById('weibo-hot-settings-back')?.addEventListener('click', () => {
             if (this.currentHotSearchTitle) {
                 this.currentView = 'hotSearchDetail';

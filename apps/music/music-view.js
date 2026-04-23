@@ -156,11 +156,22 @@ export class MusicView {
 
                         <div class="music-settings-group">
                             <div class="music-settings-group-title">提示词设置</div>
-                            <div class="music-prompt-area">
-                                <textarea id="music-prompt-textarea">${this._escapeHtml(promptContent)}</textarea>
-                                <div class="music-prompt-actions">
-                                    <button class="music-settings-btn primary" id="music-prompt-save" style="flex:1">保存</button>
-                                    <button class="music-settings-btn danger" id="music-prompt-reset" style="flex:1">恢复默认</button>
+                            <div class="phone-prompt-fold" data-default-open="false">
+                                <div class="phone-prompt-fold-header">
+                                    <div class="phone-prompt-fold-main">
+                                        <div class="phone-prompt-fold-title">🎵 音乐推荐提示词</div>
+                                        <div class="phone-prompt-fold-desc">点击展开后可编辑，默认折叠以保持紧凑。</div>
+                                    </div>
+                                    <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
+                                </div>
+                                <div class="phone-prompt-fold-content">
+                                    <div class="music-prompt-area">
+                                        <textarea id="music-prompt-textarea">${this._escapeHtml(promptContent)}</textarea>
+                                        <div class="music-prompt-actions">
+                                            <button class="music-settings-btn primary" id="music-prompt-save" style="flex:1">保存</button>
+                                            <button class="music-settings-btn danger" id="music-prompt-reset" style="flex:1">恢复默认</button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -176,6 +187,7 @@ export class MusicView {
     _bindSettingsEvents() {
         const screen = this.app.phoneShell.screen;
         if (!screen) return;
+        this._bindPromptFoldToggles(screen);
 
         // 返回 — 用 onclick 防止重复绑定
         const backBtn = screen.querySelector('#music-settings-back');
@@ -246,6 +258,25 @@ export class MusicView {
                 }
             };
         }
+    }
+
+    _bindPromptFoldToggles(root) {
+        if (!root) return;
+        root.querySelectorAll('.phone-prompt-fold').forEach(fold => {
+            if (fold.dataset.foldInited !== '1') {
+                fold.dataset.foldInited = '1';
+                fold.classList.toggle('is-open', String(fold.dataset.defaultOpen || '').toLowerCase() === 'true');
+            }
+        });
+        root.querySelectorAll('.phone-prompt-fold-header').forEach(header => {
+            if (header.dataset.foldBound === '1') return;
+            header.dataset.foldBound = '1';
+            header.addEventListener('click', () => {
+                const fold = header.closest('.phone-prompt-fold');
+                if (!fold) return;
+                fold.classList.toggle('is-open');
+            });
+        });
     }
 
     // ========== C. 悬浮窗 ==========
@@ -1026,4 +1057,3 @@ export class MusicView {
             .replace(/"/g, '&quot;');
     }
 }
-

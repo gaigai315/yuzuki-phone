@@ -569,10 +569,14 @@
     flex: 1;
     border: none;
     background: #fff;
-    padding: 5px 8px;
+    padding: 5px 12px 5px 8px;
     border-radius: 14px;
     font-size: 11px;
     outline: none;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .weibo-comment-send {
@@ -806,24 +810,32 @@
 .weibo-settings-input {
     width: 55px;
     height: 26px;
-    padding: 0 6px;
+    padding: 0 10px 0 6px;
     border: 1px solid #e0e0e0;
     border-radius: 5px;
     text-align: center;
     font-size: 12px;
     background: #fafafa;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .weibo-settings-text-input {
     width: 140px;
     height: 26px;
-    padding: 0 8px;
+    padding: 0 12px 0 8px;
     border: 1px solid #e0e0e0;
     border-radius: 5px;
     font-size: 12px;
     background: #fafafa;
     text-align: right;
     box-sizing: border-box;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .weibo-settings-btn {
@@ -857,7 +869,7 @@ label[for="weibo-settings-banner-upload"].weibo-settings-btn {
 .weibo-prompt-textarea {
     width: 100%;
     min-height: 140px;
-    padding: 8px;
+    padding: 8px 12px 8px 8px;
     border: 1px solid #e0e0e0;
     border-radius: 5px;
     font-size: 10px;
@@ -866,6 +878,10 @@ label[for="weibo-settings-banner-upload"].weibo-settings-btn {
     background: #fafafa;
     box-sizing: border-box;
     font-family: inherit;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 /* ========================================
@@ -1064,13 +1080,27 @@ label[for="weibo-settings-banner-upload"].weibo-settings-btn {
     border: none;
     background: transparent;
     outline: none;
+    padding-right: 8px;
     font-size: 13px;
     color: #222;
     font-family: inherit;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .weibo-forward-note-input::placeholder {
     color: #a8a8a8;
+}
+
+#fixed-comment-input,
+#weibo-post-text {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+    -webkit-touch-callout: default;
+    touch-action: auto;
+    padding-right: 14px !important;
 }
 
 .weibo-forward-input-wrap i {
@@ -1478,6 +1508,5 @@ label[for="weibo-settings-banner-upload"].weibo-settings-btn {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }
-
 
 

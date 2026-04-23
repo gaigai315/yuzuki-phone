@@ -5335,14 +5335,47 @@ if (window.GGP_Loaded) {
                                                     } else if (msg.type === 'weibo_card') {
                                                         // 微博转发卡片：直接使用完整content（含正文+评论）
                                                         content = msg.content || '[微博分享]';
+                                                    } else if (msg.type === 'call_record') {
+                                                        const callTypeName = msg.callType === 'video' ? '视频' : '语音';
+                                                        const callStatusText = msg.status === 'answered'
+                                                            ? `通话时长 ${msg.duration || '未知'}`
+                                                            : (msg.status === 'rejected' || msg.status === 'declined')
+                                                                ? '对方已拒绝'
+                                                                : msg.status === 'cancelled'
+                                                                    ? '已取消'
+                                                                    : '未接听';
+                                                        const callSummary = `[${callTypeName}通话 ${callStatusText}]`;
+                                                        formattedMessages.push({
+                                                            speaker,
+                                                            content: callSummary,
+                                                            time: msg.time,
+                                                            date: msg.date || ''
+                                                        });
+
+                                                        if (msg.status === 'answered' && Array.isArray(msg.transcript) && msg.transcript.length > 0) {
+                                                            msg.transcript.forEach(item => {
+                                                                const lineText = String(item?.text || '').trim();
+                                                                if (!lineText) return;
+                                                                const lineSpeakerRaw = String(item?.from || '').trim();
+                                                                const lineSpeaker = lineSpeakerRaw === 'me'
+                                                                    ? userName
+                                                                    : (lineSpeakerRaw || (isGroup ? '群成员' : chat.name));
+                                                                formattedMessages.push({
+                                                                    speaker: lineSpeaker,
+                                                                    content: `[通话] ${lineText}`,
+                                                                    time: msg.time,
+                                                                    date: msg.date || ''
+                                                                });
+                                                            });
+                                                        }
+                                                        return;
                                                     } else if (msg.type !== 'text') {
                                                         const typeMap = {
                                                             'image_prompt': `[图片]（${String(msg.imagePrompt || msg.content || '待生成图片').trim()}）`,
                                                             'voice': `[语音 ${msg.duration || '3秒'}]`,
                                                             'video': '[视频通话]',
                                                             'transfer': `[转账 ¥${msg.amount}]`,
-                                                            'redpacket': `[红包 ¥${msg.amount}]`,
-                                                            'call_record': `[${msg.callType === 'video' ? '视频' : '语音'}通话 ${msg.duration}]`
+                                                            'redpacket': `[红包 ¥${msg.amount}]`
                                                         };
                                                         content = typeMap[msg.type] || `[${msg.type}]`;
                                                     }

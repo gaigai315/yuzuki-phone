@@ -1787,6 +1787,84 @@ input:checked + .toggle-slider:before {
     color: #666666 !important;
 }
 
+/* 提示词折叠面板（跨 App 统一风格） */
+.phone-prompt-fold {
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.72);
+    overflow: hidden;
+}
+
+.phone-prompt-fold + .phone-prompt-fold {
+    margin-top: 10px;
+}
+
+.phone-prompt-fold-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+
+.phone-prompt-fold-main {
+    min-width: 0;
+    flex: 1;
+}
+
+.phone-prompt-fold-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    line-height: 1.35;
+}
+
+.phone-prompt-fold-desc {
+    margin-top: 3px;
+    font-size: 11px;
+    color: #888;
+    line-height: 1.35;
+}
+
+.phone-prompt-fold-arrow {
+    color: #999;
+    font-size: 12px;
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.phone-prompt-fold.is-open .phone-prompt-fold-arrow {
+    transform: rotate(90deg);
+}
+
+.phone-prompt-fold-content {
+    display: none;
+    padding: 0 12px 12px;
+}
+
+.phone-prompt-fold.is-open .phone-prompt-fold-content {
+    display: block;
+}
+
+/* 文本输入触控编辑兜底：避免被容器手势抢占，支持光标手柄拖动 */
+.phone-body-panel :is(
+    input[type="text"],
+    input[type="search"],
+    input[type="number"],
+    input[type="password"],
+    input[type="email"],
+    input[type="url"],
+    input[type="tel"]
+),
+.phone-body-panel textarea,
+.phone-body-panel [contenteditable="true"] {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+    -webkit-touch-callout: default;
+    touch-action: auto;
+}
+
 /* ========================================
    📞 通话界面全屏模式
    ======================================== */

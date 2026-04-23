@@ -749,7 +749,7 @@
 .music-prompt-area textarea {
     width: 100%;
     min-height: 120px;
-    padding: 10px;
+    padding: 10px 14px 10px 10px;
     border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     font-size: 12px;
@@ -759,6 +759,10 @@
     color: inherit;
     font-family: inherit;
     box-sizing: border-box;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 .music-prompt-actions {
     display: flex;
@@ -820,13 +824,17 @@
 #music-search-input {
     flex: 1;
     height: 36px;
-    padding: 0 12px;
+    padding: 0 14px 0 12px;
     border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.7);
     font-size: 13px;
     outline: none;
     color: #333;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 #music-search-submit {
@@ -950,4 +958,3 @@
 .pl-favorite.favorited i {
     transform: scale(1.1);
 }
-

@@ -448,11 +448,22 @@ export class DiaryView {
                         <!-- 提示词编辑 -->
                         <div class="diary-s-section">
                             <div class="diary-s-section-title">日记提示词</div>
-                            <div class="diary-s-desc">自定义AI写日记时使用的提示词</div>
-                            <textarea id="diary-s-prompt" class="diary-s-textarea">${this._getPromptContent().replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
-                            <div class="diary-s-btn-row">
-                                <button class="diary-s-btn diary-s-btn-warn" id="diary-s-prompt-reset">恢复默认</button>
-                                <button class="diary-s-btn diary-s-btn-primary" id="diary-s-prompt-save">保存提示词</button>
+                            <div class="phone-prompt-fold" data-default-open="false">
+                                <div class="phone-prompt-fold-header">
+                                    <div class="phone-prompt-fold-main">
+                                        <div class="phone-prompt-fold-title">📔 日记生成提示词</div>
+                                        <div class="phone-prompt-fold-desc">默认折叠，展开后可编辑完整提示词。</div>
+                                    </div>
+                                    <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
+                                </div>
+                                <div class="phone-prompt-fold-content">
+                                    <div class="diary-s-desc">自定义AI写日记时使用的提示词</div>
+                                    <textarea id="diary-s-prompt" class="diary-s-textarea">${this._getPromptContent().replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+                                    <div class="diary-s-btn-row">
+                                        <button class="diary-s-btn diary-s-btn-warn" id="diary-s-prompt-reset">恢复默认</button>
+                                        <button class="diary-s-btn diary-s-btn-primary" id="diary-s-prompt-save">保存提示词</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -466,6 +477,7 @@ export class DiaryView {
     }
 
     _bindSettingsEvents() {
+        this._bindPromptFoldToggles(document.querySelector('.phone-view-current .diary-settings-view') || document);
         // 🔥 UI 状态恢复：如果后台正在跑分批任务，立即恢复进度显示
         const runBtn = document.getElementById('diary-manual-run');
         const statusEl = document.getElementById('diary-manual-status');
@@ -698,6 +710,27 @@ export class DiaryView {
                 }
             }
         };
+
+        // 提示词折叠交互
+    }
+
+    _bindPromptFoldToggles(root) {
+        if (!root) return;
+        root.querySelectorAll('.phone-prompt-fold').forEach(fold => {
+            if (fold.dataset.foldInited !== '1') {
+                fold.dataset.foldInited = '1';
+                fold.classList.toggle('is-open', String(fold.dataset.defaultOpen || '').toLowerCase() === 'true');
+            }
+        });
+        root.querySelectorAll('.phone-prompt-fold-header').forEach(header => {
+            if (header.dataset.foldBound === '1') return;
+            header.dataset.foldBound = '1';
+            header.addEventListener('click', () => {
+                const fold = header.closest('.phone-prompt-fold');
+                if (!fold) return;
+                fold.classList.toggle('is-open');
+            });
+        });
     }
 
     // ==================== 编辑视图 ====================

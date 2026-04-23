@@ -775,12 +775,16 @@
     text-align: center;
     font-size: 14px;
     background: rgba(255, 255, 255, 0.2);
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .diary-s-textarea {
     width: 100%;
     min-height: 200px;
-    padding: 10px;
+    padding: 10px 14px 10px 10px;
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 8px;
     font-size: 12px;
@@ -790,6 +794,10 @@
     background: rgba(255, 255, 255, 0.2);
     box-sizing: border-box;
     margin-bottom: 10px;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .diary-s-btn-row {
@@ -857,7 +865,7 @@
 .diary-edit-textarea {
     flex: 1;
     width: 100%;
-    padding: 12px;
+    padding: 12px 16px 12px 12px;
     border: 1px solid #e0d8cc;
     border-radius: 8px;
     font-size: 14px;
@@ -867,6 +875,10 @@
     background: rgba(255, 255, 255, 0.8);
     box-sizing: border-box;
     overflow-y: auto;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .diary-edit-save-btn {
@@ -884,4 +896,3 @@
 }
 
 /* 复用手机设置的 toggle-switch（如果已有则跳过） */
-

@@ -2564,13 +2564,17 @@
     background: rgba(14, 12, 20, 0.96);
     border: 1px solid rgba(255, 157, 202, 0.26);
     border-radius: 16px;
-    padding: 8px 12px;
+    padding: 8px 16px 8px 12px;
     color: #fff !important;
     -webkit-text-fill-color: #fff;
     caret-color: #ffd7e7;
     font-size: 12px;
     outline: none;
     box-shadow: inset 0 0 0 1000px rgba(14, 12, 20, 0.96);
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .honey-chat-input::placeholder {
@@ -3130,6 +3134,36 @@
     margin-bottom: 10px;
 }
 
+/* 蜜语设置页：覆盖通用折叠提示词面板，保持深色统一风格 */
+.honey-page-settings .phone-prompt-fold {
+    background: #0e0c14 !important;
+    border: 1px solid rgba(255, 133, 181, 0.28) !important;
+    border-radius: 10px !important;
+    box-shadow: none !important;
+}
+
+.honey-page-settings .phone-prompt-fold-header {
+    padding: 10px 12px !important;
+}
+
+.honey-page-settings .phone-prompt-fold-title {
+    color: #ffe2f0 !important;
+}
+
+.honey-page-settings .phone-prompt-fold-desc {
+    color: rgba(255, 225, 239, 0.72) !important;
+}
+
+.honey-page-settings .phone-prompt-fold-arrow {
+    color: rgba(255, 188, 217, 0.9) !important;
+}
+
+.honey-page-settings .phone-prompt-fold-content {
+    background: rgba(18, 12, 20, 0.92) !important;
+    border-top: 1px solid rgba(255, 133, 181, 0.2);
+    padding: 10px 10px 10px !important;
+}
+
 .honey-settings-row {
     display: flex;
     align-items: center;
@@ -3154,8 +3188,12 @@
     color: #ffffff !important;
     -webkit-text-fill-color: #ffffff !important;
     font-size: 12px;
-    padding: 0 10px;
+    padding: 0 14px 0 10px;
     box-sizing: border-box;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .honey-settings-input:-webkit-autofill,
@@ -3273,10 +3311,14 @@
     color: #ffffff !important;
     font-size: 11px;
     line-height: 1.45;
-    padding: 10px;
+    padding: 10px 14px 10px 10px;
     resize: vertical;
     box-sizing: border-box;
     font-family: inherit;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .honey-prompt-editor:focus {

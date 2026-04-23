@@ -279,13 +279,24 @@ export class PhoneCallView {
                     <!-- 通话中提示词 -->
                     <div class="phone-call-settings-section">
                         <div class="phone-call-settings-section-title">通话中提示词</div>
-                        <textarea class="phone-call-prompt-textarea" id="phone-call-call-prompt" placeholder="通话中回复规则...">${this._escapeHtml(callPrompt)}</textarea>
-                        <div style="margin-top:6px; font-size:11px; color:var(--phone-secondary-text, #999); line-height:1.5;">
-                            可用变量：<code>{{user}}</code>、<code>{{callerName}}</code>（同义：<code>{{caller}}</code> / <code>{{char}}</code>）
-                        </div>
-                        <div class="phone-call-prompt-btns">
-                            <button class="phone-call-prompt-btn phone-call-prompt-btn-save" id="phone-call-save-call">保存</button>
-                            <button class="phone-call-prompt-btn phone-call-prompt-btn-reset" id="phone-call-reset-call">恢复默认</button>
+                        <div class="phone-prompt-fold" data-default-open="false">
+                            <div class="phone-prompt-fold-header">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">📞 通话回复规则</div>
+                                    <div class="phone-prompt-fold-desc">默认折叠，展开后可编辑提示词。</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content">
+                                <textarea class="phone-call-prompt-textarea" id="phone-call-call-prompt" placeholder="通话中回复规则...">${this._escapeHtml(callPrompt)}</textarea>
+                                <div style="margin-top:6px; font-size:11px; color:var(--phone-secondary-text, #999); line-height:1.5;">
+                                    可用变量：<code>{{user}}</code>、<code>{{callerName}}</code>（同义：<code>{{caller}}</code> / <code>{{char}}</code>）
+                                </div>
+                                <div class="phone-call-prompt-btns">
+                                    <button class="phone-call-prompt-btn phone-call-prompt-btn-save" id="phone-call-save-call">保存</button>
+                                    <button class="phone-call-prompt-btn phone-call-prompt-btn-reset" id="phone-call-reset-call">恢复默认</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -300,6 +311,7 @@ export class PhoneCallView {
         const pm = this._getPromptManager();
         const currentView = document.querySelector('.phone-view-current') || document;
         const query = (selector) => currentView.querySelector(selector);
+        this._bindPromptFoldToggles(currentView);
 
         // 返回（用 onclick 覆盖式绑定，防止 DOM Diffing 导致重复监听）
         const backBtn = query('#phone-call-settings-back');
@@ -333,6 +345,25 @@ export class PhoneCallView {
             textarea.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
             textarea.addEventListener('touchend', (e) => e.stopPropagation(), { passive: true });
         }
+    }
+
+    _bindPromptFoldToggles(root) {
+        if (!root) return;
+        root.querySelectorAll('.phone-prompt-fold').forEach(fold => {
+            if (fold.dataset.foldInited !== '1') {
+                fold.dataset.foldInited = '1';
+                fold.classList.toggle('is-open', String(fold.dataset.defaultOpen || '').toLowerCase() === 'true');
+            }
+        });
+        root.querySelectorAll('.phone-prompt-fold-header').forEach(header => {
+            if (header.dataset.foldBound === '1') return;
+            header.dataset.foldBound = '1';
+            header.addEventListener('click', () => {
+                const fold = header.closest('.phone-prompt-fold');
+                if (!fold) return;
+                fold.classList.toggle('is-open');
+            });
+        });
     }
 
     // ========================================

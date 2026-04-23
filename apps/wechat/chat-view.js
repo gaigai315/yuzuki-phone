@@ -6283,13 +6283,17 @@ renderChatRoom(chat) {
                         <input type="text" id="video-chat-input" placeholder="发送消息..." style="
                             flex: 1;
                             min-width: 0;
-                            padding: 8px 12px;
+                            padding: 8px 18px 8px 12px;
                             border: 1px solid rgba(255,255,255,0.4);
                             border-radius: 18px;
                             background: rgba(255,255,255,0.8);
                             color: #333;
                             font-size: 13px;
                             outline: none;
+                            -webkit-user-select: text;
+                            user-select: text;
+                            -webkit-touch-callout: default;
+                            touch-action: auto;
                         ">
                         <button id="video-send-btn" style="
                             width: 30px;
@@ -7513,13 +7517,17 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                         <input type="text" id="voice-chat-input" placeholder="发送消息..." style="
                             flex: 1;
                             min-width: 0;
-                            padding: 8px 12px;
+                            padding: 8px 18px 8px 12px;
                             border: 1px solid rgba(0,0,0,0.1);
                             border-radius: 18px;
                             background: rgba(255,255,255,0.8);
                             color: #333;
                             font-size: 13px;
                             outline: none;
+                            -webkit-user-select: text;
+                            user-select: text;
+                            -webkit-touch-callout: default;
+                            touch-action: auto;
                         ">
                         <button id="voice-send-btn" style="
                             width: 32px;

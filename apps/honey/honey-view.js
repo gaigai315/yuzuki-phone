@@ -1927,15 +1927,33 @@ export class HoneyView {
 
                     <div class="honey-settings-card">
                         <div class="honey-settings-card-title">提示词设置</div>
-                        <div class="honey-settings-label">${this._escapeHtml(promptConfig.name || '蜜语直播/视频')}</div>
-                        <div class="honey-settings-desc">${this._escapeHtml(promptConfig.description || '蜜语APP直播与视频生成规则')}</div>
-                        <textarea id="honey-prompt-editor" class="honey-prompt-editor">${this._escapeHtml(promptConfig.content || '')}</textarea>
-                        <div class="honey-settings-label" style="margin-top: 12px;">${this._escapeHtml(userLivePromptConfig.name || '蜜语用户开播')}</div>
-                        <div class="honey-settings-desc">${this._escapeHtml(userLivePromptConfig.description || '用户自己开播时的 JSON 输出规则')}</div>
-                        <textarea id="honey-user-live-prompt-editor" class="honey-prompt-editor">${this._escapeHtml(userLivePromptConfig.content || '')}</textarea>
-                        <div class="honey-settings-actions">
-                            <button class="honey-settings-btn honey-settings-btn-muted" id="honey-reset-prompt">恢复默认</button>
-                            <button class="honey-settings-btn honey-settings-btn-primary" id="honey-save-prompt">保存提示词</button>
+                        <div class="phone-prompt-fold" data-default-open="false">
+                            <div class="phone-prompt-fold-header">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">${this._escapeHtml(promptConfig.name || '蜜语直播/视频')}</div>
+                                    <div class="phone-prompt-fold-desc">${this._escapeHtml(promptConfig.description || '蜜语APP直播与视频生成规则')}</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content">
+                                <textarea id="honey-prompt-editor" class="honey-prompt-editor">${this._escapeHtml(promptConfig.content || '')}</textarea>
+                            </div>
+                        </div>
+                        <div class="phone-prompt-fold" data-default-open="false" style="margin-top: 10px;">
+                            <div class="phone-prompt-fold-header">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">${this._escapeHtml(userLivePromptConfig.name || '蜜语用户开播')}</div>
+                                    <div class="phone-prompt-fold-desc">${this._escapeHtml(userLivePromptConfig.description || '用户自己开播时的 JSON 输出规则')}</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content">
+                                <textarea id="honey-user-live-prompt-editor" class="honey-prompt-editor">${this._escapeHtml(userLivePromptConfig.content || '')}</textarea>
+                                <div class="honey-settings-actions">
+                                    <button class="honey-settings-btn honey-settings-btn-muted" id="honey-reset-prompt">恢复默认</button>
+                                    <button class="honey-settings-btn honey-settings-btn-primary" id="honey-save-prompt">保存提示词</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -3123,6 +3141,7 @@ export class HoneyView {
         if (!root) return;
         if (root.dataset.honeySettingsBound === '1') return;
         root.dataset.honeySettingsBound = '1';
+        this._bindPromptFoldToggles(root);
         this._renderCustomVideoList();
 
         root.querySelector('#honey-back-from-settings')?.addEventListener('click', () => {
@@ -3442,6 +3461,25 @@ export class HoneyView {
         });
 
         refreshEconomyPanel();
+    }
+
+    _bindPromptFoldToggles(root) {
+        if (!root) return;
+        root.querySelectorAll('.phone-prompt-fold').forEach(fold => {
+            if (fold.dataset.foldInited !== '1') {
+                fold.dataset.foldInited = '1';
+                fold.classList.toggle('is-open', String(fold.dataset.defaultOpen || '').toLowerCase() === 'true');
+            }
+        });
+        root.querySelectorAll('.phone-prompt-fold-header').forEach(header => {
+            if (header.dataset.foldBound === '1') return;
+            header.dataset.foldBound = '1';
+            header.addEventListener('click', () => {
+                const fold = header.closest('.phone-prompt-fold');
+                if (!fold) return;
+                fold.classList.toggle('is-open');
+            });
+        });
     }
 
     openSettings() {
