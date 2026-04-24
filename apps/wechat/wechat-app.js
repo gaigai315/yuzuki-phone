@@ -158,6 +158,17 @@ export class WechatApp {
     z-index: 10;
     box-sizing: border-box;
 }
+
+/* 聊天列表页专用：让外层顶部观感接近聊天内页的玻璃质感 */
+.wechat-header-chatlist-glass {
+    background:
+        linear-gradient(160deg, rgba(255, 255, 255, 0.68) 0%, rgba(255, 255, 255, 0.46) 58%, rgba(255, 255, 255, 0.38) 100%),
+        linear-gradient(120deg, rgba(225, 233, 244, 0.34) 0%, rgba(243, 238, 230, 0.26) 52%, rgba(224, 235, 245, 0.3) 100%);
+    backdrop-filter: blur(28px) saturate(170%);
+    -webkit-backdrop-filter: blur(28px) saturate(170%);
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.62);
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+}
     
 .wechat-header-left {
     width: 50px;  /* 🔥 宽度减小 */
@@ -354,6 +365,78 @@ export class WechatApp {
 
 .chat-item:active {
     background: #ececec;
+}
+
+/* 聊天列表启用背景图时，列表卡片切换为半透明玻璃效果 */
+.wechat-app.wechat-chatlist-bg-enabled .wechat-chat-list {
+    background: transparent;
+}
+
+.wechat-app.wechat-chatlist-bg-enabled .chat-item {
+    background: rgba(255, 255, 255, 0.58);
+    backdrop-filter: blur(8px) saturate(125%);
+    -webkit-backdrop-filter: blur(8px) saturate(125%);
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.48);
+}
+
+.wechat-app.wechat-chatlist-bg-enabled .chat-item:active {
+    background: rgba(255, 255, 255, 0.74);
+}
+
+.wechat-app.wechat-chatlist-bg-enabled .wechat-tabbar {
+    background: rgba(255, 255, 255, 0.48);
+    backdrop-filter: blur(20px) saturate(145%);
+    -webkit-backdrop-filter: blur(20px) saturate(145%);
+    border-top: 0.5px solid rgba(255, 255, 255, 0.52);
+}
+
+/* 微信四个主页面统一底栏玻璃风格（微信/通讯录/朋友圈/我） */
+.wechat-app.wechat-main-shell .wechat-tabbar {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(20px) saturate(145%);
+    -webkit-backdrop-filter: blur(20px) saturate(145%);
+    border-top: 0.5px solid rgba(255, 255, 255, 0.5);
+}
+
+/* 四页统一背景时：通讯录容器改为透明/半透明，避免遮掉主背景 */
+.wechat-app.wechat-chatlist-bg-enabled .wechat-contacts,
+.wechat-app.wechat-chatlist-bg-enabled .contacts-scrollable {
+    background: transparent;
+}
+
+.wechat-app.wechat-chatlist-bg-enabled .contacts-functions,
+.wechat-app.wechat-chatlist-bg-enabled .contacts-list {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(10px) saturate(130%);
+    -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+
+.wechat-app.wechat-chatlist-bg-enabled .group-letter {
+    background: rgba(255, 255, 255, 0.56);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.wechat-app.wechat-chatlist-bg-enabled .function-item:active,
+.wechat-app.wechat-chatlist-bg-enabled .contact-item:active {
+    background: rgba(255, 255, 255, 0.72);
+}
+
+/* 四页统一背景时：我页面容器改为透明/半透明 */
+.wechat-app.wechat-chatlist-bg-enabled .wechat-profile {
+    background: transparent;
+}
+
+.wechat-app.wechat-chatlist-bg-enabled .profile-card,
+.wechat-app.wechat-chatlist-bg-enabled .profile-functions,
+.wechat-app.wechat-chatlist-bg-enabled .profile-stats {
+    background: rgba(255, 255, 255, 0.56);
+    backdrop-filter: blur(10px) saturate(130%);
+    -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+
+.wechat-app.wechat-chatlist-bg-enabled .profile-function-item:active {
+    background: rgba(255, 255, 255, 0.72);
 }
 
 .chat-avatar-wrapper {
@@ -1774,7 +1857,7 @@ export class WechatApp {
 
 /* 朋友圈顶部栏特殊样式 */
 .moments-header-style {
-    background: #ededed !important;
+    /* 保留按钮布局调整，不再覆盖顶部玻璃背景 */
 }
 
 /* 🔥 朋友圈头部按钮特殊样式 */
@@ -2177,6 +2260,30 @@ export class WechatApp {
         }
     }
 
+    _getMainShellBackgroundConfig() {
+        const rawBg = String(this.wechatData?.getUserInfo?.()?.chatListBackground || '').trim();
+        if (!rawBg) {
+            return {
+                appClass: 'wechat-app',
+                appStyle: '',
+                contentBgStyle: ''
+            };
+        }
+
+        let appStyle = '';
+        if (rawBg.startsWith('data:') || rawBg.startsWith('/') || rawBg.startsWith('http')) {
+            appStyle = `background-image: url('${rawBg}'); background-size: cover; background-position: center;`;
+        } else {
+            appStyle = `background: ${rawBg};`;
+        }
+
+        return {
+            appClass: 'wechat-app wechat-main-shell wechat-chatlist-bg-enabled',
+            appStyle,
+            contentBgStyle: 'background: transparent;'
+        };
+    }
+
     // 显示提示词编辑器
     showPromptEditor(app, feature) {
         const promptManager = window.VirtualPhone?.promptManager;
@@ -2207,9 +2314,11 @@ export class WechatApp {
             this.phoneShell.showNotification('错误', '无法找到该提示词配置', '❌');
             return;
         }
+        const shellBg = this._getMainShellBackgroundConfig();
+        const editorContentStyle = `${shellBg.contentBgStyle || 'background: #ededed;'} padding: 15px;`;
 
         const html = `
-        <div class="wechat-app">
+        <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-editor">
@@ -2224,7 +2333,7 @@ export class WechatApp {
                 </div>
             </div>
             
-            <div class="wechat-content" style="background: #ededed; padding: 15px;">
+            <div class="wechat-content" style="${editorContentStyle}">
                 <div style="background: #fff; border-radius: 12px; padding: 15px;">
                     <div style="font-size: 16px; font-weight: 500; margin-bottom: 8px;">
                         ${prompt.name}
@@ -2444,10 +2553,14 @@ export class WechatApp {
             `;
         };
 
+        const userInfo = this.wechatData.getUserInfo();
+        const isMainRootView = !this.currentChat;
+        const chatListBg = String(userInfo?.chatListBackground || '').trim();
+        const hasMainShellBackground = isMainRootView && !!chatListBg;
+
         // 🔥 新增：把背景贴在整个APP最底层
         let appBgStyle = '';
         if (this.currentChat) {
-            const userInfo = this.wechatData.getUserInfo();
             const globalBg = userInfo.globalChatBackground;
             const targetBg = this.currentChat.background || globalBg || '#ededed';
             if (targetBg.startsWith('data:') || targetBg.startsWith('/') || targetBg.startsWith('http')) {
@@ -2455,12 +2568,30 @@ export class WechatApp {
             } else {
                 appBgStyle = `background: ${targetBg};`;
             }
+        } else if (hasMainShellBackground) {
+            if (chatListBg.startsWith('data:') || chatListBg.startsWith('/') || chatListBg.startsWith('http')) {
+                appBgStyle = `background-image: url('${chatListBg}'); background-size: cover; background-position: center;`;
+            } else {
+                appBgStyle = `background: ${chatListBg};`;
+            }
         }
 
+        const headerClass = [
+            'wechat-header',
+            this.currentView === 'discover' ? 'moments-header-style' : '',
+            isMainRootView ? 'wechat-header-chatlist-glass' : ''
+        ].filter(Boolean).join(' ');
+        const appClass = [
+            'wechat-app',
+            isMainRootView ? 'wechat-main-shell' : '',
+            hasMainShellBackground ? 'wechat-chatlist-bg-enabled' : ''
+        ].filter(Boolean).join(' ');
+        const contentBgStyle = (this.currentChat || hasMainShellBackground) ? 'background: transparent;' : '';
+
         const html = `
-            <div class="wechat-app" style="${appBgStyle}">
+            <div class="${appClass}" style="${appBgStyle}">
                 <!-- 顶部栏 -->
-                <div class="wechat-header ${this.currentView === 'discover' ? 'moments-header-style' : ''}">
+                <div class="${headerClass}">
                     <div class="wechat-header-left">
                         ${this.currentChat ? `
                             <button class="wechat-back-btn" id="wechat-back">
@@ -2481,7 +2612,7 @@ export class WechatApp {
                 </div>
 
                 <!-- 内容区 (如果在聊天中，让内容区变透明以透出底部背景) -->
-                <div class="wechat-content" id="wechat-content" style="${this.currentChat ? 'background: transparent;' : ''}">
+                <div class="wechat-content" id="wechat-content" style="${contentBgStyle}">
                     ${this.renderContent()}
                 </div>
 
@@ -3661,6 +3792,8 @@ export class WechatApp {
     showEditProfile() {
         const userInfo = this.wechatData.getUserInfo();
         const globalCss = this.storage?.get('phone_global_chat_css') || '';
+        const shellBg = this._getMainShellBackgroundConfig();
+        const profileContentStyle = `${shellBg.contentBgStyle || 'background: #f2f2f7;'} padding: 16px 12px;`;
         const safeCustomCss = String(globalCss)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
@@ -3669,7 +3802,7 @@ export class WechatApp {
         const avatarHtml = this.renderAvatar(userInfo.avatar, '😊', userInfo.name);
 
         const html = `
-        <div class="wechat-app">
+        <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-profile-edit">
@@ -3680,7 +3813,7 @@ export class WechatApp {
                 <div class="wechat-header-right"></div>
             </div>
 
-            <div class="wechat-content" style="background: #f2f2f7; padding: 16px 12px;">
+            <div class="wechat-content" style="${profileContentStyle}">
                 
                 <!-- 📸 头像卡片 -->
                 <div style="background: #fff; border-radius: 12px; padding: 24px 16px; text-align: center; margin-bottom: 16px;">
@@ -3913,7 +4046,12 @@ export class WechatApp {
 
                 if (uploadResp.ok) {
                     const finalUrl = `/backgrounds/${filename}`;
+                    const oldAvatar = String(this.wechatData.getUserInfo()?.avatar || '').trim();
                     this.wechatData.updateUserInfo({ avatar: finalUrl });
+                    if (oldAvatar && oldAvatar !== finalUrl) {
+                        const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldAvatar, { quiet: true });
+                        cleanupTask?.catch?.(() => { });
+                    }
                     this.phoneShell.showNotification('成功', '头像已上传并保存', '✅');
                 } else {
                     throw new Error('上传接口返回错误');
@@ -3960,9 +4098,11 @@ export class WechatApp {
         this._wechatPanelMode = 'settings';
         const promptManager = window.VirtualPhone?.promptManager;
         const prompts = promptManager?.prompts?.wechat || {};
+        const shellBg = this._getMainShellBackgroundConfig();
+        const settingsContentStyle = shellBg.contentBgStyle || 'background: #ededed;';
 
         const html = `
-        <div class="wechat-app">
+        <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-settings">
@@ -3973,7 +4113,7 @@ export class WechatApp {
                 <div class="wechat-header-right"></div>
             </div>
             
-            <div class="wechat-content" style="background: #ededed;">
+            <div class="wechat-content" style="${settingsContentStyle}">
                 <!-- 模式提示 -->
 <div style="background: #e3f2fd; border-radius: 12px; padding: 15px; margin: 15px;">
     <div style="font-size: 14px; color: #1976d2;">
@@ -4390,6 +4530,8 @@ export class WechatApp {
         this._isAvatarManagerOpen = true;
         this._wechatPanelMode = 'avatar-manager';
         this._ensureWechatAvatarPoolLoaded();
+        const shellBg = this._getMainShellBackgroundConfig();
+        const avatarManagerContentStyle = `${shellBg.contentBgStyle || 'background:#ededed;'} padding:12px; box-sizing:border-box;`;
         const contacts = [...(this.wechatData?.getContacts?.() || [])]
             .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'zh-Hans-CN'));
 
@@ -4425,7 +4567,7 @@ export class WechatApp {
             : '<div style="font-size:13px; color:#888; text-align:center; padding:24px 12px;">通讯录为空，先添加联系人。</div>';
 
         const html = `
-            <div class="wechat-app">
+            <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-avatar-manager">
@@ -4435,7 +4577,7 @@ export class WechatApp {
                     <div class="wechat-header-title">头像管理器</div>
                     <div class="wechat-header-right"></div>
                 </div>
-                <div class="wechat-content" style="background:#ededed; padding:12px; box-sizing:border-box;">
+                <div class="wechat-content" style="${avatarManagerContentStyle}">
                     <div style="background:#fff; border-radius:12px; padding:12px; margin-bottom:10px;">
                         <div style="font-size:13px; color:#333; font-weight:600;">默认头像池与性别标记</div>
                         <div style="font-size:11px; color:#888; margin-top:4px; line-height:1.45;">
@@ -4587,8 +4729,10 @@ export class WechatApp {
 
     // 📋 显示智能加载联系人确认界面
     showLoadContactsConfirm() {
+        const shellBg = this._getMainShellBackgroundConfig();
+        const loadContactsContentStyle = `${shellBg.contentBgStyle || 'background: #ededed;'} padding: 20px;`;
         const html = `
-        <div class="wechat-app">
+        <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-load">
@@ -4599,7 +4743,7 @@ export class WechatApp {
                 <div class="wechat-header-right"></div>
             </div>
             
-            <div class="wechat-content" style="background: #ededed; padding: 20px;">
+            <div class="wechat-content" style="${loadContactsContentStyle}">
                 <div style="background: #fff; border-radius: 12px; padding: 30px; text-align: center;">
                     <div style="width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
                         <i class="fa-solid fa-robot" style="font-size: 28px; color: #666;"></i>
