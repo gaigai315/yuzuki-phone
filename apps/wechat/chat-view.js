@@ -434,7 +434,7 @@ renderChatRoom(chat) {
                 </div>
 
                 <!-- 输入区 -->
-                <div class="chat-input-area">
+                <div class="chat-input-area" style="background: rgba(255, 255, 255, 0.15) !important; backdrop-filter: blur(35px) saturate(200%) !important; -webkit-backdrop-filter: blur(35px) saturate(200%) !important; border-top: 0.5px solid rgba(0, 0, 0, 0.15) !important;">
                     <!-- 表情面板 -->
                     ${this.showEmoji ? this.renderEmojiPanel() : ''}
 
@@ -445,7 +445,7 @@ renderChatRoom(chat) {
                     ${this.activeQuote ? `<div class="active-quote-bar" style="padding: 2px 8px; background: rgba(0,0,0,0.05); font-size: 10px; color: #888; display: flex; justify-content: space-between; align-items: center; line-height: 1.2;"><div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">${this.activeQuote.sender}: ${this.activeQuote.content.length > 20 ? this.activeQuote.content.substring(0, 20) + '...' : this.activeQuote.content}</div><button id="cancel-quote-btn" style="background: none; border: none; color: #aaa; cursor: pointer; padding: 0 4px; font-size: 10px; line-height: 1;"><i class="fa-solid fa-xmark"></i></button></div>` : ''}
 
                     <!-- 输入行 -->
-                    <div class="chat-input-bar" style="display: flex; align-items: center; justify-content: space-between;">
+                    <div class="chat-input-bar" style="display: flex; align-items: center; justify-content: space-between; background: transparent !important;">
                         <div style="display: flex; align-items: center; gap: 0px;">
                             <button class="input-btn" id="regenerate-btn" title="重新生成">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
@@ -456,6 +456,7 @@ renderChatRoom(chat) {
                         </div>
                         <div class="chat-input-wrapper" style="flex: 1; margin: 0;">
                             <input type="text" class="chat-input" id="chat-input"
+                                   style="background: rgba(255, 255, 255, 0.42) !important; border: 0.5px solid rgba(255, 255, 255, 0.58) !important; color: #111111 !important; backdrop-filter: blur(8px) saturate(130%) !important; -webkit-backdrop-filter: blur(8px) saturate(130%) !important;"
                                    placeholder="输入消息..." value="${this.inputText}">
                         </div>
                         <div style="display: flex; align-items: center; gap: 0px;">

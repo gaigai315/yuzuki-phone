@@ -832,11 +832,13 @@ export class WechatApp {
 /* 🔥 输入框样式 */
 .chat-input {
     width: 100%;
-    background: #ffffff !important;
-    color: #000000 !important;
-    border: 0.5px solid #ddd;
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.42) !important;
+    color: #111111 !important;
+    border: 0.5px solid rgba(255, 255, 255, 0.58);
+    border-radius: 8px;
     padding: 6px 10px;
+    backdrop-filter: blur(8px) saturate(130%);
+    -webkit-backdrop-filter: blur(8px) saturate(130%);
     /* 🔥 移除硬编码字体大小，继承父元素设置 */
     outline: none;
     box-sizing: border-box;
@@ -844,7 +846,8 @@ export class WechatApp {
 }
 
 .chat-input:focus {
-    border-color: #07c160;
+    border-color: rgba(7, 193, 96, 0.78);
+    background: rgba(255, 255, 255, 0.58) !important;
 }
 
 /* 🔥 输入栏按钮 - 统一尺寸 */
