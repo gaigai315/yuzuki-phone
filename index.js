@@ -4296,34 +4296,48 @@ if (window.GGP_Loaded) {
                     console.warn('⚠️ [手机] 刷新剧情时间失败，将回退到原有时间基准:', e);
                 }
 
-                // 1. 查找或立即创建联系人
-                let existingContact = wechatData.getContacts().find(c => c.name === contactName);
-                if (!existingContact) {
-                    const newContactId = `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    wechatData.addContact({
-                        id: newContactId,
-                        name: contactName,
-                        avatar: '',
-                        remark: '',
-                        relation: '',
-                        letter: wechatData.getFirstLetter(contactName)
-                    });
-                    existingContact = wechatData.getContacts().find(c => c.name === contactName);
-                }
+                const normalizeReplyTargetName = (name) => String(name || '').trim().replace(/\s+/g, '');
+                const normalizedContactName = normalizeReplyTargetName(contactName);
 
-                // 2. 查找或立即创建聊天会话
-                let chat = wechatData.getChatList().find(c => c.name === contactName && c.type !== 'group');
-                if (!chat && existingContact) {
-                    chat = wechatData.getChatByContactId(existingContact.id);
-                }
-                if (!chat) {
-                    chat = wechatData.createChat({
-                        id: `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                        contactId: existingContact.id,
-                        name: contactName,
-                        type: 'single',
-                        avatar: existingContact.avatar || ''
-                    });
+                // 1) 先扫描群聊名称：命中群聊时，严禁自动新增通讯录联系人
+                const existingGroupChat = wechatData.getChatList().find(c => {
+                    if (!c || c.type !== 'group') return false;
+                    const groupName = String(c.name || '').trim();
+                    return groupName === contactName || normalizeReplyTargetName(groupName) === normalizedContactName;
+                });
+
+                let chat = null;
+                if (existingGroupChat) {
+                    chat = existingGroupChat;
+                } else {
+                    // 2) 未命中群聊才按单聊联系人处理（保持原逻辑）
+                    let existingContact = wechatData.getContacts().find(c => c.name === contactName);
+                    if (!existingContact) {
+                        const newContactId = `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        wechatData.addContact({
+                            id: newContactId,
+                            name: contactName,
+                            avatar: '',
+                            remark: '',
+                            relation: '',
+                            letter: wechatData.getFirstLetter(contactName)
+                        });
+                        existingContact = wechatData.getContacts().find(c => c.name === contactName);
+                    }
+
+                    chat = wechatData.getChatList().find(c => c.name === contactName && c.type !== 'group');
+                    if (!chat && existingContact) {
+                        chat = wechatData.getChatByContactId(existingContact.id);
+                    }
+                    if (!chat) {
+                        chat = wechatData.createChat({
+                            id: `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            contactId: existingContact.id,
+                            name: contactName,
+                            type: 'single',
+                            avatar: existingContact.avatar || ''
+                        });
+                    }
                 }
 
                 // 3. 逐行解析内容并判断是否为新消息
