@@ -1725,10 +1725,10 @@ input:checked + .toggle-slider:before {
     color: #fff !important;
 }
 .phone-call-input {
-    color: #333 !important;
+    color: #fff !important;
 }
 .phone-call-input::placeholder {
-    color: rgba(0, 0, 0, 0.4) !important;
+    color: rgba(255, 255, 255, 0.6) !important;
 }
 
 /* 输入框占位符颜色（带透明度） */
@@ -2098,6 +2098,14 @@ input:checked + .toggle-slider:before {
     flex-direction: column;
     gap: 8px;
     min-height: 0;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.phone-call-messages::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
 }
 
 .phone-call-message-user {
@@ -2158,13 +2166,14 @@ input:checked + .toggle-slider:before {
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.1);
-    color: #333 !important;
+    color: #fff !important;
     font-size: 13px;
     outline: none;
+    caret-color: #fff;
 }
 
 .phone-call-input::placeholder {
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.6) !important;
 }
 
 .phone-call-send-btn,

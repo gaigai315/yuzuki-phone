@@ -1425,6 +1425,15 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
         this.ensureLoaded();
         this.storage.set('phone-prompts', JSON.stringify(this.prompts), true);
     }
+
+    // 一键恢复所有提示词到默认最新版
+    resetAllPromptsToDefault() {
+        const defaults = this.getDefaultPrompts();
+        this.prompts = JSON.parse(JSON.stringify(defaults));
+        this._loaded = true;
+        this.savePrompts();
+        return this.prompts;
+    }
     
     // 导出配置
     exportConfig() {

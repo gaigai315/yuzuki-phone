@@ -176,7 +176,15 @@ export class HomeScreen {
         if (!this._wallpaperEventBound) {
             this._wallpaperEventBound = true;
             window.addEventListener('phone:updateWallpaper', (e) => {
-                this.render();
+                this.render({ forceDomRefresh: true });
+            });
+        }
+
+        // 监听APP图标更新
+        if (!this._appIconEventBound) {
+            this._appIconEventBound = true;
+            window.addEventListener('phone:updateAppIcon', () => {
+                this.render({ forceDomRefresh: true });
             });
         }
     }
@@ -229,4 +237,3 @@ export class HomeScreen {
 }
 
 }
-

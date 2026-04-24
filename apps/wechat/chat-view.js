@@ -6506,7 +6506,7 @@ renderChatRoom(chat) {
                 (async () => {
                     const bubbleMetas = await renderVideoAiLinesSequentially(msgLines, roundId);
                     this.bindCallBubbleClickEvents(messagesDiv);
-                    const autoTTS = window.VirtualPhone?.storage?.get('phone-call-auto-tts') !== false;
+                    const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
                     this.currentTtsRound = roundId;
                     if (autoTTS) {
                         for (let i = 0; i < bubbleMetas.length; i++) {
@@ -6577,7 +6577,7 @@ renderChatRoom(chat) {
                 const bubbleMetas = await renderVideoAiLinesSequentially(renderLines, roundId);
 
                 this.bindCallBubbleClickEvents(messagesDiv);
-                const autoTTS = window.VirtualPhone?.storage?.get('phone-call-auto-tts') !== false;
+                const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
                 this.currentTtsRound = roundId;
                 if (autoTTS) {
                     for (let i = 0; i < bubbleMetas.length; i++) {
@@ -7772,7 +7772,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 (async () => {
                     const bubbleMetas = await renderVoiceAiLinesSequentially(msgLines, roundId);
                     this.bindCallBubbleClickEvents(messagesDiv);
-                    const autoTTS = window.VirtualPhone?.storage?.get('phone-call-auto-tts') !== false;
+                    const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
                     this.currentTtsRound = roundId;
                     if (autoTTS) {
                         for (let i = 0; i < bubbleMetas.length; i++) {
@@ -7829,7 +7829,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 const bubbleMetas = await renderVoiceAiLinesSequentially(renderLines, roundId);
 
                 this.bindCallBubbleClickEvents(messagesDiv);
-                const autoTTS = window.VirtualPhone?.storage?.get('phone-call-auto-tts') !== false;
+                const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
                 this.currentTtsRound = roundId;
                 if (autoTTS) {
                     for (let i = 0; i < bubbleMetas.length; i++) {

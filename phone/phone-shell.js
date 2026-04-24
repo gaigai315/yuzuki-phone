@@ -222,7 +222,7 @@ export class PhoneShell {
                 '.phone-call-history-list', '.phone-call-main', '.phone-call-transcript', '#phone-call-transcript-messages',
                 '.phone-call-settings', '.phone-call-settings-body', '.phone-call-settings-section',
                 '.phone-call-prompt-textarea', '#phone-call-call-prompt',
-                '.phone-call-active', '.phone-call-messages', '.phone-call-bottom',
+                '.phone-call-active', '.phone-call-messages', '#phone-call-messages', '.phone-call-bottom', '#phone-call-input',
                 '.honey-live-gifts', '.honey-live-gifts-list', '.honey-live-bottom',
                 '.mofo-app', '.mofo-list-col', '.mofo-detail-col',
                 '.mofo-editor-overlay', '.mofo-editor-panel', '.mofo-editor-body',

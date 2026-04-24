@@ -108,6 +108,12 @@ export class SettingsApp {
                                 </label>
                             </div>
 
+                            <div class="setting-item setting-button" style="margin-top: 10px;">
+                                <button id="setting-reset-all-prompts" class="setting-btn" style="width: 100%; padding: 8px 12px; font-size: 12px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border: 1px solid rgba(7,193,96,0.25); color: #0b8f52; border-radius: 8px;">
+                                    <i class="fa-solid fa-rotate"></i> 一键更新所有提示词（恢复默认）
+                                </button>
+                            </div>
+
                             <div class="setting-info">
                                 <strong>使用说明：</strong><br>
                                 1. 开启"在线模式"<br>
@@ -525,6 +531,17 @@ export class SettingsApp {
                                     <span style="font-size: 10px; color: #999;">填写后自动记入历史列表</span>
                                     <button id="phone-tts-voice-delete" style="padding: 2px 8px; border: none; background: none; color: #ff3b30; font-size: 10px; cursor: pointer;">删除当前音色</button>
                                 </div>
+                            </div>
+
+                            <div class="setting-item setting-toggle" style="margin-top: 8px;">
+                                <div>
+                                    <div class="setting-label">微信语音/视频通话自动播报</div>
+                                    <div class="setting-desc">开启后，微信通话中 AI 回复会自动播放绑定音色</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="wechat-call-auto-tts" ${this.storage.get('wechat-call-auto-tts') ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
 
                             <div class="setting-item" style="margin-top: 14px; padding-top: 10px; border-top: 1px dashed #ececec;">
@@ -1007,7 +1024,7 @@ export class SettingsApp {
 
                 // 通知主屏幕更新
                 window.dispatchEvent(new CustomEvent('phone:updateWallpaper', {
-                    detail: { wallpaper: croppedImage }
+                    detail: { wallpaper: serverUrl }
                 }));
 
                 alert('✅ 壁纸上传成功！');
@@ -1068,6 +1085,11 @@ export class SettingsApp {
                     this.imageManager.cache.appIcons[appId] = serverUrl;
                     await this.imageManager.saveImages(this.imageManager.cache);
 
+                    // 通知主屏幕更新图标
+                    window.dispatchEvent(new CustomEvent('phone:updateAppIcon', {
+                        detail: { appId, icon: serverUrl }
+                    }));
+
                     alert('✅ 图标上传成功！');
 
                     // 重新渲染设置页面（保持在设置页面）
@@ -1104,6 +1126,12 @@ export class SettingsApp {
                 }
 
                 alert(summary.join('\n'));
+
+                // 通知主屏幕刷新图标（重置后需要立即生效）
+                window.dispatchEvent(new CustomEvent('phone:updateAppIcon', {
+                    detail: { reset: true }
+                }));
+
                 this.render();
             } catch (e) {
                 alert('❌ 恢复失败：' + (e?.message || e));
@@ -1122,6 +1150,39 @@ export class SettingsApp {
         // 快捷回复按钮开关
         document.getElementById('setting-inline-reply-btn')?.addEventListener('change', (e) => {
             this.storage.set('phone_inline_reply_btn', e.target.checked);
+        });
+
+        // 一键更新所有提示词（恢复默认）
+        document.getElementById('setting-reset-all-prompts')?.addEventListener('click', () => {
+            const ok = confirm('确定将所有 APP 提示词一键恢复为默认最新版本吗？\n\n此操作会覆盖你在各 App 中手动编辑过的提示词内容。');
+            if (!ok) return;
+
+            try {
+                const promptManager = window.VirtualPhone?.promptManager;
+                if (!promptManager) {
+                    alert('❌ 提示词管理器未初始化');
+                    return;
+                }
+
+                if (typeof promptManager.resetAllPromptsToDefault === 'function') {
+                    promptManager.resetAllPromptsToDefault();
+                } else {
+                    const defaults = promptManager.getDefaultPrompts?.();
+                    if (!defaults) throw new Error('无法读取默认提示词');
+                    promptManager.prompts = JSON.parse(JSON.stringify(defaults));
+                    promptManager._loaded = true;
+                    if (typeof promptManager.savePrompts === 'function') {
+                        promptManager.savePrompts();
+                    } else {
+                        this.storage.set('phone-prompts', JSON.stringify(defaults), true);
+                    }
+                }
+
+                alert('✅ 已一键更新所有提示词为默认最新版本');
+            } catch (e) {
+                console.error('❌ 一键更新所有提示词失败:', e);
+                alert('❌ 更新失败：' + (e?.message || e));
+            }
         });
 
         // 🔥 上下文楼层限制设置
@@ -1209,6 +1270,7 @@ export class SettingsApp {
         const ttsModel = document.getElementById('phone-tts-model');
         const ttsModelPreset = document.getElementById('phone-tts-model-preset');
         const ttsVoice = document.getElementById('phone-tts-voice');
+        const wechatCallAutoTtsToggle = document.getElementById('wechat-call-auto-tts');
         const honeyTtsEnabledToggle = document.getElementById('phone-honey-tts-enabled');
         const honeyTtsModeSelect = document.getElementById('phone-honey-tts-mode');
         const honeyTtsCacheEnabledToggle = document.getElementById('phone-honey-tts-cache-enabled');
@@ -1248,6 +1310,11 @@ export class SettingsApp {
         if (ttsUrl) ttsUrl.addEventListener('change', async (e) => { await this.storage.set('phone-tts-url', e.target.value.trim()); });
         if (ttsKey) ttsKey.addEventListener('change', async (e) => { await this.storage.set('phone-tts-key', e.target.value.trim()); });
         if (ttsModel) ttsModel.addEventListener('change', async (e) => { await this.storage.set('phone-tts-model', e.target.value.trim()); });
+        if (wechatCallAutoTtsToggle) {
+            wechatCallAutoTtsToggle.addEventListener('change', async (e) => {
+                await this.storage.set('wechat-call-auto-tts', !!e.target.checked);
+            });
+        }
         if (honeyTtsEnabledToggle) {
             honeyTtsEnabledToggle.addEventListener('change', async (e) => {
                 await this.storage.set('phone-honey-tts-enabled', !!e.target.checked);
