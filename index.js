@@ -3362,6 +3362,7 @@ if (window.GGP_Loaded) {
 
             let currentContact = null;
             let currentChatType = 'single';
+            let currentChatTypeSource = 'inferred';
             let currentDate = null;
             let currentMessages = [];
             let groupMembers = [];
@@ -3373,6 +3374,7 @@ if (window.GGP_Loaded) {
                         type: 'wechat_message',
                         contact: currentContact,
                         chatType: currentChatType,
+                        chatTypeSource: currentChatTypeSource,
                         date: currentDate,
                         messages: [...currentMessages],
                         members: currentChatType === 'group' ? [...groupMembers] : [],
@@ -3397,6 +3399,7 @@ if (window.GGP_Loaded) {
                     // 开始新联系人/群
                     currentContact = contactHeaderMatch[1].trim();
                     currentChatType = 'single'; // 默认单聊，等解析到 type:group 再改
+                    currentChatTypeSource = 'inferred';
                     currentDate = null;
                     currentMessages = [];
                     groupMembers = [];
@@ -3406,6 +3409,7 @@ if (window.GGP_Loaded) {
                 // 解析 type: 属性
                 if (trimmedLine.startsWith('type:') || trimmedLine.startsWith('type：')) {
                     currentChatType = trimmedLine.substring(5).trim();
+                    currentChatTypeSource = 'explicit';
                     continue;
                 }
 
@@ -3420,6 +3424,7 @@ if (window.GGP_Loaded) {
                     saveCurrentContact();
                     currentContact = trimmedLine.substring(5).trim();
                     currentChatType = 'single';
+                    currentChatTypeSource = 'explicit';
                     currentMessages = [];
                     groupMembers = [];
                     continue;
@@ -3430,6 +3435,7 @@ if (window.GGP_Loaded) {
                     saveCurrentContact();
                     currentContact = trimmedLine.substring(3).trim();
                     currentChatType = 'single';
+                    currentChatTypeSource = 'explicit';
                     currentMessages = [];
                     groupMembers = [];
                     continue;
@@ -3458,8 +3464,8 @@ if (window.GGP_Loaded) {
                         groupMembers.push(msgSender);
                     }
 
-                    // 🔥🔥🔥 自动检测群聊：如果有多个不同的发送者，自动设置为群聊
-                    if (groupMembers.length > 1 && currentChatType !== 'group') {
+                    // 🔥 自动检测仅在未显式声明 type 时启用，避免单聊被误升级
+                    if (currentChatTypeSource !== 'explicit' && groupMembers.length > 1 && currentChatType !== 'group') {
                         currentChatType = 'group';
                     }
 
@@ -3717,9 +3723,17 @@ if (window.GGP_Loaded) {
             }
             wechatData = window.VirtualPhone.cachedWechatData;
 
+            const normalizeWechatName = (name) => String(name || '').trim().replace(/\s+/g, '').toLowerCase();
+            const contactLookupKey = normalizeWechatName(data.contact);
+            const explicitGroupType = data.chatType === 'group' && data.chatTypeSource === 'explicit';
+            const hasExistingGroupByName = wechatData.getChatList().some(c =>
+                c?.type === 'group' && normalizeWechatName(c?.name) === contactLookupKey
+            );
+            const effectiveIsGroupChat = explicitGroupType || hasExistingGroupByName;
+
             // 🔥🔥🔥 群聊处理：群聊不需要添加到联系人，直接找/创建群聊天 🔥🔥🔥
             let existingContact = null;
-            if (data.chatType !== 'group') {
+            if (!effectiveIsGroupChat) {
                 // 单聊：确保联系人存在（自动添加到通讯录）
                 existingContact = wechatData.getContacts().find(c => c.name === data.contact);
                 if (!existingContact) {
@@ -3739,13 +3753,16 @@ if (window.GGP_Loaded) {
             // 🔥🔥🔥 关键修复：按联系人名字和类型查找现有聊天，避免重复创建 🔥🔥🔥
             // 1. 先按名字和类型查找（最精确）
             let chat = wechatData.getChatList().find(c =>
-                c.name === data.contact &&
-                (data.chatType === 'group' ? c.type === 'group' : c.type !== 'group')
+                normalizeWechatName(c.name) === contactLookupKey &&
+                (effectiveIsGroupChat ? c.type === 'group' : c.type !== 'group')
             );
 
             // 2. 如果按名字+类型找不到，再按名字查找（兼容旧数据）
             if (!chat) {
-                chat = wechatData.getChatList().find(c => c.name === data.contact);
+                const sameNameChats = wechatData.getChatList().filter(c => normalizeWechatName(c.name) === contactLookupKey);
+                if (sameNameChats.length === 1) {
+                    chat = sameNameChats[0];
+                }
             }
 
             // 3. 如果按名字找不到，再按 contactId 查找（单聊）
@@ -3760,9 +3777,9 @@ if (window.GGP_Loaded) {
                     id: newChatId,
                     contactId: existingContact?.id,
                     name: data.contact,
-                    type: data.chatType || 'single',
-                    avatar: data.avatar || existingContact?.avatar || (data.chatType === 'group' ? '👥' : '👤'),
-                    members: data.members || [] 
+                    type: effectiveIsGroupChat ? 'group' : 'single',
+                    avatar: data.avatar || existingContact?.avatar || (effectiveIsGroupChat ? '👥' : '👤'),
+                    members: effectiveIsGroupChat ? (data.members || []) : []
                 });
                 
                 // 🛡️ 核心护盾：强行在创建会话时，给内存注入一个空数组，并锁定懒加载开关！
@@ -3771,8 +3788,8 @@ if (window.GGP_Loaded) {
                 wechatData._messagesLoaded[newChatId] = true;
                 
             } else if (chat) {
-                // 🔥 更新聊天类型（如果之前是 single 现在是 group）
-                if (data.chatType === 'group' && chat.type !== 'group') {
+                // 🔥 仅在显式 type:group 时允许从 single 升级，防止解析误判污染会话类型
+                if (explicitGroupType && chat.type !== 'group') {
                     chat.type = 'group';
                     chat.members = data.members || [];
                 }
@@ -3870,7 +3887,7 @@ if (window.GGP_Loaded) {
                 let messageSender = data.contact;  // 默认使用联系人/群名
                 let senderAvatar = data.avatar || '👤';
 
-                if (data.chatType === 'group' && msg.sender) {
+                if (effectiveIsGroupChat && msg.sender) {
                     // 群聊消息，使用每条消息的发送者
                     messageSender = msg.sender;
 

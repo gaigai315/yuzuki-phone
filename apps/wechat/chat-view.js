@@ -3296,6 +3296,16 @@ renderChatRoom(chat) {
                 '---$1---'
             );
 
+            const normalizeWechatWindowName = (name) => String(name || '')
+                .trim()
+                .replace(/\s+/g, '')
+                .toLowerCase();
+            const isSameWechatWindowName = (a, b) => {
+                const left = normalizeWechatWindowName(a);
+                const right = normalizeWechatWindowName(b);
+                return !!left && !!right && left === right;
+            };
+
             // 如果AI使用了跨聊天多开标签 <wechat> 或包含了 --- 分隔符
             if (aiRawText.includes('---')) {
                 aiRawText = aiRawText.trim();
@@ -3305,6 +3315,7 @@ renderChatRoom(chat) {
                     const headerMatch = block.match(/^---(.+?)---/);
                     if (headerMatch) {
                         const targetName = headerMatch[1].trim();
+                        const isTargetCurrentChat = isSameWechatWindowName(targetName, savedChatName);
                         let blockContent = block.replace(/^---.+---/, '').trim();
                         blockContent = blockContent.replace(/^type[：:]\s*\S+\s*$/gmi, '');
                         blockContent = blockContent.replace(/^date[：:]\s*.+$/gmi, '');
@@ -3325,7 +3336,7 @@ renderChatRoom(chat) {
                             const weiboSpecial = weiboTokenResult.tokenMap.get(line);
                             if (weiboSpecial) {
                                 extractedMsgs.push({
-                                    sender: pendingSender || (targetName === savedChatName ? (context.name2 || targetName) : targetName),
+                                    sender: pendingSender || (isTargetCurrentChat ? (context.name2 || targetName) : targetName),
                                     content: weiboSpecial.content || '[微博分享]',
                                     specialMessage: weiboSpecial
                                 });
@@ -3360,16 +3371,14 @@ renderChatRoom(chat) {
                             } else if (simpleMsgMatch && simpleMsgMatch[1].length < 20) {
                                 extractedMsgs.push({ sender: simpleMsgMatch[1].trim(), content: simpleMsgMatch[2].trim(), quote });
                             } else if (line) {
-                                extractedMsgs.push({ sender: targetName === savedChatName ? (context.name2 || targetName) : targetName, content: line, quote });
+                                extractedMsgs.push({ sender: isTargetCurrentChat ? (context.name2 || targetName) : targetName, content: line, quote });
                             }
                             pendingSender = '';
                         });
 
                         // 分流：是当前窗口，还是后台窗口？
-                        // 🔥 宽松匹配：忽略空格、比较 includes 关系
-                        const isCurrentChat = targetName.trim() === savedChatName.trim() ||
-                            targetName.includes(savedChatName) ||
-                            savedChatName.includes(targetName);
+                        // 仅允许归一化后精确匹配，避免“群名包含好友名”导致串窗
+                        const isCurrentChat = isTargetCurrentChat;
                         if (isCurrentChat) {
                             parsedMessages.push(...extractedMsgs);
                         } else {
@@ -3467,51 +3476,49 @@ renderChatRoom(chat) {
             for (const [targetName, msgs] of Object.entries(backgroundMessages)) {
                 if (msgs.length === 0) continue;
 
-                // 🔥 先查找是否已有同名聊天窗口（宽松匹配）
                 const allChats = this.app.wechatData.getChatList();
-                let bgChat = allChats.find(c =>
-                    c.name === targetName ||
-                    c.name.trim() === targetName.trim() ||
-                    c.name.includes(targetName) ||
-                    targetName.includes(c.name)
-                );
+                const sameNameChats = allChats.filter(c => isSameWechatWindowName(c.name, targetName));
+                const currentUserName = context?.name1 || this.app.wechatData.getUserInfo()?.name || '用户';
+                const userSenderKeys = new Set(['me', '我', '用户', normalizeWechatWindowName(currentUserName)]);
+                const senderNames = [...new Set(msgs.map(m => String(m?.sender || '').trim()).filter(Boolean))];
+                const senderKeys = senderNames.map(name => normalizeWechatWindowName(name)).filter(Boolean);
+                const groupMemberCandidates = senderNames.filter(name => !userSenderKeys.has(normalizeWechatWindowName(name)));
+                const inferredGroupBySenders = [...new Set(senderKeys.filter(key => !userSenderKeys.has(key)))].length > 1;
+
+                let bgChat = null;
+                if (sameNameChats.length > 0) {
+                    const exactGroupChat = sameNameChats.find(c => c.type === 'group');
+                    const exactSingleChat = sameNameChats.find(c => c.type !== 'group');
+                    if (exactGroupChat && exactSingleChat) {
+                        bgChat = inferredGroupBySenders ? exactGroupChat : exactSingleChat;
+                    } else {
+                        bgChat = exactGroupChat || exactSingleChat || null;
+                    }
+                }
 
                 if (!bgChat) {
-                    // 🔥 判断是否是群聊（消息中有多个不同发送者）
-                    const senders = [...new Set(msgs.map(m => m.sender))];
-                    const isGroupChat = senders.length > 1;
-
-                    if (isGroupChat) {
+                    if (inferredGroupBySenders) {
                         // 🔥 群聊：查找同名群，没有才创建
-                        bgChat = allChats.find(c => c.type === 'group' && c.name === targetName);
+                        bgChat = allChats.find(c => c.type === 'group' && isSameWechatWindowName(c.name, targetName));
                         if (!bgChat) {
                             bgChat = this.app.wechatData.createChat({
                                 id: `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                                 name: targetName,
                                 type: 'group',
                                 avatar: '👥',
-                                members: senders
+                                members: groupMemberCandidates
                             });
                         }
                     } else {
-                        // 🔥 单聊：先查找联系人（宽松匹配）
+                        // 🔥 单聊：先查找联系人（严格名称归一匹配）
                         const contacts = this.app.wechatData.getContacts();
-                        const existingContact = contacts.find(c =>
-                            c.name === targetName ||
-                            c.name.trim() === targetName.trim() ||
-                            c.name.includes(targetName) ||
-                            targetName.includes(c.name)
-                        );
+                        const existingContact = contacts.find(c => isSameWechatWindowName(c.name, targetName));
 
                         if (existingContact) {
                             // 联系人存在，查找或创建聊天窗口
                             bgChat = this.app.wechatData.getChatByContactId(existingContact.id);
                             if (!bgChat) {
-                                bgChat = allChats.find(c => c.type !== 'group' && (
-                                    c.name === targetName ||
-                                    c.name.includes(targetName) ||
-                                    targetName.includes(c.name)
-                                ));
+                                bgChat = allChats.find(c => c.type !== 'group' && isSameWechatWindowName(c.name, targetName));
                             }
                             if (!bgChat) {
                                 bgChat = this.app.wechatData.createChat({
@@ -3523,12 +3530,8 @@ renderChatRoom(chat) {
                                 });
                             }
                         } else {
-                            // 🔥 也尝试通过名字直接查找聊天（宽松匹配）
-                            bgChat = allChats.find(c => c.type !== 'group' && (
-                                c.name === targetName ||
-                                c.name.includes(targetName) ||
-                                targetName.includes(c.name)
-                            ));
+                            // 🔥 也尝试通过名字直接查找聊天（严格名称归一匹配）
+                            bgChat = allChats.find(c => c.type !== 'group' && isSameWechatWindowName(c.name, targetName));
 
                             if (!bgChat) {
                                 // 联系人不存在，先添加联系人再创建聊天
@@ -3554,6 +3557,7 @@ renderChatRoom(chat) {
 
                 let bgAddedCount = 0;
                 let bgLatestPreview = '';
+                const isBgGroupChat = bgChat?.type === 'group';
                 let senderAvatar = bgChat.avatar || '👤';
                 for (let bgIndex = 0; bgIndex < msgs.length; bgIndex++) {
                     const m = msgs[bgIndex];
@@ -3561,7 +3565,7 @@ renderChatRoom(chat) {
                     const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent);
                     const special = m.specialMessage || this.parseSpecialMessage(cleanContent);
                     // 🔥 核心修复2：如果是群聊，绝不能拿群聊头像(bgChat.avatar)给个人用
-                    senderAvatar = this.app.wechatData.getContactByName(m.sender)?.avatar || (isGroupChat ? '' : bgChat.avatar) || '👤';
+                    senderAvatar = this.app.wechatData.getContactByName(m.sender)?.avatar || (isBgGroupChat ? '' : bgChat.avatar) || '👤';
                     if (special?.type === 'incoming_call') {
                         const { queuedLines, consumedCount } = this._collectIncomingCallFollowUps(msgs, bgIndex);
                         bgIndex += consumedCount;
