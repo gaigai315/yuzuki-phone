@@ -1007,9 +1007,11 @@ export class SettingsApp {
                 });
 
                 const croppedImage = await cropper.open(file);
+                const oldWallpaper = this.imageManager.getWallpaper();
+                await this.imageManager.deleteManagedBackgroundByPath(oldWallpaper, { quiet: true });
 
                 // 🔥 上传到服务端，避免 Base64 撑大存档
-                const serverUrl = await this.imageManager._uploadToServer(croppedImage, 'wallpaper');
+                const serverUrl = await this.imageManager._uploadToServer(croppedImage, 'wallpaper', { allowBase64Fallback: false });
 
                 // 保存壁纸
                 this.imageManager.cache.wallpaper = serverUrl;
@@ -1078,9 +1080,11 @@ export class SettingsApp {
                     });
 
                     const croppedImage = await cropper.open(file);
+                    const oldIcon = this.imageManager.getAppIcon(appId);
+                    await this.imageManager.deleteManagedBackgroundByPath(oldIcon, { quiet: true });
 
                     // 🔥 上传到服务端，避免 Base64 撑大存档
-                    const serverUrl = await this.imageManager._uploadToServer(croppedImage, `icon_${appId}`);
+                    const serverUrl = await this.imageManager._uploadToServer(croppedImage, `icon_${appId}`, { allowBase64Fallback: false });
 
                     this.imageManager.cache.appIcons[appId] = serverUrl;
                     await this.imageManager.saveImages(this.imageManager.cache);

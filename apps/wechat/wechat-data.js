@@ -294,7 +294,8 @@ export class WechatData {
             coverImage: null,
             momentsBackground: null,
             walletBalance: null,
-            globalChatBackground: null // 🔥新增：存储全局聊天背景
+            globalChatBackground: null, // 🔥新增：存储全局聊天背景
+            chatListBackground: null // 🔥新增：微信聊天列表背景
         };
     }
     
@@ -496,6 +497,12 @@ export class WechatData {
     // 🔥 新增：设置全局聊天背景
     setGlobalChatBackground(background) {
         this.data.userInfo.globalChatBackground = background;
+        this.saveData();
+    }
+
+    // 🔥 新增：设置微信聊天列表背景
+    setChatListBackground(background) {
+        this.data.userInfo.chatListBackground = background || null;
         this.saveData();
     }
     

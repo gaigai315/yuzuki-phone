@@ -1241,6 +1241,8 @@ export class WeiboView {
             const filesToProcess = filesArray.slice(0, remaining);
             this.app.phoneShell.showNotification('处理中', `正在上传 ${filesToProcess.length} 张图片...`, '⏳');
 
+            let successCount = 0;
+            let failCount = 0;
             for (const file of filesToProcess) {
                 try {
                     const cropper = new ImageCropper({
@@ -1253,43 +1255,45 @@ export class WeiboView {
                     });
                     
                     const croppedImage = await cropper.open(file);
-                    let finalUrl = croppedImage; // 兜底：如果服务器上传失败，回退到 base64
+                    const imgResp = await fetch(croppedImage);
+                    const blob = await imgResp.blob();
+                    const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+                    const filename = `phone_weibo_img_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${ext}`;
                     
-                    try {
-                        const imgResp = await fetch(croppedImage);
-                        const blob = await imgResp.blob();
-                        const ext = blob.type === 'image/png' ? 'png' : 'jpg';
-                        const filename = `phone_weibo_img_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${ext}`;
-                        
-                        const formData = new FormData();
-                        formData.append('avatar', blob, filename);
+                    const formData = new FormData();
+                    formData.append('avatar', blob, filename);
 
-                        const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
-                        delete headers['Content-Type']; 
-                        if (!headers['X-CSRF-Token']) {
-                            const csrfResp = await fetch('/csrf-token');
-                            if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
-                        }
-
-                        const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                        if (uploadResp.ok) {
-                            finalUrl = `/backgrounds/${filename}?t=${Date.now()}`;
-                        }
-                    } catch (uploadErr) {
-                        console.warn('[Weibo] 图片上传服务器失败，降级使用Base64:', uploadErr);
+                    const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+                    delete headers['Content-Type']; 
+                    if (!headers['X-CSRF-Token']) {
+                        const csrfResp = await fetch('/csrf-token');
+                        if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
                     }
+
+                    const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
+                    if (!uploadResp.ok) {
+                        throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
+                    }
+                    const finalUrl = `/backgrounds/${filename}?t=${Date.now()}`;
 
                     // 写入预览数组并立刻渲染
                     if (!this.pendingPostImages) this.pendingPostImages = [];
                     this.pendingPostImages.push(finalUrl);
                     this.updatePostImagePreview();
+                    successCount += 1;
                 } catch (error) {
                     if (error.message !== '用户取消') {
-                        this.app.phoneShell.showNotification('提示', error.message, '⚠️');
+                        failCount += 1;
+                        this.app.phoneShell.showNotification('上传失败', error.message, '❌');
                     }
                 }
             }
-            this.app.phoneShell.showNotification('成功', '图片处理完成', '✅');
+            if (successCount > 0) {
+                const suffix = failCount > 0 ? `，失败 ${failCount} 张` : '';
+                this.app.phoneShell.showNotification('成功', `图片处理完成（成功 ${successCount} 张${suffix}）`, '✅');
+            } else {
+                this.app.phoneShell.showNotification('上传失败', '没有图片上传成功', '❌');
+            }
         });
         
         // 发布
@@ -2732,24 +2736,39 @@ export class WeiboView {
                     maxFileSize: 2 * 1024 * 1024
                 });
                 const croppedImage = await cropper.open(file);
-                let avatarUrl = croppedImage;
-                try {
-                    const res = await fetch(croppedImage);
-                    const blob = await res.blob();
-                    const ext = blob.type === 'image/png' ? 'png' : 'jpg';
-                    const filename = `phone_weibo_avatar_${Date.now()}.${ext}`;
-                    const formData = new FormData();
-                    formData.append('avatar', blob, filename);
-                    const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData });
-                    if (uploadResp.ok) avatarUrl = `/backgrounds/${filename}`;
-                } catch (err) { console.warn('[Weibo] 头像上传服务端失败:', err); }
+                const res = await fetch(croppedImage);
+                const blob = await res.blob();
+                const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+                const filename = `phone_weibo_avatar_${Date.now()}.${ext}`;
+                const formData = new FormData();
+                formData.append('avatar', blob, filename);
+                const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+                delete headers['Content-Type'];
+                delete headers['content-type'];
+                if (!headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
+                    const csrfResp = await fetch('/csrf-token');
+                    if (csrfResp.ok) {
+                        const csrfJson = await csrfResp.json();
+                        if (csrfJson?.token) headers['X-CSRF-Token'] = csrfJson.token;
+                    }
+                }
+                const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
+                if (!uploadResp.ok) {
+                    throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
+                }
+                const avatarUrl = `/backgrounds/${filename}`;
                 const profile = this.app.weiboData.getProfile();
+                const oldAvatar = String(profile.avatar || '').trim();
                 profile.avatar = avatarUrl;
                 this.app.weiboData.saveProfile(profile);
+                if (oldAvatar && oldAvatar !== avatarUrl) {
+                    const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldAvatar, { quiet: true });
+                    cleanupTask?.catch?.(() => { });
+                }
                 this.app.phoneShell.showNotification('成功', '头像已更新', '✅');
             } catch (error) {
                 if (error.message !== '用户取消') {
-                    this.app.phoneShell.showNotification('提示', error.message, '⚠️');
+                    this.app.phoneShell.showNotification('上传失败', error.message, '❌');
                 }
             }
         });
@@ -2768,24 +2787,39 @@ export class WeiboView {
                     maxFileSize: 5 * 1024 * 1024
                 });
                 const croppedImage = await cropper.open(file);
-                let bannerUrl = croppedImage;
-                try {
-                    const res = await fetch(croppedImage);
-                    const blob = await res.blob();
-                    const ext = blob.type === 'image/png' ? 'png' : 'jpg';
-                    const filename = `phone_weibo_banner_${Date.now()}.${ext}`;
-                    const formData = new FormData();
-                    formData.append('avatar', blob, filename);
-                    const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData });
-                    if (uploadResp.ok) bannerUrl = `/backgrounds/${filename}`;
-                } catch (err) { console.warn('[Weibo] 背景上传服务端失败:', err); }
+                const res = await fetch(croppedImage);
+                const blob = await res.blob();
+                const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+                const filename = `phone_weibo_banner_${Date.now()}.${ext}`;
+                const formData = new FormData();
+                formData.append('avatar', blob, filename);
+                const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+                delete headers['Content-Type'];
+                delete headers['content-type'];
+                if (!headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
+                    const csrfResp = await fetch('/csrf-token');
+                    if (csrfResp.ok) {
+                        const csrfJson = await csrfResp.json();
+                        if (csrfJson?.token) headers['X-CSRF-Token'] = csrfJson.token;
+                    }
+                }
+                const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
+                if (!uploadResp.ok) {
+                    throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
+                }
+                const bannerUrl = `/backgrounds/${filename}`;
                 const profile = this.app.weiboData.getProfile();
+                const oldBanner = String(profile.banner || '').trim();
                 profile.banner = bannerUrl;
                 this.app.weiboData.saveProfile(profile);
+                if (oldBanner && oldBanner !== bannerUrl) {
+                    const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldBanner, { quiet: true });
+                    cleanupTask?.catch?.(() => { });
+                }
                 this.app.phoneShell.showNotification('成功', '背景图已更新', '✅');
             } catch (error) {
                 if (error.message !== '用户取消') {
-                    this.app.phoneShell.showNotification('提示', error.message, '⚠️');
+                    this.app.phoneShell.showNotification('上传失败', error.message, '❌');
                 }
             }
         });
@@ -3615,6 +3649,20 @@ export class WeiboView {
     // ========================================
     async _deleteServerImages(images) {
         if (!Array.isArray(images) || images.length === 0) return;
+        const buildDeleteHeaders = async () => {
+            const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+            delete headers['Content-Type'];
+            delete headers['content-type'];
+            headers['Content-Type'] = 'application/json';
+            if (!headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
+                const csrfResp = await fetch('/csrf-token');
+                if (csrfResp.ok) {
+                    const csrfJson = await csrfResp.json();
+                    if (csrfJson?.token) headers['X-CSRF-Token'] = csrfJson.token;
+                }
+            }
+            return headers;
+        };
 
         for (const imgUrl of images) {
             const rawUrl = String(imgUrl || '').trim();
@@ -3625,13 +3673,14 @@ export class WeiboView {
             const filename = decodeURIComponent(rawUrl.replace('/backgrounds/', '').split('?')[0]);
             // 严谨校验：只删手机微博发的图片
             if (!filename.startsWith('phone_weibo_img_')) continue;
+            const headers = await buildDeleteHeaders();
 
             // 暴力兼容所有版本酒馆的删除接口格式
             const attempts = [
-                () => fetch('/api/backgrounds/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bg: filename }) }),
-                () => fetch('/api/backgrounds/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }),
-                () => fetch('/api/backgrounds/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: filename }) }),
-                () => fetch(`/api/backgrounds/delete?bg=${encodeURIComponent(filename)}`, { method: 'DELETE' })
+                () => fetch('/api/backgrounds/delete', { method: 'POST', headers, body: JSON.stringify({ bg: filename }) }),
+                () => fetch('/api/backgrounds/delete', { method: 'POST', headers, body: JSON.stringify({ filename }) }),
+                () => fetch('/api/backgrounds/delete', { method: 'POST', headers, body: JSON.stringify({ file: filename }) }),
+                () => fetch(`/api/backgrounds/delete?bg=${encodeURIComponent(filename)}`, { method: 'DELETE', headers })
             ];
 
             for (const request of attempts) {

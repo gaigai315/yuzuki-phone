@@ -2482,7 +2482,6 @@ renderChatRoom(chat) {
     async sendImageMessageFromDataUrl(dataUrl, filenamePrefix = 'phone_chatimg') {
         if (!dataUrl || !this.app.currentChat) return;
 
-        let finalUrl = dataUrl;
         try {
             const res = await fetch(dataUrl);
             const blob = await res.blob();
@@ -2497,22 +2496,27 @@ renderChatRoom(chat) {
                 if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
             }
             const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-            if (uploadResp.ok) finalUrl = `/backgrounds/${filename}`;
+            if (!uploadResp.ok) {
+                throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
+            }
+
+            const finalUrl = `/backgrounds/${filename}`;
+            this.app.wechatData.addMessage(this.app.currentChat.id, {
+                from: 'me',
+                type: 'image',
+                content: finalUrl,
+                avatar: this.app.wechatData.getUserInfo().avatar
+            });
+
+            this.app.render();
+
+            if (this.isOnlineMode()) {
+                this._enqueuePendingChat(this.app.currentChat.id);
+            }
         } catch (uploadErr) {
-            console.warn('聊天图片上传服务器失败，使用本地降级:', uploadErr);
-        }
-
-        this.app.wechatData.addMessage(this.app.currentChat.id, {
-            from: 'me',
-            type: 'image',
-            content: finalUrl,
-            avatar: this.app.wechatData.getUserInfo().avatar
-        });
-
-        this.app.render();
-
-        if (this.isOnlineMode()) {
-            this._enqueuePendingChat(this.app.currentChat.id);
+            console.warn('聊天图片上传服务器失败:', uploadErr);
+            this.app.phoneShell.showNotification('上传失败', uploadErr?.message || '图片上传失败', '❌');
+            return;
         }
     }
 
@@ -4822,10 +4826,9 @@ renderChatRoom(chat) {
                 });
                 const croppedImage = await cropper.open(file);
 
-                newAvatar = croppedImage;
                 const preview = document.getElementById('avatar-preview');
                 if (preview) {
-                    preview.innerHTML = `<img src="${newAvatar}" style="width:100%;height:100%;object-fit:cover;">`;
+                    preview.innerHTML = `<img src="${croppedImage}" style="width:100%;height:100%;object-fit:cover;">`;
                 }
 
                 this.app.phoneShell.showNotification('处理中', '正在上传头像...', '⏳');
@@ -4843,13 +4846,15 @@ renderChatRoom(chat) {
                     if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
                 }
                 const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                if (uploadResp.ok) {
-                    newAvatar = `/backgrounds/${filename}`;
-                    this.app.phoneShell.showNotification('成功', '头像已上传', '✅');
+                if (!uploadResp.ok) {
+                    throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
                 }
+                newAvatar = `/backgrounds/${filename}`;
+                this.app.phoneShell.showNotification('成功', '头像已上传', '✅');
             } catch (err) {
                 if (String(err?.message || '') === '用户取消') return;
                 console.warn('单聊头像上传失败:', err);
+                this.app.phoneShell.showNotification('上传失败', err?.message || '头像上传失败', '❌');
             }
         });
 
@@ -4879,8 +4884,13 @@ renderChatRoom(chat) {
 
             // 🔥 如果上传了新头像，同步到所有相关位置
             if (newAvatar) {
+                const oldAvatar = String(chat.avatar || '').trim();
                 // 使用更可靠的同步方法
                 this.app.wechatData.syncAvatarByChat(chat, newAvatar);
+                if (oldAvatar && oldAvatar !== newAvatar) {
+                    const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldAvatar, { quiet: true });
+                    cleanupTask?.catch?.(() => { });
+                }
             } else {
                 this.app.wechatData.saveData();
             }
@@ -5102,6 +5112,8 @@ renderChatRoom(chat) {
                 : `background-image: url('${bg}'); background-size: cover; background-position: center;`;
             return `<div class="preset-bg" data-bg="${bg}" style="height: 100px; border-radius: 8px; ${style} cursor: pointer; position: relative;"></div>`;
         }).join('');
+        const userInfo = this.app.wechatData.getUserInfo?.() || {};
+        const listBgActive = String(userInfo.chatListBackground || '').trim();
 
         const html = `
             <div class="wechat-app">
@@ -5134,6 +5146,38 @@ renderChatRoom(chat) {
                             <i class="fa-solid fa-upload"></i> 选择图片
                         </button>
                     </div>
+
+                    <!-- 同步到微信主页背景 -->
+                    <div style="background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 15px;">
+                        <div style="font-size: 14px; color: #999; margin-bottom: 4px;">微信主页背景</div>
+                        <div style="font-size: 11px; color: #07c160; margin-bottom: 12px;">
+                            当前状态：${listBgActive ? '已设置（微信/通讯录/朋友圈/我）' : '未设置'}
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <button id="sync-current-bg-to-chatlist" style="
+                                width: 100%;
+                                padding: 10px;
+                                background: #ffffff;
+                                color: #333;
+                                border: 1px solid #d8d8d8;
+                                border-radius: 8px;
+                                font-size: 13px;
+                                font-weight: 500;
+                                cursor: pointer;
+                            ">同步四页背景</button>
+                            <button id="clear-chatlist-bg" style="
+                                width: 100%;
+                                padding: 10px;
+                                background: #ffffff;
+                                color: #333;
+                                border: 1px solid #d8d8d8;
+                                border-radius: 8px;
+                                font-size: 13px;
+                                font-weight: 500;
+                                cursor: pointer;
+                            ">清除四页背景</button>
+                        </div>
+                    </div>
                     
                     <!-- 预设背景 -->
                     <div style="background: #fff; border-radius: 10px; padding: 20px;">
@@ -5159,6 +5203,59 @@ renderChatRoom(chat) {
             document.getElementById('bg-upload').click();
         });
 
+        const tryCleanupOldListBg = (oldBg, keepSet = new Set()) => {
+            const oldValue = String(oldBg || '').trim();
+            if (!oldValue) return;
+            if (keepSet.has(oldValue)) return;
+            const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldValue, { quiet: true });
+            cleanupTask?.catch?.(() => { });
+        };
+
+        document.getElementById('sync-current-bg-to-chatlist')?.addEventListener('click', () => {
+            const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
+            const sourceBg = String(this.app.currentChat?.background || latestUserInfo.globalChatBackground || '').trim();
+            if (!sourceBg) {
+                this.app.phoneShell.showNotification('提示', '当前没有可同步的聊天背景（四页）', '⚠️');
+                return;
+            }
+
+            const oldListBg = String(latestUserInfo.chatListBackground || '').trim();
+            this.app.wechatData.setChatListBackground(sourceBg);
+
+            if (oldListBg && oldListBg !== sourceBg) {
+                const keepSet = new Set([
+                    sourceBg,
+                    String(this.app.currentChat?.background || '').trim(),
+                    String(latestUserInfo.globalChatBackground || '').trim(),
+                    String(latestUserInfo.momentsBackground || '').trim()
+                ].filter(Boolean));
+                tryCleanupOldListBg(oldListBg, keepSet);
+            }
+
+            this.app.phoneShell.showNotification('设置成功', '微信主页四页背景已同步', '✅');
+            setTimeout(() => this.app.render(), 320);
+        });
+
+        document.getElementById('clear-chatlist-bg')?.addEventListener('click', () => {
+            const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
+            const oldListBg = String(latestUserInfo.chatListBackground || '').trim();
+            if (!oldListBg) {
+                this.app.phoneShell.showNotification('提示', '当前未设置四页背景', 'ℹ️');
+                return;
+            }
+
+            this.app.wechatData.setChatListBackground(null);
+            const keepSet = new Set([
+                String(this.app.currentChat?.background || '').trim(),
+                String(latestUserInfo.globalChatBackground || '').trim(),
+                String(latestUserInfo.momentsBackground || '').trim()
+            ].filter(Boolean));
+            tryCleanupOldListBg(oldListBg, keepSet);
+
+            this.app.phoneShell.showNotification('已清除', '微信主页四页背景已恢复默认', '✅');
+            setTimeout(() => this.app.render(), 320);
+        });
+
         // 上传背景 - 支持裁剪
         document.getElementById('bg-upload')?.addEventListener('change', async (e) => {
             const file = e.target.files[0];
@@ -5176,44 +5273,51 @@ renderChatRoom(chat) {
 
                 const croppedImage = await cropper.open(file);
 
-                let finalUrl = croppedImage;
-                try {
-                    const res = await fetch(croppedImage);
-                    const blob = await res.blob();
-                    const ext = blob.type === 'image/png' ? 'png' : 'jpg';
-                    const filename = `phone_chatbg_${Date.now()}.${ext}`;
-                    const formData = new FormData();
-                    formData.append('avatar', blob, filename);
-                    const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
-                    delete headers['Content-Type'];
-                    if (!headers['X-CSRF-Token']) {
-                        const csrfResp = await fetch('/csrf-token');
-                        if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
-                    }
-                    const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                    if (uploadResp.ok) {
-                        finalUrl = `/backgrounds/${filename}`;
-                    }
-                } catch (uploadErr) {
-                    console.warn('[ChatView] 聊天背景上传服务端失败:', uploadErr);
+                const res = await fetch(croppedImage);
+                const blob = await res.blob();
+                const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+                const filename = `phone_chatbg_${Date.now()}.${ext}`;
+                const formData = new FormData();
+                formData.append('avatar', blob, filename);
+                const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+                delete headers['Content-Type'];
+                if (!headers['X-CSRF-Token']) {
+                    const csrfResp = await fetch('/csrf-token');
+                    if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
                 }
+                const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
+                if (!uploadResp.ok) {
+                    throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
+                }
+                const finalUrl = `/backgrounds/${filename}`;
+                const imageManager = window.VirtualPhone?.imageManager;
 
                 // 🔥 提示用户：全局还是局部？
                 const isGlobal = confirm("上传成功！\n\n点击【确定】将此图片设为「全局默认背景」\n点击【取消】仅设为「当前聊天背景」");
                 if (isGlobal) {
+                    const oldGlobalBg = String(this.app.wechatData.getUserInfo?.()?.globalChatBackground || '').trim();
                     this.app.wechatData.setGlobalChatBackground(finalUrl);
                     // 清空当前聊天的独立背景，让它跟随全局
                     this.app.wechatData.setChatBackground(this.app.currentChat.id, null); 
+                    if (oldGlobalBg && oldGlobalBg !== finalUrl) {
+                        const cleanupTask = imageManager?.deleteManagedBackgroundByPath?.(oldGlobalBg, { quiet: true });
+                        cleanupTask?.catch?.(() => { });
+                    }
                     this.app.phoneShell.showNotification('设置成功', '全局背景已更新', '✅');
                 } else {
+                    const oldChatBg = String(this.app.currentChat?.background || '').trim();
                     this.app.wechatData.setChatBackground(this.app.currentChat.id, finalUrl);
+                    if (oldChatBg && oldChatBg !== finalUrl) {
+                        const cleanupTask = imageManager?.deleteManagedBackgroundByPath?.(oldChatBg, { quiet: true });
+                        cleanupTask?.catch?.(() => { });
+                    }
                     this.app.phoneShell.showNotification('设置成功', '当前聊天背景已更新', '✅');
                 }
                 
                 setTimeout(() => this.app.render(), 500);
             } catch (error) {
                 if (error.message !== '用户取消') {
-                    this.app.phoneShell.showNotification('提示', error.message, '⚠️');
+                    this.app.phoneShell.showNotification('上传失败', error.message, '❌');
                 }
             }
         });
@@ -8243,16 +8347,19 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         const selectedNameSet = new Set();
         const previewUrls = new Set();
         const buildEmojiName = (fileName = '', fallbackIndex = 1) => {
-            const base = String(fileName || '')
+            const rawBase = String(fileName || '')
                 .replace(/\.[^.]+$/, '')
-                .replace(/\s+/g, '')
-                .replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, '')
-                .slice(0, 10);
+                .replace(/[\r\n\t]/g, ' ')
+                .replace(/[<>]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            // 默认直接采用文件名（去扩展名），让用户可通过电脑改名后一键上传
+            const base = rawBase.slice(0, 20);
             const defaultBase = base || `表情${fallbackIndex}`;
             let candidate = defaultBase;
             let i = 2;
             while (selectedNameSet.has(candidate)) {
-                candidate = `${defaultBase.slice(0, 8)}${i}`;
+                candidate = `${defaultBase.slice(0, Math.max(1, 20 - String(i).length))}${i}`;
                 i += 1;
             }
             selectedNameSet.add(candidate);
@@ -8388,6 +8495,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             if (saveBtn) saveBtn.disabled = true;
 
             let successCount = 0;
+            let failCount = 0;
             try {
                 for (let i = 0; i < selectedFiles.length; i += 1) {
                     const item = selectedFiles[i];
@@ -8395,7 +8503,6 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                     const autoName = String(item.autoName || '').trim() || `表情${i + 1}`;
                     const emojiDescription = sanitizeEmojiName(item.name, autoName);
 
-                    let finalUrl = '';
                     try {
                         const ext = file.type === 'image/png'
                             ? 'png'
@@ -8411,27 +8518,31 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                             if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
                         }
                         const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                        if (uploadResp.ok) {
-                            finalUrl = `/backgrounds/${filename}`;
+                        if (!uploadResp.ok) {
+                            throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
                         }
+                        const finalUrl = `/backgrounds/${filename}`;
+
+                        this.app.wechatData.addCustomEmoji({
+                            name: emojiDescription,
+                            description: emojiDescription,
+                            image: finalUrl
+                        });
+                        successCount += 1;
                     } catch (err) {
-                        console.warn('表情包上传失败，准备使用本地兜底:', err);
+                        failCount += 1;
+                        console.warn('表情包上传失败:', err);
+                        continue;
                     }
-
-                    if (!finalUrl) {
-                        finalUrl = await readFileAsDataURL(file);
-                    }
-
-                    this.app.wechatData.addCustomEmoji({
-                        name: emojiDescription,
-                        description: emojiDescription,
-                        image: finalUrl
-                    });
-                    successCount += 1;
                 }
 
                 cleanupPreviewUrls();
-                this.app.phoneShell.showNotification('添加成功', `已添加 ${successCount} 张表情`, '✅');
+                if (successCount > 0) {
+                    const suffix = failCount > 0 ? `，失败 ${failCount} 张` : '';
+                    this.app.phoneShell.showNotification('添加成功', `已添加 ${successCount} 张表情${suffix}`, '✅');
+                } else {
+                    this.app.phoneShell.showNotification('上传失败', '表情上传失败，请检查酒馆后台', '❌');
+                }
                 this.emojiTab = 'custom';
                 setTimeout(() => this.app.render(), 300);
             } finally {
@@ -8440,7 +8551,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         });
     }
 
-    manageCustomEmoji(emojiId) {
+    async manageCustomEmoji(emojiId) {
         const emoji = this.app.wechatData.getCustomEmoji(emojiId);
         if (!emoji) return;
 
@@ -8456,8 +8567,24 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         if (normalized === '/delete') {
             const ok = window.confirm(`确定删除表情“${emoji.name || currentDescription || '未命名表情'}”吗？`);
             if (!ok) return;
+
+            let fileCleanupFailed = false;
+            const imageManager = window.VirtualPhone?.imageManager;
+            if (imageManager?.deleteManagedBackgroundByPath) {
+                try {
+                    const result = await imageManager.deleteManagedBackgroundByPath(emoji.image, { quiet: true });
+                    fileCleanupFailed = result?.attempted === true && result?.success !== true;
+                } catch (e) {
+                    fileCleanupFailed = true;
+                }
+            }
+
             this.app.wechatData.deleteCustomEmoji(emojiId);
-            this.app.phoneShell.showNotification('已删除', '自定义表情已删除', '🗑️');
+            this.app.phoneShell.showNotification(
+                '已删除',
+                fileCleanupFailed ? '自定义表情已删除（旧图片清理失败）' : '自定义表情已删除',
+                fileCleanupFailed ? '⚠️' : '🗑️'
+            );
             this.app.render();
             return;
         }
@@ -8803,12 +8930,11 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                     return;
                 }
 
-                // 预览兜底
+                // 本地预览（不写入持久数据）
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    newAvatar = e.target.result;
                     const preview = document.getElementById('group-avatar-preview');
-                    preview.innerHTML = `<img src="${newAvatar}" style="width:100%;height:100%;object-fit:cover;">`;
+                    preview.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
                 };
                 reader.readAsDataURL(file);
 
@@ -8827,12 +8953,14 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                         if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
                     }
                     const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                    if (uploadResp.ok) {
-                        newAvatar = `/backgrounds/${filename}`;
-                        this.app.phoneShell.showNotification('成功', '群头像已上传', '✅');
+                    if (!uploadResp.ok) {
+                        throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
                     }
+                    newAvatar = `/backgrounds/${filename}`;
+                    this.app.phoneShell.showNotification('成功', '群头像已上传', '✅');
                 } catch (err) {
                     console.warn('群头像上传失败:', err);
+                    this.app.phoneShell.showNotification('上传失败', err?.message || '群头像上传失败', '❌');
                 }
             }
         });
@@ -8891,7 +9019,12 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             }
 
             if (newAvatar) {
+                const oldAvatar = String(chat.avatar || '').trim();
                 chat.avatar = newAvatar;
+                if (oldAvatar && oldAvatar !== newAvatar) {
+                    const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldAvatar, { quiet: true });
+                    cleanupTask?.catch?.(() => { });
+                }
             }
 
             // 保存数据

@@ -524,9 +524,13 @@ export class DiaryView {
             e.target.value = '';
             const base64 = await this._processImage(file);
             if (base64) {
-                await this.app.diaryData.setCoverBg(base64);
-                this.render();
-                alert('✅ 封面背景已成功上传到酒馆服务器');
+                try {
+                    await this.app.diaryData.setCoverBg(base64);
+                    this.render();
+                    alert('✅ 封面背景已成功上传到酒馆服务器');
+                } catch (err) {
+                    alert('❌ 封面背景上传失败：' + (err?.message || err));
+                }
             }
         };
 
@@ -537,9 +541,13 @@ export class DiaryView {
             e.target.value = '';
             const base64 = await this._processImage(file);
             if (base64) {
-                await this.app.diaryData.setTocBg(base64);
-                this.render();
-                alert('✅ 目录背景已成功上传到酒馆服务器');
+                try {
+                    await this.app.diaryData.setTocBg(base64);
+                    this.render();
+                    alert('✅ 目录背景已成功上传到酒馆服务器');
+                } catch (err) {
+                    alert('❌ 目录背景上传失败：' + (err?.message || err));
+                }
             }
         };
 
@@ -550,9 +558,13 @@ export class DiaryView {
             e.target.value = '';
             const base64 = await this._processImage(file);
             if (base64) {
-                await this.app.diaryData.setGlobalBg(base64);
-                this.render();
-                alert('✅ 日记默认背景已成功上传到酒馆服务器');
+                try {
+                    await this.app.diaryData.setGlobalBg(base64);
+                    this.render();
+                    alert('✅ 日记默认背景已成功上传到酒馆服务器');
+                } catch (err) {
+                    alert('❌ 日记默认背景上传失败：' + (err?.message || err));
+                }
             }
         };
 

@@ -400,10 +400,9 @@ export class ContactsView {
                 });
                 const croppedImage = await cropper.open(file);
 
-                selectedAvatar = croppedImage;
                 const preview = document.getElementById('edit-contact-avatar-preview');
                 if (preview) {
-                    preview.innerHTML = `<img src="${selectedAvatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+                    preview.innerHTML = `<img src="${croppedImage}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
                 }
 
                 this.app.phoneShell.showNotification('处理中', '正在上传头像...', '⏳');
@@ -421,13 +420,15 @@ export class ContactsView {
                     if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
                 }
                 const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                if (uploadResp.ok) {
-                    selectedAvatar = `/backgrounds/${filename}`; // 覆盖为服务器真实路径
-                    this.app.phoneShell.showNotification('成功', '头像已上传', '✅');
+                if (!uploadResp.ok) {
+                    throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
                 }
+                selectedAvatar = `/backgrounds/${filename}`; // 覆盖为服务器真实路径
+                this.app.phoneShell.showNotification('成功', '头像已上传', '✅');
             } catch (err) {
                 if (String(err?.message || '') === '用户取消') return;
-                console.warn('头像上传服务器失败，使用本地降级:', err);
+                console.warn('头像上传服务器失败:', err);
+                this.app.phoneShell.showNotification('上传失败', err?.message || '头像上传失败', '❌');
             }
         });
 
@@ -447,6 +448,7 @@ export class ContactsView {
 
             // 🔥 新增：读取音色 ID
             const ttsVoice = document.getElementById('edit-contact-tts-input').value.trim();
+            const oldAvatar = String(contact.avatar || '').trim();
 
             this.app.wechatData.updateContact(contactId, {
                 name: name,
@@ -456,6 +458,10 @@ export class ContactsView {
             });
 
             this.app.wechatData.syncContactAvatar(contactId, selectedAvatar);
+            if (oldAvatar && oldAvatar !== selectedAvatar) {
+                const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldAvatar, { quiet: true });
+                cleanupTask?.catch?.(() => { });
+            }
             this.app.phoneShell.showNotification('保存成功', '联系人信息已更新', '✅');
 
             setTimeout(() => {
@@ -713,10 +719,9 @@ export class ContactsView {
                 });
                 const croppedImage = await cropper.open(file);
 
-                selectedAvatar = croppedImage;
                 const preview = currentView.querySelector('#friend-avatar-preview');
                 if (preview) {
-                    preview.innerHTML = `<img src="${selectedAvatar}" style="width:100%;height:100%;object-fit:cover;border-radius:10px;">`;
+                    preview.innerHTML = `<img src="${croppedImage}" style="width:100%;height:100%;object-fit:cover;border-radius:10px;">`;
                 }
 
                 this.app.phoneShell.showNotification('处理中', '正在上传头像...', '⏳');
@@ -734,13 +739,15 @@ export class ContactsView {
                     if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
                 }
                 const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                if (uploadResp.ok) {
-                    selectedAvatar = `/backgrounds/${filename}`;
-                    this.app.phoneShell.showNotification('成功', '头像已上传', '✅');
+                if (!uploadResp.ok) {
+                    throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
                 }
+                selectedAvatar = `/backgrounds/${filename}`;
+                this.app.phoneShell.showNotification('成功', '头像已上传', '✅');
             } catch (err) {
                 if (String(err?.message || '') === '用户取消') return;
                 console.warn('好友头像上传失败:', err);
+                this.app.phoneShell.showNotification('上传失败', err?.message || '头像上传失败', '❌');
             }
         };
 

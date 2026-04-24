@@ -24,6 +24,23 @@ export class ImageUploadManager {
         this._migrateOldData();
     }
 
+    async _buildRequestHeaders({ json = false } = {}) {
+        const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+        delete headers['content-type'];
+        delete headers['Content-Type'];
+        if (json) {
+            headers['Content-Type'] = 'application/json';
+        }
+        if (!headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
+            const csrfResp = await fetch('/csrf-token');
+            if (csrfResp.ok) {
+                const csrfJson = await csrfResp.json();
+                if (csrfJson?.token) headers['X-CSRF-Token'] = csrfJson.token;
+            }
+        }
+        return headers;
+    }
+
     // ========================================
     // 🔧 加载缓存（从酒馆 extensionSettings 读取）
     // ========================================
@@ -80,10 +97,14 @@ export class ImageUploadManager {
 
         // 迁移壁纸
         if (data.wallpaper && data.wallpaper.startsWith('data:image')) {
-            const url = await this._uploadToServer(data.wallpaper, 'wallpaper');
-            if (url !== data.wallpaper) {
-                this.cache.wallpaper = url;
-                changed = true;
+            try {
+                const url = await this._uploadToServer(data.wallpaper, 'wallpaper');
+                if (url !== data.wallpaper) {
+                    this.cache.wallpaper = url;
+                    changed = true;
+                }
+            } catch (e) {
+                console.warn('[ImageUpload] 迁移壁纸失败，已跳过该项:', e);
             }
         } else if (data.wallpaper && !this.cache.wallpaper) {
             this.cache.wallpaper = data.wallpaper;
@@ -94,10 +115,14 @@ export class ImageUploadManager {
         if (data.appIcons) {
             for (const [appId, icon] of Object.entries(data.appIcons)) {
                 if (icon && icon.startsWith('data:image')) {
-                    const url = await this._uploadToServer(icon, `icon_${appId}`);
-                    if (url !== icon) {
-                        this.cache.appIcons[appId] = url;
-                        changed = true;
+                    try {
+                        const url = await this._uploadToServer(icon, `icon_${appId}`);
+                        if (url !== icon) {
+                            this.cache.appIcons[appId] = url;
+                            changed = true;
+                        }
+                    } catch (e) {
+                        console.warn(`[ImageUpload] 迁移APP图标失败(${appId})，已跳过该项:`, e);
                     }
                 } else if (icon && !this.cache.appIcons[appId]) {
                     this.cache.appIcons[appId] = icon;
@@ -110,10 +135,14 @@ export class ImageUploadManager {
         if (data.avatars) {
             for (const [charId, avatar] of Object.entries(data.avatars)) {
                 if (avatar && avatar.startsWith('data:image')) {
-                    const url = await this._uploadToServer(avatar, `avatar_${charId}`);
-                    if (url !== avatar) {
-                        this.cache.avatars[charId] = url;
-                        changed = true;
+                    try {
+                        const url = await this._uploadToServer(avatar, `avatar_${charId}`);
+                        if (url !== avatar) {
+                            this.cache.avatars[charId] = url;
+                            changed = true;
+                        }
+                    } catch (e) {
+                        console.warn(`[ImageUpload] 迁移头像失败(${charId})，已跳过该项:`, e);
                     }
                 } else if (avatar && !this.cache.avatars[charId]) {
                     this.cache.avatars[charId] = avatar;
@@ -151,7 +180,8 @@ export class ImageUploadManager {
     // ========================================
     // 🔥 上传图片到服务端 backgrounds 文件夹
     // ========================================
-    async _uploadToServer(base64, prefix) {
+    async _uploadToServer(base64, prefix, options = {}) {
+        const allowBase64Fallback = options.allowBase64Fallback === true;
         if (!base64 || !base64.startsWith('data:image')) return base64;
         try {
             const res = await fetch(base64);
@@ -160,10 +190,28 @@ export class ImageUploadManager {
             const filename = `phone_${prefix}_${Date.now()}.${ext}`;
             const formData = new FormData();
             formData.append('avatar', blob, filename);
-            const response = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData });
+            const headers = await this._buildRequestHeaders();
+
+            const response = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
             if (response.ok) return `/backgrounds/${filename}`;
+
+            let reason = '';
+            try {
+                reason = (await response.text() || '').trim();
+            } catch (e) { }
+            const message = reason
+                ? `上传失败（HTTP ${response.status}）：${reason}`
+                : `上传失败（HTTP ${response.status}）`;
+            if (allowBase64Fallback) {
+                console.warn('[ImageUpload] 上传失败，已回退为 base64:', message);
+                return base64;
+            }
+            throw new Error(message);
         } catch (e) {
             console.error('[ImageUpload] 上传图片到服务端失败:', e);
+            if (!allowBase64Fallback) {
+                throw e instanceof Error ? e : new Error('上传失败');
+            }
         }
         return base64;
     }
@@ -173,7 +221,8 @@ export class ImageUploadManager {
     // ========================================
     async uploadWallpaper(file) {
         return this.processImage(file, async (base64) => {
-            const serverUrl = await this._uploadToServer(base64, 'wallpaper');
+            await this.deleteManagedBackgroundByPath(this.cache.wallpaper, { quiet: true });
+            const serverUrl = await this._uploadToServer(base64, 'wallpaper', { allowBase64Fallback: false });
             this.cache.wallpaper = serverUrl;
             await this._saveCache();
             return serverUrl;
@@ -182,7 +231,8 @@ export class ImageUploadManager {
 
     async uploadAppIcon(appId, file) {
         return this.processImage(file, async (base64) => {
-            const serverUrl = await this._uploadToServer(base64, `icon_${appId}`);
+            await this.deleteManagedBackgroundByPath(this.cache?.appIcons?.[appId], { quiet: true });
+            const serverUrl = await this._uploadToServer(base64, `icon_${appId}`, { allowBase64Fallback: false });
             this.cache.appIcons[appId] = serverUrl;
             await this._saveCache();
             return serverUrl;
@@ -191,7 +241,8 @@ export class ImageUploadManager {
 
     async uploadAvatar(characterId, file) {
         return this.processImage(file, async (base64) => {
-            const serverUrl = await this._uploadToServer(base64, `avatar_${characterId}`);
+            await this.deleteManagedBackgroundByPath(this.cache?.avatars?.[characterId], { quiet: true });
+            const serverUrl = await this._uploadToServer(base64, `avatar_${characterId}`, { allowBase64Fallback: false });
             this.cache.avatars[characterId] = serverUrl;
             await this._saveCache();
             return serverUrl;
@@ -246,16 +297,19 @@ export class ImageUploadManager {
     // 🗑️ 删除
     // ========================================
     async deleteWallpaper() {
+        await this.deleteManagedBackgroundByPath(this.cache.wallpaper, { quiet: true });
         this.cache.wallpaper = null;
         await this._saveCache();
     }
 
     async deleteAppIcon(appId) {
+        await this.deleteManagedBackgroundByPath(this.cache?.appIcons?.[appId], { quiet: true });
         delete this.cache.appIcons[appId];
         await this._saveCache();
     }
 
     async deleteAvatar(characterId) {
+        await this.deleteManagedBackgroundByPath(this.cache?.avatars?.[characterId], { quiet: true });
         delete this.cache.avatars[characterId];
         await this._saveCache();
     }
@@ -286,24 +340,31 @@ export class ImageUploadManager {
     async _deleteBackgroundFile(filename) {
         if (!filename) return false;
 
+        let headers = { 'Content-Type': 'application/json' };
+        try {
+            headers = await this._buildRequestHeaders({ json: true });
+        } catch (e) {
+            // 忽略 header 构建失败，继续尝试最基础删除请求
+        }
         const attempts = [
             () => fetch('/api/backgrounds/delete', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ bg: filename })
             }),
             () => fetch('/api/backgrounds/delete', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ filename })
             }),
             () => fetch('/api/backgrounds/delete', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ file: filename })
             }),
             () => fetch(`/api/backgrounds/delete?bg=${encodeURIComponent(filename)}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers
             })
         ];
 
@@ -314,6 +375,25 @@ export class ImageUploadManager {
             } catch (e) { }
         }
         return false;
+    }
+
+    async deleteManagedBackgroundByPath(pathLike, options = {}) {
+        const filename = this._extractBackgroundFilename(pathLike);
+        if (!filename) {
+            return { attempted: false, success: false, filename: null };
+        }
+
+        let success = false;
+        try {
+            success = await this._deleteBackgroundFile(filename);
+        } catch (e) {
+            success = false;
+        }
+        if (!success && options.quiet !== true) {
+            console.warn('[ImageUpload] 删除旧文件失败:', filename);
+        }
+
+        return { attempted: true, success, filename };
     }
 
     async resetAppIconsAndCleanupUploads() {
@@ -353,4 +433,3 @@ export class ImageUploadManager {
     getAppIcon(appId) { return this.cache.appIcons[appId]; }
     getAvatar(characterId) { return this.cache.avatars[characterId]; }
 }
-

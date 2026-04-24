@@ -27,20 +27,23 @@ export class MomentsView {
         const moments = this.app.wechatData.getMoments();
         const userInfo = this.app.wechatData.getUserInfo();
         const bgImage = userInfo.momentsBackground;
+        const mainShellBg = String(userInfo.chatListBackground || '').trim();
+        const hasMainShellBg = !!mainShellBg;
+        const hasBackdrop = !!bgImage || hasMainShellBg;
 
         return `
-            <div class="moments-page" style="overscroll-behavior: none; ${bgImage ? `background-image: url('${bgImage}'); background-size: cover; background-position: center;` : 'background: #fff;'}">
+            <div class="moments-page" style="overscroll-behavior: none; ${bgImage ? `background-image: url('${bgImage}'); background-size: cover; background-position: center;` : (hasMainShellBg ? 'background: transparent;' : 'background: #fff;')}">
                 <!-- 🔥 背景图上传（隐藏的input） -->
                 <input type="file" id="moments-bg-upload" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display: none;">
 
                 <!-- 朋友圈列表 - 有背景图时透明，无背景图时白色 -->
-                <div class="moments-feed" style="background: ${bgImage ? 'transparent' : '#fff'};">
+                <div class="moments-feed" style="background: ${hasBackdrop ? 'transparent' : '#fff'};">
                     ${moments.length === 0 ? `
-                        <div class="moments-empty-tip" style="${bgImage ? 'background: rgba(255,255,255,0.8); border-radius: 12px; margin: 20px;' : ''}">
+                        <div class="moments-empty-tip" style="${hasBackdrop ? 'background: rgba(255,255,255,0.8); border-radius: 12px; margin: 20px;' : ''}">
                             <p>朋友圈空空如也</p>
                             <p class="tip-sub">点击右上角刷新加载朋友圈</p>
                         </div>
-                    ` : moments.map(moment => this.renderMomentItem(moment, !!bgImage)).join('')}
+                    ` : moments.map(moment => this.renderMomentItem(moment, hasBackdrop)).join('')}
                 </div>
             </div>
         `;
@@ -175,32 +178,33 @@ export class MomentsView {
 
                 const croppedImage = await cropper.open(file);
 
-                // 🔥 上传到服务端，避免 Base64 撑大存档
-                let finalUrl = croppedImage;
-                try {
-                    const res = await fetch(croppedImage);
-                    const blob = await res.blob();
-                    const ext = blob.type === 'image/png' ? 'png' : 'jpg';
-                    const filename = `phone_moments_bg_${Date.now()}.${ext}`;
-                    const formData = new FormData();
-                    formData.append('avatar', blob, filename);
-                    const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
-                    delete headers['Content-Type'];
-                    if (!headers['X-CSRF-Token']) {
-                        const csrfResp = await fetch('/csrf-token');
-                        if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
-                    }
-                    const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                    if (uploadResp.ok) {
-                        finalUrl = `/backgrounds/${filename}`;
-                    }
-                } catch (uploadErr) {
-                    console.warn('[Moments] 背景上传服务端失败，使用本地兜底:', uploadErr);
+                // 🔥 上传到服务端，避免 Base64 撑大存档（严格模式：失败不回退）
+                const res = await fetch(croppedImage);
+                const blob = await res.blob();
+                const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+                const filename = `phone_moments_bg_${Date.now()}.${ext}`;
+                const formData = new FormData();
+                formData.append('avatar', blob, filename);
+                const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+                delete headers['Content-Type'];
+                if (!headers['X-CSRF-Token']) {
+                    const csrfResp = await fetch('/csrf-token');
+                    if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
                 }
+                const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
+                if (!uploadResp.ok) {
+                    throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
+                }
+                const finalUrl = `/backgrounds/${filename}`;
 
                 const userInfo = this.app.wechatData.getUserInfo();
+                const oldBackground = String(userInfo.momentsBackground || '').trim();
                 userInfo.momentsBackground = finalUrl;
                 this.app.wechatData.saveData();
+                if (oldBackground && oldBackground !== finalUrl) {
+                    const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldBackground, { quiet: true });
+                    cleanupTask?.catch?.(() => { });
+                }
                 this.app.phoneShell.showNotification('成功', '朋友圈背景已更新', '✅');
                 this.app.render();
             } catch (error) {
@@ -1114,26 +1118,24 @@ ${momentsPrompt}
 
                 const croppedImage = await cropper.open(file);
 
-                // 🔥 核心修复：朋友圈图片真实上传
-                let finalUrl = croppedImage;
-                try {
-                    const res = await fetch(croppedImage);
-                    const blob = await res.blob();
-                    const ext = blob.type === 'image/png' ? 'png' : 'jpg';
-                    const filename = `phone_moment_${Date.now()}.${ext}`;
-                    const formData = new FormData();
-                    formData.append('avatar', blob, filename);
-                    const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
-                    delete headers['Content-Type'];
-                    if (!headers['X-CSRF-Token']) {
-                        const csrfResp = await fetch('/csrf-token');
-                        if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
-                    }
-                    const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                    if (uploadResp.ok) finalUrl = `/backgrounds/${filename}`;
-                } catch (uploadErr) {
-                    console.warn('朋友圈图片上传服务器失败:', uploadErr);
+                // 🔥 核心修复：朋友圈图片真实上传（严格模式：失败不回退）
+                const res = await fetch(croppedImage);
+                const blob = await res.blob();
+                const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+                const filename = `phone_moment_${Date.now()}.${ext}`;
+                const formData = new FormData();
+                formData.append('avatar', blob, filename);
+                const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+                delete headers['Content-Type'];
+                if (!headers['X-CSRF-Token']) {
+                    const csrfResp = await fetch('/csrf-token');
+                    if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
                 }
+                const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
+                if (!uploadResp.ok) {
+                    throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
+                }
+                const finalUrl = `/backgrounds/${filename}`;
 
                 if (!this.pendingMomentImages) {
                     this.pendingMomentImages = [];
@@ -1142,7 +1144,7 @@ ${momentsPrompt}
                 this.updateImagePreview();
             } catch (error) {
                 if (error.message !== '用户取消') {
-                    this.app.phoneShell.showNotification('提示', error.message, '⚠️');
+                    this.app.phoneShell.showNotification('上传失败', error.message, '❌');
                 }
             }
         }

@@ -80,21 +80,39 @@ export class DiaryData {
             
             const formData = new FormData();
             formData.append('avatar', blob, filename); // 酒馆背景接口使用 avatar 作为字段名
+
+            const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+            delete headers['Content-Type'];
+            delete headers['content-type'];
+            if (!headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
+                const csrfResp = await fetch('/csrf-token');
+                if (csrfResp.ok) {
+                    const csrfJson = await csrfResp.json();
+                    if (csrfJson?.token) headers['X-CSRF-Token'] = csrfJson.token;
+                }
+            }
             
             // 调用酒馆自带的上传接口
             const response = await fetch('/api/backgrounds/upload', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                headers
             });
             
             if (response.ok) {
                 // 上传成功，返回酒馆静态文件的真实相对路径
                 return `/backgrounds/${filename}`;
             }
+
+            let reason = '';
+            try {
+                reason = (await response.text() || '').trim();
+            } catch (e) { }
+            throw new Error(reason ? `上传失败（HTTP ${response.status}）：${reason}` : `上传失败（HTTP ${response.status}）`);
         } catch (e) {
             console.error('[Diary] 上传图片到服务器文件夹失败:', e);
+            throw e instanceof Error ? e : new Error('上传失败');
         }
-        return base64; // 如果上传失败，降级返回原 base64 字符串
     }
 
     getPageBg(entryId) {
@@ -614,4 +632,3 @@ export class DiaryData {
         this.storage.set('diary_auto_last_floor', floorIndex);
     }
 }
-
