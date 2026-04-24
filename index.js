@@ -55,6 +55,41 @@ if (window.GGP_Loaded) {
     let modulesLoaded = false;
     let _lastWechatChatId = null; // 🔥 防串味：记录上一次处理微信数据的 chatId
     let _globalCssLoadingPromise = null;
+    // 🔥 防重放护盾：仅允许被显式标记的旧楼层重新解析（用于 Swipe/Regenerate）
+    const _forcedReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
+
+    function _makeForcedReplayKey(floor, chatId = null) {
+        const safeFloor = Number.parseInt(floor, 10);
+        if (!Number.isFinite(safeFloor) || safeFloor < 0) return '';
+        const ctx = getContext?.();
+        const safeChatId = String(chatId || ctx?.chatId || 'default').trim() || 'default';
+        return `${safeChatId}:${safeFloor}`;
+    }
+
+    function markForcedReplayFloor(floor, ttlMs = 120000, chatId = null) {
+        const key = _makeForcedReplayKey(floor, chatId);
+        if (!key) return;
+        const expireAt = Date.now() + Math.max(5000, Number.parseInt(ttlMs, 10) || 120000);
+        _forcedReplayFloors.set(key, expireAt);
+    }
+
+    function consumeForcedReplayFloor(floor, chatId = null) {
+        const now = Date.now();
+        for (const [k, expire] of _forcedReplayFloors.entries()) {
+            if (!Number.isFinite(expire) || expire <= now) {
+                _forcedReplayFloors.delete(k);
+            }
+        }
+        const key = _makeForcedReplayKey(floor, chatId);
+        if (!key) return false;
+        const expireAt = _forcedReplayFloors.get(key);
+        if (!Number.isFinite(expireAt) || expireAt <= now) {
+            _forcedReplayFloors.delete(key);
+            return false;
+        }
+        _forcedReplayFloors.delete(key);
+        return true;
+    }
 
     function getCurrentIsoWeekCode(date = new Date()) {
         const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -4422,6 +4457,14 @@ if (window.GGP_Loaded) {
 
             if (!message) return;
 
+            // 🔥 核心护盾：默认忽略“非最新楼层”的渲染事件，防止旧楼层在重绘时被误当新消息重解析。
+            // 仅当该楼层被 Swipe/Regenerate 显式标记后，才允许重新解析。
+            const latestIndex = Math.max(0, context.chat.length - 1);
+            const forcedReplay = consumeForcedReplayFloor(index, context.chatId);
+            if (!forcedReplay && index < latestIndex) {
+                return;
+            }
+
             const swipeIndex = Number.isInteger(message.swipe_id) ? message.swipe_id : 0;
 
             // 🔥 核心修复：精准区分"历史回放"和"重新生成/滑动"
@@ -4888,6 +4931,7 @@ if (window.GGP_Loaded) {
         window.currentWechatApp = null;
         window.ggp_currentWechatApp = null;
         _lastWechatChatId = null;
+        _forcedReplayFloors.clear();
 
         // 🔥 清除 timeManager 缓存，强制切换后重新从所有来源取最晚时间
         const tm = window.VirtualPhone?.timeManager;
@@ -5517,6 +5561,7 @@ if (window.GGP_Loaded) {
                 // ⏪⏪⏪ 核心修复 1：监听滑动事件，斩杀废案，并完美防抢跑 ⏪⏪⏪
                 if (context.event_types.MESSAGE_SWIPED) {
                     context.eventSource.on(context.event_types.MESSAGE_SWIPED, function (id) {
+                        markForcedReplayFloor(id, 180000);
                         
                         // 第一步：雷霆手段！只要发生滑动，立刻、无条件斩杀当前楼层的旧微信数据！
                         try {
@@ -5570,6 +5615,7 @@ if (window.GGP_Loaded) {
                     if (mesEl.length > 0) {
                         const mesId = parseInt(mesEl.attr('mesid'), 10);
                         if (!isNaN(mesId)) {
+                            markForcedReplayFloor(mesId, 180000);
                             setTimeout(() => {
                                 try {
                                     const wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;

@@ -35,6 +35,7 @@ export class ChatView {
         this.currentTtsRound = null;
         this._suppressWeiboCardClickUntil = 0;
         this._inlineStickerHydrateTimer = null;
+        this._missingBoundVoiceWarned = new Set();
     }
 
     // 🔥 判断当前会话是否开启在线模式（per-chat）
@@ -188,6 +189,36 @@ export class ChatView {
             voice: '',
             contact: resolved?.contact || null
         };
+    }
+
+    _getMissingVoiceWarnKey(senderName = '', { scene = 'chat' } = {}) {
+        const safeScene = String(scene || 'chat').trim().toLowerCase() || 'chat';
+        const chatId = String(this.app?.currentChat?.id || '').trim() || 'unknown';
+        const normalizedSender = String(senderName || '')
+            .trim()
+            .replace(/\s+/g, ' ')
+            .toLowerCase() || 'unknown';
+        return `${safeScene}:${chatId}:${normalizedSender}`;
+    }
+
+    _clearMissingBoundVoiceWarn(senderName = '', options = {}) {
+        const key = this._getMissingVoiceWarnKey(senderName, options);
+        this._missingBoundVoiceWarned?.delete(key);
+    }
+
+    _notifyMissingBoundVoiceOnce(senderName = '', { scene = 'chat' } = {}) {
+        const key = this._getMissingVoiceWarnKey(senderName, { scene });
+        if (this._missingBoundVoiceWarned?.has(key)) {
+            return false;
+        }
+        this._missingBoundVoiceWarned?.add(key);
+        const safeSender = String(senderName || '').trim() || '当前联系人';
+        const title = scene === 'call' ? '静音警告' : '无法播放';
+        const message = scene === 'call'
+            ? `[${safeSender}] 未绑定专属音色，无法发声`
+            : `请先在通讯录编辑[${safeSender}]，绑定专属音色`;
+        this.app?.phoneShell?.showNotification(title, message, '⚠️');
+        return true;
     }
 
     _escapeRegExp(text) {
@@ -2878,9 +2909,10 @@ renderChatRoom(chat) {
                     const { voice } = this._resolveWechatBoundVoiceByName(senderName);
                     if (voice) {
                         finalVoice = voice;
+                        this._clearMissingBoundVoiceWarn(senderName, { scene: 'chat' });
                     } else {
                         // ❌ 没有绑定音色，强制拦截并弹窗
-                        this.app.phoneShell.showNotification('无法播放', `请先在通讯录编辑[${senderName}]，绑定专属音色`, '⚠️');
+                        this._notifyMissingBoundVoiceOnce(senderName, { scene: 'chat' });
                         return; // 中止播放
                     }
                 }
@@ -3280,6 +3312,7 @@ renderChatRoom(chat) {
             // 5️⃣ 解析AI回复（支持多窗口路由分发）
             let parsedMessages = []; // 属于当前打开窗口的消息
             let backgroundMessages = {}; // 属于后台其他窗口的消息 { "窗口名": [消息数组] }
+            let backgroundGroupHints = {}; // 后台窗口的群聊提示 { "窗口名": true/false }
 
             let aiRawText = this._extractWechatTagPayloadOrSelf(aiResponse);
             
@@ -3317,6 +3350,7 @@ renderChatRoom(chat) {
                         const targetName = headerMatch[1].trim();
                         const isTargetCurrentChat = isSameWechatWindowName(targetName, savedChatName);
                         let blockContent = block.replace(/^---.+---/, '').trim();
+                        const blockDeclaredGroup = /(^|\n)\s*type[：:]\s*group\s*(?=\n|$)/i.test(blockContent);
                         blockContent = blockContent.replace(/^type[：:]\s*\S+\s*$/gmi, '');
                         blockContent = blockContent.replace(/^date[：:]\s*.+$/gmi, '');
                         const weiboTokenResult = this._extractWeiboNewsTokens(blockContent);
@@ -3384,6 +3418,11 @@ renderChatRoom(chat) {
                         } else {
                             if (!backgroundMessages[targetName]) backgroundMessages[targetName] = [];
                             backgroundMessages[targetName].push(...extractedMsgs);
+                            if (blockDeclaredGroup) {
+                                backgroundGroupHints[targetName] = true;
+                            } else if (backgroundGroupHints[targetName] === undefined) {
+                                backgroundGroupHints[targetName] = false;
+                            }
                         }
                     }
                 });
@@ -3483,6 +3522,7 @@ renderChatRoom(chat) {
                 const senderNames = [...new Set(msgs.map(m => String(m?.sender || '').trim()).filter(Boolean))];
                 const senderKeys = senderNames.map(name => normalizeWechatWindowName(name)).filter(Boolean);
                 const groupMemberCandidates = senderNames.filter(name => !userSenderKeys.has(normalizeWechatWindowName(name)));
+                const explicitGroupHint = backgroundGroupHints[targetName] === true;
                 const inferredGroupBySenders = [...new Set(senderKeys.filter(key => !userSenderKeys.has(key)))].length > 1;
 
                 let bgChat = null;
@@ -3490,14 +3530,14 @@ renderChatRoom(chat) {
                     const exactGroupChat = sameNameChats.find(c => c.type === 'group');
                     const exactSingleChat = sameNameChats.find(c => c.type !== 'group');
                     if (exactGroupChat && exactSingleChat) {
-                        bgChat = inferredGroupBySenders ? exactGroupChat : exactSingleChat;
+                        bgChat = (explicitGroupHint || inferredGroupBySenders) ? exactGroupChat : exactSingleChat;
                     } else {
                         bgChat = exactGroupChat || exactSingleChat || null;
                     }
                 }
 
                 if (!bgChat) {
-                    if (inferredGroupBySenders) {
+                    if (explicitGroupHint || inferredGroupBySenders) {
                         // 🔥 群聊：查找同名群，没有才创建
                         bgChat = allChats.find(c => c.type === 'group' && isSameWechatWindowName(c.name, targetName));
                         if (!bgChat) {
@@ -9077,9 +9117,10 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 const { voice } = this._resolveWechatBoundVoiceByName(senderName);
                 if (voice) {
                     finalVoice = voice;
+                    this._clearMissingBoundVoiceWarn(senderName, { scene: 'call' });
                 } else {
                     // ❌ 未绑定音色，拦截提示并跳过当前语音的生成
-                    this.app.phoneShell.showNotification('静音警告', `[${senderName}] 未绑定专属音色，无法发声`, '⚠️');
+                    this._notifyMissingBoundVoiceOnce(senderName, { scene: 'call' });
                     return; 
                 }
             }
