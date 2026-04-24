@@ -693,6 +693,81 @@ export class WechatApp {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+/* 定位卡片：横向紧凑极简版 */
+.message-location.style-compact {
+    display: flex;
+    align-items: center;
+    width: 220px;
+    max-width: 100%;
+    background: #ffffff;
+    padding: 10px 12px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    gap: 12px;
+    box-sizing: border-box;
+}
+
+.message-location.style-compact .icon-area {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    background: #f0f7ff;
+    color: #1677ff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+.message-location.style-compact .text-area {
+    flex: 1;
+    min-width: 0;
+}
+
+.message-location.style-compact .title {
+    font-size: 14px;
+    color: #1f2937;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.message-location.style-compact .detail {
+    font-size: 10px;
+    color: #6b7280;
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (max-width: 500px) {
+    .message-location.style-compact {
+        width: 188px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        gap: 10px;
+    }
+
+    .message-location.style-compact .icon-area {
+        width: 30px;
+        height: 30px;
+        min-width: 30px;
+        font-size: 14px;
+    }
+
+    .message-location.style-compact .title {
+        font-size: 13px;
+    }
+
+    .message-location.style-compact .detail {
+        font-size: 9px;
+        margin-top: 2px;
+    }
+}
+
 .message-voice {
     padding: 10px 14px;
     border-radius: 18px;

@@ -1880,7 +1880,11 @@ parseAIResponse(text) {
     // ✏️ 编辑消息
     editMessage(chatId, messageIndex, newContent) {
         if (this.data.messages[chatId] && this.data.messages[chatId][messageIndex]) {
-            this.data.messages[chatId][messageIndex].content = newContent;
+            const targetMessage = this.data.messages[chatId][messageIndex];
+            targetMessage.content = newContent;
+            if (targetMessage.type === 'location') {
+                targetMessage.locationText = newContent;
+            }
             // 🔥 标记消息已修改
             this._messagesDirty[chatId] = true;
             this.saveData();

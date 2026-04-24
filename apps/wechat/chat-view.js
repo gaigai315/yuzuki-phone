@@ -623,13 +623,13 @@ renderChatRoom(chat) {
                 const locationTitle = this._escapeHtml(locationTitleRaw);
                 const locationDetail = this._escapeHtml(locationRaw);
                 messageBody = `
-                <div class="message-location" style="width: 220px; max-width: 100%; background: #fff; border: 1px solid #e8edf5; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.08);">
-                    <div style="height: 88px; background: linear-gradient(135deg, #e7f4ff 0%, #d8ecff 48%, #f5fbff 100%); display: flex; align-items: center; justify-content: center;">
-                        <div style="width: 34px; height: 34px; border-radius: 50%; background: #2e8dfb; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 4px 8px rgba(46,141,251,0.3);">📍</div>
+                <div class="message-location style-compact">
+                    <div class="icon-area">
+                        <i class="fa-solid fa-location-dot"></i>
                     </div>
-                    <div style="padding: 8px 10px 9px;">
-                        <div style="font-size: 13px; color: #1f2329; font-weight: 600; line-height: 1.35; word-break: break-word;">${locationTitle}</div>
-                        <div style="font-size: 11px; color: #8a93a0; margin-top: 3px; line-height: 1.35; word-break: break-word;">${locationDetail}</div>
+                    <div class="text-area">
+                        <div class="title">${locationTitle}</div>
+                        <div class="detail">${locationDetail}</div>
                     </div>
                 </div>
             `;
@@ -5403,6 +5403,7 @@ renderChatRoom(chat) {
 
         // 🔥 根据消息类型决定显示哪些按钮
         const isTextMessage = message.type === 'text' || !message.type;
+        const isLocationMessage = message.type === 'location';
         const isImageMessage = message.type === 'image';
         const isVoiceMessage = message.type === 'voice';
         const isSystemMessage = message.type === 'system';
@@ -5418,7 +5419,7 @@ renderChatRoom(chat) {
         let buttonsHtml = '';
 
         // 编辑按钮：仅文本消息显示
-        if (isTextMessage) {
+        if (isTextMessage || isLocationMessage) {
             buttonsHtml += `
                 <button class="msg-action-btn" data-action="edit" data-index="${messageIndex}" style="
                     background: transparent;
@@ -5737,11 +5738,12 @@ renderChatRoom(chat) {
         const messageEl = messageElements[messageIndex];
         if (!messageEl) return;
 
-        const textEl = messageEl.querySelector('.message-text');
+        const textEl = messageEl.querySelector('.message-text, .message-location');
         if (!textEl) return;
 
         // 保存原始内容
         const isCallRecord = message.type === 'call_record';
+        const isLocationMessage = message.type === 'location';
         let originalContent;
         if (isCallRecord) {
             // 将 transcript 数组格式化为可编辑文本
@@ -5768,7 +5770,7 @@ renderChatRoom(chat) {
                 font-size: 15px;
                 line-height: 1.5;
                 resize: none;
-                background: ${isRight ? '#95ec69' : '#fff'};
+                background: ${isLocationMessage ? '#fff' : (isRight ? '#95ec69' : '#fff')};
                 color: #000;
                 outline: none;
                 font-family: -apple-system, BlinkMacSystemFont, sans-serif;
