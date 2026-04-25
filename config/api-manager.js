@@ -57,10 +57,13 @@ export class ApiManager {
             : null;
 
         if (!activeProfile) return config;
+        // 全局开关是总闸门：关闭后即使预设里为 true，也必须走酒馆原生 API。
+        const globalEnabled = config.useIndependentAPI === true;
+        const profileEnabled = activeProfile.useIndependentAPI === true;
 
         return {
             ...config,
-            useIndependentAPI: activeProfile.useIndependentAPI === true,
+            useIndependentAPI: globalEnabled && profileEnabled,
             provider: activeProfile.provider || config.provider || 'openai',
             apiUrl: activeProfile.apiUrl || activeProfile.url || config.apiUrl || '',
             apiKey: activeProfile.apiKey || activeProfile.key || config.apiKey || '',
@@ -128,6 +131,36 @@ export class ApiManager {
             });
         } catch (e) {
             console.warn('⚠️ [ApiManager] 同步 lastRequestData 失败:', e);
+        }
+    }
+
+    _clearGaigaiPhoneSignalFromProbe() {
+        try {
+            const gaigaiTargets = [];
+            if (typeof window !== 'undefined') {
+                if (window.Gaigai) gaigaiTargets.push(window.Gaigai);
+                try {
+                    if (window.top && window.top !== window && window.top.Gaigai) {
+                        gaigaiTargets.push(window.top.Gaigai);
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+            if (gaigaiTargets.length === 0) return;
+
+            gaigaiTargets.forEach((gaigai) => {
+                const probe = gaigai?.lastRequestData;
+                if (!probe || !Array.isArray(probe.chat)) return;
+                probe.chat.forEach((msg) => {
+                    if (!msg || typeof msg !== 'object') return;
+                    if (Object.prototype.hasOwnProperty.call(msg, 'gaigaiPhoneSignal')) {
+                        delete msg.gaigaiPhoneSignal;
+                    }
+                });
+            });
+        } catch (e) {
+            console.warn('⚠️ [ApiManager] 清理手机权限信号失败:', e);
         }
     }
 
@@ -209,6 +242,11 @@ export class ApiManager {
         }
         } finally {
             this._activeRequestCount = Math.max(0, this._activeRequestCount - 1);
+            // 仅在所有手机请求都结束后，清理探针里的 gaigaiPhoneSignal，
+            // 避免后续酒馆正文请求被记忆插件误判为“手机请求”。
+            if (this._activeRequestCount === 0) {
+                this._clearGaigaiPhoneSignalFromProbe();
+            }
 
             if (window.VirtualPhone) window.VirtualPhone._isInternalRequest = false;
         }
@@ -925,6 +963,4 @@ export class ApiManager {
         }
     }
 }
-
-
 

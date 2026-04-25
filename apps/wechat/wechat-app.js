@@ -2893,14 +2893,15 @@ export class WechatApp {
     _resolveContactGenderByName(name = '') {
         const safeName = String(name || '').trim();
         if (!safeName) return 'unknown';
-        const contact = this.wechatData?.getContactByName?.(safeName);
+        const contact = this.wechatData?.findContactByNameLoose?.(safeName, { includeChats: false })
+            || this.wechatData?.getContactByName?.(safeName);
         if (!contact) return 'unknown';
         return this.wechatData?.getContactGender?.(contact.id || safeName) || 'unknown';
     }
 
-    _pickRandomAvatarFromPool(pool = []) {
+    _pickStableAvatarFromPool(pool = [], seed = '') {
         if (!Array.isArray(pool) || pool.length === 0) return '';
-        const idx = Math.floor(Math.random() * pool.length);
+        const idx = this._hashText(String(seed || '')) % pool.length;
         return String(pool[idx] || '').trim();
     }
 
@@ -2927,13 +2928,14 @@ export class WechatApp {
         const pool = this._getAvatarPoolByGender(gender);
         if (!Array.isArray(pool) || pool.length === 0) return '';
 
-        const contact = this.wechatData?.getContactByName?.(safeName);
+        const contact = this.wechatData?.findContactByNameLoose?.(safeName, { includeChats: false })
+            || this.wechatData?.getContactByName?.(safeName);
         const contactId = String(contact?.id || '').trim();
+        const stableSeed = `${safeName}|${gender}`;
 
         // 非通讯录临时对象：使用稳定映射，避免每次重绘随机跳变
         if (!contactId) {
-            const idx = this._hashText(`${safeName}|${gender}`) % pool.length;
-            return String(pool[idx] || '').trim();
+            return this._pickStableAvatarFromPool(pool, stableSeed);
         }
 
         const existing = String(this.wechatData?.getContactAutoAvatar?.(contactId) || '').trim();
@@ -2948,7 +2950,7 @@ export class WechatApp {
         // 优先选未被其他角色占用的头像；池耗尽后允许复用
         const available = pool.filter(url => !usedByOthers.has(url));
         const candidatePool = available.length > 0 ? available : pool;
-        const picked = this._pickRandomAvatarFromPool(candidatePool);
+        const picked = this._pickStableAvatarFromPool(candidatePool, stableSeed);
         if (picked) {
             this.wechatData?.setContactAutoAvatar?.(contactId, picked);
         }

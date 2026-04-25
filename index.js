@@ -5718,21 +5718,6 @@ if (window.GGP_Loaded) {
                             // 📱 收集手机活动记录
                             const wechatOfflineChats = [];
                             const storage = window.VirtualPhone.storage;
-                            const offlinePerms = (() => {
-                                const basePerms = { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false };
-                                try {
-                                    const rawPerms = storage?.get('phone_memory_permissions');
-                                    const allPerms = rawPerms
-                                        ? (typeof rawPerms === 'string' ? JSON.parse(rawPerms) : rawPerms)
-                                        : {};
-                                    const phoneOnlinePerms = (allPerms && typeof allPerms.phone_online === 'object')
-                                        ? allPerms.phone_online
-                                        : {};
-                                    return { ...basePerms, ...phoneOnlinePerms };
-                                } catch (e) {
-                                    return basePerms;
-                                }
-                            })();
                             const isPhoneEnabled = isPhoneFeatureEnabled();
 
                             // 🔥 手机休眠或功能关闭时：不注入任何手机上下文，但必须强制清洗掉占位符！
@@ -6528,14 +6513,7 @@ if (window.GGP_Loaded) {
                                             content: contentToInject,
                                             isPhoneMessage: true,
                                             identifier: identifier,
-                                            name: resolveInjectedSystemName(identifier, contentToInject),
-                                            gaigaiPhoneSignal: {
-                                                appName: '手机(主视口)',
-                                                allowSummary: offlinePerms.allowSummary,
-                                                allowTable: offlinePerms.allowTable,
-                                                allowVector: offlinePerms.allowVector,
-                                                allowPrompt: offlinePerms.allowPrompt
-                                            }
+                                            name: resolveInjectedSystemName(identifier, contentToInject)
                                         };
                                         if (isGemini) msgObj.parts = [{ text: contentToInject }];
 
@@ -6624,14 +6602,7 @@ if (window.GGP_Loaded) {
                                             parts: isGemini ? [{ text: musicContent }] : undefined,
                                             isMusicMessage: true,
                                             identifier: 'music_system',
-                                            name: 'SYSTEM (音乐)',
-                                            gaigaiPhoneSignal: {
-                                                appName: '手机(主视口)',
-                                                allowSummary: offlinePerms.allowSummary,
-                                                allowTable: offlinePerms.allowTable,
-                                                allowVector: offlinePerms.allowVector,
-                                                allowPrompt: offlinePerms.allowPrompt
-                                            }
+                                            name: 'SYSTEM (音乐)'
                                         };
 
                                         let musicReplaced = false;
