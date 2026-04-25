@@ -37,6 +37,7 @@ export class ChatView {
         this._inlineStickerHydrateTimer = null;
         this._missingBoundVoiceWarned = new Set();
         this._aiReplyTimeCursor = null;
+        this._isMessageInlineEditing = false;
     }
 
     // 🔥 判断当前会话是否开启在线模式（per-chat）
@@ -130,7 +131,34 @@ export class ChatView {
         const isInputFocused = !!input && document.activeElement === input;
         const hasInputText = !!input && String(input.value || this.inputText || '').trim() !== '';
         const isPanelOpen = !!(this.showEmoji || this.showMore);
-        return isInputFocused || hasInputText || isPanelOpen;
+        const isInlineEditing = this._isMessageInlineEditing
+            || !!currentView.querySelector('.inline-edit-input, .call-inline-edit');
+        return isInputFocused || hasInputText || isPanelOpen || isInlineEditing;
+    }
+
+    _setMessageInlineEditMode(active = false, chatId = null) {
+        this._isMessageInlineEditing = !!active;
+        if (this._isMessageInlineEditing) {
+            clearTimeout(this.batchTimer);
+            this.hideTypingStatus();
+            return;
+        }
+
+        const targetChatId = String(chatId || this.app.currentChat?.id || '').trim();
+        if (!targetChatId) return;
+
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
+        const trimmedText = String(input?.value || this.inputText || '').trim();
+        const shouldRestart = this._hasPendingChat(targetChatId)
+            && !this._isComposingInCurrentChat(targetChatId)
+            && trimmedText === ''
+            && !this.showEmoji
+            && !this.showMore
+            && document.activeElement !== input;
+        if (shouldRestart) {
+            this._restartPendingTimerIfNeeded(targetChatId);
+        }
     }
 
     _isPendingChatSendable(chatId = null) {
@@ -5838,6 +5866,7 @@ renderChatRoom(chat) {
 
         const textEl = messageEl.querySelector('.message-text, .message-location');
         if (!textEl) return;
+        this._setMessageInlineEditMode(true, this.app.currentChat?.id);
 
         // 保存原始内容
         const isCallRecord = message.type === 'call_record';
@@ -5923,18 +5952,21 @@ renderChatRoom(chat) {
         textarea?.addEventListener('input', adjustHeight);
         adjustHeight();
 
+        const finishInlineEditAndRefresh = () => {
+            const messagesDiv = document.getElementById('chat-messages');
+            if (messagesDiv) {
+                const latestMessages = this.app.wechatData.getMessages(this.app.currentChat.id);
+                const userInfo = this.app.wechatData.getUserInfo();
+                messagesDiv.innerHTML = this.renderMessagesWithDateDividers(latestMessages, userInfo);
+                this.bindMessageLongPressEvents();
+            }
+            setTimeout(() => this._setMessageInlineEditMode(false, this.app.currentChat?.id), 0);
+        };
+
         // 取消按钮
         textEl.querySelector('.inline-edit-cancel')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            // 🔥 局部刷新：只更新消息列表，不重绘整个界面
-            const messagesDiv = document.getElementById('chat-messages');
-            if (messagesDiv) {
-                const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
-                const userInfo = this.app.wechatData.getUserInfo();
-                messagesDiv.innerHTML = this.renderMessagesWithDateDividers(messages, userInfo);
-                // 🔥 重新绑定长按事件
-                this.bindMessageLongPressEvents();
-            }
+            finishInlineEditAndRefresh();
         });
 
         // 保存按钮
@@ -5947,15 +5979,7 @@ renderChatRoom(chat) {
                 } else {
                     this.app.wechatData.editMessage(this.app.currentChat.id, messageIndex, newContent);
                 }
-                // 🔥 局部刷新：只更新消息列表，不重绘整个界面
-                const messagesDiv = document.getElementById('chat-messages');
-                if (messagesDiv) {
-                    const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
-                    const userInfo = this.app.wechatData.getUserInfo();
-                    messagesDiv.innerHTML = this.renderMessagesWithDateDividers(messages, userInfo);
-                    // 🔥 重新绑定长按事件
-                    this.bindMessageLongPressEvents();
-                }
+                finishInlineEditAndRefresh();
                 this.app.phoneShell.showNotification('已修改', '消息已更新', '✅');
             }
         });
@@ -5971,27 +5995,11 @@ renderChatRoom(chat) {
                     } else {
                         this.app.wechatData.editMessage(this.app.currentChat.id, messageIndex, newContent);
                     }
-                    // 🔥 局部刷新：只更新消息列表，不重绘整个界面
-                    const messagesDiv = document.getElementById('chat-messages');
-                    if (messagesDiv) {
-                        const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
-                        const userInfo = this.app.wechatData.getUserInfo();
-                        messagesDiv.innerHTML = this.renderMessagesWithDateDividers(messages, userInfo);
-                        // 🔥 重新绑定长按事件
-                        this.bindMessageLongPressEvents();
-                    }
+                    finishInlineEditAndRefresh();
                     this.app.phoneShell.showNotification('已修改', '消息已更新', '✅');
                 }
             } else if (e.key === 'Escape') {
-                // 🔥 局部刷新：只更新消息列表，不重绘整个界面
-                const messagesDiv = document.getElementById('chat-messages');
-                if (messagesDiv) {
-                    const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
-                    const userInfo = this.app.wechatData.getUserInfo();
-                    messagesDiv.innerHTML = this.renderMessagesWithDateDividers(messages, userInfo);
-                    // 🔥 重新绑定长按事件
-                    this.bindMessageLongPressEvents();
-                }
+                finishInlineEditAndRefresh();
             }
         });
     }
@@ -9540,6 +9548,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                     } else if (action === 'edit') {
                         const originalText = chatMessages[index].text;
                         const isMe = chatMessages[index].from === 'me';
+                        this._setMessageInlineEditMode(true, this.app.currentChat?.id);
                         
                         // 🔥 修复1：记录原宽度，并在编辑时强行撑满气泡（不超过 max-width 75% 的限制）
                         const originalWidth = bubbleEl.style.width;
@@ -9583,6 +9592,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                             bubbleEl.style.minWidth = '';
                             bubbleEl.innerHTML = this._escapeHtml(chatMessages[index].text);
                             delete bubbleEl.dataset.isEditing;
+                            this._setMessageInlineEditMode(false, this.app.currentChat?.id);
                         };
 
                         bubbleEl.querySelector('.call-edit-save').onclick = (ev) => {
@@ -9603,6 +9613,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                                 bubbleEl.innerHTML = this._escapeHtml(chatMessages[index].text);
                             }
                             delete bubbleEl.dataset.isEditing;
+                            this._setMessageInlineEditMode(false, this.app.currentChat?.id);
                         };
                     }
                 });
