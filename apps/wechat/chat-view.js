@@ -136,6 +136,12 @@ export class ChatView {
     _isPendingChatSendable(chatId = null) {
         const safeChatId = String(chatId || '').trim();
         if (!safeChatId) return false;
+
+        // 当前会话正在发送时，禁止进入“等待回复(黄灯)”分支，避免覆盖发送中红灯。
+        if (this.isSending && String(this._activeSendingChatId || '').trim() === safeChatId) {
+            return false;
+        }
+
         return !this._isComposingInCurrentChat(safeChatId);
     }
 
@@ -546,8 +552,8 @@ renderChatRoom(chat) {
 
                 // 🔥 日期变化时强制显示日期分隔符（线下转线上跨天场景）
                 const isDateChanged = msgDate && msgDate !== lastRenderedDate;
-                // 🔥 间隔超过3分钟 或 日期变化 才插入时间分割线
-                if (isDateChanged || msgTimestamp - lastRenderedTimestamp > 3 * 60 * 1000 || (index === 0 && msgTimestamp)) {
+                // 🔥 间隔达到3分钟（>=3）或日期变化时插入时间分割线
+                if (isDateChanged || msgTimestamp - lastRenderedTimestamp >= 3 * 60 * 1000 || (index === 0 && msgTimestamp)) {
                     let displayText = '';
                     if (isDateChanged) {
                         displayText = `${msgDate}${msg.weekday ? ' ' + msg.weekday : ''} ${msg.time || ''}`;

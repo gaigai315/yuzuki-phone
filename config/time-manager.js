@@ -446,21 +446,31 @@ getWeekday(date) {
 }
 
 /**
- * 🔥 微信消息时间步进策略（慢速）
- * 目标：AI 一次性多条消息时，避免时间快速跳动。
+ * 🔥 微信消息时间步进策略（字数分段 + 轻随机）
+ * 目标：AI 一次性多条消息时，既避免时间僵硬，也避免跳太快。
  * @param {string} content - 消息文本
  * @param {Object} options - 预留参数
- * @returns {number} 要推进的分钟数（0 或 1）
+ * @returns {number} 要推进的分钟数
  */
 getWechatMessageMinutesToAdd(content = '', options = {}) {
     const text = String(content || '').trim();
     const length = text.length;
+    const rand = Math.random();
 
-    // 短句（嗯/好/收到）不推进分钟，避免一轮分句把时间推太快
-    if (length <= 12) return 0;
+    // 很短句（嗯/好/收到）大多数不推进，少量推进 1 分钟
+    if (length <= 6) return rand < 0.8 ? 0 : 1;
 
-    // 常规句子每条最多推进 1 分钟
-    return 1;
+    // 短句：0/1 随机
+    if (length <= 14) return rand < 0.55 ? 0 : 1;
+
+    // 中句：多数推进 1，少量推进 2
+    if (length <= 30) return rand < 0.8 ? 1 : 2;
+
+    // 长句：1/2 随机，更偏向 2
+    if (length <= 60) return rand < 0.35 ? 1 : 2;
+
+    // 超长句：2/3 随机，更偏向 2，避免一下跳太猛
+    return rand < 0.75 ? 2 : 3;
 }
 
 /**
