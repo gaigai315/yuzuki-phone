@@ -374,12 +374,27 @@ export class ApiManager {
             ? messages
             : [{ role: 'user', content: String(messages || '') }];
         const preserveSystem = ['openai', 'deepseek', 'claude', 'gemini', 'siliconflow', 'proxy_only', 'compatible'].includes(provider);
-        const cleanMessages = sourceMessages.map((m) => ({
-            role: preserveSystem ? (m?.role === 'system' ? 'system' : (m?.role === 'assistant' ? 'assistant' : 'user')) : (m?.role === 'system' ? 'user' : (m?.role || 'user')),
-            content: preserveSystem
-                ? String(m?.content || '')
-                : (m?.role === 'system' ? `[System]: ${String(m?.content || '')}` : String(m?.content || ''))
-        }));
+        const cleanMessages = sourceMessages.map((m, idx) => {
+            const normalized = {
+                role: preserveSystem ? (m?.role === 'system' ? 'system' : (m?.role === 'assistant' ? 'assistant' : 'user')) : (m?.role === 'system' ? 'user' : (m?.role || 'user')),
+                content: preserveSystem
+                    ? String(m?.content || '')
+                    : (m?.role === 'system' ? `[System]: ${String(m?.content || '')}` : String(m?.content || ''))
+            };
+
+            // 独立 API 路径也必须透传手机权限信号，避免记忆插件误判为“无信号请求”后回退到全注入。
+            const isLast = idx === sourceMessages.length - 1;
+            if (isLast && m?.gaigaiPhoneSignal) {
+                normalized.gaigaiPhoneSignal = m.gaigaiPhoneSignal;
+            }
+            if (m?.isPhoneMessage) {
+                normalized.isPhoneMessage = true;
+            }
+            if (m?.isVirtualPhoneApiCall) {
+                normalized.isVirtualPhoneApiCall = true;
+            }
+            return normalized;
+        });
 
         let authHeader;
         if (apiKey) {
@@ -910,7 +925,6 @@ export class ApiManager {
         }
     }
 }
-
 
 
 
