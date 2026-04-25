@@ -820,7 +820,7 @@ renderChatRoom(chat) {
             `;
                 break;
 
-            // 表情包消息：优先走 ALAPI 图片，失败自动降级为 emoji
+            // 表情包消息：优先走 ALAPI 图片，失败降级为“关键词占位卡片”
            case 'sticker':
                 const stickerKeyword = msg.keyword || '发呆';
                 
@@ -839,20 +839,17 @@ renderChatRoom(chat) {
                     break;
                 }
 
-                // 没有匹配到自定义表情，走原有的 API / 系统表情兜底逻辑
-                const mappedStickerEmoji = this.getSystemEmojiByStickerKeyword(stickerKeyword);
-                const finalStickerEmoji = mappedStickerEmoji || '🙂';
+                // 没有匹配到自定义表情，走 API；若失败则显示关键词占位卡片（不再映射 emoji）
                 const stickerCacheKey = this.buildStickerCacheKey(stickerKeyword);
                 messageBody = `
                 <div class="message-sticker-box" style="line-height:1.2;">
                     <span class="wechat-sticker-target"
                         data-key="${this.escapeInlineStickerAttr(stickerCacheKey)}"
                         data-keyword="${this.escapeInlineStickerAttr(stickerKeyword)}"
-                        data-fallback="${this.escapeInlineStickerAttr(finalStickerEmoji)}"
                         data-image-size="56"
                         data-emoji-size="24"
                         style="display:inline-flex;align-items:center;justify-content:center;min-width:42px;min-height:42px;background:transparent;padding:0;">
-                        ${this.renderTwemojiEmoji(finalStickerEmoji, 24, true)}
+                        ${this.buildStickerKeywordFallbackMarkup(stickerKeyword, 56)}
                     </span>
                 </div>`;
                 break;
@@ -1741,15 +1738,30 @@ renderChatRoom(chat) {
         }
     }
 
+    buildStickerKeywordFallbackMarkup(keyword, size = 56) {
+        const rawKeyword = String(keyword || '').trim() || '表情包';
+        const safeKeyword = this._escapeHtml(rawKeyword);
+        const boxSize = Math.max(20, Number(size) || 56);
+
+        if (boxSize >= 40) {
+            const fontSize = Math.max(10, Math.round(boxSize * 0.2));
+            return `<span class="wechat-sticker-fallback-card" title="${safeKeyword}" style="display:inline-flex;align-items:center;justify-content:center;width:${boxSize}px;height:${boxSize}px;padding:6px;box-sizing:border-box;border-radius:8px;background:linear-gradient(180deg,#f7f8fa 0%,#eef1f5 100%);border:1px dashed #cfd6e0;color:#596579;font-size:${fontSize}px;line-height:1.2;text-align:center;word-break:break-all;overflow:hidden;">${safeKeyword}</span>`;
+        }
+
+        const chipMaxWidth = Math.max(64, Math.round(boxSize * 4));
+        const chipMinHeight = Math.max(18, Math.round(boxSize * 0.95));
+        const chipFontSize = Math.max(10, Math.round(boxSize * 0.48));
+        return `<span class="wechat-sticker-fallback-chip" title="${safeKeyword}" style="display:inline-flex;align-items:center;justify-content:center;max-width:${chipMaxWidth}px;min-height:${chipMinHeight}px;padding:0 7px;box-sizing:border-box;border-radius:999px;background:#f1f3f6;border:1px dashed #cfd6e0;color:#5a667a;font-size:${chipFontSize}px;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${safeKeyword}</span>`;
+    }
+
     applyInlineStickerFallback(node, keyword) {
         if (!node || !node.isConnected) return;
-        const mappedEmoji = String(node.dataset.fallback || '').trim() || this.getSystemEmojiByStickerKeyword(keyword) || '🙂';
-        const emojiSize = Math.max(14, Number(node.dataset.emojiSize) || 18);
+        const fallbackSize = Math.max(20, Number(node.dataset.imageSize) || Number(node.dataset.emojiSize) || 26);
         node.style.background = 'transparent';
         node.style.padding = '0';
-        node.style.minWidth = `${Math.round(emojiSize * 1.1)}px`;
-        node.style.minHeight = `${Math.round(emojiSize * 1.1)}px`;
-        node.innerHTML = `<span class="wechat-inline-sticker-emoji" style="display:inline-flex;align-items:center;vertical-align:text-bottom;">${this.renderTwemojiEmoji(mappedEmoji, emojiSize, true)}</span>`;
+        node.style.minWidth = `${Math.round(fallbackSize * 0.8)}px`;
+        node.style.minHeight = `${Math.round(fallbackSize * 0.8)}px`;
+        node.innerHTML = this.buildStickerKeywordFallbackMarkup(keyword, fallbackSize);
     }
 
     applyInlineStickerByCacheKey(cacheKey, imageUrl, keyword) {
