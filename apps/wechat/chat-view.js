@@ -2785,8 +2785,14 @@ renderChatRoom(chat) {
                 const emoji = item.dataset.emoji;
                 if (!emoji) return;
                 this.inputText += emoji;
-                input.value = this.inputText;
-                input.focus();
+                // 选中系统表情后自动收起面板
+                this.showEmoji = false;
+                this.app.render();
+                const refreshedInput = query('#chat-input');
+                if (refreshedInput) {
+                    refreshedInput.value = this.inputText;
+                    refreshedInput.focus();
+                }
             });
         });
 
