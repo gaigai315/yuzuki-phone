@@ -36,6 +36,7 @@ export class ChatView {
         this._suppressWeiboCardClickUntil = 0;
         this._inlineStickerHydrateTimer = null;
         this._missingBoundVoiceWarned = new Set();
+        this._aiReplyTimeCursor = null;
     }
 
     // 🔥 判断当前会话是否开启在线模式（per-chat）
@@ -421,6 +422,58 @@ export class ChatView {
                 this.hideTypingStatus();
             }
         }
+    }
+
+    _resetAiReplyTimeCursor() {
+        this._aiReplyTimeCursor = null;
+    }
+
+    _applyAiReplyTimeline(messageObj, fallbackContent = '') {
+        if (!messageObj || typeof messageObj !== 'object') return;
+
+        const timeManager = window.VirtualPhone?.timeManager;
+        if (!timeManager?.getCurrentStoryTime) return;
+
+        const contentText = String(messageObj.content || fallbackContent || '').trim();
+        let cursor = this._aiReplyTimeCursor || timeManager.getCurrentStoryTime();
+        if (!cursor?.time || !cursor?.date) {
+            cursor = timeManager.getCurrentStoryTime();
+        }
+
+        // 线上微信聊天统一由插件推进时间，忽略 AI 输出的显式时间，避免模型乱算时间造成跳时序。
+        const hasExplicitTime = false;
+        if (hasExplicitTime) {
+            if (!messageObj.date) messageObj.date = cursor?.date || '';
+            if (!messageObj.weekday) messageObj.weekday = cursor?.weekday || '';
+            if (typeof timeManager.setTime === 'function' && messageObj.date) {
+                timeManager.setTime(messageObj.time, messageObj.date, messageObj.weekday || null);
+            }
+            this._aiReplyTimeCursor = timeManager.getCurrentStoryTime();
+            return;
+        }
+
+        let minutesToAdd = 1;
+        if (typeof timeManager.getWechatMessageMinutesToAdd === 'function') {
+            minutesToAdd = timeManager.getWechatMessageMinutesToAdd(contentText, { inBatch: true });
+        } else {
+            minutesToAdd = contentText.length <= 12 ? 0 : 1;
+        }
+        minutesToAdd = Math.max(0, Number(minutesToAdd) || 0);
+
+        let nextTime = cursor;
+        if (typeof timeManager.addMinutesToStoryTime === 'function') {
+            nextTime = timeManager.addMinutesToStoryTime(cursor, minutesToAdd);
+        }
+
+        messageObj.time = nextTime?.time || cursor?.time || messageObj.time;
+        messageObj.date = messageObj.date || nextTime?.date || cursor?.date;
+        messageObj.weekday = messageObj.weekday || nextTime?.weekday || cursor?.weekday;
+
+        if (typeof timeManager.setTime === 'function' && messageObj.time && messageObj.date) {
+            timeManager.setTime(messageObj.time, messageObj.date, messageObj.weekday || null);
+        }
+
+        this._aiReplyTimeCursor = timeManager.getCurrentStoryTime();
     }
 renderChatRoom(chat) {
         const messages = this.app.wechatData.getMessages(chat.id);
@@ -3235,6 +3288,7 @@ renderChatRoom(chat) {
 
         let success = false;
         const responseBatchId = `wechat_ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        this._resetAiReplyTimeCursor();
 
         // 🔥 设置发送状态
         this.isSending = true;
@@ -3623,6 +3677,8 @@ renderChatRoom(chat) {
                         continue;
                     }
 
+                    this._applyAiReplyTimeline(m, normalizedTextContent);
+
                     const msgData = special
                         ? { from: m.sender, ...special, time: m.time, avatar: senderAvatar, replyBatchId: responseBatchId }
                         : { from: m.sender, content: normalizedTextContent, type: 'text', time: m.time, quote: m.quote, avatar: senderAvatar, replyBatchId: responseBatchId };
@@ -3723,6 +3779,8 @@ renderChatRoom(chat) {
                     }
                     continue;
                 }
+
+                this._applyAiReplyTimeline(msg, normalizedTextContent);
 
                 const msgData = special
                     // 🔥 核心修复3：如果是群聊，禁止 fallback 到 savedChatAvatar
@@ -3839,6 +3897,7 @@ renderChatRoom(chat) {
                 this._activeSendingChatId = null;
             }
             this.abortController = null;
+            this._resetAiReplyTimeCursor();
             this.hideTypingStatus();
             // 🔥 只有手机还开着才刷新界面（需要更新发送按钮状态）
             if (this.app.currentChat) {
@@ -4177,12 +4236,30 @@ renderChatRoom(chat) {
         // 🔌 兼容记忆插件的向量检索锚点
         // 记忆插件会在 Fetch Hijack 时查找此标识，并在其上方插入检索到的向量数据
         // ========================================
-        messages.push({
-            role: 'system',
-            content: '[Start a new chat]',
-            name: 'SYSTEM (分界线)',
-            isPhoneMessage: true
-        });
+        const shouldInjectVectorAnchor = (() => {
+            const basePerms = { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false };
+            const defaults = { ...basePerms, allowSummary: true, allowVector: true };
+            try {
+                const rawPerms = storage?.get('phone_memory_permissions');
+                const allPerms = rawPerms
+                    ? (typeof rawPerms === 'string' ? JSON.parse(rawPerms) : rawPerms)
+                    : {};
+                const wechatPerms = (allPerms && typeof allPerms.wechat === 'object') ? allPerms.wechat : {};
+                const merged = { ...defaults, ...wechatPerms };
+                return merged.allowVector !== false;
+            } catch (e) {
+                return defaults.allowVector !== false;
+            }
+        })();
+
+        if (shouldInjectVectorAnchor) {
+            messages.push({
+                role: 'system',
+                content: '[Start a new chat]',
+                name: 'SYSTEM (分界线)',
+                isPhoneMessage: true
+            });
+        }
 
         // ========================================
         // 5️⃣ 跨聊天上下文关联 (群聊带私聊 / 私聊带群聊)
@@ -4529,10 +4606,7 @@ renderChatRoom(chat) {
         let finalUserContent = `现在你处于${currentModeName}的模式，请根据以上所有信息，遵守回复格式，继续微信回复。`;
         if (!callMode) {
             if (isGroupChat) {
-                finalUserContent += '\n如果剧情需要你主动发起通话，请单独输出一行通话指令：[拨打微信群语音] 或 [拨打微信群视频]。';
                 finalUserContent += '\n群聊场景下，通话前后的发言仍需使用“发送者: 内容”格式，且发送者必须是群成员。';
-            } else {
-                finalUserContent += '\n如果剧情需要你主动发起通话，请单独输出一行通话指令：[拨打微信语音] 或 [拨打微信视频]。';
             }
         }
 
@@ -6328,6 +6402,7 @@ renderChatRoom(chat) {
         const callStartTime = timeManager
             ? timeManager.getCurrentStoryTime()
             : { time: '21:30', date: '2044年10月28日' };
+        const callStartEpoch = Date.now();
         const isGroupCall = contact?.type === 'group';
         const groupParticipants = this._getGroupChatParticipants(contact);
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
@@ -6823,35 +6898,21 @@ renderChatRoom(chat) {
                 return;
             }
 
-            const durationText = `${Math.floor(videoDuration / 60)}分${videoDuration % 60}秒`;
-
-            // 🔥 通话结束后推算剧情时间（通话秒数→分钟）
-            const minutesElapsed = Math.max(1, Math.ceil(videoDuration / 60));
-            const timeManager = window.VirtualPhone?.timeManager;
-            let endTime = callStartTime;
-            if (timeManager?.addMinutesToStoryTime) {
-                endTime = timeManager.addMinutesToStoryTime(callStartTime, minutesElapsed);
-                // 同步全局剧情时间到通话结束时刻
-                timeManager.setTime?.(endTime.time, endTime.date, endTime.weekday);
-            }
+            const wallElapsedSeconds = Math.max(0, Math.floor((Date.now() - callStartEpoch) / 1000));
+            const effectiveDurationSec = Math.max(videoDuration, wallElapsedSeconds);
+            const durationText = `${Math.floor(effectiveDurationSec / 60)}分${effectiveDurationSec % 60}秒`;
 
             // 🔥 过滤掉被删除的废弃消息
             const validChatMessages = chatMessages.filter(m => !m.isDeleted);
 
-            this.app.wechatData.addMessage(this.app.currentChat.id, {
-                from: 'me',
-                type: 'call_record',
-                callType: 'video',
-                status: 'answered',
-                duration: durationText,
-                transcript: validChatMessages.length > 0 ? [...validChatMessages] : undefined,
-                time: endTime.time,
-                date: endTime.date,
-                weekday: endTime.weekday
+            this.addCallRecord('video', 'answered', durationText, {
+                callStartTime,
+                elapsedSeconds: effectiveDurationSec,
+                transcript: validChatMessages.length > 0 ? [...validChatMessages] : undefined
             });
 
             // 🔥 如果开启在线模式，通知AI
-            if (this.isOnlineMode() && videoDuration > 0) {
+            if (this.isOnlineMode() && effectiveDurationSec > 0) {
                 this.notifyAI(`刚才和你视频通话了${durationText}`);
             }
 
@@ -7050,9 +7111,50 @@ ${groupParticipants.join('、') || '暂无成员'}
             : new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     }
 
+    _resolveCallEndStoryTime(callStartTime = null, elapsedSeconds = 0, { forceAdvanceMinute = false } = {}) {
+        const timeManager = window.VirtualPhone?.timeManager;
+        const safeElapsed = Math.max(0, Number(elapsedSeconds) || 0);
+
+        const fallbackNow = () => {
+            const now = new Date();
+            const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+            return {
+                time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+                date: `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, '0')}月${String(now.getDate()).padStart(2, '0')}日`,
+                weekday: weekdays[now.getDay()],
+                timestamp: now.getTime()
+            };
+        };
+
+        const baseTime = (callStartTime && callStartTime.time && callStartTime.date)
+            ? callStartTime
+            : (timeManager?.getCurrentStoryTime?.() || fallbackNow());
+
+        const minutesElapsedRaw = Math.ceil(safeElapsed / 60);
+        const minutesElapsed = Math.max(forceAdvanceMinute ? 1 : 0, minutesElapsedRaw);
+
+        let endTime = baseTime;
+        if (minutesElapsed > 0 && timeManager?.addMinutesToStoryTime) {
+            endTime = timeManager.addMinutesToStoryTime(baseTime, minutesElapsed);
+        }
+
+        if (timeManager?.setTime && endTime?.time && endTime?.date) {
+            timeManager.setTime(endTime.time, endTime.date, endTime.weekday || null);
+            return timeManager.getCurrentStoryTime?.() || endTime;
+        }
+
+        return endTime;
+    }
+
     // 🔥 添加通话记录到聊天（使用剧情时间）
-    addCallRecord(callType, status, duration) {
-        const currentTime = this._getCurrentStoryTimeText();
+    addCallRecord(callType, status, duration, options = {}) {
+        const elapsedSeconds = Math.max(0, Number(options?.elapsedSeconds) || 0);
+        const callStartTime = options?.callStartTime || null;
+        const shouldAdvance = String(status || '').trim() === 'answered';
+        const storyTime = shouldAdvance
+            ? this._resolveCallEndStoryTime(callStartTime, elapsedSeconds, { forceAdvanceMinute: true })
+            : (window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || null);
+        const currentTime = storyTime?.time || this._getCurrentStoryTimeText();
 
         this.app.wechatData.addMessage(this.app.currentChat.id, {
             from: 'me',
@@ -7060,7 +7162,10 @@ ${groupParticipants.join('、') || '暂无成员'}
             callType: callType,
             status: status,
             duration: duration,
-            time: currentTime  // ✅ 使用剧情时间
+            transcript: Array.isArray(options?.transcript) && options.transcript.length > 0 ? options.transcript : undefined,
+            time: currentTime,  // ✅ 使用剧情时间
+            date: storyTime?.date,
+            weekday: storyTime?.weekday
         });
 
     }
@@ -7598,6 +7703,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         const callStartTime = timeManager
             ? timeManager.getCurrentStoryTime()
             : { time: '21:30', date: '2044年10月28日' };
+        const callStartEpoch = Date.now();
         const isGroupCall = contact?.type === 'group';
         const groupParticipants = this._getGroupChatParticipants(contact);
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
@@ -8073,34 +8179,20 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 return;
             }
 
-            const durationText = `${Math.floor(callDuration / 60)}分${callDuration % 60}秒`;
-
-            // 🔥 通话结束后推算剧情时间（通话秒数→分钟）
-            const minutesElapsed = Math.max(1, Math.ceil(callDuration / 60));
-            const timeManager = window.VirtualPhone?.timeManager;
-            let endTime = callStartTime;
-            if (timeManager?.addMinutesToStoryTime) {
-                endTime = timeManager.addMinutesToStoryTime(callStartTime, minutesElapsed);
-                // 同步全局剧情时间到通话结束时刻
-                timeManager.setTime?.(endTime.time, endTime.date, endTime.weekday);
-            }
+            const wallElapsedSeconds = Math.max(0, Math.floor((Date.now() - callStartEpoch) / 1000));
+            const effectiveDurationSec = Math.max(callDuration, wallElapsedSeconds);
+            const durationText = `${Math.floor(effectiveDurationSec / 60)}分${effectiveDurationSec % 60}秒`;
 
             // 🔥 过滤掉被删除的废弃消息
             const validChatMessages = chatMessages.filter(m => !m.isDeleted);
 
-            this.app.wechatData.addMessage(this.app.currentChat.id, {
-                from: 'me',
-                type: 'call_record',
-                callType: 'voice',
-                status: 'answered',
-                duration: durationText,
-                transcript: validChatMessages.length > 0 ? [...validChatMessages] : undefined,
-                time: endTime.time,
-                date: endTime.date,
-                weekday: endTime.weekday
+            this.addCallRecord('voice', 'answered', durationText, {
+                callStartTime,
+                elapsedSeconds: effectiveDurationSec,
+                transcript: validChatMessages.length > 0 ? [...validChatMessages] : undefined
             });
 
-            if (this.isOnlineMode() && callDuration > 0) {
+            if (this.isOnlineMode() && effectiveDurationSec > 0) {
                 this.notifyAI(`刚才和你语音通话了${durationText}`);
             }
 

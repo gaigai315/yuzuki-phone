@@ -85,28 +85,47 @@ export class ApiManager {
 
     _updateGaigaiLastRequestData(messages, meta = {}) {
         try {
-            if (!window || !window.Gaigai || !Array.isArray(messages)) return;
+            if (!Array.isArray(messages)) return;
+
+            const gaigaiTargets = [];
+            if (typeof window !== 'undefined') {
+                if (window.Gaigai) gaigaiTargets.push(window.Gaigai);
+                try {
+                    if (window.top && window.top !== window && window.top.Gaigai) {
+                        gaigaiTargets.push(window.top.Gaigai);
+                    }
+                } catch (e) {
+                    // 跨域或不可访问时忽略
+                }
+            }
+            if (gaigaiTargets.length === 0) return;
 
             const debugChat = messages
                 .map((m) => {
                     const role = (m?.role === 'system' || m?.role === 'assistant') ? m.role : 'user';
+                    const hasSignal = !!m?.gaigaiPhoneSignal;
                     const content = String(m?.content || '').trim();
-                    if (!content) return null;
 
-                    const item = { role, content };
+                    // 某些预设会在发送阶段合并/清空内容，必须保留带权限信号的壳消息给记忆插件兜底识别。
+                    if (!content && !hasSignal) return null;
+
+                    const item = { role, content: content || '[PHONE_SIGNAL]' };
                     if (m?.name) item.name = m.name;
                     if (m?.isPhoneMessage) item.isPhoneMessage = true;
-                    if (m?.gaigaiPhoneSignal) item.gaigaiPhoneSignal = m.gaigaiPhoneSignal;
+                    if (hasSignal) item.gaigaiPhoneSignal = m.gaigaiPhoneSignal;
                     return item;
                 })
                 .filter(Boolean);
 
-            window.Gaigai.lastRequestData = {
+            const payload = {
                 chat: debugChat,
                 timestamp: Date.now(),
                 model: meta.model || 'Unknown',
                 source: `virtual-phone:${meta.appId || 'phone_online'}`
             };
+            gaigaiTargets.forEach((gaigai) => {
+                gaigai.lastRequestData = payload;
+            });
         } catch (e) {
             console.warn('⚠️ [ApiManager] 同步 lastRequestData 失败:', e);
         }
@@ -891,7 +910,6 @@ export class ApiManager {
         }
     }
 }
-
 
 
 

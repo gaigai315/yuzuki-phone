@@ -5718,7 +5718,21 @@ if (window.GGP_Loaded) {
                             // 📱 收集手机活动记录
                             const wechatOfflineChats = [];
                             const storage = window.VirtualPhone.storage;
-                            const offlinePerms = { allowSummary: true, allowTable: true, allowVector: true, allowPrompt: true };
+                            const offlinePerms = (() => {
+                                const basePerms = { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false };
+                                try {
+                                    const rawPerms = storage?.get('phone_memory_permissions');
+                                    const allPerms = rawPerms
+                                        ? (typeof rawPerms === 'string' ? JSON.parse(rawPerms) : rawPerms)
+                                        : {};
+                                    const phoneOnlinePerms = (allPerms && typeof allPerms.phone_online === 'object')
+                                        ? allPerms.phone_online
+                                        : {};
+                                    return { ...basePerms, ...phoneOnlinePerms };
+                                } catch (e) {
+                                    return basePerms;
+                                }
+                            })();
                             const isPhoneEnabled = isPhoneFeatureEnabled();
 
                             // 🔥 手机休眠或功能关闭时：不注入任何手机上下文，但必须强制清洗掉占位符！
@@ -5969,18 +5983,77 @@ if (window.GGP_Loaded) {
                                                         });
 
                                                         if (msg.status === 'answered' && Array.isArray(msg.transcript) && msg.transcript.length > 0) {
-                                                            msg.transcript.forEach(item => {
+                                                            const parseDurationToSeconds = (durationValue) => {
+                                                                const raw = String(durationValue || '').trim();
+                                                                if (!raw) return 0;
+                                                                if (/^\d+$/.test(raw)) return Number(raw);
+
+                                                                const colonMatch = raw.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
+                                                                if (colonMatch) {
+                                                                    if (typeof colonMatch[3] !== 'undefined') {
+                                                                        return (Number(colonMatch[1]) * 3600) + (Number(colonMatch[2]) * 60) + Number(colonMatch[3]);
+                                                                    }
+                                                                    return (Number(colonMatch[1]) * 60) + Number(colonMatch[2]);
+                                                                }
+
+                                                                const hourMatch = raw.match(/(\d+)\s*小时/);
+                                                                const minuteMatch = raw.match(/(\d+)\s*分/);
+                                                                const secondMatch = raw.match(/(\d+)\s*秒/);
+                                                                if (hourMatch || minuteMatch || secondMatch) {
+                                                                    const hours = Number(hourMatch?.[1] || 0);
+                                                                    const minutes = Number(minuteMatch?.[1] || 0);
+                                                                    const seconds = Number(secondMatch?.[1] || 0);
+                                                                    return (hours * 3600) + (minutes * 60) + seconds;
+                                                                }
+
+                                                                return 0;
+                                                            };
+                                                            const formatDateText = (dateObj) => `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
+                                                            const formatTimeText = (dateObj) => `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+
+                                                            const transcriptItems = msg.transcript.filter(item => String(item?.text || '').trim());
+                                                            const transcriptCount = transcriptItems.length;
+                                                            const callEndTs = parseDateTimeToTs(msg?.date, msg?.time);
+                                                            const durationSeconds = parseDurationToSeconds(msg?.duration);
+                                                            const durationMs = Math.max(0, durationSeconds * 1000);
+                                                            const minStepMs = 60 * 1000;
+                                                            const hasValidTimeline = Number.isFinite(callEndTs) && callEndTs > 0 && transcriptCount > 0;
+                                                            const callStartTs = hasValidTimeline ? Math.max(0, callEndTs - durationMs) : NaN;
+
+                                                            transcriptItems.forEach((item, idx) => {
                                                                 const lineText = String(item?.text || '').trim();
-                                                                if (!lineText) return;
                                                                 const lineSpeakerRaw = String(item?.from || '').trim();
                                                                 const lineSpeaker = lineSpeakerRaw === 'me'
                                                                     ? userName
                                                                     : (lineSpeakerRaw || (isGroup ? '群成员' : chat.name));
+                                                                let lineDate = msg.date || '';
+                                                                let lineTime = msg.time;
+
+                                                                if (hasValidTimeline) {
+                                                                    let lineTs = callEndTs;
+                                                                    if (transcriptCount === 1) {
+                                                                        lineTs = durationMs > 0 ? callStartTs : callEndTs;
+                                                                    } else {
+                                                                        const minWindowMs = (transcriptCount - 1) * minStepMs;
+                                                                        if (durationMs >= minWindowMs && durationMs > 0) {
+                                                                            const stepMs = durationMs / (transcriptCount - 1);
+                                                                            lineTs = callStartTs + Math.round(stepMs * idx);
+                                                                        } else {
+                                                                            // 时长过短会导致显示同一分钟，这里按分钟阶梯向前展开，避免线下注入全部同一时间
+                                                                            lineTs = callEndTs - ((transcriptCount - 1 - idx) * minStepMs);
+                                                                        }
+                                                                    }
+                                                                    const lineDateObj = new Date(lineTs);
+                                                                    if (!Number.isNaN(lineDateObj.getTime())) {
+                                                                        lineDate = formatDateText(lineDateObj);
+                                                                        lineTime = formatTimeText(lineDateObj);
+                                                                    }
+                                                                }
                                                                 formattedMessages.push({
                                                                     speaker: lineSpeaker,
                                                                     content: `[通话] ${lineText}`,
-                                                                    time: msg.time,
-                                                                    date: msg.date || ''
+                                                                    time: lineTime,
+                                                                    date: lineDate
                                                                 });
                                                             });
                                                         }
