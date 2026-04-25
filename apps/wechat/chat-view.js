@@ -173,6 +173,32 @@ export class ChatView {
         return !this._isComposingInCurrentChat(safeChatId);
     }
 
+    _closeEmojiPanelAndRestoreInputCaret(caretPos = null) {
+        const restore = () => {
+            const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+            const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
+            if (!input) return;
+            input.value = this.inputText;
+            input.focus();
+            const end = input.value.length;
+            const targetPos = Number.isFinite(Number(caretPos))
+                ? Math.max(0, Math.min(end, Number(caretPos)))
+                : end;
+            if (typeof input.setSelectionRange === 'function') {
+                input.setSelectionRange(targetPos, targetPos);
+            }
+        };
+
+        if (this.showEmoji) {
+            this.showEmoji = false;
+            this.app.render();
+            setTimeout(restore, 0);
+            return;
+        }
+
+        restore();
+    }
+
     getHeaderStatusDotColor(chatId = null) {
         const safeChatId = String(chatId || this.app.currentChat?.id || '').trim();
         if (!safeChatId) return 'green';
@@ -2818,15 +2844,18 @@ renderChatRoom(chat) {
             item.addEventListener('click', () => {
                 const emoji = item.dataset.emoji;
                 if (!emoji) return;
-                this.inputText += emoji;
-                // 选中系统表情后自动收起面板
-                this.showEmoji = false;
-                this.app.render();
-                const refreshedInput = query('#chat-input');
-                if (refreshedInput) {
-                    refreshedInput.value = this.inputText;
-                    refreshedInput.focus();
-                }
+                const currentInput = query('#chat-input') || document.getElementById('chat-input');
+                const source = String(this.inputText || '');
+                const start = currentInput && Number.isInteger(currentInput.selectionStart)
+                    ? currentInput.selectionStart
+                    : source.length;
+                const end = currentInput && Number.isInteger(currentInput.selectionEnd)
+                    ? currentInput.selectionEnd
+                    : start;
+                const insertStart = Math.max(0, Math.min(source.length, start));
+                const insertEnd = Math.max(insertStart, Math.min(source.length, end));
+                this.inputText = `${source.slice(0, insertStart)}${emoji}${source.slice(insertEnd)}`;
+                this._closeEmojiPanelAndRestoreInputCaret(insertStart + String(emoji).length);
             });
         });
 
@@ -2921,6 +2950,7 @@ renderChatRoom(chat) {
                 if (emoji) {
                     const imageUrl = String(emoji.image || '').trim();
                     if (imageUrl) {
+                        this.showEmoji = false;
                         this.app.wechatData.addMessage(this.app.currentChat.id, {
                             from: 'me',
                             type: 'image',
@@ -2932,6 +2962,7 @@ renderChatRoom(chat) {
                         });
 
                         this.app.render();
+                        this._closeEmojiPanelAndRestoreInputCaret();
 
                         if (this.isOnlineMode()) {
                             this._enqueuePendingChat(this.app.currentChat.id);
@@ -2940,12 +2971,19 @@ renderChatRoom(chat) {
                     }
 
                     // 兼容旧数据：若图片字段为空，退回文本占位插入
-                    this.inputText += `[${emoji.name}]`;
-                    const inputEl = query('#chat-input');
-                    if (inputEl) {
-                        inputEl.value = this.inputText;
-                        inputEl.focus();
-                    }
+                    const token = `[${emoji.name}]`;
+                    const currentInput = query('#chat-input') || document.getElementById('chat-input');
+                    const source = String(this.inputText || '');
+                    const start = currentInput && Number.isInteger(currentInput.selectionStart)
+                        ? currentInput.selectionStart
+                        : source.length;
+                    const end = currentInput && Number.isInteger(currentInput.selectionEnd)
+                        ? currentInput.selectionEnd
+                        : start;
+                    const insertStart = Math.max(0, Math.min(source.length, start));
+                    const insertEnd = Math.max(insertStart, Math.min(source.length, end));
+                    this.inputText = `${source.slice(0, insertStart)}${token}${source.slice(insertEnd)}`;
+                    this._closeEmojiPanelAndRestoreInputCaret(insertStart + token.length);
                 }
             });
         });
