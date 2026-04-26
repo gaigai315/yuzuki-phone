@@ -4362,10 +4362,6 @@ renderChatRoom(chat) {
                 content = content.replace(/<img[^>]*src=["']data:image[^"']*["'][^>]*>/gi, '[图片]');
                 content = content.replace(/!\[[^\]]*\]\(data:image[^)]*\)/gi, '[图片]');
 
-                // 移除微信标签（完全删除，不留痕迹）
-                content = content.replace(/<wechat>[\s\S]*?<\/wechat>/gi, '');
-                content = content.replace(/<wechat[^>]*>[\s\S]*?<\/wechat>/gi, '');
-
                 content = content.trim();
 
                 if (content) {

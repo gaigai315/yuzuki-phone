@@ -882,9 +882,7 @@ export class PhoneCallView {
                     content = content.replace(/<img[^>]*src=["']data:image[^"']*["'][^>]*>/gi, '[图片]');
                     content = content.replace(/!\[[^\]]*\]\(data:image[^)]*\)/gi, '[图片]');
 
-                    // 移除微信/通话标签
-                    content = content.replace(/<wechat>[\s\S]*?<\/wechat>/gi, '');
-                    content = content.replace(/<wechat[^>]*>[\s\S]*?<\/wechat>/gi, '');
+                    // 移除通话标签
                     content = content.replace(/<Phone>[\s\S]*?<\/Phone>/gi, '');
                     content = content.replace(/<Call>[\s\S]*?<\/Call>/gi, '');
 
