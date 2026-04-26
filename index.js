@@ -3478,7 +3478,7 @@ if (window.GGP_Loaded) {
 
                 // 🔥🔥🔥 群聊格式：[21:30] 发送者: 消息内容
                 // 🔥 严格限制发送者名称，防止把正文里带冒号的句子（如时间10:30）误判为发送者
-                const senderMessageRegex = /^\[([0-9A-Za-z:：]+)\]\s*([^\s:：，。,\.!?！？]{1,20})[：:]\s*(.+)$/;
+                const senderMessageRegex = /^\[([0-9A-Za-z:：]+)\]\s*([^\s:：，。,\.!?！？\[\]【】()（）]{1,20})[：:]\s*(.+)$/;
                 const senderMatch = senderMessageRegex.exec(trimmedLine);
 
                 if (senderMatch) {

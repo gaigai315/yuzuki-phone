@@ -2138,7 +2138,7 @@ renderChatRoom(chat) {
         }
 
         // 匹配 [转账](金额：xx元) 或 [转账] ¥xx
-        const transferMatch = content.match(/\[转账\]\s*(?:\(金额[：:]?\s*(\d+(?:\.\d+)?)\s*元?\s*\)|[¥￥]\s*(\d+(?:\.\d+)?))/);
+        const transferMatch = content.match(/\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?(\d+(?:\.\d+)?)\s*元?\s*[)）]|[¥￥]\s*(\d+(?:\.\d+)?))/);
         if (transferMatch) {
             const amount = transferMatch[1] || transferMatch[2];
             return {
@@ -2150,7 +2150,7 @@ renderChatRoom(chat) {
         }
 
         // 匹配 [红包](金额：xx元) 或 [红包]
-        const redpacketMatch = content.match(/\[红包\]\s*(?:\(金额[：:]?\s*(\d+(?:\.\d+)?)\s*元?\s*\))?/);
+        const redpacketMatch = content.match(/\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?(\d+(?:\.\d+)?)\s*元?\s*[)）])?/);
         if (redpacketMatch) {
             const amount = redpacketMatch[1] || '0.01';
             return {
@@ -2189,7 +2189,7 @@ renderChatRoom(chat) {
         const rawContent = String(message.content || '');
         if (!rawContent.trim()) return [message];
 
-        const inlineSpecialRegex = /\[转账\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\)|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:\(金额[：:]?\s*\d+(?:\.\d+)?\s*元?\s*\))?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
+        const inlineSpecialRegex = /\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
         let hasMatch = false;
         let lastIndex = 0;
         let usedQuote = false;
@@ -3571,7 +3571,7 @@ renderChatRoom(chat) {
                                 return; // 已处理，跳过后续匹配
                             }
 
-                            const groupMsgMatch = /^\[([0-9A-Za-z:：]+)\]\s*([^\s:：，。,\.!?！？]{1,20})[：:]\s*(.+)$/.exec(line);
+                            const groupMsgMatch = /^\[([0-9A-Za-z:：]+)\]\s*([^\s:：，。,\.!?！？\[\]【】()（）]{1,20})[：:]\s*(.+)$/.exec(line);
                             const simpleMsgMatch = /^([^:：]+)[：:]\s*(.+)$/.exec(line);
 
                             if (groupMsgMatch) {
@@ -3657,7 +3657,7 @@ renderChatRoom(chat) {
                             return; // 已处理，跳过后续匹配
                         }
 
-                        const groupMsgMatch = /^\[([0-9A-Za-z:：]+)\]\s*([^\s:：，。,\.!?！？]{1,20})[：:]\s*(.+)$/.exec(line);
+                        const groupMsgMatch = /^\[([0-9A-Za-z:：]+)\]\s*([^\s:：，。,\.!?！？\[\]【】()（）]{1,20})[：:]\s*(.+)$/.exec(line);
                         const simpleMsgMatch = /^([^:：]+)[：:]\s*(.+)$/.exec(line);
 
                         if (isGroupChat && groupMsgMatch) {
