@@ -4559,7 +4559,7 @@ renderChatRoom(chat) {
             wechatTranscript = '【📱 手机微信已有消息】\n';
             wechatTranscript += `⏰ 当前时间：${currentTime}\n`;
             wechatTranscript += `以下是用户手机里已经存在的消息记录。请严格遵守当前微信模式提示词调用规则，并将其视为已发生且已落地的历史事实。\n`;
-            wechatTranscript += `凡与已有消息记录在发送者、语义内容、时间意图上构成重复的输入，不得再次判定为新消息，不得在正文、微信标签或代发格式中二次落地，必须按已有记录后的时间线自然衔接。\n`;
+            wechatTranscript += `请根据已有的记录，自然回复。\n`;
             wechatTranscript += `新消息时间必须在 ${currentTime} 之后。\n\n`;
             wechatTranscript += `━━━ ${targetChat.name} 的聊天记录 ━━━\n`;
 

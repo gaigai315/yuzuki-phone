@@ -303,7 +303,9 @@ export class ApiManager {
             };
 
             const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-            const maxRetries = 3;
+            // 默认禁用原生通道自动重试，避免在中断/空返回时误取到旧轮上下文结果。
+            // 如需恢复重试，只在调用方显式传入 allowTavernRetry:true。
+            const maxRetries = options?.allowTavernRetry === true ? 3 : 1;
             let attempt = 0;
             let lastError = null;
 
@@ -364,7 +366,8 @@ export class ApiManager {
                         return { success: false, error: '已中断发送', aborted: true };
                     }
 
-                    const shouldRetry = isAbortLike(err) || /No message generated/i.test(String(err?.message || ''));
+                    const shouldRetry = options?.allowTavernRetry === true
+                        && (isAbortLike(err) || /No message generated/i.test(String(err?.message || '')));
                     if (shouldRetry && attempt < maxRetries) {
                         await delay(1500);
                         continue;
@@ -963,4 +966,3 @@ export class ApiManager {
         }
     }
 }
-
