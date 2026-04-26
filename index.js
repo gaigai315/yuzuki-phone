@@ -6730,10 +6730,11 @@ if (window.GGP_Loaded) {
                                                 modified = true;
                                             }
 
-                                            // 2. 抹除所有隐秘标签 (仅限 assistant 角色)
+                                            // 2. 抹除隐秘标签 (仅限 assistant 角色)
                                             if (msg.role === 'assistant') {
-                                                // 统一清洗 Phone, Wechat, Music 标签 (在这里原文本没被浏览器破坏，闭合标签完好无损，可以完美正则！)
-                                                const tagsToClean = ['phone', 'wechat', 'music'];
+                                                // 统一清洗 Phone, Music 标签。
+                                                // Wechat 标签不再由插件清洗，交给酒馆正则控制。
+                                                const tagsToClean = ['phone', 'music'];
                                                 tagsToClean.forEach(tag => {
                                                     const rx = new RegExp(`(?:\\\`\\\`\\\`[\\w]*\\n)?<${tag}>[\\s\\S]*?<\\/${tag}>(?:\\n\\\`\\\`\\\`)?`, 'gi');
                                                     const cleaned = c.replace(rx, '').trim();
