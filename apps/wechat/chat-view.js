@@ -3360,8 +3360,41 @@ renderChatRoom(chat) {
                 if (!this._isPendingChatSendable(chatId)) continue;
 
                 const messages = this.app.wechatData.getMessages(chatId);
-                const recentUserMessages = messages.filter(m => m.from === 'me').slice(-5);
-                const combinedMessage = recentUserMessages.map(m => m.content).join('\n');
+                const userInfo = this.app.wechatData.getUserInfo?.() || {};
+                const userName = String(userInfo?.name || '').trim();
+                const isMyMessage = (msg) => {
+                    const from = String(msg?.from || '').trim();
+                    return from === 'me' || (!!userName && from === userName);
+                };
+                const isAssistantMessage = (msg) => {
+                    if (!msg || isMyMessage(msg)) return false;
+                    const from = String(msg?.from || '').trim().toLowerCase();
+                    return from !== 'system';
+                };
+
+                // 仅提取“上一轮 AI 回复之后”的新用户输入，避免把上一轮用户消息重复送给模型
+                let lastAssistantIndex = -1;
+                for (let i = messages.length - 1; i >= 0; i--) {
+                    if (isAssistantMessage(messages[i])) {
+                        lastAssistantIndex = i;
+                        break;
+                    }
+                }
+
+                const pendingUserMessages = messages
+                    .slice(lastAssistantIndex + 1)
+                    .filter(m => isMyMessage(m) && String(m?.content || '').trim());
+
+                const combinedMessage = pendingUserMessages
+                    .map(m => String(m.content || '').trim())
+                    .filter(Boolean)
+                    .join('\n')
+                    .trim();
+
+                if (!combinedMessage) {
+                    this._dequeuePendingChat(chatId);
+                    continue;
+                }
                 const success = await this.sendToAI(combinedMessage, chatId);
 
                 if (success) {
@@ -3476,7 +3509,7 @@ renderChatRoom(chat) {
 
             // 3️⃣ 静默发送给AI
             // 直接调用，因为历史记录和系统提示词全在 buildMessagesArray 里处理了
-            const aiResponse = await this.sendToAIHidden(null, context, null, this.abortController?.signal, savedChatId);
+            const aiResponse = await this.sendToAIHidden(message, context, null, this.abortController?.signal, savedChatId);
 
             // 🔥 检查是否已中断
             if (this.abortController?.signal.aborted) {
@@ -4720,7 +4753,14 @@ renderChatRoom(chat) {
         else if (callMode === 'voice') currentModeName = isGroupChat ? '微信群语音通话' : '微信语音通话';
         else if (isGroupChat) currentModeName = '微信群聊';
 
-        let finalUserContent = `现在你处于${currentModeName}的模式，请根据以上所有信息，遵守回复格式，自然承接用户的消息进行回复。`;
+        let finalUserContent = `现在你处于${currentModeName}的模式，请根据以上所有信息，遵守回复格式，自然承接用户的消息进行回复。只输出本轮新增消息，禁止复述已有聊天记录。`;
+        if (!callMode) {
+            const latestUserInput = String(prompt || '').trim();
+            if (latestUserInput) {
+                finalUserContent += `\n本轮用户新消息：${latestUserInput}`;
+                finalUserContent += `\n请仅针对这条新消息回复，不要复述历史内容。`;
+            }
+        }
         if (!callMode) {
             if (isGroupChat) {
                 finalUserContent += '\n群聊场景下，通话前后的发言仍需使用“发送者: 内容”格式，且发送者必须是群成员。';
