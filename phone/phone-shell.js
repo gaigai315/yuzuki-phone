@@ -178,6 +178,23 @@ export class PhoneShell {
 
         // 🔥 滑动目标变量（根据场景动态切换）
         let slideTarget = null;
+        const resolveEditableHost = (node) => {
+            if (!node || typeof node.closest !== 'function') return null;
+            return node.closest('textarea, input, [contenteditable], [contenteditable="plaintext-only"]');
+        };
+        const isTextEditableElement = (el) => {
+            if (!el) return false;
+            const tag = String(el.tagName || '').toUpperCase();
+            if (tag === 'TEXTAREA') {
+                return !el.disabled && !el.readOnly;
+            }
+            if (tag === 'INPUT') {
+                const type = String(el.type || '').toLowerCase() || 'text';
+                const textInputTypes = new Set(['text', 'search', 'password', 'email', 'number', 'url', 'tel']);
+                return textInputTypes.has(type) && !el.disabled && !el.readOnly;
+            }
+            return !!el.isContentEditable;
+        };
 
         // 🔥 核心修复 1：移除屏幕宽度限制，全面接管虚拟手机的触摸滑动！
         phoneBody.addEventListener('touchmove', (e) => {
@@ -241,11 +258,10 @@ export class PhoneShell {
         // 触摸开始
         phoneBody.addEventListener('touchstart', (e) => {
             // 🔥 核心修复：输入中（含光标拖拽手柄）时放弃全局滑动判断，避免抢占文本光标拖动
-            const targetTag = String(e.target?.tagName || '').toUpperCase();
-            const activeTag = String(document.activeElement?.tagName || '').toUpperCase();
-            const hasFocusedTextInput = (activeTag === 'INPUT' || activeTag === 'TEXTAREA')
-                && phoneBody.contains(document.activeElement);
-            if (targetTag === 'TEXTAREA' || targetTag === 'INPUT' || hasFocusedTextInput) {
+            const touchEditableHost = resolveEditableHost(e.target);
+            const activeEditableHost = resolveEditableHost(document.activeElement);
+            const hasFocusedTextInput = !!(activeEditableHost && isTextEditableElement(activeEditableHost) && phoneBody.contains(activeEditableHost));
+            if (isTextEditableElement(touchEditableHost) || hasFocusedTextInput) {
                 this.touchStartX = undefined;
                 return;
             }
@@ -387,7 +403,8 @@ export class PhoneShell {
 
         phoneBody.addEventListener('mousedown', (e) => {
             // 🔥 核心修复：如果点击的是输入框或文本域，不激活鼠标拖拽返回
-            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+            const mouseEditableHost = resolveEditableHost(e.target);
+            if (isTextEditableElement(mouseEditableHost)) {
                 isMouseDown = false;
                 return;
             }
