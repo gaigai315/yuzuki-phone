@@ -37,6 +37,7 @@ export class ChatView {
         this._inlineStickerHydrateTimer = null;
         this._missingBoundVoiceWarned = new Set();
         this._aiReplyTimeCursor = null;
+        this._aiReplyRequestStartedAt = 0;
         this._isMessageInlineEditing = false;
     }
 
@@ -488,7 +489,7 @@ export class ChatView {
         this._aiReplyTimeCursor = null;
     }
 
-    _applyAiReplyTimeline(messageObj, fallbackContent = '') {
+    _applyAiReplyTimeline(messageObj, fallbackContent = '', options = {}) {
         if (!messageObj || typeof messageObj !== 'object') return;
 
         const timeManager = window.VirtualPhone?.timeManager;
@@ -517,6 +518,20 @@ export class ChatView {
             minutesToAdd = timeManager.getWechatMessageMinutesToAdd(contentText, { inBatch: true });
         } else {
             minutesToAdd = contentText.length <= 12 ? 0 : 1;
+        }
+
+        const isFirstInReplyBatch = options?.isFirstInReplyBatch === true;
+        if (isFirstInReplyBatch) {
+            const startedAt = Number(this._aiReplyRequestStartedAt || 0);
+            if (Number.isFinite(startedAt) && startedAt > 0) {
+                const waitedMs = Math.max(0, Date.now() - startedAt);
+                if (waitedMs > 60 * 1000) {
+                    // 首条回复等待超过 1 分钟时，强制显示时间胶囊（渲染层识别）
+                    messageObj.forceTimeDivider = true;
+                }
+                const waitedMinutes = Math.max(0, Math.floor(waitedMs / (60 * 1000)));
+                minutesToAdd = Math.max(minutesToAdd, waitedMinutes);
+            }
         }
         minutesToAdd = Math.max(0, Number(minutesToAdd) || 0);
 
@@ -589,7 +604,7 @@ renderChatRoom(chat) {
         `;
     }
 
-    // 🔥 渲染消息列表（带时间分割线：间隔3分钟以上才显示时间胶囊）
+    // 🔥 渲染消息列表（常规3分钟时间胶囊 + AI首条>1分钟强制显示）
     renderMessagesWithDateDividers(messages, userInfo) {
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
             return '';
@@ -603,11 +618,20 @@ renderChatRoom(chat) {
             try {
                 const msgTimestamp = msg.timestamp || 0;
                 const msgDate = msg.date || null;
+                const prevMsg = index > 0 ? messages[index - 1] : null;
+                const prevTimestamp = Number(prevMsg?.timestamp || 0);
+                const currentBatchId = String(msg?.replyBatchId || '').trim();
+                const prevBatchId = String(prevMsg?.replyBatchId || '').trim();
+                const isFirstAiReplyMessage = !!currentBatchId && currentBatchId !== prevBatchId;
+                const aiFirstGapMs = (msgTimestamp && prevTimestamp) ? (msgTimestamp - prevTimestamp) : 0;
+                const shouldShowAiFirstDivider = isFirstAiReplyMessage && (
+                    msg?.forceTimeDivider === true || aiFirstGapMs >= 60 * 1000
+                );
 
                 // 🔥 日期变化时强制显示日期分隔符（线下转线上跨天场景）
                 const isDateChanged = msgDate && msgDate !== lastRenderedDate;
-                // 🔥 间隔达到3分钟（>=3）或日期变化时插入时间分割线
-                if (isDateChanged || msgTimestamp - lastRenderedTimestamp >= 3 * 60 * 1000 || (index === 0 && msgTimestamp)) {
+                // 🔥 常规：间隔达到3分钟或日期变化；新增：AI首条>1分钟也显示时间胶囊
+                if (isDateChanged || shouldShowAiFirstDivider || msgTimestamp - lastRenderedTimestamp >= 3 * 60 * 1000 || (index === 0 && msgTimestamp)) {
                     let displayText = '';
                     if (isDateChanged) {
                         displayText = `${msgDate}${msg.weekday ? ' ' + msg.weekday : ''} ${msg.time || ''}`;
@@ -3379,6 +3403,7 @@ renderChatRoom(chat) {
         let success = false;
         const responseBatchId = `wechat_ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         this._resetAiReplyTimeCursor();
+        this._aiReplyRequestStartedAt = Date.now();
 
         // 🔥 设置发送状态
         this.isSending = true;
@@ -3767,7 +3792,7 @@ renderChatRoom(chat) {
                         continue;
                     }
 
-                    this._applyAiReplyTimeline(m, normalizedTextContent);
+                    this._applyAiReplyTimeline(m, normalizedTextContent, { isFirstInReplyBatch: bgIndex === 0 });
 
                     const msgData = special
                         ? { from: m.sender, ...special, time: m.time, avatar: senderAvatar, replyBatchId: responseBatchId }
@@ -3870,7 +3895,7 @@ renderChatRoom(chat) {
                     continue;
                 }
 
-                this._applyAiReplyTimeline(msg, normalizedTextContent);
+                this._applyAiReplyTimeline(msg, normalizedTextContent, { isFirstInReplyBatch: msgIndex === 0 });
 
                 const msgData = special
                     // 🔥 核心修复3：如果是群聊，禁止 fallback 到 savedChatAvatar
@@ -3987,6 +4012,7 @@ renderChatRoom(chat) {
                 this._activeSendingChatId = null;
             }
             this.abortController = null;
+            this._aiReplyRequestStartedAt = 0;
             this._resetAiReplyTimeCursor();
             this.hideTypingStatus();
             // 🔥 只有手机还开着才刷新界面（需要更新发送按钮状态）
@@ -4532,7 +4558,9 @@ renderChatRoom(chat) {
         if (recentWechatMessages.length > 0) {
             wechatTranscript = '【📱 手机微信已有消息】\n';
             wechatTranscript += `⏰ 当前时间：${currentTime}\n`;
-            wechatTranscript += `以下是手机里的微信消息记录，请根据已有的内容自然衔接，新消息时间必须在 ${currentTime} 之后。\n\n`;
+            wechatTranscript += `以下是用户手机里已经存在的消息记录。请严格遵守当前微信模式提示词调用规则，并将其视为已发生且已落地的历史事实。\n`;
+            wechatTranscript += `凡与已有消息记录在发送者、语义内容、时间意图上构成重复的输入，不得再次判定为新消息，不得在正文、微信标签或代发格式中二次落地，必须按已有记录后的时间线自然衔接。\n`;
+            wechatTranscript += `新消息时间必须在 ${currentTime} 之后。\n\n`;
             wechatTranscript += `━━━ ${targetChat.name} 的聊天记录 ━━━\n`;
 
             let lastDate = null;
