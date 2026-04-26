@@ -3509,7 +3509,7 @@ renderChatRoom(chat) {
 
             // 3️⃣ 静默发送给AI
             // 直接调用，因为历史记录和系统提示词全在 buildMessagesArray 里处理了
-            const aiResponse = await this.sendToAIHidden(null, context, null, this.abortController?.signal, savedChatId);
+            const aiResponse = await this.sendToAIHidden(message, context, null, this.abortController?.signal, savedChatId);
 
             // 🔥 检查是否已中断
             if (this.abortController?.signal.aborted) {
@@ -4591,7 +4591,7 @@ renderChatRoom(chat) {
         if (recentWechatMessages.length > 0) {
             wechatTranscript = '【📱 手机微信已有消息】\n';
             wechatTranscript += `⏰ 当前时间：${currentTime}\n`;
-            wechatTranscript += `以下是用户手机里已经存在的消息记录。请严格遵守当前微信模式提示词调用规则，不得重复已有的聊天记录内容。\n`;
+            wechatTranscript += `以下是用户手机已经存在的微信消息记录。使用微信时，请严格遵守当前微信模式规则，并严格执行【微信线下模式】关于历史消息不可重复生成的约束，不得重复已有聊天记录内容。\n`;
             wechatTranscript += `\n`;
             wechatTranscript += `━━━ ${targetChat.name} 的聊天记录 ━━━\n`;
 
@@ -4758,6 +4758,12 @@ renderChatRoom(chat) {
             if (isGroupChat) {
                 finalUserContent += '\n群聊场景下，通话前后的发言仍需使用“发送者: 内容”格式，且发送者必须是群成员。';
             }
+
+            const latestUserInput = String(prompt || '').trim();
+            if (latestUserInput) {
+                finalUserContent += `\n\n【用户最新输入】\n${userName}: ${latestUserInput}`;
+            }
+            finalUserContent += '\n\n【本轮硬性约束】只输出当前窗口的新增回复，不得重复“手机微信已有消息”中已经存在的任何历史消息；消息时间必须严格承接当前窗口最后一条已存在消息的时间并向后推进。';
         }
 
         // 🔥 把所有待发送的图片代币附加到 user 消息末尾（多模态只能在 user 消息中生效）

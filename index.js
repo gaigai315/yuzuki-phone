@@ -6203,9 +6203,8 @@ if (window.GGP_Loaded) {
 
                                     // 3️⃣ 添加微信聊天记录（按会话窗口分组显示，含日期）
                                     if (wechatOfflineChats.length > 0) {
-                                        phoneHistoryContent += `【 手机微信已有消息】\n`;
-                                        phoneHistoryContent += `以下是用户手机里已经存在的消息记录。请严格遵守【微信线下模式】提示词调用规则，并将其视为已发生且已落地的历史事实。\n`;
-                                        phoneHistoryContent += `凡与已有消息记录在发送者、语义内容、时间意图上构成重复的输入，不得再次判定为新消息，不得在正文、微信标签或代发格式中二次落地，必须按已有记录后的时间线自然衔接。\n\n`;
+                                        phoneHistoryContent += `【手机微信已有消息】\n`;
+                                        phoneHistoryContent += `以下是用户手机已经存在的微信消息记录。使用微信时，请严格遵守【微信线下模式】的全部规则，不得重复生成以下已经存在的历史微信消息记录。\n\n`;
 
                                         wechatOfflineChats.forEach(chatHistory => {
                                             phoneHistoryContent += `━━━ ${chatHistory.chatName} 的聊天记录 ━━━\n`;

@@ -1828,7 +1828,7 @@ parseAIResponse(text) {
             const originalLen = this.data.messages[chatId].length;
 
             this.data.messages[chatId] = this.data.messages[chatId].filter(m => {
-                // 凡是 >= 目标楼层的，统统视为未来废案，直接物理删除！
+                // 所有 >= 目标楼层的消息，都视为未来废案并直接物理删除
                 if (m.tavernMessageIndex !== undefined && m.tavernMessageIndex >= targetTavernIndex) {
                     return false;
                 }
