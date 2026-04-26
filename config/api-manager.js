@@ -303,9 +303,10 @@ export class ApiManager {
             };
 
             const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-            // 默认禁用原生通道自动重试，避免在中断/空返回时误取到旧轮上下文结果。
-            // 如需恢复重试，只在调用方显式传入 allowTavernRetry:true。
-            const maxRetries = options?.allowTavernRetry === true ? 3 : 1;
+            // 默认开启原生通道重试（用于吸收酒馆侧瞬时中断/空包）。
+            // 如需强制单次请求，可显式传入 allowTavernRetry:false。
+            const allowTavernRetry = options?.allowTavernRetry !== false;
+            const maxRetries = allowTavernRetry ? 3 : 1;
             let attempt = 0;
             let lastError = null;
 
@@ -330,25 +331,37 @@ export class ApiManager {
                     if (typeof result === 'string') {
                         text = result;
                     } else {
-                        const maybeArrayContent = result?.choices?.[0]?.message?.content;
-                        const normalizedArrayContent = Array.isArray(maybeArrayContent)
-                            ? maybeArrayContent.map(part => String(part?.text || part?.content || '')).join('')
-                            : '';
+                        const extractTextFromPayload = (payload) => {
+                            if (!payload || typeof payload !== 'object') return '';
 
-                        text =
-                            result?.choices?.[0]?.message?.content ||
-                            result?.choices?.[0]?.text ||
-                            result?.data?.choices?.[0]?.message?.content ||
-                            result?.data?.choices?.[0]?.text ||
-                            result?.results?.[0]?.text ||
-                            result?.text ||
-                            result?.content ||
-                            (typeof result?.message === 'string' ? result.message : '') ||
-                            result?.message?.content ||
-                            result?.output_text ||
-                            result?.response ||
-                            normalizedArrayContent ||
-                            '';
+                            const tryExtractFromChoices = (choices) => {
+                                if (!Array.isArray(choices) || choices.length === 0) return '';
+                                const first = choices[0] || {};
+                                const content = first?.message?.content;
+                                if (typeof content === 'string' && content.trim()) return content;
+                                if (Array.isArray(content)) {
+                                    const joined = content
+                                        .map(part => String(part?.text || part?.content || ''))
+                                        .join('')
+                                        .trim();
+                                    if (joined) return joined;
+                                }
+                                const textField = first?.text;
+                                if (typeof textField === 'string' && textField.trim()) return textField;
+                                return '';
+                            };
+
+                            return (
+                                tryExtractFromChoices(payload?.choices) ||
+                                tryExtractFromChoices(payload?.data?.choices) ||
+                                (typeof payload?.results?.[0]?.text === 'string' ? payload.results[0].text : '') ||
+                                (typeof payload?.text === 'string' ? payload.text : '') ||
+                                (typeof payload?.content === 'string' ? payload.content : '') ||
+                                (typeof payload?.output_text === 'string' ? payload.output_text : '')
+                            );
+                        };
+
+                        text = extractTextFromPayload(result);
                     }
 
                     text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
@@ -366,7 +379,7 @@ export class ApiManager {
                         return { success: false, error: '已中断发送', aborted: true };
                     }
 
-                    const shouldRetry = options?.allowTavernRetry === true
+                    const shouldRetry = allowTavernRetry
                         && (isAbortLike(err) || /No message generated/i.test(String(err?.message || '')));
                     if (shouldRetry && attempt < maxRetries) {
                         await delay(1500);

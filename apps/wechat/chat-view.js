@@ -4559,7 +4559,6 @@ renderChatRoom(chat) {
             wechatTranscript = '【📱 手机微信已有消息】\n';
             wechatTranscript += `⏰ 当前时间：${currentTime}\n`;
             wechatTranscript += `以下是用户手机里已经存在的消息记录。请严格遵守当前微信模式提示词调用规则，并将其视为已发生且已落地的历史事实。\n`;
-            wechatTranscript += `请根据已有的记录，自然回复。\n`;
             wechatTranscript += `新消息时间必须在 ${currentTime} 之后。\n\n`;
             wechatTranscript += `━━━ ${targetChat.name} 的聊天记录 ━━━\n`;
 
@@ -4721,7 +4720,7 @@ renderChatRoom(chat) {
         else if (callMode === 'voice') currentModeName = isGroupChat ? '微信群语音通话' : '微信语音通话';
         else if (isGroupChat) currentModeName = '微信群聊';
 
-        let finalUserContent = `现在你处于${currentModeName}的模式，请根据以上所有信息，遵守回复格式，继续微信回复。`;
+        let finalUserContent = `现在你处于${currentModeName}的模式，请根据以上所有信息，遵守回复格式，自然承接用户的消息进行回复。`;
         if (!callMode) {
             if (isGroupChat) {
                 finalUserContent += '\n群聊场景下，通话前后的发言仍需使用“发送者: 内容”格式，且发送者必须是群成员。';
