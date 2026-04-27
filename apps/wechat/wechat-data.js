@@ -16,6 +16,7 @@ export class WechatData {
     constructor(storage) {
         this.storage = storage;
         this.storageKey = 'wechat_data';
+        this.customEmojiGlobalKey = 'phone_custom_emojis_global';
         this.messageKeyPrefix = 'wechat_msg';  // 🔥 消息单独存储的键前缀
         this.walletDefaultKey = '__default__'; // 会话钱包默认键（用于未指定chatId时）
         this.globalSocialStore = new GlobalSocialStore(storage);
@@ -141,6 +142,14 @@ export class WechatData {
 
                     // 🔥 先构建 chats 数组（迁移需要用到）
                     const chats = data.chats || [];
+                    const legacyCustomEmojis = this._normalizeCustomEmojiList(data.customEmojis || []);
+                    const globalCustomEmojis = this._loadGlobalCustomEmojis();
+                    const mergedCustomEmojis = this._mergeCustomEmojiLists(globalCustomEmojis, legacyCustomEmojis);
+
+                    // 🔥 迁移：把旧的会话级 customEmojis 合并到全局存储
+                    if (!this._isSameCustomEmojiList(globalCustomEmojis, mergedCustomEmojis)) {
+                        this._saveGlobalCustomEmojis(mergedCustomEmojis);
+                    }
 
                     // 🔥 数据迁移：检查是否有旧格式的 messages 数据
                     if (data.messages && Object.keys(data.messages).length > 0) {
@@ -153,7 +162,6 @@ export class WechatData {
                             chats: chats,  // 已更新 timestamp
                             contacts: data.contacts || [],
                             moments: data.moments || [],
-                            customEmojis: data.customEmojis || [],
                             contactGenderMap: data.contactGenderMap || {},
                             contactAutoAvatarMap: data.contactAutoAvatarMap || {},
                             walletByChat: data.walletByChat || {}
@@ -179,7 +187,7 @@ export class WechatData {
                         contacts: data.contacts || [],
                         messages: {},  // 🔥 初始为空，按需从单独存储加载
                         moments: data.moments || [],
-                        customEmojis: data.customEmojis || [],
+                        customEmojis: mergedCustomEmojis,
                         contactGenderMap: data.contactGenderMap || {},
                         contactAutoAvatarMap: data.contactAutoAvatarMap || {},
                         walletByChat: walletByChat
@@ -200,7 +208,7 @@ export class WechatData {
             contacts: [],
             messages: {},
             moments: [],
-            customEmojis: [],
+            customEmojis: this._loadGlobalCustomEmojis(),
             contactGenderMap: {},
             contactAutoAvatarMap: {},
             walletByChat: {}
@@ -304,6 +312,92 @@ export class WechatData {
     // 完整的键由 storage.js 统一构建。
     return this.storageKey; // this.storageKey 在构造函数中定义为 'wechat_data'
 }
+
+    _getCustomEmojiGlobalKey() {
+        return this.customEmojiGlobalKey;
+    }
+
+    _buildLegacyEmojiId(emoji = {}) {
+        const seed = `${String(emoji?.name || '').trim()}|${String(emoji?.image || '').trim()}`;
+        let hash = 0;
+        for (let i = 0; i < seed.length; i++) {
+            hash = ((hash * 31) + seed.charCodeAt(i)) >>> 0;
+        }
+        return `emoji_legacy_${hash.toString(36)}`;
+    }
+
+    _normalizeCustomEmojiList(list = []) {
+        if (!Array.isArray(list)) return [];
+
+        return list.map((emoji, index) => {
+            const safeImage = String(emoji?.image || '').trim();
+            if (!safeImage) return null;
+
+            const safeName = String(emoji?.name || '').trim() || `表情${index + 1}`;
+            const safeDescription = String(emoji?.description || emoji?.name || '').trim() || safeName;
+            const safeId = String(emoji?.id || '').trim() || this._buildLegacyEmojiId({ name: safeName, image: safeImage });
+            const safeCreatedAt = String(emoji?.createdAt || '').trim() || '1970-01-01T00:00:00.000Z';
+
+            return {
+                ...emoji,
+                id: safeId,
+                name: safeName,
+                description: safeDescription,
+                image: safeImage,
+                createdAt: safeCreatedAt
+            };
+        }).filter(Boolean);
+    }
+
+    _mergeCustomEmojiLists(primaryList = [], secondaryList = []) {
+        const merged = [];
+        const seenIds = new Set();
+        const seenImages = new Set();
+
+        const append = (emoji) => {
+            const safeId = String(emoji?.id || '').trim();
+            const safeImage = String(emoji?.image || '').trim();
+            if (!safeImage) return;
+            if (safeId && seenIds.has(safeId)) return;
+            if (seenImages.has(safeImage)) return;
+
+            if (safeId) seenIds.add(safeId);
+            seenImages.add(safeImage);
+            merged.push(emoji);
+        };
+
+        this._normalizeCustomEmojiList(primaryList).forEach(append);
+        this._normalizeCustomEmojiList(secondaryList).forEach(append);
+        return merged;
+    }
+
+    _isSameCustomEmojiList(a = [], b = []) {
+        return JSON.stringify(a || []) === JSON.stringify(b || []);
+    }
+
+    _loadGlobalCustomEmojis() {
+        const raw = this.storage.get(this._getCustomEmojiGlobalKey(), '[]');
+        if (Array.isArray(raw)) {
+            return this._normalizeCustomEmojiList(raw);
+        }
+        if (typeof raw !== 'string' || raw.trim() === '') {
+            return [];
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            return this._normalizeCustomEmojiList(parsed);
+        } catch (e) {
+            console.warn('⚠️ [微信] 读取全局自定义表情失败:', e);
+            return [];
+        }
+    }
+
+    _saveGlobalCustomEmojis(list = []) {
+        const normalized = this._normalizeCustomEmojiList(list);
+        this.storage.set(this._getCustomEmojiGlobalKey(), JSON.stringify(normalized), false);
+        return normalized;
+    }
     
     async saveData() {
         try {
@@ -319,7 +413,6 @@ export class WechatData {
                 chats: this.data.chats,
                 contacts: this.data.contacts,
                 moments: this.data.moments,
-                customEmojis: this.data.customEmojis,
                 contactGenderMap: this.data.contactGenderMap || {},
                 contactAutoAvatarMap: this.data.contactAutoAvatarMap || {},
                 walletByChat: this.data.walletByChat || {}
@@ -373,6 +466,8 @@ export class WechatData {
             contactAutoAvatarMap: {},
             walletByChat: {}
         };
+
+        this._saveGlobalCustomEmojis([]);
 
         // 4. 保存重置后的空数据
         this.saveData();
@@ -2016,8 +2111,8 @@ parseAIResponse(text) {
 
 // 获取所有自定义表情
 getCustomEmojis() {
-    if (!this.data.customEmojis) {
-        this.data.customEmojis = [];
+    if (!Array.isArray(this.data.customEmojis)) {
+        this.data.customEmojis = this._loadGlobalCustomEmojis();
     }
     return this.data.customEmojis;
 }
@@ -2045,14 +2140,16 @@ updateCustomEmoji(emojiId, patch = {}) {
         description: nextDescription
     };
 
+    this.data.customEmojis = this._normalizeCustomEmojiList(this.data.customEmojis);
+    this._saveGlobalCustomEmojis(this.data.customEmojis);
     this.saveData();
     return this.data.customEmojis[targetIndex];
 }
 
 // 添加自定义表情
 addCustomEmoji(emojiData) {
-    if (!this.data.customEmojis) {
-        this.data.customEmojis = [];
+    if (!Array.isArray(this.data.customEmojis)) {
+        this.data.customEmojis = this._loadGlobalCustomEmojis();
     }
     
     const emoji = {
@@ -2064,6 +2161,8 @@ addCustomEmoji(emojiData) {
     };
     
     this.data.customEmojis.push(emoji);
+    this.data.customEmojis = this._normalizeCustomEmojiList(this.data.customEmojis);
+    this._saveGlobalCustomEmojis(this.data.customEmojis);
     this.saveData();
     
     return emoji;
@@ -2071,9 +2170,12 @@ addCustomEmoji(emojiData) {
 
 // 删除自定义表情
 deleteCustomEmoji(emojiId) {
-    if (!this.data.customEmojis) return;
+    if (!Array.isArray(this.data.customEmojis)) {
+        this.data.customEmojis = this._loadGlobalCustomEmojis();
+    }
     
     this.data.customEmojis = this.data.customEmojis.filter(e => e.id !== emojiId);
+    this._saveGlobalCustomEmojis(this.data.customEmojis);
     this.saveData();
     
    }
