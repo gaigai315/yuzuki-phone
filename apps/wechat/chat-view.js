@@ -579,6 +579,55 @@ export class ChatView {
         this._aiReplyTimeCursor = null;
     }
 
+    _isShortWechatReplyForTimeline(content = '') {
+        const text = String(content || '').replace(/\s+/g, '').trim();
+        if (!text) return false;
+
+        const timeManager = window.VirtualPhone?.timeManager;
+        if (typeof timeManager?.getWechatMessageMinutesToAdd === 'function') {
+            const minutes = Number(timeManager.getWechatMessageMinutesToAdd(text, { inBatch: true }));
+            if (Number.isFinite(minutes)) {
+                return minutes <= 0;
+            }
+        }
+
+        return text.length <= 12;
+    }
+
+    _buildShortWechatReplyGapMap(messageList = []) {
+        const extras = new Map();
+        if (!Array.isArray(messageList) || messageList.length <= 2) {
+            return extras;
+        }
+
+        const flushRun = (runIndexes) => {
+            if (runIndexes.length <= 2) return;
+            for (let i = 2; i < runIndexes.length; i++) {
+                const targetIndex = runIndexes[i];
+                const randomExtraMinutes = 1 + Math.floor(Math.random() * 3); // 1~3分钟随机分散
+                extras.set(targetIndex, randomExtraMinutes);
+            }
+        };
+
+        let shortRun = [];
+        for (let i = 0; i < messageList.length; i++) {
+            const msg = messageList[i] || {};
+            const cleanContent = this.cleanAbnormalSpaces(msg.content);
+            const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent);
+            const special = msg.specialMessage || this.parseSpecialMessage(cleanContent);
+            const isShortTextReply = !special && this._isShortWechatReplyForTimeline(normalizedTextContent);
+
+            if (isShortTextReply) {
+                shortRun.push(i);
+            } else {
+                flushRun(shortRun);
+                shortRun = [];
+            }
+        }
+        flushRun(shortRun);
+        return extras;
+    }
+
     _applyAiReplyTimeline(messageObj, fallbackContent = '', options = {}) {
         if (!messageObj || typeof messageObj !== 'object') return;
 
@@ -622,6 +671,10 @@ export class ChatView {
                 const waitedMinutes = Math.max(0, Math.floor(waitedMs / (60 * 1000)));
                 minutesToAdd = Math.max(minutesToAdd, waitedMinutes);
             }
+        }
+        const extraGapMinutes = Math.max(0, Number(options?.extraGapMinutes) || 0);
+        if (extraGapMinutes > 0) {
+            minutesToAdd += extraGapMinutes;
         }
         minutesToAdd = Math.max(0, Number(minutesToAdd) || 0);
 
@@ -4001,6 +4054,7 @@ renderChatRoom(chat) {
                 let bgLatestPreview = '';
                 const isBgGroupChat = bgChat?.type === 'group';
                 let senderAvatar = bgChat.avatar || '👤';
+                const bgShortGapMap = this._buildShortWechatReplyGapMap(msgs);
                 for (let bgIndex = 0; bgIndex < msgs.length; bgIndex++) {
                     const m = msgs[bgIndex];
                     const cleanContent = this.cleanAbnormalSpaces(m.content);
@@ -4020,7 +4074,10 @@ renderChatRoom(chat) {
                         continue;
                     }
 
-                    this._applyAiReplyTimeline(m, normalizedTextContent, { isFirstInReplyBatch: bgIndex === 0 });
+                    this._applyAiReplyTimeline(m, normalizedTextContent, {
+                        isFirstInReplyBatch: bgIndex === 0,
+                        extraGapMinutes: bgShortGapMap.get(bgIndex) || 0
+                    });
 
                     const msgData = special
                         ? { from: m.sender, ...special, time: m.time, avatar: senderAvatar, replyBatchId: responseBatchId }
@@ -4059,6 +4116,7 @@ renderChatRoom(chat) {
             }
 
             // 6️⃣ 将AI回复添加到微信界面（使用动态打字延迟）
+            const inlineShortGapMap = this._buildShortWechatReplyGapMap(parsedMessages);
             for (let msgIndex = 0; msgIndex < parsedMessages.length; msgIndex++) {
                 const msg = parsedMessages[msgIndex];
                 if (this.abortController?.signal.aborted) {
@@ -4123,7 +4181,10 @@ renderChatRoom(chat) {
                     continue;
                 }
 
-                this._applyAiReplyTimeline(msg, normalizedTextContent, { isFirstInReplyBatch: msgIndex === 0 });
+                this._applyAiReplyTimeline(msg, normalizedTextContent, {
+                    isFirstInReplyBatch: msgIndex === 0,
+                    extraGapMinutes: inlineShortGapMap.get(msgIndex) || 0
+                });
 
                 const msgData = special
                     // 🔥 核心修复3：如果是群聊，禁止 fallback 到 savedChatAvatar
