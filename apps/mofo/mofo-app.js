@@ -64,5 +64,7 @@ export class MofoApp {
     clearCache() {
         this.mofoData.clearCache();
         this.mofoView.currentPage = 'main';
+        this.mofoView.selectionMode = false;
+        this.mofoView.selectedIds?.clear?.();
     }
 }

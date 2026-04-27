@@ -760,6 +760,179 @@ export class MofoData {
         return this._clone(this._buildMergedItem(target, sessionMap[target.id]));
     }
 
+    _toExportDefinition(item = {}) {
+        const normalized = this._normalizeItem(item);
+        return {
+            id: normalized.id,
+            name: normalized.name,
+            tagName: normalized.tagName,
+            cssText: normalized.cssText,
+            htmlTemplate: normalized.htmlTemplate,
+            'html模板': normalized.htmlTemplate,
+            promptTemplate: normalized.promptTemplate,
+            offlinePromptEnabled: normalized.offlinePromptEnabled,
+            updateMode: normalized.updateMode,
+            initialState: this._clone(normalized.initialState || {}),
+            createdAt: Number(normalized.createdAt || Date.now()),
+            updatedAt: Number(normalized.updatedAt || normalized.createdAt || Date.now())
+        };
+    }
+
+    buildExportPayload(itemIds = []) {
+        const list = this._ensureCache();
+        const selectedIds = new Set(
+            (Array.isArray(itemIds) ? itemIds : [])
+                .map(id => String(id || '').trim())
+                .filter(Boolean)
+        );
+        const selected = selectedIds.size > 0
+            ? list.filter(item => selectedIds.has(String(item?.id || '').trim()))
+            : list.slice();
+        const items = selected.map(item => this._toExportDefinition(item));
+        return {
+            type: 'virtual_phone_mofo_templates',
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            count: items.length,
+            items: this._clone(items)
+        };
+    }
+
+    parseImportPayloadText(rawText = '') {
+        const text = String(rawText || '').trim();
+        if (!text) {
+            throw new Error('导入文件为空');
+        }
+        const parsed = this._parseJsonFromLooseText(text);
+        if (parsed === null) {
+            throw new Error('导入文件不是有效的 JSON');
+        }
+        return parsed;
+    }
+
+    _extractImportItems(payload = null) {
+        if (Array.isArray(payload)) return payload;
+        if (!payload || typeof payload !== 'object') return [];
+
+        if (Array.isArray(payload.items)) {
+            return payload.items;
+        }
+
+        const likelySingleTemplate =
+            Object.prototype.hasOwnProperty.call(payload, 'name')
+            || Object.prototype.hasOwnProperty.call(payload, 'title')
+            || Object.prototype.hasOwnProperty.call(payload, 'tagName')
+            || Object.prototype.hasOwnProperty.call(payload, 'tag')
+            || Object.prototype.hasOwnProperty.call(payload, 'htmlTemplate')
+            || Object.prototype.hasOwnProperty.call(payload, 'html模板')
+            || Object.prototype.hasOwnProperty.call(payload, 'promptTemplate')
+            || Object.prototype.hasOwnProperty.call(payload, 'prompt');
+
+        return likelySingleTemplate ? [payload] : [];
+    }
+
+    _buildItemFingerprint(item = {}) {
+        return this._stableStringify({
+            name: String(item.name || '').trim(),
+            tagName: String(item.tagName || '').trim(),
+            cssText: String(item.cssText || '').trim(),
+            htmlTemplate: String(item.htmlTemplate || item['html模板'] || '').trim(),
+            promptTemplate: String(item.promptTemplate || '').trim(),
+            offlinePromptEnabled: this._parseBoolean(item.offlinePromptEnabled, true),
+            updateMode: this._normalizeUpdateMode(item.updateMode, 'append'),
+            initialState: this._clone(item.initialState || {})
+        });
+    }
+
+    _buildUniqueImportedId(existingIds = new Set(), preferredId = '', fallbackName = 'mofo') {
+        const preferred = String(preferredId || '').trim();
+        if (preferred && !existingIds.has(preferred)) return preferred;
+
+        const safeName = String(fallbackName || '')
+            .trim()
+            .replace(/\s+/g, '_')
+            .replace(/[^\w-]/g, '')
+            .slice(0, 28);
+        const base = safeName ? `mofo_${safeName}` : 'mofo_template';
+        if (!existingIds.has(base)) return base;
+
+        for (let i = 1; i <= 9999; i += 1) {
+            const candidate = `${base}_${i}`;
+            if (!existingIds.has(candidate)) return candidate;
+        }
+
+        let randomId = '';
+        do {
+            randomId = `mofo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        } while (existingIds.has(randomId));
+        return randomId;
+    }
+
+    importItemsFromPayload(payload = null, options = {}) {
+        const skipDuplicates = options.skipDuplicates !== false;
+        const sourceItems = this._extractImportItems(payload);
+        const summary = {
+            totalCount: sourceItems.length,
+            importedCount: 0,
+            skippedCount: 0,
+            renamedCount: 0
+        };
+        if (sourceItems.length === 0) return summary;
+
+        const list = this._ensureCache();
+        const existingIdSet = new Set(
+            list
+                .map(item => String(item?.id || '').trim())
+                .filter(Boolean)
+        );
+        const existingFingerprintSet = new Set();
+        if (skipDuplicates) {
+            list.forEach(item => {
+                existingFingerprintSet.add(this._buildItemFingerprint(item));
+            });
+        }
+
+        sourceItems.forEach((rawItem) => {
+            if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
+                summary.skippedCount += 1;
+                return;
+            }
+
+            const normalized = this._normalizeItem(rawItem);
+            const fingerprint = this._buildItemFingerprint(normalized);
+            if (skipDuplicates && existingFingerprintSet.has(fingerprint)) {
+                summary.skippedCount += 1;
+                return;
+            }
+
+            const preferredId = String(rawItem?.id || '').trim();
+            const nextId = this._buildUniqueImportedId(existingIdSet, preferredId, normalized.name);
+            if (preferredId && nextId !== preferredId) {
+                summary.renamedCount += 1;
+            }
+
+            const nextItem = this._normalizeItem({
+                ...normalized,
+                id: nextId,
+                createdAt: Number(normalized.createdAt || Date.now()),
+                updatedAt: Number(normalized.updatedAt || normalized.createdAt || Date.now())
+            });
+
+            list.push(nextItem);
+            existingIdSet.add(nextItem.id);
+            if (skipDuplicates) {
+                existingFingerprintSet.add(this._buildItemFingerprint(nextItem));
+            }
+            this._unmarkDeletedItemId(nextItem.id);
+            summary.importedCount += 1;
+        });
+
+        if (summary.importedCount > 0) {
+            this._commit();
+        }
+        return summary;
+    }
+
     createItem(input = {}) {
         const now = Date.now();
         const name = String(input.name || '').trim();
