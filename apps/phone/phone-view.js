@@ -835,7 +835,7 @@ export class PhoneCallView {
                         let worldInfo = '【世界书/角色书信息】\n';
                         entries.forEach(entry => {
                             if (entry.content && entry.enabled !== false) {
-                                const content = entry.content.substring(0, 500);
+                                const content = String(entry.content || '');
                                 worldInfo += `${content}\n---\n`;
                             }
                         });
