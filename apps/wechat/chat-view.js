@@ -3432,6 +3432,9 @@ renderChatRoom(chat) {
 
         let pressTimer;
         let touchStartTarget = null;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let longPressTriggered = false;
 
         // 📱 移动端长按 (事件委托到父容器)
         messagesDiv.addEventListener('touchstart', (e) => {
@@ -3442,6 +3445,10 @@ renderChatRoom(chat) {
             if (!msgElement) return;
 
             touchStartTarget = msgElement;
+            longPressTriggered = false;
+            const firstTouch = e.touches && e.touches[0] ? e.touches[0] : null;
+            touchStartX = firstTouch ? Number(firstTouch.clientX) : 0;
+            touchStartY = firstTouch ? Number(firstTouch.clientY) : 0;
 
             // 🌟 对图片消息阻止默认行为，防止浏览器弹出保存图片菜单
             if (e.target.closest('.message-image')) {
@@ -3452,6 +3459,7 @@ renderChatRoom(chat) {
                 const allMessages = document.querySelectorAll('.chat-message');
                 const index = Array.from(allMessages).indexOf(msgElement);
                 if (index !== -1) {
+                    longPressTriggered = true;
                     if (targetBubble.closest('.message-weibo-card')) {
                         this._suppressWeiboCardClickUntil = Date.now() + 800;
                     }
@@ -3461,14 +3469,34 @@ renderChatRoom(chat) {
         }, { passive: false });
 
         // 📱 滑动或松开时取消长按
-        messagesDiv.addEventListener('touchend', () => {
+        messagesDiv.addEventListener('touchend', (e) => {
+            clearTimeout(pressTimer);
+            if (longPressTriggered) {
+                // 长按已触发时，阻断这次抬手产生的点击回流，避免菜单“闪现即消失”
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            touchStartTarget = null;
+            longPressTriggered = false;
+        }, { passive: false });
+        messagesDiv.addEventListener('touchmove', (e) => {
+            if (!touchStartTarget) return;
+            const currentTouch = e.touches && e.touches[0] ? e.touches[0] : null;
+            if (!currentTouch) return;
+            const dx = Math.abs(Number(currentTouch.clientX) - touchStartX);
+            const dy = Math.abs(Number(currentTouch.clientY) - touchStartY);
+            // 允许轻微抖动，避免手指微动就把长按取消
+            if (dx > 10 || dy > 10) {
+                clearTimeout(pressTimer);
+                touchStartTarget = null;
+                longPressTriggered = false;
+            }
+        }, { passive: true });
+        messagesDiv.addEventListener('touchcancel', () => {
             clearTimeout(pressTimer);
             touchStartTarget = null;
-        });
-        messagesDiv.addEventListener('touchmove', () => {
-            clearTimeout(pressTimer);
-            touchStartTarget = null;
-        });
+            longPressTriggered = false;
+        }, { passive: true });
 
         // 💻 桌面端右键
         messagesDiv.addEventListener('contextmenu', (e) => {
@@ -6019,13 +6047,20 @@ renderChatRoom(chat) {
 
         // 点击其他地方关闭菜单
         setTimeout(() => {
-            document.addEventListener('click', function closeMenu() {
+            const openedAt = Date.now();
+            const closeMenu = (evt) => {
+                // 移动端长按后的首个回流点击/触摸不关菜单，避免刚弹出就消失
+                if (Date.now() - openedAt < 350) return;
+                if (menuEl.contains(evt.target)) return;
                 document.querySelectorAll('.message-action-menu').forEach(menu => menu.remove());
                 // 🔥 菜单关闭后，恢复原本的 overflow 属性
                 if (bubbleEl) bubbleEl.style.removeProperty('overflow');
-                document.removeEventListener('click', closeMenu);
-            }, { once: true });
-        }, 100);
+                document.removeEventListener('click', closeMenu, true);
+                document.removeEventListener('touchend', closeMenu, true);
+            };
+            document.addEventListener('click', closeMenu, true);
+            document.addEventListener('touchend', closeMenu, true);
+        }, 0);
     }
 
     // 📄 查看通话 transcript（长按菜单 -> 查看）
