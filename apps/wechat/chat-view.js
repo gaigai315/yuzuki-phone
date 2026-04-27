@@ -39,6 +39,8 @@ export class ChatView {
         this._aiReplyTimeCursor = null;
         this._aiReplyRequestStartedAt = 0;
         this._isMessageInlineEditing = false;
+        this.customEmojiSelectionMode = false;
+        this.selectedCustomEmojiIds = new Set();
     }
 
     // 🔥 判断当前会话是否开启在线模式（per-chat）
@@ -192,12 +194,100 @@ export class ChatView {
 
         if (this.showEmoji) {
             this.showEmoji = false;
+            this._setCustomEmojiSelectionMode(false);
             this.app.render();
             setTimeout(restore, 0);
             return;
         }
 
         restore();
+    }
+
+    _setCustomEmojiSelectionMode(enabled = false) {
+        this.customEmojiSelectionMode = !!enabled;
+        if (!this.customEmojiSelectionMode) {
+            this.selectedCustomEmojiIds.clear();
+        }
+    }
+
+    _toggleCustomEmojiSelection(emojiId) {
+        const safeId = String(emojiId || '').trim();
+        if (!safeId) return;
+        if (this.selectedCustomEmojiIds.has(safeId)) {
+            this.selectedCustomEmojiIds.delete(safeId);
+        } else {
+            this.selectedCustomEmojiIds.add(safeId);
+        }
+    }
+
+    _syncCustomEmojiSelectionWithData() {
+        const existingIds = new Set((this.app.wechatData.getCustomEmojis() || []).map(e => String(e?.id || '').trim()).filter(Boolean));
+        this.selectedCustomEmojiIds.forEach(id => {
+            if (!existingIds.has(id)) {
+                this.selectedCustomEmojiIds.delete(id);
+            }
+        });
+    }
+
+    _toggleSelectAllCustomEmojis() {
+        const emojis = this.app.wechatData.getCustomEmojis() || [];
+        const ids = emojis.map(e => String(e?.id || '').trim()).filter(Boolean);
+        if (ids.length === 0) {
+            this.selectedCustomEmojiIds.clear();
+            return;
+        }
+        const allSelected = ids.every(id => this.selectedCustomEmojiIds.has(id));
+        if (allSelected) {
+            this.selectedCustomEmojiIds.clear();
+            return;
+        }
+        this.selectedCustomEmojiIds = new Set(ids);
+    }
+
+    async _deleteCustomEmojiSet(emojiIdList = [], { clearAll = false } = {}) {
+        const ids = Array.from(new Set((emojiIdList || []).map(id => String(id || '').trim()).filter(Boolean)));
+        if (ids.length === 0) {
+            this.app.phoneShell.showNotification('提示', '请先选择要删除的表情', '⚠️');
+            return;
+        }
+
+        const allCustomEmojis = this.app.wechatData.getCustomEmojis() || [];
+        const targetEmojis = allCustomEmojis.filter(e => ids.includes(String(e?.id || '').trim()));
+        if (targetEmojis.length === 0) {
+            this.app.phoneShell.showNotification('提示', '未找到可删除的表情', '⚠️');
+            return;
+        }
+
+        const confirmText = clearAll
+            ? `确定清空全部 ${targetEmojis.length} 张自定义表情吗？`
+            : `确定删除已选中的 ${targetEmojis.length} 张自定义表情吗？`;
+        if (!window.confirm(confirmText)) return;
+
+        const imageManager = window.VirtualPhone?.imageManager;
+        let fileCleanupFailedCount = 0;
+        for (const emoji of targetEmojis) {
+            if (!imageManager?.deleteManagedBackgroundByPath) continue;
+            try {
+                const result = await imageManager.deleteManagedBackgroundByPath(emoji.image, { quiet: true });
+                if (result?.attempted === true && result?.success !== true) {
+                    fileCleanupFailedCount += 1;
+                }
+            } catch (e) {
+                fileCleanupFailedCount += 1;
+            }
+        }
+
+        ids.forEach(id => this.app.wechatData.deleteCustomEmoji(id));
+        this._setCustomEmojiSelectionMode(false);
+        this._syncCustomEmojiSelectionWithData();
+
+        const deletedCount = targetEmojis.length;
+        if (fileCleanupFailedCount > 0) {
+            this.app.phoneShell.showNotification('已删除', `已删除 ${deletedCount} 张（${fileCleanupFailedCount} 张旧图清理失败）`, '⚠️');
+        } else {
+            this.app.phoneShell.showNotification('已删除', `已删除 ${deletedCount} 张自定义表情`, '🗑️');
+        }
+        this.app.render();
     }
 
     getHeaderStatusDotColor(chatId = null) {
@@ -749,7 +839,16 @@ renderChatRoom(chat) {
 
         switch (msg.type) {
             case 'image':
-                messageBody = `<div class="message-image-box" style="position: relative; display: inline-block; line-height: 0;"><img src="${msg.content}" class="message-image"></div>`;
+                {
+                    const isCustomEmojiImage = !!(msg.customEmojiId || msg.customEmojiName || msg.customEmojiDescription);
+                    const customEmojiBoxStyle = isCustomEmojiImage
+                        ? 'width: 112px; max-width: 38vw; max-height: 112px;'
+                        : '';
+                    const customEmojiImgStyle = isCustomEmojiImage
+                        ? 'width: 100%; max-height: 112px; object-fit: contain;'
+                        : '';
+                    messageBody = `<div class="message-image-box ${isCustomEmojiImage ? 'message-image-box-custom-emoji' : ''}" style="position: relative; display: inline-block; line-height: 0; ${customEmojiBoxStyle}"><img src="${msg.content}" class="message-image" style="${customEmojiImgStyle}"></div>`;
+                }
                 break;
             case 'image_prompt':
                 messageBody = this.renderImagePromptCard(msg);
@@ -1006,6 +1105,12 @@ renderChatRoom(chat) {
         ];
 
         const customEmojis = this.app.wechatData.getCustomEmojis();
+        this._syncCustomEmojiSelectionWithData();
+        const customMode = this.emojiTab === 'custom';
+        const isSelectionMode = customMode && this.customEmojiSelectionMode;
+        const selectedCount = this.selectedCustomEmojiIds.size;
+        const customIds = customEmojis.map(emoji => String(emoji?.id || '').trim()).filter(Boolean);
+        const allSelected = customIds.length > 0 && customIds.every(id => this.selectedCustomEmojiIds.has(id));
 
         return `
         <div class="emoji-panel">
@@ -1019,18 +1124,38 @@ renderChatRoom(chat) {
                 </div>
             </div>
 
+            ${customMode ? `
+            <div class="emoji-custom-toolbar" style="display:flex; gap:6px; padding:8px 10px 6px; border-bottom:1px solid rgba(0,0,0,0.08); background:transparent;">
+                <button id="toggle-custom-emoji-manage" style="flex:1; border:1px solid ${isSelectionMode ? 'rgba(0,0,0,0.14)' : 'rgba(7,193,96,0.25)'}; border-radius:10px; background:${isSelectionMode ? 'rgba(0,0,0,0.06)' : 'rgba(7,193,96,0.14)'}; color:${isSelectionMode ? '#555' : '#0b8f52'}; font-size:12px; font-weight:600; padding:7px 8px;">
+                    ${isSelectionMode ? '完成' : '多选删除'}
+                </button>
+                <button id="delete-selected-custom-emoji" ${!isSelectionMode || selectedCount === 0 ? 'disabled' : ''} style="flex:1; border:1px solid ${isSelectionMode && selectedCount > 0 ? 'rgba(255,59,48,0.25)' : 'rgba(0,0,0,0.08)'}; border-radius:10px; background:${isSelectionMode && selectedCount > 0 ? 'rgba(255,59,48,0.12)' : 'rgba(0,0,0,0.05)'}; color:${isSelectionMode && selectedCount > 0 ? '#c53030' : '#aaa'}; font-size:12px; font-weight:600; padding:7px 8px;">
+                    删除选中${selectedCount > 0 ? `(${selectedCount})` : ''}
+                </button>
+                <button id="clear-custom-emoji-all" ${customEmojis.length === 0 ? 'disabled' : ''} style="flex:1; border:1px solid ${customEmojis.length > 0 ? 'rgba(217,83,79,0.26)' : 'rgba(0,0,0,0.08)'}; border-radius:10px; background:${customEmojis.length > 0 ? 'rgba(217,83,79,0.12)' : 'rgba(0,0,0,0.05)'}; color:${customEmojis.length > 0 ? '#b54742' : '#aaa'}; font-size:12px; font-weight:600; padding:7px 8px;">
+                    一键清空
+                </button>
+            </div>
+            ${isSelectionMode ? `
+            <div style="padding:0 10px 6px; font-size:11px; color:#888;">
+                当前处于多选删除模式，点击表情可勾选。<button id="select-all-custom-emoji" style="border:none; background:transparent; color:#07c160; font-size:11px; padding:0; margin-left:4px;">${allSelected ? '取消全选' : '全选'}</button>
+            </div>
+            ` : ''}
+            ` : ''}
+
            <div class="emoji-scroll">
                 <div class="emoji-grid">
                     ${this.emojiTab === 'custom' ? `
                         <!-- 自定义表情 -->
                         ${customEmojis.map(emoji => `
-                            <span class="emoji-item custom-emoji-item" data-emoji-type="custom" data-emoji-id="${emoji.id}" title="${this._escapeHtml(String(emoji.description || emoji.name || '表情'))}">
+                            <span class="emoji-item custom-emoji-item ${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'is-selected' : ''}" data-emoji-type="custom" data-emoji-id="${emoji.id}" data-selection-mode="${isSelectionMode ? '1' : '0'}" title="${this._escapeHtml(String(emoji.description || emoji.name || '表情'))}" style="position:relative;${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'outline:2px solid #07c160; outline-offset:1px; border-radius:10px;' : ''}">
                                 <img src="${emoji.image}" alt="${emoji.name}">
+                                ${isSelectionMode ? `<span style="position:absolute; top:2px; right:2px; width:14px; height:14px; border-radius:50%; background:${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '#07c160' : 'rgba(255,255,255,0.9)'}; border:1px solid ${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '#07c160' : '#ccc'}; color:#fff; font-size:10px; line-height:12px; text-align:center;">${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '✓' : ''}</span>` : ''}
                             </span>
                         `).join('')}
 
                         <!-- 添加表情按钮 -->
-                        <span class="emoji-item emoji-add" id="add-custom-emoji">
+                        <span class="emoji-item emoji-add" id="add-custom-emoji" style="${isSelectionMode ? 'opacity:0.45; pointer-events:none;' : ''}">
                             <i class="fa-solid fa-plus"></i>
                         </span>
                     ` : `
@@ -1382,7 +1507,38 @@ renderChatRoom(chat) {
 
     _formatMessageContentForPrompt(msg) {
         if (!msg || typeof msg !== 'object') return '';
+        const normalizeImageName = (raw = '') => String(raw || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 20);
+        const inferImageNameFromPath = (imagePath = '') => {
+            const rawPath = String(imagePath || '').trim();
+            if (!rawPath) return '';
+            try {
+                const noQuery = rawPath.split('?')[0].split('#')[0];
+                const basename = noQuery.split('/').pop() || '';
+                const decoded = decodeURIComponent(basename);
+                const withoutExt = decoded.replace(/\.[^.]+$/, '').trim();
+                if (!withoutExt) return '';
+                // 服务端生成名对用户无意义，直接回退为通用名称
+                if (/^phone_emoji_\d+_\d+$/i.test(withoutExt)) return '图片';
+                return normalizeImageName(withoutExt);
+            } catch (e) {
+                return '';
+            }
+        };
+        const getImageDisplayName = () => {
+            const fromDesc = normalizeImageName(msg.customEmojiDescription || msg.customEmojiName || '');
+            if (fromDesc) return fromDesc;
+            const fromPath = inferImageNameFromPath(msg.content);
+            if (fromPath) return fromPath;
+            return '图片';
+        };
+
         if (msg.type === 'text') return String(msg.content || '');
+        if (msg.type === 'image') {
+            return `[图片]（${getImageDisplayName()}）`;
+        }
         if (msg.type === 'image_prompt') {
             const promptText = String(msg.imagePrompt || msg.content || '待生成图片').trim() || '待生成图片';
             const mediaType = msg.mediaType || '图片';
@@ -2852,12 +3008,18 @@ renderChatRoom(chat) {
         // 更多按钮
         query('#more-btn')?.addEventListener('click', () => {
             this.showMore = !this.showMore;
+            if (this.showEmoji) {
+                this._setCustomEmojiSelectionMode(false);
+            }
             this.showEmoji = false;
             this.app.render();
         });
 
         // 🔥 表情按钮
         query('#emoji-btn')?.addEventListener('click', () => {
+            if (this.showEmoji) {
+                this._setCustomEmojiSelectionMode(false);
+            }
             this.showEmoji = !this.showEmoji;
             this.showMore = false;
             this.app.render();
@@ -2896,6 +3058,9 @@ renderChatRoom(chat) {
         messagesDiv?.addEventListener('click', (e) => {
             // 只有点击空白区域才收起（不是点击消息气泡）
             if (this.showMore || this.showEmoji) {
+                if (this.showEmoji) {
+                    this._setCustomEmojiSelectionMode(false);
+                }
                 this.showMore = false;
                 this.showEmoji = false;
                 this.app.render();
@@ -2925,6 +3090,9 @@ renderChatRoom(chat) {
         queryAll('.emoji-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 this.emojiTab = tab.dataset.tab;
+                if (this.emojiTab !== 'custom') {
+                    this._setCustomEmojiSelectionMode(false);
+                }
                 this.app.render();
             });
         });
@@ -2932,6 +3100,26 @@ renderChatRoom(chat) {
         // 🔥 新增：添加自定义表情
         query('#add-custom-emoji')?.addEventListener('click', () => {
             this.showAddCustomEmojiDialog();
+        });
+
+        query('#toggle-custom-emoji-manage')?.addEventListener('click', () => {
+            this._setCustomEmojiSelectionMode(!this.customEmojiSelectionMode);
+            this.app.render();
+        });
+
+        query('#select-all-custom-emoji')?.addEventListener('click', () => {
+            this._toggleSelectAllCustomEmojis();
+            this.app.render();
+        });
+
+        query('#delete-selected-custom-emoji')?.addEventListener('click', async () => {
+            if (!this.customEmojiSelectionMode) return;
+            await this._deleteCustomEmojiSet(Array.from(this.selectedCustomEmojiIds), { clearAll: false });
+        });
+
+        query('#clear-custom-emoji-all')?.addEventListener('click', async () => {
+            const ids = (this.app.wechatData.getCustomEmojis() || []).map(emoji => String(emoji?.id || '').trim()).filter(Boolean);
+            await this._deleteCustomEmojiSet(ids, { clearAll: true });
         });
 
         // 🔥 新增：选择自定义表情
@@ -2945,6 +3133,7 @@ renderChatRoom(chat) {
                 }
             };
             const startManageGesture = () => {
+                if (this.customEmojiSelectionMode) return;
                 clearLongPressTimer();
                 suppressClick = false;
                 longPressTimer = setTimeout(() => {
@@ -2960,6 +3149,7 @@ renderChatRoom(chat) {
             item.addEventListener('pointercancel', clearLongPressTimer);
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
+                if (this.customEmojiSelectionMode) return;
                 clearLongPressTimer();
                 suppressClick = true;
                 this.manageCustomEmoji(item.dataset.emojiId);
@@ -2970,6 +3160,11 @@ renderChatRoom(chat) {
                     return;
                 }
                 const emojiId = item.dataset.emojiId;
+                if (this.customEmojiSelectionMode) {
+                    this._toggleCustomEmojiSelection(emojiId);
+                    this.app.render();
+                    return;
+                }
                 const emoji = this.app.wechatData.getCustomEmoji(emojiId);
                 if (emoji) {
                     const imageUrl = String(emoji.image || '').trim();
@@ -3383,10 +3578,10 @@ renderChatRoom(chat) {
 
                 const pendingUserMessages = messages
                     .slice(lastAssistantIndex + 1)
-                    .filter(m => isMyMessage(m) && String(m?.content || '').trim());
+                    .filter(m => isMyMessage(m));
 
                 const combinedMessage = pendingUserMessages
-                    .map(m => String(m.content || '').trim())
+                    .map(m => String(this._formatMessageContentForPrompt(m) || '').trim())
                     .filter(Boolean)
                     .join('\n')
                     .trim();
@@ -4264,8 +4459,7 @@ renderChatRoom(chat) {
                     let worldInfo = '【世界书/角色书信息】\n';
                     entries.forEach((entry, idx) => {
                         if (entry.content && entry.enabled !== false) {
-                            // 只取前500字符，避免过长
-                            const content = entry.content.substring(0, 500);
+                            const content = String(entry.content || '');
                             worldInfo += `${content}\n---\n`;
                         }
                     });
@@ -4628,15 +4822,16 @@ renderChatRoom(chat) {
                     }
                 } else if (msg.type === 'image') {
                     const resolvedImageData = await this._resolveWechatImageForAi(msg.content, aiImageDataCache);
+                    const imageText = this._formatMessageContentForPrompt(msg) || '[图片]';
                     if (resolvedImageData && resolvedImageData.startsWith('data:image')) {
                         const imgId = `__ST_PHONE_IMAGE_${Date.now()}_${Math.random().toString(36).substr(2, 5)}__`;
                         if (!window.VirtualPhone._pendingImages) {
                             window.VirtualPhone._pendingImages = {};
                         }
                         window.VirtualPhone._pendingImages[imgId] = resolvedImageData;
-                        wechatTranscript += `${timeStr}${speaker}: ${quoteStr}[发送了图片#${imgId}#]\n`;
+                        wechatTranscript += `${timeStr}${speaker}: ${quoteStr}${imageText}\n`;
                     } else {
-                        wechatTranscript += `${timeStr}${speaker}: ${quoteStr}[发送了一张图片]\n`;
+                        wechatTranscript += `${timeStr}${speaker}: ${quoteStr}${imageText}\n`;
                     }
                 } else if (msg.type === 'image_prompt') {
                     // 🔥 修复：将 [图片/视频] 标签原样包裹回去
@@ -8520,37 +8715,9 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             
             <div class="wechat-content" style="background: #ededed; padding: 20px;">
                 <div style="background: #fff; border-radius: 12px; padding: 25px; text-align: center;">
-                    <div style="font-size: 14px; color: #999; margin-bottom: 15px;">点击选择图片（支持批量）</div>
-                    
-                    <!-- 预览区 -->
-                    <div id="emoji-preview" style="
-                        width: 100%;
-                        min-height: 120px;
-                        border-radius: 12px;
-                        border: 2px dashed #ccc;
-                        margin: 0 auto 20px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        flex-wrap: wrap;
-                        gap: 8px;
-                        padding: 10px;
-                        box-sizing: border-box;
-                        font-size: 15px;
-                        color: #999;
-                        cursor: pointer;
-                        overflow: hidden;
-                    ">
-                        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-                            <i class="fa-solid fa-plus" style="font-size:28px;color:#ccc;"></i>
-                            <span>点击添加图片</span>
-                        </div>
-                    </div>
-
+                    <div style="font-size: 14px; color: #666; margin-bottom: 12px;">选择图片后自动上传（支持批量）</div>
                     <input type="file" id="emoji-image-upload" accept="image/png, image/jpeg, image/gif, image/webp, image/*" multiple style="display: none;">
-                    <div id="emoji-select-hint" style="text-align:left; font-size:12px; color:#999; margin-bottom:16px;">每张图片建议小于 1MB，保存时将批量上传。</div>
-                    
-                    <button id="save-custom-emoji" style="
+                    <button id="pick-custom-emoji" style="
                         width: 100%;
                         padding: 14px;
                         background: #07c160;
@@ -8560,7 +8727,8 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                         font-size: 16px;
                         font-weight: 500;
                         cursor: pointer;
-                    ">保存</button>
+                    ">选择图片</button>
+                    <div id="emoji-select-hint" style="text-align:left; font-size:12px; color:#999; margin-top:12px;">大图会在上传前等比缩小到最长边 1024px，原图超过 10MB 会跳过。</div>
                 </div>
             </div>
         </div>
@@ -8570,9 +8738,10 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         const currentView = document.querySelector('.phone-view-current') || document;
         const query = (selector) => currentView.querySelector(selector);
 
-        const selectedFiles = [];
+        const EMOJI_MAX_DIMENSION = 1024;
+        const EMOJI_RAW_FILE_MAX_SIZE = 10 * 1024 * 1024;
         const selectedNameSet = new Set();
-        const previewUrls = new Set();
+        let isUploading = false;
         const buildEmojiName = (fileName = '', fallbackIndex = 1) => {
             const rawBase = String(fileName || '')
                 .replace(/\.[^.]+$/, '')
@@ -8600,104 +8769,149 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             return trimmed || fallback;
         };
 
-        const renderSelectedPreview = () => {
-            const preview = query('#emoji-preview');
-            const hint = query('#emoji-select-hint');
-            if (!preview) return;
-            if (selectedFiles.length === 0) {
-                preview.innerHTML = `
-                    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-                        <i class="fa-solid fa-plus" style="font-size:28px;color:#ccc;"></i>
-                        <span>点击添加图片</span>
-                    </div>
-                `;
-                if (hint) hint.textContent = '每张图片建议小于 1MB，保存时将批量上传。';
-                return;
+        const resizeEmojiImageIfNeeded = async (file) => {
+            if (!file?.type?.startsWith?.('image/')) {
+                return { file, resized: false };
+            }
+            // GIF 可能包含动画，保持原文件避免破坏动图
+            if (file.type === 'image/gif') {
+                return { file, resized: false };
             }
 
-            const thumbs = selectedFiles.map((item, index) => `
-                <div style="width:72px; display:flex; flex-direction:column; align-items:center; gap:6px;">
-                    <img src="${item.preview}" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid #eee;">
-                    <input type="text"
-                        class="emoji-name-input"
-                        data-emoji-index="${index}"
-                        value="${this._escapeHtml(String(item.name || ''))}"
-                        placeholder="表情描述"
-                        maxlength="20"
-                        style="width:100%; height:24px; border:1px solid #e5e5e5; border-radius:6px; padding:0 6px; box-sizing:border-box; font-size:11px; color:#333; background:#fafafa; text-align:center;">
-                </div>
-            `).join('');
-            preview.innerHTML = `
-                <div style="width:100%;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;">
-                    ${thumbs}
-                </div>
-            `;
-            if (hint) hint.textContent = `已选择 ${selectedFiles.length} 张，点击预览区域可继续添加。`;
+            const objectUrl = URL.createObjectURL(file);
+            try {
+                const img = await new Promise((resolve, reject) => {
+                    const image = new Image();
+                    image.onload = () => resolve(image);
+                    image.onerror = () => reject(new Error('图片解码失败'));
+                    image.src = objectUrl;
+                });
+
+                const srcWidth = Number(img?.naturalWidth || 0);
+                const srcHeight = Number(img?.naturalHeight || 0);
+                if (srcWidth <= 0 || srcHeight <= 0) {
+                    return { file, resized: false };
+                }
+
+                const scale = Math.min(1, EMOJI_MAX_DIMENSION / Math.max(srcWidth, srcHeight));
+                if (scale >= 1) {
+                    return { file, resized: false };
+                }
+
+                const targetWidth = Math.max(1, Math.round(srcWidth * scale));
+                const targetHeight = Math.max(1, Math.round(srcHeight * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
+
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    return { file, resized: false };
+                }
+                ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+                const targetType = file.type === 'image/png'
+                    ? 'image/png'
+                    : (file.type === 'image/webp' ? 'image/webp' : 'image/jpeg');
+                const quality = targetType === 'image/jpeg' || targetType === 'image/webp' ? 0.9 : undefined;
+
+                const resizedBlob = await new Promise((resolve, reject) => {
+                    canvas.toBlob((blob) => {
+                        if (blob) resolve(blob);
+                        else reject(new Error('图片缩放失败'));
+                    }, targetType, quality);
+                });
+
+                const resizedFile = new File([resizedBlob], file.name, {
+                    type: resizedBlob.type || targetType,
+                    lastModified: Date.now()
+                });
+                return { file: resizedFile, resized: true };
+            } catch (err) {
+                console.warn('表情图片缩放失败，已回退原图上传:', err);
+                return { file, resized: false };
+            } finally {
+                URL.revokeObjectURL(objectUrl);
+            }
         };
 
-        const readFileAsDataURL = (file) => new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(String(e?.target?.result || ''));
-            reader.onerror = () => reject(new Error('读取图片失败'));
-            reader.readAsDataURL(file);
-        });
-        const createPreviewUrl = (file) => {
-            const objectUrl = URL.createObjectURL(file);
-            previewUrls.add(objectUrl);
-            return objectUrl;
-        };
-        const cleanupPreviewUrls = () => {
-            previewUrls.forEach((url) => {
+        const uploadCustomEmojiBatch = async (items = []) => {
+            let successCount = 0;
+            let failCount = 0;
+            let resizedCount = 0;
+
+            for (let i = 0; i < items.length; i += 1) {
+                const item = items[i];
+                const originalFile = item.file;
+                const emojiDescription = sanitizeEmojiName(item.name, `表情${i + 1}`);
+
                 try {
-                    URL.revokeObjectURL(url);
-                } catch (err) { }
-            });
-            previewUrls.clear();
+                    const { file, resized } = await resizeEmojiImageIfNeeded(originalFile);
+                    if (resized) resizedCount += 1;
+
+                    const ext = file.type === 'image/png'
+                        ? 'png'
+                        : (file.type === 'image/webp' ? 'webp' : (file.type === 'image/gif' ? 'gif' : 'jpg'));
+                    const filename = `phone_emoji_${Date.now()}_${i + 1}.${ext}`;
+                    const formData = new FormData();
+                    formData.append('avatar', file, filename);
+
+                    const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
+                    delete headers['Content-Type'];
+                    if (!headers['X-CSRF-Token']) {
+                        const csrfResp = await fetch('/csrf-token');
+                        if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
+                    }
+                    const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
+                    if (!uploadResp.ok) {
+                        throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
+                    }
+                    const finalUrl = `/backgrounds/${filename}`;
+
+                    this.app.wechatData.addCustomEmoji({
+                        name: emojiDescription,
+                        description: emojiDescription,
+                        image: finalUrl
+                    });
+                    successCount += 1;
+                } catch (err) {
+                    failCount += 1;
+                    console.warn('表情包上传失败:', err);
+                }
+            }
+
+            return { successCount, failCount, resizedCount };
         };
 
         query('#back-from-add-emoji')?.addEventListener('click', () => {
-            cleanupPreviewUrls();
             this.app.render();
         });
 
-        query('#emoji-preview')?.addEventListener('click', (e) => {
-            if (e.target?.closest?.('.emoji-name-input')) return;
+        query('#pick-custom-emoji')?.addEventListener('click', () => {
+            if (isUploading) return;
             query('#emoji-image-upload')?.click();
-        });
-        query('#emoji-preview')?.addEventListener('input', (e) => {
-            const input = e.target?.closest?.('.emoji-name-input');
-            if (!input) return;
-            const index = Number.parseInt(String(input.dataset.emojiIndex || ''), 10);
-            if (!Number.isInteger(index) || !selectedFiles[index]) return;
-            selectedFiles[index].name = sanitizeEmojiName(input.value, selectedFiles[index].name || `表情${index + 1}`);
         });
 
         query('#emoji-image-upload')?.addEventListener('change', async (e) => {
             const files = Array.from(e?.target?.files || []);
             e.target.value = '';
-            if (!files.length) return;
+            if (!files.length || isUploading) return;
 
             let skipped = 0;
+            const selectedItems = [];
             for (const file of files) {
                 if (!file?.type?.startsWith?.('image/')) {
                     skipped += 1;
                     continue;
                 }
-                if (file.size > 1 * 1024 * 1024) {
+                if (file.size > EMOJI_RAW_FILE_MAX_SIZE) {
                     skipped += 1;
                     continue;
                 }
                 try {
-                    const preview = createPreviewUrl(file);
-                    if (!preview) {
-                        skipped += 1;
-                        continue;
-                    }
-                    const autoName = buildEmojiName(file?.name, selectedFiles.length + 1);
-                    selectedFiles.push({
+                    const autoName = buildEmojiName(file?.name, selectedItems.length + 1);
+                    selectedItems.push({
                         file,
-                        preview,
-                        autoName,
                         name: autoName
                     });
                 } catch (err) {
@@ -8705,75 +8919,34 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 }
             }
 
-            renderSelectedPreview();
             if (skipped > 0) {
                 this.app.phoneShell.showNotification('提示', `已跳过 ${skipped} 张不合规图片`, '⚠️');
             }
-        });
-
-        query('#save-custom-emoji')?.addEventListener('click', async () => { // 🔥 注意这里加上了 async
-            if (selectedFiles.length === 0) {
+            if (selectedItems.length === 0) {
                 this.app.phoneShell.showNotification('提示', '请先选择至少一张图片', '⚠️');
                 return;
             }
 
-            this.app.phoneShell.showNotification('处理中', `正在上传 ${selectedFiles.length} 张表情...`, '⏳');
-            const saveBtn = query('#save-custom-emoji');
-            if (saveBtn) saveBtn.disabled = true;
+            isUploading = true;
+            const pickBtn = query('#pick-custom-emoji');
+            if (pickBtn) pickBtn.disabled = true;
+            this.app.phoneShell.showNotification('处理中', `正在上传 ${selectedItems.length} 张表情...`, '⏳');
 
-            let successCount = 0;
-            let failCount = 0;
             try {
-                for (let i = 0; i < selectedFiles.length; i += 1) {
-                    const item = selectedFiles[i];
-                    const file = item.file;
-                    const autoName = String(item.autoName || '').trim() || `表情${i + 1}`;
-                    const emojiDescription = sanitizeEmojiName(item.name, autoName);
+                const { successCount, failCount, resizedCount } = await uploadCustomEmojiBatch(selectedItems);
 
-                    try {
-                        const ext = file.type === 'image/png'
-                            ? 'png'
-                            : (file.type === 'image/webp' ? 'webp' : (file.type === 'image/gif' ? 'gif' : 'jpg'));
-                        const filename = `phone_emoji_${Date.now()}_${i + 1}.${ext}`;
-                        const formData = new FormData();
-                        formData.append('avatar', file, filename);
-
-                        const headers = typeof window.getRequestHeaders === 'function' ? window.getRequestHeaders() : {};
-                        delete headers['Content-Type'];
-                        if (!headers['X-CSRF-Token']) {
-                            const csrfResp = await fetch('/csrf-token');
-                            if (csrfResp.ok) headers['X-CSRF-Token'] = (await csrfResp.json()).token;
-                        }
-                        const uploadResp = await fetch('/api/backgrounds/upload', { method: 'POST', body: formData, headers });
-                        if (!uploadResp.ok) {
-                            throw new Error(`上传失败（HTTP ${uploadResp.status}）`);
-                        }
-                        const finalUrl = `/backgrounds/${filename}`;
-
-                        this.app.wechatData.addCustomEmoji({
-                            name: emojiDescription,
-                            description: emojiDescription,
-                            image: finalUrl
-                        });
-                        successCount += 1;
-                    } catch (err) {
-                        failCount += 1;
-                        console.warn('表情包上传失败:', err);
-                        continue;
-                    }
-                }
-
-                cleanupPreviewUrls();
                 if (successCount > 0) {
                     const suffix = failCount > 0 ? `，失败 ${failCount} 张` : '';
-                    this.app.phoneShell.showNotification('添加成功', `已添加 ${successCount} 张表情${suffix}`, '✅');
+                    const resizedHint = resizedCount > 0 ? `，已等比缩小 ${resizedCount} 张` : '';
+                    this.app.phoneShell.showNotification('添加成功', `已添加 ${successCount} 张表情${resizedHint}${suffix}`, '✅');
+                    this.emojiTab = 'custom';
+                    setTimeout(() => this.app.render(), 300);
                 } else {
                     this.app.phoneShell.showNotification('上传失败', '表情上传失败，请检查酒馆后台', '❌');
                 }
-                this.emojiTab = 'custom';
-                setTimeout(() => this.app.render(), 300);
             } finally {
-                if (saveBtn) saveBtn.disabled = false;
+                if (pickBtn) pickBtn.disabled = false;
+                isUploading = false;
             }
         });
     }
