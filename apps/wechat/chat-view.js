@@ -3421,7 +3421,8 @@ renderChatRoom(chat) {
 
     // 🔥 抽取为独立方法：绑定消息长按事件（性能优化版：事件委托）
     bindMessageLongPressEvents() {
-        const messagesDiv = document.getElementById('chat-messages');
+        const currentView = this.getCurrentWechatView();
+        const messagesDiv = currentView?.querySelector('#chat-messages');
         if (!messagesDiv) return;
         const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card';
 
@@ -3456,7 +3457,7 @@ renderChatRoom(chat) {
             }
 
             pressTimer = setTimeout(() => {
-                const allMessages = document.querySelectorAll('.chat-message');
+                const allMessages = messagesDiv.querySelectorAll('.chat-message');
                 const index = Array.from(allMessages).indexOf(msgElement);
                 if (index !== -1) {
                     longPressTriggered = true;
@@ -3507,7 +3508,7 @@ renderChatRoom(chat) {
             if (!msgElement) return;
 
             e.preventDefault();
-            const allMessages = document.querySelectorAll('.chat-message');
+            const allMessages = messagesDiv.querySelectorAll('.chat-message');
             const index = Array.from(allMessages).indexOf(msgElement);
             if (index !== -1) this.showMessageMenu(index);
         });
@@ -3520,7 +3521,7 @@ renderChatRoom(chat) {
             const msgElement = e.target.closest('.chat-message');
             if (!msgElement) return;
 
-            const allMessages = document.querySelectorAll('.chat-message');
+            const allMessages = messagesDiv.querySelectorAll('.chat-message');
             const index = Array.from(allMessages).indexOf(msgElement);
             if (index !== -1) this.showMessageMenu(index);
         });
@@ -5886,14 +5887,26 @@ renderChatRoom(chat) {
 
     // 🗑️ 显示消息操作菜单（毛玻璃样式）
     showMessageMenu(messageIndex) {
+        const currentView = this.getCurrentWechatView();
+        const messagesDiv = currentView?.querySelector('#chat-messages');
+        if (!messagesDiv) return;
+
+        // 打开新菜单前，先解绑上一轮全局关闭监听，避免事件泄露
+        if (typeof this._activeCloseMenu === 'function') {
+            document.removeEventListener('click', this._activeCloseMenu);
+            document.removeEventListener('touchend', this._activeCloseMenu);
+            this._activeCloseMenu = null;
+        }
+
         const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
         const message = messages[messageIndex];
+        if (!message) return;
 
-        // 移除旧菜单
-        document.querySelectorAll('.message-action-menu').forEach(menu => menu.remove());
+        // 移除当前视图旧菜单
+        currentView.querySelectorAll('.message-action-menu').forEach(menu => menu.remove());
 
         // 获取消息元素并判断对齐方向
-        const messageElement = document.querySelectorAll('.chat-message')[messageIndex];
+        const messageElement = messagesDiv.querySelectorAll('.chat-message')[messageIndex];
         if (!messageElement) return;
 
         const isRight = messageElement.classList.contains('message-right');
@@ -6018,18 +6031,28 @@ renderChatRoom(chat) {
             </div>
         `;
 
+        const cleanupMenu = () => {
+            currentView.querySelectorAll('.message-action-menu').forEach(menu => menu.remove());
+            if (bubbleEl) bubbleEl.style.removeProperty('overflow');
+        };
+
         // 插入到气泡内部
         bubbleEl.insertBefore(menuEl, bubbleEl.firstChild);
 
         // 绑定按钮事件
-        document.querySelectorAll('.msg-action-btn').forEach(btn => {
+        menuEl.querySelectorAll('.msg-action-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const action = btn.dataset.action;
                 const index = parseInt(btn.dataset.index);
 
-                // 先移除菜单
-                document.querySelectorAll('.message-action-menu').forEach(menu => menu.remove());
+                // 先手动解绑 closeMenu，再执行业务，避免泄露与闪烁
+                if (typeof this._activeCloseMenu === 'function') {
+                    document.removeEventListener('click', this._activeCloseMenu);
+                    document.removeEventListener('touchend', this._activeCloseMenu);
+                    this._activeCloseMenu = null;
+                }
+                cleanupMenu();
 
                 if (action === 'delete') {
                     this.deleteMessage(index);
@@ -6052,14 +6075,16 @@ renderChatRoom(chat) {
                 // 移动端长按后的首个回流点击/触摸不关菜单，避免刚弹出就消失
                 if (Date.now() - openedAt < 350) return;
                 if (menuEl.contains(evt.target)) return;
-                document.querySelectorAll('.message-action-menu').forEach(menu => menu.remove());
-                // 🔥 菜单关闭后，恢复原本的 overflow 属性
-                if (bubbleEl) bubbleEl.style.removeProperty('overflow');
-                document.removeEventListener('click', closeMenu, true);
-                document.removeEventListener('touchend', closeMenu, true);
+                cleanupMenu();
+                document.removeEventListener('click', closeMenu);
+                document.removeEventListener('touchend', closeMenu);
+                if (this._activeCloseMenu === closeMenu) {
+                    this._activeCloseMenu = null;
+                }
             };
-            document.addEventListener('click', closeMenu, true);
-            document.addEventListener('touchend', closeMenu, true);
+            this._activeCloseMenu = closeMenu;
+            document.addEventListener('click', closeMenu);
+            document.addEventListener('touchend', closeMenu);
         }, 0);
     }
 
@@ -6173,7 +6198,8 @@ renderChatRoom(chat) {
         this.app.wechatData.deleteMessage(this.app.currentChat.id, messageIndex);
 
         // 🔥 局部刷新：只更新消息列表，不重绘整个界面
-        const messagesDiv = document.getElementById('chat-messages');
+        const currentView = this.getCurrentWechatView();
+        const messagesDiv = currentView?.querySelector('#chat-messages');
         if (messagesDiv) {
             const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
             const userInfo = this.app.wechatData.getUserInfo();
@@ -6208,7 +6234,8 @@ renderChatRoom(chat) {
         this.app.wechatData.saveData();
 
         // 🔥 局部刷新：只更新消息列表，不重绘整个界面
-        const messagesDiv = document.getElementById('chat-messages');
+        const currentView = this.getCurrentWechatView();
+        const messagesDiv = currentView?.querySelector('#chat-messages');
         if (messagesDiv) {
             const updatedMessages = this.app.wechatData.getMessages(this.app.currentChat.id);
             messagesDiv.innerHTML = this.renderMessagesWithDateDividers(updatedMessages, userInfo);
@@ -6251,7 +6278,10 @@ renderChatRoom(chat) {
         const message = messages[messageIndex];
 
         // 🔥 找到对应的消息气泡
-        const messageElements = document.querySelectorAll('.chat-message');
+        const currentView = this.getCurrentWechatView();
+        const messagesDiv = currentView?.querySelector('#chat-messages');
+        if (!messagesDiv) return;
+        const messageElements = messagesDiv.querySelectorAll('.chat-message');
         const messageEl = messageElements[messageIndex];
         if (!messageEl) return;
 
@@ -6344,11 +6374,12 @@ renderChatRoom(chat) {
         adjustHeight();
 
         const finishInlineEditAndRefresh = () => {
-            const messagesDiv = document.getElementById('chat-messages');
-            if (messagesDiv) {
+            const view = this.getCurrentWechatView();
+            const scopedMessagesDiv = view?.querySelector('#chat-messages');
+            if (scopedMessagesDiv) {
                 const latestMessages = this.app.wechatData.getMessages(this.app.currentChat.id);
                 const userInfo = this.app.wechatData.getUserInfo();
-                messagesDiv.innerHTML = this.renderMessagesWithDateDividers(latestMessages, userInfo);
+                scopedMessagesDiv.innerHTML = this.renderMessagesWithDateDividers(latestMessages, userInfo);
                 this.bindMessageLongPressEvents();
             }
             setTimeout(() => this._setMessageInlineEditMode(false, this.app.currentChat?.id), 0);
