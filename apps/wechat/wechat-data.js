@@ -538,8 +538,35 @@ export class WechatData {
         }
     }
 
+    _getSillyTavernPersonaAvatar() {
+        try {
+            // 根据酒馆的 DOM 结构，精准抓取当前选中的 Persona 头像
+            const selectedAvatarEl = document.querySelector('#user_avatar_block .avatar-container.selected img');
+            if (selectedAvatarEl && selectedAvatarEl.src) {
+                return selectedAvatarEl.src;
+            }
+            // 兜底抓取：部分酒馆主题的顶部快捷栏头像
+            const topBarAvatar = document.querySelector('#rm_button_panel_persona img');
+            if (topBarAvatar && topBarAvatar.src) {
+                return topBarAvatar.src;
+            }
+        } catch (e) {
+            console.warn('[微信数据] 获取默认Persona头像失败:', e);
+        }
+        return '';
+    }
+
     getUserInfo() {
-        return this.data.userInfo;
+        const info = this.data.userInfo;
+        // 如果用户没有手动上传过自定义头像，则动态抓取酒馆默认的 Persona 头像
+        if (!info.avatar || info.avatar.trim() === '') {
+            const stAvatar = this._getSillyTavernPersonaAvatar();
+            if (stAvatar) {
+                // 返回一个包含了默认头像的拷贝，绝不污染原始数据库
+                return { ...info, avatar: stAvatar };
+            }
+        }
+        return info;
     }
 
     getWalletBalance(chatId = null) {
