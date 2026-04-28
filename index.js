@@ -4395,21 +4395,115 @@ if (window.GGP_Loaded) {
                 // 3. 逐行解析内容并判断是否为新消息
                 const lines = content.split('\n');
                 let addedCount = 0;
+                const tmForReply = window.VirtualPhone?.timeManager || (await loadTimeManager());
+                const parseStoryTs = (timeData) => {
+                    if (!timeData?.time || !timeData?.date) return Number.NEGATIVE_INFINITY;
+                    try {
+                        if (typeof tmForReply?.parseTimeToTimestamp === 'function') {
+                            const parsed = Number(tmForReply.parseTimeToTimestamp(timeData));
+                            if (Number.isFinite(parsed)) return parsed;
+                        }
+                        const dateParts = String(timeData.date).match(/(\d{1,6})[-\/年]\s*(\d{1,2})[-\/月]\s*(\d{1,2})\s*日?/);
+                        const timeParts = String(timeData.time).match(/(\d{1,2})[:：](\d{2})/);
+                        if (dateParts && timeParts) {
+                            return new Date(
+                                parseInt(dateParts[1], 10),
+                                parseInt(dateParts[2], 10) - 1,
+                                parseInt(dateParts[3], 10),
+                                parseInt(timeParts[1], 10),
+                                parseInt(timeParts[2], 10)
+                            ).getTime();
+                        }
+                    } catch (e) {
+                        // ignore
+                    }
+                    return Number.NEGATIVE_INFINITY;
+                };
+
+                let timelineCursor = tmForReply?.getCurrentStoryTime?.() || null;
+                const existingMessages = wechatData.getMessages(chat.id);
+                const lastExistingMessage = Array.isArray(existingMessages) && existingMessages.length > 0
+                    ? existingMessages[existingMessages.length - 1]
+                    : null;
+                const lastExistingTime = lastExistingMessage?.time && lastExistingMessage?.date
+                    ? {
+                        time: lastExistingMessage.time,
+                        date: lastExistingMessage.date,
+                        weekday: lastExistingMessage.weekday || ''
+                    }
+                    : null;
+                if (lastExistingTime && (!timelineCursor || parseStoryTs(lastExistingTime) > parseStoryTs(timelineCursor))) {
+                    timelineCursor = lastExistingTime;
+                }
+
+                const normalizeStickerKeyword = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+                const customEmojis = Array.isArray(wechatData.getCustomEmojis?.())
+                    ? wechatData.getCustomEmojis()
+                    : [];
 
                 lines.forEach(line => {
                     const trimmedLine = line.trim();
                     if (!trimmedLine) return;
 
-                    //  wechatData.addMessage 底层自带有防重复检测
-                    const isAdded = wechatData.addMessage(chat.id, {
+                    let messageTime = timelineCursor || null;
+                    if (tmForReply?.addMinutesToStoryTime && timelineCursor?.time && timelineCursor?.date) {
+                        let minutesToAdd = 1;
+                        if (typeof tmForReply.getWechatMessageMinutesToAdd === 'function') {
+                            minutesToAdd = tmForReply.getWechatMessageMinutesToAdd(trimmedLine, { inBatch: true });
+                        } else {
+                            minutesToAdd = String(trimmedLine).replace(/\s+/g, '').length <= 12 ? 0 : 1;
+                        }
+                        minutesToAdd = Math.max(1, Number(minutesToAdd) || 0);
+                        const nextStoryTime = tmForReply.addMinutesToStoryTime(timelineCursor, minutesToAdd);
+                        if (nextStoryTime?.time && nextStoryTime?.date) {
+                            messageTime = nextStoryTime;
+                            timelineCursor = nextStoryTime;
+                            if (typeof tmForReply.setTime === 'function') {
+                                tmForReply.setTime(nextStoryTime.time, nextStoryTime.date, nextStoryTime.weekday || null);
+                            }
+                        }
+                    }
+
+                    const stickerMatch = /^\[表情包\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(trimmedLine);
+                    const stickerKeyword = stickerMatch ? String(stickerMatch[1] || '').trim() : '';
+                    const normalizedStickerKeyword = normalizeStickerKeyword(stickerKeyword);
+                    const matchedCustomEmoji = normalizedStickerKeyword
+                        ? customEmojis.find(emoji => {
+                            const nameNorm = normalizeStickerKeyword(emoji?.name);
+                            const descNorm = normalizeStickerKeyword(emoji?.description);
+                            return (nameNorm && nameNorm === normalizedStickerKeyword)
+                                || (descNorm && descNorm === normalizedStickerKeyword);
+                        })
+                        : null;
+
+                    const messagePayload = {
                         from: 'me',
                         content: trimmedLine,
                         type: 'text',
+                        time: messageTime?.time,
+                        date: messageTime?.date,
+                        weekday: messageTime?.weekday,
                         avatar: wechatData.getUserInfo().avatar || '',
                         tavernMessageIndex: tavernIndex, // 🔥 传入楼层索引
                         batchId: batchId,                // 🔥 传入批次ID
                         fromMainChatTag: true            // 🔥 标记来自正文解析
-                    });
+                    };
+
+                    // 与微信线上逻辑对齐：
+                    // [表情包](描述) 先命中“我的表情”同名资源，命中则直接按自定义表情图片发送。
+                    // 未命中则保持旧逻辑（sticker -> API / 无配置时关键词占位卡片）。
+                    if (matchedCustomEmoji?.image) {
+                        messagePayload.type = 'image';
+                        messagePayload.content = String(matchedCustomEmoji.image || '').trim();
+                        messagePayload.customEmojiId = String(matchedCustomEmoji.id || '').trim();
+                        messagePayload.customEmojiName = String(matchedCustomEmoji.name || '').trim();
+                        messagePayload.customEmojiDescription = String(
+                            matchedCustomEmoji.description || matchedCustomEmoji.name || stickerKeyword
+                        ).trim();
+                    }
+
+                    //  wechatData.addMessage 底层自带有防重复检测
+                    const isAdded = wechatData.addMessage(chat.id, messagePayload);
 
                     if (isAdded) {
                         addedCount++;
