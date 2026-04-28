@@ -30,6 +30,8 @@ export class WeiboView {
         this._cssLoaded = false;
         this._revealedDeletePostId = null;
         this._hasPendingExternalRecommendRefresh = false;
+        this._profileMediaCheckRunning = false;
+        this._profileBrokenPathSet = new Set();
     }
 
     // ========================================
@@ -186,6 +188,7 @@ export class WeiboView {
 
         this.app.phoneShell.setContent(html, 'weibo-home');
         this.bindHomeEvents();
+        this._scheduleProfileMediaHealthCheck();
         this._hasPendingExternalRecommendRefresh = false;
     }
 
@@ -1960,6 +1963,71 @@ export class WeiboView {
 
         // 绑定动态内容区的事件（如帖子点击、删除等）
         this.bindDynamicContentEvents();
+    }
+
+    _isManagedBackgroundPath(pathLike = '') {
+        const raw = String(pathLike || '').trim();
+        if (!raw) return false;
+        return /^\/backgrounds\/[^?#]+/i.test(raw) || /^https?:\/\/[^/]+\/backgrounds\/[^?#]+/i.test(raw);
+    }
+
+    _probeImageReachable(url = '') {
+        const target = String(url || '').trim();
+        if (!target) return Promise.resolve(false);
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(false);
+            img.src = target;
+        });
+    }
+
+    _scheduleProfileMediaHealthCheck() {
+        if (this._profileMediaCheckRunning) return;
+        this._profileMediaCheckRunning = true;
+        Promise.resolve()
+            .then(() => this._runProfileMediaHealthCheck())
+            .catch(() => { })
+            .finally(() => {
+                this._profileMediaCheckRunning = false;
+            });
+    }
+
+    async _runProfileMediaHealthCheck() {
+        if (this.currentView !== 'home') return;
+        const profile = this.app.weiboData.getProfile();
+        if (!profile) return;
+
+        const avatar = String(profile.avatar || '').trim();
+        const banner = String(profile.banner || '').trim();
+
+        const checks = [];
+        if (this._isManagedBackgroundPath(avatar) && !this._profileBrokenPathSet.has(`avatar:${avatar}`)) {
+            checks.push({ key: 'avatar', url: avatar });
+        }
+        if (this._isManagedBackgroundPath(banner) && !this._profileBrokenPathSet.has(`banner:${banner}`)) {
+            checks.push({ key: 'banner', url: banner });
+        }
+        if (checks.length === 0) return;
+
+        let changed = false;
+        for (const item of checks) {
+            const ok = await this._probeImageReachable(item.url);
+            if (ok) continue;
+            this._profileBrokenPathSet.add(`${item.key}:${item.url}`);
+            if (item.key === 'avatar' && String(profile.avatar || '').trim() === item.url) {
+                profile.avatar = null;
+                changed = true;
+            }
+            if (item.key === 'banner' && String(profile.banner || '').trim() === item.url) {
+                profile.banner = null;
+                changed = true;
+            }
+        }
+
+        if (!changed) return;
+        this.app.weiboData.saveProfile(profile);
+        if (this.currentView === 'home') this.render();
     }
 
     _setDeleteButtonVisible(btn, visible) {

@@ -256,13 +256,13 @@ export class ApiManager {
     // ️ 通道 A: 酒馆原生 API (兜底)
     // ========================================
     async _callTavernAPI(messages, options = {}) {
+        const isAbortLike = (err = null) => {
+            const msg = String(err?.message || err || '').toLowerCase();
+            return err?.name === 'AbortError' || err?.statusText === 'abort' || msg.includes('abort');
+        };
         try {
             const context = typeof SillyTavern !== 'undefined' ? SillyTavern.getContext() : null;
-            if (!context || typeof context.generateRaw !== 'function') {
-                throw new Error('当前酒馆版本不支持 generateRaw API');
-            }
-
-            const responseLength = this._resolveResponseLength(context, options);
+            const responseLength = this._resolveResponseLength(context || {}, options);
             const sourceMessages = Array.isArray(messages) ? messages : [];
 
             // 核心清洗：默认只保留 role/content，避免 OpenAI Schema 报错；
@@ -292,118 +292,74 @@ export class ApiManager {
                 throw new Error('消息数组为空');
             }
 
-            const isAbortLike = (err) => {
-                const msg = String(err?.message || err || '').toLowerCase();
-                return err?.name === 'AbortError'
-                    || err?.statusText === 'abort'
-                    || msg.includes('abort')
-                    || msg.includes('api changed')
-                    || msg.includes('canceled because main api changed')
-                    || msg.includes('cancelled because main api changed');
+            const jq = window.jQuery || window.$;
+            const readInputValue = (selector, fallback = '') => {
+                try {
+                    if (typeof jq === 'function') {
+                        const node = jq(selector);
+                        if (node && typeof node.val === 'function') {
+                            const raw = node.val();
+                            if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+                                return raw;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // ignore
+                }
+                return fallback;
             };
 
-            const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-            // 默认开启原生通道重试（用于吸收酒馆侧瞬时中断/空包）。
-            // 如需强制单次请求，可显式传入 allowTavernRetry:false。
-            const allowTavernRetry = options?.allowTavernRetry !== false;
-            const maxRetries = allowTavernRetry ? 3 : 1;
-            let attempt = 0;
-            let lastError = null;
+            const chatCompletionSource = String(readInputValue('#main_api', 'openai') || 'openai').trim() || 'openai';
+            const customUrl = String(readInputValue('#custom_url', '') || '').trim();
+            const proxyPassword = String(
+                readInputValue('#custom_api_key', '') || readInputValue('#api_key_openai', '') || ''
+            ).trim();
+            const temperatureRaw = parseFloat(readInputValue('#temp', '1.0'));
+            const temperature = Number.isFinite(temperatureRaw) ? temperatureRaw : 1.0;
 
-            while (attempt < maxRetries) {
-                attempt += 1;
-                try {
-                    // 极简参数：不传 stop:[] 等高风险字段
-                    const generateParams = {
-                        prompt: cleanMessages,
-                        max_tokens: responseLength,
-                        stream: true,
-                        quiet: true,
-                        skip_save: true,
-                        signal: options.signal
-                    };
+            const payload = {
+                chat_completion_source: chatCompletionSource,
+                custom_url: customUrl,
+                proxy_password: proxyPassword,
+                messages: cleanMessages,
+                temperature,
+                max_tokens: responseLength,
+                stream: true
+            };
 
-                    const result = await context.generateRaw(generateParams);
-                    if (result && typeof result === 'object' && result.error) {
-                        throw new Error(result.error?.message || result.error || '调用返回错误');
-                    }
+            const csrfToken = await this._getCsrfToken();
+            const response = await fetch('/api/backends/chat-completions/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                },
+                credentials: 'include',
+                body: JSON.stringify(payload),
+                signal: options.signal
+            });
 
-                    let text = '';
-                    if (typeof result === 'string') {
-                        text = result;
-                    } else {
-                        const extractTextFromPayload = (payload) => {
-                            if (!payload || typeof payload !== 'object') return '';
-
-                            const tryExtractFromChoices = (choices) => {
-                                if (!Array.isArray(choices) || choices.length === 0) return '';
-                                const first = choices[0] || {};
-                                const content = first?.message?.content;
-                                if (typeof content === 'string' && content.trim()) return content;
-                                if (Array.isArray(content)) {
-                                    const joined = content
-                                        .map(part => String(part?.text || part?.content || ''))
-                                        .join('')
-                                        .trim();
-                                    if (joined) return joined;
-                                }
-                                const textField = first?.text;
-                                if (typeof textField === 'string' && textField.trim()) return textField;
-                                return '';
-                            };
-
-                            return (
-                                tryExtractFromChoices(payload?.choices) ||
-                                tryExtractFromChoices(payload?.data?.choices) ||
-                                (typeof payload?.results?.[0]?.text === 'string' ? payload.results[0].text : '') ||
-                                (typeof payload?.text === 'string' ? payload.text : '') ||
-                                (typeof payload?.content === 'string' ? payload.content : '') ||
-                                (typeof payload?.output_text === 'string' ? payload.output_text : '')
-                            );
-                        };
-
-                        text = extractTextFromPayload(result);
-                    }
-
-                    text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
-
-                    const explicitNullContent = result?.choices?.[0]?.message?.content === null;
-                    if (!text || explicitNullContent) {
-                        throw new Error('No message generated');
-                    }
-
-                    return { success: true, summary: text };
-                } catch (err) {
-                    lastError = err;
-
-                    if (options?.signal?.aborted) {
-                        return { success: false, error: '已中断发送', aborted: true };
-                    }
-
-                    const shouldRetry = allowTavernRetry
-                        && (isAbortLike(err) || /No message generated/i.test(String(err?.message || '')));
-                    if (shouldRetry && attempt < maxRetries) {
-                        await delay(1500);
-                        continue;
-                    }
-
-                    if (isAbortLike(err)) {
-                        return { success: false, error: '请求被其他插件中断' };
-                    }
-
-                    return { success: false, error: `原生 API 失败: ${err?.message || err}` };
-                }
+            if (!response.ok) {
+                const errText = await response.text();
+                return { success: false, error: `原生 API 失败: ${response.status} ${response.statusText} ${errText || ''}`.trim() };
             }
 
-            if (isAbortLike(lastError)) {
-                return { success: false, error: '请求被其他插件中断' };
+            if (!response.body) {
+                const fallbackText = await response.text();
+                if (!fallbackText) return { success: false, error: '原生 API 失败: 响应体为空' };
+                return this._parseApiResponse(fallbackText);
             }
-            return { success: false, error: `原生 API 失败: ${lastError?.message || '未知错误'}` };
+
+            return await this._readUniversalStream(response.body, '[酒馆原生流式兜底]');
         } catch (e) {
-            if (e.name === 'AbortError' || e.statusText === 'abort') {
+            if (options?.signal?.aborted) {
+                return { success: false, error: '已中断发送', aborted: true };
+            }
+            if (isAbortLike(e)) {
                 return { success: false, error: '请求被其他插件中断' };
             }
-            return { success: false, error: `原生 API 失败: ${e.message}` };
+            return { success: false, error: `原生 API 失败: ${e?.message || e}` };
         }
     }
     async _callIndependentAPI(messages, options = {}, apiConfig = {}) {

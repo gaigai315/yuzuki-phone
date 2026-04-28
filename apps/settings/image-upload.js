@@ -22,6 +22,9 @@ export class ImageUploadManager {
 
         // 自动迁移并清理旧数据
         this._migrateOldData();
+
+        // 启动后异步自检：清理已失效的 /backgrounds/ 路径，避免控制台反复 404
+        this._scheduleCleanupMissingManagedFiles();
     }
 
     async _buildRequestHeaders({ json = false } = {}) {
@@ -424,6 +427,126 @@ export class ImageUploadManager {
             fileDeleteSuccess,
             fileDeleteFailed
         };
+    }
+
+    _isManagedBackgroundPath(pathLike) {
+        const raw = String(pathLike || '').trim();
+        if (!raw) return false;
+        if (/^\/backgrounds\/[^?#]+/i.test(raw)) return true;
+        if (/^https?:\/\/[^/]+\/backgrounds\/[^?#]+/i.test(raw)) return true;
+        return false;
+    }
+
+    async _probeBackgroundPathReachable(pathLike) {
+        const url = String(pathLike || '').trim();
+        if (!this._isManagedBackgroundPath(url)) return true;
+
+        // 先尝试 HEAD，部分环境不支持再降级 GET
+        try {
+            const headResp = await fetch(url, {
+                method: 'HEAD',
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            if (headResp.ok) return true;
+            if (headResp.status !== 405 && headResp.status !== 501) return false;
+        } catch (e) {
+            // ignore and fallback to GET
+        }
+
+        try {
+            const getResp = await fetch(url, {
+                method: 'GET',
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            return !!getResp.ok;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    _scheduleCleanupMissingManagedFiles() {
+        if (this._cleanupMissingScheduled) return;
+        this._cleanupMissingScheduled = true;
+
+        Promise.resolve()
+            .then(() => this._cleanupMissingManagedFiles())
+            .catch((e) => {
+                console.warn('[ImageUpload] 清理失效背景路径失败:', e);
+            })
+            .finally(() => {
+                this._cleanupMissingScheduled = false;
+            });
+    }
+
+    async _cleanupMissingManagedFiles() {
+        const iconMap = this.cache?.appIcons && typeof this.cache.appIcons === 'object'
+            ? this.cache.appIcons
+            : {};
+        const avatarMap = this.cache?.avatars && typeof this.cache.avatars === 'object'
+            ? this.cache.avatars
+            : {};
+
+        const toCheck = new Map();
+        const wallpaper = String(this.cache?.wallpaper || '').trim();
+        if (this._isManagedBackgroundPath(wallpaper)) toCheck.set(wallpaper, true);
+        Object.values(iconMap).forEach((v) => {
+            const raw = String(v || '').trim();
+            if (this._isManagedBackgroundPath(raw)) toCheck.set(raw, true);
+        });
+        Object.values(avatarMap).forEach((v) => {
+            const raw = String(v || '').trim();
+            if (this._isManagedBackgroundPath(raw)) toCheck.set(raw, true);
+        });
+
+        if (toCheck.size === 0) return;
+
+        const reachableMap = new Map();
+        for (const path of toCheck.keys()) {
+            reachableMap.set(path, await this._probeBackgroundPathReachable(path));
+        }
+
+        let changed = false;
+        let wallpaperChanged = false;
+        let iconChanged = false;
+
+        if (wallpaper && reachableMap.get(wallpaper) === false) {
+            this.cache.wallpaper = null;
+            changed = true;
+            wallpaperChanged = true;
+            console.warn('[ImageUpload] 已清理失效壁纸路径:', wallpaper);
+        }
+
+        Object.keys(iconMap).forEach((appId) => {
+            const path = String(iconMap[appId] || '').trim();
+            if (path && reachableMap.get(path) === false) {
+                delete this.cache.appIcons[appId];
+                changed = true;
+                iconChanged = true;
+                console.warn(`[ImageUpload] 已清理失效APP图标路径(${appId}):`, path);
+            }
+        });
+
+        Object.keys(avatarMap).forEach((charId) => {
+            const path = String(avatarMap[charId] || '').trim();
+            if (path && reachableMap.get(path) === false) {
+                delete this.cache.avatars[charId];
+                changed = true;
+                console.warn(`[ImageUpload] 已清理失效头像路径(${charId}):`, path);
+            }
+        });
+
+        if (!changed) return;
+
+        await this._saveCache();
+
+        if (wallpaperChanged) {
+            window.dispatchEvent(new CustomEvent('phone:updateWallpaper', { detail: { wallpaper: null } }));
+        }
+        if (iconChanged) {
+            window.dispatchEvent(new CustomEvent('phone:updateAppIcon'));
+        }
     }
 
     // ========================================

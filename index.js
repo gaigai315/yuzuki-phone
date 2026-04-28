@@ -5056,6 +5056,7 @@ if (window.GGP_Loaded) {
             
             // 🔥 第零阶段：只加载最核心的 2 个模块
             await loadCoreModules();
+            let phonePromptHandler = async () => {};
 
             // 🔥 第一阶段：核心数据初始化
             loadData();
@@ -5639,7 +5640,7 @@ if (window.GGP_Loaded) {
                 // 🟢🟢🟢 手机消息注入监听器 (升级现代 Hook，解决移动端时序丢失) 🟢🟢🟢
                 // ========================================
                 // 🔥 核心修复：加上 async 关键字，让它有能力等待异步加载
-                const phonePromptHandler = async (eventData) => {
+                phonePromptHandler = async (eventData) => {
                         // 🔥 强制等待核心管理器就绪 (防止由于休眠或点太快导致的 null)
                         if (!promptManager) await loadPromptManager();
                         if (!timeManager) await loadTimeManager();
