@@ -317,6 +317,7 @@ export class ApiManager {
                     const generateParams = {
                         prompt: cleanMessages,
                         max_tokens: responseLength,
+                        stream: true,
                         quiet: true,
                         skip_save: true,
                         signal: options.signal
