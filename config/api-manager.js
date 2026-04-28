@@ -253,88 +253,131 @@ export class ApiManager {
     }
 
     // ========================================
-    // ️ 通道 A: 酒馆原生 API (兜底)
+    // 🛡️ 通道 A: 酒馆原生 API (终极流式兜底，完美防502/504/400)
     // ========================================
     async _callTavernAPI(messages, options = {}) {
         const isAbortLike = (err = null) => {
             const msg = String(err?.message || err || '').toLowerCase();
             return err?.name === 'AbortError' || err?.statusText === 'abort' || msg.includes('abort');
         };
-        try {
-            const context = typeof SillyTavern !== 'undefined' ? SillyTavern.getContext() : null;
-            const responseLength = this._resolveResponseLength(context || {}, options);
-            const sourceMessages = Array.isArray(messages) ? messages : [];
 
-            // 核心清洗：默认只保留 role/content，避免 OpenAI Schema 报错；
-            // 但保留手机权限信号字段，防止记忆插件权限失效导致全提示词注入。
+        try {
+            const sourceMessages = Array.isArray(messages) ? messages : [];
             const cleanMessages = sourceMessages
                 .map((m, idx) => {
                     const role = m?.role === 'system' || m?.role === 'assistant' ? m.role : 'user';
                     const content = String(m?.content || '').trim();
                     if (!content) return null;
                     const normalized = { role, content };
-
-                    const isLast = idx === sourceMessages.length - 1;
-                    if (isLast && m?.gaigaiPhoneSignal) {
-                        normalized.gaigaiPhoneSignal = m.gaigaiPhoneSignal;
-                    }
-                    if (m?.isPhoneMessage) {
-                        normalized.isPhoneMessage = true;
-                    }
-                    if (m?.isVirtualPhoneApiCall) {
-                        normalized.isVirtualPhoneApiCall = true; // 🔥 确保标签在原生请求中不丢失
-                    }
+                    if (idx === sourceMessages.length - 1 && m?.gaigaiPhoneSignal) normalized.gaigaiPhoneSignal = m.gaigaiPhoneSignal;
+                    if (m?.isPhoneMessage) normalized.isPhoneMessage = true;
+                    if (m?.isVirtualPhoneApiCall) normalized.isVirtualPhoneApiCall = true;
                     return normalized;
                 })
                 .filter(Boolean);
 
-            if (cleanMessages.length === 0) {
-                throw new Error('消息数组为空');
+            if (cleanMessages.length === 0) throw new Error('消息数组为空');
+
+            // 🌟 1. 核心修复：向后端请求配置，并正确进行 JSON.parse()
+            const csrfToken = await this._getCsrfToken();
+            const settingsRes = await fetch('/api/settings/get', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body: JSON.stringify({})
+            });
+            
+            if (!settingsRes.ok) throw new Error('无法读取酒馆配置');
+            
+            const serverData = await settingsRes.json();
+            // 酒馆的 settings 是一个字符串，必须 parse！
+            const parsedSettings = JSON.parse(serverData.settings || '{}'); 
+            
+            // 兼容不同版本的酒馆设置结构
+            const oai = parsedSettings.oai_settings || parsedSettings;
+
+            // 🌟 2. 提取最真实的 Secret ID 和 URL（无视 DOM 掩码）
+            const chatSource = document.getElementById('chat_completion_source')?.value || oai.chat_completion_source || 'custom';
+
+            let model = '';
+            let reverseProxy = '';
+            let apiKey = ''; // 这将装载真实的 Secret ID
+
+            if (chatSource === 'custom') {
+                model = oai.custom_model || document.getElementById('custom_model')?.value;
+                reverseProxy = oai.custom_url || document.getElementById('custom_url')?.value;
+                apiKey = oai.custom_key; 
+            } else if (chatSource === 'openrouter') {
+                model = oai.openrouter_model || document.getElementById('model_openrouter')?.value;
+                reverseProxy = 'https://openrouter.ai/api/v1';
+                apiKey = oai.openrouter_key;
+            } else if (chatSource === 'claude') {
+                model = oai.claude_model || document.getElementById('model_claude')?.value;
+                reverseProxy = oai.claude_reverse_proxy || document.getElementById('claude_reverse_proxy')?.value;
+                apiKey = oai.claude_key;
+            } else {
+                model = oai.openai_model || document.getElementById('model_openai')?.value;
+                reverseProxy = oai.reverse_proxy || document.getElementById('openai_reverse_proxy')?.value;
+                apiKey = oai.openai_key;
             }
 
-            const jq = window.jQuery || window.$;
-            const readInputValue = (selector, fallback = '') => {
-                try {
-                    if (typeof jq === 'function') {
-                        const node = jq(selector);
-                        if (node && typeof node.val === 'function') {
-                            const raw = node.val();
-                            if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
-                                return raw;
-                            }
-                        }
-                    }
-                } catch (e) {
-                    // ignore
-                }
-                return fallback;
-            };
+            // 🌟 修复：优先读取 OpenAI/Custom 专属的真实 DOM 滑块和后台数据
+            const maxTokensCandidates = [
+                options.max_tokens,                                  
+                document.getElementById('openai_max_tokens')?.value,
+                oai.openai_max_tokens,         
+                document.getElementById('amount_gen')?.value,
+                parsedSettings.amount_gen
+            ];
+            const maxTokens = maxTokensCandidates
+                .map(v => Number.parseInt(v, 10))
+                .find(v => Number.isFinite(v) && v > 0) || 8192;
+           // 🌟 修复：精准读取 OpenAI/Custom 专属的高级参数滑块和后台数据
+            const tempCandidates = [document.getElementById('temp_openai')?.value, oai.temp_openai, document.getElementById('temp')?.value, parsedSettings.temp];
+            const temperature = tempCandidates.map(v => Number.parseFloat(v)).find(v => Number.isFinite(v)) ?? 1.0;
 
-            const chatCompletionSource = String(readInputValue('#main_api', 'openai') || 'openai').trim() || 'openai';
-            const customUrl = String(readInputValue('#custom_url', '') || '').trim();
-            const proxyPassword = String(
-                readInputValue('#custom_api_key', '') || readInputValue('#api_key_openai', '') || ''
-            ).trim();
-            const temperatureRaw = parseFloat(readInputValue('#temp', '1.0'));
-            const temperature = Number.isFinite(temperatureRaw) ? temperatureRaw : 1.0;
+            const freqPenCandidates = [document.getElementById('freq_pen_openai')?.value, oai.freq_pen_openai];
+            const frequency_penalty = freqPenCandidates.map(v => Number.parseFloat(v)).find(v => Number.isFinite(v));
 
+            const presPenCandidates = [document.getElementById('pres_pen_openai')?.value, oai.pres_pen_openai];
+            const presence_penalty = presPenCandidates.map(v => Number.parseFloat(v)).find(v => Number.isFinite(v));
+
+            const topPCandidates = [document.getElementById('top_p_openai')?.value, oai.top_p_openai];
+            const top_p = topPCandidates.map(v => Number.parseFloat(v)).find(v => Number.isFinite(v));
+
+            // 🌟 3. 组装给后端的 Payload
             const payload = {
-                chat_completion_source: chatCompletionSource,
-                custom_url: customUrl,
-                proxy_password: proxyPassword,
+                chat_completion_source: chatSource,
                 messages: cleanMessages,
-                temperature,
-                max_tokens: responseLength,
-                stream: true
+                temperature: temperature,
+                max_tokens: maxTokens,
+                stream: true  // ✅ 开启流式，彻底解决生成大段微博时的 504 Timeout
             };
 
-            const csrfToken = await this._getCsrfToken();
-            const response = await fetch('/api/backends/chat-completions/generate', {
+            // 将读取到的高级参数加入 Payload
+            if (frequency_penalty !== undefined) payload.frequency_penalty = frequency_penalty;
+            if (presence_penalty !== undefined) payload.presence_penalty = presence_penalty;
+            if (top_p !== undefined) payload.top_p = top_p;
+
+            if (model) payload.model = model;
+            
+            if (reverseProxy) {
+                payload.reverse_proxy = reverseProxy;
+                payload.custom_url = reverseProxy; // 兼容旧版字段
+            }
+            
+            // 注入真实的 Secret ID (如: 87a6c5a1-ba67...)
+            if (apiKey) {
+                payload.proxy_password = apiKey;
+            }
+
+            console.log(`🚀 [ApiManager] 触发原生 API (模式: ${chatSource}, 模型: ${model || '未指定'}, 代理: ${reverseProxy || '默认'})`);
+
+            // 🌟 4. 发送到正确的官方路由
+            const endpoint = '/api/backends/chat-completions/generate';
+            
+            const response = await fetch(endpoint, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken
-                },
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
                 credentials: 'include',
                 body: JSON.stringify(payload),
                 signal: options.signal
@@ -342,7 +385,8 @@ export class ApiManager {
 
             if (!response.ok) {
                 const errText = await response.text();
-                return { success: false, error: `原生 API 失败: ${response.status} ${response.statusText} ${errText || ''}`.trim() };
+                console.error('[ApiManager] 后端返回错误:', response.status, errText);
+                return { success: false, error: `原生 API 失败: ${response.status} ${errText || ''}`.trim() };
             }
 
             if (!response.body) {
@@ -351,14 +395,13 @@ export class ApiManager {
                 return this._parseApiResponse(fallbackText);
             }
 
+            // 5. 进入流式解析器，像打字机一样拼接文字
             return await this._readUniversalStream(response.body, '[酒馆原生流式兜底]');
+
         } catch (e) {
-            if (options?.signal?.aborted) {
-                return { success: false, error: '已中断发送', aborted: true };
-            }
-            if (isAbortLike(e)) {
-                return { success: false, error: '请求被其他插件中断' };
-            }
+            if (options?.signal?.aborted) return { success: false, error: '已中断发送', aborted: true };
+            if (isAbortLike(e)) return { success: false, error: '请求被其他插件中断' };
+            console.error('[ApiManager] 请求异常:', e);
             return { success: false, error: `原生 API 失败: ${e?.message || e}` };
         }
     }
