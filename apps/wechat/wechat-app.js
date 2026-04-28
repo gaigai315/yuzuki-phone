@@ -4178,6 +4178,20 @@ export class WechatApp {
         this._wechatPanelMode = 'settings';
         const promptManager = window.VirtualPhone?.promptManager;
         const prompts = promptManager?.prompts?.wechat || {};
+        // 功能开关已从微信设置页移除：保留历史字段兼容并强制恢复启用，避免旧存档残留 false 导致功能失效
+        const wechatModeManagedFeatures = ['offline', 'online', 'voiceCall', 'videoCall', 'groupVoiceCall', 'groupVideoCall', 'groupChat', 'moments', 'loadContacts'];
+        if (promptManager?.prompts?.wechat) {
+            let hasPromptStateChanged = false;
+            wechatModeManagedFeatures.forEach((feature) => {
+                if (promptManager.prompts.wechat?.[feature] && promptManager.prompts.wechat[feature].enabled === false) {
+                    promptManager.prompts.wechat[feature].enabled = true;
+                    hasPromptStateChanged = true;
+                }
+            });
+            if (hasPromptStateChanged) {
+                promptManager.savePrompts();
+            }
+        }
         const shellBg = this._getMainShellBackgroundConfig();
         const settingsContentStyle = shellBg.contentBgStyle || 'background: #ededed;';
 
@@ -4208,23 +4222,18 @@ export class WechatApp {
                 <!-- 功能提示词设置 -->
                 <div style="background: #fff; border-radius: 12px; margin: 15px; padding: 15px;">
                     <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 15px;">
-                        📝 功能提示词（按需启用）
+                        📝 功能提示词
                     </div>
 
                     <!-- 线下模式 -->
                     <div class="prompt-item" style="border-bottom: 1px solid #f0f0f0; padding-bottom: 12px; margin-bottom: 12px;">
-                        <div class="prompt-header" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;"
+                        <div class="prompt-header" style="display: flex; align-items: center; cursor: pointer;"
                              data-feature="offline">
                             <div style="display: flex; align-items: center; flex: 1;">
                                 <i class="fa-solid fa-chevron-right prompt-arrow"
                                    style="color: #999; font-size: 12px; margin-right: 8px; transition: transform 0.2s;"></i>
-                                <span style="font-size: 15px;">${prompts.offline?.name || '📴 线下模式'}</span>
+                                <span style="font-size: 15px;">📴 线下模式</span>
                             </div>
-                            <label class="toggle-switch" onclick="event.stopPropagation();">
-                                <input type="checkbox" class="feature-toggle" data-feature="offline"
-                                       ${prompts.offline?.enabled !== false ? 'checked' : ''}>
-                                <span class="toggle-slider"></span>
-                            </label>
                         </div>
                         <div class="prompt-content" style="display: none; margin-top: 10px; padding-left: 20px;">
                             <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
@@ -4262,11 +4271,6 @@ export class WechatApp {
                             <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">💬 微信聊天</span>
-                                    <label class="toggle-switch" onclick="event.stopPropagation();">
-                                        <input type="checkbox" class="feature-toggle" data-feature="online"
-                                               ${prompts.online?.enabled !== false ? 'checked' : ''}>
-                                        <span class="toggle-slider"></span>
-                                    </label>
                                 </div>
                                 <div style="font-size: 11px; color: #999; margin-bottom: 8px;">
                                     ${prompts.online?.description || '手机内微信聊天规则'}
@@ -4286,11 +4290,6 @@ export class WechatApp {
                             <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">📞 语音通话</span>
-                                    <label class="toggle-switch" onclick="event.stopPropagation();">
-                                        <input type="checkbox" class="feature-toggle" data-feature="voiceCall"
-                                               ${prompts.voiceCall?.enabled !== false ? 'checked' : ''}>
-                                        <span class="toggle-slider"></span>
-                                    </label>
                                 </div>
                                 <div style="font-size: 11px; color: #999; margin-bottom: 8px;">
                                     ${prompts.voiceCall?.description || '微信语音通话规则'}
@@ -4310,11 +4309,6 @@ export class WechatApp {
                             <div style="background: #f9f9f9; border-radius: 8px; padding: 12px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">📹 视频通话</span>
-                                    <label class="toggle-switch" onclick="event.stopPropagation();">
-                                        <input type="checkbox" class="feature-toggle" data-feature="videoCall"
-                                               ${prompts.videoCall?.enabled !== false ? 'checked' : ''}>
-                                        <span class="toggle-slider"></span>
-                                    </label>
                                 </div>
                                 <div style="font-size: 11px; color: #999; margin-bottom: 8px;">
                                     ${prompts.videoCall?.description || '微信视频通话规则'}
@@ -4334,11 +4328,6 @@ export class WechatApp {
                             <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-top: 10px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">👥📞 群语音通话</span>
-                                    <label class="toggle-switch" onclick="event.stopPropagation();">
-                                        <input type="checkbox" class="feature-toggle" data-feature="groupVoiceCall"
-                                               ${prompts.groupVoiceCall?.enabled !== false ? 'checked' : ''}>
-                                        <span class="toggle-slider"></span>
-                                    </label>
                                 </div>
                                 <div style="font-size: 11px; color: #999; margin-bottom: 8px;">
                                     ${prompts.groupVoiceCall?.description || '微信群语音通话规则'}
@@ -4358,11 +4347,6 @@ export class WechatApp {
                             <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-top: 10px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">👥📹 群视频通话</span>
-                                    <label class="toggle-switch" onclick="event.stopPropagation();">
-                                        <input type="checkbox" class="feature-toggle" data-feature="groupVideoCall"
-                                               ${prompts.groupVideoCall?.enabled !== false ? 'checked' : ''}>
-                                        <span class="toggle-slider"></span>
-                                    </label>
                                 </div>
                                 <div style="font-size: 11px; color: #999; margin-bottom: 8px;">
                                     ${prompts.groupVideoCall?.description || '微信群视频通话规则'}
@@ -4382,11 +4366,6 @@ export class WechatApp {
                             <div style="background: #f9f9f9; border-radius: 8px; padding: 12px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">👥 群聊</span>
-                                    <label class="toggle-switch" onclick="event.stopPropagation();">
-                                        <input type="checkbox" class="feature-toggle" data-feature="groupChat"
-                                               ${prompts.groupChat?.enabled !== false ? 'checked' : ''}>
-                                        <span class="toggle-slider"></span>
-                                    </label>
                                 </div>
                                 <div style="font-size: 11px; color: #999; margin-bottom: 8px;">
                                     ${prompts.groupChat?.description || '微信群聊规则'}
@@ -4406,18 +4385,13 @@ export class WechatApp {
 
                     <!-- 朋友圈 -->
                     <div class="prompt-item" style="border-bottom: 1px solid #f0f0f0; padding-bottom: 12px; margin-bottom: 12px;">
-                        <div class="prompt-header" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;" 
+                        <div class="prompt-header" style="display: flex; align-items: center; cursor: pointer;" 
                              data-feature="moments">
                             <div style="display: flex; align-items: center; flex: 1;">
                                 <i class="fa-solid fa-chevron-right prompt-arrow" 
                                    style="color: #999; font-size: 12px; margin-right: 8px; transition: transform 0.2s;"></i>
                                 <span style="font-size: 15px;">${prompts.moments?.name || '📸 朋友圈'}</span>
                             </div>
-                            <label class="toggle-switch" onclick="event.stopPropagation();">
-                                <input type="checkbox" class="feature-toggle" data-feature="moments" 
-                                       ${prompts.moments?.enabled ? 'checked' : ''}>
-                                <span class="toggle-slider"></span>
-                            </label>
                         </div>
                         <div class="prompt-content" style="display: none; margin-top: 10px; padding-left: 20px;">
                             <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
@@ -4437,18 +4411,13 @@ export class WechatApp {
 
                     <!-- 智能加载联系人 -->
                     <div class="prompt-item">
-                        <div class="prompt-header" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;" 
+                        <div class="prompt-header" style="display: flex; align-items: center; cursor: pointer;" 
                              data-feature="loadContacts">
                             <div style="display: flex; align-items: center; flex: 1;">
                                 <i class="fa-solid fa-chevron-right prompt-arrow" 
                                    style="color: #999; font-size: 12px; margin-right: 8px; transition: transform 0.2s;"></i>
                                 <span style="font-size: 15px;">${prompts.loadContacts?.name || '🤖 智能加载联系人'}</span>
                             </div>
-                            <label class="toggle-switch" onclick="event.stopPropagation();">
-                                <input type="checkbox" class="feature-toggle" data-feature="loadContacts" 
-                                       ${prompts.loadContacts?.enabled !== false ? 'checked' : ''}>
-                                <span class="toggle-slider"></span>
-                            </label>
                         </div>
                         <div class="prompt-content" style="display: none; margin-top: 10px; padding-left: 20px;">
                             <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
