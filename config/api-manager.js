@@ -386,6 +386,13 @@ export class ApiManager {
             if (!response.ok) {
                 const errText = await response.text();
                 console.error('[ApiManager] 后端返回错误:', response.status, errText);
+                if (
+                    response.status === 502 &&
+                    /invalid url|err_invalid_url|\/chat\/completions/i.test(String(errText || ''))
+                ) {
+                    console.warn('⚠️ [ApiManager] 检测到后端 URL 解析失败，自动回退到 generateRaw 兜底');
+                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options);
+                }
                 return { success: false, error: `原生 API 失败: ${response.status} ${errText || ''}`.trim() };
             }
 
@@ -405,6 +412,63 @@ export class ApiManager {
             return { success: false, error: `原生 API 失败: ${e?.message || e}` };
         }
     }
+
+    async _callTavernGenerateRawFallback(cleanMessages, maxTokens, options = {}) {
+        try {
+            const context = (typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function')
+                ? SillyTavern.getContext()
+                : null;
+            if (!context || typeof context.generateRaw !== 'function') {
+                return { success: false, error: '原生 API 失败: 无可用 generateRaw 兜底' };
+            }
+
+            const generateParams = {
+                prompt: Array.isArray(cleanMessages) ? cleanMessages : [],
+                images: [],
+                quiet: true,
+                dryRun: false,
+                skip_save: true,
+                stream: true,
+                include_world_info: false,
+                include_jailbreak: false,
+                include_character_card: false,
+                include_names: false,
+                max_tokens: maxTokens,
+                length: maxTokens,
+                stop: [],
+                stop_sequence: []
+            };
+
+            const result = await context.generateRaw(generateParams);
+            let summary = '';
+            if (typeof result === 'string') {
+                summary = result;
+            } else if (result && typeof result === 'object') {
+                if (result.error) {
+                    const errorMsg = typeof result.error === 'string' ? result.error : JSON.stringify(result.error);
+                    return { success: false, error: `原生 API 失败: ${errorMsg}` };
+                }
+                summary =
+                    result?.choices?.[0]?.message?.content ||
+                    result?.results?.[0]?.text ||
+                    result?.text ||
+                    result?.content ||
+                    result?.body?.text ||
+                    result?.message ||
+                    '';
+            }
+
+            summary = String(summary || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
+            if (!summary) {
+                return { success: false, error: '原生 API 失败: generateRaw 返回为空' };
+            }
+            return { success: true, summary };
+        } catch (e) {
+            if (options?.signal?.aborted) return { success: false, error: '已中断发送', aborted: true };
+            return { success: false, error: `原生 API 失败: ${e?.message || e}` };
+        }
+    }
+
     async _callIndependentAPI(messages, options = {}, apiConfig = {}) {
         const model = apiConfig.model || 'gpt-3.5-turbo';
         const provider = apiConfig.provider || 'openai';

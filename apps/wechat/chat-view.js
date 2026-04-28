@@ -5885,13 +5885,12 @@ renderChatRoom(chat) {
         });
     }
 
-    // 🗑️ 显示消息操作菜单（毛玻璃样式）
     showMessageMenu(messageIndex) {
         const currentView = this.getCurrentWechatView();
         const messagesDiv = currentView?.querySelector('#chat-messages');
         if (!messagesDiv) return;
 
-        // 打开新菜单前，先解绑上一轮全局关闭监听，避免事件泄露
+        // 🔥 核心修复：打开新菜单前，先解绑上一轮全局关闭监听，避免事件泄露（闪烁元凶）
         if (typeof this._activeCloseMenu === 'function') {
             document.removeEventListener('click', this._activeCloseMenu);
             document.removeEventListener('touchend', this._activeCloseMenu);
@@ -5924,11 +5923,9 @@ renderChatRoom(chat) {
         // 🔥 核心修复：防止红包、转账的 overflow: hidden 将弹出的菜单裁切掉
         bubbleEl.style.setProperty('overflow', 'visible', 'important');
 
-        // 🔥 根据消息类型决定显示哪些按钮
         const isTextMessage = message.type === 'text' || !message.type;
         const isLocationMessage = message.type === 'location';
         const isImageMessage = message.type === 'image';
-        const isVoiceMessage = message.type === 'voice';
         const isSystemMessage = message.type === 'system';
         const hasCallTranscript = message.type === 'call_record'
             && message.status === 'answered'
@@ -5938,75 +5935,20 @@ renderChatRoom(chat) {
         // 系统消息不显示菜单
         if (isSystemMessage) return;
 
-        // 构建按钮HTML
         let buttonsHtml = '';
 
-        // 编辑按钮：仅文本消息显示
         if (isTextMessage || isLocationMessage) {
-            buttonsHtml += `
-                <button class="msg-action-btn" data-action="edit" data-index="${messageIndex}" style="
-                    background: transparent;
-                    color: #333;
-                    border: none;
-                    border-right: 0.5px solid rgba(0,0,0,0.08);
-                    padding: 4px 8px;
-                    font-size: 11px;
-                    cursor: pointer;
-                ">编辑</button>`;
+            buttonsHtml += `<button class="msg-action-btn" data-action="edit" data-index="${messageIndex}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">编辑</button>`;
         }
-
-        // 引用按钮：文本和图片消息显示
         if (isTextMessage || isImageMessage) {
-            buttonsHtml += `
-                <button class="msg-action-btn" data-action="quote" data-index="${messageIndex}" style="
-                    background: transparent;
-                    color: #333;
-                    border: none;
-                    border-right: 0.5px solid rgba(0,0,0,0.08);
-                    padding: 4px 8px;
-                    font-size: 11px;
-                    cursor: pointer;
-                ">引用</button>`;
+            buttonsHtml += `<button class="msg-action-btn" data-action="quote" data-index="${messageIndex}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">引用</button>`;
         }
-
-        // 查看按钮：仅已接通且有 transcript 的通话记录显示
         if (hasCallTranscript) {
-            buttonsHtml += `
-                <button class="msg-action-btn" data-action="view" data-index="${messageIndex}" style="
-                    background: transparent;
-                    color: #333;
-                    border: none;
-                    border-right: 0.5px solid rgba(0,0,0,0.08);
-                    padding: 4px 8px;
-                    font-size: 11px;
-                    cursor: pointer;
-                ">查看</button>`;
+            buttonsHtml += `<button class="msg-action-btn" data-action="view" data-index="${messageIndex}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">查看</button>`;
         }
+        buttonsHtml += `<button class="msg-action-btn" data-action="recall" data-index="${messageIndex}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">撤回</button>`;
+        buttonsHtml += `<button class="msg-action-btn" data-action="delete" data-index="${messageIndex}" style="background: transparent; color: #ff3b30; border: none; padding: 4px 8px; font-size: 11px; cursor: pointer;">删除</button>`;
 
-        // 撤回按钮：所有消息类型都显示
-        buttonsHtml += `
-            <button class="msg-action-btn" data-action="recall" data-index="${messageIndex}" style="
-                background: transparent;
-                color: #333;
-                border: none;
-                border-right: 0.5px solid rgba(0,0,0,0.08);
-                padding: 4px 8px;
-                font-size: 11px;
-                cursor: pointer;
-            ">撤回</button>`;
-
-        // 删除按钮：所有消息类型都显示
-        buttonsHtml += `
-            <button class="msg-action-btn" data-action="delete" data-index="${messageIndex}" style="
-                background: transparent;
-                color: #ff3b30;
-                border: none;
-                padding: 4px 8px;
-                font-size: 11px;
-                cursor: pointer;
-            ">删除</button>`;
-
-        // 🔥 核心修复：改用标准 DOM 创建方式，杜绝模板字符串中的换行符残留撑大气泡
         const menuEl = document.createElement('div');
         menuEl.className = 'message-action-menu';
         menuEl.style.cssText = `
@@ -6017,42 +5959,32 @@ renderChatRoom(chat) {
             z-index: 100;
         `;
         menuEl.innerHTML = `
-            <div style="
-                display: flex;
-                background: rgba(255,255,255,0.9);
-                backdrop-filter: blur(8px);
-                -webkit-backdrop-filter: blur(8px);
-                border-radius: 4px;
-                overflow: hidden;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.12);
-                white-space: nowrap;
-            ">
+            <div style="display: flex; background: rgba(255,255,255,0.9); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 4px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.12); white-space: nowrap;">
                 ${buttonsHtml}
             </div>
         `;
 
-        const cleanupMenu = () => {
-            currentView.querySelectorAll('.message-action-menu').forEach(menu => menu.remove());
-            if (bubbleEl) bubbleEl.style.removeProperty('overflow');
-        };
-
-        // 插入到气泡内部
         bubbleEl.insertBefore(menuEl, bubbleEl.firstChild);
 
-        // 绑定按钮事件
+        // 🔥 定义统一的菜单清理函数，彻底切断内存泄漏
+        const cleanupMenu = () => {
+            currentView.querySelectorAll('.message-action-menu').forEach(m => m.remove());
+            if (bubbleEl) bubbleEl.style.removeProperty('overflow');
+            if (typeof this._activeCloseMenu === 'function') {
+                document.removeEventListener('click', this._activeCloseMenu);
+                document.removeEventListener('touchend', this._activeCloseMenu);
+                this._activeCloseMenu = null;
+            }
+        };
+
+        // 按钮点击事件
         menuEl.querySelectorAll('.msg-action-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const action = btn.dataset.action;
                 const index = parseInt(btn.dataset.index);
 
-                // 先手动解绑 closeMenu，再执行业务，避免泄露与闪烁
-                if (typeof this._activeCloseMenu === 'function') {
-                    document.removeEventListener('click', this._activeCloseMenu);
-                    document.removeEventListener('touchend', this._activeCloseMenu);
-                    this._activeCloseMenu = null;
-                }
-                cleanupMenu();
+                cleanupMenu(); // 🔥 核心：执行任何操作前，先打扫干净战场！
 
                 if (action === 'delete') {
                     this.deleteMessage(index);
@@ -6068,19 +6000,14 @@ renderChatRoom(chat) {
             });
         });
 
-        // 点击其他地方关闭菜单
+        // 外部点击关闭事件
         setTimeout(() => {
             const openedAt = Date.now();
             const closeMenu = (evt) => {
-                // 移动端长按后的首个回流点击/触摸不关菜单，避免刚弹出就消失
+                // 移动端长按后的首个回流点击不关菜单，避免闪现
                 if (Date.now() - openedAt < 350) return;
                 if (menuEl.contains(evt.target)) return;
-                cleanupMenu();
-                document.removeEventListener('click', closeMenu);
-                document.removeEventListener('touchend', closeMenu);
-                if (this._activeCloseMenu === closeMenu) {
-                    this._activeCloseMenu = null;
-                }
+                cleanupMenu(); // 点击外侧时打扫战场
             };
             this._activeCloseMenu = closeMenu;
             document.addEventListener('click', closeMenu);
