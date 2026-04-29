@@ -1009,10 +1009,13 @@
     padding: 12px 16px;
     gap: 8px;
     flex-shrink: 0;
+    align-items: center;
+    min-width: 0;
 }
 
 #music-search-input {
     flex: 1;
+    min-width: 0;
     height: 36px;
     padding: 0 14px 0 12px;
     border: 1px solid rgba(0, 0, 0, 0.1);
@@ -1028,14 +1031,35 @@
 }
 
 #music-search-submit {
+    flex: 0 0 auto;
     height: 36px;
     padding: 0 16px;
+    min-width: 56px;
+    white-space: nowrap;
     border: none;
     background: #6db3d8;
     color: #fff;
     border-radius: 8px;
     font-size: 13px;
     cursor: pointer;
+}
+
+@media (max-width: 420px) {
+    .music-search-box {
+        padding: 10px 12px;
+        gap: 6px;
+    }
+
+    #music-search-input {
+        padding: 0 10px;
+        font-size: 12px;
+    }
+
+    #music-search-submit {
+        padding: 0 10px;
+        min-width: 50px;
+        font-size: 12px;
+    }
 }
 
 .music-search-results {
