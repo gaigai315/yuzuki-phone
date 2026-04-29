@@ -2967,8 +2967,9 @@ if (window.GGP_Loaded) {
 
     // 🎵 解析 <Music> 卡片内容 (增强防呆版)
     function parseMusicCard(content) {
+        const safe = String(content || '').replace(/｜/g, '|');
+
         const get = (tag) => {
-            const safe = String(content || '').replace(/｜/g, '|');
             // 🔥 使用全局匹配 /gi，兼容字段名两侧空格
             const regex = new RegExp(`\\[\\s*${tag}\\s*\\|([^\\]]+)\\]`, 'gi');
             const matches = [...safe.matchAll(regex)];
@@ -2981,13 +2982,43 @@ if (window.GGP_Loaded) {
             });
             return results;
         };
+
+        const getReplies = () => {
+            const regex = /\[\s*Replies\s*\|([^\]]+)\]/gi;
+            const matches = [...safe.matchAll(regex)];
+            if (matches.length === 0) return [];
+
+            const normalized = [];
+            for (const m of matches) {
+                const raw = String(m[1] || '').trim();
+                if (!raw) continue;
+
+                // 支持这两种写法：
+                // 1) name|@handle|text|name|@handle|text
+                // 2) name|@handle|text；name|@handle|text
+                const chunks = raw
+                    .split(/[；;](?=[^|;\n\r]+\|@?[^|;\n\r]+\|)/g)
+                    .map(s => s.trim())
+                    .filter(Boolean);
+
+                chunks.forEach(chunk => {
+                    const parts = chunk.split('|').map(s => s.trim());
+                    // 直接将分割后的扁平数组推入，交给 music-view.js 的 triplets 标准解析
+                    if (parts.length > 0) {
+                        normalized.push(...parts);
+                    }
+                });
+            }
+            return normalized;
+        };
+
         return {
             char: get('Char'),
             meta: get('Meta'),
             stats: get('Stats'),
             thought: get('Thought'),
             modules: get('Modules'),
-            replies: get('Replies'),
+            replies: getReplies(),
             media: get('Media'),
             likes: get('Likes')
         };
@@ -5814,6 +5845,12 @@ if (window.GGP_Loaded) {
                             const wechatOfflineChats = [];
                             const storage = window.VirtualPhone.storage;
                             const isPhoneEnabled = isPhoneFeatureEnabled();
+                            const wechatOnlineRaw = storage ? storage.get('wechat_online_mode') : false;
+                            const isWechatOnlineEnabled = (
+                                wechatOnlineRaw === true ||
+                                wechatOnlineRaw === 'true' ||
+                                wechatOnlineRaw === 1
+                            );
 
                             // 🔥 手机休眠或功能关闭时：不注入任何手机上下文，但必须强制清洗掉占位符！
                             if (!isPhoneEnabled) {
@@ -5852,8 +5889,8 @@ if (window.GGP_Loaded) {
                                 console.warn('[手机插件] 幽灵数据斩断保护异常:', e);
                             }
 
-                            // 🔥 核心修改：只有在手机启用时，才去收集聊天记录
-                            if (storage && isPhoneEnabled) {
+                            // 🔥 核心修改：仅在微信在线模式开启时，才收集并注入微信线下上下文
+                            if (storage && isPhoneEnabled && isWechatOnlineEnabled) {
                                 try {
                                     // 🔥 性能优化：优先从内存中读取已有的 wechatApp 实例，避免全量 JSON.parse
                                     let wechatDataParsed = null;
@@ -6228,9 +6265,8 @@ if (window.GGP_Loaded) {
                                         }
                                     }
 
-                                    // 2️⃣ 添加微信线下模式提示词（如果启用）
-                                    // 注意：wechat_online_mode 仅控制手机内“在线聊天”，不应影响正文侧的线下提示词注入。
-                                    if (promptManager?.isEnabled?.('wechat', 'offline')) {
+                                    // 2️⃣ 添加微信线下模式提示词（如果启用且在线模式开启）
+                                    if (isWechatOnlineEnabled && promptManager?.getPromptForFeature) {
                                         try {
                                             let wechatPrompt = promptManager.getPromptForFeature('wechat', 'offline');
                                             if (wechatPrompt) {
@@ -6297,7 +6333,7 @@ if (window.GGP_Loaded) {
                                     }
 
                                     // 3️⃣ 添加微信聊天记录（按会话窗口分组显示，含日期）
-                                    if (wechatOfflineChats.length > 0) {
+                                    if (isWechatOnlineEnabled && wechatOfflineChats.length > 0) {
                                         phoneHistoryContent += `【手机微信已有消息】\n`;
                                         phoneHistoryContent += `以下是用户手机已经存在的微信消息记录。使用微信时，请严格遵守【微信线下模式】的全部规则，不得重复生成以下已经存在的历史微信消息记录。\n\n`;
 

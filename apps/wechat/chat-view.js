@@ -4792,7 +4792,7 @@ renderChatRoom(chat) {
         // 🔥 根据模式选择提示词（非通话模式时）
         if (!callMode) {
             try {
-                if (isGroupChat && promptManager?.isEnabled?.('wechat', 'groupChat')) {
+                if (isGroupChat && promptManager?.getPromptForFeature) {
                     // 群聊模式
                     systemPrompt = promptManager.getPromptForFeature('wechat', 'groupChat') || '';
 
@@ -4807,7 +4807,7 @@ renderChatRoom(chat) {
                         .replace(/\{\{groupMembers\}\}/g, groupMembers)
                         .replace(/\{\{wechatContacts\}\}/g, wechatContactsList)
                         .replace(/\{\{customEmojiList\}\}/g, customEmojiList);
-                } else if (promptManager?.isEnabled?.('wechat', 'online')) {
+                } else if (promptManager?.getPromptForFeature) {
                     // 单聊模式
                     systemPrompt = promptManager.getPromptForFeature('wechat', 'online') || '';
                     // 🔥 替换单聊窗口名变量
@@ -4955,7 +4955,7 @@ renderChatRoom(chat) {
             const wechatContactsList = contactNames.length > 0 ? contactNames.join('、') : '暂无好友';
 
             let callSystemPrompt = '';
-            if (promptManager?.isEnabled?.('wechat', promptFeature)) {
+            if (promptManager?.getPromptForFeature) {
                 callSystemPrompt = promptManager.getPromptForFeature('wechat', promptFeature) || '';
             }
 

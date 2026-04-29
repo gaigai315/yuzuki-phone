@@ -19,6 +19,8 @@ export class MusicData {
         this.audioPlayer = new Audio();
         this._playlist = null;     // lazy load，存储键 music_playlist
         this._favorites = null;    // 收藏夹列表
+        this._favoritesGlobalKey = 'global_music_favorites'; // 全局共享（跨会话）
+        this._favoritesLegacyChatKey = 'music_favorites';    // 旧版：按会话存储
         this.activeListType = 'playlist'; // 当前激活的播放列表 ('playlist' 待播清单 或 'favorites' 收藏夹)
         this.currentIndex = -1;
         this.isPlaying = false;
@@ -28,6 +30,7 @@ export class MusicData {
         this._playLock = false;    // 防止并发播放请求
         this._playGeneration = 0;  // 播放请求代次，用于取消过期请求
         this._userPaused = false;  // 记录用户是否手动按了暂停
+        this._prefetching = new Set(); // 预取中的歌曲，避免重复请求
 
         // 音频事件绑定
         this.audioPlayer.addEventListener('ended', () => this._onTrackEnded());
@@ -73,7 +76,17 @@ export class MusicData {
     // ========== 收藏夹管理 ==========
     getFavorites() {
         if (this._favorites === null) {
-            const saved = this.storage.get('music_favorites', null);
+            // 1) 优先读取全局收藏（跨会话共享）
+            let saved = this.storage.get(this._favoritesGlobalKey, null);
+
+            // 2) 兼容旧版：若全局为空，回退读取旧会话收藏并迁移到全局
+            if (!saved) {
+                saved = this.storage.get(this._favoritesLegacyChatKey, null);
+                if (saved) {
+                    this.storage.set(this._favoritesGlobalKey, saved);
+                }
+            }
+
             if (saved) {
                 try { this._favorites = typeof saved === 'string' ? JSON.parse(saved) : saved; }
                 catch (e) { this._favorites = []; }
@@ -85,7 +98,7 @@ export class MusicData {
     }
 
     saveFavorites() {
-        this.storage.set('music_favorites', JSON.stringify(this._favorites || []));
+        this.storage.set(this._favoritesGlobalKey, JSON.stringify(this._favorites || []));
     }
 
     toggleFavorite(song) {
@@ -219,11 +232,17 @@ export class MusicData {
         const playlist = this.getActiveList();
         if (index < 0 || index >= playlist.length) return;
 
+        const wasPlaying = this.isPlaying;
         // 递增代次号，使之前的 play() 调用自动失效
         const generation = ++this._playGeneration;
         this._playLock = true;
         this._userPaused = false;
         this.currentIndex = index;
+        // 先停旧歌并立即刷新UI，给“上一曲/下一曲”即时反馈
+        this.audioPlayer.pause();
+        this.isPlaying = false;
+        this._notifyStateChange();
+
         const song = playlist[index];
 
         try {
@@ -263,8 +282,13 @@ export class MusicData {
             this.isPlaying = true;
             this._playLock = false;
             this._notifyStateChange();
+            this._prefetchNeighbors(index, listType);
         } catch (e) {
             if (generation === this._playGeneration) {
+                // 如果切歌失败且之前本来在播，尝试恢复上一状态的可用资源
+                if (wasPlaying && this.audioPlayer.src) {
+                    this.audioPlayer.play().catch(() => {});
+                }
                 this.isPlaying = false;
                 this._playLock = false;
                 this._notifyStateChange();
@@ -389,6 +413,41 @@ export class MusicData {
         if (playlist.length === 0) return;
         const prevIndex = (this.currentIndex - 1 + playlist.length) % playlist.length;
         this.play(prevIndex, this.activeListType);
+    }
+
+    _prefetchNeighbors(index, listType = this.activeListType) {
+        const playlist = (listType === 'favorites') ? this.getFavorites() : this.getPlaylist();
+        if (!Array.isArray(playlist) || playlist.length <= 1) return;
+
+        const nextIndex = (index + 1) % playlist.length;
+        const prevIndex = (index - 1 + playlist.length) % playlist.length;
+        this._prefetchSongAt(nextIndex, listType);
+        this._prefetchSongAt(prevIndex, listType);
+    }
+
+    async _prefetchSongAt(index, listType = this.activeListType) {
+        const playlist = (listType === 'favorites') ? this.getFavorites() : this.getPlaylist();
+        const song = playlist[index];
+        if (!song || song.url) return;
+
+        const songKey = `${listType}:${song.name}|${song.artist}`;
+        if (this._prefetching.has(songKey) || this._failedSongs.has(`${song.name}|${song.artist}`)) return;
+
+        this._prefetching.add(songKey);
+        try {
+            const result = await this._fetchSongUrl(song.name, song.artist);
+            if (result && result.url) {
+                song.url = result.url;
+                song.pic = result.pic;
+                song.lrc = result.lrc;
+                if (listType === 'favorites') this.saveFavorites();
+                else this.savePlaylist();
+            }
+        } catch (e) {
+            // 预取失败不打断主流程
+        } finally {
+            this._prefetching.delete(songKey);
+        }
     }
 
     getCurrentSong() {
@@ -559,4 +618,3 @@ export class MusicData {
         this._playGeneration++;
     }
 }
-

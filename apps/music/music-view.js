@@ -29,6 +29,7 @@ export class MusicView {
         this._cssInjected = false;
         this._isPlaylistCollapsed = false;
         this._currentTab = 'playlist'; // 记录当前在哪个列表
+        this._panelFace = 'front'; // front: 播放器正面, back: 社交背面
     }
 
     // 🔥 核心补救：缺失的统一刷新入口
@@ -51,12 +52,23 @@ export class MusicView {
     // ========== CSS 注入 ==========
 
     _injectCSS() {
-        if (this._cssInjected) return;
-        this._cssInjected = true;
-        const link = document.createElement('link');
+        const cssHref = new URL('./music.css?v=1.0.1', import.meta.url).href;
+        let link = document.getElementById('music-app-style');
+
+        if (link) {
+            if (link.href !== cssHref) {
+                link.href = cssHref;
+            }
+            this._cssInjected = true;
+            return;
+        }
+
+        link = document.createElement('link');
+        link.id = 'music-app-style';
         link.rel = 'stylesheet';
-        link.href = new URL('./music.css?v=1.0.0', import.meta.url).href;
+        link.href = cssHref;
         document.head.appendChild(link);
+        this._cssInjected = true;
     }
 
     /**
@@ -494,6 +506,7 @@ export class MusicView {
 
     _openPanel() {
         if (this._floatingPanel) return;
+        this._panelFace = 'front';
 
         const data = this.app.musicData;
         const card = data.getCardData();
@@ -504,160 +517,82 @@ export class MusicView {
         const panel = document.createElement('div');
         panel.className = 'music-floating-panel';
 
-        // 🔥 彻底放弃 fixed 定位带来的跨端冲突，改为 Flexbox 容器内的 relative 排版
+        // 继续使用安全舱容器，保持所有交互都在独立图层中
         Object.assign(panel.style, {
             position: 'relative',
-            width: '92vw',
-            maxWidth: '340px',
-            maxHeight: '75vh',
-            background: '#f5f5f5',
-            border: '1px solid rgba(0, 0, 0, 0.08)',
-            borderRadius: '16px',
-            color: 'rgba(0, 0, 0, 0.75)',
-            boxShadow: '0 8px 40px rgba(0, 0, 0, 0.15)',
-            overflow: 'hidden',
+            width: 'min(340px, calc(100vw - 24px))',
             display: 'flex',
             flexDirection: 'column',
             boxSizing: 'border-box',
-            pointerEvents: 'auto', // 让面板本身可以响应点击
+            pointerEvents: 'auto',
             visibility: 'visible',
             opacity: '1',
         });
 
-        // === 构建面板内容 ===
-        let headerHTML = '';
-        if (card && card.char && card.char.length >= 2) {
-            const realAvatar = this._getRealAvatarFromDOM() || card.char[2];
-            const avatarContent = realAvatar
-                ? `<img src="${realAvatar}" alt="">`
-                : SVG_NOTE;
-            const metaStr = (card.meta && card.meta.length > 0) ? `<span class="music-fp-meta" style="font-size:10px; color:rgba(0,0,0,0.35); margin-left:6px;">${this._escapeHtml(card.meta.join(' '))}</span>` : '';
-            headerHTML = `
-                <div class="music-fp-header">
-                    <div class="music-fp-avatar">${avatarContent}</div>
-                    <div class="music-fp-charinfo">
-                        <div class="music-fp-charname">${this._escapeHtml(card.char[0] || '')}${metaStr}</div>
-                        <div class="music-fp-handle">${this._escapeHtml(card.char[1] || '')}</div>
-                    </div>
-                    <div class="music-fp-close" id="music-fp-close">✕</div>
-                </div>
-            `;
-        } else {
-            headerHTML = `
-                <div class="music-fp-header">
-                    <div class="music-fp-avatar">${SVG_NOTE}</div>
-                    <div class="music-fp-charinfo">
-                        <div class="music-fp-charname">音乐播放器</div>
-                    </div>
-                    <div class="music-fp-close" id="music-fp-close">✕</div>
-                </div>
-            `;
-        }
+        const headerHTML = `
+            <div class="panel-header">
+                <button type="button" class="close-btn header-back-btn" id="music-fp-header-back" title="返回正面">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <span class="panel-title"> 正在播放</span>
+                <div class="close-btn" id="music-fp-close">✕</div>
+            </div>
+        `;
 
         let bodyHTML = '';
-
-        // === 卡片内容区 (全新排版) ===
-        if (card) {
-            // 1. Stats — 未说出口的话 (引言风格)
-            if (card.stats?.length > 0 && card.stats[0]) {
-                bodyHTML += `
-                    <div class="music-fp-quote">
-                        <div class="music-fp-quote-content">${this._escapeHtml(card.stats.join(' '))}</div>
-                    </div>`;
-            }
-
-            // 2. 互动区: Thought + Replies (朋友圈式排版)
-            const hasThought = card.thought?.length > 0 && card.thought[0];
-            const hasReplies = card.replies?.length >= 3;
-            if (hasThought || hasReplies) {
-                bodyHTML += `<div class="music-fp-thread">`;
-                
-                if (hasThought) {
-                    bodyHTML += `
-                        <div class="music-fp-thread-main">
-                            <div class="music-fp-thread-label">内心动态</div>
-                            <div class="music-fp-thread-content">${this._escapeHtml(card.thought.join(' '))}</div>
-                        </div>`;
-                }
-
-                if (hasReplies) {
-                    bodyHTML += `<div class="music-fp-replies">`;
-                    for (let i = 0; i < card.replies.length - 2; i += 3) {
-                        if (card.replies[i]) {
-                            bodyHTML += `
-                                <div class="music-fp-reply">
-                                    <div class="music-fp-reply-avatar">${(card.replies[i] || '?')[0]}</div>
-                                    <div class="music-fp-reply-body">
-                                        <div class="music-fp-reply-name">${this._escapeHtml(card.replies[i])}</div>
-                                        <div class="music-fp-reply-text">${this._escapeHtml(card.replies[i + 2] || '')}</div>
-                                    </div>
-                                </div>`;
-                        }
-                    }
-                    bodyHTML += `</div>`;
-                }
-                bodyHTML += `</div>`;
-            }
-
-            // 4. Likes — 偏好 (网易云卡片风格)
-            if (card.likes?.length > 0) {
-                bodyHTML += `
-                <div class="music-fp-likes-container">
-                    <div class="music-fp-likes-title">我的喜欢</div>
-                    <div class="music-fp-likes-tags">
-                        ${card.likes.map(l => `<span class="music-fp-like-tag">❤ ${this._escapeHtml(l)}</span>`).join('')}
-                    </div>
-                </div>`;
-            }
-        } else {
-            bodyHTML += `<div class="music-fp-no-card">等待记录生成...</div>`;
-        }
-
-        // === 播放器区 (引入 SVG 控件) ===
-        bodyHTML += `<div class="music-fp-player" style="position:relative;">`;
-        bodyHTML += `<div id="music-fp-search" title="搜索歌曲" style="position:absolute; top:8px; right:8px; cursor:pointer; color:rgba(0,0,0,0.3); display:flex; align-items:center; z-index:1;">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-        </div>`;
-        if (song) {
-            bodyHTML += `
-                <div class="music-fp-now-playing">
-                    <div class="music-fp-cover">${song.pic ? `<img src="${song.pic}" alt="">` : SVG_NOTE}</div>
-                    <div class="music-fp-song-info">
-                        <div class="music-fp-song-name">${this._escapeHtml(song.name)}</div>
-                        <div class="music-fp-song-artist">${this._escapeHtml(song.artist)}</div>
-                    </div>
-                </div>`;
-        } else {
-            bodyHTML += `
-                <div class="music-fp-now-playing">
-                    <div class="music-fp-cover">${SVG_NOTE}</div>
-                    <div class="music-fp-song-info">
-                        <div class="music-fp-song-name" style="opacity:0.5">暂无播放</div>
-                        <div class="music-fp-song-artist">等待推荐中...</div>
-                    </div>
-                </div>`;
-        }
-
         bodyHTML += `
-            <div class="music-fp-progress" id="music-fp-progress"><div class="music-fp-progress-bar" id="music-fp-progress-bar"></div></div>
-            <div class="music-fp-time"><span id="music-fp-time-current">0:00</span><span id="music-fp-time-total">0:00</span></div>
-            <div class="music-fp-controls">
-                <div class="music-fp-ctrl-btn" id="music-fp-prev">${SVG_PREV}</div>
-                <div class="music-fp-ctrl-btn play-btn" id="music-fp-play">${data.isPlaying ? SVG_PAUSE : SVG_PLAY}</div>
-                <div class="music-fp-ctrl-btn" id="music-fp-next">${SVG_NEXT}</div>
+            <div class="panel-face panel-front">
+                <div class="player-core-section">
+                    <div class="player-top-actions">
+                        <div class="search-trigger" id="music-fp-search" title="搜索歌曲">
+                            <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                        </div>
+                    </div>
+                    <div class="album-cover-wrapper">
+                        <div class="album-cover-media">${song && song.pic ? `<img src="${song.pic}" alt="">` : SVG_NOTE}</div>
+                    </div>
+                    <div class="song-info">
+                        <div class="song-name">${song ? this._escapeHtml(song.name) : '暂无播放'}</div>
+                        <div class="song-artist">${song ? this._escapeHtml(song.artist) : '等待推荐中...'}</div>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-bar" id="music-fp-progress">
+                            <div class="progress-fill" id="music-fp-progress-bar"></div>
+                        </div>
+                        <div class="time-info">
+                            <span id="music-fp-time-current">0:00</span>
+                            <span id="music-fp-time-total">0:00</span>
+                        </div>
+                    </div>
+                    <div class="controls-wrap">
+                        <div class="controls">
+                            <div class="ctrl-btn" id="music-fp-prev">${SVG_PREV}</div>
+                            <div class="ctrl-btn play-btn" id="music-fp-play">${data.isPlaying ? SVG_PAUSE : SVG_PLAY}</div>
+                            <div class="ctrl-btn" id="music-fp-next">${SVG_NEXT}</div>
+                        </div>
+                        <div class="flip-side-btn" id="music-fp-flip" title="查看卡片背面">
+                            <span></span><span></span><span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="playlist-section">
+                    <div class="playlist-header"></div>
+                    <div class="playlist-list"></div>
+                </div>
             </div>
-        </div>`;
+            <div class="panel-face panel-back">
+                <div class="social-card-section"></div>
+            </div>
+        `;
 
-        // === 歌单 ===
-        // 留一个空壳容器，交给 _updateFloatingPanelDOM 统一渲染防冲突
-        bodyHTML += `<div class="music-fp-playlist"></div>`;
-
-        panel.innerHTML = headerHTML + `<div class="music-fp-body">${bodyHTML}</div>`;
+        panel.innerHTML = headerHTML + `<div class="panel-scroll-body">${bodyHTML}</div>`;
         
         // 🔥 核心修复：把卡片放进免疫变形的安全舱中，而不是有坑的 document.body
         this._getFloatingContainer().appendChild(panel);
         
         this._floatingPanel = panel;
+        this._setPanelFace(this._panelFace);
 
         // 【新增搜索模态框的HTML】
         const searchModalHTML = `
@@ -723,6 +658,22 @@ export class MusicView {
         const nextBtn = panel.querySelector('#music-fp-next');
         if (nextBtn) nextBtn.onclick = () => data.next();
 
+        // 正反面切换（只切 UI，不影响音频播放状态）
+        const flipBtn = panel.querySelector('#music-fp-flip');
+        if (flipBtn) {
+            flipBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._setPanelFace(this._panelFace === 'front' ? 'back' : 'front');
+            };
+        }
+        const headerBackBtn = panel.querySelector('#music-fp-header-back');
+        if (headerBackBtn) {
+            headerBackBtn.onclick = (e) => {
+                e.stopPropagation();
+                this._setPanelFace('front');
+            };
+        }
+
         // 进度条点击
         const progress = panel.querySelector('#music-fp-progress');
         if (progress) {
@@ -764,6 +715,12 @@ export class MusicView {
                 performSearch();
             }
         };
+    }
+
+    _setPanelFace(face) {
+        this._panelFace = face === 'back' ? 'back' : 'front';
+        if (!this._floatingPanel) return;
+        this._floatingPanel.classList.toggle('show-back-face', this._panelFace === 'back');
     }
 
     _closePanel() {
@@ -877,91 +834,184 @@ export class MusicView {
 
     // 🔥 局部热更新逻辑
     _updateFloatingPanelDOM() {
+        if (!this._floatingPanel) return;
+        this._setPanelFace(this._panelFace);
+
         const data = this.app.musicData;
         const playlist = data.getPlaylist();
         const song = data.getCurrentSong() || (playlist.length > 0 ? playlist[0] : null);
-        
-        // 0：动态更新顶部的角色头像和信息
         const card = data.getCardData();
-        if (card && card.char && card.char.length >= 2) {
-            const charAvatarEl = this._floatingPanel.querySelector('.music-fp-avatar');
-            if (charAvatarEl) {
-                const realAvatar = this._getRealAvatarFromDOM() || card.char[2];
-                charAvatarEl.innerHTML = realAvatar ? `<img src="${realAvatar}" alt="">` : SVG_NOTE;
-            }
-            
-            const charNameEl = this._floatingPanel.querySelector('.music-fp-charname');
-            if (charNameEl) {
-                const metaStr = (card.meta && card.meta.length > 0) ? `<span class="music-fp-meta" style="font-size:10px; color:rgba(0,0,0,0.35); margin-left:6px;">${this._escapeHtml(card.meta.join(' '))}</span>` : '';
-                charNameEl.innerHTML = this._escapeHtml(card.char[0] || '') + metaStr;
-            }
-            
-            const handleEl = this._floatingPanel.querySelector('.music-fp-handle');
-            if (handleEl) handleEl.textContent = this._escapeHtml(card.char[1] || '');
-        }
 
         // 1. 更新播放/暂停按钮 (SVG版)
         const playBtn = this._floatingPanel.querySelector('#music-fp-play');
         if (playBtn) playBtn.innerHTML = data.isPlaying ? SVG_PAUSE : SVG_PLAY;
 
         // 2. 更新当前播放的封面、歌名和歌手
-        const coverEl = this._floatingPanel.querySelector('.music-fp-cover');
+        const coverEl = this._floatingPanel.querySelector('.album-cover-media');
         if (coverEl) coverEl.innerHTML = (song && song.pic) ? `<img src="${song.pic}" alt="">` : SVG_NOTE;
 
-        const nameEl = this._floatingPanel.querySelector('.music-fp-song-name');
+        const nameEl = this._floatingPanel.querySelector('.song-name');
         if (nameEl) {
             nameEl.textContent = song ? song.name : '暂无播放';
             nameEl.style.opacity = song ? '1' : '0.5';
         }
 
-        const artistEl = this._floatingPanel.querySelector('.music-fp-song-artist');
+        const artistEl = this._floatingPanel.querySelector('.song-artist');
         if (artistEl) artistEl.textContent = song ? song.artist : '等待推荐中...';
 
+        // 2.5 更新社交卡片
+        const socialSection = this._floatingPanel.querySelector('.social-card-section');
+        if (socialSection) {
+            if (!card) {
+                socialSection.innerHTML = `<div class="no-social-data">等待记录生成...</div>`;
+            } else {
+                const realAvatar = this._getRealAvatarFromDOM() || (card.char && card.char[2]) || '';
+                const charName = this._escapeHtml((card.char && card.char[0]) || '音乐动态');
+                const charHandle = this._escapeHtml((card.char && card.char[1]) || '');
+                const metaText = card.meta && card.meta.length > 0 ? this._escapeHtml(card.meta.join(' ')) : '';
+                const statsText = card.stats && card.stats.length > 0
+                    ? this._escapeHtml(card.stats.join(' '))
+                    : '';
+                const thoughtText = card.thought && card.thought.length > 0
+                    ? this._escapeHtml(card.thought.join(' '))
+                    : '';
+
+                const likesHTML = card.likes && card.likes.length > 0
+                    ? `<div class="likes-tags">${card.likes.map(l => `<span class="like-tag"><span class="heart">❤</span> ${this._escapeHtml(l)}</span>`).join('')}</div>`
+                    : '';
+
+                let repliesHTML = '';
+                const normalizedReplies = this._normalizeReplies(card.replies);
+                if (normalizedReplies.length > 0) {
+                    const items = [];
+                    for (const reply of normalizedReplies) {
+                        const replyName = (reply.name || '').trim();
+                        const replyHandle = (reply.handle || '').trim();
+                        const replyText = (reply.text || '').trim();
+                        if (!replyName && !replyText) continue;
+                        const avatarText = this._escapeHtml((replyName || '?').charAt(0));
+                        items.push(`
+                            <div class="reply-item">
+                                <div class="reply-avatar">${avatarText}</div>
+                                <div class="reply-body">
+                                    <div class="reply-name">
+                                        ${this._escapeHtml(replyName || '匿名')}
+                                        ${replyHandle ? `<span class="reply-handle">${this._escapeHtml(replyHandle)}</span>` : ''}
+                                    </div>
+                                    <div class="reply-text">${this._escapeHtml(replyText || '...')}</div>
+                                </div>
+                            </div>
+                        `);
+                    }
+                    if (items.length > 0) {
+                        repliesHTML = `<div class="replies-container">${items.join('')}</div>`;
+                    }
+                }
+
+                let group1HTML = '';
+                if (statsText || likesHTML) {
+                    group1HTML = `
+                        <div class="literary-box">
+                            ${statsText ? `
+                                <div class="literary-prologue">P r o l o g u e · 独 白</div>
+                                <div class="literary-main">“${statsText}”</div>
+                            ` : ''}
+                            ${likesHTML}
+                        </div>
+                    `;
+                }
+
+                let group2HTML = '';
+                if (thoughtText || repliesHTML) {
+                    const hideBorder = !repliesHTML ? 'style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;"' : '';
+                    group2HTML = `
+                        <div class="comments-group">
+                            ${thoughtText ? `
+                                <div class="inner-monologue" ${hideBorder}>
+                                    <div class="monologue-label">I N N E R  T H O U G H T S</div>
+                                    <div class="monologue-text">“${thoughtText}”</div>
+                                </div>
+                            ` : ''}
+                            ${repliesHTML}
+                        </div>
+                    `;
+                }
+
+                socialSection.innerHTML = `
+                    <div class="user-header">
+                        ${realAvatar
+                            ? `<img class="social-avatar" src="${realAvatar}" alt="">`
+                            : `<div class="social-avatar social-avatar-fallback">${SVG_NOTE}</div>`}
+                        <div class="name-box">
+                            <div class="char-name">
+                                ${charName}
+                                ${metaText ? `<span class="meta-time">${metaText}</span>` : ''}
+                            </div>
+                            <div class="char-handle">${charHandle}</div>
+                        </div>
+                    </div>
+                    ${group1HTML}
+                    ${group2HTML}
+                `;
+            }
+        }
+
         // 3. 🔥 强制全量刷新歌单区域
-        const playlistContainer = this._floatingPanel.querySelector('.music-fp-playlist');
-        if (playlistContainer) {
-            let listHTML = '';
+        const playlistSection = this._floatingPanel.querySelector('.playlist-section');
+        if (playlistSection) {
             const currentList = this._currentTab === 'favorites' ? data.getFavorites() : data.getPlaylist();
             const clearLabel = this._currentTab === 'favorites' ? '清空收藏' : '清空歌单';
-            
-            listHTML += `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-left: 4px;">
-                <div class="music-fp-tabs" style="display:flex; align-items:center; gap:12px; font-size:11px; font-weight:600; cursor:pointer;">
-                    <div class="music-tab ${this._currentTab === 'playlist' ? 'active' : ''}" data-tab="playlist">歌单 (${data.getPlaylist().length})</div>
-                    <div class="music-tab ${this._currentTab === 'favorites' ? 'active' : ''}" data-tab="favorites">收藏 (${data.getFavorites().length})</div>
-                    <i class="fa-solid fa-chevron-${this._isPlaylistCollapsed ? 'down' : 'up'}" style="font-size:10px; opacity:0.6; padding: 4px;"></i>
+            const headerEl = playlistSection.querySelector('.playlist-header');
+            const listEl = playlistSection.querySelector('.playlist-list');
+            if (!headerEl || !listEl) return;
+
+            headerEl.innerHTML = `
+                <div class="tabs">
+                    <span class="tab-item ${this._currentTab === 'playlist' ? 'active' : ''}" data-tab="playlist">歌单 (${data.getPlaylist().length})</span>
+                    <span class="tab-item ${this._currentTab === 'favorites' ? 'active' : ''}" data-tab="favorites">收藏 (${data.getFavorites().length})</span>
                 </div>
-                <div style="display: flex; gap: 10px;">
-                    <div class="music-fp-autoplay-btn" style="font-size: 10px; color: ${data.getAutoPlay() ? '#6db3d8' : '#999'}; cursor: pointer;"><i class="fa-solid fa-rotate"></i> 连播</div>
-                    <div class="music-fp-clear-btn" style="font-size: 10px; color: #ff6b6b; cursor: pointer;"><i class="fa-solid fa-trash"></i> ${clearLabel}</div>
+                <div class="actions">
+                    <span class="action-btn icon-only music-fp-autoplay-btn ${data.getAutoPlay() ? 'active' : ''}" title="连播开关">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </span>
+                    <span class="action-btn icon-only danger music-fp-clear-btn" title="${clearLabel}">
+                        <i class="fa-solid fa-trash"></i>
+                    </span>
+                    <span class="action-btn playlist-collapse" title="展开/收起">
+                        <i class="fa-solid fa-chevron-${this._isPlaylistCollapsed ? 'down' : 'up'}"></i>
+                    </span>
                 </div>
-            </div>
-            <div id="music-fp-playlist-content" style="display: ${this._isPlaylistCollapsed ? 'none' : 'block'};">`;
-            
-            if (currentList.length === 0) {
-                listHTML += `<div style="text-align:center; padding:10px; font-size:11px; color:#999;">当前列表为空</div>`;
+            `;
+
+            if (this._isPlaylistCollapsed) {
+                listEl.style.display = 'none';
+                listEl.innerHTML = '';
+            } else if (currentList.length === 0) {
+                listEl.style.display = 'flex';
+                listEl.innerHTML = `<div class="playlist-empty">当前列表为空</div>`;
             } else {
-                currentList.forEach((s, i) => {
+                listEl.style.display = 'flex';
+                listEl.innerHTML = currentList.map((s, i) => {
                     const isPlayingItem = (i === data.currentIndex && data.activeListType === this._currentTab);
                     const isFav = data.isFavorite(s);
-                    listHTML += `
-                        <div class="music-fp-playlist-item ${isPlayingItem ? 'active' : ''}" data-index="${i}">
-                            <div class="pl-index">${isPlayingItem && data.isPlaying ? '♫' : i + 1}</div>
-                            <div class="pl-info">
-                                <div class="pl-name">${this._escapeHtml(s.name)}</div>
-                                <div class="pl-artist">${this._escapeHtml(s.artist)}</div>
+                    return `
+                        <div class="song-item ${isPlayingItem ? 'active' : ''}" data-index="${i}">
+                            <span class="song-index">${isPlayingItem && data.isPlaying ? '♫' : i + 1}</span>
+                            <div class="song-detail">
+                                <div class="s-name">${this._escapeHtml(s.name)}</div>
+                                <div class="s-artist">${this._escapeHtml(s.artist)}</div>
                             </div>
-                            <div class="pl-favorite ${isFav ? 'favorited' : ''}" data-fav="${i}"><i class="${isFav ? 'fa-solid' : 'fa-regular'} fa-heart"></i></div>
-                            <div class="pl-remove" data-remove="${i}">✕</div>
-                        </div>`;
-                });
+                            <span class="icon-btn fav ${isFav ? 'active' : ''}" data-fav="${i}">
+                                <i class="${isFav ? 'fa-solid' : 'fa-regular'} fa-heart"></i>
+                            </span>
+                            <span class="icon-btn remove" data-remove="${i}">✕</span>
+                        </div>
+                    `;
+                }).join('');
             }
-            listHTML += `</div>`; 
 
-            playlistContainer.innerHTML = listHTML;
-            
             // 绑定切换 Tab
-            playlistContainer.querySelectorAll('.music-tab').forEach(tab => {
+            headerEl.querySelectorAll('.tab-item').forEach(tab => {
                 tab.onclick = (e) => {
                     e.stopPropagation();
                     this._currentTab = tab.dataset.tab;
@@ -970,15 +1020,15 @@ export class MusicView {
             });
 
             // 绑定播放
-            playlistContainer.querySelectorAll('.music-fp-playlist-item').forEach(item => {
+            listEl.querySelectorAll('.song-item').forEach(item => {
                 item.onclick = (e) => {
-                    if (e.target.closest('.pl-remove') || e.target.closest('.pl-favorite')) return;
+                    if (e.target.closest('.remove') || e.target.closest('.fav')) return;
                     data.play(parseInt(item.dataset.index), this._currentTab);
                 };
             });
 
             // 绑定删除 (待播列表点X是删除，收藏列表点X是从收藏中移除)
-            playlistContainer.querySelectorAll('.pl-remove').forEach(btn => {
+            listEl.querySelectorAll('.remove').forEach(btn => {
                 btn.onclick = (e) => {
                     e.stopPropagation();
                     const idx = parseInt(btn.dataset.remove);
@@ -993,7 +1043,7 @@ export class MusicView {
             });
 
             // 绑定收藏
-            playlistContainer.querySelectorAll('.pl-favorite').forEach(btn => {
+            listEl.querySelectorAll('.fav').forEach(btn => {
                 btn.onclick = (e) => {
                     e.stopPropagation();
                     const idx = parseInt(btn.dataset.fav);
@@ -1004,7 +1054,7 @@ export class MusicView {
             });
 
             // 绑定清空（歌单/收藏分别处理）
-            const clearBtn = playlistContainer.querySelector('.music-fp-clear-btn');
+            const clearBtn = headerEl.querySelector('.music-fp-clear-btn');
             if (clearBtn) {
                 clearBtn.onclick = (e) => {
                     e.stopPropagation();
@@ -1018,28 +1068,78 @@ export class MusicView {
             }
             
             // 绑定连播
-            const autoplayBtn = playlistContainer.querySelector('.music-fp-autoplay-btn');
+            const autoplayBtn = headerEl.querySelector('.music-fp-autoplay-btn');
             if (autoplayBtn) autoplayBtn.onclick = (e) => { e.stopPropagation(); data.setAutoPlay(!data.getAutoPlay()); this.updateDisplay(); };
 
-            // 绑定折叠按钮事件 (精准点击控制，点头部空白区域和小箭头就会折叠)
-            const toggleArea = playlistContainer.querySelector('.music-fp-tabs').parentElement;
-            if (toggleArea) {
-                toggleArea.onclick = (e) => {
-                    // 如果点的是 切换Tab、连播、清空，就不触发折叠
-                    if (e.target.closest('.music-tab') || 
-                        e.target.closest('.music-fp-autoplay-btn') || 
-                        e.target.closest('.music-fp-clear-btn')) {
-                        return;
-                    }
-                    e.stopPropagation(); 
+            // 绑定折叠按钮事件 (点击头部空白和箭头都可收起/展开)
+            const collapseToggle = headerEl.querySelector('.playlist-collapse');
+            if (collapseToggle) {
+                collapseToggle.onclick = (e) => {
+                    e.stopPropagation();
                     this._isPlaylistCollapsed = !this._isPlaylistCollapsed;
                     this.updateDisplay();
                 };
             }
+            headerEl.onclick = (e) => {
+                if (e.target.closest('.tab-item') || e.target.closest('.music-fp-autoplay-btn') ||
+                    e.target.closest('.music-fp-clear-btn') || e.target.closest('.playlist-collapse')) {
+                    return;
+                }
+                this._isPlaylistCollapsed = !this._isPlaylistCollapsed;
+                this.updateDisplay();
+            };
         }
     }
 
     // ========== 工具方法 ==========
+
+    _normalizeReplies(rawReplies) {
+        if (!Array.isArray(rawReplies) || rawReplies.length === 0) return [];
+
+        const cleaned = rawReplies
+            .map(v => String(v || '').trim())
+            .filter(Boolean);
+
+        const triplets = [];
+        if (cleaned.length >= 3) {
+            for (let i = 0; i < cleaned.length - 2; i += 3) {
+                triplets.push({
+                    name: cleaned[i] || '',
+                    handle: cleaned[i + 1] || '',
+                    text: cleaned[i + 2] || ''
+                });
+            }
+        }
+
+        const hasEmbeddedNextReply = triplets.some(t => /[；;].+\|@?/u.test(t.text || ''));
+        const tripletLooksValid =
+            cleaned.length % 3 === 0 &&
+            triplets.length > 0 &&
+            triplets.some(t => (t.handle || '').startsWith('@')) &&
+            !hasEmbeddedNextReply;
+        if (tripletLooksValid) return triplets;
+
+        // 脏格式兜底：按“；name|@handle|text”切块修复
+        const joined = cleaned.join('|');
+        const chunks = joined
+            .split(/[；;](?=[^|;\n\r]+\|@?[^|;\n\r]+\|)/g)
+            .map(s => s.trim())
+            .filter(Boolean);
+
+        const normalized = [];
+        chunks.forEach(chunk => {
+            const parts = chunk.split('|').map(s => s.trim());
+            if (parts.length >= 3) {
+                normalized.push({
+                    name: parts[0] || '',
+                    handle: parts[1] || '',
+                    text: parts.slice(2).join('|') || ''
+                });
+            }
+        });
+
+        return normalized.length > 0 ? normalized : triplets;
+    }
 
     _formatTime(seconds) {
         if (!seconds || isNaN(seconds)) return '0:00';

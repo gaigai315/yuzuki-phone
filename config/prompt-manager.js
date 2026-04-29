@@ -334,7 +334,7 @@ getDefaultPrompts() {
         // 线下模式（酒馆正文注入）
         offline: {
             enabled: true,
-            name: '📴 手机模式',
+            name: '📴 线下模式',
             description: '酒馆正文中的微信消息规则',
             content: `当前手机时间：{{STORY_DATE}} {{STORY_TIME}}
 
