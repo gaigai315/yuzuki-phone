@@ -534,7 +534,7 @@ export class MusicView {
                 <button type="button" class="close-btn header-back-btn" id="music-fp-header-back" title="返回正面">
                     <i class="fa-solid fa-chevron-left"></i>
                 </button>
-                <span class="panel-title"> 正在播放</span>
+                <span class="panel-title"> Private Drift · 私人漫游</span>
                 <div class="close-btn" id="music-fp-close">✕</div>
             </div>
         `;
@@ -543,18 +543,14 @@ export class MusicView {
         bodyHTML += `
             <div class="panel-face panel-front">
                 <div class="player-core-section">
-                    <div class="player-top-actions">
-                        <div class="search-trigger" id="music-fp-search" title="搜索歌曲">
-                            <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-                        </div>
-                    </div>
                     <div class="album-cover-wrapper">
                         <div class="album-cover-media">${song && song.pic ? `<img src="${song.pic}" alt="">` : SVG_NOTE}</div>
                     </div>
-                    <div class="song-info">
-                        <div class="song-name">${song ? this._escapeHtml(song.name) : '暂无播放'}</div>
-                        <div class="song-artist">${song ? this._escapeHtml(song.artist) : '等待推荐中...'}</div>
-                    </div>
+                <div class="turntable-tonearm" aria-hidden="true"></div>
+                <div class="song-info">
+                    <div class="song-name">${song ? this._escapeHtml(song.name) : '暂无播放'}</div>
+                    <div class="song-artist">${song ? this._escapeHtml(song.artist) : '等待推荐中...'}</div>
+                </div>
                     <div class="progress-container">
                         <div class="progress-bar" id="music-fp-progress">
                             <div class="progress-fill" id="music-fp-progress-bar"></div>
@@ -565,13 +561,16 @@ export class MusicView {
                         </div>
                     </div>
                     <div class="controls-wrap">
-                        <div class="controls">
+                        <div class="controls controls-symmetric">
+                            <div class="ctrl-btn search-trigger-inline" id="music-fp-search" title="搜索歌曲">
+                                <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                            </div>
                             <div class="ctrl-btn" id="music-fp-prev">${SVG_PREV}</div>
                             <div class="ctrl-btn play-btn" id="music-fp-play">${data.isPlaying ? SVG_PAUSE : SVG_PLAY}</div>
                             <div class="ctrl-btn" id="music-fp-next">${SVG_NEXT}</div>
-                        </div>
-                        <div class="flip-side-btn" id="music-fp-flip" title="查看卡片背面">
-                            <span></span><span></span><span></span>
+                            <div class="ctrl-btn flip-side-btn" id="music-fp-flip" title="查看卡片背面">
+                                <span></span><span></span><span></span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -593,6 +592,7 @@ export class MusicView {
         
         this._floatingPanel = panel;
         this._setPanelFace(this._panelFace);
+        panel.addEventListener('click', (e) => e.stopPropagation());
 
         // 【新增搜索模态框的HTML】
         const searchModalHTML = `
@@ -640,7 +640,8 @@ export class MusicView {
         // 播放/暂停
         const playBtn = panel.querySelector('#music-fp-play');
         if (playBtn) {
-            playBtn.onclick = () => {
+            playBtn.onclick = (e) => {
+                e.stopPropagation();
                 if (data.isPlaying) {
                     data.pause();
                 } else if (data.getCurrentSong()) {
@@ -653,10 +654,10 @@ export class MusicView {
 
         // 上一首/下一首
         const prevBtn = panel.querySelector('#music-fp-prev');
-        if (prevBtn) prevBtn.onclick = () => data.prev();
+        if (prevBtn) prevBtn.onclick = (e) => { e.stopPropagation(); data.prev(); };
 
         const nextBtn = panel.querySelector('#music-fp-next');
-        if (nextBtn) nextBtn.onclick = () => data.next();
+        if (nextBtn) nextBtn.onclick = (e) => { e.stopPropagation(); data.next(); };
 
         // 正反面切换（只切 UI，不影响音频播放状态）
         const flipBtn = panel.querySelector('#music-fp-flip');
@@ -678,6 +679,7 @@ export class MusicView {
         const progress = panel.querySelector('#music-fp-progress');
         if (progress) {
             progress.onclick = (e) => {
+                e.stopPropagation();
                 const rect = progress.getBoundingClientRect();
                 const ratio = (e.clientX - rect.left) / rect.width;
                 if (data.audioPlayer.duration) {
@@ -693,8 +695,14 @@ export class MusicView {
         const searchInput = panel.querySelector('#music-search-input');
         const searchSubmitBtn = panel.querySelector('#music-search-submit');
 
-        const openSearch = () => searchModal && searchModal.style.setProperty('display', 'flex');
-        const closeSearch = () => searchModal && searchModal.style.setProperty('display', 'none');
+        const openSearch = (e) => {
+            if (e) e.stopPropagation();
+            if (searchModal) searchModal.style.setProperty('display', 'flex');
+        };
+        const closeSearch = (e) => {
+            if (e) e.stopPropagation();
+            if (searchModal) searchModal.style.setProperty('display', 'none');
+        };
 
         const performSearch = async () => {
             const query = searchInput.value.trim();
@@ -709,8 +717,9 @@ export class MusicView {
 
         if (searchBtn) searchBtn.onclick = openSearch;
         if (searchCloseBtn) searchCloseBtn.onclick = closeSearch;
-        if (searchSubmitBtn) searchSubmitBtn.onclick = performSearch;
+        if (searchSubmitBtn) searchSubmitBtn.onclick = (e) => { e.stopPropagation(); performSearch(); };
         if (searchInput) searchInput.onkeydown = (e) => {
+            e.stopPropagation();
             if (e.key === 'Enter') {
                 performSearch();
             }
@@ -836,6 +845,7 @@ export class MusicView {
     _updateFloatingPanelDOM() {
         if (!this._floatingPanel) return;
         this._setPanelFace(this._panelFace);
+        this._floatingPanel.classList.toggle('is-playing', !!this.app.musicData.isPlaying);
 
         const data = this.app.musicData;
         const playlist = data.getPlaylist();
@@ -1022,6 +1032,7 @@ export class MusicView {
             // 绑定播放
             listEl.querySelectorAll('.song-item').forEach(item => {
                 item.onclick = (e) => {
+                    e.stopPropagation();
                     if (e.target.closest('.remove') || e.target.closest('.fav')) return;
                     data.play(parseInt(item.dataset.index), this._currentTab);
                 };
@@ -1081,6 +1092,7 @@ export class MusicView {
                 };
             }
             headerEl.onclick = (e) => {
+                e.stopPropagation();
                 if (e.target.closest('.tab-item') || e.target.closest('.music-fp-autoplay-btn') ||
                     e.target.closest('.music-fp-clear-btn') || e.target.closest('.playlist-collapse')) {
                     return;
