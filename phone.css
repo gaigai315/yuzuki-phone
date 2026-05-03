@@ -826,7 +826,7 @@
     backdrop-filter: blur(40px) saturate(180%);
     -webkit-backdrop-filter: blur(40px) saturate(180%);
     padding: 1.5% 2.5%;
-    border-radius: 16px;
+    border-radius: 16px !important;
     /* 🎨 优化：更深的阴影 */
     box-shadow:
         0 8px 30px rgba(0, 0, 0, 0.3),
@@ -843,7 +843,7 @@
     height: min(36px, 10vw, 4.6vh);
     background: rgba(255, 255, 255, 0.25);
     backdrop-filter: blur(20px);
-    border-radius: 10px;
+    border-radius: 10px !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -868,7 +868,7 @@
         rgba(255, 255, 255, 0.3) 0%,
         transparent 50%
     );
-    border-radius: 14px;
+    border-radius: 14px !important;
     opacity: 0;
     transition: opacity 0.3s;
 }
