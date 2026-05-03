@@ -16,8 +16,6 @@
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_GLOBAL_CSS_URL = new URL('./phone.css', import.meta.url).href;
-const ENABLE_BETA_LOCK = true; // 内测锁开关（正式发布时改为 false 即可）
-const BETA_SECRET_SALT = 315; // 这是作者专属的扰乱码，可以随意填数字
 
 // 🔥 防重复加载检查（放在最前面，避免任何代码执行）
 if (window.GGP_Loaded) {
@@ -91,36 +89,8 @@ if (window.GGP_Loaded) {
         return true;
     }
 
-    function getCurrentIsoWeekCode(date = new Date()) {
-        const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-        const day = utcDate.getUTCDay() || 7; // ISO: Monday=1 ... Sunday=7
-        utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day); // 移动到本周四，锁定 ISO 年
-
-        const isoYear = utcDate.getUTCFullYear();
-        const yearStart = new Date(Date.UTC(isoYear, 0, 1));
-        const weekNumber = Math.ceil((((utcDate - yearStart) / 86400000) + 1) / 7);
-
-        return `${isoYear}${String(weekNumber).padStart(2, '0')}`;
-    }
-
     function checkBetaLock() {
-        if (!ENABLE_BETA_LOCK) return true;
-
-        const currentWeekCode = getCurrentIsoWeekCode();
-        const unlockedWeek = localStorage.getItem('st_phone_unlocked_week');
-        if (unlockedWeek === currentWeekCode) return true;
-
-        const expectedCode = String((Number(currentWeekCode) * BETA_SECRET_SALT) % 10000).padStart(4, '0');
-        const inputCode = prompt('【柚月小手机 内测版】\n请输入本周的 4 位动态邀请码（每周一更新）：');
-
-        if (inputCode && inputCode.trim() === expectedCode) {
-            localStorage.setItem('st_phone_unlocked_week', currentWeekCode);
-            alert('验证成功，本周已解锁');
-            return true;
-        }
-
-        alert('邀请码错误或已过期');
-        return false;
+        return true;
     }
 
     function getRuntimeSettings() {

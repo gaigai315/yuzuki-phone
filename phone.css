@@ -209,7 +209,7 @@
     /* 🎨 极窄边框 - 深色金属质感 */
     background: #1a1a1a;
     /* 🎨 圆润的全面屏圆角 */
-    border-radius: 40px;
+    border-radius: 40px !important;
 
     /* 🎨 简洁的边框效果 */
     box-shadow:
@@ -222,7 +222,7 @@
     /* 🔥 适中边框：4px */
     padding: 4px;
     position: relative;
-    overflow: hidden;
+    overflow: hidden !important;
     flex-shrink: 0;
     display: flex;
 
@@ -510,8 +510,8 @@
     height: 100%;  /* 🔥 屏幕填满整个手机，指示器在屏幕内 */
     background: #ffffff;
     /* 🎨 圆角匹配外壳 */
-    border-radius: 38px;
-    overflow: hidden;
+    border-radius: 38px !important;
+    overflow: hidden !important;
     position: relative;
     margin-top: 0;  /* 🔥 移除顶部间距 */
     /* 🎨 简洁的屏幕效果 */
@@ -531,7 +531,7 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    border-radius: inherit;
+    border-radius: inherit !important;
 }
 
 .phone-view-prev {
@@ -601,7 +601,7 @@
     backdrop-filter: blur(30px) saturate(150%);
     -webkit-backdrop-filter: blur(30px) saturate(150%);
     /* 🔥 继承屏幕的圆角，防止四角露出 */
-    border-radius: inherit;
+    border-radius: inherit !important;
     z-index: 0;
 }
 
@@ -616,7 +616,7 @@
     overflow-y: auto;
     overflow-x: hidden;
     /* 🔥 继承屏幕圆角，防止四角露出 */
-    border-radius: inherit;
+    border-radius: inherit !important;
 }
 
 .home-time {
