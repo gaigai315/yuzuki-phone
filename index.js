@@ -74,6 +74,7 @@ if (window.GGP_Loaded) {
     let _lastWechatChatId = null; // 🔥 防串味：记录上一次处理微信数据的 chatId
     let _globalCssLoadingPromise = null;
     let _phoneStableViewportHeight = 0;
+    let _phoneKeyboardAnchorTop = 0;
     let _phoneViewportResizeTimer = null;
     // 🔥 防重放护盾：仅允许被显式标记的旧楼层重新解析（用于 Swipe/Regenerate）
     const _forcedReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
@@ -145,17 +146,28 @@ if (window.GGP_Loaded) {
         const isTypingTarget = ['input', 'textarea', 'select'].includes(activeTag)
             || document.activeElement?.isContentEditable;
         const keyboardOpen = Boolean(isTypingTarget && (keyboardGap > 120 || stableGap > 120));
+        const phoneBody = panel?.querySelector?.('.phone-body-panel');
 
         panel?.classList.toggle('phone-keyboard-open', keyboardOpen);
 
         if (options.force || !_phoneStableViewportHeight || !keyboardOpen) {
             _phoneStableViewportHeight = Math.max(layoutHeight, visualHeight, 320);
+            if (phoneBody) {
+                const rect = phoneBody.getBoundingClientRect();
+                if (Number.isFinite(rect.top) && rect.top >= 0) {
+                    _phoneKeyboardAnchorTop = Math.round(rect.top);
+                }
+            }
         }
 
         const targetHeight = keyboardOpen
             ? Math.max(visualHeight, 320)
             : Math.max(layoutHeight, visualHeight, 320);
+        const safeKeyboardAnchorTop = keyboardOpen
+            ? Math.max(0, Math.min(_phoneKeyboardAnchorTop || 0, targetHeight - 320))
+            : Math.max(0, _phoneKeyboardAnchorTop || 0);
         root.style.setProperty('--phone-panel-vh', `${Math.round(targetHeight)}px`);
+        root.style.setProperty('--phone-keyboard-anchor-top', `${Math.round(safeKeyboardAnchorTop)}px`);
     }
 
     function schedulePhonePanelViewportUpdate(options = {}) {
