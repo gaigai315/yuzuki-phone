@@ -16,7 +16,7 @@
 export class DiaryView {
     constructor(app) {
         this.app = app;
-        this.currentView = 'cover'; // 'cover' | 'toc' | 'page' | 'settings'
+        this.currentView = 'cover'; // 'cover' | 'toc' | 'page' | 'settings' | 'edit' | 'new' | 'import'
         this.currentEntryId = null;
         this.settingsPanelOpen = false;
         this.tocOrder = 'desc';
@@ -52,6 +52,8 @@ export class DiaryView {
             case 'page': result = this.renderPage(); break;
             case 'settings': result = this.renderSettings(); break;
             case 'edit': result = this.renderEdit(); break;
+            case 'new': result = this.renderNewEntry(); break;
+            case 'import': result = this.renderImport(); break;
             default: result = this.renderCover(); break;
         }
         this.isBackNav = false; // 重置标志位
@@ -107,7 +109,7 @@ export class DiaryView {
     renderTOC() {
         const data = this.app.diaryData;
         const entries = data.getEntries();
-        const sorted = this.tocOrder === 'desc' ? [...entries].reverse() : [...entries];
+        const sorted = this._sortEntries(entries);
         const tocBg = data.getTocBg();
         const bgStyle = tocBg ? `background-image: url('${tocBg}'); background-size: cover; background-position: center;` : '';
         const enterClass = this.isBackNav ? '' : 'diary-view-enter';
@@ -159,6 +161,21 @@ export class DiaryView {
             <button class="diary-toc-btn" id="diary-toc-show-selected" title="取消隐藏所选">显示</button>
             <button class="diary-toc-btn" id="diary-toc-manage-done" title="完成">完成</button>
         ` : '';
+        const entryTools = !this.tocManageMode ? `
+            <button class="diary-toc-btn diary-add-btn diary-pencil-btn" id="diary-add-entry" title="新增日记">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 5v14"/>
+                    <path d="M5 12h14"/>
+                </svg>
+            </button>
+            <button class="diary-toc-btn diary-import-btn diary-pencil-btn" id="diary-import-entry" title="批量导入">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3v12"/>
+                    <path d="m7 10 5 5 5-5"/>
+                    <path d="M5 21h14"/>
+                </svg>
+            </button>
+        ` : '';
 
         const html = `
             <div class="diary-app">
@@ -167,6 +184,7 @@ export class DiaryView {
                         <div class="diary-toc-actions">
                             ${deleteAllBtn}
                             ${manageBtns}
+                            ${entryTools}
                             <button class="diary-toc-btn diary-pencil-btn" id="diary-manual-write" title="设置">
                                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
@@ -186,6 +204,20 @@ export class DiaryView {
     }
 
     _bindTOCEvents() {
+        const addBtn = document.getElementById('diary-add-entry');
+        if (addBtn) addBtn.onclick = () => {
+            this._previousView = this.currentView;
+            this.currentView = 'new';
+            this.render();
+        };
+
+        const importBtn = document.getElementById('diary-import-entry');
+        if (importBtn) importBtn.onclick = () => {
+            this._previousView = this.currentView;
+            this.currentView = 'import';
+            this.render();
+        };
+
         const writeBtn = document.getElementById('diary-manual-write');
         if (writeBtn) writeBtn.onclick = () => {
             this._previousView = this.currentView;
@@ -216,7 +248,7 @@ export class DiaryView {
         };
         document.getElementById('diary-toc-select-all')?.addEventListener('click', () => {
             const entries = this.app.diaryData.getEntries();
-            const sortedEntries = this.tocOrder === 'desc' ? [...entries].reverse() : [...entries];
+            const sortedEntries = this._sortEntries(entries);
             const allSelected = sortedEntries.length > 0 && sortedEntries.every(entry => this.tocSelectedIds.has(String(entry.id)));
             if (allSelected) {
                 this.tocSelectedIds.clear();
@@ -848,12 +880,12 @@ export class DiaryView {
             <div class="diary-app">
                 <div class="diary-edit-view">
                     <div class="diary-page-header">
-                        <button class="diary-page-back" id="diary-edit-cancel">✕ 取消</button>
+                        <button class="diary-page-back" id="diary-edit-cancel" title="取消">✕</button>
                         <div class="diary-page-date">${diaryTitle}</div>
                         <button class="diary-edit-save-btn" id="diary-edit-save">保存</button>
                     </div>
                     <div class="diary-edit-body">
-                        <textarea class="diary-edit-textarea" id="diary-edit-text">${entry.content || ''}</textarea>
+                        <textarea class="diary-edit-textarea" id="diary-edit-text">${this._escapeTextarea(entry.content || '')}</textarea>
                     </div>
                 </div>
             </div>
@@ -883,6 +915,173 @@ export class DiaryView {
             this.isBackNav = true;
             this.render();
         };
+    }
+
+    // ==================== 新增与导入视图 ====================
+
+    renderNewEntry() {
+        const html = `
+            <div class="diary-app">
+                <div class="diary-edit-view diary-new-view">
+                    <div class="diary-page-header">
+                        <button class="diary-page-back" id="diary-new-cancel" title="取消">✕</button>
+                        <div class="diary-page-date">新增日记</div>
+                        <button class="diary-edit-save-btn" id="diary-new-save">保存</button>
+                    </div>
+                    <div class="diary-edit-body">
+                        <textarea class="diary-edit-textarea" id="diary-new-text" placeholder="粘贴或输入一篇日记。建议格式：&#10;【标题】&#10;正文...&#10;————2026年5月4日 星期一 晴"></textarea>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.app.phoneShell.setContent(html, 'diary-' + this.currentView);
+        this._bindNewEntryEvents();
+    }
+
+    _bindNewEntryEvents() {
+        const cancelBtn = document.getElementById('diary-new-cancel');
+        if (cancelBtn) cancelBtn.onclick = () => {
+            this.currentView = 'toc';
+            this.isBackNav = true;
+            this.render();
+        };
+
+        const saveBtn = document.getElementById('diary-new-save');
+        if (saveBtn) saveBtn.onclick = () => {
+            const textarea = document.getElementById('diary-new-text');
+            const content = String(textarea?.value || '').trim();
+            if (!content) {
+                alert('请先输入日记内容');
+                return;
+            }
+
+            try {
+                const entry = this.app.diaryData.createManualEntry(content);
+                this.currentEntryId = entry.id;
+                this.currentView = 'page';
+                this.isBackNav = true;
+                this.render();
+            } catch (err) {
+                alert('保存失败：' + (err?.message || err));
+            }
+        };
+    }
+
+    renderImport() {
+        const html = `
+            <div class="diary-app">
+                <div class="diary-edit-view diary-import-view">
+                    <div class="diary-page-header">
+                        <button class="diary-page-back" id="diary-import-cancel" title="取消">✕</button>
+                        <div class="diary-page-date">批量导入</div>
+                        <button class="diary-edit-save-btn" id="diary-import-save">导入</button>
+                    </div>
+                    <div class="diary-import-body">
+                        <div class="diary-import-desc">
+                            大量旧日记建议读取 .txt/.json 文件，识别后会直接导入，不塞进输入框。少量内容也可手动粘贴；推荐每篇之间用单独一行 === 分隔。
+                        </div>
+                        <div class="diary-import-tools">
+                            <label class="diary-s-btn diary-s-btn-primary" for="diary-import-file">读取文件</label>
+                            <input type="file" id="diary-import-file" accept=".txt,.json,text/plain,application/json" style="display:none;">
+                        </div>
+                        <textarea class="diary-edit-textarea diary-import-textarea" id="diary-import-text" placeholder="【第一次见面】&#10;正文...&#10;————2026年5月1日 星期五 晴&#10;&#10;===&#10;&#10;【雨夜】&#10;正文...&#10;————2026年5月2日 星期六 雨"></textarea>
+                        <div class="diary-import-preview" id="diary-import-preview">待识别：0 篇</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.app.phoneShell.setContent(html, 'diary-' + this.currentView);
+        this._bindImportEvents();
+    }
+
+    _bindImportEvents() {
+        const textarea = document.getElementById('diary-import-text');
+        const preview = document.getElementById('diary-import-preview');
+        const refreshPreview = () => {
+            if (!preview || !textarea) return;
+            const count = this.app.diaryData.parseImportedDiaries(textarea.value).length;
+            preview.textContent = `待识别：${count} 篇`;
+        };
+
+        if (textarea) textarea.oninput = refreshPreview;
+
+        const fileInput = document.getElementById('diary-import-file');
+        if (fileInput) fileInput.onchange = () => {
+            const file = fileInput.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                fileInput.value = '';
+                const content = String(reader.result || '').trim();
+                if (!content) {
+                    alert('文件内容为空');
+                    return;
+                }
+
+                const diaries = this.app.diaryData.parseImportedDiaries(content);
+                if (diaries.length === 0) {
+                    alert('没有识别到可导入的日记');
+                    return;
+                }
+                if (!confirm(`已识别 ${diaries.length} 篇日记，确认直接导入吗？`)) return;
+
+                try {
+                    const imported = this.app.diaryData.importEntriesFromText(content);
+                    this.tocOrder = 'desc';
+                    this.currentView = 'toc';
+                    this.isBackNav = true;
+                    this.render();
+                    const shell = window.VirtualPhone?.phoneShell || this.app.phoneShell;
+                    shell?.showNotification('导入完成', `已导入 ${imported.length} 篇日记`, '✅');
+                } catch (err) {
+                    alert('导入失败：' + (err?.message || err));
+                }
+            };
+            reader.onerror = () => {
+                alert('读取文件失败');
+                fileInput.value = '';
+            };
+            reader.readAsText(file, 'UTF-8');
+        };
+
+        const cancelBtn = document.getElementById('diary-import-cancel');
+        if (cancelBtn) cancelBtn.onclick = () => {
+            this.currentView = 'toc';
+            this.isBackNav = true;
+            this.render();
+        };
+
+        const saveBtn = document.getElementById('diary-import-save');
+        if (saveBtn) saveBtn.onclick = () => {
+            const content = String(textarea?.value || '').trim();
+            if (!content) {
+                alert('请先粘贴要导入的日记');
+                return;
+            }
+
+            const diaries = this.app.diaryData.parseImportedDiaries(content);
+            if (diaries.length === 0) {
+                alert('没有识别到可导入的日记');
+                return;
+            }
+            if (!confirm(`确认导入 ${diaries.length} 篇日记吗？`)) return;
+
+            try {
+                const imported = this.app.diaryData.importEntriesFromText(content);
+                this.tocOrder = 'desc';
+                this.currentView = 'toc';
+                this.isBackNav = true;
+                this.render();
+                const shell = window.VirtualPhone?.phoneShell || this.app.phoneShell;
+                shell?.showNotification('导入完成', `已导入 ${imported.length} 篇日记`, '✅');
+            } catch (err) {
+                alert('导入失败：' + (err?.message || err));
+            }
+        };
+
+        refreshPreview();
     }
 
     // ==================== 图片处理与杂项 ====================
@@ -948,6 +1147,13 @@ export class DiaryView {
         return pm?.prompts?.diary?.generate?.content || '';
     }
 
+    _escapeTextarea(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
     _parseDate(dateStr) {
         if (!dateStr) return { day: '?', monthLabel: '', year: '', full: '未知日期', weekday: '' };
         const m = dateStr.match(/(\d{1,6})年(\d{1,2})月(\d{1,2})日/);
@@ -971,6 +1177,16 @@ export class DiaryView {
             return titleMatch[1];
         }
         return '无标题';
+    }
+
+    _sortEntries(entries) {
+        const sorted = [...(entries || [])].sort((a, b) => {
+            const timeA = this.app.diaryData.getEntrySortTimestamp(a);
+            const timeB = this.app.diaryData.getEntrySortTimestamp(b);
+            if (timeA !== timeB) return timeA - timeB;
+            return Number(a?.createdAt || 0) - Number(b?.createdAt || 0);
+        });
+        return this.tocOrder === 'desc' ? sorted.reverse() : sorted;
     }
 
     _openEditDialog(id) {

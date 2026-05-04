@@ -895,4 +895,29 @@
     opacity: 0.7;
 }
 
+.diary-import-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    overflow: hidden;
+    gap: 8px;
+}
+
+.diary-import-desc,
+.diary-import-preview {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #7a6958;
+}
+
+.diary-import-tools {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.diary-import-textarea {
+    min-height: 0;
+}
+
 /* 复用手机设置的 toggle-switch（如果已有则跳过） */

@@ -220,6 +220,35 @@ export class DiaryData {
         return entry;
     }
 
+    createManualEntry(content, meta = {}) {
+        const normalized = String(content || '').replace(/\r\n/g, '\n').trim();
+        if (!normalized) throw new Error('日记内容不能为空');
+
+        return this.addEntry({
+            content: normalized,
+            title: meta.title || this._extractTitleFromContent(normalized),
+            date: meta.date || this._extractDateFromContent(normalized),
+            startIndex: Number.isFinite(meta.startIndex) ? meta.startIndex : null,
+            endIndex: Number.isFinite(meta.endIndex) ? meta.endIndex : null,
+            imported: !!meta.imported,
+            manual: meta.manual !== false,
+            createdAt: meta.createdAt || Date.now()
+        });
+    }
+
+    importEntriesFromText(rawText) {
+        const diaries = this.parseImportedDiaries(rawText);
+        if (diaries.length === 0) return [];
+
+        const now = Date.now();
+        return diaries.map((diary, index) => this.createManualEntry(diary.content, {
+            title: diary.title,
+            date: diary.date,
+            imported: true,
+            createdAt: (this._dateToTimestamp(diary.date || diary.content) || now) + index
+        }));
+    }
+
     deleteEntry(entryId) {
         const entries = this.getEntries();
         const idx = entries.findIndex(e => e.id === entryId);
@@ -318,8 +347,11 @@ export class DiaryData {
     getLastDiaryFloorIndex() {
         const entries = this.getEntries();
         if (entries.length === 0) return -1;
-        const last = entries[entries.length - 1];
-        return last.endIndex || -1;
+        for (let i = entries.length - 1; i >= 0; i--) {
+            const endIndex = Number(entries[i]?.endIndex);
+            if (Number.isFinite(endIndex) && endIndex >= 0) return endIndex;
+        }
+        return -1;
     }
 
     // ==================== AI 日记生成（参考 memory 插件的 generateRaw 调用） ====================
@@ -625,6 +657,27 @@ export class DiaryData {
         return null;
     }
 
+    getEntrySortTimestamp(entry) {
+        if (!entry) return 0;
+        return this._dateToTimestamp(entry.date || entry.content) || Number(entry.createdAt || 0) || 0;
+    }
+
+    _dateToTimestamp(value) {
+        const text = String(value || '');
+        const match = text.match(/(\d{1,6})年(\d{1,2})月(\d{1,2})日/);
+        if (!match) return 0;
+
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return 0;
+        if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return 0;
+
+        const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+        const timestamp = date.getTime();
+        return Number.isFinite(timestamp) ? timestamp : 0;
+    }
+
     /**
      * 解析AI返回的日记内容，支持多篇日记分割
      * @param {string} rawContent - AI返回的原始内容
@@ -664,6 +717,109 @@ export class DiaryData {
         }
 
         return diaries;
+    }
+
+    parseImportedDiaries(rawText) {
+        if (!rawText || typeof rawText !== 'string') return [];
+        const normalized = rawText.replace(/\r\n/g, '\n').trim();
+        if (!normalized) return [];
+
+        const jsonDiaries = this._tryParseImportedJson(normalized);
+        if (jsonDiaries.length > 0) return jsonDiaries;
+
+        const strictSeparatorRegex = /\n\s*===\s*\n/;
+        if (strictSeparatorRegex.test(normalized)) {
+            const splitBySeparators = normalized
+                .split(strictSeparatorRegex)
+                .map(part => part.trim())
+                .filter(Boolean)
+                .map(content => ({
+                    content,
+                    title: this._extractTitleFromContent(content),
+                    date: this._extractDateFromContent(content)
+                }));
+            if (splitBySeparators.length > 1) return splitBySeparators;
+        }
+
+        const lineSplitDiaries = this._splitImportedDiaryText(normalized);
+        if (lineSplitDiaries.length > 0) return lineSplitDiaries;
+
+        return [{
+            content: normalized,
+            title: this._extractTitleFromContent(normalized),
+            date: this._extractDateFromContent(normalized)
+        }];
+    }
+
+    _tryParseImportedJson(text) {
+        try {
+            const parsed = JSON.parse(text);
+            const source = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.entries) ? parsed.entries : []);
+            return source
+                .map(item => {
+                    if (typeof item === 'string') {
+                        const content = item.trim();
+                        return content ? {
+                            content,
+                            title: this._extractTitleFromContent(content),
+                            date: this._extractDateFromContent(content)
+                        } : null;
+                    }
+                    const content = String(item?.content || item?.text || item?.body || '').trim();
+                    if (!content) return null;
+                    return {
+                        content,
+                        title: item?.title || this._extractTitleFromContent(content),
+                        date: item?.date || this._extractDateFromContent(content)
+                    };
+                })
+                .filter(Boolean);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    _splitImportedDiaryText(text) {
+        const pushChunk = (chunks, lines) => {
+            const content = lines.join('\n').trim();
+            if (!content) return;
+            chunks.push({
+                content,
+                title: this._extractTitleFromContent(content),
+                date: this._extractDateFromContent(content)
+            });
+        };
+
+        const chunks = [];
+        let current = [];
+        let hasDateMark = false;
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            const startsWithTitle = /^【(?!\d{1,6}年)[^】]{1,80}】/.test(trimmed);
+            const startsNumberedDiary = /^第\s*\d+\s*[篇页则]?[：:、.\s]/.test(trimmed);
+            const isSeparator = /^===$/.test(trimmed);
+            const shouldStartNew = current.length > 0 && (
+                isSeparator ||
+                ((startsWithTitle || startsNumberedDiary) && (hasDateMark || current.join('\n').length > 280))
+            );
+
+            if (shouldStartNew) {
+                pushChunk(chunks, current);
+                current = [];
+                hasDateMark = false;
+                if (isSeparator) continue;
+            }
+
+            current.push(line);
+            if (/————\s*\d{1,6}年\d{1,2}月\d{1,2}日|\d{1,6}年\d{1,2}月\d{1,2}日/.test(trimmed)) {
+                hasDateMark = true;
+            }
+        }
+
+        pushChunk(chunks, current);
+        return chunks.length > 1 ? chunks : [];
     }
 
     clearCache() {
