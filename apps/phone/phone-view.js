@@ -997,14 +997,13 @@ export class PhoneCallView {
     // TTS播放
     // ========================================
     async playTTS(text, bubble) {
-        const provider = this.app.storage.get('phone-tts-provider') || 'minimax_cn';
-        const apiKey = this.app.storage.get('phone-tts-key') || '';
-        const apiUrl = this.app.storage.get('phone-tts-url');
-        const model = this.app.storage.get('phone-tts-model');
-        const voice = this._resolveCallerTtsVoice(this.currentCaller, { allowGlobalFallback: true });
+        const ttsManager = window.VirtualPhone?.ttsManager;
+        const ttsConfig = this._resolveCallerTtsVoice(this.currentCaller, { allowGlobalFallback: true });
+        const voice = String(ttsConfig?.voice || '').trim();
+        const provider = String(ttsConfig?.provider || '').trim();
 
-        if (!apiKey || !apiUrl) {
-            console.warn('📞 [TTS] 配置缺失 → provider:', provider, 'apiKey:', apiKey ? '***' : '空', 'apiUrl:', apiUrl);
+        if (!ttsManager) {
+            console.warn('📞 [TTS] ttsManager 未初始化');
             return;
         }
 
@@ -1015,45 +1014,7 @@ export class PhoneCallView {
             }
 
             let blobUrl = '';
-
-            if (provider.startsWith('minimax')) {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                    body: JSON.stringify({
-                        model: model || 'speech-02-hd',
-                        text: text,
-                        stream: false,
-                        voice_setting: { voice_id: voice || 'female-shaonv', speed: 1.0, vol: 1.0, pitch: 0 },
-                        audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3' }
-                    })
-                });
-                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-                const resData = await response.json();
-                if (resData.base_resp?.status_code !== 0) throw new Error(resData.base_resp?.status_msg || 'MiniMax请求失败');
-
-                const hexAudio = resData.data.audio;
-                const bytes = new Uint8Array(Math.ceil(hexAudio.length / 2));
-                for (let i = 0; i < bytes.length; i++) {
-                    bytes[i] = parseInt(hexAudio.substr(i * 2, 2), 16);
-                }
-                const blob = new Blob([bytes], { type: 'audio/mp3' });
-                blobUrl = URL.createObjectURL(blob);
-
-            } else {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                    body: JSON.stringify({
-                        model: model || 'tts-1',
-                        input: text,
-                        voice: voice || 'alloy'
-                    })
-                });
-                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-                const blob = await response.blob();
-                blobUrl = URL.createObjectURL(blob);
-            }
+            blobUrl = await ttsManager.requestTTS(text, { provider: provider || undefined, voice: voice || undefined });
 
             // 播放并等待播放完毕
             this.audioPlayer.src = blobUrl;
@@ -1118,17 +1079,26 @@ export class PhoneCallView {
 
     _resolveCallerTtsVoice(callerName, { allowGlobalFallback = true } = {}) {
         const globalVoice = String(this.app.storage.get('phone-tts-voice') || '').trim();
+        const globalProvider = String(this.app.storage.get('phone-tts-provider') || '').trim();
         try {
             const wechatData = window.VirtualPhone?.wechatApp?.wechatData;
             if (wechatData?.resolveTtsVoiceByName) {
                 const resolved = wechatData.resolveTtsVoiceByName(callerName, { includeChats: true });
                 const boundVoice = String(resolved?.voice || '').trim();
-                if (boundVoice) return boundVoice;
+                if (boundVoice) {
+                    return {
+                        voice: boundVoice,
+                        provider: String(resolved?.provider || globalProvider || '').trim()
+                    };
+                }
             }
         } catch (e) {
             // ignore
         }
-        return allowGlobalFallback ? globalVoice : '';
+        return {
+            voice: allowGlobalFallback ? globalVoice : '',
+            provider: globalProvider
+        };
     }
 
     _getCallerAvatar(callerName) {

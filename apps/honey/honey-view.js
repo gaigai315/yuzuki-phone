@@ -3627,25 +3627,74 @@ export class HoneyView {
         this._stopHoneyTtsPlayback();
     }
 
-    _getHoneyTtsConfig() {
+    _resolveHoneyTtsHostName(root = null) {
+        const fromScene = String(this.currentSceneData?.host || this.selectedTopic?.host || '').trim();
+        if (fromScene) return fromScene;
+
+        const hostEl = root?.querySelector?.('#honey-ui-host')
+            || document.querySelector('.phone-view-current .honey-page-live #honey-ui-host')
+            || document.querySelector('.honey-page-live #honey-ui-host');
+        return String(hostEl?.textContent || hostEl?.innerText || '').trim();
+    }
+
+    _resolveHoneyTtsVoice(root = null) {
+        const globalVoice = String(this.app?.storage?.get?.('phone-tts-voice') || '').trim();
+        const globalProvider = String(this.app?.storage?.get?.('phone-tts-provider') || 'minimax_cn').trim() || 'minimax_cn';
+        const hostName = this._resolveHoneyTtsHostName(root);
+
+        if (hostName) {
+            try {
+                const wechatData = window.VirtualPhone?.wechatApp?.wechatData || this.app?.wechatData;
+                const resolved = wechatData?.resolveTtsVoiceByName?.(hostName, { includeChats: true }) || null;
+                const boundVoice = String(resolved?.voice || '').trim();
+                if (boundVoice) {
+                    return {
+                        voice: boundVoice,
+                        provider: String(resolved?.provider || globalProvider).trim() || globalProvider,
+                        hostName,
+                        contact: resolved.contact || null,
+                        source: 'bound'
+                    };
+                }
+            } catch (e) {
+                console.warn('⚠️ 蜜语主播音色匹配失败:', e);
+            }
+        }
+
+        return {
+            voice: globalVoice,
+            provider: globalProvider,
+            hostName,
+            contact: null,
+            source: 'global'
+        };
+    }
+
+    _getHoneyTtsConfig(root = null) {
         const storage = this.app?.storage;
-        const provider = String(storage?.get?.('phone-tts-provider') || 'minimax_cn').trim() || 'minimax_cn';
+        const ttsManager = window.VirtualPhone?.ttsManager;
+        const resolvedVoice = this._resolveHoneyTtsVoice(root);
+        const provider = String(resolvedVoice.provider || storage?.get?.('phone-tts-provider') || 'minimax_cn').trim() || 'minimax_cn';
         const defaults = {
             minimax_cn: { url: 'https://api.minimaxi.com/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
             minimax_intl: { url: 'https://api.minimax.chat/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
-            openai: { url: 'https://api.openai.com/v1/audio/speech', model: 'tts-1', voice: 'alloy' }
+            openai: { url: 'https://api.openai.com/v1/audio/speech', model: 'tts-1', voice: 'alloy' },
+            volcengine: { url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', model: 'seed-tts-2.0', voice: 'BV700_streaming' }
         };
         const providerDefault = defaults[provider] || defaults.minimax_cn;
-        const apiKey = String(storage?.get?.('phone-tts-key') || '').trim();
-        const apiUrl = String(storage?.get?.('phone-tts-url') || providerDefault.url || '').trim();
-        const model = String(storage?.get?.('phone-tts-model') || providerDefault.model || '').trim();
-        const voice = String(storage?.get?.('phone-tts-voice') || providerDefault.voice || '').trim();
+        const resolvedConfig = ttsManager?._resolveConfig?.({ provider, voice: resolvedVoice.voice || undefined }) || null;
+        const apiKey = String(resolvedConfig?.apiKey || storage?.get?.('phone-tts-key') || '').trim();
+        const apiUrl = String(resolvedConfig?.apiUrl || storage?.get?.('phone-tts-url') || providerDefault.url || '').trim();
+        const model = String(resolvedConfig?.model || storage?.get?.('phone-tts-model') || providerDefault.model || '').trim();
+        const voice = String(resolvedVoice.voice || providerDefault.voice || '').trim();
         return {
             provider,
             apiKey,
             apiUrl,
             model,
             voice,
+            hostName: resolvedVoice.hostName || '',
+            voiceSource: resolvedVoice.source || 'global',
             ready: !!apiKey && !!apiUrl
         };
     }
@@ -3784,73 +3833,23 @@ export class HoneyView {
     }
 
     async _requestHoneyTtsBlobUrl(text = '', config = {}) {
-        const { provider, apiKey, apiUrl, model, voice } = config;
+        const { apiKey, apiUrl, voice } = config;
+        const ttsManager = window.VirtualPhone?.ttsManager;
+        if (!ttsManager) {
+            throw new Error('TTS 管理器未初始化');
+        }
         if (!apiKey || !apiUrl) {
-            throw new Error('请先配置 TTS 的 API URL 和 API Key');
+            throw new Error('请先配置 TTS 的 API URL 和 API Key / Access Token');
         }
-        if (provider.startsWith('minimax')) {
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({
-                    model: model || 'speech-02-hd',
-                    text,
-                    stream: false,
-                    voice_setting: {
-                        voice_id: voice || 'female-shaonv',
-                        speed: 1.0,
-                        vol: 1.0,
-                        pitch: 0
-                    },
-                    audio_setting: {
-                        sample_rate: 32000,
-                        bitrate: 128000,
-                        format: 'mp3'
-                    }
-                })
-            });
-            if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-            const resData = await response.json();
-            if (resData?.base_resp?.status_code !== 0) {
-                throw new Error(resData?.base_resp?.status_msg || 'MiniMax请求失败');
-            }
-            const hexAudio = String(resData?.data?.audio || '').trim();
-            if (!hexAudio) {
-                throw new Error('TTS 未返回音频数据');
-            }
-            const byteLength = Math.ceil(hexAudio.length / 2);
-            const bytes = new Uint8Array(byteLength);
-            for (let i = 0; i < byteLength; i++) {
-                bytes[i] = Number.parseInt(hexAudio.substr(i * 2, 2), 16);
-            }
-            return URL.createObjectURL(new Blob([bytes], { type: 'audio/mp3' }));
-        }
-
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: model || 'tts-1',
-                input: text,
-                voice: voice || 'alloy'
-            })
-        });
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-        const audioBlob = await response.blob();
-        return URL.createObjectURL(audioBlob);
+        return ttsManager.requestTTS(text, { provider: config.provider || undefined, voice: voice || undefined });
     }
 
     async _playHoneySceneTts(text = '', btn = null) {
         const cleanText = this._normalizeHoneySpeechText(text);
         if (!cleanText) throw new Error('没有可播放的文本内容');
 
-        const config = this._getHoneyTtsConfig();
+        const root = btn?.closest?.('.honey-page-live') || null;
+        const config = this._getHoneyTtsConfig(root);
         if (!config.ready) throw new Error('请先在设置中配置 TTS 接口信息');
 
         this._stopHoneyTtsPlayback();

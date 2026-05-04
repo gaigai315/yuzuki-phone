@@ -23,6 +23,8 @@ export class DiaryView {
         this._cssLoaded = false;
         this._previousView = 'cover';
         this.isBackNav = false; 
+        this.tocManageMode = false;
+        this.tocSelectedIds = new Set();
     }
 
     loadCSS() {
@@ -122,20 +124,26 @@ export class DiaryView {
                 const parsed = this._parseDate(entry.date);
                 const preview = (entry.content || '').replace(/【[^】]*】/g, '').trim().slice(0, 40);
                 const titleMatch = (entry.content || '').match(/【([^】]+)】/);
-                const diaryTitle = (titleMatch && !titleMatch[1].match(/\d{4}年/)) ? titleMatch[1] : '';
+                const diaryTitle = (titleMatch && !titleMatch[1].match(/\d{1,6}年/)) ? titleMatch[1] : '';
+                const isHidden = entry.offlineHidden === true;
+                const isSelected = this.tocSelectedIds.has(String(entry.id));
                 return `
-                    <div class="diary-toc-item" data-id="${entry.id}">
+                    <div class="diary-toc-item ${isHidden ? 'diary-offline-hidden' : ''}" data-id="${entry.id}" style="${isHidden ? 'opacity:0.58;' : ''}">
+                        ${this.tocManageMode ? `
+                            <input type="checkbox" class="diary-toc-select" data-id="${entry.id}" ${isSelected ? 'checked' : ''} style="margin-right:8px; flex-shrink:0; accent-color:#5b6cff;">
+                        ` : ''}
                         <div class="diary-toc-item-date">
-                            <div class="diary-toc-item-year">${parsed.full.match(/\d{4}/)?.[0] || ''}年</div>
+                            <div class="diary-toc-item-year">${parsed.year || ''}${parsed.year ? '年' : ''}</div>
                             <div class="diary-toc-item-day">${parsed.day}</div>
                             <div class="diary-toc-item-month">${parsed.monthLabel}</div>
                             <div class="diary-toc-item-weekday">${parsed.weekday}</div>
                         </div>
                         <div class="diary-toc-item-info">
-                            <div class="diary-toc-item-title">${diaryTitle || '无标题'}</div>
+                            <div class="diary-toc-item-title">${diaryTitle || '无标题'}${isHidden ? '（已隐藏）' : ''}</div>
                             <div class="diary-toc-item-preview">${preview || '...'}</div>
                         </div>
                         <div class="diary-toc-item-actions" style="display:none;">
+                            <button class="diary-toc-item-hide" data-id="${entry.id}">${isHidden ? '显示' : '隐藏'}</button>
                             <button class="diary-toc-item-edit" data-id="${entry.id}">✏️</button>
                             <button class="diary-toc-item-delete" data-id="${entry.id}">🗑️</button>
                         </div>
@@ -144,7 +152,13 @@ export class DiaryView {
             }).join('');
         }
 
-        const deleteAllBtn = sorted.length > 0 ? `<button class="diary-toc-btn diary-delete-all-btn" id="diary-delete-all" title="全部删除" style="display:none;">🗑️</button>` : '';
+        const deleteAllBtn = sorted.length > 0 ? `<button class="diary-toc-btn diary-delete-all-btn" id="diary-delete-all" title="全部删除" style="${this.tocManageMode ? '' : 'display:none;'}">🗑️</button>` : '';
+        const manageBtns = sorted.length > 0 && this.tocManageMode ? `
+            <button class="diary-toc-btn" id="diary-toc-select-all" title="全选">全选</button>
+            <button class="diary-toc-btn" id="diary-toc-hide-selected" title="隐藏所选">隐藏</button>
+            <button class="diary-toc-btn" id="diary-toc-show-selected" title="取消隐藏所选">显示</button>
+            <button class="diary-toc-btn" id="diary-toc-manage-done" title="完成">完成</button>
+        ` : '';
 
         const html = `
             <div class="diary-app">
@@ -152,6 +166,7 @@ export class DiaryView {
                     <div class="diary-toc-header">
                         <div class="diary-toc-actions">
                             ${deleteAllBtn}
+                            ${manageBtns}
                             <button class="diary-toc-btn diary-pencil-btn" id="diary-manual-write" title="设置">
                                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
@@ -183,9 +198,50 @@ export class DiaryView {
         if (deleteAllBtn) deleteAllBtn.onclick = () => {
             if (confirm('确定删除全部日记吗？此操作不可恢复！')) {
                 this.app.diaryData.clearAllEntries();
+                this.tocSelectedIds.clear();
+                this.tocManageMode = false;
                 this.render();
             }
         };
+
+        const enterManageMode = () => {
+            this.tocManageMode = true;
+            this.render();
+        };
+        const selectedIds = () => Array.from(this.tocSelectedIds);
+        const ensureSelection = () => {
+            if (this.tocSelectedIds.size > 0) return true;
+            alert('请先勾选日记');
+            return false;
+        };
+        document.getElementById('diary-toc-select-all')?.addEventListener('click', () => {
+            const entries = this.app.diaryData.getEntries();
+            const sortedEntries = this.tocOrder === 'desc' ? [...entries].reverse() : [...entries];
+            const allSelected = sortedEntries.length > 0 && sortedEntries.every(entry => this.tocSelectedIds.has(String(entry.id)));
+            if (allSelected) {
+                this.tocSelectedIds.clear();
+            } else {
+                sortedEntries.forEach(entry => this.tocSelectedIds.add(String(entry.id)));
+            }
+            this.render();
+        });
+        document.getElementById('diary-toc-hide-selected')?.addEventListener('click', () => {
+            if (!ensureSelection()) return;
+            this.app.diaryData.setEntriesOfflineHidden(selectedIds(), true);
+            this.tocSelectedIds.clear();
+            this.render();
+        });
+        document.getElementById('diary-toc-show-selected')?.addEventListener('click', () => {
+            if (!ensureSelection()) return;
+            this.app.diaryData.setEntriesOfflineHidden(selectedIds(), false);
+            this.tocSelectedIds.clear();
+            this.render();
+        });
+        document.getElementById('diary-toc-manage-done')?.addEventListener('click', () => {
+            this.tocSelectedIds.clear();
+            this.tocManageMode = false;
+            this.render();
+        });
 
         document.querySelectorAll('.diary-toc-item').forEach(item => {
             // 🔥 防止重复绑定定时器事件
@@ -195,18 +251,34 @@ export class DiaryView {
             const actionsDiv = item.querySelector('.diary-toc-item-actions');
             const editBtn = item.querySelector('.diary-toc-item-edit');
             const deleteBtn = item.querySelector('.diary-toc-item-delete');
+            const hideBtn = item.querySelector('.diary-toc-item-hide');
+            const selectInput = item.querySelector('.diary-toc-select');
+
+            if (selectInput) {
+                selectInput.onchange = (e) => {
+                    e.stopPropagation();
+                    const id = String(selectInput.dataset.id || '');
+                    if (!id) return;
+                    if (selectInput.checked) this.tocSelectedIds.add(id);
+                    else this.tocSelectedIds.delete(id);
+                };
+            }
 
             item.addEventListener('mousedown', (e) => {
-                if (e.target.closest('.diary-toc-item-actions')) return;
+                if (e.target.closest('.diary-toc-item-actions') || e.target.closest('.diary-toc-select')) return;
                 longPressTimer = setTimeout(() => {
+                    this.tocSelectedIds.add(String(item.dataset.id || ''));
+                    enterManageMode();
                     actionsDiv.style.display = 'flex';
                     if (deleteAllBtn) deleteAllBtn.style.display = 'flex';
                 }, 1000); 
             });
 
             item.addEventListener('touchstart', (e) => {
-                if (e.target.closest('.diary-toc-item-actions')) return;
+                if (e.target.closest('.diary-toc-item-actions') || e.target.closest('.diary-toc-select')) return;
                 longPressTimer = setTimeout(() => {
+                    this.tocSelectedIds.add(String(item.dataset.id || ''));
+                    enterManageMode();
                     actionsDiv.style.display = 'flex';
                     if (deleteAllBtn) deleteAllBtn.style.display = 'flex';
                 }, 500); 
@@ -220,13 +292,21 @@ export class DiaryView {
 
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                actionsDiv.style.display = 'flex';
-                if (deleteAllBtn) deleteAllBtn.style.display = 'flex';
+                this.tocSelectedIds.add(String(item.dataset.id || ''));
+                enterManageMode();
             });
 
             // 🔥 核心：点击事件改为 onclick
             item.onclick = (e) => {
-                if (e.target.closest('.diary-toc-item-actions')) return;
+                if (e.target.closest('.diary-toc-item-actions') || e.target.closest('.diary-toc-select')) return;
+                if (this.tocManageMode) {
+                    const id = String(item.dataset.id || '');
+                    if (!id) return;
+                    if (this.tocSelectedIds.has(id)) this.tocSelectedIds.delete(id);
+                    else this.tocSelectedIds.add(id);
+                    this.render();
+                    return;
+                }
                 if (actionsDiv.style.display === 'flex') {
                     actionsDiv.style.display = 'none';
                     if (deleteAllBtn) deleteAllBtn.style.display = 'none';
@@ -235,6 +315,13 @@ export class DiaryView {
                 this.currentEntryId = item.dataset.id;
                 this.currentView = 'page';
                 this.settingsPanelOpen = false;
+                this.render();
+            };
+
+            if (hideBtn) hideBtn.onclick = (e) => {
+                e.stopPropagation();
+                const entry = this.app.diaryData.getEntry(hideBtn.dataset.id);
+                this.app.diaryData.setEntryOfflineHidden(hideBtn.dataset.id, entry?.offlineHidden !== true);
                 this.render();
             };
 
@@ -862,24 +949,25 @@ export class DiaryView {
     }
 
     _parseDate(dateStr) {
-        if (!dateStr) return { day: '?', monthLabel: '', full: '未知日期', weekday: '' };
-        const m = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+        if (!dateStr) return { day: '?', monthLabel: '', year: '', full: '未知日期', weekday: '' };
+        const m = dateStr.match(/(\d{1,6})年(\d{1,2})月(\d{1,2})日/);
         const wm = dateStr.match(/(星期[一二三四五六日天])/);
         if (m) {
             return {
                 day: m[3],
                 monthLabel: `${m[2]}月`,
+                year: m[1],
                 full: `${m[1]}年${m[2]}月${m[3]}日`,
                 weekday: wm ? wm[1] : ''
             };
         }
-        return { day: '?', monthLabel: '', full: dateStr, weekday: wm ? wm[1] : '' };
+        return { day: '?', monthLabel: '', year: '', full: dateStr, weekday: wm ? wm[1] : '' };
     }
 
     _extractTitle(content) {
         if (!content) return '无标题';
         const titleMatch = content.match(/【([^】]+)】/);
-        if (titleMatch && !titleMatch[1].match(/\d{4}年/)) {
+        if (titleMatch && !titleMatch[1].match(/\d{1,6}年/)) {
             return titleMatch[1];
         }
         return '无标题';

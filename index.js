@@ -35,6 +35,7 @@ if (window.GGP_Loaded) {
     let TimeManager = null;        // 需要时加载
     let PromptManager = null;      // 发消息时加载
     let SettingsApp = null;        // 打开设置时加载
+    let TtsManager = null;         // 语音管理器
 
     // 🔥 三击唤醒手势状态
     let phoneTapCount = 0;
@@ -50,9 +51,12 @@ if (window.GGP_Loaded) {
     let settings = null;
     let timeManager = null;
     let promptManager = null;
+    let ttsManager = null;
     let modulesLoaded = false;
     let _lastWechatChatId = null; // 🔥 防串味：记录上一次处理微信数据的 chatId
     let _globalCssLoadingPromise = null;
+    let _phoneStableViewportHeight = 0;
+    let _phoneViewportResizeTimer = null;
     // 🔥 防重放护盾：仅允许被显式标记的旧楼层重新解析（用于 Swipe/Regenerate）
     const _forcedReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
 
@@ -106,6 +110,60 @@ if (window.GGP_Loaded) {
         return !!(runtime && runtime.enabled);
     }
 
+    function updatePhonePanelViewportHeight(options = {}) {
+        const panel = document.getElementById('phone-panel');
+        const root = document.documentElement;
+        if (!root) return;
+
+        const viewport = window.visualViewport;
+        const layoutHeight = Math.max(
+            window.innerHeight || 0,
+            document.documentElement?.clientHeight || 0
+        );
+        const visualHeight = viewport?.height || layoutHeight;
+        const keyboardGap = layoutHeight && visualHeight ? layoutHeight - visualHeight : 0;
+        const stableGap = _phoneStableViewportHeight ? _phoneStableViewportHeight - visualHeight : 0;
+        const activeTag = String(document.activeElement?.tagName || '').toLowerCase();
+        const isTypingTarget = ['input', 'textarea', 'select'].includes(activeTag)
+            || document.activeElement?.isContentEditable;
+        const keyboardOpen = Boolean(isTypingTarget && (keyboardGap > 120 || stableGap > 120));
+
+        panel?.classList.toggle('phone-keyboard-open', keyboardOpen);
+
+        if (options.force || !_phoneStableViewportHeight || !keyboardOpen) {
+            _phoneStableViewportHeight = Math.max(layoutHeight, visualHeight, 320);
+        }
+
+        const targetHeight = keyboardOpen && _phoneStableViewportHeight
+            ? _phoneStableViewportHeight
+            : Math.max(layoutHeight, visualHeight, 320);
+        root.style.setProperty('--phone-panel-vh', `${Math.round(targetHeight)}px`);
+    }
+
+    function schedulePhonePanelViewportUpdate(options = {}) {
+        clearTimeout(_phoneViewportResizeTimer);
+        _phoneViewportResizeTimer = setTimeout(() => {
+            updatePhonePanelViewportHeight(options);
+        }, 60);
+    }
+
+    function bindPhonePanelViewportGuards() {
+        window.removeEventListener('resize', schedulePhonePanelViewportUpdate);
+        window.addEventListener('resize', schedulePhonePanelViewportUpdate, { passive: true });
+
+        if (window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', schedulePhonePanelViewportUpdate);
+            window.visualViewport.addEventListener('resize', schedulePhonePanelViewportUpdate, { passive: true });
+        }
+
+        document.removeEventListener('focusin', schedulePhonePanelViewportUpdate);
+        document.removeEventListener('focusout', schedulePhonePanelViewportUpdate);
+        document.removeEventListener('focusin', schedulePhonePanelViewportUpdate, true);
+        document.removeEventListener('focusout', schedulePhonePanelViewportUpdate, true);
+        document.addEventListener('focusin', schedulePhonePanelViewportUpdate, true);
+        document.addEventListener('focusout', schedulePhonePanelViewportUpdate, true);
+    }
+
     async function loadCoreModules() {
         if (modulesLoaded) return;
 
@@ -117,13 +175,15 @@ if (window.GGP_Loaded) {
             storageModule,
             apiManagerModule,
             timeManagerModule,      // 👈 新增：时间推算引擎
-            promptManagerModule     // 👈 新增：全局提示词中枢
+            promptManagerModule,    // 👈 新增：全局提示词中枢
+            ttsManagerModule
         ] = await Promise.all([
             import('./config/apps.js'),
             import('./config/storage.js'),
             import('./config/api-manager.js'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-            import('./config/prompt-manager.js')   // 👈 取消懒加载
+            import('./config/prompt-manager.js'),  // 👈 取消懒加载
+            import('./config/tts-manager.js')
         ]);
 
         APPS = appsModule.APPS;
@@ -131,6 +191,7 @@ if (window.GGP_Loaded) {
         ApiManager = apiManagerModule.ApiManager;
         TimeManager = timeManagerModule.TimeManager;       // 👈 绑定类
         PromptManager = promptManagerModule.PromptManager; // 👈 绑定类
+        TtsManager = ttsManagerModule.TtsManager;
 
         // 初始化核心对象
         currentApps = JSON.parse(JSON.stringify(APPS));
@@ -140,6 +201,7 @@ if (window.GGP_Loaded) {
         // 🔥 立即实例化时间和提示词，拔除任何延迟隐患！
         timeManager = new TimeManager(storage);
         promptManager = new PromptManager(storage);
+        ttsManager = new TtsManager(storage);
         promptManager.ensureLoaded(); // 强制把所有提示词立即读入内存待命
 
         modulesLoaded = true;
@@ -2831,6 +2893,7 @@ if (window.GGP_Loaded) {
         if (isOpen) {
             // 关闭
             panel.classList.remove('phone-panel-open');
+            panel.classList.remove('phone-keyboard-open');
             panel.classList.add('phone-panel-hidden');
             // 🔥 关闭时添加强力隐藏样式
             panel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
@@ -2855,10 +2918,12 @@ if (window.GGP_Loaded) {
     function openPhonePanelWithOutsideClose(panel, icon) {
         if (!panel || !icon) return;
 
+        updatePhonePanelViewportHeight({ force: true });
         panel.classList.add('phone-panel-open');
         panel.classList.remove('phone-panel-hidden');
         panel.style.cssText = '';
         panel.classList.add('drawer-content', 'fillRight', 'openDrawer');
+        schedulePhonePanelViewportUpdate();
 
         // 自动唤起来电/转线上时也必须补上外部点击关闭监听
         panel.removeEventListener('click', handlePanelClick);
@@ -3598,13 +3663,18 @@ if (window.GGP_Loaded) {
             return;
         }
 
-        // [语音]转文字内容 (根据字数自动估算秒数，每3个字1秒)
-        const newVoiceMatch = /^\[语音\]\s*(.+)$/.exec(content);
+        // [语音]内容 / [语音](内容) / [语音]（内容）/ 【语音】内容
+        const newVoiceMatch = /^(?:\[\s*语音\s*\]|【\s*语音\s*】)\s*[:：]?\s*(.+)$/i.exec(String(content || '').trim());
         if (newVoiceMatch) {
+            let parsedVoiceText = String(newVoiceMatch[1] || '').trim();
+            const wrappedVoiceMatch = parsedVoiceText.match(/^[（(]\s*([\s\S]*?)\s*[)）]$/);
+            if (wrappedVoiceMatch) {
+                parsedVoiceText = String(wrappedVoiceMatch[1] || '').trim();
+            }
             msgObj.type = 'voice';
-            msgObj.voiceText = newVoiceMatch[1].trim();
+            msgObj.voiceText = parsedVoiceText;
             // 自动计算秒数：每3个字1秒，最少2秒，最多60秒
-            let seconds = Math.ceil(msgObj.voiceText.length / 3);
+            let seconds = Math.ceil((msgObj.voiceText || '语音').length / 3);
             seconds = Math.max(2, Math.min(seconds, 60));
             msgObj.duration = seconds + '"'; // 微信真实的秒数符号是双引号
             return;
@@ -5167,6 +5237,7 @@ if (window.GGP_Loaded) {
                 extensionBaseUrl: ST_PHONE_BASE_URL,
                 apiManager: new ApiManager(storage),
                 promptManager: null,
+                ttsManager: ttsManager,
                 home: null,
                 wechatApp: null,
                 mofoApp: null,
@@ -5208,6 +5279,7 @@ if (window.GGP_Loaded) {
                     // 加载界面完全消失后，再安全地执行 DOM 注入
                     ensureGlobalPhoneCSS();
                     initColors();
+                    bindPhonePanelViewportGuards();
                     createTopPanel();
                     createInlineReplyButton();
 
@@ -5743,7 +5815,7 @@ if (window.GGP_Loaded) {
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}'];
+                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
                                 let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
@@ -5755,9 +5827,9 @@ if (window.GGP_Loaded) {
                                             modified = true;
                                         }
                                     });
-                                    // 兼容 {{ MOFO_PROMPT }}（含空格）
-                                    if (/\{\{\s*MOFO_PROMPT\s*\}\}/i.test(c)) {
-                                        c = c.replace(/\{\{\s*MOFO_PROMPT\s*\}\}/gi, '').trim();
+                                    // 兼容 {{ XXX }}（含空格）
+                                    if (/\{\{\s*(MOFO_PROMPT|DIARY_HISTORY)\s*\}\}/i.test(c)) {
+                                        c = c.replace(/\{\{\s*(MOFO_PROMPT|DIARY_HISTORY)\s*\}\}/gi, '').trim();
                                         modified = true;
                                     }
                                     if (modified) {
@@ -6216,6 +6288,7 @@ if (window.GGP_Loaded) {
                                     let phoneHistoryContent = '';
                                     let weiboHistoryContent = '';
                                     let mofoPromptContent = '';
+                                    let diaryHistoryContent = '';
                                     let weiboInjectEnabled = false;
 
                                     // 🔥 确保 promptManager 已加载（修复懒加载导致的 null 问题）
@@ -6300,6 +6373,30 @@ if (window.GGP_Loaded) {
                                     } catch (e) {
                                         mofoPromptContent = '';
                                         console.warn('⚠️ [手机] 获取魔坊线下提示词失败');
+                                    }
+
+                                    // 2.6️⃣ 日记线下变量注入（隐藏日记不注入）
+                                    try {
+                                        const diaryInjectEnabledRaw = storage?.get('offline-diary-history-enabled');
+                                        const diaryInjectEnabled = !(
+                                            diaryInjectEnabledRaw === false ||
+                                            diaryInjectEnabledRaw === 'false' ||
+                                            diaryInjectEnabledRaw === 0 ||
+                                            diaryInjectEnabledRaw === '0'
+                                        );
+                                        if (diaryInjectEnabled) {
+                                            let diaryData = window.VirtualPhone?.diaryApp?.diaryData || null;
+                                            if (!diaryData) {
+                                                const diaryModule = await import('./apps/diary/diary-data.js');
+                                                diaryData = new diaryModule.DiaryData(storage);
+                                            }
+                                            diaryHistoryContent = diaryData?.buildOfflineInjectionContent?.() || '';
+                                        } else {
+                                            diaryHistoryContent = '';
+                                        }
+                                    } catch (e) {
+                                        diaryHistoryContent = '';
+                                        console.warn('⚠️ [手机] 注入日记记录失败:', e);
                                     }
 
                                     // 3️⃣ 添加微信聊天记录（按会话窗口分组显示，含日期）
@@ -6599,6 +6696,7 @@ if (window.GGP_Loaded) {
                                             if (id === 'weibo_system_history') return 'SYSTEM (微博)';
                                             if (id === 'phone_system_history') return 'SYSTEM (微信历史)';
                                             if (id === 'mofo_system_prompt') return 'SYSTEM (魔坊)';
+                                            if (id === 'diary_system_history') return 'SYSTEM (日记)';
                                             if (id === 'phone_system_rules') {
                                                 const source = String(text || '');
                                                 const tags = [];
@@ -6675,6 +6773,7 @@ if (window.GGP_Loaded) {
                                         injectIntoMessages('{{WEIBO_HISTORY}}', weiboHistoryContent, 'weibo_system_history');
                                     }
                                     injectIntoMessages('{{MOFO_PROMPT}}', mofoPromptContent, 'mofo_system_prompt');
+                                    injectIntoMessages('{{DIARY_HISTORY}}', diaryHistoryContent, 'diary_system_history');
 
                                     // ============================
                                     // 🎵 {{MUSIC_PROMPT}} 独立注入
@@ -6785,11 +6884,13 @@ if (window.GGP_Loaded) {
                                             const WEIBO_VAR = '{{WEIBO_HISTORY}}';
                                             const MUSIC_VAR = '{{MUSIC_PROMPT}}';
                                             const MOFO_VAR = '{{MOFO_PROMPT}}';
+                                            const DIARY_VAR = '{{DIARY_HISTORY}}';
                                             const PHONE_PROMPT_SPACED_REGEX = /\{\{\s*PHONE_PROMPT\s*\}\}/gi;
                                             const PHONE_HISTORY_SPACED_REGEX = /\{\{\s*PHONE_HISTORY\s*\}\}/gi;
                                             const WEIBO_HISTORY_SPACED_REGEX = /\{\{\s*WEIBO_HISTORY\s*\}\}/gi;
                                             const MUSIC_PROMPT_SPACED_REGEX = /\{\{\s*MUSIC_PROMPT\s*\}\}/gi;
                                             const MOFO_PROMPT_SPACED_REGEX = /\{\{\s*MOFO_PROMPT\s*\}\}/gi;
+                                            const DIARY_HISTORY_SPACED_REGEX = /\{\{\s*DIARY_HISTORY\s*\}\}/gi;
                                             if (c.includes(TARGET_VAR)) {
                                                 c = c.split(TARGET_VAR).join('');
                                                 modified = true;
@@ -6828,6 +6929,14 @@ if (window.GGP_Loaded) {
                                             }
                                             if (MOFO_PROMPT_SPACED_REGEX.test(c)) {
                                                 c = c.replace(MOFO_PROMPT_SPACED_REGEX, '');
+                                                modified = true;
+                                            }
+                                            if (c.includes(DIARY_VAR)) {
+                                                c = c.split(DIARY_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (DIARY_HISTORY_SPACED_REGEX.test(c)) {
+                                                c = c.replace(DIARY_HISTORY_SPACED_REGEX, '');
                                                 modified = true;
                                             }
 
@@ -6919,7 +7028,7 @@ if (window.GGP_Loaded) {
 
                             if (targetArray) {
                                 // 🌟 1. 核心防御：连同外层 bodyObj 一起检查，防止变量被移动端或 Claude 抽离到 system 字段
-                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{\s*PHONE_PROMPT\s*\}\}|\{\{\s*PHONE_HISTORY\s*\}\}|\{\{\s*WEIBO_HISTORY\s*\}\}|\{\{\s*MUSIC_PROMPT\s*\}\}|\{\{\s*MOFO_PROMPT\s*\}\}/i);
+                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{\s*PHONE_PROMPT\s*\}\}|\{\{\s*PHONE_HISTORY\s*\}\}|\{\{\s*WEIBO_HISTORY\s*\}\}|\{\{\s*MUSIC_PROMPT\s*\}\}|\{\{\s*MOFO_PROMPT\s*\}\}|\{\{\s*DIARY_HISTORY\s*\}\}/i);
 
                                 if (hasMacros) {
                                     console.log('🚨 [手机插件] 警告：酒馆发送过快导致 Hook 被无视，请求体残留变量！正在执行网卡级底层强行注入...');

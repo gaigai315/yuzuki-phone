@@ -19,6 +19,8 @@
     /* 📏 手机壳缩放：宽度保持原样，高度缩小 5% */
     --phone-shell-width-scale: 1;
     --phone-shell-height-scale: 0.95;
+    /* 📐 手机面板高度：JS 会在键盘弹出时锁定，避免折叠屏被 dvh 压缩 */
+    --phone-panel-vh: 100dvh;
 
     /* ⚠️ 已废弃：以下变量保留以防兼容性问题，但不再使用 */
     --phone-time-color: #ffffff;
@@ -117,10 +119,10 @@
     right: 0 !important;
     bottom: 0 !important;
     width: 100vw !important;
-    height: 100dvh !important;
+    height: var(--phone-panel-vh, 100dvh) !important;
     max-width: 100vw !important;
-    max-height: 100dvh !important;
-    min-height: 100dvh !important;
+    max-height: var(--phone-panel-vh, 100dvh) !important;
+    min-height: var(--phone-panel-vh, 100dvh) !important;
     transform: none !important;
     display: flex !important;
     flex-direction: column !important;
@@ -149,7 +151,7 @@
 #phone-panel-content {
     width: 100% !important;
     height: auto !important;
-    min-height: calc(100dvh - 40px) !important;
+    min-height: calc(var(--phone-panel-vh, 100dvh) - 40px) !important;
     max-width: 100% !important;
     padding: 0 !important;
     margin: 0 !important;
@@ -190,11 +192,11 @@
     width: min(
         calc(400px * var(--phone-shell-width-scale, 1)),
         95vw,
-        calc(92dvh * 9 / 19.5 * var(--phone-shell-width-scale, 1))
+        calc(var(--phone-panel-vh, 100dvh) * 0.92 * 9 / 19.5 * var(--phone-shell-width-scale, 1))
     ) !important;
     height: min(
         calc(866px * var(--phone-shell-height-scale, 1)),
-        calc(92dvh * var(--phone-shell-height-scale, 1)),
+        calc(var(--phone-panel-vh, 100dvh) * 0.92 * var(--phone-shell-height-scale, 1)),
         calc(95vw * 19.5 / 9 * var(--phone-shell-height-scale, 1))
     ) !important;
 

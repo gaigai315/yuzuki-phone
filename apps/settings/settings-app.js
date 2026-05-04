@@ -39,6 +39,33 @@ export class SettingsApp {
         }
     }
 
+    _getTtsProviderDefaults(provider) {
+        const defaults = {
+            minimax_cn: { url: 'https://api.minimaxi.com/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
+            minimax_intl: { url: 'https://api.minimax.chat/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
+            openai: { url: 'https://api.openai.com/v1/audio/speech', model: 'tts-1', voice: 'alloy' },
+            volcengine: { url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', model: 'seed-tts-2.0', voice: 'BV700_streaming', resourceId: 'seed-tts-2.0' }
+        };
+        return defaults[provider] || defaults.minimax_cn;
+    }
+
+    _getTtsProviderConfigKey(provider, field) {
+        return `phone-tts-${provider}-${field}`;
+    }
+
+    _getTtsProviderValue(provider, field, legacyKey = '') {
+        const scoped = String(this.storage.get(this._getTtsProviderConfigKey(provider, field)) || '').trim();
+        if (scoped) return scoped;
+        if (legacyKey && provider === this._getCurrentTtsProvider()) {
+            return String(this.storage.get(legacyKey) || '').trim();
+        }
+        return '';
+    }
+
+    _getCurrentTtsProvider() {
+        return String(this.storage.get('phone-tts-provider') || 'minimax_cn').trim() || 'minimax_cn';
+    }
+
     // 🔥 处理滑动返回
     handleSwipeBack() {
         // 仅当前前台图层是设置页时才响应，避免历史隐藏层误触发
@@ -52,6 +79,14 @@ export class SettingsApp {
     render() {
         const context = this.storage.getContext();
         const charName = context?.name2 || context?.characterId || '未知';
+        const currentTtsProvider = this._getCurrentTtsProvider();
+        const currentTtsDefaults = this._getTtsProviderDefaults(currentTtsProvider);
+        const currentTtsUrl = this._getTtsProviderValue(currentTtsProvider, 'url', 'phone-tts-url') || currentTtsDefaults.url || '';
+        const currentTtsKey = this._getTtsProviderValue(currentTtsProvider, 'key', 'phone-tts-key');
+        const currentTtsModel = this._getTtsProviderValue(currentTtsProvider, 'model', 'phone-tts-model') || currentTtsDefaults.model || '';
+        const currentTtsVoice = this._getTtsProviderValue(currentTtsProvider, 'voice', 'phone-tts-voice');
+        const currentTtsVolcAppId = this._getTtsProviderValue(currentTtsProvider, 'app-id', 'phone-tts-volc-app-id');
+        const currentTtsVolcResourceId = this._getTtsProviderValue(currentTtsProvider, 'resource-id', 'phone-tts-volc-resource-id') || currentTtsDefaults.resourceId || 'seed-tts-2.0';
 
         // 加载壁纸和颜色设置
         const wallpaper = this.imageManager.getWallpaper();
@@ -194,6 +229,17 @@ export class SettingsApp {
                         <!-- 线下模式 -->
                         <div class="setting-section">
                             <div class="setting-section-title">📴 线下模式（酒馆正文注入）</div>
+
+                            <div class="setting-item setting-toggle">
+                                <div>
+                                    <div class="setting-label">日记记录注入线下</div>
+                                    <div class="setting-desc">关闭后，{{DIARY_HISTORY}} 不会替换为日记内容，隐藏日记也始终不注入</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="offline-diary-history-enabled" ${(this.storage.get('offline-diary-history-enabled') === false || this.storage.get('offline-diary-history-enabled') === 'false') ? '' : 'checked'}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
 
                             <div class="setting-item setting-toggle">
                                 <div>
@@ -457,11 +503,14 @@ export class SettingsApp {
                             <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                                 <span style="font-size: 14px; color: #000;">接口提供商</span>
                                 <select id="phone-tts-provider" style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
-                                    <option value="minimax_cn" ${(this.storage.get('phone-tts-provider') || 'minimax_cn') === 'minimax_cn' ? 'selected' : ''}>MiniMax国内版</option>
-                                    <option value="minimax_intl" ${this.storage.get('phone-tts-provider') === 'minimax_intl' ? 'selected' : ''}>MiniMax国际版</option>
-                                    <option value="openai" ${this.storage.get('phone-tts-provider') === 'openai' ? 'selected' : ''}>OpenAI兼容格式</option>
+                                    <option value="minimax_cn" ${currentTtsProvider === 'minimax_cn' ? 'selected' : ''}>MiniMax国内版</option>
+                                    <option value="minimax_intl" ${currentTtsProvider === 'minimax_intl' ? 'selected' : ''}>MiniMax国际版</option>
+                                    <option value="openai" ${currentTtsProvider === 'openai' ? 'selected' : ''}>OpenAI兼容格式</option>
+                                    <option value="volcengine" ${currentTtsProvider === 'volcengine' ? 'selected' : ''}>火山引擎 (豆包)</option>
                                 </select>
                             </div>
+
+                            <div style="margin: 12px 0 6px; font-size: 12px; font-weight: 700; color: #333;">MiniMax / OpenAI 填写区</div>
 
                             <div class="setting-item">
                                 <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -471,19 +520,20 @@ export class SettingsApp {
                                         <option value="https://api.minimaxi.com/v1/t2a_v2">MiniMax 国内版</option>
                                         <option value="https://api.minimax.chat/v1/t2a_v2">MiniMax 国际版</option>
                                         <option value="https://api.openai.com/v1/audio/speech">OpenAI 官方</option>
+                                        <option value="https://openspeech.bytedance.com/api/v3/tts/unidirectional">火山引擎/豆包</option>
                                     </select>
                                 </div>
                                 <input type="text" id="phone-tts-url"
-                                       value="${this.storage.get('phone-tts-url') || ''}"
+                                       value="${currentTtsUrl}"
                                        placeholder="选择预设或手动输入地址"
                                        style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
                             </div>
 
                             <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">API Key</span>
+                                <span style="font-size: 14px; color: #000;">API Key / 豆包 Access Token</span>
                                 <input type="password" id="phone-tts-key"
-                                       value="${this.storage.get('phone-tts-key') || ''}"
-                                       placeholder="输入API Key"
+                                       value="${currentTtsKey}"
+                                       placeholder="MiniMax填Key，豆包填Token"
                                        style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
                             </div>
 
@@ -503,9 +553,30 @@ export class SettingsApp {
                                     </select>
                                 </div>
                                 <input type="text" id="phone-tts-model"
-                                       value="${this.storage.get('phone-tts-model') || ''}"
+                                       value="${currentTtsModel}"
                                        placeholder="选择预设或手动输入模型名"
                                        style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
+                            </div>
+
+                            <div style="margin: 14px 0 6px; padding-top: 10px; border-top: 1px dashed #ececec; font-size: 12px; font-weight: 700; color: #333;">火山引擎（豆包）填写区</div>
+
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">火山 APP ID</span>
+                                <input type="text" id="phone-tts-volc-app-id"
+                                       value="${currentTtsVolcAppId}"
+                                       placeholder="仅豆包需要"
+                                       style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                            </div>
+
+                            <div class="setting-item">
+                                <div style="display: flex; align-items: center; justify-content: space-between;">
+                                    <span style="font-size: 14px; color: #000;">Resource ID</span>
+                                    <input type="text" id="phone-tts-volc-resource-id"
+                                           value="${currentTtsVolcResourceId}"
+                                           placeholder="豆包模型资源ID"
+                                           style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                                </div>
+                                <div class="setting-desc" style="margin-top: 6px;">豆包的 Access Token 填上方密钥栏；Resource ID 用于指定模型版本，例如 seed-tts-2.0、seed-tts-1.0。</div>
                             </div>
 
                             <div class="setting-item">
@@ -523,7 +594,7 @@ export class SettingsApp {
                                 </div>
                                 <div style="display: flex; gap: 6px; margin-top: 6px;">
                                     <input type="text" id="phone-tts-voice"
-                                           value="${this.storage.get('phone-tts-voice') || ''}"
+                                           value="${currentTtsVoice}"
                                            placeholder="输入音色ID，回车或失焦保存"
                                            style="flex: 1; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
                                 </div>
@@ -1234,6 +1305,10 @@ export class SettingsApp {
             await this.storage.set('offline-honey-chat-enabled', !!e.target.checked);
         });
 
+        document.getElementById('offline-diary-history-enabled')?.addEventListener('change', async (e) => {
+            await this.storage.set('offline-diary-history-enabled', !!e.target.checked);
+        });
+
         // 📞 通话发送条数设置
         document.getElementById('phone-call-limit')?.addEventListener('change', async (e) => {
             const limit = parseInt(e.target.value) || 10;
@@ -1271,6 +1346,8 @@ export class SettingsApp {
         const ttsUrl = document.getElementById('phone-tts-url');
         const ttsUrlPreset = document.getElementById('phone-tts-url-preset');
         const ttsKey = document.getElementById('phone-tts-key');
+        const ttsVolcAppId = document.getElementById('phone-tts-volc-app-id');
+        const ttsVolcResourceId = document.getElementById('phone-tts-volc-resource-id');
         const ttsModel = document.getElementById('phone-tts-model');
         const ttsModelPreset = document.getElementById('phone-tts-model-preset');
         const ttsVoice = document.getElementById('phone-tts-voice');
@@ -1278,28 +1355,40 @@ export class SettingsApp {
         const honeyTtsEnabledToggle = document.getElementById('phone-honey-tts-enabled');
         const honeyTtsModeSelect = document.getElementById('phone-honey-tts-mode');
         const honeyTtsCacheEnabledToggle = document.getElementById('phone-honey-tts-cache-enabled');
+        const getSelectedTtsProvider = () => String(ttsProvider?.value || this._getCurrentTtsProvider()).trim() || 'minimax_cn';
+        const setTtsProviderField = async (field, value, legacyKey = '') => {
+            const provider = getSelectedTtsProvider();
+            const safeValue = String(value || '').trim();
+            await this.storage.set(this._getTtsProviderConfigKey(provider, field), safeValue);
+            if (legacyKey && provider === this._getCurrentTtsProvider()) {
+                await this.storage.set(legacyKey, safeValue);
+            }
+        };
 
         if (ttsProvider) ttsProvider.addEventListener('change', async (e) => {
             const val = e.target.value;
             await this.storage.set('phone-tts-provider', val);
             // 联动填充默认 URL 和模型
-            const defaults = {
-                minimax_cn:   { url: 'https://api.minimaxi.com/v1/t2a_v2',    model: 'speech-02-hd' },
-                minimax_intl: { url: 'https://api.minimax.chat/v1/t2a_v2',     model: 'speech-02-hd' },
-                openai:       { url: 'https://api.openai.com/v1/audio/speech',  model: 'tts-1' }
-            };
-            const d = defaults[val];
-            if (d) {
-                if (ttsUrl) { ttsUrl.value = d.url; await this.storage.set('phone-tts-url', d.url); }
-                if (ttsModel) { ttsModel.value = d.model; await this.storage.set('phone-tts-model', d.model); }
-            }
+            const d = this._getTtsProviderDefaults(val);
+            const nextUrl = this._getTtsProviderValue(val, 'url') || d.url || '';
+            const nextKey = this._getTtsProviderValue(val, 'key') || '';
+            const nextModel = this._getTtsProviderValue(val, 'model') || d.model || '';
+            const nextVoice = this._getTtsProviderValue(val, 'voice') || '';
+            const nextAppId = this._getTtsProviderValue(val, 'app-id') || '';
+            const nextResourceId = this._getTtsProviderValue(val, 'resource-id') || d.resourceId || 'seed-tts-2.0';
+            if (ttsUrl) { ttsUrl.value = nextUrl; await this.storage.set('phone-tts-url', nextUrl); }
+            if (ttsKey) { ttsKey.value = nextKey; await this.storage.set('phone-tts-key', nextKey); }
+            if (ttsModel) { ttsModel.value = nextModel; await this.storage.set('phone-tts-model', nextModel); }
+            if (ttsVoice) { ttsVoice.value = nextVoice; await this.storage.set('phone-tts-voice', nextVoice); }
+            if (ttsVolcAppId) { ttsVolcAppId.value = nextAppId; await this.storage.set('phone-tts-volc-app-id', nextAppId); }
+            if (ttsVolcResourceId) { ttsVolcResourceId.value = nextResourceId; await this.storage.set('phone-tts-volc-resource-id', nextResourceId); }
         });
 
         // 接口地址预设下拉 → 填入输入框
         if (ttsUrlPreset) ttsUrlPreset.addEventListener('change', async (e) => {
             const val = e.target.value;
             if (!val) return;
-            if (ttsUrl) { ttsUrl.value = val; await this.storage.set('phone-tts-url', val); }
+            if (ttsUrl) { ttsUrl.value = val; await setTtsProviderField('url', val, 'phone-tts-url'); }
             e.target.value = ''; // 重置下拉为占位项
         });
 
@@ -1307,13 +1396,15 @@ export class SettingsApp {
         if (ttsModelPreset) ttsModelPreset.addEventListener('change', async (e) => {
             const val = e.target.value;
             if (!val) return;
-            if (ttsModel) { ttsModel.value = val; await this.storage.set('phone-tts-model', val); }
+            if (ttsModel) { ttsModel.value = val; await setTtsProviderField('model', val, 'phone-tts-model'); }
             e.target.value = ''; // 重置下拉为占位项
         });
 
-        if (ttsUrl) ttsUrl.addEventListener('change', async (e) => { await this.storage.set('phone-tts-url', e.target.value.trim()); });
-        if (ttsKey) ttsKey.addEventListener('change', async (e) => { await this.storage.set('phone-tts-key', e.target.value.trim()); });
-        if (ttsModel) ttsModel.addEventListener('change', async (e) => { await this.storage.set('phone-tts-model', e.target.value.trim()); });
+        if (ttsUrl) ttsUrl.addEventListener('change', async (e) => { await setTtsProviderField('url', e.target.value, 'phone-tts-url'); });
+        if (ttsKey) ttsKey.addEventListener('change', async (e) => { await setTtsProviderField('key', e.target.value, 'phone-tts-key'); });
+        if (ttsVolcAppId) ttsVolcAppId.addEventListener('change', async (e) => { await setTtsProviderField('app-id', e.target.value, 'phone-tts-volc-app-id'); });
+        if (ttsVolcResourceId) ttsVolcResourceId.addEventListener('change', async (e) => { await setTtsProviderField('resource-id', e.target.value, 'phone-tts-volc-resource-id'); });
+        if (ttsModel) ttsModel.addEventListener('change', async (e) => { await setTtsProviderField('model', e.target.value, 'phone-tts-model'); });
         if (wechatCallAutoTtsToggle) {
             wechatCallAutoTtsToggle.addEventListener('change', async (e) => {
                 await this.storage.set('wechat-call-auto-tts', !!e.target.checked);
@@ -1337,7 +1428,7 @@ export class SettingsApp {
         }
         if (ttsVoice) ttsVoice.addEventListener('change', async (e) => {
             const val = e.target.value.trim();
-            await this.storage.set('phone-tts-voice', val);
+            await setTtsProviderField('voice', val, 'phone-tts-voice');
             // 自动加入历史列表（去重）
             if (val) {
                 let history = [];
@@ -1363,7 +1454,7 @@ export class SettingsApp {
             ttsVoicePreset.addEventListener('change', async (e) => {
                 const val = e.target.value;
                 if (!val) return;
-                if (ttsVoice) { ttsVoice.value = val; await this.storage.set('phone-tts-voice', val); }
+                if (ttsVoice) { ttsVoice.value = val; await setTtsProviderField('voice', val, 'phone-tts-voice'); }
                 e.target.value = ''; // 重置为占位项
             });
 
@@ -1385,7 +1476,7 @@ export class SettingsApp {
                     // 如果当前使用的就是被删的，清空输入框
                     if (ttsVoice && ttsVoice.value === selectedVal) {
                         ttsVoice.value = '';
-                        await this.storage.set('phone-tts-voice', '');
+                        await setTtsProviderField('voice', '', 'phone-tts-voice');
                     }
                 }, 800);
             });
@@ -1420,7 +1511,7 @@ export class SettingsApp {
 
                 // 清空输入框和存储
                 if (ttsVoice) ttsVoice.value = '';
-                await this.storage.set('phone-tts-voice', '');
+                await setTtsProviderField('voice', '', 'phone-tts-voice');
 
                 this.phoneShell.showNotification('已删除', `音色「${currentVoice}」已移除`, '🗑️');
             });

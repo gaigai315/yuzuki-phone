@@ -20,6 +20,57 @@ export class ContactsView {
         this.searchText = '';
     }
 
+    _escapeAttr(value = '') {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    _getTtsProviderOptions() {
+        return [
+            { id: 'minimax_cn', label: 'MiniMax 国内', placeholder: '例如 female-shaonv' },
+            { id: 'minimax_intl', label: 'MiniMax 国际', placeholder: '例如 female-shaonv' },
+            { id: 'openai', label: 'OpenAI', placeholder: '例如 alloy' },
+            { id: 'volcengine', label: '豆包 / 火山引擎', placeholder: '例如 BV700_streaming' }
+        ];
+    }
+
+    _getCurrentTtsProvider() {
+        return String(this.app?.storage?.get?.('phone-tts-provider') || 'minimax_cn').trim() || 'minimax_cn';
+    }
+
+    _getContactTtsVoices(contact = {}) {
+        return (contact?.ttsVoices && typeof contact.ttsVoices === 'object') ? contact.ttsVoices : {};
+    }
+
+    _getTtsVoiceHistoryOptions() {
+        try {
+            const store = this.app.storage;
+            let raw = store.get('phone-tts-voice-history') || store.get('phone_tts_voice_history');
+            if (!raw) return '';
+
+            let historyList = [];
+            if (typeof raw === 'string') {
+                if (raw.startsWith('[')) {
+                    historyList = JSON.parse(raw);
+                } else {
+                    historyList = raw.split(',').map(s => s.trim()).filter(Boolean);
+                }
+            } else if (Array.isArray(raw)) {
+                historyList = raw;
+            }
+
+            return [...new Set(historyList)]
+                .map(v => `<option value="${this._escapeAttr(v)}">${this._escapeAttr(v)}</option>`)
+                .join('');
+        } catch (e) {
+            console.warn('读取音色历史失败:', e);
+            return '';
+        }
+    }
+
     render() {
         const contacts = this.app.wechatData.getContacts();
         const grouped = this.groupContacts(contacts);
@@ -236,6 +287,11 @@ export class ContactsView {
         if (!contact) return;
 
         const avatarHtml = this.app.renderAvatar(contact.avatar, '👤', contact.name);
+        const currentTtsProvider = this._getCurrentTtsProvider();
+        const contactTtsVoices = this._getContactTtsVoices(contact);
+        const contactTtsProvider = String(contact.ttsProvider || '').trim();
+        const legacyTtsVoice = String(contact.ttsVoice || '').trim();
+        const ttsHistoryOptions = this._getTtsVoiceHistoryOptions();
 
         const html = `
             <div class="wechat-app">
@@ -299,46 +355,54 @@ export class ContactsView {
                         <div style="margin-top: 15px; border-top: 1px solid #f0f0f0; padding-top: 15px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                 <div style="font-size: 12px; color: #000; font-weight: 500;">🎙️ 专属语音音色</div>
-                               <!-- 获取历史音色记录（终极兼容版） -->
                                 <select id="edit-contact-tts-select" style="border:none; background:#f5f5f5; border-radius:4px; font-size:11px; padding:2px 4px; color:#666; outline:none; max-width: 100px;">
                                     <option value="">-- 历史音色 --</option>
-                                    ${(() => {
-                                        try {
-                                            const store = this.app.storage;
-                                            // 兼容不同的命名习惯（横杠或下划线）
-                                            let raw = store.get('phone-tts-voice-history') || store.get('phone_tts_voice_history');
-                                            if (!raw) return '';
-                                            
-                                            let historyList = [];
-                                            // 兼容数据格式：可能是 JSON 数组，也可能是逗号分隔的字符串
-                                            if (typeof raw === 'string') {
-                                                if (raw.startsWith('[')) {
-                                                    historyList = JSON.parse(raw);
-                                                } else {
-                                                    historyList = raw.split(',').map(s => s.trim()).filter(Boolean);
-                                                }
-                                            } else if (Array.isArray(raw)) {
-                                                historyList = raw;
-                                            }
-                                            // 去重并生成选项
-                                            return [...new Set(historyList)].map(v => `<option value="${v}">${v}</option>`).join('');
-                                        } catch(e) { 
-                                            console.warn('读取音色历史失败:', e);
-                                            return ''; 
-                                        }
-                                    })()}
+                                    ${ttsHistoryOptions}
                                 </select>
                             </div>
-                            <input type="text" id="edit-contact-tts-input" placeholder="请填入 TTS Voice ID"
-                                   value="${contact.ttsVoice || ''}" style="
-                                width: 100%;
-                                padding: 8px 10px;
-                                border: 1px solid #e5e5e5;
-                                border-radius: 6px;
-                                font-size: 13px;
-                                box-sizing: border-box;
-                            ">
-                            <div style="font-size: 10px; color: #ff3b30; margin-top: 4px;">未绑定音色时，该角色将无法发送/接听语音及视频通话。</div>
+                            <label style="display: block; margin-bottom: 7px;">
+                                <div style="font-size: 11px; color: #666; margin-bottom: 3px;">该角色默认语音服务商</div>
+                                <select id="edit-contact-tts-provider-select" style="
+                                    width: 100%;
+                                    height: 30px;
+                                    padding: 0 8px;
+                                    border: 1px solid #e5e5e5;
+                                    border-radius: 6px;
+                                    font-size: 12px;
+                                    background: #fafafa;
+                                    box-sizing: border-box;
+                                ">
+                                    <option value="" ${!contactTtsProvider ? 'selected' : ''}>跟随全局设置</option>
+                                    ${this._getTtsProviderOptions().map(option => `
+                                        <option value="${option.id}" ${contactTtsProvider === option.id ? 'selected' : ''}>${option.label}</option>
+                                    `).join('')}
+                                </select>
+                            </label>
+                            <div style="display: flex; flex-direction: column; gap: 7px;">
+                                ${this._getTtsProviderOptions().map(option => {
+                                    const providerVoice = String(contactTtsVoices?.[option.id] || '').trim();
+                                    const value = providerVoice || (option.id === currentTtsProvider ? legacyTtsVoice : '');
+                                    const activeText = option.id === currentTtsProvider ? '当前' : '';
+                                    return `
+                                        <label style="display: block;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                                                <span style="font-size: 11px; color: #666;">${option.label}</span>
+                                                ${activeText ? '<span style="font-size: 10px; color: #07c160;">当前</span>' : ''}
+                                            </div>
+                                            <input type="text" class="edit-contact-tts-provider-input" data-provider="${option.id}" placeholder="${option.placeholder}"
+                                                   value="${this._escapeAttr(value)}" style="
+                                                width: 100%;
+                                                padding: 8px 10px;
+                                                border: 1px solid #e5e5e5;
+                                                border-radius: 6px;
+                                                font-size: 12px;
+                                                box-sizing: border-box;
+                                            ">
+                                        </label>
+                                    `;
+                                }).join('')}
+                            </div>
+                            <div style="font-size: 10px; color: #ff3b30; margin-top: 5px;">群聊自动播放会按发送者的默认服务商和对应音色逐条合成；未指定服务商则跟随全局设置。</div>
                         </div>
 
                     </div>
@@ -371,7 +435,10 @@ export class ContactsView {
         document.getElementById('edit-contact-tts-select')?.addEventListener('change', (e) => {
             const selectedVoice = e.target.value;
             if (selectedVoice) {
-                document.getElementById('edit-contact-tts-input').value = selectedVoice;
+                const targetProvider = String(document.getElementById('edit-contact-tts-provider-select')?.value || currentTtsProvider).trim() || currentTtsProvider;
+                const currentInput = document.querySelector(`.edit-contact-tts-provider-input[data-provider="${CSS.escape(targetProvider)}"]`)
+                    || document.querySelector('.edit-contact-tts-provider-input');
+                if (currentInput) currentInput.value = selectedVoice;
             }
         });
 
@@ -440,21 +507,34 @@ export class ContactsView {
                 return;
             }
 
-            const exists = this.app.wechatData.getContacts().find(c => c.name === name && c.id !== contactId);
+            const exists = this.app.wechatData.getContacts().find(c =>
+                c.id !== contactId && this.app.wechatData._isSameLookupName?.(c.name, name)
+            );
             if (exists) {
                 this.app.phoneShell.showNotification('提示', '该名称已被其他联系人使用', '⚠️');
                 return;
             }
 
-            // 🔥 新增：读取音色 ID
-            const ttsVoice = document.getElementById('edit-contact-tts-input').value.trim();
+            // 🔥 新增：读取各服务商音色 ID
+            const ttsVoices = {};
+            let currentProviderTtsVoice = '';
+            const ttsProvider = String(document.getElementById('edit-contact-tts-provider-select')?.value || '').trim();
+            document.querySelectorAll('.edit-contact-tts-provider-input').forEach((input) => {
+                const provider = String(input.dataset.provider || '').trim();
+                const value = String(input.value || '').trim();
+                if (provider && value) ttsVoices[provider] = value;
+                if (provider === currentTtsProvider) currentProviderTtsVoice = value;
+            });
+            const ttsVoice = String(currentProviderTtsVoice || '').trim();
             const oldAvatar = String(contact.avatar || '').trim();
 
             this.app.wechatData.updateContact(contactId, {
                 name: name,
                 avatar: selectedAvatar,
                 letter: this.app.wechatData.getFirstLetter(name),
-                ttsVoice: ttsVoice // 🔥 保存音色
+                ttsVoice: ttsVoice, // 🔥 旧字段兜底
+                ttsVoices: ttsVoices, // 🔥 按服务商保存音色
+                ttsProvider: ttsProvider // 🔥 该角色默认服务商；空值表示跟随全局
             });
 
             this.app.wechatData.syncContactAvatar(contactId, selectedAvatar);
@@ -763,7 +843,8 @@ export class ContactsView {
                 return;
             }
 
-            const exists = this.app.wechatData.getContacts().find(c => c.name === name);
+            const exists = this.app.wechatData.findContactByNameLoose?.(name, { includeChats: false })
+                || this.app.wechatData.getContacts().find(c => c.name === name);
             if (exists) {
                 this.app.phoneShell.showNotification('提示', '该好友已存在', '⚠️');
                 return;
@@ -772,15 +853,15 @@ export class ContactsView {
             isSaving = true;
 
             const newContactId = `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            this.app.wechatData.addContact({
+            const createdContact = this.app.wechatData.addContact({
                 id: newContactId,
                 name: name,
                 avatar: selectedAvatar,
                 letter: this.app.wechatData.getFirstLetter(name)
-            });
+            }) || { id: newContactId, name, avatar: selectedAvatar };
 
-            this.app.wechatData.syncContactAvatar(name, selectedAvatar);
-            this.app.phoneShell.showNotification('添加成功', `已添加好友：${name}`, '✅');
+            this.app.wechatData.syncContactAvatar(createdContact.id || name, selectedAvatar);
+            this.app.phoneShell.showNotification('添加成功', `已添加好友：${createdContact.name || name}`, '✅');
 
             setTimeout(() => {
                 this.app.currentView = 'contacts';

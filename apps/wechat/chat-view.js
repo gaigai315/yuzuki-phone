@@ -326,6 +326,7 @@ export class ChatView {
         if (voice) {
             return {
                 voice,
+                provider: String(resolved?.provider || '').trim(),
                 contact: resolved.contact || null
             };
         }
@@ -333,12 +334,14 @@ export class ChatView {
         if (allowGlobalFallback) {
             return {
                 voice: this._getGlobalTtsVoice(),
+                provider: String(window.VirtualPhone?.storage?.get('phone-tts-provider') || '').trim(),
                 contact: resolved?.contact || null
             };
         }
 
         return {
             voice: '',
+            provider: String(resolved?.provider || '').trim(),
             contact: resolved?.contact || null
         };
     }
@@ -890,7 +893,15 @@ renderChatRoom(chat) {
 
         let messageBody = '';
 
-        switch (msg.type) {
+        const contentStr = String(msg?.content || '').trim();
+        const inlineVoiceNewMatch = /^(?:\[\s*语音\s*\]|【\s*语音\s*】)\s*[:：]?\s*(.+)$/i.exec(contentStr);
+        const inlineVoiceOldMatch = /^\[语音\s*(\d+)秒?\]\(?([^)]*)\)?$/i.exec(contentStr);
+        const effectiveType = (msg.type === 'text' || !msg.type)
+            && (inlineVoiceNewMatch || inlineVoiceOldMatch)
+            ? 'voice'
+            : msg.type;
+
+        switch (effectiveType) {
             case 'image':
                 {
                     const isCustomEmojiImage = !!(msg.customEmojiId || msg.customEmojiName || msg.customEmojiDescription);
@@ -930,13 +941,17 @@ renderChatRoom(chat) {
                 let voiceText = msg.voiceText || '';
 
                 // 兼容新老格式提取
-                const newVMatch = /^\[语音\]\s*(.+)$/.exec(msg.content);
+                const newVMatch = inlineVoiceNewMatch || /^(?:\[\s*语音\s*\]|【\s*语音\s*】)\s*[:：]?\s*(.+)$/i.exec(msg.content);
                 if (newVMatch) {
-                    voiceText = newVMatch[1].trim();
+                    voiceText = String(newVMatch[1] || '').trim();
+                    const wrappedVoiceMatch = voiceText.match(/^[（(]\s*([\s\S]*?)\s*[)）]$/);
+                    if (wrappedVoiceMatch) {
+                        voiceText = String(wrappedVoiceMatch[1] || '').trim();
+                    }
                     durationNum = Math.max(2, Math.min(Math.ceil(voiceText.length / 3), 60));
                     durationStr = durationNum + '"';
                 } else {
-                    const oldVMatch = /^\[语音\s*(\d+)秒?\]\(?([^)]*)\)?$/.exec(msg.content);
+                    const oldVMatch = inlineVoiceOldMatch || /^\[语音\s*(\d+)秒?\]\(?([^)]*)\)?$/.exec(msg.content);
                     if (oldVMatch) {
                         durationStr = oldVMatch[1] + '"';
                         voiceText = oldVMatch[2] || '';
@@ -2116,7 +2131,8 @@ renderChatRoom(chat) {
         return text;
     }
 
-    _stripCallSpeechPrefix(text) {
+    _stripCallSpeechPrefix(text, options = {}) {
+        const preserveVoiceTag = options?.preserveVoiceTag === true;
         let normalized = this.cleanAbnormalSpaces(String(text || ''));
         if (!normalized) return '';
 
@@ -2124,7 +2140,12 @@ renderChatRoom(chat) {
         while (normalized !== previous) {
             previous = normalized;
             normalized = normalized
-                .replace(/^\s*(?:\[\s*(?:语音|视频|语音通话|视频通话|通话)\s*\]|【\s*(?:语音|视频|语音通话|视频通话|通话)\s*】)\s*/i, '')
+                .replace(
+                    preserveVoiceTag
+                        ? /^\s*(?:\[\s*(?:视频|语音通话|视频通话|通话)\s*\]|【\s*(?:视频|语音通话|视频通话|通话)\s*】)\s*/i
+                        : /^\s*(?:\[\s*(?:语音|视频|语音通话|视频通话|通话)\s*\]|【\s*(?:语音|视频|语音通话|视频通话|通话)\s*】)\s*/i,
+                    ''
+                )
                 .replace(/^\s*(?:语音|视频)(?:通话)?\s*[：:]\s*/i, '')
                 .trim();
         }
@@ -3291,11 +3312,10 @@ renderChatRoom(chat) {
                 if (!bubble) return;
 
                 const storage = window.VirtualPhone?.storage;
-                const provider = storage?.get('phone-tts-provider') || 'minimax_cn';
-                const apiKey = storage?.get('phone-tts-key') || '';
+                const ttsManager = window.VirtualPhone?.ttsManager;
 
-                if (!apiKey) {
-                    this.app.phoneShell.showNotification('提示', '请先在设置中配置 TTS 的 API Key', '⚠️');
+                if (!ttsManager) {
+                    this.app.phoneShell.showNotification('提示', 'TTS 管理器未初始化', '⚠️');
                     return;
                 }
 
@@ -3311,11 +3331,9 @@ renderChatRoom(chat) {
                     return;
                 }
 
-                const apiUrl = storage.get('phone-tts-url');
-                const model = storage.get('phone-tts-model');
-                
                 // 🔥 核心修改：动态判定发送者音色
                 let finalVoice = this._getGlobalTtsVoice(); // 默认拿全局音色兜底（对自己有效）
+                let finalProvider = String(storage?.get('phone-tts-provider') || '').trim();
                 const msgNode = bubble.closest('.chat-message');
                 const isMe = msgNode && msgNode.classList.contains('message-right');
 
@@ -3326,9 +3344,10 @@ renderChatRoom(chat) {
                     const senderEl = msgNode.querySelector('.message-sender');
                     if (senderEl) senderName = senderEl.innerText;
 
-                    const { voice } = this._resolveWechatBoundVoiceByName(senderName);
+                    const { voice, provider } = this._resolveWechatBoundVoiceByName(senderName);
                     if (voice) {
                         finalVoice = voice;
+                        finalProvider = provider || finalProvider;
                         this._clearMissingBoundVoiceWarn(senderName, { scene: 'chat' });
                     } else {
                         // ❌ 没有绑定音色，强制拦截并弹窗
@@ -3337,6 +3356,7 @@ renderChatRoom(chat) {
                     }
                 }
                 const voice = finalVoice;
+                const provider = finalProvider;
 
                 try {
                     bubble.style.opacity = '0.5'; // 加载中视觉反馈
@@ -3345,49 +3365,7 @@ renderChatRoom(chat) {
                         const prevBubble = document.getElementById(this.currentPlayingMsgId);
                         if (prevBubble) prevBubble.classList.remove('voice-playing');
                     }
-                    let blobUrl = '';
-
-                    if (provider.startsWith('minimax')) {
-                        // MiniMax 原生接口调用 (t2a_v2 返回 hex 编码)
-                        const response = await fetch(apiUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                            body: JSON.stringify({
-                                model: model || "speech-02-hd",
-                                text: textToSpeak,
-                                stream: false,
-                                voice_setting: { voice_id: voice || "female-shaonv", speed: 1.0, vol: 1.0, pitch: 0 },
-                                audio_setting: { sample_rate: 32000, bitrate: 128000, format: "mp3" }
-                            })
-                        });
-                        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-                        const resData = await response.json();
-                        if (resData.base_resp?.status_code !== 0) throw new Error(resData.base_resp?.status_msg || 'MiniMax请求失败');
-
-                        // 将 Hex 转为 Blob
-                        const hexAudio = resData.data.audio;
-                        const bytes = new Uint8Array(Math.ceil(hexAudio.length / 2));
-                        for (let i = 0; i < bytes.length; i++) {
-                            bytes[i] = parseInt(hexAudio.substr(i * 2, 2), 16);
-                        }
-                        const blob = new Blob([bytes], { type: 'audio/mp3' });
-                        blobUrl = URL.createObjectURL(blob);
-
-                    } else {
-                        // OpenAI 标准接口调用
-                        const response = await fetch(apiUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                            body: JSON.stringify({
-                                model: model || "tts-1",
-                                input: textToSpeak,
-                                voice: voice || "alloy"
-                            })
-                        });
-                        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-                        const blob = await response.blob();
-                        blobUrl = URL.createObjectURL(blob);
-                    }
+                    const blobUrl = await ttsManager.requestTTS(textToSpeak, { provider: provider || undefined, voice: voice || undefined });
 
                     // 播放音频
                     this.audioPlayer.src = blobUrl;
@@ -3817,9 +3795,16 @@ renderChatRoom(chat) {
                 .trim()
                 .replace(/\s+/g, '')
                 .toLowerCase();
+            const normalizeWechatSingleName = (name) => normalizeWechatWindowName(name)
+                .replace(/[（(][^（）()]*[）)]/g, '');
             const isSameWechatWindowName = (a, b) => {
                 const left = normalizeWechatWindowName(a);
                 const right = normalizeWechatWindowName(b);
+                return !!left && !!right && left === right;
+            };
+            const isSameWechatSingleName = (a, b) => {
+                const left = normalizeWechatSingleName(a);
+                const right = normalizeWechatSingleName(b);
                 return !!left && !!right && left === right;
             };
 
@@ -4000,7 +3985,11 @@ renderChatRoom(chat) {
                 if (msgs.length === 0) continue;
 
                 const allChats = this.app.wechatData.getChatList();
-                const sameNameChats = allChats.filter(c => isSameWechatWindowName(c.name, targetName));
+                const sameNameChats = allChats.filter(c =>
+                    c.type === 'group'
+                        ? isSameWechatWindowName(c.name, targetName)
+                        : isSameWechatSingleName(c.name, targetName)
+                );
                 const currentUserName = context?.name1 || this.app.wechatData.getUserInfo()?.name || '用户';
                 const userSenderKeys = new Set(['me', '我', '用户', normalizeWechatWindowName(currentUserName)]);
                 const senderNames = [...new Set(msgs.map(m => String(m?.sender || '').trim()).filter(Boolean))];
@@ -4036,13 +4025,13 @@ renderChatRoom(chat) {
                     } else {
                         // 🔥 单聊：先查找联系人（严格名称归一匹配）
                         const contacts = this.app.wechatData.getContacts();
-                        const existingContact = contacts.find(c => isSameWechatWindowName(c.name, targetName));
+                        const existingContact = contacts.find(c => isSameWechatSingleName(c.name, targetName));
 
                         if (existingContact) {
                             // 联系人存在，查找或创建聊天窗口
                             bgChat = this.app.wechatData.getChatByContactId(existingContact.id);
                             if (!bgChat) {
-                                bgChat = allChats.find(c => c.type !== 'group' && isSameWechatWindowName(c.name, targetName));
+                                bgChat = allChats.find(c => c.type !== 'group' && isSameWechatSingleName(c.name, targetName));
                             }
                             if (!bgChat) {
                                 bgChat = this.app.wechatData.createChat({
@@ -4055,24 +4044,24 @@ renderChatRoom(chat) {
                             }
                         } else {
                             // 🔥 也尝试通过名字直接查找聊天（严格名称归一匹配）
-                            bgChat = allChats.find(c => c.type !== 'group' && isSameWechatWindowName(c.name, targetName));
+                            bgChat = allChats.find(c => c.type !== 'group' && isSameWechatSingleName(c.name, targetName));
 
                             if (!bgChat) {
                                 // 联系人不存在，先添加联系人再创建聊天
                                 const newContactId = `contact_${Date.now()}`;
-                                this.app.wechatData.addContact({
+                                const newContact = this.app.wechatData.addContact({
                                     id: newContactId,
                                     name: targetName,
                                     avatar: '👤',
                                     letter: this.app.wechatData.getFirstLetter(targetName)
-                                });
+                                }) || { id: newContactId, name: targetName, avatar: '👤' };
 
                                 bgChat = this.app.wechatData.createChat({
-                                    id: `chat_${newContactId}`,
-                                    contactId: newContactId,
-                                    name: targetName,
+                                    id: `chat_${newContact.id || newContactId}`,
+                                    contactId: newContact.id || newContactId,
+                                    name: newContact.name || targetName,
                                     type: 'single',
-                                    avatar: '👤'
+                                    avatar: newContact.avatar || '👤'
                                 });
                             }
                         }
@@ -4087,7 +4076,7 @@ renderChatRoom(chat) {
                 for (let bgIndex = 0; bgIndex < msgs.length; bgIndex++) {
                     const m = msgs[bgIndex];
                     const cleanContent = this.cleanAbnormalSpaces(m.content);
-                    const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent);
+                    const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent, { preserveVoiceTag: true });
                     const special = m.specialMessage || this.parseSpecialMessage(cleanContent);
                     // 🔥 核心修复2：如果是群聊，绝不能拿群聊头像(bgChat.avatar)给个人用
                     senderAvatar = this.app.wechatData.getContactByName(m.sender)?.avatar || (isBgGroupChat ? '' : bgChat.avatar) || '👤';
@@ -4178,7 +4167,7 @@ renderChatRoom(chat) {
                 // 存入数据库
                 const senderContact = this.app.wechatData.getContactByName(msg.sender);
                 const cleanContent = this.cleanAbnormalSpaces(msg.content);
-                const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent);
+                const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent, { preserveVoiceTag: true });
                 const special = msg.specialMessage || this.parseSpecialMessage(cleanContent);
                 if (special?.type === 'incoming_call') {
                     const { queuedLines, consumedCount } = this._collectIncomingCallFollowUps(parsedMessages, msgIndex);
@@ -9686,13 +9675,11 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
     // 播放微信通话的TTS
     async playWechatCallTTS(text, bubble) {
         const storage = window.VirtualPhone?.storage;
+        const ttsManager = window.VirtualPhone?.ttsManager;
         if (!storage) return;
-        const provider = storage.get('phone-tts-provider') || 'minimax_cn';
-        const apiKey = storage.get('phone-tts-key') || '';
-        const apiUrl = storage.get('phone-tts-url');
-        const model = storage.get('phone-tts-model');
         // 🔥 核心修改：拦截通话全局音色，强制要求专属音色
         let finalVoice = this._getGlobalTtsVoice();
+        let finalProvider = String(storage.get('phone-tts-provider') || '').trim();
         const row = bubble?.closest?.('.call-msg-row');
         const isMe = !!(bubble && !bubble.classList.contains('wechat-call-ai-bubble')) ||
             (row && String(row.style?.justifyContent || '').trim() === 'flex-end');
@@ -9701,9 +9688,10 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             // 通话中对方说话，优先使用气泡绑定的发送者，再回退到发送者标签
             const senderName = this._resolveCallBubbleSenderName(bubble);
             if (senderName) {
-                const { voice } = this._resolveWechatBoundVoiceByName(senderName);
+                const { voice, provider } = this._resolveWechatBoundVoiceByName(senderName);
                 if (voice) {
                     finalVoice = voice;
+                    finalProvider = provider || finalProvider;
                     this._clearMissingBoundVoiceWarn(senderName, { scene: 'call' });
                 } else {
                     // ❌ 未绑定音色，拦截提示并跳过当前语音的生成
@@ -9713,8 +9701,9 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             }
         }
         const voice = finalVoice;
+        const provider = finalProvider;
 
-        if (!apiKey || !apiUrl) return;
+        if (!ttsManager) return;
 
         try {
             // 停止上一个
@@ -9723,33 +9712,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 if (prevBubble) prevBubble.classList.remove('voice-playing');
             }
 
-            let blobUrl = '';
-            if (provider.startsWith('minimax')) {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                    body: JSON.stringify({
-                        model: model || 'speech-02-hd', text: text, stream: false,
-                        voice_setting: { voice_id: voice || 'female-shaonv', speed: 1.0, vol: 1.0, pitch: 0 },
-                        audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3' }
-                    })
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const resData = await response.json();
-                if (resData.base_resp?.status_code !== 0) throw new Error(resData.base_resp?.status_msg);
-                const hexAudio = resData.data.audio;
-                const bytes = new Uint8Array(Math.ceil(hexAudio.length / 2));
-                for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hexAudio.substr(i * 2, 2), 16);
-                blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/mp3' }));
-            } else {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                    body: JSON.stringify({ model: model || 'tts-1', input: text, voice: voice || 'alloy' })
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                blobUrl = URL.createObjectURL(await response.blob());
-            }
+            const blobUrl = await ttsManager.requestTTS(text, { provider: provider || undefined, voice: voice || undefined });
 
             this.audioPlayer.src = blobUrl;
             this.currentPlayingCallMsgId = bubble ? bubble.id : null;

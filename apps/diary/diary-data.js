@@ -265,6 +265,56 @@ export class DiaryData {
         return false;
     }
 
+    setEntryOfflineHidden(entryId, hidden) {
+        const entry = this.getEntry(entryId);
+        if (!entry) return false;
+        entry.offlineHidden = !!hidden;
+        this.saveEntries();
+        return true;
+    }
+
+    setEntriesOfflineHidden(entryIds = [], hidden) {
+        const ids = new Set((Array.isArray(entryIds) ? entryIds : []).map(id => String(id || '').trim()).filter(Boolean));
+        if (ids.size === 0) return 0;
+        let changed = 0;
+        this.getEntries().forEach(entry => {
+            if (!ids.has(String(entry?.id || ''))) return;
+            if (!!entry.offlineHidden === !!hidden) return;
+            entry.offlineHidden = !!hidden;
+            changed++;
+        });
+        if (changed > 0) this.saveEntries();
+        return changed;
+    }
+
+    buildOfflineInjectionContent() {
+        const entries = this.getEntries()
+            .filter(entry => entry && entry.offlineHidden !== true && String(entry.content || '').trim())
+            .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+        if (entries.length === 0) return '';
+
+        const cleanText = (value, maxLen = 5000) => String(value || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim()
+            .slice(0, maxLen);
+
+        let content = '【日记记录】\n';
+        content += '以下是角色的私密日记。剧情中可参考这些内容保持角色记忆、情绪和关系连续性；严禁逐字复述。\n\n';
+
+        entries.forEach((entry, index) => {
+            const title = cleanText(entry.title || this._extractTitleFromContent(entry.content) || '无标题', 80);
+            const date = cleanText(entry.date || this._extractDateFromContent(entry.content), 80);
+            const body = cleanText(entry.content);
+            content += `--- 日记${index + 1} ---\n`;
+            if (date) content += `日期: ${date}\n`;
+            if (title) content += `标题: ${title}\n`;
+            content += `${body}\n\n`;
+        });
+
+        return content.trim() + '\n';
+    }
+
     getLastDiaryFloorIndex() {
         const entries = this.getEntries();
         if (entries.length === 0) return -1;
