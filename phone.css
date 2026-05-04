@@ -294,6 +294,15 @@
     ) !important;
 }
 
+@media (min-width: 501px) {
+    #phone-panel.phone-keyboard-open .phone-body-panel {
+        width: min(
+            calc(400px * var(--phone-shell-width-scale, 1)),
+            95vw
+        ) !important;
+    }
+}
+
 #phone-panel ~ .drawer-backdrop,
 #phone-panel .drawer-backdrop {
     display: none !important;
