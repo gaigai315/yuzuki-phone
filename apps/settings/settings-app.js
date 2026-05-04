@@ -376,11 +376,11 @@ export class SettingsApp {
                             <div class="setting-section-title">ℹ️ 关于</div>
                             <div class="setting-item">
                                 <div class="setting-label">版本</div>
-                                <div class="setting-value">v1.0.0</div>
+                                <div class="setting-value">v1.0.2</div>
                             </div>
                             <div class="setting-info">
-                                每个角色的手机数据独立存储<br>
-                                切换角色时自动加载对应的数据
+                                每个聊天会话窗口独立存储<br>
+                                蜜语数据全局共享
                             </div>
                         </div>
                     </div>

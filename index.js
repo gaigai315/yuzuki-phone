@@ -10,13 +10,13 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // ========================================
-// 虚拟手机互动系统 v1.0.1
+// 虚拟手机互动系统 v1.0.2
 // SillyTavern 扩展插件
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_GLOBAL_CSS_URL = new URL('./phone.css', import.meta.url).href;
-const ST_PHONE_VERSION = '1.0.1';
+const ST_PHONE_VERSION = '1.0.2';
 const ST_PHONE_UPDATE_MANIFEST_URLS = [
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/main/manifest.json',
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/master/manifest.json'
@@ -30,6 +30,7 @@ const ST_PHONE_CURRENT_UPDATE = {
     date: '2026-05-04',
     items: [
         '日记新增注入功能，可把日记历史写入上下文。',
+        '日记新增导入功能，支持把旧日记批量迁移到小手机。',
         '语音支持豆包；群语音支持 MiniMax 与豆包混合调用。',
         '适配折叠手机屏显示问题，优化特殊屏幕下的小手机布局。'
     ]
