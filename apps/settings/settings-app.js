@@ -20,13 +20,15 @@ import {
     parsePhoneTagFilterDiagnosticJson
 } from '../../config/tag-filter.js';
 
+const DEFAULT_DOUBAO_CLONE_WORKER_URL = '';
+
 export class SettingsApp {
     constructor(phoneShell, storage, settings) {
         this.phoneShell = phoneShell;
         this.storage = storage;
         this.settings = settings;
         this.imageManager = new ImageUploadManager(storage);
-        this.currentTab = 'general'; // 可选值: 'general', 'memory', 'llm', 'tts'
+        this.currentTab = 'general'; // 可选值: 'general', 'memory', 'llm', 'tts', 'image'
 
         // 🔥 监听滑动返回事件 (防止实例重建导致重复绑定)
         if (!window._settingsSwipeBackBound) {
@@ -85,9 +87,19 @@ export class SettingsApp {
         const currentTtsKey = this._getTtsProviderValue(currentTtsProvider, 'key', 'phone-tts-key');
         const currentTtsModel = this._getTtsProviderValue(currentTtsProvider, 'model', 'phone-tts-model') || currentTtsDefaults.model || '';
         const currentTtsVoice = this._getTtsProviderValue(currentTtsProvider, 'voice', 'phone-tts-voice');
-        const currentTtsVolcAppId = this._getTtsProviderValue(currentTtsProvider, 'app-id', 'phone-tts-volc-app-id');
-        const currentTtsVolcResourceId = this._getTtsProviderValue(currentTtsProvider, 'resource-id', 'phone-tts-volc-resource-id') || currentTtsDefaults.resourceId || 'seed-tts-2.0';
-
+        const volcTtsKey = this._getTtsProviderValue('volcengine', 'key', 'phone-tts-key');
+        const volcTtsVoice = this._getTtsProviderValue('volcengine', 'voice', 'phone-tts-voice');
+        const currentTtsVolcAppId = this._getTtsProviderValue('volcengine', 'app-id', 'phone-tts-volc-app-id');
+        const currentTtsVolcResourceId = this._getTtsProviderValue('volcengine', 'resource-id', 'phone-tts-volc-resource-id') || 'seed-tts-2.0';
+        const currentTtsVolcCloneWorkerUrl = this._getTtsProviderValue('volcengine', 'clone-worker-url', 'phone-tts-volc-clone-worker-url') || DEFAULT_DOUBAO_CLONE_WORKER_URL;
+        const currentTtsVolcCloneAccessToken = this._getTtsProviderValue('volcengine', 'clone-access-token', 'phone-tts-volc-clone-access-token');
+        const currentTtsVolcCloneAppId = this._getTtsProviderValue('volcengine', 'clone-app-id', 'phone-tts-volc-clone-app-id');
+        const isTtsMiniMaxSectionOpen = this.storage.get('phone-tts-minimax-section-open') === true;
+        const isTtsVolcSectionOpen = this.storage.get('phone-tts-volc-section-open') === true;
+        const isTtsWechatSectionOpen = this.storage.get('phone-tts-wechat-section-open') === true;
+        const isTtsHoneySectionOpen = this.storage.get('phone-tts-honey-section-open') === true;
+        const isGeneralInteractionOpen = this.storage.get('phone-settings-general-interaction-open') === true;
+        const isGeneralLimitsOpen = this.storage.get('phone-settings-general-limits-open') === true;
         // 加载壁纸和颜色设置
         const wallpaper = this.imageManager.getWallpaper();
         const globalTextColor = this.storage.get('phone-global-text') || '#000000';
@@ -103,6 +115,7 @@ export class SettingsApp {
                         <button class="settings-tab-btn ${this.currentTab === 'memory' ? 'active' : ''}" data-tab="memory" style="flex: 1; border: none; background: ${this.currentTab === 'memory' ? 'rgba(0,0,0,0.06)' : 'transparent'}; height: 38px; min-height: 38px; padding: 0; line-height: 38px; font-size: 13px; font-weight: ${this.currentTab === 'memory' ? '600' : '500'}; color: ${this.currentTab === 'memory' ? '#111' : '#666'}; border-radius: 8px 8px 0 0; transition: all .2s ease;">联动记录</button>
                         <button class="settings-tab-btn ${this.currentTab === 'llm' ? 'active' : ''}" data-tab="llm" style="flex: 1; border: none; background: ${this.currentTab === 'llm' ? 'rgba(0,0,0,0.06)' : 'transparent'}; height: 38px; min-height: 38px; padding: 0; line-height: 38px; font-size: 13px; font-weight: ${this.currentTab === 'llm' ? '600' : '500'}; color: ${this.currentTab === 'llm' ? '#111' : '#666'}; border-radius: 8px 8px 0 0; transition: all .2s ease;">聊天 API</button>
                         <button class="settings-tab-btn ${this.currentTab === 'tts' ? 'active' : ''}" data-tab="tts" style="flex: 1; border: none; background: ${this.currentTab === 'tts' ? 'rgba(0,0,0,0.06)' : 'transparent'}; height: 38px; min-height: 38px; padding: 0; line-height: 38px; font-size: 13px; font-weight: ${this.currentTab === 'tts' ? '600' : '500'}; color: ${this.currentTab === 'tts' ? '#111' : '#666'}; border-radius: 8px 8px 0 0; transition: all .2s ease;">语音 TTS</button>
+                        <button class="settings-tab-btn ${this.currentTab === 'image' ? 'active' : ''}" data-tab="image" style="flex: 1; border: none; background: ${this.currentTab === 'image' ? 'rgba(0,0,0,0.06)' : 'transparent'}; height: 38px; min-height: 38px; padding: 0; line-height: 38px; font-size: 13px; font-weight: ${this.currentTab === 'image' ? '600' : '500'}; color: ${this.currentTab === 'image' ? '#111' : '#666'}; border-radius: 8px 8px 0 0; transition: all .2s ease;">生图</button>
                     </div>
                 </div>
 
@@ -117,9 +130,12 @@ export class SettingsApp {
                             </div>
                         </div>
 
-                        <!-- 互动模式 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📡 互动模式</div>
+                        <details data-settings-fold-key="phone-settings-general-interaction-open" ${isGeneralInteractionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                            <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
+                                <span>📡 互动模式</span>
+                                <span style="font-size: 11px; color: #888; font-weight: 500;">点击展开/折叠</span>
+                            </summary>
+                            <div style="padding: 10px 10px 4px;">
 
                             <div class="setting-item setting-toggle">
                                 <div>
@@ -155,11 +171,15 @@ export class SettingsApp {
                                 2. 在对应APP设置中配置各功能提示词<br>
                                 3. 在手机APP中发送消息，AI会自动回复
                             </div>
-                        </div>
+                            </div>
+                        </details>
 
-                        <!-- 消息记录设置 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📨 消息记录</div>
+                        <details data-settings-fold-key="phone-settings-general-limits-open" ${isGeneralLimitsOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                            <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
+                                <span>📨 注入/记录条数</span>
+                                <span style="font-size: 11px; color: #888; font-weight: 500;">点击展开/折叠</span>
+                            </summary>
+                            <div style="padding: 10px 10px 4px;">
 
                             <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                                 <span style="font-size: 14px; color: #000;">正文上下文楼层</span>
@@ -167,11 +187,9 @@ export class SettingsApp {
                                        value="${this.storage.get('phone-context-limit') || 20}"
                                        style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
                             </div>
-                        </div>
 
-                        <!-- 线上模式 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📱 线上模式（手机内聊天）</div>
+                            <div style="height: 1px; background: #ececec; margin: 10px 0;"></div>
+                            <div style="font-size: 12px; font-weight: 700; color: #333; margin: 0 0 6px;">📱 线上模式（手机内聊天）</div>
 
                             <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                                 <span style="font-size: 14px; color: #000;">单聊发送条数</span>
@@ -186,22 +204,19 @@ export class SettingsApp {
                                        value="${this.storage.get('wechat-group-chat-limit') || 200}"
                                        style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
                             </div>
-                        </div>
 
-                        <!-- 电话通话 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📞 电话通话</div>
+                            <div style="height: 1px; background: #ececec; margin: 10px 0;"></div>
+                            <div style="font-size: 12px; font-weight: 700; color: #333; margin: 0 0 6px;">📞 电话通话</div>
+
                             <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                                 <span style="font-size: 14px; color: #000;">通话发送条数</span>
                                 <input type="number" id="phone-call-limit" min="1" max="9999"
                                        value="${this.storage.get('phone-call-limit') || 10}"
                                        style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
                             </div>
-                        </div>
 
-                        <!-- 微博注入 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">🧾 微博注入（线下模式）</div>
+                            <div style="height: 1px; background: #ececec; margin: 10px 0;"></div>
+                            <div style="font-size: 12px; font-weight: 700; color: #333; margin: 0 0 6px;">🧾 微博注入（线下模式）</div>
 
                             <div class="setting-item setting-toggle">
                                 <div>
@@ -224,11 +239,9 @@ export class SettingsApp {
                             <div class="setting-info">
                                 同时附带注入微博最新热搜条目（不注入热搜正文详情）
                             </div>
-                        </div>
 
-                        <!-- 线下模式 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📴 线下模式（酒馆正文注入）</div>
+                            <div style="height: 1px; background: #ececec; margin: 10px 0;"></div>
+                            <div style="font-size: 12px; font-weight: 700; color: #333; margin: 0 0 6px;">📴 线下模式（酒馆正文注入）</div>
 
                             <div class="setting-item setting-toggle">
                                 <div>
@@ -265,7 +278,8 @@ export class SettingsApp {
                                        value="${this.storage.get('offline-group-chat-limit') || 10}"
                                        style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
                             </div>
-                        </div>
+                            </div>
+                        </details>
 
                         <!-- 个性化设置 -->
                         <div class="setting-section">
@@ -376,7 +390,7 @@ export class SettingsApp {
                             <div class="setting-section-title">ℹ️ 关于</div>
                             <div class="setting-item">
                                 <div class="setting-label">版本</div>
-                                <div class="setting-value">v1.0.2</div>
+                                <div class="setting-value">v1.0.3</div>
                             </div>
                             <div class="setting-info">
                                 每个聊天会话窗口独立存储<br>
@@ -469,154 +483,229 @@ export class SettingsApp {
                                 </div>
                             </div>
                         </div>
-
-                        <div class="setting-section">
-                            <div class="setting-section-title">🖼️ 微信生图</div>
-                            <div class="setting-info" style="margin-bottom: 10px;">
-                                用于微信聊天里 AI 返回的 [图片]（描述）占位卡。点击后会直接调用 SiliconFlow 生图，默认走更快的小图参数。
-                            </div>
-
-                            <div class="setting-item">
-                                <div class="setting-label">SiliconFlow API Key</div>
-                                <input type="password" id="siliconflow-api-key"
-                                       value="${this.storage.get('siliconflow_api_key') || ''}"
-                                       placeholder="输入用于微信生图的 API Key"
-                                       style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 13px; background: #fafafa; box-sizing: border-box;">
-                            </div>
-
-                            <div class="setting-item">
-                                <div class="setting-label">生图模型</div>
-                                <input type="text" id="image-generation-model"
-                                       value="${this.storage.get('image_generation_model') || 'Kwai-Kolors/Kolors'}"
-                                       placeholder="Kwai-Kolors/Kolors"
-                                       style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 13px; background: #fafafa; box-sizing: border-box;">
-                                <div class="setting-desc" style="margin-top: 6px;">默认模型：Kwai-Kolors/Kolors。当前代码会自动补“二次元、非真人、性别明确”的通用提示词，并使用 Kolor 官方推荐尺寸里的较小档 768x1024。</div>
-                            </div>
-                        </div>
                     </div>
 
                     <div class="tab-content" id="tab-tts" style="${this.currentTab === 'tts' ? '' : 'display: none;'}">
                         <!-- 🔊 语音功能 (TTS) -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">🔊 语音功能 (TTS)</div>
+                        <div class="tts-section-list">
+                            <details data-tts-fold-key="phone-tts-minimax-section-open" ${isTtsMiniMaxSectionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                                <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
+                                    <span>MiniMax / OpenAI</span>
+                                    <span style="font-size: 11px; color: #888; font-weight: 500;">点击展开/折叠</span>
+                                </summary>
+                                <div style="padding: 10px 10px 4px;">
+                                    <div class="setting-item">
+                                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                                            <span style="font-size: 14px; color: #000;">API 接口地址</span>
+                                            <select id="phone-tts-url-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
+                                                <option value="">-- 快速选择 --</option>
+                                                <option value="https://api.minimaxi.com/v1/t2a_v2">MiniMax 国内版</option>
+                                                <option value="https://api.minimax.chat/v1/t2a_v2">MiniMax 国际版</option>
+                                                <option value="https://api.openai.com/v1/audio/speech">OpenAI 官方</option>
+                                                <option value="https://openspeech.bytedance.com/api/v3/tts/unidirectional">火山引擎/豆包</option>
+                                            </select>
+                                        </div>
+                                        <input type="text" id="phone-tts-url"
+                                               value="${currentTtsUrl}"
+                                               placeholder="选择预设或手动输入地址"
+                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
+                                    </div>
 
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">接口提供商</span>
-                                <select id="phone-tts-provider" style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
-                                    <option value="minimax_cn" ${currentTtsProvider === 'minimax_cn' ? 'selected' : ''}>MiniMax国内版</option>
-                                    <option value="minimax_intl" ${currentTtsProvider === 'minimax_intl' ? 'selected' : ''}>MiniMax国际版</option>
-                                    <option value="openai" ${currentTtsProvider === 'openai' ? 'selected' : ''}>OpenAI兼容格式</option>
-                                    <option value="volcengine" ${currentTtsProvider === 'volcengine' ? 'selected' : ''}>火山引擎 (豆包)</option>
-                                </select>
-                            </div>
+                                    <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                        <span style="font-size: 14px; color: #000;">API Key</span>
+                                        <input type="password" id="phone-tts-key"
+                                               value="${currentTtsKey}"
+                                               placeholder="MiniMax/OpenAI API Key"
+                                               style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                                    </div>
 
-                            <div style="margin: 12px 0 6px; font-size: 12px; font-weight: 700; color: #333;">MiniMax / OpenAI 填写区</div>
+                                    <div class="setting-item">
+                                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                                            <span style="font-size: 14px; color: #000;">语音模型</span>
+                                            <select id="phone-tts-model-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
+                                                <option value="">-- 快速选择 --</option>
+                                                <option value="speech-2.8-hd">speech-2.8-hd</option>
+                                                <option value="speech-2.6-hd">speech-2.6-hd</option>
+                                                <option value="speech-2.8-turbo">speech-2.8-turbo</option>
+                                                <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+                                                <option value="speech-02-hd">speech-02-hd</option>
+                                                <option value="speech-02-turbo">speech-02-turbo</option>
+                                                <option value="tts-1">tts-1 (OpenAI)</option>
+                                                <option value="tts-1-hd">tts-1-hd (OpenAI)</option>
+                                            </select>
+                                        </div>
+                                        <input type="text" id="phone-tts-model"
+                                               value="${currentTtsModel}"
+                                               placeholder="选择预设或手动输入模型名"
+                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
+                                    </div>
 
-                            <div class="setting-item">
-                                <div style="display: flex; align-items: center; justify-content: space-between;">
-                                    <span style="font-size: 14px; color: #000;">API 接口地址</span>
-                                    <select id="phone-tts-url-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
-                                        <option value="">-- 快速选择 --</option>
-                                        <option value="https://api.minimaxi.com/v1/t2a_v2">MiniMax 国内版</option>
-                                        <option value="https://api.minimax.chat/v1/t2a_v2">MiniMax 国际版</option>
-                                        <option value="https://api.openai.com/v1/audio/speech">OpenAI 官方</option>
-                                        <option value="https://openspeech.bytedance.com/api/v3/tts/unidirectional">火山引擎/豆包</option>
-                                    </select>
+                                    <div class="setting-item">
+                                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                                            <span style="font-size: 14px; color: #000;">音色 ID (Voice)</span>
+                                            <select id="phone-tts-voice-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
+                                                <option value="">-- 历史音色 --</option>
+                                                ${(() => {
+                                                    try {
+                                                        const list = JSON.parse(this.storage.get('phone-tts-voice-history') || '[]');
+                                                        return list.map(v => `<option value="${v}">${v}</option>`).join('');
+                                                    } catch(e) { return ''; }
+                                                })()}
+                                            </select>
+                                        </div>
+                                        <input type="text" id="phone-tts-voice"
+                                               value="${currentTtsVoice}"
+                                               placeholder="MiniMax/OpenAI 音色 ID"
+                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
+                                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+                                            <button id="phone-tts-preview" style="padding: 2px 8px; border: none; background: none; color: #1677ff; font-size: 10px; cursor: pointer;">试听当前音色</button>
+                                            <button id="phone-tts-voice-delete" style="padding: 2px 8px; border: none; background: none; color: #ff3b30; font-size: 10px; cursor: pointer;">删除当前音色</button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <input type="text" id="phone-tts-url"
-                                       value="${currentTtsUrl}"
-                                       placeholder="选择预设或手动输入地址"
-                                       style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                            </div>
+                            </details>
 
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">API Key / 豆包 Access Token</span>
-                                <input type="password" id="phone-tts-key"
-                                       value="${currentTtsKey}"
-                                       placeholder="MiniMax填Key，豆包填Token"
-                                       style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
-                            </div>
+                            <details data-tts-fold-key="phone-tts-volc-section-open" ${isTtsVolcSectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                                <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
+                                    <span>火山引擎（豆包）</span>
+                                    <span style="font-size: 11px; color: #888; font-weight: 500;">点击展开/折叠</span>
+                                </summary>
+                                <div style="padding: 10px 10px 4px;">
+                                    <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                        <span style="font-size: 14px; color: #000;">Access Token</span>
+                                        <input type="password" id="phone-tts-volc-key"
+                                               value="${volcTtsKey}"
+                                               placeholder="豆包 Access Token"
+                                               style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                                    </div>
 
-                            <div class="setting-item">
-                                <div style="display: flex; align-items: center; justify-content: space-between;">
-                                    <span style="font-size: 14px; color: #000;">语音模型</span>
-                                    <select id="phone-tts-model-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
-                                        <option value="">-- 快速选择 --</option>
-                                        <option value="speech-2.8-hd">speech-2.8-hd</option>
-                                        <option value="speech-2.6-hd">speech-2.6-hd</option>
-                                        <option value="speech-2.8-turbo">speech-2.8-turbo</option>
-                                        <option value="speech-2.6-turbo">speech-2.6-turbo</option>
-                                        <option value="speech-02-hd">speech-02-hd</option>
-                                        <option value="speech-02-turbo">speech-02-turbo</option>
-                                        <option value="tts-1">tts-1 (OpenAI)</option>
-                                        <option value="tts-1-hd">tts-1-hd (OpenAI)</option>
-                                    </select>
+                                    <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                        <span style="font-size: 14px; color: #000;">火山 APP ID</span>
+                                        <input type="text" id="phone-tts-volc-app-id"
+                                               value="${currentTtsVolcAppId}"
+                                               placeholder="仅豆包需要"
+                                               style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                                    </div>
+
+                                    <div class="setting-item">
+                                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                                            <span style="font-size: 14px; color: #000;">Resource ID</span>
+                                            <input type="text" id="phone-tts-volc-resource-id"
+                                                   value="${currentTtsVolcResourceId}"
+                                                   placeholder="豆包模型资源ID"
+                                                   style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                                        </div>
+                                        <div class="setting-desc" style="margin-top: 6px;">豆包的 Access Token 填上方密钥栏；官方预置音色通常用 seed-tts-2.0，复刻音色（一般为 S_ 开头）需用 seed-icl-2.0。检测到 S_ 复刻音色且仍填 seed-tts-* 时，播放会自动改用 seed-icl-2.0。</div>
+                                    </div>
+
+                                    <div class="setting-item">
+                                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                                            <span style="font-size: 14px; color: #000;">音色 ID (Voice)</span>
+                                            <select id="phone-tts-volc-voice-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
+                                                <option value="">-- 历史音色 --</option>
+                                                ${(() => {
+                                                    try {
+                                                        const list = JSON.parse(this.storage.get('phone-tts-voice-history') || '[]');
+                                                        return list.map(v => `<option value="${v}">${v}</option>`).join('');
+                                                    } catch(e) { return ''; }
+                                                })()}
+                                            </select>
+                                        </div>
+                                        <div style="display: flex; gap: 6px; margin-top: 6px;">
+                                            <input type="text" id="phone-tts-volc-voice"
+                                                   value="${volcTtsVoice}"
+                                                   placeholder="输入默认音色或 S_ 复刻音色"
+                                                   style="flex: 1; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
+                                        </div>
+                                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+                                            <span style="font-size: 10px; color: #999;">填写后自动记入历史列表</span>
+                                            <button id="phone-tts-volc-voice-delete" style="padding: 2px 8px; border: none; background: none; color: #ff3b30; font-size: 10px; cursor: pointer;">删除当前音色</button>
+                                        </div>
+                                        <button id="phone-tts-volc-preview" style="width: 100%; height: 30px; margin-top: 8px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; color: #222; font-size: 12px; cursor: pointer;">试听当前豆包音色</button>
+                                    </div>
+
+                                    <div style="height: 1px; background: #ececec; margin: 10px 0;"></div>
+
+                                    <div class="setting-item">
+                                        <div style="font-size: 13px; font-weight: 700; color: #333; margin-bottom: 8px;">豆包音色复刻</div>
+                                        <div class="setting-desc" style="margin-bottom: 8px;">复刻会把音频上传到火山/豆包云端，并消耗复刻音色额度；训练成功后可直接设为当前音色调用。</div>
+
+                                        <input type="text" id="phone-tts-volc-clone-worker-url"
+                                               value="${currentTtsVolcCloneWorkerUrl}"
+                                               placeholder="Worker 地址，例：https://xxx.workers.dev"
+                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-bottom: 8px;">
+                                        <div class="setting-desc" style="margin-bottom: 8px;">建议填写自己搭建的 Worker 地址。</div>
+
+                                        <input type="password" id="phone-tts-volc-clone-access-token"
+                                               value="${currentTtsVolcCloneAccessToken}"
+                                               placeholder="复刻 Access Token，空着则使用上方豆包 Token"
+                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-bottom: 8px;">
+
+                                        <input type="text" id="phone-tts-volc-clone-app-id"
+                                               value="${currentTtsVolcCloneAppId}"
+                                               placeholder="复刻 APP ID，空着则使用上方火山 APP ID"
+                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-bottom: 8px;">
+
+                                        <input type="text" id="phone-tts-volc-clone-speaker-id"
+                                               value="${volcTtsVoice && /^S_[A-Za-z0-9_-]+$/.test(volcTtsVoice) ? volcTtsVoice : ''}"
+                                               placeholder="S_ 开头的 Speaker ID 槽位"
+                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-bottom: 8px;">
+
+                                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                                            <select id="phone-tts-volc-clone-model-type" style="flex: 1; min-width: 0; height: 30px; padding: 0 6px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                                                <option value="4">ICL 2.0</option>
+                                                <option value="1">ICL 1.0</option>
+                                                <option value="2">DiT 标准</option>
+                                                <option value="3">DiT 还原</option>
+                                            </select>
+                                            <select id="phone-tts-volc-clone-language" style="flex: 1; min-width: 0; height: 30px; padding: 0 6px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                                                <option value="0">中文</option>
+                                                <option value="1">英文</option>
+                                                <option value="2">日语</option>
+                                            </select>
+                                        </div>
+
+                                        <div style="font-size: 12px; color: #333; margin-bottom: 6px;">音频文件</div>
+                                        <input type="file" id="phone-tts-volc-clone-audio" accept=".wav,.mp3,.m4a,.ogg,.aac" style="display: none;">
+                                        <div style="display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 8px;">
+                                            <button id="phone-tts-volc-clone-audio-pick" style="height: 30px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; color: #222; font-size: 12px; cursor: pointer;">选择音频文件</button>
+                                            <div id="phone-tts-volc-clone-audio-name" style="min-width: 0; color: #999; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">未选择文件</div>
+                                        </div>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                            <button id="phone-tts-volc-clone-upload" style="height: 30px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; color: #222; font-size: 12px; cursor: pointer;">上传复刻</button>
+                                            <button id="phone-tts-volc-clone-status" style="height: 30px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; color: #222; font-size: 12px; cursor: pointer;">查询状态</button>
+                                        </div>
+                                        <button id="phone-tts-volc-clone-use" style="width: 100%; height: 30px; margin-top: 8px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; color: #222; font-size: 12px; cursor: pointer;">设为当前音色</button>
+                                        <div id="phone-tts-volc-clone-result" class="setting-desc" style="margin-top: 8px; min-height: 16px;"></div>
+                                    </div>
                                 </div>
-                                <input type="text" id="phone-tts-model"
-                                       value="${currentTtsModel}"
-                                       placeholder="选择预设或手动输入模型名"
-                                       style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                            </div>
+                            </details>
 
-                            <div style="margin: 14px 0 6px; padding-top: 10px; border-top: 1px dashed #ececec; font-size: 12px; font-weight: 700; color: #333;">火山引擎（豆包）填写区</div>
-
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 14px; color: #000;">火山 APP ID</span>
-                                <input type="text" id="phone-tts-volc-app-id"
-                                       value="${currentTtsVolcAppId}"
-                                       placeholder="仅豆包需要"
-                                       style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
-                            </div>
-
-                            <div class="setting-item">
-                                <div style="display: flex; align-items: center; justify-content: space-between;">
-                                    <span style="font-size: 14px; color: #000;">Resource ID</span>
-                                    <input type="text" id="phone-tts-volc-resource-id"
-                                           value="${currentTtsVolcResourceId}"
-                                           placeholder="豆包模型资源ID"
-                                           style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                            <details data-tts-fold-key="phone-tts-wechat-section-open" ${isTtsWechatSectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                                <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
+                                    <span>微信语音/视频通话</span>
+                                    <span style="font-size: 11px; color: #888; font-weight: 500;">点击展开/折叠</span>
+                                </summary>
+                                <div style="padding: 10px 10px 4px;">
+                                    <div class="setting-item setting-toggle" style="margin-top: 0;">
+                                        <div>
+                                            <div class="setting-label">自动播报</div>
+                                            <div class="setting-desc">开启后，微信通话中 AI 回复会自动播放绑定音色</div>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="wechat-call-auto-tts" ${this.storage.get('wechat-call-auto-tts') ? 'checked' : ''}>
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
                                 </div>
-                                <div class="setting-desc" style="margin-top: 6px;">豆包的 Access Token 填上方密钥栏；Resource ID 用于指定模型版本，例如 seed-tts-2.0、seed-tts-1.0。</div>
-                            </div>
+                            </details>
 
-                            <div class="setting-item">
-                                <div style="display: flex; align-items: center; justify-content: space-between;">
-                                    <span style="font-size: 14px; color: #000;">音色 ID (Voice)</span>
-                                    <select id="phone-tts-voice-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
-                                        <option value="">-- 历史音色 --</option>
-                                        ${(() => {
-                                            try {
-                                                const list = JSON.parse(this.storage.get('phone-tts-voice-history') || '[]');
-                                                return list.map(v => `<option value="${v}">${v}</option>`).join('');
-                                            } catch(e) { return ''; }
-                                        })()}
-                                    </select>
-                                </div>
-                                <div style="display: flex; gap: 6px; margin-top: 6px;">
-                                    <input type="text" id="phone-tts-voice"
-                                           value="${currentTtsVoice}"
-                                           placeholder="输入音色ID，回车或失焦保存"
-                                           style="flex: 1; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
-                                </div>
-                                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
-                                    <span style="font-size: 10px; color: #999;">填写后自动记入历史列表</span>
-                                    <button id="phone-tts-voice-delete" style="padding: 2px 8px; border: none; background: none; color: #ff3b30; font-size: 10px; cursor: pointer;">删除当前音色</button>
-                                </div>
-                            </div>
-
-                            <div class="setting-item setting-toggle" style="margin-top: 8px;">
-                                <div>
-                                    <div class="setting-label">微信语音/视频通话自动播报</div>
-                                    <div class="setting-desc">开启后，微信通话中 AI 回复会自动播放绑定音色</div>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="wechat-call-auto-tts" ${this.storage.get('wechat-call-auto-tts') ? 'checked' : ''}>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="setting-item" style="margin-top: 14px; padding-top: 10px; border-top: 1px dashed #ececec;">
-                                <div style="font-size: 12px; font-weight: 700; color: #333; margin-bottom: 8px;">💕 蜜语直播</div>
+                            <details data-tts-fold-key="phone-tts-honey-section-open" ${isTtsHoneySectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                                <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
+                                    <span>蜜语 TTS 配置</span>
+                                    <span style="font-size: 11px; color: #888; font-weight: 500;">点击展开/折叠</span>
+                                </summary>
+                                <div class="setting-item" style="margin-top: 0; padding: 10px 10px 4px;">
 
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 13px; color: #222;">启用剧情语音</span>
@@ -642,7 +731,12 @@ export class SettingsApp {
                                     </label>
                                 </div>
                             </div>
+                            </details>
                         </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-image" style="${this.currentTab === 'image' ? '' : 'display: none;'}">
+                        ${this.renderImageGenerationSection()}
                     </div>
                 </div>
             </div>
@@ -650,6 +744,179 @@ export class SettingsApp {
 
         this.phoneShell.setContent(html);
         this.bindEvents();
+    }
+
+    renderImageGenerationSection() {
+        const provider = String(this.storage.get('phone-image-provider') || 'novelai').trim() || 'novelai';
+        const enabled = this.storage.get('phone-image-enabled') === true || this.storage.get('phone-image-enabled') === 'true';
+        const novelaiKey = String(this.storage.get('phone-image-novelai-key') || '').trim();
+        const siliconflowKey = String(this.storage.get('phone-image-siliconflow-key') || this.storage.get('siliconflow_api_key') || '').trim();
+        const novelaiModel = String(this.storage.get('phone-image-novelai-model') || 'nai-diffusion-4-5-full').trim();
+        const siliconflowModel = String(this.storage.get('phone-image-siliconflow-model') || this.storage.get('image_generation_model') || 'Kwai-Kolors/Kolors').trim();
+        const novelaiSite = String(this.storage.get('phone-image-novelai-site') || 'official').trim() || 'official';
+        const novelaiUrl = String(this.storage.get('phone-image-novelai-url') || '').trim();
+        const sampler = String(this.storage.get('phone-image-novelai-sampler') || 'k_euler').trim() || 'k_euler';
+        const schedule = String(this.storage.get('phone-image-novelai-schedule') || 'karras').trim() || 'karras';
+        const width = Number(this.storage.get('phone-image-width') || 832);
+        const height = Number(this.storage.get('phone-image-height') || 1216);
+        const steps = Number(this.storage.get('phone-image-steps') || 28);
+        const scale = Number(this.storage.get('phone-image-scale') || 5);
+        const cfgRescale = Number(this.storage.get('phone-image-cfg-rescale') || 0);
+        const seed = Number(this.storage.get('phone-image-seed') ?? -1);
+        const fixedPrompt = this._escapeHtml(this.storage.get('phone-image-fixed-prompt') || '');
+        const fixedPromptEnd = this._escapeHtml(this.storage.get('phone-image-fixed-prompt-end') || '');
+        const negativePrompt = this._escapeHtml(this.storage.get('phone-image-negative-prompt') || '');
+        const novelaiDisplay = provider === 'novelai' ? '' : 'display: none;';
+        const siliconflowDisplay = provider === 'siliconflow' ? '' : 'display: none;';
+
+        return `
+            <div class="setting-section">
+                <div class="setting-section-title">🖼️ 生图功能</div>
+
+                <div class="setting-item setting-toggle">
+                    <div>
+                        <div class="setting-label">启用全局生图</div>
+                        <div class="setting-desc">蜜语、微博、微信等 App 共用这里的生图服务配置</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="phone-image-enabled" ${enabled ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 14px; color: #000;">生图供应商</span>
+                        <select id="phone-image-provider" style="width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                            <option value="novelai" ${provider === 'novelai' ? 'selected' : ''}>NovelAI / NAI</option>
+                            <option value="siliconflow" ${provider === 'siliconflow' ? 'selected' : ''}>硅基流动</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-section" id="phone-image-novelai-section" style="${novelaiDisplay}">
+                <div class="setting-section-title">🎨 NovelAI / NAI</div>
+
+                <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 14px; color: #000;">API Key</span>
+                    <input type="password" id="phone-image-novelai-key"
+                           value="${this._escapeHtml(novelaiKey)}"
+                           placeholder="NovelAI API Key"
+                           style="width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                </div>
+
+                <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 14px; color: #000;">接口站点</span>
+                    <select id="phone-image-novelai-site" style="width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                        <option value="official" ${novelaiSite === 'official' ? 'selected' : ''}>官方站点</option>
+                        <option value="custom" ${novelaiSite === 'custom' ? 'selected' : ''}>自定义地址</option>
+                    </select>
+                </div>
+
+                <div class="setting-item" id="phone-image-novelai-url-row" style="${novelaiSite === 'custom' ? '' : 'display: none;'}">
+                    <div class="setting-label">自定义 Base URL</div>
+                    <input type="text" id="phone-image-novelai-url"
+                           value="${this._escapeHtml(novelaiUrl)}"
+                           placeholder="例如：https://image.novelai.net"
+                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                </div>
+
+                <div class="setting-item">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 14px; color: #000;">模型</span>
+                        <select id="phone-image-novelai-model-preset" style="width: 150px; height: 30px; padding: 0 6px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
+                            <option value="">-- 快速选择 --</option>
+                            <option value="nai-diffusion-4-5-full">NAI Diffusion 4.5 Full</option>
+                            <option value="nai-diffusion-4-5-curated">NAI Diffusion 4.5 Curated</option>
+                            <option value="nai-diffusion-4-full">NAI Diffusion 4 Full</option>
+                            <option value="nai-diffusion-3">NAI Diffusion 3</option>
+                        </select>
+                    </div>
+                    <input type="text" id="phone-image-novelai-model"
+                           value="${this._escapeHtml(novelaiModel)}"
+                           placeholder="NovelAI 模型名"
+                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div class="setting-item">
+                        <div class="setting-label">采样器</div>
+                        <input type="text" id="phone-image-novelai-sampler" value="${this._escapeHtml(sampler)}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">Schedule</div>
+                        <input type="text" id="phone-image-novelai-schedule" value="${this._escapeHtml(schedule)}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-section" id="phone-image-siliconflow-section" style="${siliconflowDisplay}">
+                <div class="setting-section-title">🌊 硅基流动</div>
+
+                <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 14px; color: #000;">API Key</span>
+                    <input type="password" id="siliconflow-api-key"
+                           value="${this._escapeHtml(siliconflowKey)}"
+                           placeholder="SiliconFlow API Key"
+                           style="width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">模型名称</div>
+                    <input type="text" id="image-generation-model"
+                           value="${this._escapeHtml(siliconflowModel)}"
+                           placeholder="Kwai-Kolors/Kolors"
+                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                </div>
+            </div>
+
+            <div class="setting-section">
+                <div class="setting-section-title">⚙️ 通用参数</div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div class="setting-item">
+                        <div class="setting-label">宽度</div>
+                        <input type="number" id="phone-image-width" min="64" max="2048" step="64" value="${width}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">高度</div>
+                        <input type="number" id="phone-image-height" min="64" max="2048" step="64" value="${height}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">Steps</div>
+                        <input type="number" id="phone-image-steps" min="1" max="50" value="${steps}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">Scale</div>
+                        <input type="number" id="phone-image-scale" min="0" max="50" step="0.1" value="${scale}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">CFG Rescale</div>
+                        <input type="number" id="phone-image-cfg-rescale" min="0" max="1" step="0.01" value="${cfgRescale}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">Seed</div>
+                        <input type="number" id="phone-image-seed" min="-1" value="${seed}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">固定前置提示词</div>
+                    <textarea id="phone-image-fixed-prompt" style="width: 100%; min-height: 58px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${fixedPrompt}</textarea>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">固定后置提示词</div>
+                    <textarea id="phone-image-fixed-prompt-end" style="width: 100%; min-height: 58px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${fixedPromptEnd}</textarea>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label">负面提示词</div>
+                    <textarea id="phone-image-negative-prompt" style="width: 100%; min-height: 70px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${negativePrompt}</textarea>
+                </div>
+            </div>
+        `;
     }
     // 渲染APP图标上传
     renderAppIconUpload() {
@@ -1059,6 +1326,14 @@ export class SettingsApp {
             });
         });
 
+        document.querySelectorAll('[data-settings-fold-key]').forEach((foldEl) => {
+            foldEl.addEventListener('toggle', async () => {
+                const key = foldEl.dataset.settingsFoldKey;
+                if (!key) return;
+                await this.storage.set(key, !!foldEl.open);
+            });
+        });
+
         // 上传壁纸 - 支持裁剪
         document.getElementById('upload-wallpaper')?.addEventListener('change', async (e) => {
             const file = e.target.files[0];
@@ -1330,15 +1605,114 @@ export class SettingsApp {
             await this.storage.set('offline-weibo-history-limit', validLimit);
         });
 
-        // 🖼️ 微信生图配置
+        // 🖼️ 全局生图配置
+        const imageEnabled = document.getElementById('phone-image-enabled');
+        const imageProvider = document.getElementById('phone-image-provider');
+        const imageNovelaiSection = document.getElementById('phone-image-novelai-section');
+        const imageSiliconflowSection = document.getElementById('phone-image-siliconflow-section');
+        const imageNovelaiSite = document.getElementById('phone-image-novelai-site');
+        const imageNovelaiUrlRow = document.getElementById('phone-image-novelai-url-row');
+        const imageNovelaiModel = document.getElementById('phone-image-novelai-model');
+        const imageNovelaiModelPreset = document.getElementById('phone-image-novelai-model-preset');
+        const setImageProviderVisibility = () => {
+            const provider = String(imageProvider?.value || 'novelai').trim() || 'novelai';
+            if (imageNovelaiSection) imageNovelaiSection.style.display = provider === 'novelai' ? '' : 'none';
+            if (imageSiliconflowSection) imageSiliconflowSection.style.display = provider === 'siliconflow' ? '' : 'none';
+        };
+        const clampNumberInput = (input, fallback, min, max, integer = false) => {
+            if (!input) return fallback;
+            let value = Number(input.value);
+            if (!Number.isFinite(value)) value = fallback;
+            if (Number.isFinite(min)) value = Math.max(min, value);
+            if (Number.isFinite(max)) value = Math.min(max, value);
+            if (integer) value = Math.round(value);
+            input.value = String(value);
+            return value;
+        };
+
+        imageEnabled?.addEventListener('change', async (e) => {
+            await this.storage.set('phone-image-enabled', !!e.target.checked);
+        });
+
+        imageProvider?.addEventListener('change', async (e) => {
+            const provider = String(e.target.value || 'novelai').trim() || 'novelai';
+            await this.storage.set('phone-image-provider', provider);
+            setImageProviderVisibility();
+        });
+
+        document.getElementById('phone-image-novelai-key')?.addEventListener('change', async (e) => {
+            await this.storage.set('phone-image-novelai-key', String(e.target.value || '').trim());
+        });
+
+        imageNovelaiSite?.addEventListener('change', async (e) => {
+            const site = String(e.target.value || 'official').trim() || 'official';
+            await this.storage.set('phone-image-novelai-site', site);
+            if (imageNovelaiUrlRow) imageNovelaiUrlRow.style.display = site === 'custom' ? '' : 'none';
+        });
+
+        document.getElementById('phone-image-novelai-url')?.addEventListener('change', async (e) => {
+            await this.storage.set('phone-image-novelai-url', String(e.target.value || '').trim());
+        });
+
+        imageNovelaiModelPreset?.addEventListener('change', async (e) => {
+            const model = String(e.target.value || '').trim();
+            if (!model || !imageNovelaiModel) return;
+            imageNovelaiModel.value = model;
+            await this.storage.set('phone-image-novelai-model', model);
+        });
+
+        imageNovelaiModel?.addEventListener('change', async (e) => {
+            const model = String(e.target.value || '').trim() || 'nai-diffusion-4-5-full';
+            e.target.value = model;
+            await this.storage.set('phone-image-novelai-model', model);
+        });
+
+        document.getElementById('phone-image-novelai-sampler')?.addEventListener('change', async (e) => {
+            const value = String(e.target.value || '').trim() || 'k_euler';
+            e.target.value = value;
+            await this.storage.set('phone-image-novelai-sampler', value);
+        });
+
+        document.getElementById('phone-image-novelai-schedule')?.addEventListener('change', async (e) => {
+            const value = String(e.target.value || '').trim() || 'karras';
+            e.target.value = value;
+            await this.storage.set('phone-image-novelai-schedule', value);
+        });
+
         document.getElementById('siliconflow-api-key')?.addEventListener('change', async (e) => {
-            await this.storage.set('siliconflow_api_key', String(e.target.value || '').trim());
+            const value = String(e.target.value || '').trim();
+            await this.storage.set('phone-image-siliconflow-key', value);
+            await this.storage.set('siliconflow_api_key', value);
         });
 
         document.getElementById('image-generation-model')?.addEventListener('change', async (e) => {
             const nextModel = String(e.target.value || '').trim() || 'Kwai-Kolors/Kolors';
             e.target.value = nextModel;
+            await this.storage.set('phone-image-siliconflow-model', nextModel);
             await this.storage.set('image_generation_model', nextModel);
+        });
+
+        [
+            ['phone-image-width', 832, 64, 2048, true],
+            ['phone-image-height', 1216, 64, 2048, true],
+            ['phone-image-steps', 28, 1, 50, true],
+            ['phone-image-scale', 5, 0, 50, false],
+            ['phone-image-cfg-rescale', 0, 0, 1, false],
+            ['phone-image-seed', -1, -1, 4294967295, true]
+        ].forEach(([id, fallback, min, max, integer]) => {
+            document.getElementById(id)?.addEventListener('change', async (e) => {
+                await this.storage.set(id, clampNumberInput(e.target, fallback, min, max, integer));
+            });
+        });
+
+        [
+            'phone-image-fixed-prompt',
+            'phone-image-fixed-prompt-end',
+            'phone-image-negative-prompt'
+        ].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', async (e) => {
+                await this.storage.set(id, String(e.target.value || '').trim());
+            });
         });
 
         // 🔊 TTS 设置事件绑定
@@ -1346,11 +1720,28 @@ export class SettingsApp {
         const ttsUrl = document.getElementById('phone-tts-url');
         const ttsUrlPreset = document.getElementById('phone-tts-url-preset');
         const ttsKey = document.getElementById('phone-tts-key');
+        const ttsVolcKey = document.getElementById('phone-tts-volc-key');
         const ttsVolcAppId = document.getElementById('phone-tts-volc-app-id');
         const ttsVolcResourceId = document.getElementById('phone-tts-volc-resource-id');
         const ttsModel = document.getElementById('phone-tts-model');
         const ttsModelPreset = document.getElementById('phone-tts-model-preset');
         const ttsVoice = document.getElementById('phone-tts-voice');
+        const ttsVolcVoice = document.getElementById('phone-tts-volc-voice');
+        const ttsPreviewBtn = document.getElementById('phone-tts-preview');
+        const ttsVolcPreviewBtn = document.getElementById('phone-tts-volc-preview');
+        const ttsVolcCloneWorkerUrl = document.getElementById('phone-tts-volc-clone-worker-url');
+        const ttsVolcCloneAccessToken = document.getElementById('phone-tts-volc-clone-access-token');
+        const ttsVolcCloneAppId = document.getElementById('phone-tts-volc-clone-app-id');
+        const ttsVolcCloneSpeakerId = document.getElementById('phone-tts-volc-clone-speaker-id');
+        const ttsVolcCloneModelType = document.getElementById('phone-tts-volc-clone-model-type');
+        const ttsVolcCloneLanguage = document.getElementById('phone-tts-volc-clone-language');
+        const ttsVolcCloneAudio = document.getElementById('phone-tts-volc-clone-audio');
+        const ttsVolcCloneAudioPickBtn = document.getElementById('phone-tts-volc-clone-audio-pick');
+        const ttsVolcCloneAudioName = document.getElementById('phone-tts-volc-clone-audio-name');
+        const ttsVolcCloneUploadBtn = document.getElementById('phone-tts-volc-clone-upload');
+        const ttsVolcCloneStatusBtn = document.getElementById('phone-tts-volc-clone-status');
+        const ttsVolcCloneUseBtn = document.getElementById('phone-tts-volc-clone-use');
+        const ttsVolcCloneResult = document.getElementById('phone-tts-volc-clone-result');
         const wechatCallAutoTtsToggle = document.getElementById('wechat-call-auto-tts');
         const honeyTtsEnabledToggle = document.getElementById('phone-honey-tts-enabled');
         const honeyTtsModeSelect = document.getElementById('phone-honey-tts-mode');
@@ -1363,6 +1754,93 @@ export class SettingsApp {
             if (legacyKey && provider === this._getCurrentTtsProvider()) {
                 await this.storage.set(legacyKey, safeValue);
             }
+        };
+        const setVolcTtsField = async (field, value, legacyKey = '') => {
+            const safeValue = String(value || '').trim();
+            await this.storage.set(this._getTtsProviderConfigKey('volcengine', field), safeValue);
+            if (legacyKey && this._getCurrentTtsProvider() === 'volcengine') {
+                await this.storage.set(legacyKey, safeValue);
+            }
+        };
+        const addTtsVoiceHistory = async (voiceValue) => {
+            const val = String(voiceValue || '').trim();
+            if (!val) return;
+
+            let history = [];
+            try { history = JSON.parse(this.storage.get('phone-tts-voice-history') || '[]'); } catch(e) {}
+            if (!history.includes(val)) {
+                history.push(val);
+                await this.storage.set('phone-tts-voice-history', JSON.stringify(history));
+                document.querySelectorAll('#phone-tts-voice-preset, #phone-tts-volc-voice-preset').forEach((preset) => {
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.textContent = val;
+                    preset.appendChild(opt);
+                });
+            }
+        };
+        const saveTtsVoice = async (voiceValue) => {
+            const val = String(voiceValue || '').trim();
+            if (ttsVoice) ttsVoice.value = val;
+            await setTtsProviderField('voice', val, 'phone-tts-voice');
+            await addTtsVoiceHistory(val);
+        };
+        const saveVolcTtsVoice = async (voiceValue) => {
+            const val = String(voiceValue || '').trim();
+            if (ttsVolcVoice) ttsVolcVoice.value = val;
+            await setVolcTtsField('voice', val, 'phone-tts-voice');
+            await addTtsVoiceHistory(val);
+        };
+        const setCloneResult = (message, isError = false) => {
+            if (!ttsVolcCloneResult) return;
+            ttsVolcCloneResult.textContent = message || '';
+            ttsVolcCloneResult.style.color = isError ? '#ff3b30' : '#666';
+        };
+        const getCloneForm = () => ({
+            apiKey: String(ttsVolcCloneAccessToken?.value || ttsVolcKey?.value || ttsKey?.value || '').trim(),
+            appId: String(ttsVolcCloneAppId?.value || ttsVolcAppId?.value || '').trim(),
+            speakerId: String(ttsVolcCloneSpeakerId?.value || '').trim(),
+            workerUrl: String(ttsVolcCloneWorkerUrl?.value || '').trim(),
+            resourceId: String(ttsVolcResourceId?.value || 'seed-icl-2.0').trim() || 'seed-icl-2.0',
+            modelType: String(ttsVolcCloneModelType?.value || '4'),
+            language: String(ttsVolcCloneLanguage?.value || '0'),
+            audioFile: ttsVolcCloneAudio?.files?.[0] || null
+        });
+        const withBusyButton = async (button, busyText, task) => {
+            if (!button) return;
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = busyText;
+            try {
+                await task();
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        };
+        let ttsPreviewAudio = null;
+        const playTtsPreview = async (provider, voice, button) => {
+            const ttsManager = window.VirtualPhone?.ttsManager;
+            if (!ttsManager?.requestTTS) {
+                this.phoneShell.showNotification('试听失败', 'TTS 管理器未初始化', '⚠️');
+                return;
+            }
+            await withBusyButton(button, '试听中...', async () => {
+                try {
+                    const previewText = '这是一段小手机语音试听。';
+                    const blobUrl = await ttsManager.requestTTS(previewText, { provider, voice });
+                    if (ttsPreviewAudio) {
+                        ttsPreviewAudio.pause();
+                        ttsPreviewAudio.src = '';
+                    }
+                    ttsPreviewAudio = new Audio(blobUrl);
+                    ttsPreviewAudio.onended = () => URL.revokeObjectURL(blobUrl);
+                    ttsPreviewAudio.onerror = () => URL.revokeObjectURL(blobUrl);
+                    await ttsPreviewAudio.play();
+                } catch (error) {
+                    this.phoneShell.showNotification('试听失败', error?.message || '无法播放试听音频', '⚠️');
+                }
+            });
         };
 
         if (ttsProvider) ttsProvider.addEventListener('change', async (e) => {
@@ -1380,8 +1858,20 @@ export class SettingsApp {
             if (ttsKey) { ttsKey.value = nextKey; await this.storage.set('phone-tts-key', nextKey); }
             if (ttsModel) { ttsModel.value = nextModel; await this.storage.set('phone-tts-model', nextModel); }
             if (ttsVoice) { ttsVoice.value = nextVoice; await this.storage.set('phone-tts-voice', nextVoice); }
-            if (ttsVolcAppId) { ttsVolcAppId.value = nextAppId; await this.storage.set('phone-tts-volc-app-id', nextAppId); }
-            if (ttsVolcResourceId) { ttsVolcResourceId.value = nextResourceId; await this.storage.set('phone-tts-volc-resource-id', nextResourceId); }
+            if (val === 'volcengine') {
+                if (ttsVolcKey) ttsVolcKey.value = nextKey;
+                if (ttsVolcVoice) ttsVolcVoice.value = nextVoice;
+                if (ttsVolcAppId) { ttsVolcAppId.value = nextAppId; await this.storage.set('phone-tts-volc-app-id', nextAppId); }
+                if (ttsVolcResourceId) { ttsVolcResourceId.value = nextResourceId; await this.storage.set('phone-tts-volc-resource-id', nextResourceId); }
+            }
+        });
+
+        document.querySelectorAll('[data-tts-fold-key]').forEach((foldEl) => {
+            foldEl.addEventListener('toggle', async () => {
+                const key = foldEl.dataset.ttsFoldKey;
+                if (!key) return;
+                await this.storage.set(key, !!foldEl.open);
+            });
         });
 
         // 接口地址预设下拉 → 填入输入框
@@ -1402,9 +1892,117 @@ export class SettingsApp {
 
         if (ttsUrl) ttsUrl.addEventListener('change', async (e) => { await setTtsProviderField('url', e.target.value, 'phone-tts-url'); });
         if (ttsKey) ttsKey.addEventListener('change', async (e) => { await setTtsProviderField('key', e.target.value, 'phone-tts-key'); });
-        if (ttsVolcAppId) ttsVolcAppId.addEventListener('change', async (e) => { await setTtsProviderField('app-id', e.target.value, 'phone-tts-volc-app-id'); });
-        if (ttsVolcResourceId) ttsVolcResourceId.addEventListener('change', async (e) => { await setTtsProviderField('resource-id', e.target.value, 'phone-tts-volc-resource-id'); });
+        if (ttsVolcKey) ttsVolcKey.addEventListener('change', async (e) => { await setVolcTtsField('key', e.target.value, 'phone-tts-key'); });
+        if (ttsVolcAppId) ttsVolcAppId.addEventListener('change', async (e) => { await setVolcTtsField('app-id', e.target.value, 'phone-tts-volc-app-id'); });
+        if (ttsVolcResourceId) ttsVolcResourceId.addEventListener('change', async (e) => { await setVolcTtsField('resource-id', e.target.value, 'phone-tts-volc-resource-id'); });
+        if (ttsVolcCloneWorkerUrl) ttsVolcCloneWorkerUrl.addEventListener('change', async (e) => { await setVolcTtsField('clone-worker-url', e.target.value, 'phone-tts-volc-clone-worker-url'); });
+        if (ttsVolcCloneAccessToken) ttsVolcCloneAccessToken.addEventListener('change', async (e) => { await setVolcTtsField('clone-access-token', e.target.value, 'phone-tts-volc-clone-access-token'); });
+        if (ttsVolcCloneAppId) ttsVolcCloneAppId.addEventListener('change', async (e) => { await setVolcTtsField('clone-app-id', e.target.value, 'phone-tts-volc-clone-app-id'); });
         if (ttsModel) ttsModel.addEventListener('change', async (e) => { await setTtsProviderField('model', e.target.value, 'phone-tts-model'); });
+        if (ttsVolcCloneAudioPickBtn && ttsVolcCloneAudio) {
+            ttsVolcCloneAudioPickBtn.addEventListener('click', () => {
+                ttsVolcCloneAudio.click();
+            });
+            ttsVolcCloneAudio.addEventListener('change', () => {
+                const file = ttsVolcCloneAudio.files?.[0];
+                if (ttsVolcCloneAudioName) {
+                    ttsVolcCloneAudioName.textContent = file ? `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)` : '未选择文件';
+                    ttsVolcCloneAudioName.style.color = file ? '#333' : '#999';
+                }
+            });
+        }
+        if (ttsPreviewBtn) {
+            ttsPreviewBtn.addEventListener('click', async () => {
+                const provider = getSelectedTtsProvider();
+                const voice = String(ttsVoice?.value || '').trim();
+                await saveTtsVoice(voice);
+                await playTtsPreview(provider, voice || undefined, ttsPreviewBtn);
+            });
+        }
+        if (ttsVolcPreviewBtn) {
+            ttsVolcPreviewBtn.addEventListener('click', async () => {
+                const voice = String(ttsVolcVoice?.value || '').trim();
+                const volcDefaults = this._getTtsProviderDefaults('volcengine');
+                await this.storage.set('phone-tts-provider', 'volcengine');
+                await setVolcTtsField('url', volcDefaults.url, 'phone-tts-url');
+                await setVolcTtsField('model', volcDefaults.model, 'phone-tts-model');
+                if (ttsVolcResourceId && /^S_[A-Za-z0-9_-]+$/.test(voice)) {
+                    ttsVolcResourceId.value = 'seed-icl-2.0';
+                    await setVolcTtsField('resource-id', 'seed-icl-2.0', 'phone-tts-volc-resource-id');
+                }
+                await saveVolcTtsVoice(voice);
+                await playTtsPreview('volcengine', voice || undefined, ttsVolcPreviewBtn);
+            });
+        }
+        if (ttsVolcCloneUploadBtn) {
+            ttsVolcCloneUploadBtn.addEventListener('click', async () => {
+                if (!ttsVolcCloneAudio?.files?.[0]) {
+                    ttsVolcCloneAudio?.click();
+                    setCloneResult('请先选择用于复刻的音频文件。');
+                    return;
+                }
+                const ttsManager = window.VirtualPhone?.ttsManager;
+                if (!ttsManager?.cloneVolcVoice) {
+                    setCloneResult('TTS 管理器未初始化，无法上传复刻。', true);
+                    return;
+                }
+                await withBusyButton(ttsVolcCloneUploadBtn, '上传中...', async () => {
+                    try {
+                        setCloneResult('正在上传音频并开始复刻...');
+                        const form = getCloneForm();
+                        const result = await ttsManager.cloneVolcVoice(form);
+                        const speakerId = String(result.speakerId || form.speakerId).trim();
+                        if (ttsVolcCloneSpeakerId) ttsVolcCloneSpeakerId.value = speakerId;
+                        if (ttsVolcResourceId) {
+                            ttsVolcResourceId.value = result.resourceId || 'seed-icl-2.0';
+                            await setVolcTtsField('resource-id', ttsVolcResourceId.value, 'phone-tts-volc-resource-id');
+                        }
+                        await saveVolcTtsVoice(speakerId);
+                        setCloneResult(`上传成功，音色 ${speakerId} 已加入历史。稍后可查询训练状态。`);
+                        this.phoneShell.showNotification('上传成功', '豆包音色复刻已开始', '🎙️');
+                    } catch (error) {
+                        setCloneResult(error?.message || '豆包音色复刻失败', true);
+                    }
+                });
+            });
+        }
+        if (ttsVolcCloneStatusBtn) {
+            ttsVolcCloneStatusBtn.addEventListener('click', async () => {
+                const ttsManager = window.VirtualPhone?.ttsManager;
+                if (!ttsManager?.getVolcVoiceCloneStatus) {
+                    setCloneResult('TTS 管理器未初始化，无法查询状态。', true);
+                    return;
+                }
+                await withBusyButton(ttsVolcCloneStatusBtn, '查询中...', async () => {
+                    try {
+                        const form = getCloneForm();
+                        const result = await ttsManager.getVolcVoiceCloneStatus(form);
+                        const versionText = result.version ? `，版本 ${result.version}` : '';
+                        setCloneResult(`状态：${result.statusText}${versionText}`);
+                    } catch (error) {
+                        setCloneResult(error?.message || '豆包音色状态查询失败', true);
+                    }
+                });
+            });
+        }
+        if (ttsVolcCloneUseBtn) {
+            ttsVolcCloneUseBtn.addEventListener('click', async () => {
+                const speakerId = String(ttsVolcCloneSpeakerId?.value || '').trim();
+                if (!speakerId) {
+                    setCloneResult('请先填写 S_ 开头的 Speaker ID。', true);
+                    return;
+                }
+                await this.storage.set('phone-tts-provider', 'volcengine');
+                if (ttsProvider) ttsProvider.value = 'volcengine';
+                if (ttsVolcResourceId) {
+                    ttsVolcResourceId.value = 'seed-icl-2.0';
+                    await setVolcTtsField('resource-id', 'seed-icl-2.0', 'phone-tts-volc-resource-id');
+                }
+                await saveVolcTtsVoice(speakerId);
+                setCloneResult(`已设为当前豆包音色：${speakerId}`);
+                this.phoneShell.showNotification('已设置', '复刻音色已设为当前音色', '✅');
+            });
+        }
         if (wechatCallAutoTtsToggle) {
             wechatCallAutoTtsToggle.addEventListener('change', async (e) => {
                 await this.storage.set('wechat-call-auto-tts', !!e.target.checked);
@@ -1428,23 +2026,13 @@ export class SettingsApp {
         }
         if (ttsVoice) ttsVoice.addEventListener('change', async (e) => {
             const val = e.target.value.trim();
-            await setTtsProviderField('voice', val, 'phone-tts-voice');
-            // 自动加入历史列表（去重）
-            if (val) {
-                let history = [];
-                try { history = JSON.parse(this.storage.get('phone-tts-voice-history') || '[]'); } catch(e) {}
-                if (!history.includes(val)) {
-                    history.push(val);
-                    await this.storage.set('phone-tts-voice-history', JSON.stringify(history));
-                    // 动态追加到下拉框
-                    const preset = document.getElementById('phone-tts-voice-preset');
-                    if (preset) {
-                        const opt = document.createElement('option');
-                        opt.value = val;
-                        opt.textContent = val;
-                        preset.appendChild(opt);
-                    }
-                }
+            await saveTtsVoice(val);
+        });
+        if (ttsVolcVoice) ttsVolcVoice.addEventListener('change', async (e) => {
+            const val = e.target.value.trim();
+            await saveVolcTtsVoice(val);
+            if (ttsVolcCloneSpeakerId && /^S_[A-Za-z0-9_-]+$/.test(val)) {
+                ttsVolcCloneSpeakerId.value = val;
             }
         });
 
@@ -1454,7 +2042,7 @@ export class SettingsApp {
             ttsVoicePreset.addEventListener('change', async (e) => {
                 const val = e.target.value;
                 if (!val) return;
-                if (ttsVoice) { ttsVoice.value = val; await setTtsProviderField('voice', val, 'phone-tts-voice'); }
+                await saveTtsVoice(val);
                 e.target.value = ''; // 重置为占位项
             });
 
@@ -1482,6 +2070,19 @@ export class SettingsApp {
             });
             ttsVoicePreset.addEventListener('mouseup', () => clearTimeout(voiceLongPressTimer));
             ttsVoicePreset.addEventListener('mouseleave', () => clearTimeout(voiceLongPressTimer));
+        }
+
+        const ttsVolcVoicePreset = document.getElementById('phone-tts-volc-voice-preset');
+        if (ttsVolcVoicePreset) {
+            ttsVolcVoicePreset.addEventListener('change', async (e) => {
+                const val = e.target.value;
+                if (!val) return;
+                await saveVolcTtsVoice(val);
+                if (ttsVolcCloneSpeakerId && /^S_[A-Za-z0-9_-]+$/.test(val)) {
+                    ttsVolcCloneSpeakerId.value = val;
+                }
+                e.target.value = '';
+            });
         }
 
         // 删除音色按钮
@@ -1514,6 +2115,35 @@ export class SettingsApp {
                 await setTtsProviderField('voice', '', 'phone-tts-voice');
 
                 this.phoneShell.showNotification('已删除', `音色「${currentVoice}」已移除`, '🗑️');
+            });
+        }
+
+        const ttsVolcVoiceDeleteBtn = document.getElementById('phone-tts-volc-voice-delete');
+        if (ttsVolcVoiceDeleteBtn) {
+            ttsVolcVoiceDeleteBtn.addEventListener('click', async () => {
+                const currentVoice = ttsVolcVoice?.value?.trim();
+                if (!currentVoice) {
+                    this.phoneShell.showNotification('提示', '请先选择或输入要删除的豆包音色', '⚠️');
+                    return;
+                }
+                if (!confirm(`确定删除豆包音色「${currentVoice}」？`)) return;
+
+                let history = [];
+                try { history = JSON.parse(this.storage.get('phone-tts-voice-history') || '[]'); } catch(e) {}
+                history = history.filter(v => v !== currentVoice);
+                await this.storage.set('phone-tts-voice-history', JSON.stringify(history));
+
+                document.querySelectorAll('#phone-tts-voice-preset, #phone-tts-volc-voice-preset').forEach((preset) => {
+                    const opt = preset.querySelector(`option[value="${CSS.escape(currentVoice)}"]`);
+                    if (opt) opt.remove();
+                    preset.value = '';
+                });
+
+                if (ttsVolcVoice) ttsVolcVoice.value = '';
+                if (ttsVolcCloneSpeakerId?.value === currentVoice) ttsVolcCloneSpeakerId.value = '';
+                await setVolcTtsField('voice', '', 'phone-tts-voice');
+
+                this.phoneShell.showNotification('已删除', `豆包音色「${currentVoice}」已移除`, '🗑️');
             });
         }
 
@@ -1641,7 +2271,7 @@ export class SettingsApp {
                 .filter(p => p && typeof p === 'object' && String(p.name || '').trim())
                 .map(p => ({
                     name: String(p.name || '').trim(),
-                    useIndependentAPI: p.useIndependentAPI === true,
+                    useIndependentAPI: p.useIndependentAPI !== false,
                     provider: p.provider || 'openai',
                     apiUrl: p.apiUrl || p.url || '',
                     apiKey: p.apiKey || p.key || '',
@@ -1828,7 +2458,17 @@ export class SettingsApp {
                 const profile = config.profiles[idx];
                 if (!profile) return;
 
-                const merged = { ...config, ...profile, activeProfileName: profile.name };
+                const merged = {
+                    ...config,
+                    useIndependentAPI: profile.useIndependentAPI !== false,
+                    provider: profile.provider || 'openai',
+                    apiUrl: profile.apiUrl || '',
+                    apiKey: profile.apiKey || '',
+                    model: profile.model || '',
+                    maxTokens: parseInt(profile.maxTokens, 10) || 4096,
+                    useStream: profile.useStream !== false,
+                    activeProfileName: profile.name
+                };
                 applyConfigToForm(merged);
                 updateProviderPlaceholders(merged.provider || 'openai');
                 await saveApiConfig(merged); // 切换预设即生效

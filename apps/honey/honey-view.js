@@ -1051,6 +1051,22 @@ export class HoneyView {
         const liveVideoHtml = liveVideoUrl
             ? `<video id="honey-live-video-el" src="${this._escapeHtml(liveVideoUrl)}" class="honey-live-video" autoplay loop muted playsinline webkit-playsinline preload="auto"></video>`
             : '';
+        const naiPrompt = String(data.naiPrompt || data.imageGenerationPrompt || '').trim();
+        const imageStatus = String(data.imageGenerationStatus || '').trim();
+        const generatedImageUrl = String(data.naiImageUrl || data.generatedImageUrl || data.imageUrl || '').trim();
+        const generatedImageStyle = (!liveVideoUrl && generatedImageUrl)
+            ? this._buildAvatarInlineStyle(generatedImageUrl)
+            : '';
+        const imageButtonLabel = imageStatus === 'loading'
+            ? '生成中...'
+            : (generatedImageUrl ? '重新生成图片' : (naiPrompt ? '生成直播图片' : '等待 NAI 提示词'));
+        const imageButtonIcon = imageStatus === 'loading'
+            ? 'fa-spinner fa-spin'
+            : (generatedImageUrl ? 'fa-rotate' : (naiPrompt ? 'fa-wand-magic-sparkles' : 'fa-lock'));
+        const imageButtonDisabled = imageStatus === 'loading' || !naiPrompt;
+        const imageStatusHtml = (!liveVideoUrl && imageStatus === 'failed' && data.imageGenerationError)
+            ? `<div class="honey-nai-status is-error">${this._escapeHtml(data.imageGenerationError)}</div>`
+            : '';
         const collabNick = this._normalizeLiveCollabName(data.collab);
         const collabCost = Math.max(0, Number.parseInt(String(data.collabCost ?? 0), 10) || 0);
         const collabLabel = collabNick === '无' ? '申请联播' : `联播：${collabNick}`;
@@ -1168,8 +1184,8 @@ export class HoneyView {
         const unlockButtonHtml = isUserLive
             ? ''
             : `
-                <button class="honey-unlock-btn" id="honey-test-nai-btn">
-                    <i class="fa-solid fa-lock"></i> 解锁私密互动
+                <button class="honey-unlock-btn ${generatedImageUrl && !liveVideoUrl ? 'is-regenerate' : ''}" id="honey-test-nai-btn" ${imageButtonDisabled ? 'disabled' : ''}>
+                    <i class="fa-solid ${imageButtonIcon}"></i> ${imageButtonLabel}
                 </button>
             `;
         const giftButtonHtml = isUserLive
@@ -1244,10 +1260,11 @@ export class HoneyView {
                             </div>
                         </div>
 
-                        <div class="honey-nai-placeholder" style="${liveVideoUrl ? 'background: #000;' : ''}">
+                        <div class="honey-nai-placeholder ${generatedImageUrl && !liveVideoUrl ? 'has-generated-image' : ''}" style="${liveVideoUrl ? 'background: #000;' : generatedImageStyle}">
                             ${liveVideoHtml}
                             <div class="honey-nai-glass" style="${liveVideoUrl ? 'backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(0,0,0,0.1);' : ''}"></div>
                             ${unlockButtonHtml}
+                            ${imageStatusHtml}
                         </div>
 
                         ${introHtml}
@@ -2646,8 +2663,64 @@ export class HoneyView {
         };
         document.addEventListener('click', this._outsideClickHandler);
 
-        root.querySelector('#honey-test-nai-btn')?.addEventListener('click', () => {
-            this.app.phoneShell.showNotification('蜜语', '图片返回位已预留（后续接NAI）', '🖼️');
+        root.querySelector('#honey-test-nai-btn')?.addEventListener('click', async () => {
+            const scene = this.currentSceneData || {};
+            const prompt = String(scene.naiPrompt || scene.imageGenerationPrompt || '').trim();
+            if (!prompt) {
+                this.app.phoneShell.showNotification('蜜语', '当前直播没有可用的 NAI 提示词', '⚠️');
+                return;
+            }
+
+            const imageManager = window.VirtualPhone?.imageGenerationManager;
+            if (!imageManager || typeof imageManager.generate !== 'function') {
+                this.app.phoneShell.showNotification('生图失败', '生图管理器未初始化', '❌');
+                return;
+            }
+
+            const provider = String(this.app?.storage?.get?.('phone-image-provider') || 'novelai').trim() || 'novelai';
+            this.currentSceneData = {
+                ...scene,
+                imageGenerationStatus: 'loading',
+                imageGenerationProvider: provider,
+                imageGenerationPrompt: prompt,
+                imageGenerationError: ''
+            };
+            this._persistCurrentScene();
+            this.render();
+
+            try {
+                const result = await imageManager.generate({
+                    app: 'honey',
+                    prompt,
+                    width: Number(this.app?.storage?.get?.('phone-image-width') || 832),
+                    height: Number(this.app?.storage?.get?.('phone-image-height') || 1216)
+                });
+                this.currentSceneData = {
+                    ...(this.currentSceneData || scene),
+                    naiImageUrl: result.imageUrl || result.imageData || '',
+                    generatedImageUrl: result.imageUrl || result.imageData || '',
+                    imageGenerationStatus: 'done',
+                    imageGenerationProvider: result.provider || provider,
+                    imageGenerationModel: result.model || '',
+                    imageGenerationPrompt: prompt,
+                    imageGenerationError: ''
+                };
+                this._persistCurrentScene();
+                this.render();
+                this.app.phoneShell.showNotification('蜜语', '直播图片已生成', '🖼️');
+            } catch (err) {
+                const message = err?.message || String(err || '生成失败');
+                this.currentSceneData = {
+                    ...(this.currentSceneData || scene),
+                    imageGenerationStatus: 'failed',
+                    imageGenerationProvider: provider,
+                    imageGenerationPrompt: prompt,
+                    imageGenerationError: message
+                };
+                this._persistCurrentScene();
+                this.render();
+                this.app.phoneShell.showNotification('生图失败', message, '❌');
+            }
         });
 
         const liveVideo = root.querySelector('#honey-live-video-el');

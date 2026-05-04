@@ -3,7 +3,7 @@
     "name": "yuzuki-phone",
     "description": "一个为酒馆量身定制的超拟真、高交互虚拟手机系统。支持微信、朋友圈、微博热搜、音视频通话及音乐播放等沉浸式RP体验。",
     "author": "yuzuki",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "loading_order": 200,
     "requires": [],
     "optional": [],

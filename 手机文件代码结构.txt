@@ -8,11 +8,15 @@
 │ ├── 📄 apps.js [配置] APP出厂清单、图标、主题色。
 │ ├── 📄 storage.js [存储总线] 防弹级存储系统。自动识别并分发数据至 chatMetadata (随聊天存) 或 extensionSettings (全局存)。
 │ ├── 📄 api-manager.js [通信网关] 统一 AI 调用入口。支持独立 API、代理、流式解析、酒馆原生 API 兜底。
-│ ├── 📄 tts-manager.js [语音网关] 统一 TTS 调用入口。按服务商读取配置，支持 MiniMax 国内/国际、OpenAI 兼容格式、火山引擎/豆包，并返回可播放音频 URL。
+│ ├── 📄 tts-manager.js [语音网关] 统一 TTS 调用入口。按服务商读取配置，支持 MiniMax 国内/国际、OpenAI 兼容格式、火山引擎/豆包，并返回可播放音频 URL。豆包复刻音色（S_ 开头）会自动使用 seed-icl-2.0，避免误用 seed-tts-*；同时提供豆包音色复刻上传与训练状态查询方法，支持优先走用户自填 Cloudflare Worker 代理。
 │ ├── 📄 prompt-manager.js [提示词中枢] 管理微信、微博、蜜语、日记等所有 APP 的系统提示词下发与变量替换。
 │ ├── 📄 time-manager.js [时间引擎] 剧情时间推算核心。负责蔡勒公式算星期、状态栏提取、跨日分钟步进逻辑。
 │ ├── 📄 tag-filter.js [标签过滤器] 兼容记忆插件，负责清洗 AI 返回中的 think、Memory 等干扰标签。
 │ └── 📄 global-social-store.js [全局社交库] 跨应用联动核心。用于在不同 APP（如蜜语和微信）间共享联系人档案与互动摘要。
+│
+├── 📁 workers (可选云端代理)
+│ ├── 📄 doubao-clone-worker.js [豆包复刻代理] Cloudflare Worker 源码，提供 /api/clone 与 /api/status，代理豆包音色复刻上传与状态查询。
+│ └── 📄 README.md [部署说明] 说明如何部署 Worker 并把地址填入设置页。
 │
 ├── 📁 phone (系统 UI 区)
 │ ├── 📄 phone-shell.js [物理外壳] 双层 Z-index 物理视图栈、原生右滑返回手势运算、通知弹窗队列。
@@ -72,12 +76,12 @@
 规则： AI 发包前，index.js 会识别消息中的 __ST_PHONE_IMAGE_ 占位符。 Fetch 拦截器会在网卡级将其调包为真正的 image_url 多模态数组发送给大模型。修改 AI 发送逻辑时，切勿破坏占位符字符串。
 5. 音频/TTS 专属音色保护
 机制： 通话功能强制绑定音色，实际发声统一经由 config/tts-manager.js 的 TtsManager.requestTTS。
-规则： 微信单聊/通话界面点击播放时，系统会调用 resolveTtsVoiceByName。如果联系人未在通讯录中绑定专属 Voice ID，播放请求将被拦截并提示，以防所有角色都使用同一个全局默认音色。TTS 服务商配置由设置页写入 phone-tts-* 键，新增服务商时必须同步更新 settings-app.js 与 tts-manager.js。
+规则： 微信单聊/通话界面点击播放时，系统会调用 resolveTtsVoiceByName。如果联系人未在通讯录中绑定专属 Voice ID，播放请求将被拦截并提示，以防所有角色都使用同一个全局默认音色。TTS 服务商配置由设置页写入 phone-tts-* 键，新增服务商时必须同步更新 settings-app.js 与 tts-manager.js。设置页 TTS 分区默认折叠并保存展开状态；豆包分区可上传音频复刻、查询训练状态、把训练好的 S_ 音色设为当前音色。豆包复刻可单独配置复刻 Access Token、复刻 APP ID 与 Worker 地址，上传/查询优先请求 /api/clone 与 /api/status，未填 Worker 时才尝试直连豆包接口。豆包官方预置音色通常用 seed-tts-2.0，复刻音色（S_ 开头）需用 seed-icl-2.0，tts-manager.js 会自动纠正这类复刻音色的资源 ID。
 
 📜 AI 指令与标签解析规范
 【微信标签 - <wechat>】
 包裹： 必须使用 <!-- --> 注释包裹，防止被酒馆 Markdown 渲染破坏。
-格式： 支持 ---联系人--- 分隔多人。
+格式： 支持 ---联系人--- 分隔多人；线下正文注入格式每个联系人块必须包含“接收人：{{user}}”，解析层只同步接收人为 user/酒馆用户名字/小手机微信里用户自己的昵称的消息。
 特殊： [红包](金额：100元)、[转账](金额：500元)、[图片]（描述）、[拨打微信语音]。
 【蜜语标签 - <Honey>】
 结构： 必须包含 ---热门推荐--- 和 ---当前激情直播---。

@@ -10,13 +10,13 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // ========================================
-// 虚拟手机互动系统 v1.0.2
+// 虚拟手机互动系统 v1.0.3
 // SillyTavern 扩展插件
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_GLOBAL_CSS_URL = new URL('./phone.css', import.meta.url).href;
-const ST_PHONE_VERSION = '1.0.2';
+const ST_PHONE_VERSION = '1.0.3';
 const ST_PHONE_UPDATE_MANIFEST_URLS = [
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/main/manifest.json',
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/master/manifest.json'
@@ -27,12 +27,11 @@ const ST_PHONE_UPDATE_LOG_URLS = [
 ];
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-05-04',
+    date: '2026-05-05',
     items: [
-        '日记新增注入功能，可把日记历史写入上下文。',
-        '日记新增导入功能，支持把旧日记批量迁移到小手机。',
-        '语音支持豆包；群语音支持 MiniMax 与豆包混合调用。',
-        '适配折叠手机屏显示问题，优化特殊屏幕下的小手机布局。'
+        '微信线下转线上新增接收人校验，只有发给用户或小手机微信里用户自己的昵称时才同步。',
+        '修复聊天 API 预设切换后不生效的问题，旧预设也能正确切换。',
+        '本次微信规则更新后必须更新提示词：可在设置页常规设置点击“一键更新所有提示词为默认最新版本”，或进入线下提示词区域对该提示词单独手动更新。'
     ]
 };
 
@@ -55,6 +54,7 @@ if (window.GGP_Loaded) {
     let PromptManager = null;      // 发消息时加载
     let SettingsApp = null;        // 打开设置时加载
     let TtsManager = null;         // 语音管理器
+    let ImageGenerationManager = null; // 生图管理器
 
     // 🔥 三击唤醒手势状态
     let phoneTapCount = 0;
@@ -71,12 +71,15 @@ if (window.GGP_Loaded) {
     let timeManager = null;
     let promptManager = null;
     let ttsManager = null;
+    let imageGenerationManager = null;
     let modulesLoaded = false;
     let _lastWechatChatId = null; // 🔥 防串味：记录上一次处理微信数据的 chatId
     let _globalCssLoadingPromise = null;
     let _phoneStableViewportHeight = 0;
     let _phoneKeyboardAnchorTop = 0;
     let _phoneViewportResizeTimer = null;
+    let _phoneViewportSettleTimer = null;
+    let _phoneKeyboardLikelyOpenUntil = 0;
     // 🔥 防重放护盾：仅允许被显式标记的旧楼层重新解析（用于 Swipe/Regenerate）
     const _forcedReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
 
@@ -149,7 +152,10 @@ if (window.GGP_Loaded) {
         const activeTag = String(document.activeElement?.tagName || '').toLowerCase();
         const isTypingTarget = ['input', 'textarea', 'select'].includes(activeTag)
             || document.activeElement?.isContentEditable;
-        const keyboardOpen = Boolean(isTypingTarget && (keyboardGap > 120 || stableGap > 120));
+        const now = Date.now();
+        const isLikelyKeyboardWindow = now < _phoneKeyboardLikelyOpenUntil;
+        const hasKeyboardViewportGap = keyboardGap > 120 || stableGap > 120;
+        const keyboardOpen = Boolean((isTypingTarget || isLikelyKeyboardWindow) && hasKeyboardViewportGap);
         const phoneBody = panel?.querySelector?.('.phone-body-panel');
 
         panel?.classList.toggle('phone-keyboard-open', keyboardOpen);
@@ -178,27 +184,66 @@ if (window.GGP_Loaded) {
     }
 
     function schedulePhonePanelViewportUpdate(options = {}) {
+        const immediate = options.immediate === true;
+        const delay = Number.isFinite(Number(options.delay)) ? Math.max(0, Number(options.delay)) : 60;
+        const settleDelay = Number.isFinite(Number(options.settleDelay)) ? Math.max(0, Number(options.settleDelay)) : 140;
+
+        if (immediate) {
+            updatePhonePanelViewportHeight(options);
+        } else if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => updatePhonePanelViewportHeight(options));
+        }
+
         clearTimeout(_phoneViewportResizeTimer);
         _phoneViewportResizeTimer = setTimeout(() => {
             updatePhonePanelViewportHeight(options);
-        }, 60);
+        }, delay);
+
+        clearTimeout(_phoneViewportSettleTimer);
+        _phoneViewportSettleTimer = setTimeout(() => {
+            updatePhonePanelViewportHeight(options);
+        }, settleDelay);
     }
 
     function bindPhonePanelViewportGuards() {
-        window.removeEventListener('resize', schedulePhonePanelViewportUpdate);
-        window.addEventListener('resize', schedulePhonePanelViewportUpdate, { passive: true });
+        const onViewportResize = () => schedulePhonePanelViewportUpdate({ delay: 40, settleDelay: 160 });
+        const onViewportScroll = () => schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 140 });
+        const onFocusIn = () => {
+            _phoneKeyboardLikelyOpenUntil = Date.now() + 700;
+            schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
+        };
+        const onFocusOut = () => {
+            _phoneKeyboardLikelyOpenUntil = Date.now() + 180;
+            schedulePhonePanelViewportUpdate({ immediate: true, delay: 80, settleDelay: 260 });
+        };
 
-        if (window.visualViewport) {
-            window.visualViewport.removeEventListener('resize', schedulePhonePanelViewportUpdate);
-            window.visualViewport.addEventListener('resize', schedulePhonePanelViewportUpdate, { passive: true });
+        if (bindPhonePanelViewportGuards._handlers) {
+            const prev = bindPhonePanelViewportGuards._handlers;
+            window.removeEventListener('resize', prev.onViewportResize);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', prev.onViewportResize);
+                window.visualViewport.removeEventListener('scroll', prev.onViewportScroll);
+            }
+            document.removeEventListener('focusin', prev.onFocusIn, true);
+            document.removeEventListener('focusout', prev.onFocusOut, true);
         }
 
-        document.removeEventListener('focusin', schedulePhonePanelViewportUpdate);
-        document.removeEventListener('focusout', schedulePhonePanelViewportUpdate);
-        document.removeEventListener('focusin', schedulePhonePanelViewportUpdate, true);
-        document.removeEventListener('focusout', schedulePhonePanelViewportUpdate, true);
-        document.addEventListener('focusin', schedulePhonePanelViewportUpdate, true);
-        document.addEventListener('focusout', schedulePhonePanelViewportUpdate, true);
+        bindPhonePanelViewportGuards._handlers = {
+            onViewportResize,
+            onViewportScroll,
+            onFocusIn,
+            onFocusOut
+        };
+
+        window.addEventListener('resize', onViewportResize, { passive: true });
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', onViewportResize, { passive: true });
+            window.visualViewport.addEventListener('scroll', onViewportScroll, { passive: true });
+        }
+
+        document.addEventListener('focusin', onFocusIn, true);
+        document.addEventListener('focusout', onFocusOut, true);
     }
 
     async function loadCoreModules() {
@@ -213,14 +258,16 @@ if (window.GGP_Loaded) {
             apiManagerModule,
             timeManagerModule,      // 👈 新增：时间推算引擎
             promptManagerModule,    // 👈 新增：全局提示词中枢
-            ttsManagerModule
+            ttsManagerModule,
+            imageGenerationManagerModule
         ] = await Promise.all([
             import('./config/apps.js'),
             import('./config/storage.js'),
             import('./config/api-manager.js'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
             import('./config/prompt-manager.js'),  // 👈 取消懒加载
-            import('./config/tts-manager.js')
+            import('./config/tts-manager.js'),
+            import('./config/image-generation-manager.js')
         ]);
 
         APPS = appsModule.APPS;
@@ -229,6 +276,7 @@ if (window.GGP_Loaded) {
         TimeManager = timeManagerModule.TimeManager;       // 👈 绑定类
         PromptManager = promptManagerModule.PromptManager; // 👈 绑定类
         TtsManager = ttsManagerModule.TtsManager;
+        ImageGenerationManager = imageGenerationManagerModule.ImageGenerationManager;
 
         // 初始化核心对象
         currentApps = JSON.parse(JSON.stringify(APPS));
@@ -239,6 +287,7 @@ if (window.GGP_Loaded) {
         timeManager = new TimeManager(storage);
         promptManager = new PromptManager(storage);
         ttsManager = new TtsManager(storage);
+        imageGenerationManager = new ImageGenerationManager(storage);
         promptManager.ensureLoaded(); // 强制把所有提示词立即读入内存待命
 
         modulesLoaded = true;
@@ -3617,6 +3666,52 @@ if (window.GGP_Loaded) {
         return messages;
     }
 
+    function normalizeWechatRecipientKey(value) {
+        return String(value || '')
+            .trim()
+            .replace(/[「」『』"'“”‘’]/g, '')
+            .replace(/\s+/g, '')
+            .toLowerCase();
+    }
+
+    function getCurrentWechatRecipientAliases() {
+        const aliases = new Set(['user', '{{user}}']);
+        try {
+            const context = getContext();
+            const userName = String(context?.name1 || '').trim();
+            if (userName) aliases.add(userName);
+        } catch (e) { }
+
+        try {
+            const runtimeName = String(window.VirtualPhone?.wechatApp?.wechatData?.getUserInfo?.()?.name || '').trim();
+            if (runtimeName) aliases.add(runtimeName);
+        } catch (e) { }
+
+        try {
+            const cachedName = String(window.VirtualPhone?.cachedWechatData?.getUserInfo?.()?.name || '').trim();
+            if (cachedName) aliases.add(cachedName);
+        } catch (e) { }
+
+        try {
+            const rawData = storage?.get?.('wechat_data', false);
+            if (rawData) {
+                const parsed = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+                const storedName = String(parsed?.userInfo?.name || '').trim();
+                if (storedName) aliases.add(storedName);
+            }
+        } catch (e) { }
+
+        return Array.from(aliases)
+            .map(normalizeWechatRecipientKey)
+            .filter(Boolean);
+    }
+
+    function isWechatRecipientCurrentUser(recipient) {
+        const key = normalizeWechatRecipientKey(recipient);
+        if (!key) return false;
+        return getCurrentWechatRecipientAliases().includes(key);
+    }
+
     // 🔥 新版：解析轻量级XML格式微信标签（支持 ---联系人--- 分隔多人）
     function parseLightweightWechatTag(text) {
         if (!text || !isPhoneFeatureEnabled()) return [];
@@ -3652,6 +3747,7 @@ if (window.GGP_Loaded) {
         let match;
 
         while ((match = WECHAT_TAG_REGEX_NEW.exec(normalizedText)) !== null) {
+            const isOfflineCommentTag = /<!--/.test(match[0]);
             let content = extractWechatTagPayload(match[0]) || stripWechatCommentWrapper(match[1]);
 
             if (!content) {
@@ -3680,18 +3776,30 @@ if (window.GGP_Loaded) {
             let currentChatType = 'single';
             let currentChatTypeSource = 'inferred';
             let currentDate = null;
+            let currentRecipient = null;
+            let currentRecipientExplicit = false;
             let currentMessages = [];
             let groupMembers = [];
 
             // 🔥 辅助函数：保存当前联系人的消息
             const saveCurrentContact = () => {
                 if (currentContact && currentMessages.length > 0) {
+                    const shouldCheckRecipient = isOfflineCommentTag || currentRecipientExplicit;
+                    if (shouldCheckRecipient && !isWechatRecipientCurrentUser(currentRecipient)) {
+                        console.warn('⚠️ [微信] 跳过非用户接收人的线下微信消息:', {
+                            contact: currentContact,
+                            recipient: currentRecipient || '(未填写)'
+                        });
+                        return;
+                    }
+
                     results.push({
                         type: 'wechat_message',
                         contact: currentContact,
                         chatType: currentChatType,
                         chatTypeSource: currentChatTypeSource,
                         date: currentDate,
+                        recipient: currentRecipient || '',
                         messages: [...currentMessages],
                         members: currentChatType === 'group' ? [...groupMembers] : [],
                         status: 'online',
@@ -3717,6 +3825,8 @@ if (window.GGP_Loaded) {
                     currentChatType = 'single'; // 默认单聊，等解析到 type:group 再改
                     currentChatTypeSource = 'inferred';
                     currentDate = null;
+                    currentRecipient = null;
+                    currentRecipientExplicit = false;
                     currentMessages = [];
                     groupMembers = [];
                     continue;
@@ -3735,23 +3845,22 @@ if (window.GGP_Loaded) {
                     continue;
                 }
 
+                // 解析接收人：线下转线上时只允许同步发给 user/酒馆用户名/小手机微信里用户自己的昵称的消息
+                const recipientMatch = /^(?:接收人|收信人|recipient|receiver)\s*[:：]\s*(.+)$/i.exec(trimmedLine);
+                if (recipientMatch) {
+                    currentRecipient = recipientMatch[1].trim();
+                    currentRecipientExplicit = true;
+                    continue;
+                }
+
                 // 🔥 兼容旧版 from: 属性（单联系人格式）
                 if (trimmedLine.startsWith('from:') || trimmedLine.startsWith('from：')) {
                     saveCurrentContact();
                     currentContact = trimmedLine.substring(5).trim();
                     currentChatType = 'single';
                     currentChatTypeSource = 'explicit';
-                    currentMessages = [];
-                    groupMembers = [];
-                    continue;
-                }
-
-                // 🔥 兼容旧版 to: 属性
-                if (trimmedLine.startsWith('to:') || trimmedLine.startsWith('to：')) {
-                    saveCurrentContact();
-                    currentContact = trimmedLine.substring(3).trim();
-                    currentChatType = 'single';
-                    currentChatTypeSource = 'explicit';
+                    currentRecipient = null;
+                    currentRecipientExplicit = false;
                     currentMessages = [];
                     groupMembers = [];
                     continue;
@@ -5455,6 +5564,7 @@ if (window.GGP_Loaded) {
                 apiManager: new ApiManager(storage),
                 promptManager: null,
                 ttsManager: ttsManager,
+                imageGenerationManager: imageGenerationManager,
                 home: null,
                 wechatApp: null,
                 mofoApp: null,

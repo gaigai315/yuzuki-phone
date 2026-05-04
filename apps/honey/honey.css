@@ -1942,6 +1942,12 @@
     flex-direction: column;
 }
 
+.honey-nai-placeholder.has-generated-image {
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
 /* 直播间动态私密视频层 */
 .honey-live-video {
     position: absolute;
@@ -1967,6 +1973,12 @@
     z-index: 1;
 }
 
+.honey-nai-placeholder.has-generated-image .honey-nai-glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: linear-gradient(180deg, rgba(15, 8, 14, 0.08), rgba(15, 8, 14, 0.28));
+}
+
 .honey-unlock-btn {
     position: relative;
     z-index: 2;
@@ -1982,6 +1994,39 @@
     display: flex;
     align-items: center;
     gap: 6px;
+}
+
+.honey-unlock-btn:disabled {
+    opacity: 0.72;
+    cursor: not-allowed;
+}
+
+.honey-unlock-btn.is-regenerate {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    padding: 6px 10px;
+    border-radius: 14px;
+    background: rgba(28, 18, 26, 0.58);
+}
+
+.honey-nai-status {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 2;
+    padding: 6px 8px;
+    border-radius: 10px;
+    background: rgba(40, 18, 28, 0.68);
+    color: #fff;
+    font-size: 10px;
+    line-height: 1.35;
+    text-align: center;
+}
+
+.honey-nai-status.is-error {
+    color: #ffd5df;
 }
 
 .honey-live-header {

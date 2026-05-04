@@ -58,8 +58,12 @@ export class TtsManager {
         const provider = String(options.provider || this.storage?.get?.('phone-tts-provider') || 'minimax_cn').trim() || 'minimax_cn';
         const defaults = this._getProviderDefaults(provider);
         const apiKey = this._getStoredProviderValue(provider, 'key', 'phone-tts-key');
-        const apiUrl = this._getStoredProviderValue(provider, 'url', 'phone-tts-url') || defaults.url || '';
-        const model = this._getStoredProviderValue(provider, 'model', 'phone-tts-model') || defaults.model || '';
+        const scopedUrl = this._getStoredProviderValue(provider, 'url');
+        const legacyUrl = this._getStoredProviderValue(provider, 'url', 'phone-tts-url');
+        const apiUrl = scopedUrl || (provider === 'volcengine' ? defaults.url : legacyUrl) || defaults.url || '';
+        const scopedModel = this._getStoredProviderValue(provider, 'model');
+        const legacyModel = this._getStoredProviderValue(provider, 'model', 'phone-tts-model');
+        const model = scopedModel || (provider === 'volcengine' ? defaults.model : legacyModel) || defaults.model || '';
         const globalVoice = this._getStoredProviderValue(provider, 'voice', 'phone-tts-voice') || defaults.voice || '';
         const voice = String(options.voice || globalVoice || '').trim();
         const appId = this._getStoredProviderValue(provider, 'app-id', 'phone-tts-volc-app-id');
@@ -72,6 +76,205 @@ export class TtsManager {
             voice,
             appId,
             resourceId
+        };
+    }
+
+    _isVolcClonedVoiceId(voice = '') {
+        return /^S_[A-Za-z0-9_-]+$/.test(String(voice || '').trim());
+    }
+
+    _resolveVolcResourceId(resourceId = '', voice = '') {
+        const safeResourceId = String(resourceId || '').trim() || 'seed-tts-2.0';
+        if (this._isVolcClonedVoiceId(voice) && /^seed-tts-/i.test(safeResourceId)) {
+            return 'seed-icl-2.0';
+        }
+        return safeResourceId;
+    }
+
+    _resolveVolcCloneResourceId(modelType = '4') {
+        return String(modelType || '4') === '4' ? 'seed-icl-2.0' : 'seed-icl-1.0';
+    }
+
+    _readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const raw = String(reader.result || '');
+                resolve(raw.includes(',') ? raw.split(',').pop() : raw);
+            };
+            reader.onerror = () => reject(reader.error || new Error('音频文件读取失败'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    _formatVolcCloneError(data = {}) {
+        const base = data?.BaseResp || {};
+        const code = base.StatusCode ?? data?.code ?? 'N/A';
+        let message = base.StatusMessage || data?.message || '未知错误';
+        const codeHints = {
+            1106: 'Speaker ID 重复',
+            1107: 'Speaker ID 未找到',
+            1111: '音频无人声',
+            1122: '未检测到人声',
+            1123: '已达上传限制'
+        };
+        if (codeHints[code]) message += `（${codeHints[code]}）`;
+        return `豆包音色复刻失败：${message}，code=${code}`;
+    }
+
+    _normalizeVolcAccessToken(accessToken = '') {
+        return String(accessToken || '').trim().replace(/^Bearer\s*;?\s*/i, '');
+    }
+
+    async cloneVolcVoice(options = {}) {
+        const accessToken = this._normalizeVolcAccessToken(options.accessToken || options.apiKey || '');
+        const appId = String(options.appId || '').trim();
+        const speakerId = String(options.speakerId || '').trim();
+        const workerUrl = String(options.workerUrl || '').trim().replace(/\/+$/, '');
+        const audioFile = options.audioFile;
+        const modelType = String(options.modelType || '4');
+        const language = String(options.language || '0');
+
+        if (!accessToken) throw new Error('缺少豆包 Access Token');
+        if (!appId) throw new Error('缺少火山 APP ID');
+        if (!speakerId) throw new Error('缺少 Speaker ID');
+        if (!audioFile) throw new Error('请选择用于复刻的音频文件');
+        if (Number(audioFile.size || 0) > 10 * 1024 * 1024) throw new Error('音频文件不能超过 10MB');
+
+        const audioBase64 = await this._readFileAsBase64(audioFile);
+        const audioFormat = String(options.audioFormat || audioFile.name?.split('.').pop() || 'mp3').trim().toLowerCase();
+        const resourceId = this._resolveVolcCloneResourceId(modelType);
+
+        if (workerUrl) {
+            const response = await fetch(`${workerUrl}/api/clone`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    accessToken,
+                    appId,
+                    speakerId,
+                    audioBase64,
+                    audioFormat,
+                    modelType,
+                    language
+                })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data?.success === false) {
+                throw new Error(data?.error || `豆包复刻 Worker HTTP ${response.status}`);
+            }
+            return {
+                speakerId: data.speaker_id || data.speakerId || speakerId,
+                resourceId: data.resourceId || resourceId,
+                raw: data
+            };
+        }
+
+        const response = await fetch('https://openspeech.bytedance.com/api/v1/mega_tts/audio/upload', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer; ${accessToken}`,
+                'Resource-Id': resourceId,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                appid: appId,
+                speaker_id: speakerId,
+                audios: [{ audio_bytes: audioBase64, audio_format: audioFormat }],
+                source: 2,
+                model_type: Number.parseInt(modelType, 10) || 4,
+                language: Number.parseInt(language, 10) || 0
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            throw new Error(`豆包音色复刻接口 HTTP ${response.status}${errorText ? `：${errorText}` : ''}`);
+        }
+
+        const data = await response.json();
+        if (data?.BaseResp?.StatusCode === 0) {
+            return {
+                speakerId: data.speaker_id || speakerId,
+                resourceId,
+                raw: data
+            };
+        }
+
+        throw new Error(this._formatVolcCloneError(data));
+    }
+
+    async getVolcVoiceCloneStatus(options = {}) {
+        const accessToken = this._normalizeVolcAccessToken(options.accessToken || options.apiKey || '');
+        const appId = String(options.appId || '').trim();
+        const speakerId = String(options.speakerId || '').trim();
+        const workerUrl = String(options.workerUrl || '').trim().replace(/\/+$/, '');
+        const resourceId = String(options.resourceId || 'seed-icl-2.0').trim() || 'seed-icl-2.0';
+
+        if (!accessToken) throw new Error('缺少豆包 Access Token');
+        if (!appId) throw new Error('缺少火山 APP ID');
+        if (!speakerId) throw new Error('缺少 Speaker ID');
+
+        if (workerUrl) {
+            const response = await fetch(`${workerUrl}/api/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    accessToken,
+                    appId,
+                    speakerId,
+                    resourceId
+                })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data?.success === false) {
+                throw new Error(data?.error || `豆包复刻状态 Worker HTTP ${response.status}`);
+            }
+            return {
+                status: data.status,
+                statusText: data.statusText || '未知',
+                version: data.version,
+                resourceId,
+                raw: data
+            };
+        }
+
+        const response = await fetch('https://openspeech.bytedance.com/api/v1/mega_tts/status', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer; ${accessToken}`,
+                'Resource-Id': resourceId,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                appid: appId,
+                speaker_id: speakerId
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            throw new Error(`豆包音色状态接口 HTTP ${response.status}${errorText ? `：${errorText}` : ''}`);
+        }
+
+        const data = await response.json();
+        if (data?.BaseResp?.StatusCode !== 0) {
+            throw new Error(this._formatVolcCloneError(data));
+        }
+
+        const statusMap = {
+            0: '未找到',
+            1: '训练中',
+            2: '训练成功',
+            3: '训练失败',
+            4: '已激活'
+        };
+        return {
+            status: data.status,
+            statusText: statusMap[data.status] || '未知',
+            version: data.version,
+            resourceId,
+            raw: data
         };
     }
 
@@ -123,6 +326,7 @@ export class TtsManager {
         if (provider === 'volcengine') {
             if (!appId) throw new Error('请先配置火山引擎 APP ID');
             if (!resourceId) throw new Error('请先配置火山引擎 Resource ID');
+            const effectiveResourceId = this._resolveVolcResourceId(resourceId, voice);
 
             const requestedUrl = String(apiUrl || '').trim();
             const requestPayload = {
@@ -148,14 +352,17 @@ export class TtsManager {
                     'Content-Type': 'application/json',
                     'X-Api-App-Key': appId,
                     'X-Api-Access-Key': apiKey,
-                    'X-Api-Resource-Id': resourceId
+                    'X-Api-Resource-Id': effectiveResourceId
                 },
                 body: JSON.stringify(requestPayload)
             });
             if (!response.ok) {
                 const errorText = await response.text().catch(() => '');
                 if (response.status === 401) {
-                    throw new Error(`HTTP 401 鉴权失败，请核对 APP ID / API Key / Resource ID（当前 APP ID=${appId}, Resource ID=${resourceId}）${errorText ? `：${errorText}` : ''}`);
+                    throw new Error(`HTTP 401 鉴权失败，请核对 APP ID / API Key / Resource ID（当前 APP ID=${appId}, Resource ID=${effectiveResourceId}）${errorText ? `：${errorText}` : ''}`);
+                }
+                if (this._isVolcClonedVoiceId(voice) && !/^seed-icl-/i.test(effectiveResourceId)) {
+                    throw new Error(`HTTP ${response.status}：复刻音色 ${voice} 需要使用 seed-icl-2.0 类 Resource ID${errorText ? `；原始错误：${errorText}` : ''}`);
                 }
                 throw new Error(`HTTP ${response.status}${errorText ? `：${errorText}` : ''}`);
             }

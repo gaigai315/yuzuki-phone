@@ -59,7 +59,7 @@ export class ApiManager {
         if (!activeProfile) return config;
         // 全局开关是总闸门：关闭后即使预设里为 true，也必须走酒馆原生 API。
         const globalEnabled = config.useIndependentAPI === true;
-        const profileEnabled = activeProfile.useIndependentAPI === true;
+        const profileEnabled = activeProfile.useIndependentAPI !== false;
 
         return {
             ...config,

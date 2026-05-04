@@ -1353,6 +1353,20 @@
     background: #f2f2f7;
 }
 
+.tts-section-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.tts-section-list details[data-tts-fold-key] {
+    margin: 0 !important;
+    border-radius: 12px !important;
+    box-shadow:
+        0 2px 10px rgba(0, 0, 0, 0.06),
+        0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
 .setting-item {
     padding: 10px 12px;
     border-bottom: 0.5px solid #e5e5ea;
