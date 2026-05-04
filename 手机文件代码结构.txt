@@ -1,12 +1,14 @@
 📁 ST-Phone (插件根目录)
 ├── 📄 manifest.json [元数据] 插件定义与加载顺序 (loading_order: 200)。
-├── 📄 index.js [核心中枢] 负责 Hook 酒馆事件、Fetch 拦截器（底层强行注入）、三击唤醒监听。
+├── 📄 index.js [核心中枢] 负责 Hook 酒馆事件、Fetch 拦截器（底层强行注入）、三击唤醒监听、更新公告与远程版本检测。
+├── 📄 update-log.json [更新日志] 按版本记录公告内容，供本地更新公告与远程新版提醒展示。
 ├── 📄 phone.css [全局皮肤] 手机壳物理属性、华为药丸屏、状态栏、全局文字颜色变量。
 │
 ├── 📁 config (核心引擎大脑 - 核心逻辑区)
 │ ├── 📄 apps.js [配置] APP出厂清单、图标、主题色。
 │ ├── 📄 storage.js [存储总线] 防弹级存储系统。自动识别并分发数据至 chatMetadata (随聊天存) 或 extensionSettings (全局存)。
 │ ├── 📄 api-manager.js [通信网关] 统一 AI 调用入口。支持独立 API、代理、流式解析、酒馆原生 API 兜底。
+│ ├── 📄 tts-manager.js [语音网关] 统一 TTS 调用入口。按服务商读取配置，支持 MiniMax 国内/国际、OpenAI 兼容格式、火山引擎/豆包，并返回可播放音频 URL。
 │ ├── 📄 prompt-manager.js [提示词中枢] 管理微信、微博、蜜语、日记等所有 APP 的系统提示词下发与变量替换。
 │ ├── 📄 time-manager.js [时间引擎] 剧情时间推算核心。负责蔡勒公式算星期、状态栏提取、跨日分钟步进逻辑。
 │ ├── 📄 tag-filter.js [标签过滤器] 兼容记忆插件，负责清洗 AI 返回中的 think、Memory 等干扰标签。
@@ -69,8 +71,8 @@
 机制： 实现“图文无限次穿插”。
 规则： AI 发包前，index.js 会识别消息中的 __ST_PHONE_IMAGE_ 占位符。 Fetch 拦截器会在网卡级将其调包为真正的 image_url 多模态数组发送给大模型。修改 AI 发送逻辑时，切勿破坏占位符字符串。
 5. 音频/TTS 专属音色保护
-机制： 通话功能强制绑定音色。
-规则： 微信单聊/通话界面点击播放时，系统会调用 resolveTtsVoiceByName。如果联系人未在通讯录中绑定专属 Voice ID，播放请求将被拦截并提示，以防所有角色都使用同一个全局默认音色。
+机制： 通话功能强制绑定音色，实际发声统一经由 config/tts-manager.js 的 TtsManager.requestTTS。
+规则： 微信单聊/通话界面点击播放时，系统会调用 resolveTtsVoiceByName。如果联系人未在通讯录中绑定专属 Voice ID，播放请求将被拦截并提示，以防所有角色都使用同一个全局默认音色。TTS 服务商配置由设置页写入 phone-tts-* 键，新增服务商时必须同步更新 settings-app.js 与 tts-manager.js。
 
 📜 AI 指令与标签解析规范
 【微信标签 - <wechat>】

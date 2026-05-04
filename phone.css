@@ -67,6 +67,130 @@
 }
 
 /* ========================================
+   更新公告弹窗
+   ======================================== */
+
+.st-phone-update-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 160000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(10, 12, 16, 0.42);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.st-phone-update-dialog {
+    width: min(420px, calc(100vw - 36px));
+    max-height: min(620px, calc(100vh - 36px));
+    display: flex;
+    gap: 14px;
+    padding: 18px;
+    overflow: auto;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+    color: #17181c;
+}
+
+.st-phone-update-mark {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: #111827;
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.st-phone-update-content {
+    min-width: 0;
+    flex: 1;
+}
+
+.st-phone-update-kicker {
+    margin-bottom: 4px;
+    color: #5b6371;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.st-phone-update-title {
+    margin-bottom: 4px;
+    color: #111827;
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.st-phone-update-subtitle,
+.st-phone-update-note {
+    color: #626a78;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.st-phone-update-list {
+    margin: 14px 0;
+    padding-left: 18px;
+    color: #222733;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.st-phone-update-list li {
+    margin: 6px 0;
+    padding-left: 2px;
+}
+
+.st-phone-update-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 16px;
+}
+
+.st-phone-update-btn {
+    min-width: 96px;
+    height: 36px;
+    padding: 0 16px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.st-phone-update-btn-primary {
+    background: #111827;
+    color: #ffffff;
+}
+
+.st-phone-update-btn-primary:hover {
+    background: #273142;
+}
+
+@media (max-width: 420px) {
+    .st-phone-update-dialog {
+        display: block;
+        padding: 16px;
+        border-radius: 16px;
+    }
+
+    .st-phone-update-mark {
+        margin-bottom: 12px;
+    }
+}
+
+/* ========================================
    精准覆盖 - 只针对手机面板
    ======================================== */
 
