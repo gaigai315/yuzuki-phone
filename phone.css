@@ -72,24 +72,32 @@
 
 .st-phone-update-modal {
     position: fixed;
-    inset: 0;
+    left: var(--st-phone-update-left, 0);
+    top: var(--st-phone-update-top, 0);
+    width: var(--st-phone-update-vw, 100vw);
+    height: var(--st-phone-update-vh, 100dvh);
     z-index: 160000;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 18px;
+    box-sizing: border-box;
+    padding: 14px;
+    overflow: hidden;
     background: rgba(10, 12, 16, 0.42);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
 }
 
 .st-phone-update-dialog {
-    width: min(420px, calc(100vw - 36px));
-    max-height: min(620px, calc(100vh - 36px));
+    width: min(420px, calc(var(--st-phone-update-vw, 100vw) - 28px));
+    max-height: calc(var(--st-phone-update-vh, 100dvh) - 28px);
     display: flex;
     gap: 14px;
     padding: 18px;
+    box-sizing: border-box;
     overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.72);
     background: rgba(255, 255, 255, 0.96);
@@ -179,9 +187,15 @@
 }
 
 @media (max-width: 420px) {
+    .st-phone-update-modal {
+        padding: 10px;
+    }
+
     .st-phone-update-dialog {
         display: block;
-        padding: 16px;
+        width: min(360px, calc(var(--st-phone-update-vw, 100vw) - 20px));
+        max-height: calc(var(--st-phone-update-vh, 100dvh) - 20px);
+        padding: 14px;
         border-radius: 16px;
     }
 

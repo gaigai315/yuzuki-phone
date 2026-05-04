@@ -642,6 +642,19 @@ if (window.GGP_Loaded) {
         document.getElementById('st-phone-update-modal')?.remove();
 
         const overlay = document.createElement('div');
+        const viewportController = new AbortController();
+        const syncUpdateModalViewport = () => {
+            const vv = window.visualViewport;
+            const width = Math.max(320, Math.round(vv?.width || window.innerWidth || document.documentElement?.clientWidth || 360));
+            const height = Math.max(320, Math.round(vv?.height || window.innerHeight || document.documentElement?.clientHeight || 640));
+            const left = Math.round(vv?.offsetLeft || 0);
+            const top = Math.round(vv?.offsetTop || 0);
+            overlay.style.setProperty('--st-phone-update-vw', `${width}px`);
+            overlay.style.setProperty('--st-phone-update-vh', `${height}px`);
+            overlay.style.setProperty('--st-phone-update-left', `${left}px`);
+            overlay.style.setProperty('--st-phone-update-top', `${top}px`);
+        };
+
         overlay.id = 'st-phone-update-modal';
         overlay.className = 'st-phone-update-modal';
         overlay.innerHTML = `
@@ -667,6 +680,7 @@ if (window.GGP_Loaded) {
             if (rememberKey && storage?.set) {
                 await storage.set(rememberKey, version);
             }
+            viewportController.abort();
             overlay.remove();
             if (typeof options.onClose === 'function') {
                 options.onClose();
@@ -677,6 +691,12 @@ if (window.GGP_Loaded) {
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay && mode === 'remote') close();
         });
+        window.addEventListener('resize', syncUpdateModalViewport, { passive: true, signal: viewportController.signal });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', syncUpdateModalViewport, { passive: true, signal: viewportController.signal });
+            window.visualViewport.addEventListener('scroll', syncUpdateModalViewport, { passive: true, signal: viewportController.signal });
+        }
+        syncUpdateModalViewport();
         document.body.appendChild(overlay);
     }
 
