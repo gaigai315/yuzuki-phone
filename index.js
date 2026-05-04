@@ -152,8 +152,8 @@ if (window.GGP_Loaded) {
             _phoneStableViewportHeight = Math.max(layoutHeight, visualHeight, 320);
         }
 
-        const targetHeight = keyboardOpen && _phoneStableViewportHeight
-            ? _phoneStableViewportHeight
+        const targetHeight = keyboardOpen
+            ? Math.max(visualHeight, 320)
             : Math.max(layoutHeight, visualHeight, 320);
         root.style.setProperty('--phone-panel-vh', `${Math.round(targetHeight)}px`);
     }

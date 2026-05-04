@@ -277,6 +277,23 @@
     box-sizing: border-box !important;
 }
 
+#phone-panel.drawer-content.phone-keyboard-open {
+    padding: 8px 8px 8px !important;
+    justify-content: center !important;
+}
+
+#phone-panel.phone-keyboard-open #phone-panel-content {
+    min-height: calc(var(--phone-panel-vh, 100dvh) - 16px) !important;
+}
+
+#phone-panel.phone-keyboard-open .phone-body-panel {
+    height: min(
+        calc(866px * var(--phone-shell-height-scale, 1)),
+        calc((var(--phone-panel-vh, 100dvh) - 16px) * 0.98 * var(--phone-shell-height-scale, 1)),
+        calc(95vw * 19.5 / 9 * var(--phone-shell-height-scale, 1))
+    ) !important;
+}
+
 #phone-panel ~ .drawer-backdrop,
 #phone-panel .drawer-backdrop {
     display: none !important;
