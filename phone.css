@@ -296,20 +296,23 @@
 }
 
 @media (min-width: 501px) {
+    /* 修复1：取消 flex-end，改回 center，防止平板端输入框被顶飞到屏幕外 */
     #phone-panel.drawer-content.phone-keyboard-open {
-        justify-content: flex-end !important;
+        justify-content: center !important;
     }
 
     #phone-panel.phone-keyboard-open #phone-panel-content,
     #phone-panel.phone-keyboard-open .phone-in-panel {
-        justify-content: flex-end !important;
+        justify-content: center !important;
     }
 
     #phone-panel.phone-keyboard-open .phone-body-panel {
+        /* 修复2：移除受 vh 高度影响的等比缩放计算。
+           保持 400px 或 95vw 的固定物理宽度。这样即使高度被键盘挤压，
+           手机宽度依然稳定，表现得像真实的手机只被遮挡了下半部分 */
         width: min(
             calc(400px * var(--phone-shell-width-scale, 1)),
-            95vw,
-            calc((var(--phone-panel-vh, 100dvh) - 16px) * 0.98 * 9 / 19.5 * var(--phone-shell-width-scale, 1))
+            95vw
         ) !important;
     }
 }
