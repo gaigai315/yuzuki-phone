@@ -140,6 +140,9 @@ if (window.GGP_Loaded) {
             document.documentElement?.clientHeight || 0
         );
         const visualHeight = viewport?.height || layoutHeight;
+        const visualWidth = viewport?.width || window.innerWidth || document.documentElement?.clientWidth || 360;
+        const visualTop = viewport?.offsetTop || 0;
+        const visualLeft = viewport?.offsetLeft || 0;
         const keyboardGap = layoutHeight && visualHeight ? layoutHeight - visualHeight : 0;
         const stableGap = _phoneStableViewportHeight ? _phoneStableViewportHeight - visualHeight : 0;
         const activeTag = String(document.activeElement?.tagName || '').toLowerCase();
@@ -167,6 +170,9 @@ if (window.GGP_Loaded) {
             ? Math.max(0, Math.min(_phoneKeyboardAnchorTop || 0, targetHeight - 320))
             : Math.max(0, _phoneKeyboardAnchorTop || 0);
         root.style.setProperty('--phone-panel-vh', `${Math.round(targetHeight)}px`);
+        root.style.setProperty('--phone-panel-vw', `${Math.round(Math.max(visualWidth, 320))}px`);
+        root.style.setProperty('--phone-panel-top', `${Math.round(Math.max(visualTop, 0))}px`);
+        root.style.setProperty('--phone-panel-left', `${Math.round(Math.max(visualLeft, 0))}px`);
         root.style.setProperty('--phone-keyboard-anchor-top', `${Math.round(safeKeyboardAnchorTop)}px`);
     }
 
