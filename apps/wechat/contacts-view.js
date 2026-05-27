@@ -464,6 +464,7 @@ export class ContactsView {
         const contactTtsProvider = String(contact.ttsProvider || '').trim();
         const legacyTtsVoice = String(contact.ttsVoice || '').trim();
         const contactGender = String(this.app.wechatData?.getContactGender?.(safeContactId) || 'unknown').trim();
+        const contactAvatarGroup = String(this.app.wechatData?.getContactAvatarGroup?.(safeContactId) || '').trim();
         const ttsHistoryOptions = this._getTtsVoiceHistoryOptions();
         const referenceImage = this._normalizeWechatReferenceImage(contact.naiReferenceImage || contact.referenceImage || '');
         const referenceEnabled = !!referenceImage && contact.naiReferenceEnabled !== false && contact.naiReferenceEnabled !== 'false';
@@ -558,6 +559,25 @@ export class ContactsView {
                             ">
                                 <option value="female" ${contactGender !== 'male' ? 'selected' : ''}>女</option>
                                 <option value="male" ${contactGender === 'male' ? 'selected' : ''}>男</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom: 10px;">
+                            <div style="font-size: 11px; color: #999; margin-bottom: 4px;">默认头像类型</div>
+                            <select id="edit-contact-avatar-group-select" style="
+                                width: 100%;
+                                height: 30px;
+                                padding: 0 8px;
+                                ${softFieldStyle}
+                                border-radius: 6px;
+                                font-size: 12px;
+                                box-sizing: border-box;
+                            ">
+                                <option value="" ${!contactAvatarGroup ? 'selected' : ''}>跟随性别</option>
+                                <option value="female" ${contactAvatarGroup === 'female' ? 'selected' : ''}>普通女</option>
+                                <option value="male" ${contactAvatarGroup === 'male' ? 'selected' : ''}>普通男</option>
+                                <option value="female_elder" ${contactAvatarGroup === 'female_elder' ? 'selected' : ''}>年长女</option>
+                                <option value="male_elder" ${contactAvatarGroup === 'male_elder' ? 'selected' : ''}>年长男</option>
                             </select>
                         </div>
 
@@ -976,6 +996,10 @@ export class ContactsView {
                 safeContactId,
                 String(query('#edit-contact-gender-select')?.value || 'female').trim() === 'male' ? 'male' : 'female'
             );
+            this.app.wechatData.setContactAvatarGroup?.(
+                safeContactId,
+                String(query('#edit-contact-avatar-group-select')?.value || '').trim()
+            );
 
             this.app.wechatData.syncContactAvatar(safeContactId, selectedAvatar);
             if (oldAvatar && oldAvatar !== selectedAvatar) {
@@ -1228,6 +1252,42 @@ export class ContactsView {
                             ">
                         </div>
 
+                        <div style="margin-bottom: 10px;">
+                            <div style="font-size: 11px; color: #999; margin-bottom: 4px;">性别（用于默认头像池）</div>
+                            <select id="friend-gender-select" style="
+                                width: 100%;
+                                padding: 8px;
+                                border: 1px solid #e5e5e5;
+                                border-radius: 6px;
+                                font-size: 13px;
+                                background: #fff;
+                                box-sizing: border-box;
+                            ">
+                                <option value="unknown">未知</option>
+                                <option value="female">女</option>
+                                <option value="male">男</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom: 10px;">
+                            <div style="font-size: 11px; color: #999; margin-bottom: 4px;">默认头像类型</div>
+                            <select id="friend-avatar-group-select" style="
+                                width: 100%;
+                                padding: 8px;
+                                border: 1px solid #e5e5e5;
+                                border-radius: 6px;
+                                font-size: 13px;
+                                background: #fff;
+                                box-sizing: border-box;
+                            ">
+                                <option value="">跟随性别</option>
+                                <option value="female">普通女</option>
+                                <option value="male">普通男</option>
+                                <option value="female_elder">年长女</option>
+                                <option value="male_elder">年长男</option>
+                            </select>
+                        </div>
+
                         <div style="font-size: 11px; color: #999;">
                             备注请直接写在昵称里（例如：张三（同事））
                         </div>
@@ -1250,7 +1310,7 @@ export class ContactsView {
 
         this.app.phoneShell.setContent(html);
 
-        let selectedAvatar = '👤';
+        let selectedAvatar = '';
         const currentView = document.querySelector('.phone-view-current') || document;
 
         const backBtn = currentView.querySelector('#back-from-add-friend');
@@ -1304,7 +1364,7 @@ export class ContactsView {
 
         let isSaving = false;
         const saveBtn = currentView.querySelector('#save-friend-btn');
-        if (saveBtn) saveBtn.onclick = () => {
+        if (saveBtn) saveBtn.onclick = async () => {
             if (isSaving) return;
 
             const name = currentView.querySelector('#friend-name-input').value.trim();
@@ -1322,16 +1382,29 @@ export class ContactsView {
             }
 
             isSaving = true;
+            const gender = String(currentView.querySelector('#friend-gender-select')?.value || 'unknown').trim();
+            const avatarGroup = String(currentView.querySelector('#friend-avatar-group-select')?.value || '').trim();
 
             const newContactId = `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const createdContact = this.app.wechatData.addContact({
                 id: newContactId,
                 name: name,
                 avatar: selectedAvatar,
+                gender,
                 letter: this.app.wechatData.getFirstLetter(name)
             }) || { id: newContactId, name, avatar: selectedAvatar };
 
-            this.app.wechatData.syncContactAvatar(createdContact.id || name, selectedAvatar);
+            this.app.wechatData.setContactGender?.(createdContact.id || name, gender);
+            this.app.wechatData.setContactAvatarGroup?.(createdContact.id || name, avatarGroup);
+            if (selectedAvatar) {
+                this.app.wechatData.syncContactAvatar(createdContact.id || name, selectedAvatar);
+            } else {
+                await this.app._ensureWechatAvatarPoolLoaded?.();
+                const autoAvatar = this.app._resolveAutoAvatarForName?.(createdContact.name || name, gender, avatarGroup);
+                if (autoAvatar) {
+                    this.app.wechatData.setContactAutoAvatar?.(createdContact.id || name, autoAvatar);
+                }
+            }
             this.app.phoneShell.showNotification('添加成功', `已添加好友：${createdContact.name || name}`, '✅');
 
             setTimeout(() => {

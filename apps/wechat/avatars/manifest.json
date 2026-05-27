@@ -1,27 +1,40 @@
 {
   "male": [
     "male001.png",
-    "male002.png",
-    "male003.png",
-    "male004.png",
-    "male005.png",
-    "male006.png",
-    "male007.png",
-    "male008.png",
-    "male009.png",
-    "male0010.png",
-    "male011.png",
-    "male012.png"
+    "male002.jpg",
+    "male003.jpg",
+    "male004.jpg",
+    "male005.jpg",
+    "male006.jpg",
+    "male007.jpg",
+    "male008.jpg",
+    "male009.jpg",
+    "male010.jpg"
+  ],
+  "male_elder": [
+    "male_elder001.png",
+    "male_elder002.png",
+    "male_elder003.png",
+    "male_elder004.png",
+    "male_elder005.png"
   ],
   "female": [
-    "female001.png",
-    "female002.png",
-    "female003.png",
-    "female004.png",
+    "female001.jpg",
+    "female002.jpg",
+    "female003.jpg",
+    "female004.jpg",
     "female005.png",
     "female006.png",
-    "female007.png",
-    "female008.png",
-    "female009.png"
+    "female007.jpg",
+    "female008.jpg",
+    "female009.jpg",
+    "female010.jpg"
+  ],
+  "female_elder": [
+    "female_elder001.png",
+    "female_elder002.png",
+    "female_elder003.png",
+    "female_elder004.png",
+    "female_elder005.png"
   ]
 }

@@ -274,6 +274,7 @@ export class WechatData {
                             contacts: contacts,
                             moments: data.moments || [],
                             contactGenderMap: data.contactGenderMap || {},
+                            contactAvatarGroupMap: data.contactAvatarGroupMap || {},
                             contactAutoAvatarMap: data.contactAutoAvatarMap || {},
                             walletByChat: data.walletByChat || {},
                             honeyInviteLog: data.honeyInviteLog || []
@@ -301,6 +302,7 @@ export class WechatData {
                         moments: data.moments || [],
                         customEmojis: mergedCustomEmojis,
                         contactGenderMap: data.contactGenderMap || {},
+                        contactAvatarGroupMap: data.contactAvatarGroupMap || {},
                         contactAutoAvatarMap: data.contactAutoAvatarMap || {},
                         walletByChat: walletByChat,
                         musicListening: data.musicListening || {},
@@ -324,6 +326,7 @@ export class WechatData {
             moments: [],
             customEmojis: this._loadGlobalCustomEmojis(),
             contactGenderMap: {},
+            contactAvatarGroupMap: {},
             contactAutoAvatarMap: {},
             walletByChat: {},
             musicListening: {}
@@ -1159,6 +1162,7 @@ export class WechatData {
                 contacts: this.data.contacts,
                 moments: this.data.moments,
                 contactGenderMap: this.data.contactGenderMap || {},
+                contactAvatarGroupMap: this.data.contactAvatarGroupMap || {},
                 contactAutoAvatarMap: this.data.contactAutoAvatarMap || {},
                 walletByChat: this.data.walletByChat || {},
                 musicListening: this.data.musicListening || {},
@@ -1212,6 +1216,7 @@ export class WechatData {
             moments: [],
             customEmojis: [],
             contactGenderMap: {},
+            contactAvatarGroupMap: {},
             contactAutoAvatarMap: {},
             walletByChat: {},
             musicListening: {}
@@ -2092,6 +2097,40 @@ getWeekday(date) {
         const safeGender = this._normalizeGenderValue(gender);
         const map = this.getContactGenderMap();
         map[key] = safeGender;
+        this.saveData();
+        return true;
+    }
+
+    _normalizeAvatarGroupValue(group) {
+        const raw = String(group || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+        if (raw === 'male' || raw === 'female' || raw === 'male_elder' || raw === 'female_elder') return raw;
+        return '';
+    }
+
+    getContactAvatarGroupMap() {
+        if (!this.data.contactAvatarGroupMap || typeof this.data.contactAvatarGroupMap !== 'object') {
+            this.data.contactAvatarGroupMap = {};
+        }
+        return this.data.contactAvatarGroupMap;
+    }
+
+    getContactAvatarGroup(contactIdOrName) {
+        const key = this._getContactGenderMapKey(contactIdOrName);
+        if (!key) return '';
+        const map = this.getContactAvatarGroupMap();
+        return this._normalizeAvatarGroupValue(map[key]);
+    }
+
+    setContactAvatarGroup(contactIdOrName, group) {
+        const key = this._getContactGenderMapKey(contactIdOrName);
+        if (!key) return false;
+        const safeGroup = this._normalizeAvatarGroupValue(group);
+        const map = this.getContactAvatarGroupMap();
+        if (safeGroup) {
+            map[key] = safeGroup;
+        } else {
+            delete map[key];
+        }
         this.saveData();
         return true;
     }
@@ -3330,6 +3369,9 @@ parseAIResponse(text) {
         }
         if (this.data.contactGenderMap && typeof this.data.contactGenderMap === 'object') {
             delete this.data.contactGenderMap[contactId];
+        }
+        if (this.data.contactAvatarGroupMap && typeof this.data.contactAvatarGroupMap === 'object') {
+            delete this.data.contactAvatarGroupMap[contactId];
         }
         if (this.data.contactAutoAvatarMap && typeof this.data.contactAutoAvatarMap === 'object') {
             delete this.data.contactAutoAvatarMap[contactId];

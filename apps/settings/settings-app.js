@@ -2896,21 +2896,15 @@ export class SettingsApp {
                 </div>
 
                 <div class="setting-item">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <span style="font-size: 14px; color: #000;">模型</span>
-                        <select id="phone-image-novelai-model-preset" style="width: 150px; height: 30px; padding: 0 6px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
-                            <option value="">-- 快速选择 --</option>
-                            <option value="nai-diffusion-4-5-full">NAI Diffusion 4.5 Full</option>
-                            <option value="nai-diffusion-4-5-curated">NAI Diffusion 4.5 Curated</option>
-                            <option value="nai-diffusion-4-full">NAI Diffusion 4 Full</option>
-                            <option value="nai-diffusion-4-curated-preview">NAI Diffusion 4 Curated Preview</option>
-                            <option value="nai-diffusion-3">NAI Diffusion 3</option>
-                        </select>
-                    </div>
-                    <input type="text" id="phone-image-novelai-model"
-                           value="${this._escapeHtml(novelaiModel)}"
-                           placeholder="NovelAI 模型名"
-                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    <div class="setting-label">模型</div>
+                    <select id="phone-image-novelai-model" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                        ${!['nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-full', 'nai-diffusion-4-curated-preview', 'nai-diffusion-3'].includes(novelaiModel) ? `<option value="${this._escapeHtml(novelaiModel)}" selected>${this._escapeHtml(novelaiModel)}</option>` : ''}
+                        <option value="nai-diffusion-4-5-full" ${novelaiModel === 'nai-diffusion-4-5-full' ? 'selected' : ''}>NAI Diffusion 4.5 Full</option>
+                        <option value="nai-diffusion-4-5-curated" ${novelaiModel === 'nai-diffusion-4-5-curated' ? 'selected' : ''}>NAI Diffusion 4.5 Curated</option>
+                        <option value="nai-diffusion-4-full" ${novelaiModel === 'nai-diffusion-4-full' ? 'selected' : ''}>NAI Diffusion 4 Full</option>
+                        <option value="nai-diffusion-4-curated-preview" ${novelaiModel === 'nai-diffusion-4-curated-preview' ? 'selected' : ''}>NAI Diffusion 4 Curated Preview</option>
+                        <option value="nai-diffusion-3" ${novelaiModel === 'nai-diffusion-3' ? 'selected' : ''}>NAI Diffusion 3</option>
+                    </select>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -4652,7 +4646,6 @@ export class SettingsApp {
         const imageNovelaiPublicUrlRow = document.getElementById('phone-image-novelai-public-url-row');
         const imageNovelaiUrlRow = document.getElementById('phone-image-novelai-url-row');
         const imageNovelaiModel = document.getElementById('phone-image-novelai-model');
-        const imageNovelaiModelPreset = document.getElementById('phone-image-novelai-model-preset');
         const imageOpenaiSite = document.getElementById('phone-image-openai-site');
         const imageOpenaiKey = document.getElementById('phone-image-openai-key');
         const imageOpenaiKeyLabel = document.getElementById('phone-image-openai-key-label');
@@ -4827,7 +4820,6 @@ export class SettingsApp {
             if (preset.novelaiModel) {
                 const model = String(preset.novelaiModel || '').trim() || 'nai-diffusion-4-5-full';
                 if (imageNovelaiModel) imageNovelaiModel.value = model;
-                if (imageNovelaiModelPreset) imageNovelaiModelPreset.value = model;
                 await this.storage.set('phone-image-novelai-model', model);
             }
             if (preset.novelaiSampler) {
@@ -6263,13 +6255,6 @@ export class SettingsApp {
             fillOpenAIImagePresetSelect(nextPresets, '');
             if (imageOpenaiPresetName) imageOpenaiPresetName.value = '';
             this.phoneShell?.showNotification?.('已删除 GPT 预设', target.name, '🗑️');
-        });
-
-        imageNovelaiModelPreset?.addEventListener('change', async (e) => {
-            const model = String(e.target.value || '').trim();
-            if (!model || !imageNovelaiModel) return;
-            imageNovelaiModel.value = model;
-            await this.storage.set('phone-image-novelai-model', model);
         });
 
         imageNovelaiModel?.addEventListener('change', async (e) => {

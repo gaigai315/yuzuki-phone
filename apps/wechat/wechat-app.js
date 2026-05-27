@@ -23,9 +23,10 @@ export class WechatApp {
         this.wechatData = new WechatData(storage);
         this.currentView = 'chats';
         this.currentChat = null;
-        this._avatarPool = { male: [], female: [], all: [] };
+        this._avatarPool = { male: [], female: [], male_elder: [], female_elder: [], all: [] };
         this._avatarPoolLoaded = false;
         this._avatarPoolLoading = false;
+        this._avatarPoolPromise = null;
         this._isAvatarManagerOpen = false;
         this._wechatPanelMode = 'main'; // main | settings | avatar-manager
         this._isWalletEvaluating = false;
@@ -3897,12 +3898,24 @@ export class WechatApp {
             ...(Array.isArray(payload.female) ? payload.female : []),
             ...(Array.isArray(payload.femaleAvatars) ? payload.femaleAvatars : [])
         ]);
+        const maleElder = this._normalizeWechatAvatarList([
+            ...(Array.isArray(payload.male_elder) ? payload.male_elder : []),
+            ...(Array.isArray(payload.maleElder) ? payload.maleElder : []),
+            ...(Array.isArray(payload.elderMale) ? payload.elderMale : [])
+        ]);
+        const femaleElder = this._normalizeWechatAvatarList([
+            ...(Array.isArray(payload.female_elder) ? payload.female_elder : []),
+            ...(Array.isArray(payload.femaleElder) ? payload.femaleElder : []),
+            ...(Array.isArray(payload.elderFemale) ? payload.elderFemale : [])
+        ]);
         const all = this._normalizeWechatAvatarList([
             ...(Array.isArray(payload.all) ? payload.all : []),
             ...male,
-            ...female
+            ...female,
+            ...maleElder,
+            ...femaleElder
         ]);
-        return { male, female, all };
+        return { male, female, male_elder: maleElder, female_elder: femaleElder, all };
     }
 
     async _probeAvatarUrlExists(url) {
@@ -3972,16 +3985,23 @@ export class WechatApp {
         return Math.abs(hash);
     }
 
-    _getAvatarPoolByGender(gender = 'unknown') {
+    _getAvatarPoolByGender(gender = 'unknown', avatarGroup = '') {
         const safeGender = String(gender || '').trim().toLowerCase();
+        const safeGroup = String(avatarGroup || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
         const male = Array.isArray(this._avatarPool?.male) ? this._avatarPool.male : [];
         const female = Array.isArray(this._avatarPool?.female) ? this._avatarPool.female : [];
+        const maleElder = Array.isArray(this._avatarPool?.male_elder) ? this._avatarPool.male_elder : [];
+        const femaleElder = Array.isArray(this._avatarPool?.female_elder) ? this._avatarPool.female_elder : [];
         const all = Array.isArray(this._avatarPool?.all) ? this._avatarPool.all : [];
 
+        if (safeGroup === 'male_elder' && maleElder.length > 0) return maleElder;
+        if (safeGroup === 'female_elder' && femaleElder.length > 0) return femaleElder;
+        if ((safeGroup === 'male_elder' || safeGroup === 'male') && male.length > 0) return male;
+        if ((safeGroup === 'female_elder' || safeGroup === 'female') && female.length > 0) return female;
         if (safeGender === 'male' && male.length > 0) return male;
         if (safeGender === 'female' && female.length > 0) return female;
         if (all.length > 0) return all;
-        if (male.length > 0 || female.length > 0) return [...male, ...female];
+        if (male.length > 0 || female.length > 0 || maleElder.length > 0 || femaleElder.length > 0) return [...male, ...female, ...maleElder, ...femaleElder];
         return [];
     }
 
@@ -4001,6 +4021,15 @@ export class WechatApp {
             || this.wechatData?.getContactByName?.(safeName);
         if (!contact) return 'unknown';
         return this.wechatData?.getContactGender?.(contact.id || safeName) || 'unknown';
+    }
+
+    _resolveContactAvatarGroupByName(name = '') {
+        const safeName = String(name || '').trim();
+        if (!safeName) return '';
+        const contact = this.wechatData?.findContactByNameLoose?.(safeName, { includeChats: false })
+            || this.wechatData?.getContactByName?.(safeName);
+        if (!contact) return '';
+        return this.wechatData?.getContactAvatarGroup?.(contact.id || safeName) || '';
     }
 
     _pickStableAvatarFromPool(pool = [], seed = '') {
@@ -4026,16 +4055,17 @@ export class WechatApp {
         return out;
     }
 
-    _resolveAutoAvatarForName(name = '', gender = 'unknown') {
+    _resolveAutoAvatarForName(name = '', gender = 'unknown', avatarGroup = '') {
         const safeName = String(name || '').trim();
         if (!safeName || !this._avatarPoolLoaded) return '';
-        const pool = this._getAvatarPoolByGender(gender);
+        const safeGroup = String(avatarGroup || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+        const pool = this._getAvatarPoolByGender(gender, safeGroup);
         if (!Array.isArray(pool) || pool.length === 0) return '';
 
         const contact = this.wechatData?.findContactByNameLoose?.(safeName, { includeChats: false })
             || this.wechatData?.getContactByName?.(safeName);
         const contactId = String(contact?.id || '').trim();
-        const stableSeed = `${safeName}|${gender}`;
+        const stableSeed = `${safeName}|${gender}|${safeGroup}`;
 
         // 非通讯录临时对象：使用稳定映射，避免每次重绘随机跳变
         if (!contactId) {
@@ -4070,7 +4100,7 @@ export class WechatApp {
     }
 
     _ensureWechatAvatarPoolLoaded() {
-        if (this._avatarPoolLoaded || this._avatarPoolLoading) return;
+        if (this._avatarPoolLoaded || this._avatarPoolLoading) return this._avatarPoolPromise;
         this._avatarPoolLoading = true;
         const manifestUrl = this._getWechatAssetUrl('avatars/manifest.json?v=20260409-01');
 
@@ -4093,7 +4123,7 @@ export class WechatApp {
             }
         };
 
-        fetch(manifestUrl, { cache: 'no-cache' })
+        this._avatarPoolPromise = fetch(manifestUrl, { cache: 'no-cache' })
             .then(resp => (resp.ok ? resp.text() : ''))
             .then(async (rawText) => {
                 let payload = null;
@@ -4115,6 +4145,7 @@ export class WechatApp {
                 finalize(pool);
             })
             .catch(() => finalize(null));
+        return this._avatarPoolPromise;
     }
 
     renderAvatar(avatar, defaultEmoji = '👤', fallbackName = '') {
@@ -4154,7 +4185,8 @@ export class WechatApp {
         let autoAvatar = '';
         if (this._shouldApplyContactPoolAvatar(defaultEmoji, fallbackName)) {
             const resolvedGender = this._resolveContactGenderByName(fallbackName);
-            autoAvatar = this._resolveAutoAvatarForName(fallbackName, resolvedGender);
+            const resolvedGroup = this._resolveContactAvatarGroupByName(fallbackName);
+            autoAvatar = this._resolveAutoAvatarForName(fallbackName, resolvedGender, resolvedGroup);
         }
 
         // 用户自定义头像优先；如果图片资源被删除/失效，自动回退到性别默认头像。
@@ -6094,7 +6126,9 @@ export class WechatApp {
 
         const maleCount = Array.isArray(this._avatarPool?.male) ? this._avatarPool.male.length : 0;
         const femaleCount = Array.isArray(this._avatarPool?.female) ? this._avatarPool.female.length : 0;
-        const emptyPoolHint = (maleCount + femaleCount) === 0
+        const maleElderCount = Array.isArray(this._avatarPool?.male_elder) ? this._avatarPool.male_elder.length : 0;
+        const femaleElderCount = Array.isArray(this._avatarPool?.female_elder) ? this._avatarPool.female_elder.length : 0;
+        const emptyPoolHint = (maleCount + femaleCount + maleElderCount + femaleElderCount) === 0
             ? '<div style="font-size:11px;color:#d46b08;margin-top:6px;">未检测到头像素材，请将 male001/female001 系列图片放入目录后点击刷新。</div>'
             : '';
         const escapeHtml = (text) => String(text || '')
@@ -6110,30 +6144,23 @@ export class WechatApp {
                 const contactName = String(contact?.name || '').trim() || '未命名';
                 const safeContactName = escapeHtml(contactName);
                 const gender = this.wechatData?.getContactGender?.(contactId) || 'unknown';
-                const genderOptions = [
+                const avatarGroup = this.wechatData?.getContactAvatarGroup?.(contactId) || '';
+                const avatarGroupOptions = [
                     { value: 'unknown', label: '未标记' },
                     { value: 'male', label: '男' },
-                    { value: 'female', label: '女' }
+                    { value: 'female', label: '女' },
+                    { value: 'male_elder', label: '年长男' },
+                    { value: 'female_elder', label: '年长女' }
                 ];
+                const selectedAvatarGroup = avatarGroup || gender || 'unknown';
                 return `
-                    <div class="wechat-avatar-row" style="display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; column-gap:10px; padding:10px 0; border-bottom:0.5px solid #f1f1f1;">
+                    <div class="wechat-avatar-row" style="display:grid; grid-template-columns:minmax(0,1fr); row-gap:7px; padding:10px 0; border-bottom:0.5px solid #f1f1f1;">
                         <div style="min-width:0; font-size:14px; color:#111; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.2;">${safeContactName}</div>
-                        <div class="wechat-contact-gender-buttons" data-contact-id="${contactId}" style="display:flex; gap:4px; justify-self:end;">
-                            ${genderOptions.map(option => `
-                                <button type="button" class="wechat-contact-gender-btn" data-gender="${option.value}" style="
-                                    min-width:${option.value === 'unknown' ? '50px' : '28px'};
-                                    height:28px;
-                                    padding:0 7px;
-                                    border:1px solid ${gender === option.value ? '#07c160' : '#d9d9d9'};
-                                    border-radius:8px;
-                                    background:${gender === option.value ? '#07c160' : '#fafafa'};
-                                    color:${gender === option.value ? '#fff' : '#333'};
-                                    font-size:11px;
-                                    cursor:pointer;
-                                    touch-action:manipulation;
-                                    -webkit-tap-highlight-color:transparent;
-                                ">${option.label}</button>
-                            `).join('')}
+                        <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+                            <span style="font-size:11px; color:#888; flex:0 0 auto;">头像类型</span>
+                            <select class="wechat-contact-avatar-group-select" data-contact-id="${contactId}" style="flex:1; min-width:0; height:28px; border:1px solid #e1e1e1; border-radius:8px; background:#fafafa; color:#333; font-size:11px; padding:0 7px;">
+                                ${avatarGroupOptions.map(option => `<option value="${option.value}" ${selectedAvatarGroup === option.value ? 'selected' : ''}>${option.label}</option>`).join('')}
+                            </select>
                         </div>
                     </div>
                 `;
@@ -6156,9 +6183,9 @@ export class WechatApp {
                         <div style="font-size:13px; color:#333; font-weight:600;">默认头像池与性别标记</div>
                         <div style="font-size:11px; color:#888; margin-top:4px; line-height:1.45;">
                             素材目录：\`apps/wechat/avatars/\`<br>
-                            命名示例：\`male001.png\`、\`female001.jpg\`（连续编号即可）<br>
-                            当前已识别：男 ${maleCount} 张，女 ${femaleCount} 张<br>
-                            通讯录联系人：${contacts.length} 人（仅显示姓名与性别选择）
+                            普通头像：\`male001.png\`、\`female001.jpg\`；年长组请写入 manifest 的 \`male_elder\` / \`female_elder\`<br>
+                            当前已识别：男 ${maleCount} 张，女 ${femaleCount} 张，年长男 ${maleElderCount} 张，年长女 ${femaleElderCount} 张<br>
+                            通讯录联系人：${contacts.length} 人（显示姓名与头像类型）
                         </div>
                         ${emptyPoolHint}
                         <button id="wechat-avatar-pool-refresh" style="margin-top:8px; padding:6px 10px; border:1px solid #e1e1e1; border-radius:8px; background:#fafafa; font-size:12px; cursor:pointer;">刷新头像池</button>
@@ -6185,31 +6212,17 @@ export class WechatApp {
             this.phoneShell.showNotification('头像池', '正在刷新头像素材...', '🔄');
         });
 
-        document.querySelectorAll('.wechat-contact-gender-btn').forEach((buttonEl) => {
-            const applyGender = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const button = e.currentTarget;
-                const group = button?.closest?.('.wechat-contact-gender-buttons');
-                const contactId = String(group?.dataset?.contactId || '').trim();
-                const gender = String(button?.dataset?.gender || 'unknown').trim();
+        document.querySelectorAll('.wechat-contact-avatar-group-select').forEach((selectEl) => {
+            selectEl.addEventListener('change', (e) => {
+                const select = e.currentTarget;
+                const contactId = String(select?.dataset?.contactId || '').trim();
+                const value = String(select.value || 'unknown').trim();
                 if (!contactId) return;
+                const gender = value.includes('female') ? 'female' : (value.includes('male') ? 'male' : 'unknown');
+                const avatarGroup = value === 'male_elder' || value === 'female_elder' ? value : '';
                 this.wechatData?.setContactGender?.(contactId, gender);
-                group.querySelectorAll('.wechat-contact-gender-btn').forEach(btn => {
-                    const active = btn === button;
-                    btn.style.borderColor = active ? '#07c160' : '#d9d9d9';
-                    btn.style.background = active ? '#07c160' : '#fafafa';
-                    btn.style.color = active ? '#fff' : '#333';
-                });
-            };
-            buttonEl.addEventListener('pointerup', (e) => {
-                buttonEl.dataset.lastPointerAt = String(Date.now());
-                applyGender(e);
-            });
-            buttonEl.addEventListener('click', (e) => {
-                const lastPointerAt = Number(buttonEl.dataset.lastPointerAt || 0);
-                if (lastPointerAt && Date.now() - lastPointerAt < 500) return;
-                applyGender(e);
+                this.wechatData?.setContactAvatarGroup?.(contactId, avatarGroup);
+                this.wechatData?.setContactAutoAvatar?.(contactId, '');
             });
         });
     }
