@@ -4678,6 +4678,13 @@ renderChatRoom(chat) {
         };
     }
 
+    _stripLeadingWechatTimePrefix(line = '') {
+        return String(line || '')
+            .trim()
+            .replace(/^(?:\[\s*\d{1,2}\s*[:：]\s*\d{2}(?:\s*[:：]\s*\d{2})?(?:\s*[APap][Mm])?\s*\]|【\s*\d{1,2}\s*[:：]\s*\d{2}(?:\s*[:：]\s*\d{2})?(?:\s*[APap][Mm])?\s*】)\s*/, '')
+            .trim();
+    }
+
     _parseIncomingCallMarker(content) {
         const source = String(content || '');
         if (!source) return null;
@@ -6902,6 +6909,8 @@ renderChatRoom(chat) {
                                 pendingSender = '';
                                 return;
                             }
+                            line = this._stripLeadingWechatTimePrefix(line);
+                            if (!line) return;
                             const senderOnlyMatch = /^([^:：]+)[：:]\s*$/.exec(line);
                             if (senderOnlyMatch) {
                                 pendingSender = senderOnlyMatch[1].trim();
@@ -6928,8 +6937,16 @@ renderChatRoom(chat) {
                                 return;
                             }
 
+                            const timedLine = this._parseTimedWechatSenderLine(line);
+                            if (timedLine) {
+                                quote = consumeDeferredQuote(timedLine.sender, quote);
+                                extractedMsgs.push({ time: timedLine.time, sender: timedLine.sender, content: timedLine.content, quote });
+                                pendingSender = '';
+                                return;
+                            }
+
                             // 🔥 格式2: 发送者: 「引用 xxx: 内容」回复 （引用在消息内容中）
-                            const innerQuoteMatch = line.match(/^([^:：]+)[:：]\s*(.+)$/);
+                            const innerQuoteMatch = line.match(/^([^\[\]【】\r\n:：]{1,20})[:：]\s*(.+)$/);
                             if (innerQuoteMatch) {
                                 const sender = innerQuoteMatch[1].trim();
                                 const contentWithMaybeQuote = innerQuoteMatch[2].trim();
@@ -6946,13 +6963,9 @@ renderChatRoom(chat) {
                                 return; // 已处理，跳过后续匹配
                             }
 
-                            const timedLine = this._parseTimedWechatSenderLine(line);
                             const simpleMsgMatch = /^([^:：]+)[：:]\s*(.+)$/.exec(line);
 
-                            if (timedLine) {
-                                quote = consumeDeferredQuote(timedLine.sender, quote);
-                                extractedMsgs.push({ time: timedLine.time, sender: timedLine.sender, content: timedLine.content, quote });
-                            } else if (simpleMsgMatch && simpleMsgMatch[1].length < 20) {
+                            if (simpleMsgMatch && simpleMsgMatch[1].length < 20) {
                                 quote = consumeDeferredQuote(simpleMsgMatch[1].trim(), quote);
                                 extractedMsgs.push({ sender: simpleMsgMatch[1].trim(), content: simpleMsgMatch[2].trim(), quote });
                             } else if (line) {
@@ -7041,6 +7054,8 @@ renderChatRoom(chat) {
                             pendingSender = '';
                             return;
                         }
+                        line = this._stripLeadingWechatTimePrefix(line);
+                        if (!line) return;
                         const senderOnlyMatch = /^([^:：]+)[：:]\s*$/.exec(line);
                         if (senderOnlyMatch) {
                             pendingSender = senderOnlyMatch[1].trim();
@@ -7067,8 +7082,16 @@ renderChatRoom(chat) {
                             return;
                         }
 
+                        const timedLine = this._parseTimedWechatSenderLine(line);
+                        if (timedLine) {
+                            quote = consumeDeferredQuote(timedLine.sender, quote);
+                            parsedMessages.push({ time: timedLine.time, sender: timedLine.sender, content: timedLine.content, quote });
+                            pendingSender = '';
+                            return;
+                        }
+
                         // 🔥 格式2: 发送者: 「引用 xxx: 内容」回复 （引用在消息内容中）
-                        const innerQuoteMatch = line.match(/^([^:：]+)[:：]\s*(.+)$/);
+                        const innerQuoteMatch = line.match(/^([^\[\]【】\r\n:：]{1,20})[:：]\s*(.+)$/);
                         if (innerQuoteMatch) {
                             const sender = innerQuoteMatch[1].trim();
                             const contentWithMaybeQuote = innerQuoteMatch[2].trim();
@@ -7085,13 +7108,9 @@ renderChatRoom(chat) {
                             return; // 已处理，跳过后续匹配
                         }
 
-                        const timedLine = this._parseTimedWechatSenderLine(line);
                         const simpleMsgMatch = /^([^:：]+)[：:]\s*(.+)$/.exec(line);
 
-                        if (timedLine) {
-                            quote = consumeDeferredQuote(timedLine.sender, quote);
-                            parsedMessages.push({ time: timedLine.time, sender: timedLine.sender, content: timedLine.content, quote });
-                        } else if (simpleMsgMatch && simpleMsgMatch[1].length < 20) {
+                        if (simpleMsgMatch && simpleMsgMatch[1].length < 20) {
                             quote = consumeDeferredQuote(simpleMsgMatch[1].trim(), quote);
                             parsedMessages.push({ sender: simpleMsgMatch[1].trim(), content: simpleMsgMatch[2].trim(), quote });
                         } else if (line) {
