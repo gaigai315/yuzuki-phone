@@ -8803,14 +8803,14 @@ renderChatRoom(chat) {
             }
 
             // 检查钱包余额
-            const currentBalance = this.app.wechatData.getWalletBalance(this.app.currentChat.id);
+            const currentBalance = this.app.wechatData.getWalletBalance();
             if (currentBalance !== null && parseFloat(amount) > currentBalance) {
                 this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${parseFloat(currentBalance).toFixed(2)} 啦`, '❌');
                 return;
             }
             // 扣款
             if (currentBalance !== null) {
-                this.app.wechatData.updateWalletBalance(-parseFloat(amount), this.app.currentChat.id);
+                this.app.wechatData.updateWalletBalance(-parseFloat(amount));
             }
 
             this.app.wechatData.addMessage(this.app.currentChat.id, {
@@ -12471,14 +12471,14 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             }
 
             // 检查钱包余额
-            const currentBalance = this.app.wechatData.getWalletBalance(this.app.currentChat.id);
+            const currentBalance = this.app.wechatData.getWalletBalance();
             if (currentBalance !== null && parseFloat(amount) > currentBalance) {
                 this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${parseFloat(currentBalance).toFixed(2)} 啦`, '❌');
                 return;
             }
             // 扣款
             if (currentBalance !== null) {
-                this.app.wechatData.updateWalletBalance(-parseFloat(amount), this.app.currentChat.id);
+                this.app.wechatData.updateWalletBalance(-parseFloat(amount));
             }
 
             this.app.wechatData.addMessage(this.app.currentChat.id, {
