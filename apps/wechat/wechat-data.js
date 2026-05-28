@@ -160,6 +160,7 @@ export class WechatData {
                     members: Array.isArray(chat.members) ? chat.members.filter(Boolean) : [],
                     unread: Math.max(0, Number.parseInt(chat.unread || 0, 10) || 0),
                     timestamp: Number(chat.timestamp || 0) || 0,
+                    pinnedAt: Math.max(0, Number(chat.pinnedAt || 0) || 0),
                     lastMessage: String(chat.lastMessage || ''),
                     time: String(chat.time || '')
                 });
@@ -1509,10 +1510,29 @@ export class WechatData {
             this.saveData();
         }
         return [...chats].sort((a, b) => {
+            const pinA = Number(a.pinnedAt || 0) || 0;
+            const pinB = Number(b.pinnedAt || 0) || 0;
+            if (pinA > 0 || pinB > 0) {
+                if (pinA > 0 && pinB > 0) return pinA - pinB;
+                return pinA > 0 ? -1 : 1;
+            }
             const timeA = a.timestamp || 0;
             const timeB = b.timestamp || 0;
             return timeB - timeA; // 降序排列（时间戳越大的越靠前）
         });
+    }
+
+    setChatPinned(chatId, pinned = true) {
+        const chat = this.getChat(chatId);
+        if (!chat) return false;
+        const isPinned = !!pinned;
+        if (isPinned && !(Number(chat.pinnedAt || 0) > 0)) {
+            chat.pinnedAt = Date.now();
+        } else if (!isPinned) {
+            chat.pinnedAt = 0;
+        }
+        this.saveData();
+        return true;
     }
     
     getChat(chatId) {

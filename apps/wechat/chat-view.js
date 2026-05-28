@@ -13093,14 +13093,16 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         </div>
     `;
 
-        this.app.phoneShell.setContent(html);
+        this.app.phoneShell.setContent(html, `wechat-group-settings-${liveChat.id}`);
 
         // 🔥 临时存储
         let newAvatar = null;
         const originalName = liveChat.name;
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const query = (selector) => currentView.querySelector(selector);
 
         // 返回按钮
-        document.getElementById('back-from-group-settings')?.addEventListener('click', () => {
+        query('#back-from-group-settings')?.addEventListener('click', () => {
             if (returnToChatList) {
                 this.app.currentChat = null;
                 this.app.currentView = 'chats';
@@ -13109,12 +13111,12 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         });
 
         // 点击头像区域
-        document.getElementById('group-avatar-preview')?.addEventListener('click', () => {
-            document.getElementById('group-avatar-upload').click();
+        query('#group-avatar-preview')?.addEventListener('click', () => {
+            query('#group-avatar-upload')?.click();
         });
 
         // 上传头像
-        document.getElementById('group-avatar-upload')?.addEventListener('change', async (e) => {
+        query('#group-avatar-upload')?.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file) {
                 if (file.size > 5 * 1024 * 1024) {
@@ -13125,8 +13127,8 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 // 本地预览（不写入持久数据）
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    const preview = document.getElementById('group-avatar-preview');
-                    preview.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
+                    const preview = query('#group-avatar-preview');
+                    if (preview) preview.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
                 };
                 reader.readAsDataURL(file);
 
@@ -13144,7 +13146,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         });
 
         // 🔥 移除成员按钮
-        document.querySelectorAll('.remove-member-btn').forEach(btn => {
+        currentView.querySelectorAll('.remove-member-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (isGroupMutating) return;
@@ -13165,6 +13167,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
                 const dataChat = this.app.wechatData.getChat(liveChat.id);
                 if (dataChat) {
                     dataChat.members = liveChat.members;
+                    this.app.currentChat = dataChat;
                 }
 
                 // 添加系统消息
@@ -13180,13 +13183,13 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         });
 
         // 🔥 添加成员按钮
-        document.getElementById('add-member-btn')?.addEventListener('click', () => {
+        query('#add-member-btn')?.addEventListener('click', () => {
             this.showAddMemberDialog(liveChat, { returnToChatList });
         });
 
         // 保存按钮
-        document.getElementById('save-group-settings')?.addEventListener('click', () => {
-            const newName = document.getElementById('group-name-input').value.trim();
+        query('#save-group-settings')?.addEventListener('click', () => {
+            const newName = query('#group-name-input')?.value?.trim() || '';
 
             // 🔥 如果群名改变，添加系统消息
             if (newName && newName !== originalName) {
@@ -13304,10 +13307,12 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         </div>
     `;
 
-        this.app.phoneShell.setContent(html);
+        this.app.phoneShell.setContent(html, `wechat-add-member-${chat.id}`);
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const query = (selector) => currentView.querySelector(selector);
 
         // 返回按钮
-        document.getElementById('back-from-add-member')?.addEventListener('click', () => {
+        query('#back-from-add-member')?.addEventListener('click', () => {
             this.showGroupSettings({ returnToChatList });
         });
 
@@ -13331,6 +13336,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             if (dataChat) {
                 if (!dataChat.members) dataChat.members = [];
                 dataChat.members = chat.members;
+                this.app.currentChat = dataChat;
             }
 
             this.app.wechatData.addMessage(chat.id, {
@@ -13341,12 +13347,12 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
             setTimeout(() => this.showGroupSettings({ returnToChatList }), 220);
         };
 
-        document.getElementById('manual-member-add-btn')?.addEventListener('click', () => {
-            const input = document.getElementById('manual-member-input');
+        query('#manual-member-add-btn')?.addEventListener('click', () => {
+            const input = query('#manual-member-input');
             addMemberByName(input?.value || '');
         });
 
-        document.getElementById('manual-member-input')?.addEventListener('keydown', (e) => {
+        query('#manual-member-input')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 addMemberByName(e.currentTarget.value || '');
@@ -13354,7 +13360,7 @@ ${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: $
         });
 
         // 点击添加成员
-        document.querySelectorAll('.add-member-item').forEach(item => {
+        currentView.querySelectorAll('.add-member-item').forEach(item => {
             item.addEventListener('click', () => {
                 addMemberByName(this._decodeDataToken(item.dataset.name));
             });

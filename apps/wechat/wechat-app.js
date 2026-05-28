@@ -554,6 +554,15 @@ export class WechatApp {
     white-space: nowrap;
 }
 
+.chat-pin-mark {
+    display: inline-block;
+    vertical-align: 0;
+    margin-right: 5px;
+    color: #9a9a9a;
+    font-size: 11px;
+    line-height: 1;
+}
+
 .group-count {
     font-size: 12px;
     color: #999;
@@ -4306,6 +4315,7 @@ export class WechatApp {
                         </div>
                         <div class="chat-info">
                             <div class="chat-name">
+                                ${Number(chat.pinnedAt || 0) > 0 ? '<i class="fa-solid fa-thumbtack chat-pin-mark" aria-label="置顶"></i>' : ''}
                                 ${chat.type === 'group' ? this.getShortGroupName(chat.name, 6) : chat.name}
                                 ${chat.type === 'group' ? `<span class="group-count">(${(chat.members?.length || 0) + 1})</span>` : ''}
                             </div>
@@ -4771,7 +4781,7 @@ export class WechatApp {
             const hostRect = host.getBoundingClientRect ? host.getBoundingClientRect() : { top: 0, left: 0 };
             const isBodyHost = host === document.body;
             const topPx = Math.max(8, rect.top + (rect.height / 2) - 16);
-            const leftPx = Math.max(8, rect.right - 126);
+            const leftPx = Math.max(8, rect.right - 176);
             const menu = document.createElement('div');
             menu.className = 'wechat-chat-delete-pop';
             menu.style.cssText = `
@@ -4797,6 +4807,27 @@ export class WechatApp {
                 line-height: 1.2;
                 cursor: pointer;
             `;
+
+            const chat = this.wechatData.getChat(chatId);
+            const isPinned = Number(chat?.pinnedAt || 0) > 0;
+
+            const pinBtn = document.createElement('button');
+            pinBtn.type = 'button';
+            pinBtn.textContent = isPinned ? '取消置顶' : '置顶';
+            pinBtn.style.cssText = `${baseBtnStyle}border-right: 0.5px solid #e5e5e5;color:#07c160;`;
+            pinBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const targetChat = this.wechatData.getChat(chatId);
+                if (!targetChat) {
+                    closeDeleteMenu();
+                    return;
+                }
+                const nextPinned = !(Number(targetChat.pinnedAt || 0) > 0);
+                this.wechatData.setChatPinned?.(chatId, nextPinned);
+                this.phoneShell.showNotification('微信', nextPinned ? `已置顶${targetChat.name}` : `已取消置顶${targetChat.name}`, '✅');
+                closeDeleteMenu();
+                this.render();
+            });
 
             const editBtn = document.createElement('button');
             editBtn.type = 'button';
@@ -4829,6 +4860,7 @@ export class WechatApp {
                 this.render();
             });
 
+            menu.appendChild(pinBtn);
             menu.appendChild(editBtn);
             menu.appendChild(deleteBtn);
             host.appendChild(menu);
