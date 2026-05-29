@@ -865,6 +865,8 @@
     align-items: flex-end;
     padding: 12px;
     box-sizing: border-box;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
 }
 
 .games-catbox-letters-overlay {
@@ -887,6 +889,8 @@
     padding: 9px;
     box-sizing: border-box;
     overflow: hidden;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
 }
 
 .games-catbox-coadopt-panel,
@@ -911,6 +915,9 @@
     gap: 7px;
     max-height: 190px;
     overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
     scrollbar-width: none;
 }
 
@@ -1033,6 +1040,9 @@
     gap: 7px;
     max-height: 240px;
     overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
 }
 
 .games-catbox-inventory-list {

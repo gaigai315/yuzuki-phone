@@ -19,6 +19,7 @@ const SVG_PAUSE = `<svg viewBox="0 0 24 24" width="22" height="22" fill="current
 const SVG_PREV = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>`;
 const SVG_NEXT = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>`;
 const MUSIC_NOTE_SVG = `<svg viewBox="0 0 24 24" width="22" height="22"><defs><linearGradient id="mfg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#a8d8ea"/><stop offset="100%" stop-color="#6db3d8"/></linearGradient></defs><path fill="url(#mfg)" d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>`;
+const MUSIC_FLOATING_POSITION_KEY = 'global_music_floating_position';
 export class MusicView {
     constructor(musicApp) {
         this.app = musicApp;
@@ -367,13 +368,20 @@ export class MusicView {
     }
 
     _positionFloatingBtn(btn) {
-        // 如果用户已经手动拖拽过，尊重用户选择的位置
-        if (this._userDragged) return;
-
         const btnSize = 40;
         const margin = 12;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
+        const savedPosition = this._getSavedFloatingPosition();
+
+        if (savedPosition) {
+            this._applyFloatingBtnPosition(btn, savedPosition.left, savedPosition.top, { persist: false });
+            this._userDragged = true;
+            return;
+        }
+
+        // 如果用户已经手动拖拽过，尊重用户选择的位置
+        if (this._userDragged) return;
 
         // 计算目标位置（像素绝对值，不用 right/bottom 避免viewport差异）
         let targetLeft = vw - btnSize - margin;
@@ -388,14 +396,46 @@ export class MusicView {
             }
         }
 
-        // 强制钳位在视口内（安全边距4px）
-        targetLeft = Math.max(4, Math.min(vw - btnSize - 4, targetLeft));
-        targetTop = Math.max(4, Math.min(vh - btnSize - 4, targetTop));
+        this._applyFloatingBtnPosition(btn, targetLeft, targetTop, { persist: false });
+    }
 
-        btn.style.left = `${targetLeft}px`;
-        btn.style.top = `${targetTop}px`;
+    _getSavedFloatingPosition() {
+        const raw = this.app?.storage?.get?.(MUSIC_FLOATING_POSITION_KEY, '');
+        if (!raw) return null;
+
+        try {
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            const left = Number(parsed?.left);
+            const top = Number(parsed?.top);
+            if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+            return { left, top };
+        } catch (error) {
+            console.warn('[MusicView] 读取悬浮按钮位置失败:', error);
+            return null;
+        }
+    }
+
+    _applyFloatingBtnPosition(btn, left, top, { persist = false } = {}) {
+        if (!btn) return;
+        const btnSize = btn.getBoundingClientRect?.().width || 40;
+        const vw = window.innerWidth || btnSize;
+        const vh = window.innerHeight || btnSize;
+        const maxLeft = Math.max(4, vw - btnSize - 4);
+        const maxTop = Math.max(4, vh - btnSize - 4);
+        const safeLeft = Math.max(4, Math.min(maxLeft, Number(left) || 4));
+        const safeTop = Math.max(4, Math.min(maxTop, Number(top) || 4));
+
+        btn.style.left = `${safeLeft}px`;
+        btn.style.top = `${safeTop}px`;
         btn.style.right = 'auto';
         btn.style.bottom = 'auto';
+
+        if (persist) {
+            this.app?.storage?.set?.(MUSIC_FLOATING_POSITION_KEY, JSON.stringify({
+                left: Math.round(safeLeft),
+                top: Math.round(safeTop)
+            }));
+        }
     }
 
     _ensureButtonVisible(btn) {
@@ -407,8 +447,13 @@ export class MusicView {
 
         // 如果按钮完全在视口外，重新定位
         if (rect.right < 0 || rect.left > vw || rect.bottom < 0 || rect.top > vh) {
-            this._userDragged = false; // 重置拖拽标记，允许重新定位
-            this._positionFloatingBtn(btn);
+            const savedPosition = this._getSavedFloatingPosition();
+            if (savedPosition) {
+                this._applyFloatingBtnPosition(btn, savedPosition.left, savedPosition.top, { persist: true });
+            } else {
+                this._userDragged = false; // 重置拖拽标记，允许重新定位
+                this._positionFloatingBtn(btn);
+            }
         }
 
         // 确保关键样式没有被覆盖
@@ -462,14 +507,7 @@ export class MusicView {
 
             if (moved) {
                 e.preventDefault();
-                const vw = window.innerWidth;
-                const vh = window.innerHeight;
-                let newLeft = Math.max(0, Math.min(vw - 40, startLeft + dx));
-                let newTop = Math.max(0, Math.min(vh - 40, startTop + dy));
-                el.style.left = `${newLeft}px`;
-                el.style.top = `${newTop}px`;
-                el.style.right = 'auto';
-                el.style.bottom = 'auto';
+                this._applyFloatingBtnPosition(el, startLeft + dx, startTop + dy, { persist: false });
             }
         };
 
@@ -491,6 +529,8 @@ export class MusicView {
 
             if (moved) {
                 this._userDragged = true;
+                const rect = el.getBoundingClientRect();
+                this._applyFloatingBtnPosition(el, rect.left, rect.top, { persist: true });
             } else {
                 // 🔥 核心修复：如果没有移动，立刻触发点击回调（完美解决移动端触摸失灵）
                 triggerTap();
