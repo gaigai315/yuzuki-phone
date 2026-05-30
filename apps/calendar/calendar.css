@@ -308,6 +308,22 @@
     line-height: 1.35 !important;
 }
 
+#phone-panel-content .phone-screen .yzp-calendar-reminder-advance-input {
+    flex: 0 0 76px !important;
+    width: 76px !important;
+    height: 30px !important;
+    border: 1px solid var(--yzp-cal-line) !important;
+    border-radius: 8px !important;
+    padding: 0 8px !important;
+    background: var(--yzp-cal-soft) !important;
+    color: var(--yzp-cal-text) !important;
+    font-size: 12px !important;
+    line-height: 30px !important;
+    text-align: right !important;
+    outline: none !important;
+    box-sizing: border-box !important;
+}
+
 #phone-panel-content .phone-screen .yzp-calendar-prompt-editor {
     width: 100% !important;
     height: 260px !important;

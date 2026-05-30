@@ -12,6 +12,7 @@ export class CalendarData {
         this.defaultHolidayVersion = '20260527_school_and_festival_holidays';
         this.themeKey = 'calendar_theme';
         this.reminderEnabledKey = 'calendar_reminder_enabled';
+        this.reminderAdvanceMinutesKey = 'calendar_reminder_advance_minutes';
         this.autoScheduleEnabledKey = 'calendar_auto_schedule_enabled';
         this._memos = null;
         this._holidays = null;
@@ -491,6 +492,20 @@ export class CalendarData {
         return value;
     }
 
+    getReminderAdvanceMinutes() {
+        const raw = this.storage?.get?.(this.reminderAdvanceMinutesKey, 0);
+        const value = Number.parseInt(raw, 10);
+        if (!Number.isFinite(value)) return 0;
+        return Math.max(0, Math.min(1440, value));
+    }
+
+    setReminderAdvanceMinutes(minutes) {
+        const value = Number.parseInt(minutes, 10);
+        const safeValue = Number.isFinite(value) ? Math.max(0, Math.min(1440, value)) : 0;
+        this.storage?.set?.(this.reminderAdvanceMinutesKey, safeValue);
+        return safeValue;
+    }
+
     isAutoScheduleEnabled() {
         const raw = this.storage?.get?.(this.autoScheduleEnabledKey, false);
         return raw === true || raw === 'true' || raw === 1 || raw === '1';
@@ -599,16 +614,22 @@ export class CalendarData {
         const previousMinutes = prev?.dateKey === curr.dateKey ? prev.minutes : -1;
         if (currentMinutes <= previousMinutes) return null;
 
+        const advanceMinutes = this.getReminderAdvanceMinutes();
         const due = this.getMemosByDate(curr.dateKey)
             .filter(memo => this.isMemoReminderCandidate(memo, curr.dateKey))
             .map(memo => {
                 const memoMinutes = this.parseTimeToMinutes(memo.time);
-                return Number.isFinite(memoMinutes) ? { memo, memoMinutes } : null;
+                if (!Number.isFinite(memoMinutes)) return null;
+                return {
+                    memo,
+                    memoMinutes,
+                    triggerMinutes: Math.max(0, memoMinutes - advanceMinutes)
+                };
             })
             .filter(Boolean)
-            .filter(item => item.memoMinutes > previousMinutes && item.memoMinutes <= currentMinutes)
+            .filter(item => item.triggerMinutes > previousMinutes && item.triggerMinutes <= currentMinutes)
             .filter(item => !this.hasMemoReminderFired(item.memo, curr.dateKey))
-            .sort((a, b) => b.memoMinutes - a.memoMinutes);
+            .sort((a, b) => b.triggerMinutes - a.triggerMinutes || b.memoMinutes - a.memoMinutes);
 
         const hit = due[0];
         if (!hit) return null;
@@ -616,6 +637,8 @@ export class CalendarData {
             memo: hit.memo,
             dateKey: curr.dateKey,
             time: this.formatMinutes(hit.memoMinutes),
+            triggerTime: this.formatMinutes(hit.triggerMinutes),
+            advanceMinutes,
             title: String(hit.memo?.title || '').trim()
         };
     }

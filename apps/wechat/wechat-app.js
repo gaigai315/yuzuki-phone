@@ -6416,6 +6416,7 @@ export class WechatApp {
         });
 
         document.getElementById('confirm-load')?.addEventListener('click', async () => {
+            const shouldClear = confirm('智能加载联系人前，是否先清空当前微信里的所有联系人、群聊和聊天记录？\n\n点击“确定”会先清空再生成，避免重复联系人/群聊；点击“取消”则保留现有数据并继续追加补全。');
             const confirmBtn = document.getElementById('confirm-load');
             if (confirmBtn?.dataset?.loading === '1') return;
             if (confirmBtn) {
@@ -6428,6 +6429,9 @@ export class WechatApp {
             this.phoneShell.showNotification('AI分析中', '正在生成联系人...', '⏳');
 
             try {
+                if (shouldClear) {
+                    this.wechatData.clearContactsAndGroupsForSmartLoad?.();
+                }
 
                 const result = await this.wechatData.loadContactsFromCharacter();
 

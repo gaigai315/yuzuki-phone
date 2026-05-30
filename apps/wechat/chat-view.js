@@ -3705,6 +3705,19 @@ renderChatRoom(chat) {
             return `[图片]（${getImageDisplayName()}）`;
         }
         if (msg.type === 'image_prompt') return this._formatImagePromptTagForPrompt(msg);
+        if (msg.type === 'call_record') {
+            const isGroupCall = targetChat?.type === 'group';
+            const callTypeName = msg.callType === 'video' ? '视频通话' : '语音通话';
+            const status = String(msg.status || '').trim();
+            const statusText = status === 'answered'
+                ? `通话时长 ${msg.duration || '未知'}`
+                : (status === 'rejected' || status === 'declined')
+                    ? (isGroupCall ? '群成员未接听' : '对方已拒绝')
+                    : status === 'cancelled'
+                        ? '用户已取消'
+                        : '未接听';
+            return `[微信${isGroupCall ? '群' : ''}${callTypeName} - ${statusText}]`;
+        }
         if (msg.type === 'poker_card') {
             const poker = msg.pokerData || {};
             const title = String(poker.title || '德州扑克牌局记录').trim();

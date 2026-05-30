@@ -2945,6 +2945,33 @@ export class SettingsApp {
                 ${this._renderImageProviderAppBinding('openai', imageProviderAppBindings)}
 
                 <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 14px; color: #000;">接口站点</span>
+                    <select id="phone-image-openai-site" style="width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                        <option value="official" ${openaiSite === 'official' ? 'selected' : ''}>官方站点</option>
+                        <option value="public" ${openaiSite === 'public' ? 'selected' : ''}>公益站点</option>
+                        <option value="custom" ${openaiSite === 'custom' ? 'selected' : ''}>自定义地址</option>
+                    </select>
+                </div>
+
+                <div class="setting-item" id="phone-image-openai-public-url-row" style="${openaiSite === 'public' ? '' : 'display: none;'}">
+                    <div class="setting-label">公益站点真实 Base URL</div>
+                    <div class="setting-desc">填写真实 GPT 公益站纯域名，不要带 /v1 或 /v1/images/generations。</div>
+                    <input type="text" id="phone-image-openai-public-url"
+                           value="${this._escapeHtml(openaiPublicUrl)}"
+                           placeholder="例如：https://imagegen.mukyu.me"
+                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                </div>
+
+                <div class="setting-item" id="phone-image-openai-url-row" style="${openaiSite === 'custom' ? '' : 'display: none;'}">
+                    <div class="setting-label">自定义 Base URL</div>
+                    <div class="setting-desc">可填 Base URL，也可填完整 /v1/images/generations。</div>
+                    <input type="text" id="phone-image-openai-url"
+                           value="${this._escapeHtml(openaiUrl)}"
+                           placeholder="例如：https://api.openai.com"
+                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                </div>
+
+                <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                     <span id="phone-image-openai-key-label" style="font-size: 14px; color: #000;">${openaiSite === 'public' ? '公益站 Key' : 'API Key'}</span>
                     <div style="display: flex; align-items: center; width: 150px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; overflow: hidden;">
                         <input type="password" id="phone-image-openai-key"
@@ -2962,38 +2989,6 @@ export class SettingsApp {
                         测试 GPT 生图连接
                     </button>
                     <div class="setting-desc" id="phone-image-test-openai-result" style="margin-top: 6px;">使用 OpenAI 兼容 /v1/images/generations 生成一张测试图。</div>
-                </div>
-
-                <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-size: 14px; color: #000;">接口站点</span>
-                    <select id="phone-image-openai-site" style="width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
-                        <option value="official" ${openaiSite === 'official' ? 'selected' : ''}>官方站点</option>
-                        <option value="public" ${openaiSite === 'public' ? 'selected' : ''}>公益站点</option>
-                        <option value="custom" ${openaiSite === 'custom' ? 'selected' : ''}>自定义地址</option>
-                    </select>
-                </div>
-
-                <div class="setting-item" id="phone-image-openai-public-url-row" style="${openaiSite === 'public' ? '' : 'display: none;'}">
-                    <div class="setting-label">公益站点真实 Base URL</div>
-                    <div class="setting-desc">填写真实 GPT 公益站纯域名，不要带 /v1 或 /v1/images/generations。</div>
-                    <input type="text" id="phone-image-openai-public-url"
-                           value="${this._escapeHtml(openaiPublicUrl)}"
-                           placeholder="例如：https://imagegen.mukyu.me"
-                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
-                    <div class="setting-desc" style="margin-top: 8px;">仅移动端 Termux 使用本地中转时填写。电脑端留空；Termux 运行 imgrelay 后填 http://127.0.0.1:8787。</div>
-                    <input type="text" id="phone-image-openai-public-relay-url"
-                           value="${this._escapeHtml(openaiPublicRelayUrl)}"
-                           placeholder="例如：http://127.0.0.1:8787"
-                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
-                </div>
-
-                <div class="setting-item" id="phone-image-openai-url-row" style="${openaiSite === 'custom' ? '' : 'display: none;'}">
-                    <div class="setting-label">自定义 Base URL</div>
-                    <div class="setting-desc">可填 Base URL，也可填完整 /v1/images/generations。</div>
-                    <input type="text" id="phone-image-openai-url"
-                           value="${this._escapeHtml(openaiUrl)}"
-                           placeholder="例如：https://api.openai.com"
-                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
                 </div>
 
                 <div class="setting-item">
@@ -3016,6 +3011,15 @@ export class SettingsApp {
                            placeholder="gpt-image-2"
                            style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
                     <div class="setting-desc" id="phone-image-openai-models-result" style="margin-top: 6px;">从当前站点的 /v1/models 拉取可用模型。</div>
+                </div>
+
+                <div class="setting-item" id="phone-image-openai-public-relay-row" style="${openaiSite === 'public' ? '' : 'display: none;'}">
+                    <div class="setting-label">移动端本地中转 URL</div>
+                    <div class="setting-desc">仅移动端 Termux 使用本地中转时填写。电脑端留空；Termux 运行 imgrelay 后填 http://127.0.0.1:8787。</div>
+                    <input type="text" id="phone-image-openai-public-relay-url"
+                           value="${this._escapeHtml(openaiPublicRelayUrl)}"
+                           placeholder="例如：http://127.0.0.1:8787"
+                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
                 </div>
 
                 <div class="setting-item">
@@ -4651,6 +4655,7 @@ export class SettingsApp {
         const imageOpenaiKeyLabel = document.getElementById('phone-image-openai-key-label');
         const imageOpenaiPublicUrlRow = document.getElementById('phone-image-openai-public-url-row');
         const imageOpenaiUrlRow = document.getElementById('phone-image-openai-url-row');
+        const imageOpenaiPublicRelayRow = document.getElementById('phone-image-openai-public-relay-row');
         const imageOpenaiPublicRelayUrl = document.getElementById('phone-image-openai-public-relay-url');
         const imageOpenaiModel = document.getElementById('phone-image-openai-model');
         const imageOpenaiModelPreset = document.getElementById('phone-image-openai-model-preset');
@@ -4732,6 +4737,7 @@ export class SettingsApp {
             const site = String(imageOpenaiSite?.value || 'official').trim() || 'official';
             if (imageOpenaiPublicUrlRow) imageOpenaiPublicUrlRow.style.display = site === 'public' ? '' : 'none';
             if (imageOpenaiUrlRow) imageOpenaiUrlRow.style.display = site === 'custom' ? '' : 'none';
+            if (imageOpenaiPublicRelayRow) imageOpenaiPublicRelayRow.style.display = site === 'public' ? '' : 'none';
             if (imageOpenaiKeyLabel) imageOpenaiKeyLabel.textContent = site === 'public' ? '公益站 Key' : 'API Key';
             if (imageOpenaiKey) {
                 imageOpenaiKey.placeholder = site === 'public' ? '公益站 API Key' : 'OpenAI API Key';

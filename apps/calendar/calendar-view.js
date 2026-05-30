@@ -262,6 +262,7 @@ export class CalendarView {
         const promptManager = this.getPromptManager();
         const prompt = this.getSchedulePromptConfig(promptManager);
         const holidays = this.app.calendarData.getHolidays();
+        const reminderAdvanceMinutes = this.app.calendarData.getReminderAdvanceMinutes();
         const html = `
             <div class="yzp-calendar-app yzp-calendar-theme-${theme}">
                 <header class="yzp-calendar-settings-header">
@@ -282,6 +283,13 @@ export class CalendarView {
                                 <input type="checkbox" id="yzp-calendar-reminder-toggle" ${this.app.calendarData.isReminderEnabled() ? 'checked' : ''}>
                                 <span></span>
                             </label>
+                        </div>
+                        <div class="yzp-calendar-setting-row">
+                            <div>
+                                <div class="yzp-calendar-settings-label">提前提醒</div>
+                                <div class="yzp-calendar-settings-desc">AI 写入的是日程开始时间，提醒会提前指定分钟触发；填 0 表示准点提醒。</div>
+                            </div>
+                            <input class="yzp-calendar-reminder-advance-input" id="yzp-calendar-reminder-advance" type="number" inputmode="numeric" min="0" max="1440" step="1" value="${reminderAdvanceMinutes}">
                         </div>
                     </section>
                     <section class="yzp-calendar-settings-section">
@@ -564,6 +572,11 @@ export class CalendarView {
                 this.app.checkScheduleReminders(window.VirtualPhone?.timeManager?.getCurrentStoryTime?.());
             }
             this.app.phoneShell?.showNotification?.('日历提醒', enabled ? '已开启日程提醒' : '已关闭日程提醒', '📅');
+        });
+        root.querySelector('#yzp-calendar-reminder-advance')?.addEventListener('change', (e) => {
+            const value = this.app.calendarData.setReminderAdvanceMinutes(e.target.value);
+            e.target.value = String(value);
+            this.app.phoneShell?.showNotification?.('日历提醒', value > 0 ? `将提前 ${value} 分钟提醒` : '已设为准点提醒', '📅');
         });
         root.querySelector('#yzp-calendar-auto-schedule-toggle')?.addEventListener('change', (e) => {
             const enabled = this.app.calendarData.setAutoScheduleEnabled(!!e.target.checked);

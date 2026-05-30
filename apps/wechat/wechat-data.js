@@ -1248,6 +1248,29 @@ export class WechatData {
         this._flushChatMetadata();
     }
 
+    clearContactsAndGroupsForSmartLoad() {
+        const chatIds = Array.isArray(this.data.chats) ? this.data.chats.map(c => c.id) : [];
+        this._removeMessageStoresByChatIds(chatIds);
+        this.globalSocialStore?.removeAllAppContacts?.('wechat');
+        this._clearLinkedHoneyFriendsForWechatReset();
+
+        this.data.contacts = [];
+        this.data.chats = [];
+        this.data.messages = {};
+        this.data.contactGenderMap = {};
+        this.data.contactAvatarGroupMap = {};
+        this.data.contactAutoAvatarMap = {};
+        this.data.walletByChat = {};
+        this.data.musicListening = {};
+        this.data.honeyInviteLog = [];
+        this._messagesLoaded = {};
+        this._messagesDirty = {};
+
+        this.saveData();
+        this._flushChatMetadata();
+        return true;
+    }
+
     // 🧹 清理朋友圈数据（仅朋友圈内容）
     clearMomentsData() {
         this.data.moments = [];

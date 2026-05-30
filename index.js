@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.2.2';
+const ST_PHONE_VERSION = '1.2.3';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}`, import.meta.url).href;
 const ST_PHONE_UPDATE_MANIFEST_URLS = [
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/main/manifest.json',
@@ -38,13 +38,14 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-05-28',
+    date: '2026-05-30',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【优化】优化角色头像性别及头像库。',
-        '【新增】微信聊天列表新增置顶功能。',
-        '【修复】修复微信群聊添加成员时页面卡死的问题。',
-        '【修复】修复微信转账与红包余额读取错误的问题。'
+        '【新增】酒馆开始新聊天并确认后，会自动把当前小手机的聊天专属数据复制到新会话。',
+        '【优化】GPT 生图设置页调整为先选接口站点、填写地址和 Key，再拉取模型，移动端本地代理放到最后。',
+        '【优化】日历设置新增提前提醒分钟数，AI 写入日程开始时间后可按设定提前触发提醒。',
+        '【优化】微信智能加载联系人前可选择先清空当前微信联系人、群聊和聊天记录，避免重复生成。',
+        '【修复】微信通话记录注入时会明确写入对方已拒绝、群成员未接听、用户已取消等状态，不再漏成 [call_record]。'
     ]
 };
 
@@ -1147,6 +1148,135 @@ if (window.GGP_Loaded) {
     }
 
     let _lastCalendarReminderCheckTime = null;
+    let _pendingNewChatPhoneDataMigration = null;
+
+    function clonePhoneDataForMigration(value) {
+        try {
+            if (typeof structuredClone === 'function') return structuredClone(value);
+        } catch (e) {}
+        try {
+            return JSON.parse(JSON.stringify(value || {}));
+        } catch (e) {
+            console.warn('[ST-Phone] 复制手机数据快照失败:', e);
+            return null;
+        }
+    }
+
+    function getPhoneChatStoreFromContext(context = null, create = false) {
+        const ctx = context || getContext();
+        if (!ctx?.chatMetadata) return null;
+        const namespace = storage?.NAMESPACE || 'st_virtual_phone';
+        if (!ctx.chatMetadata[namespace] && create) ctx.chatMetadata[namespace] = {};
+        return ctx.chatMetadata[namespace] || null;
+    }
+
+    function getCurrentTavernChatIdentity(context = null) {
+        const ctx = context || getContext();
+        return String(ctx?.chatMetadata?.file_name || ctx?.chatId || '').trim();
+    }
+
+    function capturePhoneDataForNewChatMigration() {
+        const ctx = getContext();
+        const sourceChatId = getCurrentTavernChatIdentity(ctx);
+        const sourceStore = getPhoneChatStoreFromContext(ctx, false);
+        const snapshot = clonePhoneDataForMigration(sourceStore || {});
+        if (!snapshot || !Object.keys(snapshot).length) {
+            _pendingNewChatPhoneDataMigration = null;
+            return false;
+        }
+
+        _pendingNewChatPhoneDataMigration = {
+            sourceChatId,
+            snapshot,
+            capturedAt: Date.now()
+        };
+        console.log('[ST-Phone] 已暂存当前手机数据，等待新聊天确认后迁移');
+        return true;
+    }
+
+    function cancelPendingPhoneDataMigration(reason = 'cancelled') {
+        if (!_pendingNewChatPhoneDataMigration) return;
+        console.log('[ST-Phone] 已取消手机数据迁移:', reason);
+        _pendingNewChatPhoneDataMigration = null;
+    }
+
+    function applyPendingPhoneDataMigrationToCurrentChat() {
+        const pending = _pendingNewChatPhoneDataMigration;
+        if (!pending?.snapshot) return false;
+        _pendingNewChatPhoneDataMigration = null;
+
+        if (!pending.confirmedAt) {
+            console.log('[ST-Phone] 新聊天未确认，跳过手机数据迁移');
+            return false;
+        }
+
+        if (Date.now() - Number(pending.capturedAt || 0) > 120000) {
+            console.warn('[ST-Phone] 手机数据迁移快照已过期，跳过');
+            return false;
+        }
+
+        const ctx = getContext();
+        const targetChatId = getCurrentTavernChatIdentity(ctx);
+        if (pending.sourceChatId && targetChatId && pending.sourceChatId === targetChatId) {
+            console.warn('[ST-Phone] 新聊天未切换，跳过手机数据迁移');
+            return false;
+        }
+
+        const targetStore = getPhoneChatStoreFromContext(ctx, true);
+        if (!targetStore) return false;
+        const migrated = clonePhoneDataForMigration(pending.snapshot);
+        if (!migrated) return false;
+
+        Object.keys(targetStore).forEach(key => delete targetStore[key]);
+        Object.assign(targetStore, migrated);
+
+        try {
+            if (typeof window.saveChatDebounced === 'function') {
+                window.saveChatDebounced();
+            } else if (typeof ctx?.saveChat === 'function') {
+                ctx.saveChat();
+            }
+        } catch (e) {
+            console.warn('[ST-Phone] 保存迁移后的手机数据失败:', e);
+        }
+
+        console.log('[ST-Phone] 已将当前手机数据迁移到新聊天:', targetChatId || '(unknown)');
+        return true;
+    }
+
+    function bindNewChatPhoneDataMigration() {
+        if (window.__stPhoneNewChatMigrationBound) return;
+        window.__stPhoneNewChatMigrationBound = true;
+
+        document.addEventListener('click', (event) => {
+            const target = event.target;
+            const startOption = target?.closest?.('#option_start_new_chat');
+            if (startOption) {
+                capturePhoneDataForNewChatMigration();
+                return;
+            }
+
+            const confirmBtn = target?.closest?.('.popup-button-ok.result-control, .popup-button-ok');
+            if (confirmBtn && _pendingNewChatPhoneDataMigration) {
+                const popup = confirmBtn.closest?.('.popup, .popup-body, [data-dialogue-type]');
+                const text = String(popup?.textContent || document.querySelector('.popup-body')?.textContent || '');
+                if (/开始新聊天|Start new chat/i.test(text)) {
+                    _pendingNewChatPhoneDataMigration.confirmedAt = Date.now();
+                }
+                return;
+            }
+
+            const cancelBtn = target?.closest?.('.popup-button-cancel.result-control, .popup-button-cancel');
+            if (cancelBtn && _pendingNewChatPhoneDataMigration) {
+                const popup = cancelBtn.closest?.('.popup, .popup-body, [data-dialogue-type]');
+                const text = String(popup?.textContent || document.querySelector('.popup-body')?.textContent || '');
+                if (/开始新聊天|Start new chat/i.test(text)) {
+                    cancelPendingPhoneDataMigration('new_chat_cancelled');
+                }
+            }
+        }, true);
+    }
+
     async function checkCalendarScheduleReminders(currentTime = null) {
         try {
             if (!storage) return;
@@ -7166,6 +7296,8 @@ if (window.GGP_Loaded) {
             tm.clearCache();
         }
 
+        applyPendingPhoneDataMigrationToCurrentChat();
+
         // 🔥 界面保护：如果手机正停留在应用界面，强制退回主屏幕
         if (currentApp !== null) {
             currentApp = null;
@@ -7440,6 +7572,7 @@ if (window.GGP_Loaded) {
                     await ensureGlobalPhoneCSS();
                     initColors();
                     bindPhonePanelViewportGuards();
+                    bindNewChatPhoneDataMigration();
                     createTopPanel();
                     createInlineReplyButton();
                     schedulePhoneUpdateNotices();
