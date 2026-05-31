@@ -12,6 +12,9 @@
 export class TtsManager {
     constructor(storage) {
         this.storage = storage;
+        this._csrfToken = null;
+        this._csrfTokenPromise = null;
+        this._purgeNimoCloneLocalAudioResidue();
     }
 
     _getProviderDefaults(provider) {
@@ -30,6 +33,11 @@ export class TtsManager {
                 url: 'https://api.openai.com/v1/audio/speech',
                 model: 'tts-1',
                 voice: 'alloy'
+            },
+            nimo: {
+                url: 'https://api.xiaomimimo.com/v1',
+                model: 'mimo-v2.5-tts',
+                voice: 'mimo_default'
             },
             volcengine: {
                 url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
@@ -58,6 +66,7 @@ export class TtsManager {
         const url = String(apiUrl || '').trim().toLowerCase();
         if (url.includes('minimaxi.com')) return 'minimax_cn';
         if (url.includes('minimax.chat')) return 'minimax_intl';
+        if (url.includes('xiaomimimo.com') || /\/chat\/completions\b/.test(url)) return 'nimo';
         if (url.includes('openspeech.bytedance.com')) return 'volcengine';
         if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
         return String(fallback || '').trim() || 'minimax_cn';
@@ -122,6 +131,302 @@ export class TtsManager {
             reader.onerror = () => reject(reader.error || new Error('音频文件读取失败'));
             reader.readAsDataURL(file);
         });
+    }
+
+    _readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('音频文件读取失败'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    _inferAudioMime(file) {
+        const type = String(file?.type || '').trim();
+        if (type) return type;
+        const name = String(file?.name || '').toLowerCase();
+        if (name.endsWith('.wav')) return 'audio/wav';
+        if (name.endsWith('.flac')) return 'audio/flac';
+        if (name.endsWith('.m4a')) return 'audio/mp4';
+        if (name.endsWith('.ogg')) return 'audio/ogg';
+        return 'audio/mpeg';
+    }
+
+    _getNimoCloneVoiceStorageKey() {
+        return 'phone-tts-nimo-clone-voices';
+    }
+
+    _readNimoCloneVoicesRaw() {
+        try {
+            const raw = this.storage?.get?.(this._getNimoCloneVoiceStorageKey());
+            const parsed = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+            return Array.isArray(parsed) ? parsed.filter(item => item && typeof item === 'object') : [];
+        } catch (_e) {
+            return [];
+        }
+    }
+
+    _sanitizeNimoCloneVoices(list = []) {
+        return (Array.isArray(list) ? list : [])
+            .filter(item => item && typeof item === 'object')
+            .map(item => ({
+                id: String(item.id || '').trim(),
+                nick: String(item.nick || '').trim(),
+                name: String(item.name || '').trim(),
+                mime: String(item.mime || '').trim(),
+                size: Number(item.size || 0),
+                serverPath: String(item.serverPath || item.serverUrl || item.path || '').trim(),
+                storage: String(item.storage || (item.serverPath || item.serverUrl || item.path ? 'sillytavern' : '')).trim(),
+                createdAt: Number(item.createdAt || 0) || Date.now()
+            }))
+            .filter(item => item.id);
+    }
+
+    async _purgeNimoCloneLocalAudioResidue() {
+        try {
+            const raw = this._readNimoCloneVoicesRaw();
+            const clean = this._sanitizeNimoCloneVoices(raw);
+            if (JSON.stringify(raw) !== JSON.stringify(clean)) {
+                await this._saveNimoCloneVoices(clean);
+            }
+        } catch (_e) { }
+    }
+
+    _readNimoCloneVoices() {
+        return this._sanitizeNimoCloneVoices(this._readNimoCloneVoicesRaw());
+    }
+
+    async _saveNimoCloneVoices(list = []) {
+        await this.storage?.set?.(this._getNimoCloneVoiceStorageKey(), JSON.stringify(this._sanitizeNimoCloneVoices(list)));
+    }
+
+    _getNimoCloneVoice(voiceId = '') {
+        const safeId = String(voiceId || '').trim();
+        if (!safeId) return null;
+        return this._readNimoCloneVoices().find(item => String(item?.id || '') === safeId) || null;
+    }
+
+    async saveNimoCloneVoice(options = {}) {
+        const audioFile = options.audioFile;
+        const nick = String(options.nick || '').trim();
+        if (!audioFile) throw new Error('请选择用于 MiMo 复刻的参考音频');
+        if (Number(audioFile.size || 0) > 10 * 1024 * 1024) throw new Error('音频文件不能超过 10MB');
+        const mime = this._inferAudioMime(audioFile);
+        if (!['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'].includes(mime)) {
+            throw new Error('MiMo 复刻参考音频目前仅支持 MP3 或 WAV');
+        }
+
+        const serverPath = await this._uploadNimoCloneAudioToServer(audioFile, mime);
+        const id = `nimo_clone_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const voice = {
+            id,
+            nick: nick || audioFile.name || 'MiMo复刻音色',
+            name: audioFile.name || '',
+            mime,
+            size: Number(audioFile.size || 0),
+            serverPath,
+            storage: 'sillytavern',
+            createdAt: Date.now()
+        };
+        const voices = this._readNimoCloneVoices().filter(item => String(item?.id || '') !== id);
+        voices.push(voice);
+        await this._saveNimoCloneVoices(voices);
+        return voice;
+    }
+
+    async _resolveNimoVoicePayload(voice = '', model = 'mimo-v2.5-tts') {
+        const safeVoice = String(voice || '').trim();
+        if (String(model || '').trim() === 'mimo-v2.5-tts-voiceclone') {
+            if (/^data:audio\//i.test(safeVoice)) return safeVoice;
+            const cloneVoice = this._getNimoCloneVoice(safeVoice);
+            const serverPath = String(cloneVoice?.serverPath || '').trim();
+            if (serverPath) return this._readNimoServerAudioAsDataUrl(serverPath, cloneVoice?.mime);
+            if (/^(?:https?:\/\/|\/?files\/)/i.test(safeVoice)) {
+                return this._readNimoServerAudioAsDataUrl(safeVoice, cloneVoice?.mime);
+            }
+            if (cloneVoice) throw new Error('MiMo 复刻音频缺少酒馆服务端路径，请重新上传参考音频');
+        }
+        return safeVoice;
+    }
+
+    _getRawFetch() {
+        if (typeof window !== 'undefined' && window.VirtualPhoneRawFetch) return window.VirtualPhoneRawFetch;
+        if (typeof window !== 'undefined' && typeof window.fetch === 'function') return window.fetch.bind(window);
+        return fetch;
+    }
+
+    async _getCsrfToken() {
+        if (this._csrfToken) return this._csrfToken;
+        if (this._csrfTokenPromise) return this._csrfTokenPromise;
+        this._csrfTokenPromise = (async () => {
+            try {
+                const headers = typeof window !== 'undefined' && typeof window.getRequestHeaders === 'function'
+                    ? window.getRequestHeaders() || {}
+                    : {};
+                const existing = headers['X-CSRF-Token'] || headers['x-csrf-token'];
+                if (existing) {
+                    this._csrfToken = String(existing);
+                    return this._csrfToken;
+                }
+                const rawFetch = this._getRawFetch();
+                const response = await rawFetch('/csrf-token', {
+                    credentials: 'include',
+                    cache: 'no-store',
+                    stPhoneInternalApi: true,
+                    headers: { 'X-ST-Phone-Internal-API': '1' }
+                });
+                if (!response.ok) return null;
+                const data = await response.json().catch(() => null);
+                this._csrfToken = String(data?.token || '').trim() || null;
+                return this._csrfToken;
+            } catch (_e) {
+                this._csrfTokenPromise = null;
+                return null;
+            }
+        })();
+        return this._csrfTokenPromise;
+    }
+
+    async _buildStJsonHeaders() {
+        const headers = {};
+        try {
+            if (typeof window !== 'undefined' && typeof window.getRequestHeaders === 'function') {
+                Object.assign(headers, window.getRequestHeaders() || {});
+            }
+        } catch (_e) { }
+        delete headers['content-type'];
+        delete headers['Content-Type'];
+        headers['Content-Type'] = 'application/json';
+        headers['X-ST-Phone-Internal-API'] = '1';
+        if (!headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
+            const token = await this._getCsrfToken();
+            if (token) headers['X-CSRF-Token'] = token;
+        }
+        return headers;
+    }
+
+    _getAudioExtension(mime = '', filename = '') {
+        const name = String(filename || '').toLowerCase();
+        if (name.endsWith('.wav')) return 'wav';
+        if (name.endsWith('.mp3')) return 'mp3';
+        const safeMime = String(mime || '').toLowerCase();
+        if (safeMime.includes('wav')) return 'wav';
+        return 'mp3';
+    }
+
+    _normalizeServerFileUrl(value = '') {
+        let url = String(value || '').trim().replace(/\\/g, '/');
+        if (!url) return '';
+        if (/^(?:data:|https?:\/\/)/i.test(url)) return url;
+        url = url.replace(/^public\//i, '');
+        if (!url.startsWith('/')) url = `/${url}`;
+        return url;
+    }
+
+    _extractServerUploadPath(data, fallbackName = '') {
+        if (typeof data === 'string') return data;
+        if (!data || typeof data !== 'object') return fallbackName ? `/files/${fallbackName}` : '';
+        if (data.path || data.url || data.filename || data.name) {
+            return data.path || data.url || data.filename || data.name;
+        }
+        if (typeof data.file === 'string') return data.file;
+        if (data.file && typeof data.file === 'object') {
+            return data.file.path || data.file.url || data.file.filename || data.file.name || (fallbackName ? `/files/${fallbackName}` : '');
+        }
+        return fallbackName ? `/files/${fallbackName}` : '';
+    }
+
+    async _uploadNimoCloneAudioToServer(file, mime = '') {
+        const ext = this._getAudioExtension(mime, file?.name);
+        const random = Math.random().toString(36).slice(2, 8);
+        const filename = `yuzuki-phone-mimo-clone-${Date.now()}-${random}.${ext}`;
+        const data = await this._readFileAsBase64(file);
+        const headers = await this._buildStJsonHeaders();
+        const rawFetch = this._getRawFetch();
+        const response = await rawFetch('/api/files/upload', {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            stPhoneInternalApi: true,
+            body: JSON.stringify({ name: filename, data })
+        });
+        const text = await response.text().catch(() => '');
+        if (!response.ok) {
+            throw new Error(text ? `上传到酒馆服务端失败（HTTP ${response.status}）：${text}` : `上传到酒馆服务端失败（HTTP ${response.status}）`);
+        }
+        let parsed = null;
+        try {
+            parsed = JSON.parse(text || '{}');
+        } catch (_e) {
+            parsed = text;
+        }
+        return this._normalizeServerFileUrl(this._extractServerUploadPath(parsed, filename));
+    }
+
+    async _readNimoServerAudioAsDataUrl(serverPath = '', fallbackMime = '') {
+        const url = this._normalizeServerFileUrl(serverPath);
+        if (!url) return '';
+        const rawFetch = this._getRawFetch();
+        const headers = typeof window !== 'undefined' && typeof window.getRequestHeaders === 'function'
+            ? window.getRequestHeaders() || {}
+            : {};
+        headers['X-ST-Phone-Internal-API'] = '1';
+        const response = await rawFetch(url, {
+            credentials: 'include',
+            stPhoneInternalApi: true,
+            headers
+        });
+        if (!response.ok) throw new Error(`读取 MiMo 复刻参考音频失败（HTTP ${response.status}）`);
+        const blob = await response.blob();
+        const mime = String(blob.type || fallbackMime || '').trim() || 'audio/mpeg';
+        const audioBlob = blob.type ? blob : new Blob([blob], { type: mime });
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('MiMo 复刻参考音频读取失败'));
+            reader.readAsDataURL(audioBlob);
+        });
+    }
+
+    _base64ToBytes(base64 = '') {
+        const binary = atob(String(base64 || ''));
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+    }
+
+    _pcm16ToWavBlob(bytes, sampleRate = 24000) {
+        const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+        const buffer = new ArrayBuffer(44 + data.length);
+        const view = new DataView(buffer);
+        const writeString = (offset, value) => {
+            for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i));
+        };
+        writeString(0, 'RIFF');
+        view.setUint32(4, 36 + data.length, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeString(36, 'data');
+        view.setUint32(40, data.length, true);
+        new Uint8Array(buffer, 44).set(data);
+        return new Blob([buffer], { type: 'audio/wav' });
+    }
+
+    _normalizeNimoBaseUrl(apiUrl = '') {
+        const rawInput = String(apiUrl || 'https://api.xiaomimimo.com/v1').trim();
+        const withProtocol = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
+        const raw = withProtocol.replace(/\/+$/, '');
+        return raw.replace(/\/chat\/completions$/i, '');
     }
 
     _formatVolcCloneError(data = {}) {
@@ -337,6 +642,68 @@ export class TtsManager {
                 bytes[i] = Number.parseInt(hexAudio.substr(i * 2, 2), 16);
             }
             const blob = new Blob([bytes], { type: 'audio/mp3' });
+            return URL.createObjectURL(blob);
+        }
+
+        if (provider === 'nimo') {
+            const safeModel = model || 'mimo-v2.5-tts';
+            const audio = { format: 'wav' };
+            const voicePayload = await this._resolveNimoVoicePayload(voice, safeModel);
+            if (safeModel !== 'mimo-v2.5-tts-voicedesign') {
+                if (!voicePayload) throw new Error('缺少 MiMo 音色或复刻音频');
+                audio.voice = voicePayload;
+            }
+
+            const messages = [];
+            if (safeModel === 'mimo-v2.5-tts-voicedesign') {
+                messages.push({ role: 'user', content: voice || '自然、清晰、适合中文对话的声音' });
+            } else {
+                messages.push({ role: 'user', content: '' });
+            }
+            messages.push({ role: 'assistant', content: inputText });
+            const requestBody = {
+                model: safeModel,
+                messages,
+                audio
+            };
+
+            const endpoint = new URL(`${this._normalizeNimoBaseUrl(apiUrl)}/chat/completions`);
+            const rawFetch = this._getRawFetch();
+            const response = await rawFetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api-key': apiKey,
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify(requestBody)
+            });
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => '');
+                let errorMessage = errorText;
+                try {
+                    const parsedError = JSON.parse(errorText || '{}');
+                    errorMessage = parsedError?.error?.message || parsedError?.message || errorText;
+                } catch (_e) {}
+                try {
+                    console.error('[YuzukiPhone][MiMo TTS] request failed', {
+                        status: response.status,
+                        message: errorMessage,
+                        body: errorText,
+                        request: requestBody
+                    });
+                } catch (_e) {}
+                throw new Error(`MiMo HTTP ${response.status}${errorMessage ? `：${errorMessage}` : ''}`);
+            }
+
+            const resData = await response.json();
+            const audioData = String(resData?.choices?.[0]?.message?.audio?.data || '').trim();
+            if (!audioData) throw new Error('MiMo 未返回音频数据');
+
+            const bytes = this._base64ToBytes(audioData);
+            const blob = audio.format === 'pcm16'
+                ? this._pcm16ToWavBlob(bytes, 24000)
+                : new Blob([bytes], { type: audio.format === 'wav' ? 'audio/wav' : 'audio/mpeg' });
             return URL.createObjectURL(blob);
         }
 

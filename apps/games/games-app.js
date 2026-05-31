@@ -6,16 +6,42 @@
 import { PokerApp } from './poker/poker-app.js';
 import { Game2048Data } from './game2048/game2048-data.js';
 import { Game2048View } from './game2048/game2048-view.js';
+import { SudokuData } from './sudoku/sudoku-data.js';
+import { SudokuView } from './sudoku/sudoku-view.js';
 import { CatboxData } from './catbox/catbox-data.js';
 import { CatboxView } from './catbox/catbox-view.js';
+
+const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
+const CATBOX_PRELOAD_ASSETS = [
+    new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
+    new URL('./catbox/assets/wxxw2.png', import.meta.url).href,
+    new URL('./catbox/assets/wxxw3.jpeg', import.meta.url).href,
+    new URL('./catbox/assets/wxxw4.png', import.meta.url).href,
+    new URL('./catbox/assets/A1.png', import.meta.url).href,
+    new URL('./catbox/assets/A2.png', import.meta.url).href,
+    new URL('./catbox/assets/A3.png', import.meta.url).href,
+    new URL('./catbox/assets/A4.png', import.meta.url).href,
+    new URL('./catbox/assets/A5.png', import.meta.url).href,
+    new URL('./catbox/assets/A6.png', import.meta.url).href,
+    new URL('./catbox/assets/A7.png', import.meta.url).href,
+    new URL('./catbox/assets/A8.png', import.meta.url).href,
+    new URL('./catbox/assets/A9.png', import.meta.url).href,
+    new URL('./catbox/assets/A10.png', import.meta.url).href,
+    new URL('./catbox/assets/A11.png', import.meta.url).href,
+    new URL('./catbox/assets/A12.png', import.meta.url).href,
+    new URL('./catbox/assets/tzxf.png', import.meta.url).href
+];
 
 export class GamesApp extends PokerApp {
     constructor(phoneShell, storage) {
         super(phoneShell, storage);
         this.game2048Data = new Game2048Data(storage);
         this.game2048View = new Game2048View(this);
+        this.sudokuData = new SudokuData(storage);
+        this.sudokuView = new SudokuView(this);
         this.catboxData = new CatboxData(storage);
         this.catboxView = new CatboxView(this);
+        this._preloadCatboxAssets();
     }
 
     open2048() {
@@ -34,11 +60,70 @@ export class GamesApp extends PokerApp {
         this.game2048View.render();
     }
 
+    openSudoku() {
+        this.applyPhoneChromeTheme();
+        this.currentView = 'sudoku';
+        this.sudokuView.render();
+    }
+
+    newSudoku(difficulty) {
+        this.sudokuData.newGame(difficulty);
+        this.sudokuView.render();
+    }
+
+    selectSudokuCell(row, col) {
+        this.sudokuData.select(row, col);
+        this.sudokuView.render();
+    }
+
+    setSudokuNumber(value) {
+        this.sudokuData.setNumber(value);
+        this.sudokuView.render();
+    }
+
+    eraseSudoku() {
+        this.sudokuData.erase();
+        this.sudokuView.render();
+    }
+
+    undoSudoku() {
+        this.sudokuData.undo();
+        this.sudokuView.render();
+    }
+
+    toggleSudokuNoteMode() {
+        this.sudokuData.toggleNoteMode();
+        this.sudokuView.render();
+    }
+
+    hintSudoku() {
+        this.sudokuData.hint();
+        this.sudokuView.render();
+    }
+
     openCatbox() {
         this.applyPhoneChromeTheme();
         this.currentView = 'catbox';
         this.catboxView.resetHudCollapsed?.();
         this.catboxView.render();
+    }
+
+    _preloadCatboxAssets() {
+        if (document.getElementById('games-catbox-css')) return;
+        const stylesheet = document.createElement('link');
+        stylesheet.id = 'games-catbox-css';
+        stylesheet.rel = 'stylesheet';
+        stylesheet.href = CATBOX_CSS_URL;
+        document.head.appendChild(stylesheet);
+
+        CATBOX_PRELOAD_ASSETS.forEach((href, index) => {
+            const link = document.createElement('link');
+            link.rel = 'preload';
+            link.href = href;
+            link.as = 'image';
+            link.dataset.catboxPreload = String(index + 1);
+            document.head.appendChild(link);
+        });
     }
 
     randomCatboxCat() {
@@ -166,12 +251,13 @@ export class GamesApp extends PokerApp {
 
     backToLobby() {
         this.game2048View?.destroy?.();
+        this.sudokuView?.destroy?.();
         this.catboxView?.destroy?.();
         super.backToLobby();
     }
 
     handleSwipeBack() {
-        if (this.currentView === 'game2048' || this.currentView === 'catbox') {
+        if (this.currentView === 'game2048' || this.currentView === 'sudoku' || this.currentView === 'catbox') {
             this.backToLobby();
             return;
         }

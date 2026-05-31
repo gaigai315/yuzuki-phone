@@ -16,7 +16,10 @@
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.2.3';
-const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}`, import.meta.url).href;
+const ST_PHONE_CSS_REVISION = '20260601-open-fix';
+const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
+const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
+const ST_PHONE_GAMES_CSS_URL = new URL('./apps/games/poker/poker.css?v=1.0.0', import.meta.url).href;
 const ST_PHONE_UPDATE_MANIFEST_URLS = [
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/main/manifest.json',
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/master/manifest.json'
@@ -42,6 +45,7 @@ const ST_PHONE_CURRENT_UPDATE = {
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
         '【新增】酒馆开始新聊天并确认后，会自动把当前小手机的聊天专属数据复制到新会话。',
+        '【新增】新增 MiMo TTS，支持 MiMo-V2.5 官方/公益站接口地址，并可将复刻参考音频保存到酒馆服务端。',
         '【优化】GPT 生图设置页调整为先选接口站点、填写地址和 Key，再拉取模型，移动端本地代理放到最后。',
         '【优化】日历设置新增提前提醒分钟数，AI 写入日程开始时间后可按设定提前触发提醒。',
         '【优化】微信智能加载联系人前可选择先清空当前微信联系人、群聊和聊天记录，避免重复生成。',
@@ -98,11 +102,75 @@ if (window.GGP_Loaded) {
     let _phoneKeyboardLikelyOpenUntil = 0;
     let _wechatMessageAudio = null;
     let _wechatMessageSoundLastAt = 0;
+    let _gamesModulePromise = null;
+    let _gamesCssPromise = null;
     const PHONE_PANEL_DESKTOP_SIDE_KEY = 'phone-panel-desktop-side';
     const PHONE_PANEL_DESKTOP_POSITION_KEY = 'phone-panel-desktop-position';
     // 🔥 防重放护盾：仅允许被显式标记的旧楼层重新解析（用于 Swipe/Regenerate）
     const _forcedReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
     const _exactReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
+
+    function ensureGamesCSSPreloaded() {
+        if (_gamesCssPromise) return _gamesCssPromise;
+        _gamesCssPromise = new Promise(resolve => {
+            const existing = document.getElementById('games-css');
+            if (existing) {
+                if (existing.dataset.loaded === 'true' || existing.sheet) resolve();
+                else {
+                    existing.addEventListener('load', resolve, { once: true });
+                    existing.addEventListener('error', resolve, { once: true });
+                }
+                return;
+            }
+
+            const link = document.createElement('link');
+            link.id = 'games-css';
+            link.rel = 'stylesheet';
+            link.href = ST_PHONE_GAMES_CSS_URL;
+            link.addEventListener('load', () => {
+                link.dataset.loaded = 'true';
+                resolve();
+            }, { once: true });
+            link.addEventListener('error', resolve, { once: true });
+            document.head.appendChild(link);
+        });
+        return _gamesCssPromise;
+    }
+
+    function loadGamesModule() {
+        if (!_gamesModulePromise) {
+            _gamesModulePromise = import('./apps/games/games-app.js').catch(error => {
+                _gamesModulePromise = null;
+                throw error;
+            });
+        }
+        return _gamesModulePromise;
+    }
+
+    function preloadGamesAppAssets() {
+        try {
+            if (!document.getElementById('games-module-preload')) {
+                const link = document.createElement('link');
+                link.id = 'games-module-preload';
+                link.rel = 'modulepreload';
+                link.href = ST_PHONE_GAMES_MODULE_URL;
+                document.head.appendChild(link);
+            }
+            ensureGamesCSSPreloaded();
+            loadGamesModule().catch(error => console.warn('⚠️ 游戏模块预加载失败，点击时将重试:', error));
+        } catch (error) {
+            console.warn('⚠️ 游戏资源预加载失败:', error);
+        }
+    }
+
+    function scheduleGamesAppPreload() {
+        const run = () => preloadGamesAppAssets();
+        if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(run, { timeout: 2000 });
+        } else {
+            setTimeout(run, 800);
+        }
+    }
 
     function _makeForcedReplayKey(floor, chatId = null) {
         const safeFloor = Number.parseInt(floor, 10);
@@ -725,6 +793,9 @@ if (window.GGP_Loaded) {
         if (modulesLoaded) return;
 
         const startTime = performance.now();
+        if (!window.VirtualPhoneRawFetch && typeof window.fetch === 'function') {
+            window.VirtualPhoneRawFetch = window.fetch.bind(window);
+        }
 
         // 🔥 彻底废弃懒加载，将最核心的5个大脑模块在启动时一口气全部读入内存！
         const [
@@ -742,7 +813,7 @@ if (window.GGP_Loaded) {
             import('./config/api-manager.js'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
             import('./config/prompt-manager.js'),  // 👈 取消懒加载
-            import('./config/tts-manager.js'),
+            import('./config/tts-manager.js?v=20260530-mimo-server-clone'),
             import('./config/image-generation-manager.js?v=20260527-nai-ref-values'),
             import('./config/worldbook-manager.js')
         ]);
@@ -7449,7 +7520,8 @@ if (window.GGP_Loaded) {
     async function ensureGlobalPhoneCSS() {
         const styleId = 'st-phone-global-css';
         const existing = document.getElementById(styleId);
-        if (existing?.getAttribute('data-version') === ST_PHONE_VERSION) return;
+        if (existing?.getAttribute('data-version') === ST_PHONE_VERSION
+            && existing?.getAttribute('data-revision') === ST_PHONE_CSS_REVISION) return;
 
         if (_globalCssLoadingPromise) {
             await _globalCssLoadingPromise;
@@ -7470,6 +7542,7 @@ if (window.GGP_Loaded) {
                 style.id = styleId;
                 style.setAttribute('data-source', ST_PHONE_GLOBAL_CSS_URL);
                 style.setAttribute('data-version', ST_PHONE_VERSION);
+                style.setAttribute('data-revision', ST_PHONE_CSS_REVISION);
                 style.textContent = finalCssText;
                 existing?.remove();
                 document.head.appendChild(style);
@@ -7577,6 +7650,7 @@ if (window.GGP_Loaded) {
                     createInlineReplyButton();
                     schedulePhoneUpdateNotices();
                     startWechatOnlineProactiveScheduler();
+                    scheduleGamesAppPreload();
 
                     // 🎵 悬浮窗初始化：若开启了全局悬浮窗，懒加载音乐模块并创建
                     try {
@@ -7865,7 +7939,16 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '魔坊模块加载失败', '❌');
                         });
                 } else if (appId === 'games') {
-                    import('./apps/games/games-app.js')
+                    ensureGamesCSSPreloaded();
+                    if (!window.VirtualPhone.gamesApp) {
+                        phoneShell?.setContent?.(`
+                            <div class="games-app games-loading" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:radial-gradient(circle at 50% 34%, #286b5a 0%, #123f39 52%, #081f25 100%);color:#f7f3e8;font-size:13px;">
+                                <i class="fa-solid fa-spinner fa-spin" style="font-size:22px;"></i>
+                                <div>游戏加载中...</div>
+                            </div>
+                        `, 'games-loading');
+                    }
+                    loadGamesModule()
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.gamesApp) {
@@ -9720,6 +9803,7 @@ if (window.GGP_Loaded) {
                 const ogFetch = window.fetch;
                 window.fetch = async function (url, options) {
                     const isPhoneInternalApiRequest = (() => {
+                        if (options?.stPhoneInternalApi === true) return true;
                         const headers = options?.headers;
                         if (!headers) return false;
                         if (typeof Headers !== 'undefined' && headers instanceof Headers) {

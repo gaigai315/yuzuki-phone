@@ -558,6 +558,7 @@ export class SettingsApp {
             minimax_cn: { url: 'https://api.minimaxi.com/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
             minimax_intl: { url: 'https://api.minimax.chat/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
             openai: { url: 'https://api.openai.com/v1/audio/speech', model: 'tts-1', voice: 'alloy' },
+            nimo: { url: 'https://api.xiaomimimo.com/v1', model: 'mimo-v2.5-tts', voice: 'mimo_default' },
             volcengine: { url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', model: 'seed-tts-2.0', voice: 'BV700_streaming', resourceId: 'seed-tts-2.0' }
         };
         return defaults[provider] || defaults.minimax_cn;
@@ -582,14 +583,15 @@ export class SettingsApp {
 
     _getCurrentMainTtsProvider() {
         const scoped = String(this.storage.get('phone-tts-main-provider') || '').trim();
-        if (['minimax_cn', 'minimax_intl', 'openai'].includes(scoped)) return scoped;
+        if (['minimax_cn', 'minimax_intl', 'openai', 'nimo'].includes(scoped)) return scoped;
 
         const current = this._getCurrentTtsProvider();
-        if (['minimax_cn', 'minimax_intl', 'openai'].includes(current)) return current;
+        if (['minimax_cn', 'minimax_intl', 'openai', 'nimo'].includes(current)) return current;
 
         const legacyUrl = String(this.storage.get('phone-tts-url') || '').trim().toLowerCase();
         if (legacyUrl.includes('minimaxi.com')) return 'minimax_cn';
         if (legacyUrl.includes('minimax.chat')) return 'minimax_intl';
+        if (legacyUrl.includes('xiaomimimo.com') || /\/chat\/completions\b/.test(legacyUrl)) return 'nimo';
         if (legacyUrl.includes('api.openai.com') || /\/audio\/speech\b/.test(legacyUrl)) return 'openai';
         return 'minimax_cn';
     }
@@ -663,6 +665,7 @@ export class SettingsApp {
             { id: 'minimax_cn', label: 'MiniMax 国内' },
             { id: 'minimax_intl', label: 'MiniMax 国际' },
             { id: 'openai', label: 'OpenAI' },
+            { id: 'nimo', label: 'MiMo-V2.5-TTS' },
             { id: 'volcengine', label: '豆包 / 火山引擎' }
         ];
         const currentGlobalTtsProvider = this._getCurrentTtsProvider();
@@ -1978,7 +1981,7 @@ export class SettingsApp {
                         <div class="tts-section-list">
                             <details data-tts-fold-key="phone-tts-minimax-section-open" ${isTtsMiniMaxSectionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                                 <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                    <span>MiniMax / OpenAI</span>
+                                    <span>通用 TTS / MiMo</span>
                                     ${SETTINGS_FOLD_ARROW_HTML}
                                 </summary>
                                 <div style="padding: 10px 10px 4px;">
@@ -1990,6 +1993,7 @@ export class SettingsApp {
                                                 <option value="https://api.minimaxi.com/v1/t2a_v2">MiniMax 国内版</option>
                                                 <option value="https://api.minimax.chat/v1/t2a_v2">MiniMax 国际版</option>
                                                 <option value="https://api.openai.com/v1/audio/speech">OpenAI 官方</option>
+                                                <option value="https://api.xiaomimimo.com/v1">MiMo 官方</option>
                                                 <option value="https://openspeech.bytedance.com/api/v3/tts/unidirectional">火山引擎/豆包</option>
                                             </select>
                                         </div>
@@ -2003,7 +2007,7 @@ export class SettingsApp {
                                         <span style="font-size: 14px; color: #000;">API Key</span>
                                         <input type="password" id="phone-tts-key"
                                                value="${currentTtsKey}"
-                                               placeholder="MiniMax/OpenAI API Key"
+                                               placeholder="MiniMax/OpenAI/MiMo API Key"
                                                style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
                                     </div>
 
@@ -2012,14 +2016,6 @@ export class SettingsApp {
                                             <span style="font-size: 14px; color: #000;">语音模型</span>
                                             <select id="phone-tts-model-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
                                                 <option value="">-- 快速选择 --</option>
-                                                <option value="speech-2.8-hd">speech-2.8-hd</option>
-                                                <option value="speech-2.6-hd">speech-2.6-hd</option>
-                                                <option value="speech-2.8-turbo">speech-2.8-turbo</option>
-                                                <option value="speech-2.6-turbo">speech-2.6-turbo</option>
-                                                <option value="speech-02-hd">speech-02-hd</option>
-                                                <option value="speech-02-turbo">speech-02-turbo</option>
-                                                <option value="tts-1">tts-1 (OpenAI)</option>
-                                                <option value="tts-1-hd">tts-1-hd (OpenAI)</option>
                                             </select>
                                         </div>
                                         <input type="text" id="phone-tts-model"
@@ -2033,17 +2029,35 @@ export class SettingsApp {
                                             <span style="font-size: 14px; color: #000;">音色 ID (Voice)</span>
                                             <select id="phone-tts-voice-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
                                                 <option value="">-- 历史音色 --</option>
-                                                ${ttsVoiceHistory.map(v => `<option value="${v}">${v}</option>`).join('')}
                                             </select>
                                         </div>
                                         <input type="text" id="phone-tts-voice"
                                                value="${currentTtsVoice}"
-                                               placeholder="MiniMax/OpenAI 音色 ID"
+                                               placeholder="MiniMax/OpenAI/MiMo 音色 ID；MiMo描述模型可填声音描述"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
                                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
                                             <button id="phone-tts-preview" style="padding: 2px 8px; border: none; background: none; color: #1677ff; font-size: 10px; cursor: pointer;">试听当前音色</button>
                                             <button id="phone-tts-voice-delete" style="padding: 2px 8px; border: none; background: none; color: #ff3b30; font-size: 10px; cursor: pointer;">删除当前音色</button>
                                         </div>
+                                    </div>
+
+                                    <div style="height: 1px; background: #ececec; margin: 10px 0;"></div>
+
+                                    <div class="setting-item">
+                                        <div style="font-size: 13px; font-weight: 700; color: #333; margin-bottom: 8px;">MiMo 服务端复刻</div>
+                                        <div class="setting-desc" style="margin-bottom: 8px;">选择参考音频后会上传到酒馆服务端，小手机只保存路径；调用 MiMo 复刻模型时临时读取发送，不在浏览器保存音频 base64。</div>
+
+                                        <input type="text" id="phone-tts-nimo-clone-nick"
+                                               placeholder="复刻音色备注，例如：角色A参考音"
+                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-bottom: 8px;">
+
+                                        <input type="file" id="phone-tts-nimo-clone-audio" accept=".wav,.mp3,audio/wav,audio/mpeg" style="display: none;">
+                                        <div style="display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 8px;">
+                                            <button id="phone-tts-nimo-clone-audio-pick" style="height: 30px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; color: #222; font-size: 12px; cursor: pointer;">选择参考音频</button>
+                                            <div id="phone-tts-nimo-clone-audio-name" style="min-width: 0; color: #999; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">未选择文件</div>
+                                        </div>
+                                        <button id="phone-tts-nimo-clone-save" style="width: 100%; height: 30px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; color: #222; font-size: 12px; cursor: pointer;">上传并设为 MiMo 复刻音色</button>
+                                        <div id="phone-tts-nimo-clone-result" class="setting-desc" style="margin-top: 8px; min-height: 16px;"></div>
                                     </div>
                                 </div>
                             </details>
@@ -2757,6 +2771,7 @@ export class SettingsApp {
         const siliconflowDisplay = provider === 'siliconflow' ? '' : 'display: none;';
         const sdDisplay = provider === 'sd' ? '' : 'display: none;';
         const comfyuiDisplay = provider === 'comfyui' ? '' : 'display: none;';
+        const novelaiOnlyDisplay = provider === 'novelai' ? '' : 'display: none;';
 
         return `
             <div class="setting-section">
@@ -3370,7 +3385,7 @@ export class SettingsApp {
                     <textarea id="phone-image-negative-prompt" style="width: 100%; min-height: 70px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${negativePrompt}</textarea>
                 </div>
 
-                <div class="setting-item">
+                <div class="setting-item phone-image-novelai-only" style="${novelaiOnlyDisplay}">
                     <div class="setting-label">氛围转移设置</div>
                     <div class="setting-desc">对应 NovelAI 官网的 Vibe Transfer，所有 App 的 NAI v4 / 4.5 生图共用当前启用组。</div>
                     <div style="display:grid; grid-template-columns:1fr 84px; gap:8px; margin-top:8px;">
@@ -3398,7 +3413,7 @@ export class SettingsApp {
                     <div class="setting-desc" id="phone-image-novelai-vibe-status" style="margin-top:8px;"></div>
                 </div>
 
-                <div class="setting-item setting-toggle">
+                <div class="setting-item setting-toggle phone-image-novelai-only" style="${novelaiOnlyDisplay}">
                     <div>
                         <div class="setting-label">启用 Vibe 组氛围转移</div>
                         <div class="setting-desc">使用当前 Vibe 组进行氛围转移。</div>
@@ -3409,7 +3424,7 @@ export class SettingsApp {
                     </label>
                 </div>
 
-                <div class="setting-item setting-toggle">
+                <div class="setting-item setting-toggle phone-image-novelai-only" style="${novelaiOnlyDisplay}">
                     <div>
                         <div class="setting-label">Normalize Reference Strength Values</div>
                         <div class="setting-desc">开启后会把当前组内 Vibe 强度归一化为总和 1.0。</div>
@@ -4700,6 +4715,7 @@ export class SettingsApp {
         const imagePromptPresetImportBtn = document.getElementById('phone-image-prompt-preset-import');
         const imagePromptPresetImportFile = document.getElementById('phone-image-prompt-preset-import-file');
         const imageProviderAppBindInputs = Array.from(document.querySelectorAll('.phone-image-provider-app-bind'));
+        const imageNovelaiOnlyRows = Array.from(document.querySelectorAll('.phone-image-novelai-only'));
         const setImageProviderVisibility = () => {
             const provider = String(imageProvider?.value || 'novelai').trim() || 'novelai';
             if (imageNovelaiSection) imageNovelaiSection.style.display = provider === 'novelai' ? '' : 'none';
@@ -4707,6 +4723,9 @@ export class SettingsApp {
             if (imageSiliconflowSection) imageSiliconflowSection.style.display = provider === 'siliconflow' ? '' : 'none';
             if (imageSdSection) imageSdSection.style.display = provider === 'sd' ? '' : 'none';
             if (imageComfyUISection) imageComfyUISection.style.display = provider === 'comfyui' ? '' : 'none';
+            imageNovelaiOnlyRows.forEach(row => {
+                row.style.display = provider === 'novelai' ? '' : 'none';
+            });
         };
         const getImageProviderAppBindings = () => this._getImageProviderAppBindings();
         const saveImageProviderAppBindings = async (bindings) => {
@@ -7140,6 +7159,7 @@ export class SettingsApp {
         const ttsModel = document.getElementById('phone-tts-model');
         const ttsModelPreset = document.getElementById('phone-tts-model-preset');
         const ttsVoice = document.getElementById('phone-tts-voice');
+        const ttsVoicePreset = document.getElementById('phone-tts-voice-preset');
         const ttsVolcVoice = document.getElementById('phone-tts-volc-voice');
         const ttsPreviewBtn = document.getElementById('phone-tts-preview');
         const ttsVolcPreviewBtn = document.getElementById('phone-tts-volc-preview');
@@ -7156,6 +7176,12 @@ export class SettingsApp {
         const ttsVolcCloneStatusBtn = document.getElementById('phone-tts-volc-clone-status');
         const ttsVolcCloneUseBtn = document.getElementById('phone-tts-volc-clone-use');
         const ttsVolcCloneResult = document.getElementById('phone-tts-volc-clone-result');
+        const ttsNimoCloneNick = document.getElementById('phone-tts-nimo-clone-nick');
+        const ttsNimoCloneAudio = document.getElementById('phone-tts-nimo-clone-audio');
+        const ttsNimoCloneAudioPickBtn = document.getElementById('phone-tts-nimo-clone-audio-pick');
+        const ttsNimoCloneAudioName = document.getElementById('phone-tts-nimo-clone-audio-name');
+        const ttsNimoCloneSaveBtn = document.getElementById('phone-tts-nimo-clone-save');
+        const ttsNimoCloneResult = document.getElementById('phone-tts-nimo-clone-result');
         const ttsFallbackMaleProvider = document.getElementById('phone-tts-fallback-male-provider');
         const ttsFallbackMaleVoice = document.getElementById('phone-tts-fallback-male-voice');
         const ttsFallbackMalePreviewBtn = document.getElementById('phone-tts-fallback-male-preview');
@@ -7168,13 +7194,96 @@ export class SettingsApp {
         const honeyTtsCacheEnabledToggle = document.getElementById('phone-honey-tts-cache-enabled');
         const getSelectedTtsProvider = () => String(ttsProvider?.value || this._getCurrentTtsProvider()).trim() || 'minimax_cn';
         const getSelectedMainTtsProvider = () => String(ttsProvider?.value || this._getCurrentMainTtsProvider()).trim() || 'minimax_cn';
+        const readTtsVoiceHistory = () => {
+            try {
+                const parsed = JSON.parse(this.storage.get('phone-tts-voice-history') || '[]');
+                return Array.isArray(parsed) ? parsed.map(v => String(v || '').trim()).filter(Boolean) : [];
+            } catch (_e) {
+                return [];
+            }
+        };
+        const ttsModelPresetOptions = {
+            minimax_cn: [
+                { value: 'speech-2.8-hd', label: 'speech-2.8-hd' },
+                { value: 'speech-2.6-hd', label: 'speech-2.6-hd' },
+                { value: 'speech-2.8-turbo', label: 'speech-2.8-turbo' },
+                { value: 'speech-2.6-turbo', label: 'speech-2.6-turbo' },
+                { value: 'speech-02-hd', label: 'speech-02-hd' },
+                { value: 'speech-02-turbo', label: 'speech-02-turbo' }
+            ],
+            minimax_intl: [
+                { value: 'speech-2.8-hd', label: 'speech-2.8-hd' },
+                { value: 'speech-2.6-hd', label: 'speech-2.6-hd' },
+                { value: 'speech-2.8-turbo', label: 'speech-2.8-turbo' },
+                { value: 'speech-2.6-turbo', label: 'speech-2.6-turbo' },
+                { value: 'speech-02-hd', label: 'speech-02-hd' },
+                { value: 'speech-02-turbo', label: 'speech-02-turbo' }
+            ],
+            openai: [
+                { value: 'tts-1', label: 'tts-1' },
+                { value: 'tts-1-hd', label: 'tts-1-hd' },
+                { value: 'gpt-4o-mini-tts', label: 'gpt-4o-mini-tts' }
+            ],
+            nimo: [
+                { value: 'mimo-v2.5-tts', label: 'mimo-v2.5-tts（预置音色）' },
+                { value: 'mimo-v2.5-tts-voiceclone', label: 'mimo-v2.5-tts-voiceclone（音频复刻）' },
+                { value: 'mimo-v2.5-tts-voicedesign', label: 'mimo-v2.5-tts-voicedesign（文字描述）' }
+            ]
+        };
+        const ttsVoicePresetOptions = {
+            openai: [
+                { value: 'alloy', label: 'alloy' },
+                { value: 'ash', label: 'ash' },
+                { value: 'ballad', label: 'ballad' },
+                { value: 'coral', label: 'coral' },
+                { value: 'echo', label: 'echo' },
+                { value: 'fable', label: 'fable' },
+                { value: 'nova', label: 'nova' },
+                { value: 'onyx', label: 'onyx' },
+                { value: 'sage', label: 'sage' },
+                { value: 'shimmer', label: 'shimmer' }
+            ],
+            nimo: [
+                { value: 'mimo_default', label: 'mimo_default（默认）' },
+                { value: '冰糖', label: '冰糖' },
+                { value: '茉莉', label: '茉莉' },
+                { value: '苏打', label: '苏打' },
+                { value: '白桦', label: '白桦' },
+                { value: 'Mia', label: 'Mia' },
+                { value: 'Chloe', label: 'Chloe' },
+                { value: 'Milo', label: 'Milo' },
+                { value: 'Dean', label: 'Dean' }
+            ],
+            minimax_cn: [],
+            minimax_intl: []
+        };
         const inferTtsProviderFromUrl = (urlValue, fallback = '') => {
             const url = String(urlValue || '').trim().toLowerCase();
             if (url.includes('minimaxi.com')) return 'minimax_cn';
             if (url.includes('minimax.chat')) return 'minimax_intl';
+            if (url.includes('xiaomimimo.com') || /\/chat\/completions\b/.test(url)) return 'nimo';
             if (url.includes('openspeech.bytedance.com')) return 'volcengine';
             if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
             return String(fallback || '').trim() || 'minimax_cn';
+        };
+        const getCurrentMainProviderFromForm = () => inferTtsProviderFromUrl(ttsUrl?.value || '', getSelectedMainTtsProvider());
+        const refreshTtsPresetOptions = () => {
+            const provider = getCurrentMainProviderFromForm();
+            if (ttsModelPreset) {
+                const models = ttsModelPresetOptions[provider] || [];
+                ttsModelPreset.innerHTML = '<option value="">-- 快速选择 --</option>' + models
+                    .map(item => `<option value="${this._escapeHtml(item.value)}">${this._escapeHtml(item.label)}</option>`)
+                    .join('');
+            }
+            if (ttsVoicePreset) {
+                const voices = ttsVoicePresetOptions[provider] || [];
+                const presetVoiceSet = new Set(voices.map(item => String(item.value || '').trim()).filter(Boolean));
+                const uniqueHistory = [...new Set(readTtsVoiceHistory())].filter(v => !presetVoiceSet.has(v));
+                ttsVoicePreset.innerHTML = '<option value="">-- 快速选择 --</option>'
+                    + voices.map(item => `<option value="${this._escapeHtml(item.value)}">${this._escapeHtml(item.label)}</option>`).join('')
+                    + (uniqueHistory.length ? '<option value="" disabled>-- 历史音色 --</option>' : '')
+                    + uniqueHistory.map(v => `<option value="${this._escapeHtml(v)}">${this._escapeHtml(v)}</option>`).join('');
+            }
         };
         const setTtsProviderField = async (field, value, legacyKey = '') => {
             const provider = getSelectedTtsProvider();
@@ -7188,8 +7297,9 @@ export class SettingsApp {
             const provider = inferTtsProviderFromUrl(ttsUrl?.value || '', getSelectedMainTtsProvider());
             const safeValue = String(value || '').trim();
             await this.storage.set(this._getTtsProviderConfigKey(provider, field), safeValue);
-            if (['minimax_cn', 'minimax_intl', 'openai'].includes(provider)) {
+            if (['minimax_cn', 'minimax_intl', 'openai', 'nimo'].includes(provider)) {
                 await this.storage.set('phone-tts-main-provider', provider);
+                await this.storage.set('phone-tts-provider', provider);
             }
             if (legacyKey && provider === this._getCurrentTtsProvider()) {
                 await this.storage.set(legacyKey, safeValue);
@@ -7215,6 +7325,7 @@ export class SettingsApp {
                 history.push(val);
                 await this.storage.set(historyKey, JSON.stringify(history));
                 document.querySelectorAll(presetSelector).forEach((preset) => {
+                    if (preset.querySelector(`option[value="${CSS.escape(val)}"]`)) return;
                     const opt = document.createElement('option');
                     opt.value = val;
                     opt.textContent = val;
@@ -7244,6 +7355,11 @@ export class SettingsApp {
             if (!ttsVolcCloneResult) return;
             ttsVolcCloneResult.textContent = message || '';
             ttsVolcCloneResult.style.color = isError ? '#ff3b30' : '#666';
+        };
+        const setNimoCloneResult = (message, isError = false) => {
+            if (!ttsNimoCloneResult) return;
+            ttsNimoCloneResult.textContent = message || '';
+            ttsNimoCloneResult.style.color = isError ? '#ff3b30' : '#666';
         };
         const getCloneForm = () => ({
             apiKey: String(ttsVolcCloneAccessToken?.value || ttsVolcKey?.value || ttsKey?.value || '').trim(),
@@ -7298,6 +7414,7 @@ export class SettingsApp {
             await this.storage.set(`phone-tts-fallback-${safeGender}-provider`, provider);
             await this.storage.set(`phone-tts-fallback-${safeGender}-voice`, voice);
         };
+        refreshTtsPresetOptions();
 
         if (ttsProvider) ttsProvider.addEventListener('change', async (e) => {
             const val = e.target.value;
@@ -7314,6 +7431,10 @@ export class SettingsApp {
             if (ttsKey) { ttsKey.value = nextKey; await this.storage.set('phone-tts-key', nextKey); }
             if (ttsModel) { ttsModel.value = nextModel; await this.storage.set('phone-tts-model', nextModel); }
             if (ttsVoice) { ttsVoice.value = nextVoice; }
+            if (['minimax_cn', 'minimax_intl', 'openai', 'nimo'].includes(val)) {
+                await this.storage.set('phone-tts-main-provider', val);
+            }
+            refreshTtsPresetOptions();
             if (val === 'volcengine') {
                 if (ttsVolcKey) ttsVolcKey.value = nextKey;
                 if (ttsVolcVoice) ttsVolcVoice.value = nextVoice;
@@ -7336,8 +7457,15 @@ export class SettingsApp {
             if (!val) return;
             const inferredProvider = inferTtsProviderFromUrl(val, getSelectedMainTtsProvider());
             await this.storage.set('phone-tts-main-provider', inferredProvider);
+            await this.storage.set('phone-tts-provider', inferredProvider);
             if (ttsProvider) ttsProvider.value = inferredProvider;
+            const defaults = this._getTtsProviderDefaults(inferredProvider);
+            const nextModel = this._getTtsProviderValue(inferredProvider, 'model') || defaults.model || '';
+            const nextVoice = this._getTtsProviderValue(inferredProvider, 'voice') || defaults.voice || '';
             if (ttsUrl) { ttsUrl.value = val; await setMainTtsProviderField('url', val, 'phone-tts-url'); }
+            if (ttsModel) { ttsModel.value = nextModel; await setMainTtsProviderField('model', nextModel, 'phone-tts-model'); }
+            if (ttsVoice) { ttsVoice.value = nextVoice; await setMainTtsProviderField('voice', nextVoice, 'phone-tts-voice'); }
+            refreshTtsPresetOptions();
             e.target.value = ''; // 重置下拉为占位项
         });
 
@@ -7349,7 +7477,17 @@ export class SettingsApp {
             e.target.value = ''; // 重置下拉为占位项
         });
 
-        if (ttsUrl) ttsUrl.addEventListener('change', async (e) => { await setMainTtsProviderField('url', e.target.value, 'phone-tts-url'); });
+        if (ttsUrl) ttsUrl.addEventListener('change', async (e) => {
+            const nextUrl = String(e.target.value || '').trim();
+            const inferredProvider = inferTtsProviderFromUrl(nextUrl, getSelectedMainTtsProvider());
+            const defaults = this._getTtsProviderDefaults(inferredProvider);
+            const nextModel = this._getTtsProviderValue(inferredProvider, 'model') || defaults.model || '';
+            const nextVoice = this._getTtsProviderValue(inferredProvider, 'voice') || defaults.voice || '';
+            await setMainTtsProviderField('url', nextUrl, 'phone-tts-url');
+            if (ttsModel) { ttsModel.value = nextModel; await setMainTtsProviderField('model', nextModel, 'phone-tts-model'); }
+            if (ttsVoice) { ttsVoice.value = nextVoice; await setMainTtsProviderField('voice', nextVoice, 'phone-tts-voice'); }
+            refreshTtsPresetOptions();
+        });
         if (ttsKey) ttsKey.addEventListener('change', async (e) => { await setMainTtsProviderField('key', e.target.value, 'phone-tts-key'); });
         if (ttsVolcKey) ttsVolcKey.addEventListener('change', async (e) => { await setVolcTtsField('key', e.target.value, 'phone-tts-key'); });
         if (ttsVolcAppId) ttsVolcAppId.addEventListener('change', async (e) => { await setVolcTtsField('app-id', e.target.value, 'phone-tts-volc-app-id'); });
@@ -7367,6 +7505,21 @@ export class SettingsApp {
                 if (ttsVolcCloneAudioName) {
                     ttsVolcCloneAudioName.textContent = file ? `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)` : '未选择文件';
                     ttsVolcCloneAudioName.style.color = file ? '#333' : '#999';
+                }
+            });
+        }
+        if (ttsNimoCloneAudioPickBtn && ttsNimoCloneAudio) {
+            ttsNimoCloneAudioPickBtn.addEventListener('click', () => {
+                ttsNimoCloneAudio.click();
+            });
+            ttsNimoCloneAudio.addEventListener('change', () => {
+                const file = ttsNimoCloneAudio.files?.[0];
+                if (ttsNimoCloneAudioName) {
+                    ttsNimoCloneAudioName.textContent = file ? `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)` : '未选择文件';
+                    ttsNimoCloneAudioName.style.color = file ? '#333' : '#999';
+                }
+                if (ttsNimoCloneNick && file && !String(ttsNimoCloneNick.value || '').trim()) {
+                    ttsNimoCloneNick.value = file.name.replace(/\.[^.]+$/, '');
                 }
             });
         }
@@ -7489,6 +7642,46 @@ export class SettingsApp {
                 this.phoneShell.showNotification('已设置', '复刻音色已设为当前音色', '✅');
             });
         }
+        if (ttsNimoCloneSaveBtn) {
+            ttsNimoCloneSaveBtn.addEventListener('click', async () => {
+                if (!ttsNimoCloneAudio?.files?.[0]) {
+                    ttsNimoCloneAudio?.click();
+                    setNimoCloneResult('请先选择用于 MiMo 复刻的参考音频。');
+                    return;
+                }
+                const ttsManager = window.VirtualPhone?.ttsManager;
+                if (!ttsManager?.saveNimoCloneVoice) {
+                    setNimoCloneResult('TTS 管理器未初始化，无法保存 MiMo 复刻音色。', true);
+                    return;
+                }
+                await withBusyButton(ttsNimoCloneSaveBtn, '上传中...', async () => {
+                    try {
+                        const voice = await ttsManager.saveNimoCloneVoice({
+                            nick: String(ttsNimoCloneNick?.value || '').trim(),
+                            audioFile: ttsNimoCloneAudio.files[0]
+                        });
+                        const nimoDefaults = this._getTtsProviderDefaults('nimo');
+                        await this.storage.set('phone-tts-provider', 'nimo');
+                        await this.storage.set('phone-tts-main-provider', 'nimo');
+                        await this.storage.set(this._getTtsProviderConfigKey('nimo', 'url'), nimoDefaults.url);
+                        await this.storage.set(this._getTtsProviderConfigKey('nimo', 'key'), String(ttsKey?.value || '').trim());
+                        await this.storage.set(this._getTtsProviderConfigKey('nimo', 'model'), 'mimo-v2.5-tts-voiceclone');
+                        await this.storage.set('phone-tts-url', nimoDefaults.url);
+                        await this.storage.set('phone-tts-key', String(ttsKey?.value || '').trim());
+                        await this.storage.set('phone-tts-model', 'mimo-v2.5-tts-voiceclone');
+                        if (ttsProvider) ttsProvider.value = 'nimo';
+                        if (ttsUrl) ttsUrl.value = nimoDefaults.url;
+                        if (ttsModel) ttsModel.value = 'mimo-v2.5-tts-voiceclone';
+                        refreshTtsPresetOptions();
+                        await saveTtsVoice(voice.id);
+                        setNimoCloneResult(`已上传到酒馆并设为 MiMo 复刻音色：${voice.nick || voice.id}`);
+                        this.phoneShell.showNotification('已设置', 'MiMo 复刻音色已上传并设为当前音色', '✅');
+                    } catch (error) {
+                        setNimoCloneResult(error?.message || 'MiMo 复刻音色保存失败', true);
+                    }
+                });
+            });
+        }
         if (wechatCallAutoTtsToggle) {
             wechatCallAutoTtsToggle.addEventListener('change', async (e) => {
                 await this.storage.set('wechat-call-auto-tts', !!e.target.checked);
@@ -7523,7 +7716,6 @@ export class SettingsApp {
         });
 
         // 音色历史下拉 → 选择填入输入框
-        const ttsVoicePreset = document.getElementById('phone-tts-voice-preset');
         if (ttsVoicePreset) {
             ttsVoicePreset.addEventListener('change', async (e) => {
                 const val = e.target.value;

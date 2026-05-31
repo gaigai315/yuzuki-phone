@@ -207,6 +207,28 @@
     font-size: 15px;
 }
 
+.games-sudoku-lobby-art {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 2px;
+}
+
+.games-sudoku-lobby-art span {
+    border-radius: 3px;
+    background: #eadfcb;
+    color: #8d4f28;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    line-height: 1;
+    font-weight: 900;
+    box-shadow: inset 0 0 0 1px rgba(141, 79, 40, 0.18);
+}
+
 .games-lobby-card {
     position: absolute;
     width: 22px;

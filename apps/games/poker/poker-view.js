@@ -69,6 +69,19 @@ export class PokerView {
                         <i class="fa-solid fa-chevron-right games-game-chevron"></i>
                     </button>
 
+                    <button class="games-game-card games-sudoku-card" id="games-open-sudoku" type="button">
+                        <div class="games-game-art">
+                            <div class="games-sudoku-lobby-art" aria-hidden="true">
+                                <span>3</span><span>9</span><span>1</span><span>5</span>
+                            </div>
+                        </div>
+                        <div class="games-game-info">
+                            <div class="games-game-title">每日数独</div>
+                            <div class="games-game-desc">9x9 · 笔记推理</div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right games-game-chevron"></i>
+                    </button>
+
                     <button class="games-game-card games-catbox-card" id="games-open-catbox" type="button">
                         <div class="games-game-art">
                             <div class="games-catbox-lobby-art" aria-hidden="true">
@@ -461,6 +474,9 @@ export class PokerView {
         });
         document.getElementById('games-open-2048')?.addEventListener('click', () => {
             this.app.open2048();
+        });
+        document.getElementById('games-open-sudoku')?.addEventListener('click', () => {
+            this.app.openSudoku();
         });
         document.getElementById('games-open-catbox')?.addEventListener('click', () => {
             this.app.openCatbox();

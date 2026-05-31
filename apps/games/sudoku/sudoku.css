@@ -1,0 +1,337 @@
+.games-sudoku-app {
+    background: #eee6d9;
+    color: #464646;
+    overflow: hidden;
+}
+
+.games-sudoku-topbar {
+    height: 68px;
+    flex: 0 0 68px;
+    padding: 28px 14px 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.games-sudoku-icon-btn {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(69, 67, 61, 0.88);
+    color: #fff8ec !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.games-sudoku-icon-btn i {
+    color: #fff8ec !important;
+}
+
+.games-sudoku-icon-btn:nth-child(3) {
+    margin-right: auto;
+}
+
+.games-sudoku-header {
+    flex: 0 0 auto;
+    padding: 0 14px 8px;
+    box-sizing: border-box;
+}
+
+.games-sudoku-level {
+    text-align: center;
+    color: #a95f2f;
+    font-size: 19px;
+    line-height: 1.15;
+    font-weight: 900;
+}
+
+.games-sudoku-meta {
+    margin-top: 5px;
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) 58px;
+    align-items: center;
+    gap: 8px;
+    color: #a95f2f;
+    font-size: 17px;
+    font-weight: 800;
+}
+
+.games-sudoku-meta strong {
+    min-width: 0;
+    color: #464646;
+    font-size: 16px;
+    text-align: center;
+}
+
+.games-sudoku-meta strong span {
+    color: #df5059;
+    font-size: 18px;
+    margin-left: 4px;
+}
+
+.games-sudoku-meta strong span.is-lost {
+    color: rgba(70, 70, 70, 0.22);
+}
+
+.games-sudoku-meta > span:last-child {
+    text-align: right;
+}
+
+.games-sudoku-board {
+    width: calc(100% - 28px);
+    max-width: 342px;
+    align-self: center;
+    aspect-ratio: 1;
+    display: grid;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    grid-template-rows: repeat(9, minmax(0, 1fr));
+    border: 2px solid #474747;
+    background: #474747;
+    gap: 1px;
+    box-sizing: border-box;
+    touch-action: none;
+    overscroll-behavior: contain;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.games-sudoku-cell {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    border: 0;
+    padding: 0;
+    background: #e9e1d3;
+    color: #4b4b4b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'HarmonyOS Sans', sans-serif;
+    cursor: pointer;
+}
+
+.games-sudoku-cell:nth-child(3n) {
+    border-right: 2px solid #474747;
+}
+
+.games-sudoku-cell:nth-child(9n) {
+    border-right: 0;
+}
+
+.games-sudoku-cell:nth-child(n + 19):nth-child(-n + 27),
+.games-sudoku-cell:nth-child(n + 46):nth-child(-n + 54) {
+    border-bottom: 2px solid #474747;
+}
+
+.games-sudoku-cell.is-related {
+    background: #dfd6c5;
+}
+
+.games-sudoku-cell.is-same-number {
+    background: #d2c5ad;
+}
+
+.games-sudoku-cell.is-selected {
+    background: #efdba6;
+    box-shadow: inset 0 0 0 2px #9a6a32;
+    z-index: 1;
+}
+
+.games-sudoku-cell.is-wrong {
+    background: #f0b3ad;
+    color: #b22e34;
+}
+
+.games-sudoku-cell.is-fixed .games-sudoku-value {
+    color: #4c4c4c;
+    font-weight: 700;
+}
+
+.games-sudoku-value {
+    color: #9a5a2c;
+    font-size: 29px;
+    line-height: 1;
+    font-weight: 500;
+}
+
+.games-sudoku-notes {
+    width: 100%;
+    height: 100%;
+    padding: 2px;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+
+.games-sudoku-notes span {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #55504a;
+    font-size: 10px;
+    line-height: 1;
+}
+
+.games-sudoku-tools {
+    flex: 0 0 auto;
+    margin-top: 14px;
+    padding: 0 18px;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.games-sudoku-tool {
+    height: 52px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #a95f2f !important;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.games-sudoku-tool i {
+    color: #a95f2f !important;
+    font-size: 22px;
+}
+
+.games-sudoku-tool.is-active {
+    background: rgba(169, 95, 47, 0.1);
+}
+
+.games-sudoku-tool.is-disabled {
+    opacity: 0.35;
+}
+
+.games-sudoku-keypad {
+    flex: 0 0 auto;
+    padding: 6px 14px 18px;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: 2px;
+}
+
+.games-sudoku-number {
+    height: 44px;
+    border: 0;
+    background: transparent;
+    color: #444444;
+    font-size: 35px;
+    line-height: 1;
+    font-weight: 400;
+    cursor: pointer;
+}
+
+.games-sudoku-difficulty-sheet,
+.games-sudoku-result {
+    position: absolute;
+    inset: 0;
+    z-index: 35;
+    background: rgba(46, 42, 36, 0.36);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.games-sudoku-difficulty-sheet[hidden] {
+    display: none;
+}
+
+.games-sudoku-difficulty-panel,
+.games-sudoku-result-panel {
+    width: 100%;
+    border-radius: 10px;
+    background: #fffaf0;
+    border: 1px solid rgba(71, 71, 71, 0.16);
+    box-shadow: 0 18px 36px rgba(48, 42, 36, 0.28);
+    padding: 14px;
+    box-sizing: border-box;
+    display: grid;
+    gap: 8px;
+    color: #464646;
+}
+
+.games-sudoku-difficulty-panel strong,
+.games-sudoku-result-panel strong {
+    color: #a95f2f;
+    font-size: 15px;
+    text-align: center;
+}
+
+.games-sudoku-difficulty-panel button,
+.games-sudoku-result-panel button {
+    height: 40px;
+    border: 1px solid rgba(169, 95, 47, 0.18);
+    border-radius: 8px;
+    background: rgba(169, 95, 47, 0.1);
+    color: #8d4f28;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.games-sudoku-result {
+    align-items: center;
+}
+
+.games-sudoku-result-panel {
+    max-width: 270px;
+    text-align: center;
+}
+
+.games-sudoku-result-panel span {
+    color: rgba(70, 70, 70, 0.68);
+    font-size: 12px;
+}
+
+@media (max-height: 700px) {
+    .games-sudoku-topbar {
+        height: 58px;
+        flex-basis: 58px;
+        padding-top: 22px;
+    }
+
+    .games-sudoku-level {
+        font-size: 17px;
+    }
+
+    .games-sudoku-meta {
+        font-size: 15px;
+    }
+
+    .games-sudoku-board {
+        max-width: 312px;
+    }
+
+    .games-sudoku-tools {
+        margin-top: 9px;
+    }
+
+    .games-sudoku-tool {
+        height: 44px;
+    }
+
+    .games-sudoku-number {
+        height: 38px;
+        font-size: 30px;
+    }
+}
