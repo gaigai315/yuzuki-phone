@@ -183,11 +183,11 @@
 .games-sudoku-tools {
     flex: 0 0 auto;
     margin-top: 14px;
-    padding: 0 18px;
+    padding: 0 14px;
     box-sizing: border-box;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
 }
 
 .games-sudoku-tool {
@@ -201,14 +201,14 @@
     align-items: center;
     justify-content: center;
     gap: 3px;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     cursor: pointer;
 }
 
 .games-sudoku-tool i {
     color: #a95f2f !important;
-    font-size: 22px;
+    font-size: 20px;
 }
 
 .games-sudoku-tool.is-active {

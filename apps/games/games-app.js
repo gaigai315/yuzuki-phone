@@ -96,6 +96,11 @@ export class GamesApp extends PokerApp {
         this.sudokuView.render();
     }
 
+    autoNoteSudoku() {
+        this.sudokuData.autoNotes();
+        this.sudokuView.render();
+    }
+
     hintSudoku() {
         this.sudokuData.hint();
         this.sudokuView.render();

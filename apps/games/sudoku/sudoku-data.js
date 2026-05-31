@@ -53,6 +53,30 @@ export class SudokuData {
         return this.state;
     }
 
+    autoNotes() {
+        if (this.state.completed || this.state.failed) return this.state;
+        const nextNotes = this._cloneNotes(this.state.notes);
+        let changed = false;
+
+        for (let row = 0; row < SIZE; row += 1) {
+            for (let col = 0; col < SIZE; col += 1) {
+                const notes = (!this.state.fixed[row][col] && !this.state.board[row][col])
+                    ? this._getCandidates(row, col)
+                    : [];
+                if (!this._sameNotes(nextNotes[row][col], notes)) {
+                    nextNotes[row][col] = notes;
+                    changed = true;
+                }
+            }
+        }
+
+        if (!changed) return this.state;
+        this._pushHistory();
+        this.state.notes = nextNotes;
+        this._persist();
+        return this.state;
+    }
+
     setNumber(value) {
         const number = Number(value);
         const { row, col } = this.state.selected || {};
@@ -222,6 +246,27 @@ export class SudokuData {
                 this.state.notes[r][c] = this.state.notes[r][c].filter(item => item !== number);
             }
         }
+    }
+
+    _getCandidates(row, col) {
+        const used = new Set();
+        for (let index = 0; index < SIZE; index += 1) {
+            if (this.state.board[row][index]) used.add(this.state.board[row][index]);
+            if (this.state.board[index][col]) used.add(this.state.board[index][col]);
+        }
+        const rowStart = Math.floor(row / BOX) * BOX;
+        const colStart = Math.floor(col / BOX) * BOX;
+        for (let r = rowStart; r < rowStart + BOX; r += 1) {
+            for (let c = colStart; c < colStart + BOX; c += 1) {
+                if (this.state.board[r][c]) used.add(this.state.board[r][c]);
+            }
+        }
+        return [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(number => !used.has(number));
+    }
+
+    _sameNotes(a = [], b = []) {
+        if (a.length !== b.length) return false;
+        return a.every((value, index) => Number(value) === Number(b[index]));
     }
 
     _checkComplete() {

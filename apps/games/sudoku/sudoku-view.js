@@ -53,6 +53,10 @@ export class SudokuView {
                         <i class="fa-solid fa-pencil"></i>
                         <span>笔记</span>
                     </button>
+                    <button class="games-sudoku-tool" id="games-sudoku-auto-note" type="button">
+                        <i class="fa-solid fa-list-check"></i>
+                        <span>一键</span>
+                    </button>
                     <button class="games-sudoku-tool" id="games-sudoku-hint" type="button">
                         <i class="fa-solid fa-lightbulb"></i>
                         <span>提示</span>
@@ -161,6 +165,7 @@ export class SudokuView {
         document.getElementById('games-sudoku-erase')?.addEventListener('click', () => this.app.eraseSudoku());
         document.getElementById('games-sudoku-undo')?.addEventListener('click', () => this.app.undoSudoku());
         document.getElementById('games-sudoku-note')?.addEventListener('click', () => this.app.toggleSudokuNoteMode());
+        document.getElementById('games-sudoku-auto-note')?.addEventListener('click', () => this.app.autoNoteSudoku());
         document.getElementById('games-sudoku-hint')?.addEventListener('click', () => this.app.hintSudoku());
 
         document.querySelectorAll('.games-sudoku-cell').forEach(cell => {
