@@ -3778,7 +3778,7 @@ input:checked + .toggle-slider:before {
 @media (max-width: 500px) {
     /* 🔥 移动端基准宽度保持原样，不受高度缩放影响 */
     .phone-body-panel {
-        width: calc(82vw * var(--phone-shell-width-scale, 1)) !important;
+        width: calc(88vw * var(--phone-shell-width-scale, 1)) !important;
     }
 
     /* 🔥 移动端图标放大 */
