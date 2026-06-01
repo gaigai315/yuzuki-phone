@@ -23,6 +23,7 @@ export class PokerApp {
         this._pokerChatReplyTimer = null;
         this._pokerChatReplyDelay = 6000;
         this._pokerChatHasPendingReply = false;
+        this._pendingUserPokerActionContext = null;
 
         window.addEventListener('phone:swipeBack', () => this.handleSwipeBack());
     }
@@ -142,8 +143,22 @@ export class PokerApp {
             title: '德州扑克牌局记录',
             desc: summaryLines.join(' / ') || '点击查看完整牌局内容',
             content,
-            sharedAt: Date.now()
+            sharedAt: this._getPokerStoryShareTime()
         };
+    }
+
+    _getPokerStoryShareTime() {
+        try {
+            const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.();
+            const date = String(storyTime?.date || '').trim();
+            const time = String(storyTime?.time || '').trim().replace('：', ':');
+            if (date && /^\d{1,2}:\d{2}$/.test(time)) {
+                return [date, storyTime?.weekday, time].filter(Boolean).join(' ');
+            }
+        } catch (error) {
+            console.warn('[Games] 读取德州扑克分享时间失败:', error);
+        }
+        return '';
     }
 
     async sharePokerToWechat(targetName, options = {}) {
@@ -398,7 +413,18 @@ export class PokerApp {
             this.phoneShell?.showNotification?.('德州扑克', '正在等待牌桌回复，请稍后行动', '⏳');
             return;
         }
+        const combinedSpeech = this._consumePendingPokerChatForAction();
         this.gamesData.userAction(action, amount);
+        if (combinedSpeech) {
+            const actionLabel = [
+                this._formatPokerActionName(action),
+                Number(amount || 0) > 0 ? this._fmtPokerNumber(amount) : ''
+            ].filter(Boolean).join('');
+            this._pendingUserPokerActionContext = {
+                speech: combinedSpeech,
+                action: actionLabel || this._formatPokerActionName(action) || String(action || '').trim()
+            };
+        }
         this.gamesView.renderPoker();
         await this.drivePokerAi();
     }
@@ -412,6 +438,17 @@ export class PokerApp {
         this.gamesView.clearPendingChatInput?.();
         this.gamesView.renderPoker();
         this._schedulePokerTableChatReplies();
+    }
+
+    stagePokerTableChatForAction(message = '') {
+        const text = String(message || '').trim();
+        if (!text) return false;
+        this.gamesData.addTableSpeech(this.gamesData.getState()?.players?.find(p => p.id === 'user')?.name || '你', text);
+        this._pendingPokerChatMessages.push(text);
+        this._pokerChatHasPendingReply = true;
+        this.gamesView.clearPendingChatInput?.();
+        this.holdPendingPokerChatForAction();
+        return true;
     }
 
     _schedulePokerTableChatReplies() {
@@ -432,11 +469,42 @@ export class PokerApp {
             this.gamesView.updateStatusDot?.();
             return;
         }
-        this._setPokerStatus('waiting', 'table_chat');
+        this._setPokerStatus('idle');
         this._pokerChatReplyTimer = setTimeout(() => {
             this._pokerChatReplyTimer = null;
             this._flushPokerTableChatReplies();
         }, this._pokerChatReplyDelay);
+    }
+
+    holdPendingPokerChatForAction() {
+        if (this._pokerChatReplyTimer) {
+            clearTimeout(this._pokerChatReplyTimer);
+            this._pokerChatReplyTimer = null;
+        }
+        if (this._pokerChatHasPendingReply) {
+            this._setPokerStatus('idle');
+        }
+    }
+
+    cancelPendingPokerActionChat() {
+        if (this._pokerChatReplyTimer) {
+            clearTimeout(this._pokerChatReplyTimer);
+            this._pokerChatReplyTimer = null;
+        }
+        if (!this._pokerChatHasPendingReply && this._pendingPokerChatMessages.length === 0) return;
+        this._pendingPokerChatMessages = [];
+        this._pokerChatHasPendingReply = false;
+        if (!this.isSending && !this._aiDriving) this._setPokerStatus('idle');
+    }
+
+    _consumePendingPokerChatForAction() {
+        if (this._pokerChatReplyTimer) {
+            clearTimeout(this._pokerChatReplyTimer);
+            this._pokerChatReplyTimer = null;
+        }
+        const messages = this._pendingPokerChatMessages.splice(0);
+        this._pokerChatHasPendingReply = false;
+        return messages.map(item => String(item || '').trim()).filter(Boolean).join('\n');
     }
 
     async _flushPokerTableChatReplies() {
@@ -491,6 +559,7 @@ export class PokerApp {
             }
         } finally {
             this._aiDriving = false;
+            this._pendingUserPokerActionContext = null;
             if (!this.isSending) this._setPokerStatus('idle');
             if (!stoppedByError) this.gamesView.renderPoker();
         }
@@ -503,7 +572,8 @@ export class PokerApp {
             const context = this.gamesData.buildAiDecisionContext(player.id);
             if (!context) throw new Error('牌局上下文为空');
             const result = await this._callPokerAi(player, () => this._buildPokerAiMessages(player, context, {
-                mode: 'action'
+                mode: 'action',
+                userActionContext: this._pendingUserPokerActionContext
             }), {
                 appId: 'games',
                 temperature: 0.8,
@@ -744,6 +814,12 @@ export class PokerApp {
             lines.push(`用户刚在牌桌说：${pokerContext.userMessage || '（空）'}`);
             lines.push('请只给出牌桌发言，行动写“无行动”。');
         } else {
+            if (options.userActionContext?.speech) {
+                lines.push(`用户刚才把以下牌桌发言和本次行动一起打出：${options.userActionContext.speech}`);
+                if (options.userActionContext.action) {
+                    lines.push(`用户本次行动：${options.userActionContext.action}。`);
+                }
+            }
             lines.push(`本次合法行动：${legalActions}。`);
             lines.push('请根据你的手牌、公共牌、位置、筹码压力和最近行动做出一个合法行动。');
         }

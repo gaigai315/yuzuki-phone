@@ -304,7 +304,7 @@ export class PokerData {
     exportPokerShareText() {
         const state = this.state;
         const lines = ['[德州扑克牌局分享]'];
-        if (this.sessionStartedAt) lines.push(`开始时间：${this._formatTime(this.sessionStartedAt)}`);
+        lines.push(`开始时间：${this._formatStoryTime()}`);
         if (state) {
             lines.push(`当前局数：第 ${state.handNo} 局`);
             lines.push(`当前阶段：${STREET_LABELS[state.street] || state.street || '牌桌'}`);
@@ -1017,6 +1017,20 @@ export class PokerData {
         const date = new Date(Number(timestamp || Date.now()));
         const pad = value => String(value).padStart(2, '0');
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    _formatStoryTime() {
+        try {
+            const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.();
+            const date = String(storyTime?.date || '').trim();
+            const time = String(storyTime?.time || '').trim().replace('：', ':');
+            if (date && /^\d{1,2}:\d{2}$/.test(time)) {
+                return `${date} ${time}`;
+            }
+        } catch (error) {
+            console.warn('[Poker] 读取手机全局时间失败:', error);
+        }
+        return this._formatTime(Date.now());
     }
 }
 

@@ -600,6 +600,8 @@ export class PokerView {
             if (nextOpen) this._logPanelOpen = false;
             this._wagerModalOpen = false;
             this.renderPoker();
+            if (nextOpen) this.app.holdPendingPokerChatForAction?.();
+            else this.app.cancelPendingPokerActionChat?.();
             this.app.handlePokerComposerChanged?.();
         });
         document.querySelectorAll('.games-action-btn[data-action]').forEach(btn => {
@@ -621,6 +623,10 @@ export class PokerView {
                     return;
                 }
                 const action = btn.dataset.action;
+                const pendingText = String(this._pendingChatInput || '').trim();
+                if (pendingText) {
+                    this.app.stagePokerTableChatForAction?.(pendingText);
+                }
                 this._actionPanelOpen = false;
                 this._wagerModalOpen = false;
                 this.app.handleUserPokerAction(action, Number(btn.dataset.amount || 0));
@@ -628,6 +634,7 @@ export class PokerView {
         });
 
         document.getElementById('games-wager-modal-cancel')?.addEventListener('click', () => {
+            this.app.cancelPendingPokerActionChat?.();
             this._wagerModalOpen = false;
             this.renderPoker();
         });
@@ -637,6 +644,10 @@ export class PokerView {
                 return;
             }
             const amount = this._resolveModalWagerAmount();
+            const pendingText = String(this._pendingChatInput || '').trim();
+            if (pendingText) {
+                this.app.stagePokerTableChatForAction?.(pendingText);
+            }
             this._actionPanelOpen = false;
             this._wagerModalOpen = false;
             this.app.handleUserPokerAction(this._wagerModalAction, amount);
@@ -646,6 +657,7 @@ export class PokerView {
         });
         document.getElementById('games-wager-modal-backdrop')?.addEventListener('click', e => {
             if (e.target?.id !== 'games-wager-modal-backdrop') return;
+            this.app.cancelPendingPokerActionChat?.();
             this._wagerModalOpen = false;
             this.renderPoker();
         });

@@ -249,6 +249,7 @@ export class PhoneShell {
                 '.weibo-profile-wrapper', '.weibo-recommend-container', '.weibo-pull-refresh-indicator',
                 '.weibo-forward-overlay', '.weibo-forward-dialog', '.weibo-forward-dialog-compose', '.weibo-forward-list',
                 '#wechat-weibo-preview-modal', '#wechat-weibo-preview-modal > div',
+                '#wechat-poker-preview-modal', '#wechat-poker-preview-modal > div', '.wechat-poker-preview-body',
                 '.wechat-call-transcript-overlay', '.wechat-call-transcript-panel', '.wechat-call-transcript-body',
                 '.phone-image-viewer-overlay', '.phone-image-viewer-stage',
                 '#st-phone-update-modal', '.st-phone-update-dialog', '.st-phone-update-content', '.st-phone-update-list',

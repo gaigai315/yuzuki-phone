@@ -5493,10 +5493,7 @@ renderChatRoom(chat) {
     showPokerCardPreviewModal(pokerData = {}) {
         const title = this._escapeHtml(pokerData.title || '德州扑克牌局记录');
         const content = this._escapeHtml(pokerData.content || pokerData.desc || '暂无牌局内容');
-        const sharedAt = Number(pokerData.sharedAt) || 0;
-        const timeText = sharedAt
-            ? this._escapeHtml(new Date(sharedAt).toLocaleString('zh-CN', { hour12: false }))
-            : '';
+        const timeText = this._escapeHtml(String(pokerData.sharedAt || '').trim());
 
         const currentView = document.querySelector('.phone-view-current') || document;
         const host = currentView.querySelector('.wechat-app') || currentView;
@@ -5530,7 +5527,7 @@ renderChatRoom(chat) {
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
-                <div style="padding:12px 14px 14px; overflow-y:auto; -webkit-overflow-scrolling:touch;">
+                <div class="wechat-poker-preview-body" style="padding:12px 14px 14px; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain; min-height:0; flex:1;">
                     <div style="font-size:12px; line-height:1.65; color:#333; text-align:left; white-space:pre-wrap; word-break:break-word; font-family:inherit;">${content}</div>
                 </div>
             </div>
