@@ -761,6 +761,16 @@ export class PokerView {
         this._pendingChatInput = '';
     }
 
+    clearPokerActionInputDom({ keepFocus = false } = {}) {
+        const input = document.querySelector('.phone-view-current #games-action-input') || document.getElementById('games-action-input');
+        if (!input) return;
+        input.value = '';
+        this._pendingChatInput = '';
+        if (keepFocus && document.activeElement === input) {
+            requestAnimationFrame(() => input.focus({ preventScroll: true }));
+        }
+    }
+
     isPokerComposing() {
         if (this._actionPanelOpen || this._wagerModalOpen || this._shareOverlayOpen || this._settingsOpen) return true;
         const input = document.querySelector('.phone-view-current #games-action-input') || document.getElementById('games-action-input');

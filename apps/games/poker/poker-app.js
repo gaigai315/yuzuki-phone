@@ -441,7 +441,8 @@ export class PokerApp {
         this._pendingPokerChatMessages.push(text);
         this._pokerChatHasPendingReply = true;
         this.gamesView.clearPendingChatInput?.();
-        this.gamesView.renderPoker();
+        this.gamesView.clearPokerActionInputDom?.({ keepFocus: true });
+        this.gamesView.syncLatestSeatSpeechFromState?.();
         this._schedulePokerTableChatReplies();
     }
 
