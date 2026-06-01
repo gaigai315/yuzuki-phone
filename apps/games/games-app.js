@@ -12,9 +12,10 @@ import { CatboxData } from './catbox/catbox-data.js';
 import { CatboxView } from './catbox/catbox-view.js';
 import { WerewolfData } from './werewolf/werewolf-data.js';
 import { WerewolfView } from './werewolf/werewolf-view.js';
+import { buildGameSillyTavernContextMessages } from './common/games-ai-context.js';
 
 const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
-const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.27', import.meta.url).href;
+const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.30', import.meta.url).href;
 const CATBOX_PRELOAD_ASSETS = [
     new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
     new URL('./catbox/assets/wxxw2.png', import.meta.url).href,
@@ -46,6 +47,7 @@ export class GamesApp extends PokerApp {
         this.catboxView = new CatboxView(this);
         this.werewolfData = new WerewolfData(storage);
         this.werewolfView = new WerewolfView(this);
+        this._werewolfDriving = false;
         this._preloadCatboxAssets();
         this._preloadWerewolfAssets();
         window.addEventListener('phone:panelVisibility', event => {
@@ -132,17 +134,61 @@ export class GamesApp extends PokerApp {
     openWerewolf() {
         this.applyPhoneChromeTheme();
         this.currentView = 'werewolf';
+        this.werewolfData.updateUserInfo(this._getWerewolfUserInfo());
         this.werewolfView.openEntryPrompt();
         this.werewolfView.render();
     }
 
     startNewWerewolfGame() {
-        this.werewolfData.reset();
+        this.werewolfData.reset(this._getWerewolfUserInfo());
         this.werewolfView.closeEntryPrompt();
         this.werewolfView.render();
     }
 
-    async startWerewolfMatch() {
+    getWechatContactsForWerewolf() {
+        return this.getWechatContactsForPoker();
+    }
+
+    getDefaultWerewolfPrompt() {
+        return [
+            '你正在为小手机狼人杀扮演当前发言玩家。',
+            '你只能根据系统公告、场上公开状态和已经出现的发言来判断。',
+            '你会收到自己的真实身份，但绝不能在发言中直接暴露身份，除非当前策略确实需要跳身份。',
+            '你不能读取或泄露其他玩家的真实身份，也不要说“系统告诉我”。',
+            '首日白天如果系统公告没有给出夜晚结果，不能凭空说查杀、金水、银水、验人结果、守护结果或刀口信息。',
+            '第一轮发言以自我介绍、表水、轻度试探和听后置位发言为主，不要直接推进到完整推理结论。',
+            '发言要像真实玩家：可以怀疑、拉票、反驳、试探、隐藏、伪装或分析票型，但必须围绕场上公开信息。',
+            '每次只输出当前玩家 1 段发言，建议 40-120 字。',
+            '必须只返回 <狼人杀发言> 标签包裹内容，不要 Markdown，不要解释。'
+        ].join('\n');
+    }
+
+    getWerewolfPrompt() {
+        const saved = String(this.storage?.get?.('games_werewolf_ai_prompt') || '').trim();
+        return saved || this.getDefaultWerewolfPrompt();
+    }
+
+    setWerewolfPrompt(value) {
+        const text = String(value || '').trim();
+        this.storage?.set?.('games_werewolf_ai_prompt', text, true);
+        return text;
+    }
+
+    resetWerewolfPrompt() {
+        this.storage?.set?.('games_werewolf_ai_prompt', '', true);
+        return this.getDefaultWerewolfPrompt();
+    }
+
+    isWerewolfWorldbookEnabled() {
+        return window.VirtualPhone?.worldbookManager?.getEnabled?.('games') ?? true;
+    }
+
+    async setWerewolfWorldbookEnabled(enabled) {
+        await window.VirtualPhone?.worldbookManager?.setEnabled?.('games', !!enabled);
+        return !!enabled;
+    }
+
+    async startWerewolfMatch(invitedContacts = []) {
         const emptySeats = this.werewolfData.getEmptySeats();
         if (!emptySeats.length) {
             this.phoneShell?.showNotification?.('狼人杀', '已经没有空位需要匹配', '🐺');
@@ -151,15 +197,21 @@ export class GamesApp extends PokerApp {
         this.werewolfData.setMatching(true);
         this.werewolfView.render();
         try {
-            const result = await this._callWerewolfMatchAi(emptySeats);
-            const matched = this._parseWerewolfMatch(result?.summary || result?.content || result?.text || '');
-            const required = new Set(emptySeats);
-            const filtered = matched.filter(player => required.has(player.seat));
-            if (filtered.length !== emptySeats.length) {
-                throw new Error(`AI 返回人数不完整：需要 ${emptySeats.length} 个，收到 ${filtered.length} 个`);
+            const invited = this._buildWerewolfInvitedPlayers(invitedContacts, emptySeats);
+            const remainingSeats = emptySeats.filter(seat => !invited.some(player => Number(player.seat) === Number(seat)));
+            let generated = [];
+            if (remainingSeats.length) {
+                const result = await this._callWerewolfMatchAi(remainingSeats);
+                generated = this._parseWerewolfMatch(result?.summary || result?.content || result?.text || '')
+                    .filter(player => remainingSeats.includes(Number(player.seat)))
+                    .map(player => ({ ...player, source: 'ai' }));
+                if (generated.length !== remainingSeats.length) {
+                    generated = this._buildWerewolfFallbackPlayers(remainingSeats, generated);
+                }
             }
-            this.werewolfData.applyMatchedPlayers(filtered);
+            this.werewolfData.applyMatchedPlayers([...invited, ...generated]);
             this.werewolfView.render();
+            await this.driveWerewolfDaySpeeches();
         } catch (error) {
             console.warn('[Werewolf] 匹配失败:', error);
             const message = this._formatError?.(error, '匹配失败') || error?.message || '匹配失败';
@@ -215,6 +267,884 @@ export class GamesApp extends PokerApp {
         });
     }
 
+    async driveWerewolfDaySpeeches() {
+        if (this._werewolfDriving) return;
+        this._werewolfDriving = true;
+        try {
+            let guard = 0;
+            while (guard < 16) {
+                guard += 1;
+                const state = this.werewolfData.getState();
+                if (!state || state.gameOver || state.phase !== 'day') break;
+                const speaker = this.werewolfData.getCurrentSpeaker();
+                if (!speaker) break;
+                if (speaker.alive === false) {
+                    this.werewolfData.skipDeadSpeaker();
+                    this.werewolfView.render();
+                    continue;
+                }
+                if (speaker.isUser) {
+                    this.werewolfData.setActiveSpeaker(speaker.seat, false);
+                    this.werewolfData.addSystemNotice(`请 ${speaker.seat}号 ${speaker.name || '你'} 发言。`);
+                    this.werewolfView.render();
+                    break;
+                }
+                const ok = await this._runWerewolfAiSpeechTurn(speaker);
+                if (ok === false) break;
+            }
+        } finally {
+            this._werewolfDriving = false;
+            this.werewolfView.render();
+        }
+    }
+
+    async driveWerewolfNight() {
+        let guard = 0;
+        while (guard < 8) {
+            guard += 1;
+            const state = this.werewolfData.getState();
+            if (!state || state.gameOver || state.phase !== 'night') return;
+            if (!state.nightStep) {
+                this.werewolfData.startDayFromNight();
+                this.werewolfView.render();
+                await this.driveWerewolfDaySpeeches();
+                return;
+            }
+            if (this.werewolfData.isUserNightTurn()) {
+                this.werewolfView.render();
+                return;
+            }
+            const ok = await this._runWerewolfAiNightAction();
+            if (ok === false) return;
+            this.werewolfView.render();
+            await new Promise(resolve => setTimeout(resolve, 450));
+        }
+    }
+
+    submitWerewolfNightAction(payload = {}) {
+        const state = this.werewolfData.getState();
+        if (!state || state.gameOver) return;
+        const user = state?.players?.find?.(player => player.isUser);
+        const isWitchTurn = state?.phase === 'night' && state?.nightStep === 'witch' && user?.role === '女巫';
+        const usePotion = String(payload.usePotion || '').trim();
+        const targetSeat = Number(payload.targetSeat || 0);
+        if (isWitchTurn && usePotion === 'poison' && targetSeat && targetSeat === Number(user.seat || 0)) {
+            this.phoneShell?.showNotification?.('狼人杀', '女巫不能对自己使用毒药，已按跳过处理。', '🌙');
+            payload = { ...payload, targetSeat: 0, usePotion: '' };
+        } else if (isWitchTurn && !usePotion) {
+            this.phoneShell?.showNotification?.('狼人杀', '你选择不使用药剂，夜晚继续。', '🌙');
+        }
+        if (state.nightStep === 'werewolf' && user?.role === '狼人') {
+            payload = {
+                ...payload,
+                discussion: (Array.isArray(state.wolfChat) ? state.wolfChat : [])
+                    .map(item => `${item.seat || '狼队'}号：${item.text}`)
+                    .join(' / ')
+            };
+        }
+        this.werewolfData.applyUserNightAction(payload);
+        this.werewolfView.render();
+        this.driveWerewolfNight();
+    }
+
+    submitWerewolfWolfChat(text = '') {
+        const state = this.werewolfData.getState();
+        const user = state?.players?.find?.(player => player.isUser);
+        const content = String(text || '').trim();
+        if (!content || state?.phase !== 'night' || state?.nightStep !== 'werewolf' || user?.role !== '狼人') return;
+        this.werewolfData.addWolfChatMessage(user.seat, content);
+        this.werewolfView.render();
+    }
+
+    async requestWerewolfWolfMateAdvice() {
+        const state = this.werewolfData.getState();
+        const user = state?.players?.find?.(player => player.isUser);
+        if (!state || state.phase !== 'night' || state.nightStep !== 'werewolf' || user?.role !== '狼人' || state.wolfChatLoading) return;
+        const mates = (state.players || []).filter(player => player.role === '狼人' && !player.isUser && player.alive !== false);
+        if (!mates.length) {
+            this.phoneShell?.showNotification?.('狼人杀', '没有存活的 AI 狼人队友可以商量', '🐺');
+            return;
+        }
+        this.werewolfData.setWolfChatLoading(true);
+        this.werewolfView.render();
+        try {
+            const result = await this._callWerewolfWolfMateAdviceAi(mates);
+            if (result?.success === false) throw new Error(result.error || 'AI 请求失败');
+            const advice = this._parseWerewolfWolfAdvice(result?.summary || result?.content || result?.text || '');
+            this.werewolfData.addWolfChatMessage(mates[0].seat, advice || '我建议先刀最像神职的人，别暴露狼队视角。');
+        } catch (error) {
+            console.warn('[Werewolf] 狼队友建议失败:', error);
+            this.phoneShell?.showNotification?.('狼人杀狼队友失败', error?.message || '请求失败', '❌');
+        } finally {
+            this.werewolfData.setWolfChatLoading(false);
+            this.werewolfView.render();
+        }
+    }
+
+    async resolveWerewolfVote() {
+        const state = this.werewolfData.getState();
+        if (!state || state.gameOver || state.phase !== 'vote' || state.voting) return;
+        if (!this.werewolfData.canUserVote?.()) {
+            this.werewolfData.setVoting?.(true);
+            this.werewolfView.render();
+            try {
+                const result = await this._callWerewolfVoteAi(null);
+                if (result?.success === false) throw new Error(result.error || 'AI 请求失败');
+                const decision = this._parseWerewolfVoteDecision(result?.summary || result?.content || result?.text || '');
+                const normalized = this._normalizeWerewolfVoteDecision(decision, null);
+                this.werewolfData.applyVoteResult(normalized.targetSeat, normalized.votes, { reason: normalized.reason });
+                this.werewolfView.render();
+                await this.driveWerewolfLastWords();
+            } catch (error) {
+                console.warn('[Werewolf] 投票 AI 失败:', error);
+                const fallbackSeat = this._fallbackWerewolfVoteTarget();
+                this.werewolfData.applyVoteResult(fallbackSeat, [], { reason: '投票请求失败，系统按兜底规则放逐。' });
+                this.werewolfView.render();
+                await this.driveWerewolfLastWords();
+            }
+            return;
+        }
+        const user = state?.players?.find?.(player => player.isUser);
+        return this.submitWerewolfUserVote(0);
+    }
+
+    async submitWerewolfUserVote(targetSeat) {
+        const state = this.werewolfData.getState();
+        if (!state || state.gameOver || state.phase !== 'vote') return;
+        if (!this.werewolfData.canUserVote?.()) {
+            this.phoneShell?.showNotification?.('狼人杀', '你当前不能投票', '⚠️');
+            return;
+        }
+        const user = state.players.find(player => player.isUser);
+        const target = Number(targetSeat || 0)
+            ? this.werewolfData.getVoteTargets?.().find(player => Number(player.seat) === Number(targetSeat))
+            : null;
+        if (Number(targetSeat || 0) && !target) {
+            this.phoneShell?.showNotification?.('狼人杀', '请选择一名可投票玩家', '⚠️');
+            return;
+        }
+        const userVote = { voterSeat: Number(user.seat), targetSeat: Number(target?.seat || 0) };
+        this.werewolfData.addSystemNotice(`${userVote.voterSeat}号已${userVote.targetSeat ? '投票' : '弃票'}，等待其他玩家投票。`);
+        this.werewolfData.setVoting?.(true);
+        this.werewolfView.render();
+        try {
+            const result = await this._callWerewolfVoteAi(userVote);
+            if (result?.success === false) throw new Error(result.error || 'AI 请求失败');
+            const decision = this._parseWerewolfVoteDecision(result?.summary || result?.content || result?.text || '');
+            const normalized = this._normalizeWerewolfVoteDecision(decision, userVote);
+            this.werewolfData.applyVoteResult(normalized.targetSeat, normalized.votes, { reason: normalized.reason });
+            this.werewolfView.render();
+            await this.driveWerewolfLastWords();
+        } catch (error) {
+            console.warn('[Werewolf] 投票 AI 失败:', error);
+            const fallbackSeat = Number(userVote.targetSeat || 0);
+            this.werewolfData.applyVoteResult(fallbackSeat, [userVote], { reason: '投票请求失败，系统按已记录投票处理。' });
+            this.werewolfData.setVoting?.(false);
+            this.werewolfView.render();
+            await this.driveWerewolfLastWords();
+        }
+    }
+
+    async driveWerewolfLastWords() {
+        const state = this.werewolfData.getState();
+        if (!state || state.gameOver || state.phase !== 'last_words') return;
+        const player = this.werewolfData.getEliminatedPlayer();
+        if (!player) {
+            this.werewolfData.startNextNight();
+            this.werewolfView.render();
+            await this.driveWerewolfNight();
+            return;
+        }
+        if (player.isUser) {
+            this.werewolfView.render();
+            return;
+        }
+        try {
+            const result = await this._callWerewolfLastWordsAi(player);
+            if (result?.success === false) throw new Error(result.error || 'AI 请求失败');
+            const words = this._parseWerewolfLastWords(result?.summary || result?.content || result?.text || '');
+            this.werewolfData.addLastWords(player.seat, words || '我没什么好说的，后面的人自己盘。');
+        } catch (error) {
+            console.warn('[Werewolf] 遗言 AI 失败:', error);
+            this.werewolfData.addLastWords(player.seat, '我没什么好说的，后面的人自己盘。');
+        }
+        if (this.werewolfData.getState()?.gameOver) {
+            this.werewolfView.render();
+            return;
+        }
+        this.werewolfData.startNextNight();
+        this.werewolfView.render();
+        await this.driveWerewolfNight();
+    }
+
+    submitWerewolfUserLastWords(text = '') {
+        const player = this.werewolfData.getEliminatedPlayer();
+        if (!player?.isUser) return;
+        this.werewolfData.addLastWords(player.seat, String(text || '').trim() || '我没有遗言。');
+        if (this.werewolfData.getState()?.gameOver) {
+            this.werewolfView.clearUserSpeechInput?.();
+            this.werewolfView.render();
+            return;
+        }
+        this.werewolfData.startNextNight();
+        this.werewolfView.clearUserSpeechInput?.();
+        this.werewolfView.render();
+        this.driveWerewolfNight();
+    }
+
+    async _runWerewolfAiNightAction() {
+        const state = this.werewolfData.getState();
+        const step = String(state?.nightStep || '');
+        const actors = this._getWerewolfNightActors(step);
+        if (!actors.length) {
+            this._applyFallbackWerewolfNightAction();
+            return true;
+        }
+        const actor = actors[0];
+        try {
+            const result = await this._callWerewolfNightAi(actors, step);
+            if (result?.success === false) throw new Error(result.error || 'AI 请求失败');
+            const decision = this._parseWerewolfNightDecision(result?.summary || result?.content || result?.text || '', step);
+            const normalized = this._normalizeWerewolfNightDecision(decision, step);
+            this.werewolfData.applyNightAction(step, normalized, { actorSeat: actor.seat });
+            return true;
+        } catch (error) {
+            console.warn('[Werewolf] 夜晚 AI 行动失败:', error);
+            const message = this._formatError?.(error, '夜晚行动失败') || error?.message || '夜晚行动失败';
+            this.werewolfData.applySpeechError(`${this._formatWerewolfNightStepName(step)}中断，点击续接发言可继续。${message}`);
+            this.phoneShell?.showNotification?.('狼人杀夜晚行动失败', message, '❌');
+            return false;
+        }
+    }
+
+    async _callWerewolfNightAi(actors, step) {
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        const messages = await this._buildWerewolfNightMessages(actors, step);
+        return apiManager.callAI(messages, {
+            appId: 'games',
+            temperature: step === 'werewolf' ? 0.85 : 0.75,
+            max_tokens: step === 'werewolf' ? 760 : 420
+        });
+    }
+
+    async _callWerewolfWolfMateAdviceAi(mates = []) {
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        const state = this.werewolfData.getState();
+        const user = (state.players || []).find(player => player.isUser);
+        const livePlayers = (state.players || []).filter(player => !player.empty && player.alive !== false);
+        const publicLog = (state.chat || []).map(item => item.seat ? `${item.seat}号：${item.text}` : `系统：${item.text}`).slice(-24);
+        const wolfChat = (Array.isArray(state.wolfChat) ? state.wolfChat : []).slice(-12).map(item => {
+            const speaker = (state.players || []).find(player => Number(player.seat) === Number(item.seat));
+            return `${item.seat || '狼队'}号${speaker?.name ? ` ${speaker.name}` : ''}：${item.text}`;
+        });
+        const targetPool = livePlayers
+            .filter(player => player.role !== '狼人')
+            .map(player => `${player.seat}号 ${player.name}：${player.personality || '普通玩家'}`)
+            .join('\n');
+        const messages = [
+            {
+                role: 'system',
+                name: 'SYSTEM (狼人杀狼队私聊)',
+                isPhoneMessage: true,
+                content: [
+                    '你正在扮演用户的 AI 狼人队友，在夜晚私聊里给出建议。',
+                    '这是狼人内部信息，不是公开发言。',
+                    '你知道狼队成员，但不知道神职身份，只能根据公开发言和人物信息推测刀人目标。',
+                    '不要替用户最终决定，只给简短建议和理由。',
+                    '必须只返回 <狼人杀狼队建议> 标签包裹内容。'
+                ].join('\n')
+            },
+            {
+                role: 'user',
+                isPhoneMessage: true,
+                content: [
+                    `当前第 ${state.day || 1} 夜，狼人行动。`,
+                    `用户狼人：${user?.seat || '?'}号 ${user?.name || '用户'}。`,
+                    `AI 狼人队友：${mates.map(player => `${player.seat}号 ${player.name}`).join('、')}。`,
+                    '可袭击目标：',
+                    targetPool || '无',
+                    '公开记录：',
+                    publicLog.map(line => `- ${line}`).join('\n') || '- 暂无',
+                    '狼队私聊记录：',
+                    wolfChat.map(line => `- ${line}`).join('\n') || '- 暂无',
+                    '<狼人杀狼队建议>',
+                    '一句狼队私聊建议',
+                    '</狼人杀狼队建议>'
+                ].join('\n')
+            }
+        ];
+        return apiManager.callAI(messages, { appId: 'games', temperature: 0.86, max_tokens: 260 });
+    }
+
+    async _buildWerewolfNightMessages(actors, step) {
+        const state = this.werewolfData.getState();
+        const actorList = Array.isArray(actors) ? actors.filter(Boolean) : [actors].filter(Boolean);
+        const actor = actorList[0];
+        const livePlayers = (state?.players || []).filter(player => !player.empty && player.alive !== false);
+        const publicLog = (state?.chat || []).map(item => item.seat ? `${item.seat}号：${item.text}` : `系统：${item.text}`).slice(-18);
+        const roleLines = livePlayers.map(player => {
+            const visibleRole = step === 'werewolf' && player.role === '狼人'
+                ? '狼人同伴'
+                : Number(player.seat) === Number(actor.seat)
+                    ? actor.role
+                    : '未知';
+            return `${player.seat}号 ${player.name}：${player.alive === false ? '死亡' : '存活'}，身份视角=${visibleRole}`;
+        });
+        const killedSeat = Number(state.lastKilledSeat || 0);
+        const witchPotions = this.werewolfData.getWitchPotions?.() || { antidote: true, poison: true };
+        const formatRule = [
+            '<狼人杀夜晚行动>',
+            step === 'werewolf' ? '讨论：两名狼人用内部语气简短商量，1-4句' : '',
+            '目标：数字座位号或0',
+            step === 'witch' ? '药剂：解药/毒药/不用' : '药剂：不用',
+            '理由：一句话',
+            '</狼人杀夜晚行动>'
+        ].filter(Boolean).join('\n');
+        const instructionMap = {
+            guard: '你是守卫。请选择今晚守护一名存活玩家，可以守自己。目标只写座位号。',
+            werewolf: '你是狼人阵营。请先模拟两名狼人短暂内部讨论，再给出最终袭击目标。目标必须是非狼人存活玩家，只写座位号。',
+            seer: '你是预言家。请选择今晚查验一名存活玩家。目标只写座位号。',
+            witch: killedSeat
+                ? `你是女巫。今晚被狼人袭击的是 ${killedSeat}号。剩余药剂：解药${witchPotions.antidote ? '可用' : '已用'}，毒药${witchPotions.poison ? '可用' : '已用'}。只能使用仍可用的药，或不用药。`
+                : `你是女巫。今晚没有可救信息。剩余药剂：解药${witchPotions.antidote ? '可用' : '已用'}，毒药${witchPotions.poison ? '可用' : '已用'}。只能使用仍可用的毒药，或不用药。`
+        };
+        const messages = [
+            {
+                role: 'system',
+                name: 'SYSTEM (狼人杀夜晚裁判)',
+                isPhoneMessage: true,
+                content: [
+                    '你正在为小手机狼人杀执行夜晚私密行动。',
+                    '只根据你这个身份可知道的信息做决定。',
+                    '不要输出公开发言，不要解释规则，不要 Markdown。',
+                    instructionMap[step] || '请选择夜晚行动目标。',
+                    '必须严格按标签格式返回。'
+                ].join('\n')
+            }
+        ];
+        messages.push(...await buildGameSillyTavernContextMessages('games', this.storage, {
+            includeWorldbook: this.isWerewolfWorldbookEnabled()
+        }));
+        messages.push({
+            role: 'user',
+            isPhoneMessage: true,
+            content: [
+                `当前阶段：第 ${state.day || 1} 夜，${this._formatWerewolfNightStepName(step)}。`,
+                step === 'werewolf'
+                    ? `当前狼人同伴：${actorList.map(item => `${item.seat}号 ${item.name}`).join('、')}。`
+                    : `当前行动者：${actor.seat}号 ${actor.name}，身份：${actor.role}。`,
+                '存活玩家和你的身份视角：',
+                roleLines.join('\n'),
+                killedSeat ? `女巫可见刀口：${killedSeat}号。` : '',
+                step === 'witch' ? `女巫剩余药剂：解药${witchPotions.antidote ? '可用' : '已用'}，毒药${witchPotions.poison ? '可用' : '已用'}。` : '',
+                '公开记录：',
+                publicLog.length ? publicLog.map(line => `- ${line}`).join('\n') : '- 暂无',
+                '返回格式：',
+                formatRule
+            ].filter(Boolean).join('\n')
+        });
+        return messages;
+    }
+
+    _parseWerewolfNightDecision(text = '', step = '') {
+        const source = String(text || '').trim();
+        const block = source.match(/<狼人杀夜晚行动>([\s\S]*?)<\/狼人杀夜晚行动>/)?.[1] || source;
+        const discussion = this._extractWerewolfNightField(block, '讨论');
+        const targetText = this._extractWerewolfNightField(block, '目标');
+        const potionText = this._extractWerewolfNightField(block, '药剂');
+        const reason = this._extractWerewolfNightField(block, '理由');
+        return {
+            targetSeat: this._extractFirstNumber(targetText),
+            usePotion: this._normalizeWerewolfPotion(potionText, step),
+            discussion,
+            reason
+        };
+    }
+
+    _parseWerewolfWolfAdvice(text = '') {
+        const source = String(text || '').trim();
+        return String(source.match(/<狼人杀狼队建议>([\s\S]*?)<\/狼人杀狼队建议>/)?.[1] || source).trim();
+    }
+
+    _normalizeWerewolfNightDecision(decision = {}, step = '') {
+        const state = this.werewolfData.getState();
+        const liveSeats = new Set((state?.players || []).filter(player => !player.empty && player.alive !== false).map(player => Number(player.seat)));
+        let targetSeat = Number(decision.targetSeat || 0);
+        if (!liveSeats.has(targetSeat)) targetSeat = 0;
+        if (step === 'werewolf') {
+            const target = (state?.players || []).find(player => Number(player.seat) === targetSeat);
+            if (!target || target.role === '狼人') targetSeat = this._fallbackWerewolfNightTarget(step);
+        } else if (step === 'seer' || step === 'guard') {
+            if (!targetSeat) targetSeat = this._fallbackWerewolfNightTarget(step);
+        }
+        const result = step === 'seer' && targetSeat
+            ? {
+                seat: targetSeat,
+                role: (state?.players || []).find(player => Number(player.seat) === targetSeat)?.role === '狼人' ? '狼人' : '好人'
+            }
+            : null;
+        return {
+            targetSeat,
+            usePotion: this._normalizeWerewolfNightPotionForState(step, decision.usePotion, targetSeat),
+            result,
+            discussion: String(decision.discussion || '').trim(),
+            reason: String(decision.reason || '').trim()
+        };
+    }
+
+    _normalizeWerewolfNightPotionForState(step = '', potion = '', targetSeat = 0) {
+        if (step !== 'witch') return '';
+        const value = String(potion || '').trim();
+        const state = this.werewolfData.getState();
+        const potions = this.werewolfData.getWitchPotions?.() || { antidote: true, poison: true };
+        if (value === 'antidote') {
+            const killedSeat = Number(state?.lastKilledSeat || 0);
+            return potions.antidote && killedSeat && Number(targetSeat) === killedSeat ? 'antidote' : '';
+        }
+        if (value === 'poison') return potions.poison && Number(targetSeat || 0) ? 'poison' : '';
+        return '';
+    }
+
+    _applyFallbackWerewolfNightAction() {
+        const state = this.werewolfData.getState();
+        const step = String(state?.nightStep || '');
+        const livePlayers = (state?.players || []).filter(player => !player.empty && player.alive !== false);
+        const userSeat = Number((state?.players || []).find(player => player.isUser)?.seat || 0);
+        const pick = (items) => {
+            const pool = items.filter(Boolean);
+            return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+        };
+        if (step === 'guard') {
+            const guard = livePlayers.find(player => player.role === '守卫');
+            const target = pick(livePlayers);
+            this.werewolfData.applyNightAction(step, { targetSeat: target?.seat || 0 }, { actorSeat: guard?.seat || 0 });
+            return;
+        }
+        if (step === 'werewolf') {
+            const wolves = livePlayers.filter(player => player.role === '狼人');
+            const targets = livePlayers.filter(player => player.role !== '狼人');
+            const target = pick(targets);
+            this.werewolfData.applyNightAction(step, { targetSeat: target?.seat || userSeat || 0 }, { actorSeat: wolves[0]?.seat || 0 });
+            return;
+        }
+        if (step === 'seer') {
+            const seer = livePlayers.find(player => player.role === '预言家');
+            const target = pick(livePlayers.filter(player => player.seat !== seer?.seat));
+            const result = target ? { seat: target.seat, role: target.role === '狼人' ? '狼人' : '好人' } : null;
+            this.werewolfData.applyNightAction(step, { targetSeat: target?.seat || 0, result }, { actorSeat: seer?.seat || 0 });
+            return;
+        }
+        if (step === 'witch') {
+            const witch = livePlayers.find(player => player.role === '女巫');
+            const killedSeat = Number(state.lastKilledSeat || 0);
+            const potions = this.werewolfData.getWitchPotions?.() || { antidote: true, poison: true };
+            const shouldSave = potions.antidote && killedSeat && Math.random() < 0.45;
+            this.werewolfData.applyNightAction(step, {
+                usePotion: shouldSave ? 'antidote' : '',
+                targetSeat: shouldSave ? killedSeat : 0
+            }, { actorSeat: witch?.seat || 0 });
+        }
+    }
+
+    _getWerewolfNightActors(step = '') {
+        const state = this.werewolfData.getState();
+        const roleMap = { guard: '守卫', werewolf: '狼人', seer: '预言家', witch: '女巫' };
+        const role = roleMap[String(step || '')];
+        if (!role) return [];
+        const players = (state?.players || []).filter(player => player.role === role && player.alive !== false && !player.empty && !player.isUser);
+        return step === 'werewolf' ? players : players.slice(0, 1);
+    }
+
+    _fallbackWerewolfNightTarget(step = '') {
+        const state = this.werewolfData.getState();
+        const livePlayers = (state?.players || []).filter(player => !player.empty && player.alive !== false);
+        const pool = step === 'werewolf'
+            ? livePlayers.filter(player => player.role !== '狼人')
+            : livePlayers;
+        return pool.length ? Number(pool[Math.floor(Math.random() * pool.length)].seat) : 0;
+    }
+
+    _extractWerewolfNightField(body, label) {
+        const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const match = String(body || '').match(new RegExp(`${escaped}\\s*[:：]\\s*([^\\n\\r]*)`));
+        return String(match?.[1] || '').trim();
+    }
+
+    _normalizeWerewolfPotion(text = '', step = '') {
+        if (step !== 'witch') return '';
+        const value = String(text || '').trim();
+        if (/解药|救|antidote/i.test(value)) return 'antidote';
+        if (/毒药|毒|poison/i.test(value)) return 'poison';
+        return '';
+    }
+
+    _formatWerewolfNightStepName(step = '') {
+        const map = { guard: '守卫行动', werewolf: '狼人行动', seer: '预言家行动', witch: '女巫行动' };
+        return map[String(step || '')] || '夜晚行动';
+    }
+
+    async submitWerewolfUserSpeech(text = '') {
+        const speech = String(text || '').trim();
+        if (!speech) {
+            return;
+        }
+        if (!this.werewolfData.canUserSpeak()) {
+            this.phoneShell?.showNotification?.('狼人杀', '还没轮到你发言', '⏳');
+            return;
+        }
+        const speaker = this.werewolfData.getCurrentSpeaker();
+        this.werewolfData.setActiveSpeaker(speaker.seat, true);
+        this.werewolfData.addSpeech(speaker.seat, speech);
+        this.werewolfData.markSpeakerDone(speaker.seat);
+        this.werewolfView.clearUserSpeechInput?.();
+        this.werewolfView.render();
+        await this.driveWerewolfDaySpeeches();
+    }
+
+    async continueWerewolfSpeech() {
+        const phase = this.werewolfData.getState()?.phase;
+        if (phase === 'night') {
+            await this.driveWerewolfNight();
+            return;
+        }
+        await this.driveWerewolfDaySpeeches();
+    }
+
+    async _runWerewolfAiSpeechTurn(player) {
+        try {
+            this.werewolfData.setActiveSpeaker(player.seat, true);
+            this.werewolfView.render();
+            const result = await this._callWerewolfSpeechAi(player);
+            if (result?.success === false) throw new Error(result.error || 'AI 请求失败');
+            const speech = this._parseWerewolfSpeech(result?.summary || result?.content || result?.text || '');
+            if (!speech) throw new Error('AI 未返回有效狼人杀发言');
+            this.werewolfData.addSpeech(player.seat, speech);
+            this.werewolfData.markSpeakerDone(player.seat);
+            return true;
+        } catch (error) {
+            console.warn('[Werewolf] AI 发言失败:', error);
+            const message = this._formatError?.(error, 'AI 发言失败') || error?.message || 'AI 发言失败';
+            this.werewolfData.applySpeechError(`${player.seat}号发言中断，点击续接发言可继续。${message}`);
+            this.phoneShell?.showNotification?.('狼人杀 AI 失败', `${player.seat}号：${message}`, '❌');
+            return false;
+        }
+    }
+
+    async _callWerewolfSpeechAi(player) {
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        const messages = await this._buildWerewolfSpeechMessages(player);
+        return apiManager.callAI(messages, {
+            appId: 'games',
+            temperature: 0.82,
+            max_tokens: 520
+        });
+    }
+
+    async _callWerewolfVoteAi(userVote = null) {
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        const state = this.werewolfData.getState();
+        const livePlayers = (state?.players || []).filter(player => !player.empty && player.alive !== false);
+        const userSeat = Number(state?.players?.find?.(player => player.isUser)?.seat || 0);
+        const aiVoters = livePlayers.filter(player => Number(player.seat) !== userSeat);
+        const publicLog = (state?.chat || []).map(item => item.seat ? `${item.seat}号：${item.text}` : `系统：${item.text}`).slice(-32);
+        const messages = [
+            {
+                role: 'system',
+                name: 'SYSTEM (狼人杀投票裁判)',
+                isPhoneMessage: true,
+                content: [
+                    '你是狼人杀投票裁判，负责根据公开发言和玩家公开人物信息模拟 AI 玩家投票。',
+                    '用户已经先投票，你不能改写用户这一票，也不要为用户投票。',
+                    '允许弃票，弃票目标写 0。',
+                    '只能使用公开信息，不要读取、推断或泄露任何真实身份。',
+                    '必须返回标签格式，不要 Markdown，不要解释。'
+                ].join('\n')
+            },
+            {
+                role: 'user',
+                isPhoneMessage: true,
+                content: [
+                    `当前第 ${state.day || 1} 天，进入投票。`,
+                    userVote ? `用户投票：${userVote.voterSeat}号 -> ${userVote.targetSeat ? `${userVote.targetSeat}号` : '弃票'}。` : '',
+                    '存活玩家：',
+                    livePlayers.map(player => `${player.seat}号 ${player.name}：${player.personality || '普通玩家'}，公开状态=${player.alive === false ? '死亡' : '存活'}`).join('\n'),
+                    '需要你模拟投票的玩家：',
+                    aiVoters.map(player => `${player.seat}号 ${player.name}`).join('\n') || '无',
+                    '公开发言记录：',
+                    publicLog.map(line => `- ${line}`).join('\n') || '- 暂无',
+                    '请只模拟“需要你模拟投票的玩家”的投票，不要输出用户票；可以投存活玩家，也可以弃票写 0。格式：',
+                    '<狼人杀投票>',
+                    '票型：2->3，3->0，4->3',
+                    '出局：0',
+                    '理由：一句话；如果弃票较多或没有形成明确多数，可以无人出局',
+                    '</狼人杀投票>'
+                ].filter(Boolean).join('\n')
+            }
+        ];
+        return apiManager.callAI(messages, { appId: 'games', temperature: 0.78, max_tokens: 520 });
+    }
+
+    async _callWerewolfLastWordsAi(player) {
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        const state = this.werewolfData.getState();
+        const publicLog = (state?.chat || []).map(item => item.seat ? `${item.seat}号：${item.text}` : `系统：${item.text}`).slice(-30);
+        const messages = [
+            {
+                role: 'system',
+                name: 'SYSTEM (狼人杀遗言)',
+                isPhoneMessage: true,
+                content: [
+                    '你正在扮演被白天投票放逐的狼人杀玩家发表遗言。',
+                    '你知道自己的真实身份，但不能知道其他非同阵营玩家的真实身份。',
+                    '狼人可以继续伪装、带节奏、卖队友或混淆视听；好人应尽量交代视角和怀疑对象。',
+                    '遗言必须是公开发言，40-140字。',
+                    '必须只返回 <狼人杀遗言> 标签包裹内容。'
+                ].join('\n')
+            },
+            {
+                role: 'user',
+                isPhoneMessage: true,
+                content: [
+                    `当前第 ${state.day || 1} 天，${player.seat}号 ${player.name} 被投票放逐。`,
+                    `你的真实身份：${player.role || '村民'}。`,
+                    player.role === '狼人'
+                        ? `狼人同伴：${(state.players || []).filter(item => item.role === '狼人').map(item => `${item.seat}号 ${item.name}`).join('、')}`
+                        : '',
+                    '公开记录：',
+                    publicLog.map(line => `- ${line}`).join('\n') || '- 暂无',
+                    '<狼人杀遗言>',
+                    '遗言内容',
+                    '</狼人杀遗言>'
+                ].filter(Boolean).join('\n')
+            }
+        ];
+        return apiManager.callAI(messages, { appId: 'games', temperature: 0.86, max_tokens: 420 });
+    }
+
+    _parseWerewolfVoteDecision(text = '') {
+        const source = String(text || '').trim();
+        const block = source.match(/<狼人杀投票>([\s\S]*?)<\/狼人杀投票>/)?.[1] || source;
+        const voteText = this._extractWerewolfNightField(block, '票型');
+        const targetText = this._extractWerewolfNightField(block, '出局');
+        const reason = this._extractWerewolfNightField(block, '理由');
+        const votes = [];
+        String(voteText || '').replace(/[，,；;]/g, ' ').split(/\s+/).forEach(part => {
+            const match = part.match(/(\d+)\s*(?:->|→|投|票)\s*(\d+|弃票)/);
+            if (match) votes.push({ voterSeat: Number(match[1]), targetSeat: /弃票/.test(match[2]) ? 0 : Number(match[2]) });
+        });
+        return { targetSeat: this._extractFirstNumber(targetText), votes, reason };
+    }
+
+    _normalizeWerewolfVoteDecision(decision = {}, userVote = null) {
+        const state = this.werewolfData.getState();
+        const liveSeats = new Set((state?.players || []).filter(player => !player.empty && player.alive !== false).map(player => Number(player.seat)));
+        const userSeat = Number(userVote?.voterSeat || 0);
+        const votes = (Array.isArray(decision.votes) ? decision.votes : [])
+            .filter(vote => liveSeats.has(Number(vote.voterSeat)) && (Number(vote.targetSeat) === 0 || liveSeats.has(Number(vote.targetSeat))))
+            .filter(vote => !userSeat || Number(vote.voterSeat) !== userSeat)
+            .map(vote => ({ voterSeat: Number(vote.voterSeat), targetSeat: Number(vote.targetSeat) }));
+        if (userVote && liveSeats.has(Number(userVote.voterSeat)) && (Number(userVote.targetSeat) === 0 || liveSeats.has(Number(userVote.targetSeat)))) {
+            votes.unshift({ voterSeat: Number(userVote.voterSeat), targetSeat: Number(userVote.targetSeat) });
+        }
+        const targetSeat = this._resolveWerewolfVoteTarget(votes);
+        return {
+            targetSeat,
+            votes,
+            reason: String(decision.reason || '').trim()
+        };
+    }
+
+    _resolveWerewolfVoteTarget(votes = []) {
+        const counts = new Map();
+        votes.forEach(vote => {
+            const targetSeat = Number(vote.targetSeat || 0);
+            if (!targetSeat) return;
+            counts.set(targetSeat, (counts.get(targetSeat) || 0) + 1);
+        });
+        if (!counts.size) return 0;
+        const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+        const topCount = Number(sorted[0]?.[1] || 0);
+        const tied = sorted.filter(item => Number(item[1]) === topCount);
+        return tied.length === 1 ? Number(sorted[0]?.[0] || 0) : 0;
+    }
+
+    _fallbackWerewolfVoteTarget(userVote = null) {
+        const state = this.werewolfData.getState();
+        const live = (state?.players || []).filter(player => !player.empty && player.alive !== false);
+        if (!live.length) return 0;
+        if (userVote && live.some(player => Number(player.seat) === Number(userVote.targetSeat))) {
+            return Number(userVote.targetSeat);
+        }
+        const sorted = [...live].sort((a, b) => Number(b.seat) - Number(a.seat));
+        return Number(sorted[0]?.seat || live[0].seat || 0);
+    }
+
+    _parseWerewolfLastWords(text = '') {
+        const source = String(text || '').trim();
+        return String(source.match(/<狼人杀遗言>([\s\S]*?)<\/狼人杀遗言>/)?.[1] || source).trim();
+    }
+
+    async _buildWerewolfSpeechMessages(player) {
+        const context = this.werewolfData.buildSpeechContext(player);
+        if (!context) throw new Error('狼人杀上下文为空');
+        const extraContextMessages = await buildGameSillyTavernContextMessages('games', this.storage, {
+            includeWorldbook: this.isWerewolfWorldbookEnabled()
+        });
+        const messages = [
+            {
+                role: 'system',
+                name: 'SYSTEM (狼人杀规则)',
+                isPhoneMessage: true,
+                content: this._formatWerewolfRulesMessage(extraContextMessages)
+            },
+            {
+                role: 'system',
+                name: 'SYSTEM (场上公开状态)',
+                isPhoneMessage: true,
+                content: this._formatWerewolfPublicStateMessage(context)
+            },
+            {
+                role: 'system',
+                name: 'SYSTEM (发言简报与系统公告)',
+                isPhoneMessage: true,
+                content: this._formatWerewolfPublicLogMessage(context)
+            },
+            {
+                role: 'user',
+                name: 'USER (当前发言任务)',
+                isPhoneMessage: true,
+                content: this._formatWerewolfSpeechTaskMessage(context)
+            }
+        ];
+        return messages;
+    }
+
+    _formatWerewolfRulesMessage(extraMessages = []) {
+        const extraText = (Array.isArray(extraMessages) ? extraMessages : [])
+            .map(message => {
+                const label = String(message?.name || message?.role || '外部上下文').trim();
+                const content = String(message?.content || '').trim();
+                return content ? `【${label}】\n${content}` : '';
+            })
+            .filter(Boolean)
+            .join('\n\n');
+        return [
+            this.getWerewolfPrompt(),
+            extraText ? '【酒馆/世界书补充上下文】' : '',
+            extraText
+        ].filter(Boolean).join('\n\n');
+    }
+
+    _formatWerewolfPublicStateMessage(context = {}) {
+        const playerLines = (context.players || [])
+            .map(player => `${player.seat}号 ${player.name}：${player.status}${player.isUser ? '，用户本人' : ''}${player.personality ? `，${player.personality}` : ''}`)
+            .join('\n');
+        return [
+            '【场上公开玩家状态】',
+            `当前：第 ${context.day || 1} 天白天。`,
+            `用户座位：${context.userSeat || '?'}号。`,
+            playerLines || '暂无'
+        ].join('\n');
+    }
+
+    _formatWerewolfPublicLogMessage(context = {}) {
+        const logLines = (context.publicLog || []).length
+            ? context.publicLog.map(line => `- ${line}`).join('\n')
+            : '- 暂无';
+        return [
+            '【发言简报与系统公告】',
+            Number(context.day || 1) === 1 ? '当前是首日白天，系统尚未公布任何夜晚技能结果；禁止凭空声称查杀、金水、银水、刀口或验人结果。' : '',
+            '系统公告与已公开发言记录：',
+            logLines
+        ].filter(Boolean).join('\n');
+    }
+
+    _formatWerewolfSpeechTaskMessage(context = {}) {
+        const state = this.werewolfData.getState();
+        const speakerSeat = Number(context.speaker?.seat || 0);
+        const wolfMates = context.speakerPrivateRole === '狼人'
+            ? (state?.players || [])
+                .filter(player => player.role === '狼人')
+                .map(player => `${player.seat}号 ${player.name}`)
+                .join('、')
+            : '';
+        return [
+            '【当前发言任务】',
+            '以下身份信息只给当前发言玩家用于策略判断。',
+            `当前该 ${speakerSeat || '?'}号 ${context.speaker?.name || '玩家'} 发言。`,
+            `当前发言玩家真实身份：${context.speakerPrivateRole || '村民'}。`,
+            wolfMates ? `狼人同伴：${wolfMates}。` : '',
+            '其他玩家真实身份不得在发言中泄露；除非场上公开信息已经说明，否则不要假装知道。',
+            '请只输出当前玩家的公开发言。格式：',
+            '<狼人杀发言>',
+            '发言内容',
+            '</狼人杀发言>'
+        ].filter(Boolean).join('\n');
+    }
+
+    _parseWerewolfSpeech(text = '') {
+        const source = String(text || '').trim();
+        const tagged = source.match(/<狼人杀发言>([\s\S]*?)<\/狼人杀发言>/)?.[1];
+        return String(tagged || source)
+            .replace(/^发言\s*[:：]/, '')
+            .trim();
+    }
+
+    _buildWerewolfInvitedPlayers(contacts = [], emptySeats = []) {
+        const seats = emptySeats.slice();
+        const seen = new Set();
+        return (Array.isArray(contacts) ? contacts : [])
+            .map(contact => {
+                const id = String(contact?.id || contact?.contactId || contact?.name || '').trim();
+                const name = String(contact?.name || contact?.remark || '').trim();
+                if (!id || !name || seen.has(id) || !seats.length) return null;
+                seen.add(id);
+                const seat = seats.shift();
+                return {
+                    seat,
+                    id: `wechat_${id}`,
+                    contactId: id,
+                    name,
+                    avatar: String(contact?.avatar || '').trim(),
+                    personality: String(contact?.personality || contact?.pokerStyle || '微信好友，按角色性格自然发言').trim(),
+                    source: 'wechat'
+                };
+            })
+            .filter(Boolean);
+    }
+
+    _buildWerewolfFallbackPlayers(emptySeats = [], generated = []) {
+        const bySeat = new Map(generated.map(player => [Number(player.seat), player]));
+        const names = ['青岚', '夜航', '阿澈', '小满', '林鹿', '北辰', '梨白'];
+        return emptySeats.map((seat, index) => {
+            const item = bySeat.get(Number(seat));
+            if (item?.name) return item;
+            return {
+                seat,
+                id: `ai_${seat}`,
+                name: names[index % names.length],
+                gender: '',
+                personality: '谨慎观察，发言简短但会抓矛盾',
+                source: 'ai'
+            };
+        });
+    }
+
+    _getWerewolfUserInfo() {
+        const wechatData = this.getWechatData?.();
+        const userInfo = wechatData?.getUserInfo?.() || {};
+        return {
+            name: String(userInfo.name || '你').trim(),
+            avatar: String(userInfo.avatar || '').trim(),
+            personality: String(userInfo.signature || '').trim()
+        };
+    }
+
     _parseWerewolfMatch(text = '') {
         const source = String(text || '').trim();
         const block = source.match(/<狼人杀匹配环节>([\s\S]*?)<\/狼人杀匹配环节>/)?.[1] || source;
@@ -231,7 +1161,7 @@ export class GamesApp extends PokerApp {
                 personality: this._extractWerewolfField(body, '性格及语言风格')
             });
         }
-        return sections.filter(item => item.seat >= 1 && item.seat <= 7 && item.name && item.personality);
+        return sections.filter(item => item.seat >= 1 && item.seat <= 8 && item.name && item.personality);
     }
 
     _extractWerewolfField(body, label) {
@@ -287,6 +1217,17 @@ export class GamesApp extends PokerApp {
             link.as = 'image';
             document.head.appendChild(link);
         }
+
+        ['Guard.png', 'Witch.png', 'Werewolf.png', 'Villager.png'].forEach(file => {
+            const id = `games-werewolf-role-${file.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+            if (document.getElementById(id)) return;
+            const link = document.createElement('link');
+            link.id = id;
+            link.rel = 'preload';
+            link.href = new URL(`./werewolf/assets/${file}`, import.meta.url).href;
+            link.as = 'image';
+            document.head.appendChild(link);
+        });
     }
 
     randomCatboxCat() {

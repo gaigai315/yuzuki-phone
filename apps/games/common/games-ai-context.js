@@ -88,8 +88,10 @@ export async function buildGameSillyTavernContextMessages(appKey, storage, optio
     const characterMessage = buildCharacterMessage(context);
     if (characterMessage) messages.push(characterMessage);
 
-    const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.(appKey, options.worldbookOptions || {});
-    if (worldbookMessage) messages.push(worldbookMessage);
+    if (options.includeWorldbook !== false) {
+        const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.(appKey, options.worldbookOptions || {});
+        if (worldbookMessage) messages.push(worldbookMessage);
+    }
 
     const personaMessage = buildPersonaMessage();
     if (personaMessage) messages.push(personaMessage);
@@ -97,4 +99,3 @@ export async function buildGameSillyTavernContextMessages(appKey, storage, optio
     messages.push(...buildRecentChatMessages(context, storage, options.limitKey || 'phone-context-limit'));
     return messages;
 }
-

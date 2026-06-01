@@ -1,6 +1,6 @@
 /* ========================================================
  *  柚月小手机 (Yuzuki's Little Phone)
- *  狼人杀 UI 预览视图
+ *  狼人杀 UI 视图
  * ======================================================== */
 
 export class WerewolfView {
@@ -9,14 +9,21 @@ export class WerewolfView {
         this._cssLoaded = false;
         this._chatExpanded = false;
         this._entryPromptOpen = false;
+        this._inviteOpen = false;
+        this._settingsOpen = false;
+        this._recordOpen = false;
+        this._selectedContactIds = new Set();
+        this._userSpeechInput = '';
     }
 
     async render() {
         await this._loadCSS();
         const state = this.app.werewolfData.getState();
         const players = state.players || [];
-        const phaseLabel = state.phase === 'night' ? '黑夜' : state.phase === 'setup' ? '匹配' : '白天';
+        const phaseLabel = state.phase === 'night' ? '黑夜' : state.phase === 'setup' ? '匹配' : state.phase === 'vote' ? '投票' : state.phase === 'last_words' ? '遗言' : state.phase === 'ended' ? '结束' : '白天';
         const themeClass = state.phase === 'night' ? 'games-werewolf-night-theme' : 'games-werewolf-day-theme';
+        const currentPlayer = players.find(player => Number(player.seat) === Number(state.currentSpeaker));
+        const nightInfo = this.app.werewolfData.getNightStepInfo?.() || {};
         const html = `
             <div class="games-app games-werewolf-app ${themeClass} ${this._chatExpanded ? 'is-chat-expanded' : ''}">
                 <div class="games-werewolf-backdrop" aria-hidden="true"></div>
@@ -29,6 +36,9 @@ export class WerewolfView {
                         <div class="games-werewolf-title">狼人杀</div>
                         <div class="games-werewolf-subtitle">夜幕降临</div>
                     </div>
+                    <button class="games-werewolf-icon-btn games-werewolf-settings-btn" id="games-werewolf-settings" type="button" aria-label="狼人杀设置">
+                        <i class="fa-solid fa-gear"></i>
+                    </button>
                 </div>
 
                 <div class="games-werewolf-stage">
@@ -42,8 +52,9 @@ export class WerewolfView {
                             <div class="games-werewolf-day">第 <strong>${Number(state.day || 1)}</strong> 天</div>
                             <div class="games-werewolf-phase">${this._escape(phaseLabel)}</div>
                             <div class="games-werewolf-divider"></div>
-                            <div class="games-werewolf-turn">${state.phase === 'setup' ? '等待匹配' : '当前轮到'}</div>
-                            <div class="games-werewolf-speaker">${state.phase === 'setup' ? '开始游戏' : `<strong>${Number(state.currentSpeaker || 1)}</strong>号 发言`}</div>
+                            <div class="games-werewolf-turn">${state.phase === 'setup' ? '等待匹配' : state.phase === 'night' ? '夜晚行动' : state.phase === 'vote' ? '等待投票' : state.phase === 'ended' ? '游戏结束' : '当前轮到'}</div>
+                            <div class="games-werewolf-speaker">${this._renderCenterSpeaker(state, currentPlayer, nightInfo)}</div>
+                            ${state.phase !== 'setup' && state.userRoleHint ? `<div class="games-werewolf-role-hint">${this._escape(state.userRoleHint)}</div>` : ''}
                         </div>
                     </div>
 
@@ -63,15 +74,23 @@ export class WerewolfView {
                         </div>
                     </div>
 
+                    ${this._renderUserSpeechBox(state)}
+                    ${this._renderLastWordsBox(state)}
+                    ${this._renderVoteBox(state)}
+                    ${this._renderNightActionBox(state, nightInfo)}
+
                     <div class="games-werewolf-actions">
                         ${this._renderPrimaryActions(state)}
-                        <button class="games-werewolf-action" type="button">
+                        <button class="games-werewolf-action" type="button" id="games-werewolf-record">
                             <i class="fa-solid fa-book-open"></i>
                             <span>记录</span>
                         </button>
                     </div>
                 </div>
                 ${this._renderEntryPrompt(state)}
+                ${this._renderInviteOverlay(state)}
+                ${this._renderSettingsOverlay()}
+                ${this._renderRecordOverlay(state)}
             </div>
         `;
 
@@ -81,24 +100,8 @@ export class WerewolfView {
 
     destroy() {}
 
-    _bindEvents() {
-        document.getElementById('games-werewolf-back')?.addEventListener('click', () => {
-            this.app.backToLobby();
-        });
-        document.getElementById('games-werewolf-chat-toggle')?.addEventListener('click', () => {
-            this._chatExpanded = !this._chatExpanded;
-            this.render();
-        });
-        document.getElementById('games-werewolf-start')?.addEventListener('click', () => {
-            this.app.startWerewolfMatch();
-        });
-        document.getElementById('games-werewolf-continue')?.addEventListener('click', () => {
-            this.closeEntryPrompt();
-            this.render();
-        });
-        document.getElementById('games-werewolf-new')?.addEventListener('click', () => {
-            this.app.startNewWerewolfGame();
-        });
+    clearUserSpeechInput() {
+        this._userSpeechInput = '';
     }
 
     openEntryPrompt() {
@@ -109,23 +112,194 @@ export class WerewolfView {
         this._entryPromptOpen = false;
     }
 
+    _bindEvents() {
+        document.getElementById('games-werewolf-back')?.addEventListener('click', () => {
+            this.app.backToLobby();
+        });
+        document.getElementById('games-werewolf-settings')?.addEventListener('click', () => {
+            this._settingsOpen = true;
+            this.render();
+        });
+        document.getElementById('games-werewolf-chat-toggle')?.addEventListener('click', () => {
+            this._chatExpanded = !this._chatExpanded;
+            this.render();
+        });
+        document.getElementById('games-werewolf-start')?.addEventListener('click', () => {
+            this._inviteOpen = true;
+            this.render();
+        });
+        document.getElementById('games-werewolf-continue-speech')?.addEventListener('click', () => {
+            this.app.continueWerewolfSpeech();
+        });
+        document.getElementById('games-werewolf-resolve-vote')?.addEventListener('click', () => {
+            this.app.resolveWerewolfVote();
+        });
+        document.querySelectorAll('.games-werewolf-vote-target[data-seat]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.app.submitWerewolfUserVote(Number(btn.dataset.seat || 0));
+            });
+        });
+        document.getElementById('games-werewolf-submit-speech')?.addEventListener('click', () => {
+            const input = document.getElementById('games-werewolf-user-speech');
+            this._userSpeechInput = input?.value || '';
+            this.app.submitWerewolfUserSpeech(this._userSpeechInput);
+        });
+        document.getElementById('games-werewolf-user-speech')?.addEventListener('input', e => {
+            this._userSpeechInput = e.target.value || '';
+        });
+        document.getElementById('games-werewolf-submit-lastwords')?.addEventListener('click', () => {
+            const input = document.getElementById('games-werewolf-lastwords-input');
+            this._userSpeechInput = input?.value || '';
+            this.app.submitWerewolfUserLastWords(this._userSpeechInput);
+        });
+        document.getElementById('games-werewolf-lastwords-input')?.addEventListener('input', e => {
+            this._userSpeechInput = e.target.value || '';
+        });
+        document.querySelectorAll('.games-werewolf-night-target[data-seat]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const seat = Number(btn.dataset.seat || 0);
+                const action = String(btn.dataset.action || '').trim();
+                this.app.submitWerewolfNightAction({ targetSeat: seat, usePotion: action });
+            });
+        });
+        document.getElementById('games-werewolf-night-skip')?.addEventListener('click', () => {
+            this.app.submitWerewolfNightAction({ targetSeat: 0, usePotion: '' });
+        });
+        document.getElementById('games-werewolf-wolf-chat-send')?.addEventListener('click', () => {
+            const input = document.getElementById('games-werewolf-wolf-chat-input');
+            this.app.submitWerewolfWolfChat(input?.value || '');
+        });
+        document.getElementById('games-werewolf-wolf-chat-ai')?.addEventListener('click', () => {
+            this.app.requestWerewolfWolfMateAdvice();
+        });
+        document.getElementById('games-werewolf-record')?.addEventListener('click', () => {
+            this._recordOpen = true;
+            this.render();
+        });
+        document.getElementById('games-werewolf-continue')?.addEventListener('click', () => {
+            this.closeEntryPrompt();
+            this.render();
+            this.app.continueWerewolfSpeech();
+        });
+        document.getElementById('games-werewolf-new')?.addEventListener('click', () => {
+            this.app.startNewWerewolfGame();
+        });
+        this._bindInviteEvents();
+        this._bindSettingsEvents();
+        this._bindRecordEvents();
+    }
+
+    _bindInviteEvents() {
+        document.getElementById('games-werewolf-invite-close')?.addEventListener('click', () => {
+            this._inviteOpen = false;
+            this.render();
+        });
+        document.getElementById('games-werewolf-invite-overlay')?.addEventListener('click', e => {
+            if (e.target?.id !== 'games-werewolf-invite-overlay') return;
+            this._inviteOpen = false;
+            this.render();
+        });
+        document.querySelectorAll('.games-werewolf-contact-choice[data-contact-id]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = String(btn.dataset.contactId || '').trim();
+                if (!id) return;
+                if (this._selectedContactIds.has(id)) this._selectedContactIds.delete(id);
+                else if (this._selectedContactIds.size < this._emptySeatCount()) this._selectedContactIds.add(id);
+                this.render();
+            });
+        });
+        document.getElementById('games-werewolf-invite-start')?.addEventListener('click', () => {
+            const contacts = this.app.getWechatContactsForWerewolf()
+                .filter(contact => this._selectedContactIds.has(contact.id));
+            this._inviteOpen = false;
+            this.closeEntryPrompt();
+            this.app.startWerewolfMatch(contacts);
+        });
+    }
+
+    _bindSettingsEvents() {
+        document.getElementById('games-werewolf-settings-close')?.addEventListener('click', () => {
+            this._settingsOpen = false;
+            this.render();
+        });
+        document.getElementById('games-werewolf-settings-overlay')?.addEventListener('click', e => {
+            if (e.target?.id !== 'games-werewolf-settings-overlay') return;
+            this._settingsOpen = false;
+            this.render();
+        });
+        document.getElementById('games-werewolf-worldbook-enabled')?.addEventListener('change', async e => {
+            await this.app.setWerewolfWorldbookEnabled(!!e.target.checked);
+            this.renderWerewolfWorldbookList();
+        });
+        document.getElementById('games-werewolf-prompt-save')?.addEventListener('click', () => {
+            this.app.setWerewolfPrompt(document.getElementById('games-werewolf-ai-prompt')?.value || '');
+            this.app.phoneShell?.showNotification?.('狼人杀设置', '提示词已保存', '✅');
+            this._settingsOpen = false;
+            this.render();
+        });
+        document.getElementById('games-werewolf-prompt-reset')?.addEventListener('click', () => {
+            const text = this.app.resetWerewolfPrompt();
+            const textarea = document.getElementById('games-werewolf-ai-prompt');
+            if (textarea) textarea.value = text;
+            this.app.phoneShell?.showNotification?.('狼人杀设置', '已恢复默认提示词', '✅');
+        });
+        this.renderWerewolfWorldbookList();
+    }
+
+    _bindRecordEvents() {
+        document.getElementById('games-werewolf-record-close')?.addEventListener('click', () => {
+            this._recordOpen = false;
+            this.render();
+        });
+        document.getElementById('games-werewolf-record-overlay')?.addEventListener('click', e => {
+            if (e.target?.id !== 'games-werewolf-record-overlay') return;
+            this._recordOpen = false;
+            this.render();
+        });
+    }
+
     _renderPlayerCard(player) {
+        const alive = player.alive !== false;
         const classes = [
             'games-werewolf-player',
             `games-werewolf-seat-${player.seat}`,
             `games-werewolf-avatar-${player.tone}`,
             player.active ? 'is-active' : '',
             player.isUser ? 'is-user' : '',
-            player.empty ? 'is-empty' : ''
+            player.empty ? 'is-empty' : '',
+            !alive ? 'is-dead' : ''
         ].filter(Boolean).join(' ');
         return `
             <div class="${classes}">
                 <div class="games-werewolf-seat-no"><span>${player.seat}</span></div>
-                <div class="games-werewolf-avatar" aria-hidden="true"></div>
+                <div class="games-werewolf-avatar" aria-hidden="true">${this._renderAvatar(player)}</div>
                 <div class="games-werewolf-player-name">${this._escape(player.name)}</div>
-                <div class="games-werewolf-player-status"><span></span>存活</div>
+                <div class="games-werewolf-player-status"><span></span>${alive ? '存活' : '死亡'}</div>
             </div>
         `;
+    }
+
+    _renderAvatar(player) {
+        if (player.alive === false) {
+            const roleImage = this._getDeathRoleImage(player.role);
+            if (roleImage) {
+                return `<img class="games-werewolf-role-card-img" src="${this._escapeAttr(roleImage)}" alt="${this._escapeAttr(player.role || '身份')}">`;
+            }
+        }
+        if (player.empty) return '';
+        return this.app.renderPlayerAvatar?.(player) || '';
+    }
+
+    _getDeathRoleImage(role = '') {
+        const map = {
+            守卫: 'Guard.png',
+            女巫: 'Witch.png',
+            狼人: 'Werewolf.png',
+            村民: 'Villager.png',
+            预言家: 'Villager.png'
+        };
+        const file = map[String(role || '').trim()];
+        return file ? new URL(`./assets/${file}`, import.meta.url).href : '';
     }
 
     _renderChatRow(seat, text) {
@@ -140,9 +314,138 @@ export class WerewolfView {
         return `
             <div class="games-werewolf-chat-row games-werewolf-chat-row-${seat}">
                 <span>${seat}</span>
-                <p>${seat}号：${this._escape(text)}</p>
+                <p>${this._escape(text)}</p>
             </div>
         `;
+    }
+
+    _renderUserSpeechBox(state) {
+        if (!this.app.werewolfData.canUserSpeak()) return '';
+        return `
+            <div class="games-werewolf-user-speech-box">
+                <textarea id="games-werewolf-user-speech" class="games-werewolf-user-speech" rows="2" placeholder="输入你的白天发言">${this._escape(this._userSpeechInput)}</textarea>
+                <button id="games-werewolf-submit-speech" class="games-werewolf-speech-send" type="button">发送</button>
+            </div>
+        `;
+    }
+
+    _renderLastWordsBox(state) {
+        if (!this.app.werewolfData.canUserLastWords?.()) return '';
+        return `
+            <div class="games-werewolf-user-speech-box">
+                <textarea id="games-werewolf-lastwords-input" class="games-werewolf-user-speech" rows="2" placeholder="输入你的遗言">${this._escape(this._userSpeechInput)}</textarea>
+                <button id="games-werewolf-submit-lastwords" class="games-werewolf-speech-send" type="button">遗言</button>
+            </div>
+        `;
+    }
+
+    _renderVoteBox(state) {
+        if (!this.app.werewolfData.canUserVote?.()) return '';
+        const targets = this.app.werewolfData.getVoteTargets?.() || [];
+        return `
+            <div class="games-werewolf-night-box games-werewolf-vote-box">
+                <div class="games-werewolf-night-title">请选择你要投票放逐的玩家</div>
+                <div class="games-werewolf-night-desc">你的票会先记录，再由 AI 根据公开发言模拟其他玩家投票。</div>
+                <div class="games-werewolf-night-targets">
+                    ${targets.map(player => `
+                        <button class="games-werewolf-night-target games-werewolf-vote-target" type="button" data-seat="${Number(player.seat)}">
+                            投 ${Number(player.seat)}号 ${this._escape(player.name)}
+                        </button>
+                    `).join('')}
+                </div>
+                <button class="games-werewolf-night-skip games-werewolf-vote-target" type="button" data-seat="0">弃票</button>
+            </div>
+        `;
+    }
+
+    _renderNightActionBox(state, nightInfo = {}) {
+        if (state.phase !== 'night' || !nightInfo.isUserTurn) return '';
+        const role = String(nightInfo.role || state.userRole || '').trim();
+        const targets = this.app.werewolfData.getNightTargets({
+            includeSelf: role === '守卫' || role === '女巫',
+            excludeRoles: role === '狼人' ? ['狼人'] : []
+        });
+        const userSeat = Number((state.players || []).find(player => player.isUser)?.seat || 0);
+        const wolfMates = role === '狼人'
+            ? (state.players || []).filter(player => player.role === '狼人').map(player => `${player.seat}号 ${player.name}`).join('、')
+            : '';
+        const titleMap = {
+            守卫: '选择今晚守护的玩家',
+            狼人: '选择今晚袭击的玩家',
+            预言家: '选择今晚查验的玩家',
+            女巫: '选择今晚使用药剂的目标'
+        };
+        if (role === '女巫') {
+            const killedSeat = Number(state.lastKilledSeat || 0);
+            const killedPlayer = targets.find(player => Number(player.seat) === killedSeat);
+            const potions = this.app.werewolfData.getWitchPotions?.() || { antidote: true, poison: true };
+            const poisonTargets = this.app.werewolfData.getNightTargets({ includeSelf: false, excludeSeat: userSeat });
+            return `
+                <div class="games-werewolf-night-box">
+                    <div class="games-werewolf-night-title">${killedPlayer ? `今晚 ${Number(killedPlayer.seat)}号 ${this._escape(killedPlayer.name)} 被袭击` : '今晚无人被告知死亡'}</div>
+                    <div class="games-werewolf-night-desc">解药：${potions.antidote ? '可用' : '已用'} · 毒药：${potions.poison ? '可用' : '已用'}</div>
+                    ${killedPlayer && potions.antidote ? `<button class="games-werewolf-night-skip games-werewolf-night-target" type="button" data-seat="${Number(killedPlayer.seat)}" data-action="antidote">使用解药救 ${Number(killedPlayer.seat)}号</button>` : ''}
+                    ${potions.poison ? `
+                        <div class="games-werewolf-night-targets">
+                            ${poisonTargets.map(player => `
+                                <button class="games-werewolf-night-target" type="button" data-seat="${Number(player.seat)}" data-action="poison">
+                                    毒 ${Number(player.seat)}号
+                                </button>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                    <button class="games-werewolf-night-skip" id="games-werewolf-night-skip" type="button">不使用药剂，直接天亮</button>
+                </div>
+            `;
+        }
+        return `
+            <div class="games-werewolf-night-box">
+                <div class="games-werewolf-night-title">${this._escape(titleMap[role] || '选择夜晚行动目标')}</div>
+                ${role === '狼人' ? this._renderWolfNightChat(state) : wolfMates ? `<div class="games-werewolf-night-desc">狼人同伴：${this._escape(wolfMates)}</div>` : ''}
+                <div class="games-werewolf-night-targets">
+                    ${targets.map(player => `
+                        <button class="games-werewolf-night-target" type="button" data-seat="${Number(player.seat)}" data-action="">
+                            ${Number(player.seat)}号 ${this._escape(player.name)}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderWolfNightChat(state) {
+        const mates = this.app.werewolfData.getWerewolfMates?.() || [];
+        const chat = Array.isArray(state.wolfChat) ? state.wolfChat : [];
+        const loading = !!state.wolfChatLoading;
+        return `
+            <div class="games-werewolf-wolf-panel">
+                <div class="games-werewolf-night-desc">狼人同伴：${this._escape(mates.map(player => `${player.seat}号 ${player.name}`).join('、') || '仅剩你一名狼人')}</div>
+                <div class="games-werewolf-wolf-chat">
+                    ${chat.length ? chat.slice(-8).map(item => `
+                        <div class="games-werewolf-wolf-chat-row">
+                            <span>${Number(item.seat || 0) ? `${Number(item.seat)}号` : '狼队'}</span>
+                            <p>${this._escape(item.text || '')}</p>
+                        </div>
+                    `).join('') : '<div class="games-werewolf-night-desc">还没有狼队私聊，可以先说你的想法或让队友建议。</div>'}
+                </div>
+                <div class="games-werewolf-wolf-chat-input">
+                    <input id="games-werewolf-wolf-chat-input" type="text" placeholder="输入狼队私聊">
+                    <button id="games-werewolf-wolf-chat-send" type="button">发送</button>
+                    <button id="games-werewolf-wolf-chat-ai" type="button" ${loading ? 'disabled' : ''}>${loading ? '思考中' : '队友建议'}</button>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderCenterSpeaker(state, currentPlayer, nightInfo = {}) {
+        if (state.phase === 'setup') return '开始游戏';
+        if (state.phase === 'ended') return this._escape(state.winner === 'werewolves' ? '狼人胜利' : '好人胜利');
+        if (state.phase === 'night') {
+            if (nightInfo.isUserTurn) return `<strong>${this._escape(nightInfo.role || '你')}</strong> 行动`;
+            return this._escape(nightInfo.label || '夜晚行动中');
+        }
+        if (!currentPlayer) return '等待';
+        return `<strong>${Number(currentPlayer.seat)}</strong>号 ${this._escape(currentPlayer.name || '玩家')}`;
     }
 
     _renderPrimaryActions(state) {
@@ -158,13 +461,63 @@ export class WerewolfView {
                 </button>
             `;
         }
+        if (state.phase === 'night') {
+            return `
+                <button class="games-werewolf-action" type="button" disabled>
+                    <i class="fa-solid fa-moon"></i>
+                    <span>夜晚</span>
+                </button>
+                <button class="games-werewolf-action games-werewolf-action-primary" type="button" disabled>
+                    <i class="fa-solid fa-user-secret"></i>
+                    <span>行动中</span>
+                </button>
+            `;
+        }
+        if (state.phase === 'last_words') {
+            return `
+                <button class="games-werewolf-action" type="button" disabled>
+                    <i class="fa-solid fa-comment-dots"></i>
+                    <span>遗言</span>
+                </button>
+                <button class="games-werewolf-action games-werewolf-action-primary" type="button" disabled>
+                    <i class="fa-solid fa-hourglass-half"></i>
+                    <span>等待</span>
+                </button>
+            `;
+        }
+        if (state.phase === 'ended') {
+            return `
+                <button class="games-werewolf-action" type="button" disabled>
+                    <i class="fa-solid fa-flag-checkered"></i>
+                    <span>结束</span>
+                </button>
+                <button class="games-werewolf-action games-werewolf-action-primary" type="button" disabled>
+                    <i class="fa-solid fa-book-open"></i>
+                    <span>看复盘</span>
+                </button>
+            `;
+        }
+        if (state.phase === 'vote') {
+            const canUserVote = this.app.werewolfData.canUserVote?.();
+            return `
+                <button class="games-werewolf-action" id="games-werewolf-resolve-vote" type="button" ${canUserVote || state.voting ? 'disabled' : ''}>
+                    <i class="fa-solid fa-check-to-slot"></i>
+                    <span>投票</span>
+                </button>
+                <button class="games-werewolf-action games-werewolf-action-primary" type="button" disabled>
+                    <i class="fa-solid ${state.voting ? 'fa-spinner fa-spin' : 'fa-hand-pointer'}"></i>
+                    <span>${state.voting ? '结算中' : canUserVote ? '选目标' : '看结算'}</span>
+                </button>
+            `;
+        }
+        const canContinue = state.phase === 'day' && !this.app.werewolfData.canUserSpeak();
         return `
-            <button class="games-werewolf-action" type="button">
-                <i class="fa-solid fa-comment-dots"></i>
-                <span>发言</span>
+            <button class="games-werewolf-action" id="games-werewolf-continue-speech" type="button" ${canContinue ? '' : 'disabled'}>
+                <i class="fa-solid fa-forward-step"></i>
+                <span>续接发言</span>
             </button>
-            <button class="games-werewolf-action games-werewolf-action-primary" type="button">
-                <i class="fa-solid fa-paw"></i>
+            <button class="games-werewolf-action games-werewolf-action-primary" id="games-werewolf-resolve-vote" type="button" disabled>
+                <i class="fa-solid fa-check-to-slot"></i>
                 <span>投票</span>
             </button>
         `;
@@ -174,7 +527,7 @@ export class WerewolfView {
         if (!this._entryPromptOpen) return '';
         const user = state.players?.find(player => player.isUser);
         const filledCount = (state.players || []).filter(player => !player.empty).length;
-        const phaseText = state.phase === 'setup' ? '未开始' : state.phase === 'night' ? '夜间' : '白天';
+        const phaseText = state.phase === 'setup' ? '未开始' : state.phase === 'night' ? '夜间' : state.phase === 'vote' ? '投票' : state.phase === 'last_words' ? '遗言' : state.phase === 'ended' ? '结束' : '白天';
         return `
             <div class="games-werewolf-entry-overlay">
                 <div class="games-werewolf-entry-panel">
@@ -189,6 +542,165 @@ export class WerewolfView {
                 </div>
             </div>
         `;
+    }
+
+    _renderInviteOverlay() {
+        if (!this._inviteOpen) return '';
+        const contacts = this.app.getWechatContactsForWerewolf();
+        const required = this._emptySeatCount();
+        return `
+            <div class="games-werewolf-invite-overlay" id="games-werewolf-invite-overlay">
+                <div class="games-werewolf-invite-panel">
+                    <div class="games-werewolf-invite-head">
+                        <div>
+                            <div class="games-werewolf-entry-title">邀请微信好友</div>
+                            <div class="games-werewolf-entry-desc">已选 ${this._selectedContactIds.size}/${required}，未选空位会由 AI 补齐</div>
+                        </div>
+                        <button class="games-werewolf-icon-btn" id="games-werewolf-invite-close" type="button" aria-label="关闭">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <div class="games-werewolf-contact-list">
+                        ${contacts.length ? contacts.map(contact => {
+                            const checked = this._selectedContactIds.has(contact.id);
+                            const disabled = !checked && this._selectedContactIds.size >= required;
+                            return `
+                                <button class="games-werewolf-contact-choice ${checked ? 'is-active' : ''}" type="button" data-contact-id="${this._escapeAttr(contact.id)}" ${disabled ? 'disabled' : ''}>
+                                    <span class="games-werewolf-contact-avatar">${this.app.renderPlayerAvatar({ name: contact.name, avatar: contact.avatar })}</span>
+                                    <span>${this._escape(contact.name)}</span>
+                                    <i class="fa-solid ${checked ? 'fa-check' : 'fa-plus'}"></i>
+                                </button>
+                            `;
+                        }).join('') : '<div class="games-werewolf-contact-empty">微信通讯录暂无可邀请好友，将由 AI 自动补齐。</div>'}
+                    </div>
+                    <button class="games-werewolf-entry-btn is-primary" id="games-werewolf-invite-start" type="button">开始匹配</button>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderSettingsOverlay() {
+        if (!this._settingsOpen) return '';
+        const prompt = this.app.getWerewolfPrompt();
+        const worldbookChecked = this.app.isWerewolfWorldbookEnabled() ? 'checked' : '';
+        return `
+            <div class="games-werewolf-settings-overlay" id="games-werewolf-settings-overlay">
+                <div class="games-werewolf-settings-panel">
+                    <div class="games-werewolf-invite-head">
+                        <div>
+                            <div class="games-werewolf-entry-title">狼人杀设置</div>
+                            <div class="games-werewolf-entry-desc">默认提示词与酒馆上下文</div>
+                        </div>
+                        <button class="games-werewolf-icon-btn" id="games-werewolf-settings-close" type="button" aria-label="关闭">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <label class="games-werewolf-setting-toggle">
+                        <span>使用酒馆世界书</span>
+                        <input id="games-werewolf-worldbook-enabled" type="checkbox" ${worldbookChecked}>
+                    </label>
+                    <div class="games-werewolf-setting-desc">开启后发言会注入世界书、角色卡、用户信息和最近酒馆上下文。</div>
+                    <div class="games-werewolf-worldbook-list" id="games-werewolf-worldbook-list">
+                        <div class="games-werewolf-setting-desc">正在读取当前可用世界书...</div>
+                    </div>
+                    <div class="games-werewolf-prompt-card">
+                        <div class="games-werewolf-prompt-title">默认狼人杀提示词</div>
+                        <textarea id="games-werewolf-ai-prompt" class="games-werewolf-settings-textarea">${this._escape(prompt)}</textarea>
+                        <div class="games-werewolf-prompt-actions">
+                            <button class="games-werewolf-entry-btn" id="games-werewolf-prompt-reset" type="button">恢复默认</button>
+                            <button class="games-werewolf-entry-btn is-primary" id="games-werewolf-prompt-save" type="button">保存</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderRecordOverlay(state) {
+        if (!this._recordOpen) return '';
+        const gameOver = !!state.gameOver || state.phase === 'ended';
+        const records = (Array.isArray(state.replayLog) ? state.replayLog : [])
+            .map(item => this._getDisplayRecord(item, gameOver))
+            .filter(Boolean);
+        return `
+            <div class="games-werewolf-record-overlay" id="games-werewolf-record-overlay">
+                <div class="games-werewolf-record-panel">
+                    <div class="games-werewolf-invite-head">
+                        <div>
+                            <div class="games-werewolf-entry-title">狼人杀复盘</div>
+                            <div class="games-werewolf-entry-desc">${gameOver ? '游戏已结束，完整后台记录已解锁' : '游戏进行中，仅显示公开记录和脱敏夜晚记录'}</div>
+                        </div>
+                        <button class="games-werewolf-icon-btn" id="games-werewolf-record-close" type="button" aria-label="关闭">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <div class="games-werewolf-record-list">
+                        ${records.length ? records.map(item => `
+                            <div class="games-werewolf-record-item is-${this._escapeAttr(item.visibility || 'private')}">
+                                <span>${this._escape(this._formatRecordMeta(item))}</span>
+                                <p>${this._escape(item.displayText || '')}</p>
+                            </div>
+                        `).join('') : '<div class="games-werewolf-contact-empty">暂无复盘记录</div>'}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    _getDisplayRecord(item = {}, gameOver = false) {
+        if (gameOver) return { ...item, displayText: item.text || '' };
+        if (item.visibility === 'public') return { ...item, displayText: item.text || '' };
+        const redactedText = String(item.redactedText || '').trim();
+        if (!redactedText) return null;
+        return { ...item, displayText: redactedText };
+    }
+
+    _formatRecordMeta(item = {}) {
+        const phaseMap = { setup: '准备', night: '夜晚', day: '白天', vote: '投票', last_words: '遗言', ended: '结束' };
+        const visibility = item.visibility === 'public' ? '公开' : '后台';
+        return `第${Number(item.day || 1)}天 · ${phaseMap[item.phase] || item.phase || '记录'} · ${visibility}`;
+    }
+
+    async renderWerewolfWorldbookList() {
+        const container = document.getElementById('games-werewolf-worldbook-list');
+        const manager = window.VirtualPhone?.worldbookManager;
+        if (!container || !manager) return;
+        if (!this.app.isWerewolfWorldbookEnabled()) {
+            container.innerHTML = '<div class="games-werewolf-setting-desc">世界书注入已关闭。</div>';
+            return;
+        }
+        try {
+            const sources = await manager.listAvailableWorldbooks({ includeEntries: false, force: true });
+            const selection = manager.getSelectionState('games');
+            if (!sources.length) {
+                container.innerHTML = '<div class="games-werewolf-setting-desc">未读取到酒馆世界书列表。</div>';
+                return;
+            }
+            const isSelected = source => selection.initialized && manager.matchesSelection?.(source, selection.ids);
+            container.innerHTML = [...sources].sort((a, b) => Number(isSelected(b)) - Number(isSelected(a))).map(source => `
+                <label class="games-werewolf-worldbook-item">
+                    <input type="checkbox" class="games-werewolf-worldbook-choice" value="${this._escapeAttr(source.id)}" ${isSelected(source) ? 'checked' : ''}>
+                    <span>
+                        <strong>${this._escape(source.name)}</strong>
+                        <em>${this._escape(source.sourceLabel || '世界书')} · ${isSelected(source) ? '发送时读取并注入' : '未勾选不读取'}</em>
+                    </span>
+                </label>
+            `).join('');
+            container.querySelectorAll('.games-werewolf-worldbook-choice').forEach(input => {
+                input.addEventListener('change', async () => {
+                    const ids = Array.from(container.querySelectorAll('.games-werewolf-worldbook-choice:checked')).map(item => item.value);
+                    await manager.setSelection('games', ids);
+                    this.renderWerewolfWorldbookList();
+                });
+            });
+        } catch (error) {
+            console.warn('[Werewolf] 世界书列表渲染失败:', error);
+            container.innerHTML = '<div class="games-werewolf-setting-desc">世界书读取失败，请稍后重试。</div>';
+        }
+    }
+
+    _emptySeatCount() {
+        return this.app.werewolfData.getEmptySeats().length;
     }
 
     _loadCSS() {
@@ -206,7 +718,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.27', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.30', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {
@@ -223,5 +735,9 @@ export class WerewolfView {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    _escapeAttr(text) {
+        return this._escape(text);
     }
 }

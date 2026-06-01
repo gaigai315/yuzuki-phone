@@ -44,6 +44,17 @@ export class PokerView {
                 </div>
 
                 <div class="games-lobby-content">
+                    <button class="games-game-card games-werewolf-card" id="games-open-werewolf" type="button">
+                        <div class="games-game-art">
+                            <div class="games-werewolf-lobby-art" aria-hidden="true">狼</div>
+                        </div>
+                        <div class="games-game-info">
+                            <div class="games-game-title">狼人杀</div>
+                            <div class="games-game-desc">身份推理 · 联机游戏</div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right games-game-chevron"></i>
+                    </button>
+
                     <button class="games-game-card games-poker-card" id="games-open-poker" type="button">
                         <div class="games-game-art">
                             <span class="games-lobby-card games-lobby-card-black">A♠</span>
@@ -77,7 +88,7 @@ export class PokerView {
                         </div>
                         <div class="games-game-info">
                             <div class="games-game-title">每日数独</div>
-                            <div class="games-game-desc">9x9 · 笔记推理</div>
+                            <div class="games-game-desc">9x9 · 单机游戏</div>
                         </div>
                         <i class="fa-solid fa-chevron-right games-game-chevron"></i>
                     </button>
@@ -91,17 +102,6 @@ export class PokerView {
                         <div class="games-game-info">
                             <div class="games-game-title">猫盒</div>
                             <div class="games-game-desc">像素小猫 · 领养养成</div>
-                        </div>
-                        <i class="fa-solid fa-chevron-right games-game-chevron"></i>
-                    </button>
-
-                    <button class="games-game-card games-werewolf-card" id="games-open-werewolf" type="button">
-                        <div class="games-game-art">
-                            <div class="games-werewolf-lobby-art" aria-hidden="true">狼</div>
-                        </div>
-                        <div class="games-game-info">
-                            <div class="games-game-title">狼人杀</div>
-                            <div class="games-game-desc">身份推理 · UI 预览</div>
                         </div>
                         <i class="fa-solid fa-chevron-right games-game-chevron"></i>
                     </button>
