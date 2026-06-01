@@ -95,13 +95,16 @@ export class PokerView {
                         <i class="fa-solid fa-chevron-right games-game-chevron"></i>
                     </button>
 
-                    <div class="games-coming-grid">
-                        <div class="games-coming-card">
-                            <div class="games-coming-icon">狼</div>
-                            <div>狼人杀</div>
-                            <span>待接入</span>
+                    <button class="games-game-card games-werewolf-card" id="games-open-werewolf" type="button">
+                        <div class="games-game-art">
+                            <div class="games-werewolf-lobby-art" aria-hidden="true">狼</div>
                         </div>
-                    </div>
+                        <div class="games-game-info">
+                            <div class="games-game-title">狼人杀</div>
+                            <div class="games-game-desc">身份推理 · UI 预览</div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right games-game-chevron"></i>
+                    </button>
                 </div>
                 ${this._renderPokerSetupOverlay()}
                 ${this._renderSettingsOverlay()}
@@ -480,6 +483,9 @@ export class PokerView {
         });
         document.getElementById('games-open-catbox')?.addEventListener('click', () => {
             this.app.openCatbox();
+        });
+        document.getElementById('games-open-werewolf')?.addEventListener('click', () => {
+            this.app.openWerewolf();
         });
         document.getElementById('games-settings-open')?.addEventListener('click', () => {
             this._settingsOpen = true;

@@ -1,0 +1,782 @@
+.games-werewolf-app {
+    isolation: isolate;
+    background: #05080d;
+    color: #eef7ff;
+}
+
+.games-werewolf-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    background:
+        linear-gradient(180deg, rgba(2, 5, 10, 0.05), rgba(2, 5, 10, 0.26) 48%, rgba(2, 5, 10, 0.86) 100%),
+        url('./assets/werewolf-background.png') center / cover no-repeat;
+}
+
+.games-werewolf-day-theme .games-werewolf-backdrop {
+    background:
+        linear-gradient(180deg, rgba(2, 8, 12, 0.18), rgba(2, 8, 12, 0.3) 48%, rgba(2, 8, 12, 0.78) 100%),
+        url('./assets/day.png') center / cover no-repeat;
+}
+
+.games-werewolf-backdrop::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at 50% 7%, rgba(207, 230, 255, 0.28), transparent 24%),
+        linear-gradient(90deg, rgba(0, 0, 0, 0.38), transparent 24%, transparent 76%, rgba(0, 0, 0, 0.4));
+}
+
+.games-werewolf-day-theme .games-werewolf-backdrop::after {
+    background:
+        radial-gradient(circle at 50% 14%, rgba(255, 255, 255, 0.18), transparent 30%),
+        linear-gradient(90deg, rgba(2, 12, 18, 0.3), transparent 24%, transparent 76%, rgba(2, 12, 18, 0.34));
+}
+
+.games-werewolf-topbar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    z-index: 10;
+    height: 62px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 28px 12px 0;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.games-werewolf-icon-btn {
+    width: 30px;
+    height: 30px;
+    border: 1px solid rgba(154, 211, 255, 0.38);
+    border-radius: 8px;
+    background: rgba(5, 12, 20, 0.54);
+    color: #e7f5ff !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    pointer-events: auto;
+    backdrop-filter: blur(10px);
+}
+
+.games-werewolf-title-wrap {
+    min-width: 0;
+}
+
+.games-werewolf-title {
+    color: #f5fbff !important;
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1.15;
+    letter-spacing: 0;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.62);
+}
+
+.games-werewolf-subtitle {
+    margin-top: 2px;
+    color: rgba(190, 224, 255, 0.78) !important;
+    font-size: 10px;
+    line-height: 1.2;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.62);
+}
+
+.games-werewolf-stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    display: grid;
+    grid-template-rows: auto auto auto auto;
+    gap: 7px;
+    padding: 66px 12px 12px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.games-werewolf-board {
+    --werewolf-card-w: clamp(66px, 22%, 78px);
+    --werewolf-card-h: clamp(78px, 24%, 90px);
+    --werewolf-oracle-size: clamp(104px, 36%, 136px);
+    --werewolf-col-side: 6%;
+    --werewolf-col-inner: 24%;
+    --werewolf-col-mid: 50%;
+    --werewolf-row-top: 15%;
+    --werewolf-row-top-side: 17%;
+    --werewolf-row-mid: 48%;
+    --werewolf-row-bottom: 78%;
+    --werewolf-row-user: 82%;
+    position: relative;
+    height: clamp(310px, 43vh, 380px);
+    min-height: 310px;
+}
+
+.games-werewolf-seats {
+    position: absolute;
+    inset: 0;
+}
+
+.games-werewolf-player {
+    position: absolute;
+    width: var(--werewolf-card-w);
+    height: var(--werewolf-card-h);
+    border: 1px solid rgba(151, 201, 240, 0.58);
+    border-radius: 8px;
+    background:
+        linear-gradient(180deg, rgba(4, 11, 18, 0.88), rgba(3, 10, 16, 0.72)),
+        rgba(7, 18, 29, 0.76);
+    box-shadow:
+        inset 0 0 18px rgba(118, 179, 227, 0.08),
+        0 8px 22px rgba(0, 0, 0, 0.34);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 5px 5px;
+    box-sizing: border-box;
+}
+
+.games-werewolf-player.is-active {
+    border-color: rgba(118, 198, 255, 0.95);
+    box-shadow:
+        inset 0 0 18px rgba(118, 198, 255, 0.14),
+        0 0 18px rgba(91, 174, 255, 0.28);
+}
+
+.games-werewolf-player.is-user {
+    border-color: rgba(240, 183, 83, 0.95);
+    box-shadow:
+        inset 0 0 20px rgba(240, 183, 83, 0.12),
+        0 0 20px rgba(240, 183, 83, 0.28);
+}
+
+.games-werewolf-player.is-empty {
+    border-style: dashed;
+    opacity: 0.78;
+}
+
+.games-werewolf-seat-no {
+    position: absolute;
+    left: -9px;
+    top: -10px;
+    width: 27px;
+    height: 27px;
+    transform: none;
+    border: 0;
+    background: url('./assets/数字边框.png') center / contain no-repeat;
+    color: #f3d48f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.48));
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'HarmonyOS Sans', sans-serif;
+}
+
+.games-werewolf-seat-no span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    transform: translateY(0);
+    text-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.9),
+        0 0 6px rgba(243, 212, 143, 0.34);
+    font-variant-numeric: tabular-nums;
+}
+
+.games-werewolf-avatar {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    border: 1px solid rgba(123, 190, 255, 0.86);
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 50% 42%, rgba(10, 20, 32, 0.1) 0 18%, rgba(2, 7, 13, 0.85) 19% 36%, transparent 37%),
+        radial-gradient(circle at 50% 34%, rgba(136, 184, 225, 0.34), transparent 56%),
+        linear-gradient(145deg, #122233, #02070d);
+    box-shadow:
+        inset 0 0 18px rgba(134, 205, 255, 0.16),
+        0 0 12px rgba(70, 146, 223, 0.16);
+}
+
+.games-werewolf-avatar-knight .games-werewolf-avatar {
+    background:
+        linear-gradient(90deg, transparent 42%, rgba(205, 224, 242, 0.66) 43% 48%, transparent 49%),
+        radial-gradient(circle at 50% 34%, rgba(180, 211, 241, 0.34), transparent 56%),
+        linear-gradient(145deg, #17283a, #02070d);
+}
+
+.games-werewolf-avatar-witch .games-werewolf-avatar {
+    background:
+        radial-gradient(ellipse at 50% 24%, rgba(102, 82, 168, 0.9) 0 18%, transparent 19%),
+        linear-gradient(18deg, transparent 0 34%, rgba(168, 154, 255, 0.48) 35% 43%, transparent 44%),
+        radial-gradient(circle at 50% 34%, rgba(121, 139, 241, 0.34), transparent 56%),
+        linear-gradient(145deg, #10142d, #02070d);
+}
+
+.games-werewolf-avatar-hunter .games-werewolf-avatar {
+    background:
+        linear-gradient(145deg, transparent 45%, rgba(180, 205, 222, 0.55) 46% 50%, transparent 51%),
+        radial-gradient(circle at 50% 34%, rgba(115, 177, 217, 0.34), transparent 56%),
+        linear-gradient(145deg, #13273a, #02070d);
+}
+
+.games-werewolf-avatar-youth .games-werewolf-avatar,
+.games-werewolf-avatar-user .games-werewolf-avatar {
+    background:
+        radial-gradient(ellipse at 50% 18%, rgba(33, 43, 55, 0.86) 0 24%, transparent 25%),
+        radial-gradient(circle at 50% 38%, rgba(123, 167, 204, 0.34), transparent 56%),
+        linear-gradient(145deg, #172233, #02070d);
+}
+
+.games-werewolf-player.is-empty .games-werewolf-avatar {
+    background:
+        radial-gradient(circle at 50% 50%, rgba(141, 203, 255, 0.16), transparent 46%),
+        linear-gradient(145deg, rgba(9, 24, 35, 0.92), rgba(2, 7, 13, 0.88));
+}
+
+.games-werewolf-player.is-user .games-werewolf-avatar {
+    border-color: rgba(240, 183, 83, 0.96);
+    box-shadow:
+        inset 0 0 18px rgba(240, 183, 83, 0.14),
+        0 0 14px rgba(240, 183, 83, 0.24);
+}
+
+.games-werewolf-player-name {
+    width: 100%;
+    min-height: 15px;
+    margin-top: 4px;
+    color: #f6fbff;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.2;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.72);
+}
+
+.games-werewolf-player.is-user .games-werewolf-player-name {
+    color: #f3c76e;
+}
+
+.games-werewolf-player.is-empty .games-werewolf-player-name {
+    color: rgba(190, 224, 255, 0.78);
+}
+
+.games-werewolf-player-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    color: rgba(246, 251, 255, 0.9);
+    font-size: 10px;
+    line-height: 1.15;
+}
+
+.games-werewolf-player-status span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #82d95b;
+    box-shadow: 0 0 8px rgba(130, 217, 91, 0.8);
+}
+
+.games-werewolf-seat-1 { left: var(--werewolf-col-inner); top: var(--werewolf-row-top-side); transform: translate(-50%, -50%); }
+.games-werewolf-seat-2 { left: var(--werewolf-col-mid); top: var(--werewolf-row-top); transform: translate(-50%, -50%); }
+.games-werewolf-seat-3 { right: var(--werewolf-col-inner); top: var(--werewolf-row-top-side); transform: translate(50%, -50%); }
+.games-werewolf-seat-4 { left: var(--werewolf-col-side); top: var(--werewolf-row-mid); transform: translateY(-50%); }
+.games-werewolf-seat-5 { right: var(--werewolf-col-side); top: var(--werewolf-row-mid); transform: translateY(-50%); }
+.games-werewolf-seat-6 { left: var(--werewolf-col-inner); top: var(--werewolf-row-bottom); transform: translate(-50%, -50%); }
+.games-werewolf-seat-7 { right: var(--werewolf-col-inner); top: var(--werewolf-row-bottom); transform: translate(50%, -50%); }
+.games-werewolf-seat-8 { left: var(--werewolf-col-mid); top: var(--werewolf-row-user); transform: translate(-50%, -50%); }
+
+.games-werewolf-oracle {
+    position: absolute;
+    left: 50%;
+    top: 49%;
+    width: var(--werewolf-oracle-size);
+    aspect-ratio: 1;
+    height: auto;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgba(88, 157, 222, 0.28);
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 50% 44%, rgba(7, 22, 38, 0.72), rgba(4, 11, 19, 0.46) 63%, rgba(4, 11, 19, 0.18) 64%),
+        conic-gradient(from 0deg, rgba(100, 179, 255, 0.16), transparent 22%, rgba(100, 179, 255, 0.16) 50%, transparent 72%, rgba(100, 179, 255, 0.16));
+    box-shadow:
+        inset 0 0 28px rgba(53, 132, 211, 0.12),
+        0 0 34px rgba(0, 0, 0, 0.34);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.games-werewolf-moon {
+    color: #8dccff;
+    font-size: clamp(13px, 4.3vw, 17px);
+    line-height: 1;
+}
+
+.games-werewolf-day {
+    margin-top: 4px;
+    color: #eef7ff;
+    font-size: clamp(13px, 4vw, 16px);
+    line-height: 1.1;
+}
+
+.games-werewolf-day strong,
+.games-werewolf-speaker strong {
+    color: #f0bd62;
+    font-size: clamp(16px, 5.1vw, 21px);
+}
+
+.games-werewolf-phase {
+    margin-top: 3px;
+    color: #8dccff;
+    font-size: clamp(21px, 7vw, 27px);
+    font-weight: 900;
+    line-height: 1.1;
+    text-shadow: 0 0 14px rgba(97, 181, 255, 0.48);
+}
+
+.games-werewolf-divider {
+    width: 66%;
+    height: 1px;
+    margin: 6px 0;
+    background: linear-gradient(90deg, transparent, rgba(141, 203, 255, 0.64), transparent);
+}
+
+.games-werewolf-turn {
+    color: rgba(238, 247, 255, 0.76);
+    font-size: clamp(10px, 3.1vw, 12px);
+}
+
+.games-werewolf-speaker {
+    margin-top: 3px;
+    color: #eef7ff;
+    font-size: clamp(14px, 4.6vw, 18px);
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.games-werewolf-notice {
+    width: calc(100% - 72px);
+    height: 22px;
+    min-height: 0;
+    justify-self: center;
+    border: 1px solid rgba(229, 173, 85, 0.62);
+    border-radius: 8px;
+    background:
+        linear-gradient(90deg, rgba(209, 145, 55, 0.12), rgba(5, 12, 20, 0.72) 26%, rgba(5, 12, 20, 0.72) 74%, rgba(209, 145, 55, 0.12)),
+        rgba(3, 10, 17, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 0 10px;
+    box-sizing: border-box;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.games-werewolf-notice span,
+.games-werewolf-chat-title {
+    display: block;
+    color: #e8b85e;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.games-werewolf-notice strong {
+    display: block;
+    color: #f8fbff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.games-werewolf-chat {
+    position: relative;
+    z-index: 30;
+    height: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    border: 1px solid rgba(100, 170, 230, 0.48);
+    border-radius: 8px;
+    background: rgba(4, 11, 18, 0.74);
+    box-shadow:
+        inset 0 0 24px rgba(70, 138, 207, 0.08),
+        0 8px 20px rgba(0, 0, 0, 0.24);
+    padding: 0;
+    box-sizing: border-box;
+    overflow: visible;
+}
+
+.games-werewolf-chat-toggle {
+    width: 100%;
+    height: 40px;
+    border: 0;
+    background: transparent;
+    color: #8dccff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.games-werewolf-chat-toggle span {
+    color: #8dccff;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.15;
+}
+
+.games-werewolf-chat-toggle i {
+    color: rgba(141, 204, 255, 0.82);
+    font-size: 10px;
+}
+
+.games-werewolf-chat-scroll {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 6px);
+    max-height: 136px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 10px;
+    box-sizing: border-box;
+    border: 1px solid rgba(100, 170, 230, 0.48);
+    border-radius: 8px;
+    background: rgba(4, 11, 18, 0.92);
+    box-shadow:
+        inset 0 0 24px rgba(70, 138, 207, 0.08),
+        0 12px 28px rgba(0, 0, 0, 0.36);
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+.games-werewolf-chat.is-expanded .games-werewolf-chat-scroll {
+    display: block;
+}
+
+.games-werewolf-chat-row {
+    height: 30px;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+}
+
+.games-werewolf-chat-row span {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(141, 203, 255, 0.82);
+    color: #ddecff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.games-werewolf-chat-row-4 span {
+    border-color: rgba(129, 219, 102, 0.82);
+}
+
+.games-werewolf-chat-row-7 span {
+    border-color: rgba(188, 111, 255, 0.86);
+}
+
+.games-werewolf-chat-row-system span {
+    border-color: rgba(232, 184, 94, 0.86);
+    color: #e8b85e;
+}
+
+.games-werewolf-chat-row p {
+    min-width: 0;
+    height: 30px;
+    margin: 0;
+    padding: 0 10px;
+    border: 1px solid rgba(151, 201, 240, 0.18);
+    border-radius: 8px;
+    background: rgba(5, 13, 21, 0.74);
+    color: rgba(238, 247, 255, 0.76);
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.games-werewolf-chat-empty {
+    height: 30px;
+    color: rgba(238, 247, 255, 0.48);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+}
+
+.games-werewolf-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.games-werewolf-action {
+    height: 42px;
+    border: 1px solid rgba(100, 185, 255, 0.7);
+    border-radius: 8px;
+    background:
+        linear-gradient(180deg, rgba(12, 44, 72, 0.92), rgba(5, 20, 34, 0.92));
+    color: #bfe5ff !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+    box-shadow:
+        inset 0 0 14px rgba(87, 174, 255, 0.16),
+        0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.games-werewolf-action i {
+    font-size: 17px;
+}
+
+.games-werewolf-action-primary {
+    border-color: rgba(236, 184, 87, 0.86);
+    background:
+        linear-gradient(180deg, rgba(92, 59, 18, 0.96), rgba(22, 16, 10, 0.95));
+    color: #f2c56d !important;
+    box-shadow:
+        inset 0 0 14px rgba(236, 184, 87, 0.18),
+        0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.games-werewolf-action:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+}
+
+.games-werewolf-entry-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    box-sizing: border-box;
+    background: rgba(1, 8, 14, 0.58);
+    backdrop-filter: blur(8px);
+}
+
+.games-werewolf-entry-panel {
+    width: min(82vw, 280px);
+    border: 1px solid rgba(128, 199, 255, 0.42);
+    border-radius: 8px;
+    background:
+        linear-gradient(180deg, rgba(9, 31, 48, 0.96), rgba(3, 13, 22, 0.96));
+    box-shadow:
+        inset 0 0 22px rgba(96, 177, 255, 0.12),
+        0 18px 38px rgba(0, 0, 0, 0.42);
+    padding: 14px;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+.games-werewolf-entry-title {
+    color: #eef7ff;
+    font-size: 16px;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.games-werewolf-entry-desc {
+    margin-top: 8px;
+    color: rgba(238, 247, 255, 0.72);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.games-werewolf-entry-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.games-werewolf-entry-btn {
+    height: 34px;
+    border: 1px solid rgba(100, 185, 255, 0.62);
+    border-radius: 8px;
+    background: rgba(9, 36, 58, 0.92);
+    color: #cfeeff;
+    font-size: 12px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.games-werewolf-entry-btn.is-primary {
+    border-color: rgba(236, 184, 87, 0.86);
+    background: linear-gradient(180deg, rgba(96, 62, 18, 0.96), rgba(35, 22, 9, 0.96));
+    color: #f2c56d;
+}
+
+@media (max-height: 760px) {
+    .games-werewolf-stage {
+        grid-template-rows: auto auto auto auto;
+        gap: 4px;
+        padding: 56px 10px 8px;
+    }
+
+    .games-werewolf-board {
+        --werewolf-card-w: clamp(58px, 20.5%, 66px);
+        --werewolf-card-h: clamp(70px, 23%, 78px);
+        --werewolf-oracle-size: clamp(78px, 28%, 92px);
+        --werewolf-col-side: 5%;
+        --werewolf-col-inner: 23%;
+        --werewolf-row-top: 15%;
+        --werewolf-row-top-side: 17%;
+        --werewolf-row-mid: 47%;
+        --werewolf-row-bottom: 78%;
+        --werewolf-row-user: 82%;
+        height: clamp(260px, 42vh, 310px);
+        min-height: 260px;
+    }
+
+    .games-werewolf-player {
+        padding: 6px 4px 4px;
+    }
+
+    .games-werewolf-avatar {
+        width: 32px;
+        height: 32px;
+        flex-basis: 32px;
+    }
+
+    .games-werewolf-player-name {
+        min-height: 14px;
+        font-size: 10px;
+        margin-top: 3px;
+    }
+
+    .games-werewolf-player-status {
+        font-size: 9px;
+        gap: 4px;
+    }
+
+    .games-werewolf-seat-no {
+        left: -8px;
+        top: -9px;
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+    }
+
+    .games-werewolf-oracle {
+        top: 47%;
+    }
+
+    .games-werewolf-moon {
+        font-size: 11px;
+    }
+
+    .games-werewolf-day {
+        margin-top: 2px;
+        font-size: 11px;
+    }
+
+    .games-werewolf-day strong,
+    .games-werewolf-speaker strong {
+        font-size: 14px;
+    }
+
+    .games-werewolf-phase {
+        margin-top: 1px;
+        font-size: 18px;
+    }
+
+    .games-werewolf-divider {
+        margin: 4px 0;
+    }
+
+    .games-werewolf-turn {
+        font-size: 9px;
+    }
+
+    .games-werewolf-speaker {
+        margin-top: 1px;
+        font-size: 12px;
+    }
+
+    .games-werewolf-chat {
+        height: 32px;
+        min-height: 32px;
+        max-height: 32px;
+    }
+
+    .games-werewolf-chat-toggle {
+        height: 32px;
+    }
+
+    .games-werewolf-chat-scroll {
+        max-height: 92px;
+        padding: 7px 8px;
+    }
+
+    .games-werewolf-chat-row {
+        height: 27px;
+        margin-top: 4px;
+    }
+
+    .games-werewolf-chat-row p {
+        height: 27px;
+        font-size: 11px;
+    }
+
+    .games-werewolf-action {
+        height: 36px;
+        font-size: 11px;
+    }
+
+    .games-werewolf-app.is-chat-expanded .games-werewolf-notice {
+        width: calc(100% - 80px);
+        height: 20px;
+        min-height: 0;
+    }
+
+    .games-werewolf-app.is-chat-expanded .games-werewolf-chat {
+        max-height: 32px;
+    }
+
+    .games-werewolf-app.is-chat-expanded .games-werewolf-chat-scroll {
+        max-height: 92px;
+    }
+}

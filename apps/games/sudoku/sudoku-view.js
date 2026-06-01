@@ -12,6 +12,7 @@ export class SudokuView {
 
     render() {
         this._loadCSS();
+        this.app.sudokuData.resumeTimer();
         const state = this.app.sudokuData.getState();
         const html = `
             <div class="games-app games-sudoku-app">
@@ -30,7 +31,6 @@ export class SudokuView {
                 <div class="games-sudoku-header">
                     <div class="games-sudoku-level">${this._escape(state.difficultyLabel || '每日')}</div>
                     <div class="games-sudoku-meta">
-                        <span>${this._escape(this._formatDailyLabel(state.dailyKey))}</span>
                         <strong>错误次数：${this._renderHearts(state)}</strong>
                         <span id="games-sudoku-timer">${this._formatTime(state.elapsedMs)}</span>
                     </div>
@@ -84,6 +84,7 @@ export class SudokuView {
             clearInterval(this._timer);
             this._timer = null;
         }
+        this.app.sudokuData.pauseTimer();
     }
 
     _renderCells(state) {
@@ -217,16 +218,14 @@ export class SudokuView {
         this._cssLoaded = true;
     }
 
-    _formatDailyLabel(value = '') {
-        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (!match) return '每日';
-        return `${Number(match[2])}-${Number(match[3])}`;
-    }
-
     _formatTime(ms = 0) {
         const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
-        const minutes = Math.floor(total / 60);
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
         const seconds = total % 60;
+        if (hours > 0) {
+            return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
         return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     }
 

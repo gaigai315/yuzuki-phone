@@ -10,8 +10,11 @@ import { SudokuData } from './sudoku/sudoku-data.js';
 import { SudokuView } from './sudoku/sudoku-view.js';
 import { CatboxData } from './catbox/catbox-data.js';
 import { CatboxView } from './catbox/catbox-view.js';
+import { WerewolfData } from './werewolf/werewolf-data.js';
+import { WerewolfView } from './werewolf/werewolf-view.js';
 
 const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
+const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.27', import.meta.url).href;
 const CATBOX_PRELOAD_ASSETS = [
     new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
     new URL('./catbox/assets/wxxw2.png', import.meta.url).href,
@@ -41,7 +44,20 @@ export class GamesApp extends PokerApp {
         this.sudokuView = new SudokuView(this);
         this.catboxData = new CatboxData(storage);
         this.catboxView = new CatboxView(this);
+        this.werewolfData = new WerewolfData(storage);
+        this.werewolfView = new WerewolfView(this);
         this._preloadCatboxAssets();
+        this._preloadWerewolfAssets();
+        window.addEventListener('phone:panelVisibility', event => {
+            const open = !!event.detail?.open;
+            if (this.currentView !== 'sudoku') return;
+            if (open) {
+                this.sudokuData.resumeTimer();
+                this.sudokuView.render();
+            } else {
+                this.sudokuView.destroy();
+            }
+        });
     }
 
     open2048() {
@@ -113,6 +129,117 @@ export class GamesApp extends PokerApp {
         this.catboxView.render();
     }
 
+    openWerewolf() {
+        this.applyPhoneChromeTheme();
+        this.currentView = 'werewolf';
+        this.werewolfView.openEntryPrompt();
+        this.werewolfView.render();
+    }
+
+    startNewWerewolfGame() {
+        this.werewolfData.reset();
+        this.werewolfView.closeEntryPrompt();
+        this.werewolfView.render();
+    }
+
+    async startWerewolfMatch() {
+        const emptySeats = this.werewolfData.getEmptySeats();
+        if (!emptySeats.length) {
+            this.phoneShell?.showNotification?.('狼人杀', '已经没有空位需要匹配', '🐺');
+            return;
+        }
+        this.werewolfData.setMatching(true);
+        this.werewolfView.render();
+        try {
+            const result = await this._callWerewolfMatchAi(emptySeats);
+            const matched = this._parseWerewolfMatch(result?.summary || result?.content || result?.text || '');
+            const required = new Set(emptySeats);
+            const filtered = matched.filter(player => required.has(player.seat));
+            if (filtered.length !== emptySeats.length) {
+                throw new Error(`AI 返回人数不完整：需要 ${emptySeats.length} 个，收到 ${filtered.length} 个`);
+            }
+            this.werewolfData.applyMatchedPlayers(filtered);
+            this.werewolfView.render();
+        } catch (error) {
+            console.warn('[Werewolf] 匹配失败:', error);
+            const message = this._formatError?.(error, '匹配失败') || error?.message || '匹配失败';
+            this.werewolfData.applyMatchError(message);
+            this.werewolfView.render();
+            this.phoneShell?.showNotification?.('狼人杀匹配失败', message, '❌');
+        }
+    }
+
+    async _callWerewolfMatchAi(emptySeats = []) {
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        const seatsText = emptySeats.map(seat => `${seat}号`).join('、');
+        const userSeat = this.werewolfData.getState().players?.find(player => player.isUser)?.seat || 8;
+        const messages = [
+            {
+                role: 'system',
+                name: 'SYSTEM (狼人杀匹配)',
+                isPhoneMessage: true,
+                content: [
+                    '你是狼人杀游戏的匹配系统，只负责生成临时游戏好友资料。',
+                    `当前是 8 人局狼人杀，${userSeat}号是用户本人，其余空位需要生成游戏好友。`,
+                    '只生成姓名、性别、性格及语言风格，不要分配狼人杀身份，不要写游戏过程。',
+                    '姓名应像真实中文昵称或姓名，避免重复，性格和语言风格要适合狼人杀发言。',
+                    '必须只返回 <狼人杀匹配环节> 标签包裹的内容，不要 Markdown，不要解释。'
+                ].join('\n')
+            },
+            {
+                role: 'user',
+                isPhoneMessage: true,
+                content: [
+                    `目前空置位置：${seatsText}。`,
+                    '请为这些位置生成游戏好友。',
+                    '严格使用以下格式：',
+                    '<狼人杀匹配环节>',
+                    '【3号】',
+                    '姓名：',
+                    '性别：',
+                    '性格及语言风格：',
+                    '---',
+                    '【4号】',
+                    '姓名：',
+                    '性别：',
+                    '性格及语言风格：',
+                    '</狼人杀匹配环节>'
+                ].join('\n')
+            }
+        ];
+        return apiManager.callAI(messages, {
+            appId: 'games',
+            temperature: 0.9,
+            max_tokens: 900
+        });
+    }
+
+    _parseWerewolfMatch(text = '') {
+        const source = String(text || '').trim();
+        const block = source.match(/<狼人杀匹配环节>([\s\S]*?)<\/狼人杀匹配环节>/)?.[1] || source;
+        const sections = [];
+        const pattern = /【\s*(\d+)\s*号\s*】([\s\S]*?)(?=---\s*【\s*\d+\s*号\s*】|【\s*\d+\s*号\s*】|$)/g;
+        let match = null;
+        while ((match = pattern.exec(block))) {
+            const seat = Number(match[1]);
+            const body = String(match[2] || '');
+            sections.push({
+                seat,
+                name: this._extractWerewolfField(body, '姓名'),
+                gender: this._extractWerewolfField(body, '性别'),
+                personality: this._extractWerewolfField(body, '性格及语言风格')
+            });
+        }
+        return sections.filter(item => item.seat >= 1 && item.seat <= 7 && item.name && item.personality);
+    }
+
+    _extractWerewolfField(body, label) {
+        const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const match = String(body || '').match(new RegExp(`${escaped}\\s*[:：]\\s*([\\s\\S]*?)(?=\\n\\s*(?:姓名|性别|性格及语言风格)\\s*[:：]|$)`));
+        return String(match?.[1] || '').trim();
+    }
+
     _preloadCatboxAssets() {
         if (document.getElementById('games-catbox-css')) return;
         const stylesheet = document.createElement('link');
@@ -129,6 +256,37 @@ export class GamesApp extends PokerApp {
             link.dataset.catboxPreload = String(index + 1);
             document.head.appendChild(link);
         });
+    }
+
+    _preloadWerewolfAssets() {
+        const existingCss = document.getElementById('games-werewolf-css');
+        if (existingCss) {
+            if (existingCss.href !== WEREWOLF_CSS_URL) existingCss.href = WEREWOLF_CSS_URL;
+        } else {
+            const stylesheet = document.createElement('link');
+            stylesheet.id = 'games-werewolf-css';
+            stylesheet.rel = 'stylesheet';
+            stylesheet.href = WEREWOLF_CSS_URL;
+            document.head.appendChild(stylesheet);
+        }
+
+        if (!document.getElementById('games-werewolf-bg-preload')) {
+            const link = document.createElement('link');
+            link.id = 'games-werewolf-bg-preload';
+            link.rel = 'preload';
+            link.href = new URL('./werewolf/assets/werewolf-background.png', import.meta.url).href;
+            link.as = 'image';
+            document.head.appendChild(link);
+        }
+
+        if (!document.getElementById('games-werewolf-day-bg-preload')) {
+            const link = document.createElement('link');
+            link.id = 'games-werewolf-day-bg-preload';
+            link.rel = 'preload';
+            link.href = new URL('./werewolf/assets/day.png', import.meta.url).href;
+            link.as = 'image';
+            document.head.appendChild(link);
+        }
     }
 
     randomCatboxCat() {
@@ -258,11 +416,12 @@ export class GamesApp extends PokerApp {
         this.game2048View?.destroy?.();
         this.sudokuView?.destroy?.();
         this.catboxView?.destroy?.();
+        this.werewolfView?.destroy?.();
         super.backToLobby();
     }
 
     handleSwipeBack() {
-        if (this.currentView === 'game2048' || this.currentView === 'sudoku' || this.currentView === 'catbox') {
+        if (this.currentView === 'game2048' || this.currentView === 'sudoku' || this.currentView === 'catbox' || this.currentView === 'werewolf') {
             this.backToLobby();
             return;
         }

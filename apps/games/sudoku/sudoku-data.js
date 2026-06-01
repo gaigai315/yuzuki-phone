@@ -25,6 +25,19 @@ export class SudokuData {
         return this.state;
     }
 
+    pauseTimer() {
+        this._pauseTimer();
+        this.storage?.set?.(STORAGE_KEY, this.state);
+        return this.state;
+    }
+
+    resumeTimer() {
+        if (!this.state || this.state.completed || this.state.failed || this.state.startedAt) return this.state;
+        this.state.startedAt = Date.now();
+        this.storage?.set?.(STORAGE_KEY, this.state);
+        return this.state;
+    }
+
     newDaily(difficulty = 'normal') {
         const mode = this._normalizeDifficulty(difficulty);
         const seed = this._hashSeed(`${this._getDailyKey()}-${mode}`);
@@ -159,7 +172,10 @@ export class SudokuData {
 
     _loadState() {
         const saved = this.storage?.get?.(STORAGE_KEY);
-        if (this._isValidState(saved)) return saved;
+        if (this._isValidState(saved)) {
+            saved.startedAt = 0;
+            return saved;
+        }
         return this._createState('normal', this._hashSeed(this._getDailyKey()));
     }
 

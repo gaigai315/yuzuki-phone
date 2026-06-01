@@ -4324,6 +4324,7 @@ if (window.GGP_Loaded) {
 
         if (isOpen) {
             // 关闭
+            window.dispatchEvent(new CustomEvent('phone:panelVisibility', { detail: { open: false } }));
             panel.classList.remove('phone-panel-open');
             panel.classList.remove('phone-keyboard-open');
             panel.classList.add('phone-panel-hidden');
@@ -4347,6 +4348,7 @@ if (window.GGP_Loaded) {
 
             // 手机 DOM 已准备好后再正式弹出，避免首次加载时白块和错位。
             openPhonePanelWithOutsideClose(panel, icon);
+            window.dispatchEvent(new CustomEvent('phone:panelVisibility', { detail: { open: true } }));
 
             // 🔥 展开手机时，如果刚好停留在微信某聊天界面，立刻刷新消除红点
             if (currentApp === 'wechat' && window.VirtualPhone?.wechatApp) {

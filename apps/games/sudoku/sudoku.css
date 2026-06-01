@@ -53,7 +53,7 @@
 .games-sudoku-meta {
     margin-top: 5px;
     display: grid;
-    grid-template-columns: 52px minmax(0, 1fr) 58px;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px;
     color: #a95f2f;
@@ -65,7 +65,7 @@
     min-width: 0;
     color: #464646;
     font-size: 16px;
-    text-align: center;
+    text-align: left;
 }
 
 .games-sudoku-meta strong span {

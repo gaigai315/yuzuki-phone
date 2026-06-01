@@ -262,6 +262,7 @@ export class PhoneShell {
                 '.mofo-app', '.mofo-list-col', '.mofo-detail-col',
                 '.mofo-editor-overlay', '.mofo-editor-panel', '.mofo-editor-body',
                 '.games-app', '.games-lobby-content', '.games-log', '.games-contact-list', '.games-settings-panel', '.games-worldbook-list', '.games-ai-error-message',
+                '.games-werewolf-chat-scroll',
                 '.games-catbox-inventory-overlay', '.games-catbox-inventory-panel', '.games-catbox-inventory-list',
                 '.games-catbox-coadopt-overlay', '.games-catbox-coadopt-panel', '.games-catbox-coadopt-list',
                 '.games-catbox-letters-overlay', '.games-catbox-letter-paper', '.games-catbox-letter-list',
