@@ -101,6 +101,22 @@ export class WerewolfView {
 
     destroy() {}
 
+    _collapseChatPanel() {
+        if (!this._chatExpanded) return;
+        this._chatExpanded = false;
+        const root = document.querySelector('.games-werewolf-app');
+        const chat = document.querySelector('.games-werewolf-chat');
+        const toggle = document.getElementById('games-werewolf-chat-toggle');
+        root?.classList.remove('is-chat-expanded');
+        chat?.classList.remove('is-expanded');
+        toggle?.setAttribute('aria-expanded', 'false');
+        const icon = toggle?.querySelector('i');
+        if (icon) {
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-up');
+        }
+    }
+
     clearUserSpeechInput() {
         this._userSpeechInput = '';
     }
@@ -124,6 +140,11 @@ export class WerewolfView {
         document.getElementById('games-werewolf-chat-toggle')?.addEventListener('click', () => {
             this._chatExpanded = !this._chatExpanded;
             this.render();
+        });
+        document.querySelector('.games-werewolf-app')?.addEventListener('click', e => {
+            if (!this._chatExpanded) return;
+            if (e.target?.closest?.('.games-werewolf-chat')) return;
+            this._collapseChatPanel();
         });
         document.querySelectorAll('.games-werewolf-chat-day-toggle[data-day]').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -764,7 +785,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.34', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.35', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {
