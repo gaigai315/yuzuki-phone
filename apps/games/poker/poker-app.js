@@ -21,6 +21,7 @@ export class PokerApp {
         this.abortController = null;
         this._pendingPokerChatMessages = [];
         this._pokerChatReplyTimer = null;
+        this._pokerActionReplyTimer = null;
         this._pokerChatReplyDelay = 6000;
         this._pokerChatHasPendingReply = false;
         this._pendingUserPokerActionContext = null;
@@ -426,6 +427,10 @@ export class PokerApp {
             };
         }
         this.gamesView.renderPoker();
+        if (combinedSpeech) {
+            this._schedulePokerAiAfterUserAction();
+            return;
+        }
         await this.drivePokerAi();
     }
 
@@ -507,6 +512,19 @@ export class PokerApp {
         return messages.map(item => String(item || '').trim()).filter(Boolean).join('\n');
     }
 
+    _schedulePokerAiAfterUserAction() {
+        if (this._pokerActionReplyTimer) {
+            clearTimeout(this._pokerActionReplyTimer);
+            this._pokerActionReplyTimer = null;
+        }
+        this._setPokerStatus('waiting', 'user_action');
+        this.gamesView.updateStatusDot?.();
+        this._pokerActionReplyTimer = setTimeout(async () => {
+            this._pokerActionReplyTimer = null;
+            await this.drivePokerAi();
+        }, this._pokerChatReplyDelay);
+    }
+
     async _flushPokerTableChatReplies() {
         const messages = this._pendingPokerChatMessages.splice(0);
         const text = messages.map(item => String(item || '').trim()).filter(Boolean).join('\n');
@@ -559,6 +577,10 @@ export class PokerApp {
             }
         } finally {
             this._aiDriving = false;
+            if (this._pokerActionReplyTimer) {
+                clearTimeout(this._pokerActionReplyTimer);
+                this._pokerActionReplyTimer = null;
+            }
             this._pendingUserPokerActionContext = null;
             if (!this.isSending) this._setPokerStatus('idle');
             if (!stoppedByError) this.gamesView.renderPoker();
