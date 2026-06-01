@@ -424,7 +424,7 @@
 }
 
 .games-werewolf-role-hint {
-    max-width: 82%;
+    max-width: min(172px, 52vw);
     margin-top: 5px;
     padding: 2px 6px;
     border: 1px solid rgba(240, 183, 83, 0.52);
@@ -434,9 +434,11 @@
     font-size: clamp(9px, 2.8vw, 11px);
     font-weight: 900;
     line-height: 1.25;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
     white-space: nowrap;
+    position: relative;
+    z-index: 2;
+    box-sizing: border-box;
 }
 
 .games-werewolf-notice {
@@ -1259,7 +1261,8 @@
 
     .games-werewolf-role-hint {
         margin-top: 3px;
-        padding: 1px 5px;
+        padding: 2px 6px;
+        max-width: min(164px, 56vw);
         font-size: 9px;
     }
 
