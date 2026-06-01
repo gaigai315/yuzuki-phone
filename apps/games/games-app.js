@@ -15,7 +15,7 @@ import { WerewolfView } from './werewolf/werewolf-view.js';
 import { buildGameSillyTavernContextMessages } from './common/games-ai-context.js';
 
 const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
-const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.30', import.meta.url).href;
+const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.33', import.meta.url).href;
 const CATBOX_PRELOAD_ASSETS = [
     new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
     new URL('./catbox/assets/wxxw2.png', import.meta.url).href,
@@ -139,8 +139,8 @@ export class GamesApp extends PokerApp {
         this.werewolfView.render();
     }
 
-    startNewWerewolfGame() {
-        this.werewolfData.reset(this._getWerewolfUserInfo());
+    startNewWerewolfGame(options = {}) {
+        this.werewolfData.reset(this._getWerewolfUserInfo(), options);
         this.werewolfView.closeEntryPrompt();
         this.werewolfView.render();
     }
@@ -158,6 +158,7 @@ export class GamesApp extends PokerApp {
             '首日白天如果系统公告没有给出夜晚结果，不能凭空说查杀、金水、银水、验人结果、守护结果或刀口信息。',
             '第一轮发言以自我介绍、表水、轻度试探和听后置位发言为主，不要直接推进到完整推理结论。',
             '发言要像真实玩家：可以怀疑、拉票、反驳、试探、隐藏、伪装或分析票型，但必须围绕场上公开信息。',
+            '禁止描写心理活动、动作、表情或旁白，不要使用括号补充任何非发言内容。',
             '每次只输出当前玩家 1 段发言，建议 40-120 字。',
             '必须只返回 <狼人杀发言> 标签包裹内容，不要 Markdown，不要解释。'
         ].join('\n');
@@ -1080,6 +1081,7 @@ export class GamesApp extends PokerApp {
             `当前发言玩家真实身份：${context.speakerPrivateRole || '村民'}。`,
             wolfMates ? `狼人同伴：${wolfMates}。` : '',
             '其他玩家真实身份不得在发言中泄露；除非场上公开信息已经说明，否则不要假装知道。',
+            '禁止描写心理活动、动作、表情或旁白，不要使用括号补充任何非发言内容。',
             '请只输出当前玩家的公开发言。格式：',
             '<狼人杀发言>',
             '发言内容',

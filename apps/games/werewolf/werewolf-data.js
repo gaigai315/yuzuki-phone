@@ -30,8 +30,9 @@ export class WerewolfData {
         return this.state;
     }
 
-    reset(userInfo = {}) {
+    reset(userInfo = {}, options = {}) {
         this.state = this._createInitialState(userInfo);
+        this.state.roleRevealMode = this._normalizeRoleRevealMode(options.roleRevealMode || this.state.roleRevealMode);
         this._persist();
         return this.state;
     }
@@ -96,6 +97,7 @@ export class WerewolfData {
         this.state.voting = false;
         this.state.gameOver = false;
         this.state.winner = '';
+        this.state.roleRevealMode = this._normalizeRoleRevealMode(this.state.roleRevealMode);
         this.state.notice = this.state.currentSpeaker
             ? `第 1 天白天开始，请 ${this.state.currentSpeaker} 号玩家发言。`
             : '第 1 天白天开始。';
@@ -408,6 +410,8 @@ export class WerewolfData {
         this.state.chat.push({
             seat: speakerSeat,
             text: speech,
+            day: Number(options.day || this.state.day || 1),
+            phase: String(options.phase || this.state.phase || '').trim(),
             at: Date.now(),
             system: !!options.system
         });
@@ -485,14 +489,19 @@ export class WerewolfData {
     }
 
     _publicPlayer(player) {
+        const alive = player.alive !== false;
+        const publicRole = !alive && this.state.roleRevealMode !== 'hidden'
+            ? String(player.role || '').trim()
+            : '';
         return {
             seat: player.seat,
             name: player.name,
             source: player.source || '',
-            alive: player.alive !== false,
+            alive,
             isUser: !!player.isUser,
             personality: player.personality || '',
-            status: player.alive === false ? '死亡' : '存活'
+            publicRole,
+            status: alive ? '存活' : publicRole ? `死亡，公开身份：${publicRole}` : '死亡'
         };
     }
 
@@ -529,6 +538,7 @@ export class WerewolfData {
             voting: false,
             gameOver: false,
             winner: '',
+            roleRevealMode: 'open',
             privateLog: [],
             replayLog: [],
             notice: '点击开始游戏，邀请微信好友入座。',
@@ -589,6 +599,7 @@ export class WerewolfData {
             voting: !!state.voting,
             gameOver: !!state.gameOver,
             winner: String(state.winner || ''),
+            roleRevealMode: this._normalizeRoleRevealMode(state.roleRevealMode),
             privateLog: Array.isArray(state.privateLog) ? state.privateLog : [],
             replayLog: Array.isArray(state.replayLog) ? state.replayLog : []
         };
@@ -753,7 +764,7 @@ export class WerewolfData {
         const deathList = [...deaths].sort((a, b) => a - b);
         const notice = deathList.length
             ? `天亮了，昨夜 ${deathList.map(seat => `${seat}号`).join('、')} 死亡。`
-            : '天亮了，昨夜是平安夜。';
+            : '天亮了，昨夜无人死亡。';
         return { deaths: deathList, notice };
     }
 
@@ -822,6 +833,10 @@ export class WerewolfData {
 
     _randomSeat() {
         return Math.floor(Math.random() * 8) + 1;
+    }
+
+    _normalizeRoleRevealMode(mode = '') {
+        return String(mode || '').trim() === 'hidden' ? 'hidden' : 'open';
     }
 
     _shouldRandomizeLegacyUserSeat(state) {

@@ -14,6 +14,7 @@ export class WerewolfView {
         this._recordOpen = false;
         this._selectedContactIds = new Set();
         this._userSpeechInput = '';
+        this._expandedChatDays = new Set();
     }
 
     async render() {
@@ -69,7 +70,7 @@ export class WerewolfView {
                         </button>
                         <div class="games-werewolf-chat-scroll">
                             ${(state.chat || []).length
-                                ? state.chat.map(item => this._renderChatRow(item.seat, item.text)).join('')
+                                ? this._renderChatRows(state)
                                 : '<div class="games-werewolf-chat-empty">暂无发言</div>'}
                         </div>
                     </div>
@@ -123,6 +124,15 @@ export class WerewolfView {
         document.getElementById('games-werewolf-chat-toggle')?.addEventListener('click', () => {
             this._chatExpanded = !this._chatExpanded;
             this.render();
+        });
+        document.querySelectorAll('.games-werewolf-chat-day-toggle[data-day]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const day = Number(btn.dataset.day || 0);
+                if (!day) return;
+                if (this._expandedChatDays.has(day)) this._expandedChatDays.delete(day);
+                else this._expandedChatDays.add(day);
+                this.render();
+            });
         });
         document.getElementById('games-werewolf-start')?.addEventListener('click', () => {
             this._inviteOpen = true;
@@ -182,7 +192,10 @@ export class WerewolfView {
             this.app.continueWerewolfSpeech();
         });
         document.getElementById('games-werewolf-new')?.addEventListener('click', () => {
-            this.app.startNewWerewolfGame();
+            this.app.startNewWerewolfGame({ roleRevealMode: 'open' });
+        });
+        document.getElementById('games-werewolf-new-hidden')?.addEventListener('click', () => {
+            this.app.startNewWerewolfGame({ roleRevealMode: 'hidden' });
         });
         this._bindInviteEvents();
         this._bindSettingsEvents();
@@ -280,7 +293,8 @@ export class WerewolfView {
     }
 
     _renderAvatar(player) {
-        if (player.alive === false) {
+        const state = this.app.werewolfData.getState();
+        if (player.alive === false && state.roleRevealMode !== 'hidden') {
             const roleImage = this._getDeathRoleImage(player.role);
             if (roleImage) {
                 return `<img class="games-werewolf-role-card-img" src="${this._escapeAttr(roleImage)}" alt="${this._escapeAttr(player.role || '身份')}">`;
@@ -302,10 +316,40 @@ export class WerewolfView {
         return file ? new URL(`./assets/${file}`, import.meta.url).href : '';
     }
 
+    _renderChatRows(state) {
+        const currentDay = Number(state.day || 1);
+        const groups = new Map();
+        (state.chat || []).forEach(item => {
+            const day = Number(item.day || 1);
+            if (!groups.has(day)) groups.set(day, []);
+            groups.get(day).push(item);
+        });
+        return [...groups.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([day, items]) => {
+                const collapsed = day < currentDay && !this._expandedChatDays.has(day);
+                if (collapsed) return this._renderChatDayCollapsed(day, items);
+                return items.map(item => this._renderChatRow(item.seat, item.text)).join('');
+            })
+            .join('');
+    }
+
+    _renderChatDayCollapsed(day, items = []) {
+        const count = Array.isArray(items) ? items.length : 0;
+        const speeches = (Array.isArray(items) ? items : []).filter(item => Number(item.seat || 0)).length;
+        return `
+            <button class="games-werewolf-chat-day-toggle" type="button" data-day="${Number(day)}">
+                <span>第 ${Number(day)} 天记录已折叠</span>
+                <em>${count} 条 · ${speeches} 条发言</em>
+            </button>
+        `;
+    }
+
     _renderChatRow(seat, text) {
         if (!seat) {
+            const isDaybreak = String(text || '').trim().startsWith('天亮了');
             return `
-                <div class="games-werewolf-chat-row games-werewolf-chat-row-system">
+                <div class="games-werewolf-chat-row games-werewolf-chat-row-system ${isDaybreak ? 'is-daybreak' : ''}">
                     <span>!</span>
                     <p>${this._escape(text)}</p>
                 </div>
@@ -528,16 +572,18 @@ export class WerewolfView {
         const user = state.players?.find(player => player.isUser);
         const filledCount = (state.players || []).filter(player => !player.empty).length;
         const phaseText = state.phase === 'setup' ? '未开始' : state.phase === 'night' ? '夜间' : state.phase === 'vote' ? '投票' : state.phase === 'last_words' ? '遗言' : state.phase === 'ended' ? '结束' : '白天';
+        const revealText = state.roleRevealMode === 'hidden' ? '暗牌局' : '明牌局';
         return `
             <div class="games-werewolf-entry-overlay">
                 <div class="games-werewolf-entry-panel">
                     <div class="games-werewolf-entry-title">狼人杀</div>
                     <div class="games-werewolf-entry-desc">
-                        当前存档：${this._escape(phaseText)} · ${filledCount}/8 人 · 你在 ${Number(user?.seat || 8)} 号位
+                        当前存档：${this._escape(phaseText)} · ${this._escape(revealText)} · ${filledCount}/8 人 · 你在 ${Number(user?.seat || 8)} 号位
                     </div>
                     <div class="games-werewolf-entry-actions">
                         <button class="games-werewolf-entry-btn" id="games-werewolf-continue" type="button">继续当前游戏</button>
-                        <button class="games-werewolf-entry-btn is-primary" id="games-werewolf-new" type="button">开始新游戏</button>
+                        <button class="games-werewolf-entry-btn is-primary" id="games-werewolf-new" type="button">明牌局</button>
+                        <button class="games-werewolf-entry-btn" id="games-werewolf-new-hidden" type="button">暗牌局</button>
                     </div>
                 </div>
             </div>
@@ -718,7 +764,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.30', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.33', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {

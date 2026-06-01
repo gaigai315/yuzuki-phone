@@ -574,17 +574,21 @@
     line-height: 1;
 }
 
-.games-werewolf-chat-row-4 span {
-    border-color: rgba(129, 219, 102, 0.82);
-}
-
-.games-werewolf-chat-row-7 span {
-    border-color: rgba(188, 111, 255, 0.86);
-}
-
 .games-werewolf-chat-row-system span {
     border-color: rgba(232, 184, 94, 0.86);
     color: #e8b85e;
+}
+
+.games-werewolf-chat-row-system.is-daybreak {
+    margin-top: 12px;
+}
+
+.games-werewolf-chat-row-system.is-daybreak::before {
+    content: "";
+    grid-column: 1 / -1;
+    height: 1px;
+    margin: 0 6px 5px;
+    background: linear-gradient(90deg, transparent, rgba(232, 184, 94, 0.52), transparent);
 }
 
 .games-werewolf-chat-row p {
@@ -601,6 +605,41 @@
     overflow: visible;
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+.games-werewolf-chat-day-toggle {
+    width: 100%;
+    min-height: 32px;
+    margin-top: 8px;
+    border: 1px solid rgba(232, 184, 94, 0.42);
+    border-radius: 8px;
+    background: rgba(8, 18, 28, 0.86);
+    color: #f2c56d;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    cursor: pointer;
+}
+
+.games-werewolf-chat-day-toggle span {
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 900;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.games-werewolf-chat-day-toggle em {
+    color: rgba(238, 247, 255, 0.58);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 800;
+    white-space: nowrap;
 }
 
 .games-werewolf-chat-empty {
