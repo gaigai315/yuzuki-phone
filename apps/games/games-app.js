@@ -16,6 +16,7 @@ import { buildGameSillyTavernContextMessages } from './common/games-ai-context.j
 
 const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
 const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.35', import.meta.url).href;
+const WEREWOLF_API_COOLDOWN_MS = 5000;
 const CATBOX_PRELOAD_ASSETS = [
     new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
     new URL('./catbox/assets/wxxw2.png', import.meta.url).href,
@@ -48,6 +49,7 @@ export class GamesApp extends PokerApp {
         this.werewolfData = new WerewolfData(storage);
         this.werewolfView = new WerewolfView(this);
         this._werewolfDriving = false;
+        this._lastWerewolfApiRequestAt = 0;
         this._preloadCatboxAssets();
         this._preloadWerewolfAssets();
         window.addEventListener('phone:panelVisibility', event => {
@@ -225,6 +227,7 @@ export class GamesApp extends PokerApp {
     async _callWerewolfMatchAi(emptySeats = []) {
         const apiManager = window.VirtualPhone?.apiManager;
         if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        await this._waitWerewolfApiCooldown();
         const seatsText = emptySeats.map(seat => `${seat}号`).join('、');
         const userSeat = this.werewolfData.getState().players?.find(player => player.isUser)?.seat || 8;
         const messages = [
@@ -261,11 +264,27 @@ export class GamesApp extends PokerApp {
                 ].join('\n')
             }
         ];
+        this._lastWerewolfApiRequestAt = Date.now();
         return apiManager.callAI(messages, {
             appId: 'games',
             temperature: 0.9,
             max_tokens: 900
         });
+    }
+
+    async _waitWerewolfApiCooldown() {
+        const state = this.werewolfData?.getState?.() || {};
+        const latestSpeechAt = Number(state.lastSpeechAt || 0);
+        const latestAnchor = Math.max(
+            Number(this._lastWerewolfApiRequestAt || 0),
+            Number.isFinite(latestSpeechAt) ? latestSpeechAt : 0
+        );
+        const waitMs = latestAnchor
+            ? Math.max(0, WEREWOLF_API_COOLDOWN_MS - (Date.now() - latestAnchor))
+            : 0;
+        if (waitMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+        }
     }
 
     async driveWerewolfDaySpeeches() {
@@ -521,7 +540,9 @@ export class GamesApp extends PokerApp {
     async _callWerewolfNightAi(actors, step) {
         const apiManager = window.VirtualPhone?.apiManager;
         if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        await this._waitWerewolfApiCooldown();
         const messages = await this._buildWerewolfNightMessages(actors, step);
+        this._lastWerewolfApiRequestAt = Date.now();
         return apiManager.callAI(messages, {
             appId: 'games',
             temperature: step === 'werewolf' ? 0.85 : 0.75,
@@ -532,6 +553,7 @@ export class GamesApp extends PokerApp {
     async _callWerewolfWolfMateAdviceAi(mates = []) {
         const apiManager = window.VirtualPhone?.apiManager;
         if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        await this._waitWerewolfApiCooldown();
         const state = this.werewolfData.getState();
         const user = (state.players || []).find(player => player.isUser);
         const livePlayers = (state.players || []).filter(player => !player.empty && player.alive !== false);
@@ -576,6 +598,7 @@ export class GamesApp extends PokerApp {
                 ].join('\n')
             }
         ];
+        this._lastWerewolfApiRequestAt = Date.now();
         return apiManager.callAI(messages, { appId: 'games', temperature: 0.86, max_tokens: 260 });
     }
 
@@ -836,7 +859,9 @@ export class GamesApp extends PokerApp {
     async _callWerewolfSpeechAi(player) {
         const apiManager = window.VirtualPhone?.apiManager;
         if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        await this._waitWerewolfApiCooldown();
         const messages = await this._buildWerewolfSpeechMessages(player);
+        this._lastWerewolfApiRequestAt = Date.now();
         return apiManager.callAI(messages, {
             appId: 'games',
             temperature: 0.82,
@@ -847,6 +872,7 @@ export class GamesApp extends PokerApp {
     async _callWerewolfVoteAi(userVote = null) {
         const apiManager = window.VirtualPhone?.apiManager;
         if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        await this._waitWerewolfApiCooldown();
         const state = this.werewolfData.getState();
         const livePlayers = (state?.players || []).filter(player => !player.empty && player.alive !== false);
         const userSeat = Number(state?.players?.find?.(player => player.isUser)?.seat || 0);
@@ -886,12 +912,14 @@ export class GamesApp extends PokerApp {
                 ].filter(Boolean).join('\n')
             }
         ];
+        this._lastWerewolfApiRequestAt = Date.now();
         return apiManager.callAI(messages, { appId: 'games', temperature: 0.78, max_tokens: 520 });
     }
 
     async _callWerewolfLastWordsAi(player) {
         const apiManager = window.VirtualPhone?.apiManager;
         if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        await this._waitWerewolfApiCooldown();
         const state = this.werewolfData.getState();
         const publicLog = (state?.chat || []).map(item => item.seat ? `${item.seat}号：${item.text}` : `系统：${item.text}`).slice(-30);
         const messages = [
@@ -924,6 +952,7 @@ export class GamesApp extends PokerApp {
                 ].filter(Boolean).join('\n')
             }
         ];
+        this._lastWerewolfApiRequestAt = Date.now();
         return apiManager.callAI(messages, { appId: 'games', temperature: 0.86, max_tokens: 420 });
     }
 

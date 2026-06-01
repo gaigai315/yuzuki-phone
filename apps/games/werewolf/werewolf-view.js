@@ -101,20 +101,25 @@ export class WerewolfView {
 
     destroy() {}
 
-    _collapseChatPanel() {
-        if (!this._chatExpanded) return;
-        this._chatExpanded = false;
+    _setChatPanelExpanded(expanded) {
+        const nextExpanded = !!expanded;
+        if (this._chatExpanded === nextExpanded) return;
+        this._chatExpanded = nextExpanded;
         const root = document.querySelector('.games-werewolf-app');
         const chat = document.querySelector('.games-werewolf-chat');
         const toggle = document.getElementById('games-werewolf-chat-toggle');
-        root?.classList.remove('is-chat-expanded');
-        chat?.classList.remove('is-expanded');
-        toggle?.setAttribute('aria-expanded', 'false');
+        root?.classList.toggle('is-chat-expanded', nextExpanded);
+        chat?.classList.toggle('is-expanded', nextExpanded);
+        toggle?.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
         const icon = toggle?.querySelector('i');
         if (icon) {
-            icon.classList.remove('fa-chevron-down');
-            icon.classList.add('fa-chevron-up');
+            icon.classList.toggle('fa-chevron-down', nextExpanded);
+            icon.classList.toggle('fa-chevron-up', !nextExpanded);
         }
+    }
+
+    _collapseChatPanel() {
+        this._setChatPanelExpanded(false);
     }
 
     clearUserSpeechInput() {
@@ -138,8 +143,7 @@ export class WerewolfView {
             this.render();
         });
         document.getElementById('games-werewolf-chat-toggle')?.addEventListener('click', () => {
-            this._chatExpanded = !this._chatExpanded;
-            this.render();
+            this._setChatPanelExpanded(!this._chatExpanded);
         });
         document.querySelector('.games-werewolf-app')?.addEventListener('click', e => {
             if (!this._chatExpanded) return;
@@ -527,14 +531,16 @@ export class WerewolfView {
             `;
         }
         if (state.phase === 'night') {
+            const canContinueNight = !this.app.werewolfData.isUserNightTurn?.()
+                && /中断|失败|429|请求/.test(String(state.notice || ''));
             return `
                 <button class="games-werewolf-action" type="button" disabled>
                     <i class="fa-solid fa-moon"></i>
                     <span>夜晚</span>
                 </button>
-                <button class="games-werewolf-action games-werewolf-action-primary" type="button" disabled>
-                    <i class="fa-solid fa-user-secret"></i>
-                    <span>行动中</span>
+                <button class="games-werewolf-action games-werewolf-action-primary" ${canContinueNight ? 'id="games-werewolf-continue-speech"' : ''} type="button" ${canContinueNight ? '' : 'disabled'}>
+                    <i class="fa-solid ${canContinueNight ? 'fa-forward-step' : 'fa-user-secret'}"></i>
+                    <span>${canContinueNight ? '续接行动' : '行动中'}</span>
                 </button>
             `;
         }
