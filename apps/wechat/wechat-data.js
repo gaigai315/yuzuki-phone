@@ -2131,7 +2131,15 @@ getWeekday(date) {
         const key = this._getContactGenderMapKey(contactIdOrName);
         if (!key) return 'unknown';
         const map = this.getContactGenderMap();
-        return this._normalizeGenderValue(map[key]);
+        const mappedGender = this._normalizeGenderValue(map[key]);
+        if (mappedGender !== 'unknown') return mappedGender;
+
+        const raw = String(contactIdOrName || '').trim();
+        const contact = this.data.contacts.find(c => c.id === key)
+            || this.data.contacts.find(c => c.id === raw)
+            || this.data.contacts.find(c => c.name === raw)
+            || this.data.contacts.find(c => this._isSameLookupName(c.name, raw));
+        return this._normalizeGenderValue(contact?.gender);
     }
 
     setContactGender(contactIdOrName, gender) {
@@ -2390,12 +2398,12 @@ async loadContactsFromCharacter() {
         }
         
         
-        // ✅ 构建AI提示词
-        const prompt = await this.buildContactPrompt(context);
+        // ✅ 构建AI消息
+        const messages = await this.buildContactPrompt(context);
         
         
         // ✅ 调用AI
-        const aiResponse = await this.sendToAI(prompt);
+        const aiResponse = await this.sendToAI(messages);
         
         if (!aiResponse) {
             throw new Error('AI未返回数据');
@@ -2582,8 +2590,12 @@ async buildContactPrompt(context) {
         ? context.characters[context.characterId]
         : null;
 
-    const personality = (char?.personality || char?.description || '').trim();
+    const description = String(char?.description || '').trim();
+    const personality = String(char?.personality || char?.description || '').trim();
     const scenario = (context?.scenario || char?.scenario || '').trim();
+    const systemPrompt = String(char?.data?.system_prompt || char?.system_prompt || '').trim();
+    const mesExample = String(char?.mes_example || char?.data?.mes_example || '').trim();
+    const firstMes = String(char?.first_mes || char?.data?.first_mes || '').trim();
 
     let persona = '';
     const personaTextarea = document.getElementById('persona_description');
@@ -2601,7 +2613,7 @@ async buildContactPrompt(context) {
         }
     }
 
-    let worldBook = '';
+    let charWorldBook = '';
     if (char?.data?.character_book?.entries) {
         const entries = char.data.character_book.entries;
         const chunks = [];
@@ -2610,7 +2622,7 @@ async buildContactPrompt(context) {
             const title = entry.comment || entry.keys || `条目${idx + 1}`;
             chunks.push(`【${title}】\n${entry.content}`);
         });
-        worldBook = chunks.join('\n\n');
+        charWorldBook = chunks.join('\n\n');
     }
 
     let chatHistory = '';
@@ -2650,18 +2662,51 @@ async buildContactPrompt(context) {
         throw new Error('未找到智能加载联系人提示词');
     }
 
-    const sections = [
-        `【主角信息】\n姓名：${charName}\n性格：${personality || '未知'}`,
-        `【场景设定】\n${scenario || '暂无场景设定'}`,
-        `【用户信息】\n姓名：${userName}\n${persona || '暂无用户信息'}`,
-        `【世界书背景】\n${worldBook || '暂无世界书背景'}`,
-        `【聊天记录】\n${chatHistory || '暂无聊天记录'}`
-    ];
+    const messages = [];
 
     const selectedWorldbookText = await this._buildWechatWorldbookText();
     if (selectedWorldbookText) {
-        sections.push(`【酒馆世界书勾选注入】\n${selectedWorldbookText}`);
+        messages.push({
+            role: 'system',
+            content: `【酒馆世界书勾选注入】\n${selectedWorldbookText}`
+        });
     }
+
+    const charCardParts = [
+        `【当前主角角色卡】`,
+        `姓名：${charName}`,
+        description ? `描述：${description}` : '',
+        personality ? `性格：${personality}` : '',
+        scenario ? `场景/背景：${scenario}` : '',
+        systemPrompt ? `系统提示词：${systemPrompt}` : '',
+        firstMes ? `开场白：${firstMes}` : '',
+        mesExample ? `对话示例：${mesExample}` : '',
+        charWorldBook ? `角色卡世界书：\n${charWorldBook}` : ''
+    ].filter(Boolean);
+    messages.push({
+        role: 'system',
+        content: charCardParts.join('\n')
+    });
+
+    messages.push({
+        role: 'system',
+        content: `【最近聊天记录】\n${chatHistory || '暂无聊天记录'}`
+    });
+
+    messages.push({
+        role: 'system',
+        content: '以上是故事的参考背景。现在你是一个数据分析助手，不是角色扮演AI。请根据以下用户信息、最近聊天记录和上方故事背景，生成专属于用户的微信联系人列表、群聊和手机初始时间。'
+    });
+
+    const userInfoParts = [
+        `【用户信息】`,
+        `姓名：${userName}`,
+        persona || '暂无用户信息'
+    ];
+    messages.push({
+        role: 'system',
+        content: userInfoParts.join('\n')
+    });
 
     if (lobbySelection.isLobby) {
         const selectedCharacterText = lobbySelection.characters.length > 0
@@ -2676,13 +2721,20 @@ async buildContactPrompt(context) {
         const selectedUserHint = lobbyUsers.length > 0
             ? `\n大厅用户：${lobbyUsers.join('、')}\n主用户（优先视角）：${primaryLobbyUser}`
             : '\n大厅用户：未勾选';
-        sections.push(`【大厅联动白名单】\n仅允许使用下列对象构建联系人与群聊。\n角色卡详情：\n${selectedCharacterText}\n用户组：${selectedGroupText}${selectedUserHint}`);
+        messages.push({
+            role: 'system',
+            content: `【大厅联动白名单】\n仅允许使用下列对象构建联系人与群聊。\n角色卡详情：\n${selectedCharacterText}\n用户组：${selectedGroupText}${selectedUserHint}`
+        });
     }
 
     const lobbyHardRule = lobbySelection.isLobby
         ? '\n\n【大厅模式硬规则】\n当前是大厅模式。请将上面所有char信息创建联系人，不得遗漏。不需要为user创建其他联系人。'
         : '';
-    return `${sections.join('\n\n')}\n\n${loadContactsPrompt}${lobbyHardRule}`;
+    messages.push({
+        role: 'user',
+        content: `${loadContactsPrompt}${lobbyHardRule}`
+    });
+    return messages;
 }
 
 // 🔧 辅助方法：判断是否可能是人名
@@ -2734,10 +2786,12 @@ async sendToAI(prompt) {
             const context = typeof SillyTavern !== 'undefined' ? SillyTavern.getContext() : null;
             if (!context) throw new Error('无法获取 SillyTavern 上下文');
 
-            const messages = [
-                { role: 'system', content: '你是一个数据分析助手，不要进行角色扮演。严格遵循用户消息中的输出格式要求。' },
-                { role: 'user', content: prompt }
-            ];
+            const messages = Array.isArray(prompt)
+                ? prompt
+                : [
+                    { role: 'system', content: '你是一个数据分析助手，不要进行角色扮演。严格遵循用户消息中的输出格式要求。' },
+                    { role: 'user', content: prompt }
+                ];
 
             // 🚀 核心：移交 ApiManager 处理
             const apiManager = window.VirtualPhone?.apiManager;

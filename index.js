@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.2.3';
+const ST_PHONE_VERSION = '1.2.4';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
@@ -41,15 +41,11 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-05-30',
+    date: '2026-06-01',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【新增】酒馆开始新聊天并确认后，会自动把当前小手机的聊天专属数据复制到新会话。',
-        '【新增】新增 MiMo TTS，支持 MiMo-V2.5 官方/公益站接口地址，并可将复刻参考音频保存到酒馆服务端。',
-        '【优化】GPT 生图设置页调整为先选接口站点、填写地址和 Key，再拉取模型，移动端本地代理放到最后。',
-        '【优化】日历设置新增提前提醒分钟数，AI 写入日程开始时间后可按设定提前触发提醒。',
-        '【优化】微信智能加载联系人前可选择先清空当前微信联系人、群聊和聊天记录，避免重复生成。',
-        '【修复】微信通话记录注入时会明确写入对方已拒绝、群成员未接听、用户已取消等状态，不再漏成 [call_record]。'
+        '【优化】优化微信智能加载联系人及钱包资产评估的 AI 请求结构。',
+        '【修复】优化游戏部分 bug。'
     ]
 };
 

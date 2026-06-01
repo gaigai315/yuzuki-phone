@@ -4606,7 +4606,7 @@ export class WechatApp {
         
         // 1. 收集信息
         const userName = context.name1 || '用户';
-        let charInfo = '', userInfo = '', worldInfo = '';
+        let charInfo = '', userInfo = '';
 
         const char = (context.characters && context.characterId !== undefined)
             ? context.characters[context.characterId]
@@ -4616,22 +4616,23 @@ export class WechatApp {
         if (char) {
             const charLines = [];
             charLines.push(`名字: ${char.name || context.name2 || '角色'}`);
-            if (char.description) charLines.push(`描述: ${String(char.description).substring(0, 800)}`);
-            if (char.personality) charLines.push(`性格: ${String(char.personality).substring(0, 500)}`);
-            if (char.scenario) charLines.push(`场景/背景: ${String(char.scenario).substring(0, 500)}`);
-            if (char.data?.system_prompt) charLines.push(`系统提示词: ${String(char.data.system_prompt).substring(0, 600)}`);
-            charInfo = charLines.join('\n');
-
+            if (char.description) charLines.push(`描述: ${String(char.description)}`);
+            if (char.personality) charLines.push(`性格: ${String(char.personality)}`);
+            if (char.scenario) charLines.push(`场景/背景: ${String(char.scenario)}`);
+            if (char.data?.system_prompt) charLines.push(`系统提示词: ${String(char.data.system_prompt)}`);
+            if (char.first_mes || char.data?.first_mes) charLines.push(`开场白: ${String(char.first_mes || char.data.first_mes)}`);
+            if (char.mes_example || char.data?.mes_example) charLines.push(`对话示例: ${String(char.mes_example || char.data.mes_example)}`);
             if (char?.data?.character_book?.entries) {
-                worldInfo = char.data.character_book.entries
+                const charBook = char.data.character_book.entries
                     .filter(e => e && e.enabled !== false && e.content)
                     .map(e => {
                         const title = e.comment ? `【${e.comment}】` : '';
-                        return `${title}\n${String(e.content).substring(0, 400)}`;
+                        return `${title}\n${String(e.content)}`;
                     })
-                    .join('\n---\n')
-                    .substring(0, 2000);
+                    .join('\n---\n');
+                if (charBook) charLines.push(`角色卡内置世界书:\n${charBook}`);
             }
+            charInfo = charLines.join('\n');
         } else {
             charInfo = `名字: ${context.name2 || '角色'}`;
         }
@@ -4647,8 +4648,13 @@ export class WechatApp {
         if (personaText) userLines.push(`设定: ${personaText.substring(0, 800)}`);
         userInfo = userLines.join('\n');
 
+        const selectedWorldbookText = await this.wechatData?._buildWechatWorldbookText?.() || '';
+
         // 2. 获取提示词
         const promptManager = window.VirtualPhone?.promptManager;
+        if (promptManager && !promptManager._loaded && typeof promptManager.ensureLoaded === 'function') {
+            promptManager.ensureLoaded();
+        }
         const promptTemplate = promptManager?.getPromptForFeature('wechat', 'walletEval') || '';
         if (!promptTemplate) {
             this.phoneShell.showNotification('错误', '找不到钱包评估提示词', '❌');
@@ -4657,17 +4663,33 @@ export class WechatApp {
             return;
         }
 
-        const finalPrompt = promptTemplate
-            .replace(/\{\{charInfo\}\}/g, charInfo || '无')
-            .replace(/\{\{userInfo\}\}/g, userInfo || '无')
-            .replace(/\{\{worldInfo\}\}/g, worldInfo || '无');
+        const messages = [];
+        if (selectedWorldbookText) {
+            messages.push({
+                role: 'system',
+                content: `【微信世界书勾选注入】\n${selectedWorldbookText}`
+            });
+        }
+        messages.push({
+            role: 'system',
+            content: `【当前主角角色卡】\n${charInfo || '无'}`
+        });
+        messages.push({
+            role: 'system',
+            content: '以上是参考背景，以下是 user 的信息。你是一个数据处理引擎，只负责根据背景和用户信息评估微信零钱余额，不要进行角色扮演。'
+        });
+        messages.push({
+            role: 'system',
+            content: `【用户信息】\n${userInfo || '无'}`
+        });
+        messages.push({
+            role: 'user',
+            content: promptTemplate
+        });
 
         try {
             const apiManager = window.VirtualPhone?.apiManager;
-            const result = await apiManager.callAI([
-                { role: 'system', content: '你是一个数据处理引擎。请严格返回要求的JSON格式。' },
-                { role: 'user', content: finalPrompt }
-            ], { max_tokens: 8192, appId: 'wechat' });
+            const result = await apiManager.callAI(messages, { max_tokens: 8192, appId: 'wechat' });
 
             if (!result.success) throw new Error(result.error);
 

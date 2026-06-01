@@ -563,7 +563,12 @@ export class CatboxData {
         const catId = CAT_IDS.includes(state.catId) ? state.catId : '';
         const draftCatId = CAT_IDS.includes(state.draftCatId) ? state.draftCatId : catId;
         const maxStat = Math.max(100, Number(state.maxStat || 100));
-        const level = Math.max(1, Number(state.level || this._levelFromExp(state.exp)) || 1);
+        const rawExp = Math.max(0, Number(state.exp || 0));
+        const savedLevel = Math.max(1, Math.min(MAX_LEVEL, Number(state.level || 0) || 0));
+        const level = savedLevel || this._levelFromExp(rawExp);
+        const exp = savedLevel
+            ? this._normalizeExpForSavedLevel(rawExp, level)
+            : rawExp;
         const savedBackgroundId = BACKGROUND_IDS.includes(state.backgroundId) ? state.backgroundId : BACKGROUND_IDS[0];
         const backgroundId = level >= Number(BACKGROUND_UNLOCK_LEVELS[savedBackgroundId] || 1)
             ? savedBackgroundId
@@ -579,7 +584,7 @@ export class CatboxData {
             hunger: this._clamp(Number(state.hunger ?? 50), maxStat),
             energy: this._clamp(Number(state.energy ?? 50), maxStat),
             level,
-            exp: Math.max(0, Number(state.exp || 0)),
+            exp,
             inventory: this._normalizeInventory(state.inventory),
             maxStat,
             pendingSleepBoost: Number(state.pendingSleepBoost || 0),
@@ -656,6 +661,16 @@ export class CatboxData {
     _levelFromExp(exp) {
         const value = Math.max(0, Number(exp || 0));
         return Math.min(MAX_LEVEL, Math.max(1, Math.floor(value / EXP_PER_LEVEL) + 1));
+    }
+
+    _normalizeExpForSavedLevel(exp, level) {
+        const safeLevel = Math.max(1, Math.min(MAX_LEVEL, Number(level || 1) || 1));
+        const rawExp = Math.max(0, Number(exp || 0));
+        if (safeLevel >= MAX_LEVEL) return Math.max((MAX_LEVEL - 1) * EXP_PER_LEVEL, rawExp);
+        const minExp = (safeLevel - 1) * EXP_PER_LEVEL;
+        const maxExp = safeLevel * EXP_PER_LEVEL - 1;
+        if (rawExp >= minExp && rawExp <= maxExp) return rawExp;
+        return minExp + (rawExp % EXP_PER_LEVEL);
     }
 
     getExpProgress() {
