@@ -360,13 +360,14 @@ export class WerewolfView {
 
     _renderPlayerCard(player) {
         const alive = player.alive !== false;
+        const isEmptySeat = !!player.empty && !player.isUser;
         const classes = [
             'games-werewolf-player',
             `games-werewolf-seat-${player.seat}`,
             `games-werewolf-avatar-${player.tone}`,
             player.active ? 'is-active' : '',
             player.isUser ? 'is-user' : '',
-            player.empty ? 'is-empty' : '',
+            isEmptySeat ? 'is-empty' : '',
             !alive ? 'is-dead' : ''
         ].filter(Boolean).join(' ');
         return `
@@ -387,7 +388,7 @@ export class WerewolfView {
                 return `<img class="games-werewolf-role-card-img" src="${this._escapeAttr(roleImage)}" alt="${this._escapeAttr(player.role || '身份')}">`;
             }
         }
-        if (player.empty) return '';
+        if (player.empty && !player.isUser) return '';
         return this.app.renderPlayerAvatar?.(player) || '';
     }
 
@@ -853,7 +854,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.36', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.42', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {

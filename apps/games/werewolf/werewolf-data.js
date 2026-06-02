@@ -38,12 +38,18 @@ export class WerewolfData {
     }
 
     updateUserInfo(userInfo = {}) {
+        this._sanitizeSetupSeats();
         const user = this.state.players?.find(player => player.isUser);
         if (!user) return this.state;
         const name = String(userInfo.name || user.name || '你').trim();
+        user.id = 'user';
         user.name = name || '你';
         user.avatar = String(userInfo.avatar || user.avatar || '').trim();
         user.personality = String(userInfo.personality || user.personality || '用户本人，按用户输入发言').trim();
+        user.tone = 'user';
+        user.source = 'user';
+        user.empty = false;
+        user.alive = user.alive !== false;
         this._persist();
         return this.state;
     }
@@ -145,6 +151,7 @@ export class WerewolfData {
     }
 
     getEmptySeats() {
+        this._sanitizeSetupSeats();
         return this.state.players
             .filter(player => !player.isUser && player.empty)
             .map(player => player.seat);
@@ -522,9 +529,33 @@ export class WerewolfData {
             if (saved.phase === 'setup' && this._shouldRandomizeLegacyUserSeat(saved)) {
                 return this._createInitialState();
             }
-            return this._migrateState(saved);
+            const migrated = this._migrateState(saved);
+            if (saved.phase === 'setup' && this._hasDirtySetupSeats(saved, migrated)) {
+                this.state = migrated;
+                this._persist();
+            }
+            return migrated;
         }
         return this._createInitialState();
+    }
+
+    _createEmptyPlayer(seat) {
+        const safeSeat = Number(seat || 0);
+        return {
+            id: `empty_${safeSeat}`,
+            seat: safeSeat,
+            name: '空位',
+            avatar: '',
+            gender: '',
+            personality: '',
+            role: '',
+            tone: 'empty',
+            source: '',
+            empty: true,
+            isUser: false,
+            alive: true,
+            active: false
+        };
     }
 
     _createInitialState(userInfo = {}) {
@@ -574,21 +605,7 @@ export class WerewolfData {
                         active: false
                     };
                 }
-                return {
-                    id: `empty_${seat}`,
-                    seat,
-                    name: '空位',
-                    avatar: '',
-                    gender: '',
-                    personality: '',
-                    role: '',
-                    tone: 'empty',
-                    source: '',
-                    empty: true,
-                    isUser: false,
-                    alive: true,
-                    active: false
-                };
+                return this._createEmptyPlayer(seat);
             })
         };
     }
@@ -616,14 +633,70 @@ export class WerewolfData {
             replayLog: Array.isArray(state.replayLog) ? state.replayLog : [],
             seerChecks: Array.isArray(state.seerChecks) ? state.seerChecks : []
         };
-        next.players = next.players.map(player => ({
-            ...player,
-            id: String(player.id || (player.isUser ? 'user' : `${player.source || 'player'}_${player.seat}`)).trim(),
-            avatar: String(player.avatar || '').trim(),
-            active: !!player.active,
-            alive: player.alive !== false
-        }));
+        next.players = next.players.map(player => {
+            const seat = Number(player.seat || 0);
+            if (next.phase === 'setup' && !player.isUser) return this._createEmptyPlayer(seat);
+            if (player.isUser) {
+                return {
+                    ...player,
+                    id: 'user',
+                    seat,
+                    name: String(player.name || '你').trim() || '你',
+                    avatar: String(player.avatar || '').trim(),
+                    personality: String(player.personality || '用户本人，按用户输入发言').trim(),
+                    tone: 'user',
+                    source: 'user',
+                    empty: false,
+                    active: !!player.active,
+                    alive: player.alive !== false
+                };
+            }
+            return {
+                ...player,
+                id: String(player.id || (player.isUser ? 'user' : `${player.source || 'player'}_${seat}`)).trim(),
+                seat,
+                avatar: String(player.avatar || '').trim(),
+                empty: !!player.empty,
+                active: !!player.active,
+                alive: player.alive !== false
+            };
+        });
         return next;
+    }
+
+    _hasDirtySetupSeats(originalState = {}, migratedState = {}) {
+        if (String(originalState.phase || '') !== 'setup') return false;
+        const originalPlayers = Array.isArray(originalState.players) ? originalState.players : [];
+        const migratedPlayers = Array.isArray(migratedState.players) ? migratedState.players : [];
+        if (originalPlayers.length !== migratedPlayers.length) return true;
+        return originalPlayers.some((player) => {
+            if (player?.isUser) return false;
+            return player?.empty !== true
+                || String(player?.name || '') !== '空位'
+                || !!String(player?.avatar || '').trim()
+                || !!String(player?.contactId || '').trim()
+                || !!String(player?.source || '').trim();
+        });
+    }
+
+    _sanitizeSetupSeats() {
+        if (this.state?.phase !== 'setup' || !Array.isArray(this.state.players)) return false;
+        let changed = false;
+        this.state.players = this.state.players.map(player => {
+            if (player?.isUser) return player;
+            const seat = Number(player?.seat || 0);
+            const dirty = player?.empty !== true
+                || String(player?.name || '') !== '空位'
+                || !!String(player?.avatar || '').trim()
+                || !!String(player?.contactId || '').trim()
+                || !!String(player?.source || '').trim()
+                || String(player?.tone || '') !== 'empty';
+            if (!dirty) return player;
+            changed = true;
+            return this._createEmptyPlayer(seat);
+        });
+        if (changed) this._persist();
+        return changed;
     }
 
     _assignRoles() {

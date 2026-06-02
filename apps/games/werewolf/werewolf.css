@@ -99,8 +99,8 @@
 }
 
 .games-werewolf-board {
-    --werewolf-card-w: clamp(66px, 22%, 78px);
-    --werewolf-card-h: clamp(78px, 24%, 90px);
+    --werewolf-card-w: clamp(62px, 20%, 72px);
+    --werewolf-card-h: calc(var(--werewolf-card-w) * 1.5);
     --werewolf-oracle-size: clamp(104px, 36%, 136px);
     --werewolf-col-side: 6%;
     --werewolf-col-inner: 24%;
@@ -124,7 +124,7 @@
     position: absolute;
     width: var(--werewolf-card-w);
     height: var(--werewolf-card-h);
-    border: 1px solid rgba(151, 201, 240, 0.58);
+    border: 0;
     border-radius: 8px;
     background:
         linear-gradient(180deg, rgba(4, 11, 18, 0.88), rgba(3, 10, 16, 0.72)),
@@ -137,19 +137,30 @@
     align-items: center;
     padding: 6px 5px 5px;
     box-sizing: border-box;
+    overflow: hidden;
+}
+
+.games-werewolf-player::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-radius: 8px;
+    background: var(--werewolf-seat-image, none) center / 100% 100% no-repeat;
+    pointer-events: none;
 }
 
 .games-werewolf-player.is-active {
-    border-color: rgba(118, 198, 255, 0.95);
     box-shadow:
         inset 0 0 18px rgba(118, 198, 255, 0.14),
+        0 0 0 1px rgba(118, 198, 255, 0.92),
         0 0 18px rgba(91, 174, 255, 0.28);
 }
 
 .games-werewolf-player.is-user {
-    border-color: rgba(240, 183, 83, 0.95);
     box-shadow:
         inset 0 0 20px rgba(240, 183, 83, 0.12),
+        0 0 0 1px rgba(240, 183, 83, 0.92),
         0 0 20px rgba(240, 183, 83, 0.28);
 }
 
@@ -176,6 +187,7 @@
     line-height: 1;
     filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.48));
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'HarmonyOS Sans', sans-serif;
+    display: none;
 }
 
 .games-werewolf-seat-no span {
@@ -192,18 +204,19 @@
 }
 
 .games-werewolf-avatar {
-    width: 36px;
-    height: 36px;
-    flex: 0 0 36px;
-    border: 1px solid rgba(123, 190, 255, 0.86);
-    border-radius: 50%;
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    flex: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
     background:
-        radial-gradient(circle at 50% 42%, rgba(10, 20, 32, 0.1) 0 18%, rgba(2, 7, 13, 0.85) 19% 36%, transparent 37%),
         radial-gradient(circle at 50% 34%, rgba(136, 184, 225, 0.34), transparent 56%),
         linear-gradient(145deg, #122233, #02070d);
-    box-shadow:
-        inset 0 0 18px rgba(134, 205, 255, 0.16),
-        0 0 12px rgba(70, 146, 223, 0.16);
+    box-shadow: none;
     overflow: hidden;
     display: flex;
     align-items: center;
@@ -216,7 +229,7 @@
     height: 100%;
     display: block;
     object-fit: cover;
-    border-radius: 50%;
+    border-radius: 0;
 }
 
 .games-werewolf-avatar img.games-werewolf-role-card-img {
@@ -266,21 +279,25 @@
 
 .games-werewolf-player.is-empty .games-werewolf-avatar {
     background:
-        radial-gradient(circle at 50% 50%, rgba(141, 203, 255, 0.16), transparent 46%),
+        radial-gradient(circle at 50% 24%, rgba(141, 203, 255, 0.18), transparent 24%),
+        linear-gradient(180deg, rgba(244, 250, 255, 0.86), rgba(218, 232, 240, 0.8)),
         linear-gradient(145deg, rgba(9, 24, 35, 0.92), rgba(2, 7, 13, 0.88));
 }
 
 .games-werewolf-player.is-user .games-werewolf-avatar {
-    border-color: rgba(240, 183, 83, 0.96);
-    box-shadow:
-        inset 0 0 18px rgba(240, 183, 83, 0.14),
-        0 0 14px rgba(240, 183, 83, 0.24);
+    border-color: transparent;
+    box-shadow: none;
 }
 
 .games-werewolf-player-name {
-    width: 100%;
+    position: absolute;
+    z-index: 4;
+    left: 6px;
+    right: 6px;
+    bottom: 15px;
+    width: auto;
     min-height: 15px;
-    margin-top: 4px;
+    margin-top: 0;
     color: #f6fbff;
     font-size: 11px;
     font-weight: 800;
@@ -301,6 +318,11 @@
 }
 
 .games-werewolf-player-status {
+    position: absolute;
+    z-index: 4;
+    left: 6px;
+    right: 6px;
+    bottom: 3px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -308,6 +330,7 @@
     color: rgba(246, 251, 255, 0.9);
     font-size: 10px;
     line-height: 1.15;
+    margin-top: 0;
 }
 
 .games-werewolf-player-status span {
@@ -343,14 +366,14 @@
     }
 }
 
-.games-werewolf-seat-1 { left: var(--werewolf-col-mid); top: var(--werewolf-row-top); transform: translate(-50%, -50%); }
-.games-werewolf-seat-2 { left: var(--werewolf-col-inner); top: var(--werewolf-row-top-side); transform: translate(-50%, -50%); }
-.games-werewolf-seat-3 { right: var(--werewolf-col-inner); top: var(--werewolf-row-top-side); transform: translate(50%, -50%); }
-.games-werewolf-seat-4 { left: var(--werewolf-col-side); top: var(--werewolf-row-mid); transform: translateY(-50%); }
-.games-werewolf-seat-5 { right: var(--werewolf-col-side); top: var(--werewolf-row-mid); transform: translateY(-50%); }
-.games-werewolf-seat-6 { left: var(--werewolf-col-inner); top: var(--werewolf-row-bottom); transform: translate(-50%, -50%); }
-.games-werewolf-seat-7 { right: var(--werewolf-col-inner); top: var(--werewolf-row-bottom); transform: translate(50%, -50%); }
-.games-werewolf-seat-8 { left: var(--werewolf-col-mid); top: var(--werewolf-row-user); transform: translate(-50%, -50%); }
+.games-werewolf-seat-1 { --werewolf-seat-image: url('./assets/wz1.png'); left: var(--werewolf-col-mid); top: var(--werewolf-row-top); transform: translate(-50%, -50%); }
+.games-werewolf-seat-2 { --werewolf-seat-image: url('./assets/wz2.png'); left: var(--werewolf-col-inner); top: var(--werewolf-row-top-side); transform: translate(-50%, -50%); }
+.games-werewolf-seat-3 { --werewolf-seat-image: url('./assets/wz3.png'); right: var(--werewolf-col-inner); top: var(--werewolf-row-top-side); transform: translate(50%, -50%); }
+.games-werewolf-seat-4 { --werewolf-seat-image: url('./assets/wz4.png'); left: var(--werewolf-col-side); top: var(--werewolf-row-mid); transform: translateY(-50%); }
+.games-werewolf-seat-5 { --werewolf-seat-image: url('./assets/wz5.png'); right: var(--werewolf-col-side); top: var(--werewolf-row-mid); transform: translateY(-50%); }
+.games-werewolf-seat-6 { --werewolf-seat-image: url('./assets/wz6.png'); left: var(--werewolf-col-inner); top: var(--werewolf-row-bottom); transform: translate(-50%, -50%); }
+.games-werewolf-seat-7 { --werewolf-seat-image: url('./assets/wz7.png'); right: var(--werewolf-col-inner); top: var(--werewolf-row-bottom); transform: translate(50%, -50%); }
+.games-werewolf-seat-8 { --werewolf-seat-image: url('./assets/wz8.png'); left: var(--werewolf-col-mid); top: var(--werewolf-row-user); transform: translate(-50%, -50%); }
 
 .games-werewolf-oracle {
     position: absolute;

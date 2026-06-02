@@ -279,13 +279,11 @@ export class PokerApp {
 
     resolvePlayerAvatar(player = {}) {
         const wechatData = this.getWechatData();
+        const direct = this._normalizeWechatAvatarPath(player.avatar);
+        if (direct) return direct;
         if (!wechatData) return '';
         if (player.id === 'user') {
-            return wechatData.getUserInfo?.()?.avatar || '';
-        }
-        if (player.avatar) {
-            const normalized = this._normalizeWechatAvatarPath(player.avatar);
-            if (normalized) return normalized;
+            return this._normalizeWechatAvatarPath(wechatData.getUserInfo?.()?.avatar) || '';
         }
         const contact = player.contactId
             ? wechatData.getContact?.(player.contactId)
@@ -303,6 +301,37 @@ export class PokerApp {
             contact?.contactId,
             contact?.name
         ].filter(Boolean).map(value => String(value).trim()));
+
+        const contacts = typeof wechatData.getContacts === 'function' ? (wechatData.getContacts() || []) : [];
+        const chats = typeof wechatData.getChatList === 'function' ? (wechatData.getChatList() || []) : [];
+        for (const key of Array.from(keySet)) {
+            const matchedContact = contacts.find(item =>
+                String(item?.id || '').trim() === key
+                || String(item?.name || '').trim() === key
+                || String(item?.remark || '').trim() === key
+            );
+            if (matchedContact) {
+                [matchedContact.id, matchedContact.contactId, matchedContact.name, matchedContact.remark]
+                    .filter(Boolean)
+                    .forEach(value => keySet.add(String(value).trim()));
+                const contactAvatar = this._normalizeWechatAvatarPath(matchedContact.avatar);
+                if (contactAvatar) return contactAvatar;
+            }
+            const matchedChat = chats.find(item =>
+                item?.type !== 'group'
+                && (
+                    String(item?.contactId || '').trim() === key
+                    || String(item?.name || '').trim() === key
+                )
+            );
+            if (matchedChat) {
+                [matchedChat.contactId, matchedChat.name]
+                    .filter(Boolean)
+                    .forEach(value => keySet.add(String(value).trim()));
+                const chatAvatar = this._normalizeWechatAvatarPath(matchedChat.avatar);
+                if (chatAvatar) return chatAvatar;
+            }
+        }
 
         for (const key of keySet) {
             const autoAvatar = this._normalizeWechatAvatarPath(wechatData.getContactAutoAvatar?.(key));
