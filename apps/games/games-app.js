@@ -336,7 +336,10 @@ export class GamesApp extends PokerApp {
                 return;
             }
             const ok = await this._runWerewolfAiNightAction();
-            if (ok === false) return;
+            if (ok === false) {
+                this.werewolfView.render();
+                return;
+            }
             this.werewolfView.render();
             await new Promise(resolve => setTimeout(resolve, 450));
         }
@@ -508,6 +511,7 @@ export class GamesApp extends PokerApp {
             const message = this._formatError?.(error, '遗言失败') || error?.message || '遗言失败';
             this.werewolfData.applySpeechError(`${player?.seat || '?'}号遗言中断，点击续接遗言可继续。${message}`);
             this.phoneShell?.showNotification?.('狼人杀遗言失败', `${player?.seat || '?'}号：${message}`, '❌');
+            this.werewolfView.render();
             return;
         } finally {
             this._werewolfLastWordsDriving = false;
@@ -889,6 +893,7 @@ export class GamesApp extends PokerApp {
             const message = this._formatError?.(error, 'AI 发言失败') || error?.message || 'AI 发言失败';
             this.werewolfData.applySpeechError(`${player.seat}号发言中断，点击续接发言可继续。${message}`);
             this.phoneShell?.showNotification?.('狼人杀 AI 失败', `${player.seat}号：${message}`, '❌');
+            this.werewolfView.render();
             return false;
         }
     }
