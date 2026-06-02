@@ -583,7 +583,7 @@ export class WerewolfView {
     _renderPrimaryActions(state) {
         if (state.phase === 'setup') {
             return `
-                <button class="games-werewolf-action games-werewolf-action-primary" id="games-werewolf-start" type="button" ${state.matching ? 'disabled' : ''}>
+                <button class="games-werewolf-action games-werewolf-action-primary ${state.matching ? 'is-waiting' : ''}" id="games-werewolf-start" type="button" ${state.matching ? 'disabled' : ''}>
                     <i class="fa-solid ${state.matching ? 'fa-spinner fa-spin' : 'fa-paw'}"></i>
                     <span>${state.matching ? '匹配中' : '开始游戏'}</span>
                 </button>
@@ -601,8 +601,8 @@ export class WerewolfView {
                     <i class="fa-solid fa-moon"></i>
                     <span>夜晚</span>
                 </button>
-                <button class="games-werewolf-action games-werewolf-action-primary" ${canContinueNight ? 'id="games-werewolf-continue-speech"' : ''} type="button" ${canContinueNight ? '' : 'disabled'}>
-                    <i class="fa-solid ${canContinueNight ? 'fa-forward-step' : 'fa-user-secret'}"></i>
+                <button class="games-werewolf-action games-werewolf-action-primary ${canContinueNight ? '' : 'is-waiting'}" ${canContinueNight ? 'id="games-werewolf-continue-speech"' : ''} type="button" ${canContinueNight ? '' : 'disabled'}>
+                    <i class="fa-solid ${canContinueNight ? 'fa-forward-step' : 'fa-spinner fa-spin'}"></i>
                     <span>${canContinueNight ? '续接行动' : '行动中'}</span>
                 </button>
             `;
@@ -613,8 +613,8 @@ export class WerewolfView {
                     <i class="fa-solid fa-comment-dots"></i>
                     <span>遗言</span>
                 </button>
-                <button class="games-werewolf-action games-werewolf-action-primary" type="button" disabled>
-                    <i class="fa-solid fa-hourglass-half"></i>
+                <button class="games-werewolf-action games-werewolf-action-primary is-waiting" type="button" disabled>
+                    <i class="fa-solid fa-spinner fa-spin"></i>
                     <span>等待</span>
                 </button>
             `;
@@ -638,17 +638,18 @@ export class WerewolfView {
                     <i class="fa-solid fa-check-to-slot"></i>
                     <span>投票</span>
                 </button>
-                <button class="games-werewolf-action games-werewolf-action-primary" type="button" disabled>
+                <button class="games-werewolf-action games-werewolf-action-primary ${state.voting ? 'is-waiting' : ''}" type="button" disabled>
                     <i class="fa-solid ${state.voting ? 'fa-spinner fa-spin' : 'fa-hand-pointer'}"></i>
                     <span>${state.voting ? '结算中' : canUserVote ? '选目标' : '看结算'}</span>
                 </button>
             `;
         }
-        const canContinue = state.phase === 'day' && !this.app.werewolfData.canUserSpeak();
+        const isWaitingSpeech = !!state.speaking;
+        const canContinue = state.phase === 'day' && !this.app.werewolfData.canUserSpeak() && !isWaitingSpeech;
         return `
-            <button class="games-werewolf-action" id="games-werewolf-continue-speech" type="button" ${canContinue ? '' : 'disabled'}>
-                <i class="fa-solid fa-forward-step"></i>
-                <span>续接发言</span>
+            <button class="games-werewolf-action ${isWaitingSpeech ? 'is-waiting' : ''}" id="games-werewolf-continue-speech" type="button" ${canContinue ? '' : 'disabled'}>
+                <i class="fa-solid ${isWaitingSpeech ? 'fa-spinner fa-spin' : 'fa-forward-step'}"></i>
+                <span>${isWaitingSpeech ? '等待中' : '续接发言'}</span>
             </button>
             <button class="games-werewolf-action games-werewolf-action-primary" id="games-werewolf-resolve-vote" type="button" disabled>
                 <i class="fa-solid fa-check-to-slot"></i>
@@ -854,7 +855,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.46', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.47', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {

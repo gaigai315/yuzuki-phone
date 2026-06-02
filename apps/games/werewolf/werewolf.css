@@ -890,6 +890,42 @@
     cursor: not-allowed;
 }
 
+.games-werewolf-action.is-waiting {
+    opacity: 0.88;
+    cursor: wait;
+    animation: games-werewolf-waiting-pulse 1.05s ease-in-out infinite;
+}
+
+.games-werewolf-action.is-waiting span::after {
+    content: '';
+    display: inline-block;
+    width: 1.2em;
+    text-align: left;
+    animation: games-werewolf-waiting-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes games-werewolf-waiting-pulse {
+    0%, 100% {
+        filter: brightness(1);
+        box-shadow:
+            inset 0 0 14px rgba(236, 184, 87, 0.18),
+            0 8px 18px rgba(0, 0, 0, 0.28);
+    }
+    50% {
+        filter: brightness(1.18);
+        box-shadow:
+            inset 0 0 18px rgba(236, 184, 87, 0.28),
+            0 0 18px rgba(236, 184, 87, 0.22);
+    }
+}
+
+@keyframes games-werewolf-waiting-dots {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75%, 100% { content: '...'; }
+}
+
 .games-werewolf-entry-overlay {
     position: absolute;
     inset: 0;

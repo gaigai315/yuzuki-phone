@@ -15,7 +15,7 @@ import { WerewolfView } from './werewolf/werewolf-view.js';
 import { buildGameSillyTavernContextMessages } from './common/games-ai-context.js';
 
 const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
-const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.46', import.meta.url).href;
+const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.47', import.meta.url).href;
 const WEREWOLF_API_COOLDOWN_MS = 5000;
 const CATBOX_PRELOAD_ASSETS = [
     new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
