@@ -7775,6 +7775,8 @@ renderChatRoom(chat) {
         // 🔥🔥🔥 检测是否是群聊
         const isGroupChat = targetChat?.type === 'group';
         const groupName = isGroupChat ? targetChat?.name : '';
+        const profileContextEnabled = isGroupChat
+            || this.app.wechatData.isProfileContextInjectionEnabledForChat?.(targetChat?.id) !== false;
 
         // 🔥 从多个来源获取群成员：1.聊天对象的members 2.历史消息中的发送者
         let groupMembersArray = [];
@@ -7786,7 +7788,7 @@ renderChatRoom(chat) {
         // ========================================
         // 2️⃣ 角色信息（从角色卡读取）
         // ========================================
-        if (context.characterId !== undefined && context.characters && context.characters[context.characterId]) {
+        if (profileContextEnabled && context.characterId !== undefined && context.characters && context.characters[context.characterId]) {
             const char = context.characters[context.characterId];
             let charInfo = `【角色信息】\n角色名: ${char.name || charName}\n`;
 
@@ -7812,12 +7814,12 @@ renderChatRoom(chat) {
                 name: 'SYSTEM (角色卡)',
                 isPhoneMessage: true
             });
-
-            const worldInfoMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('wechat');
-            if (worldInfoMessage) messages.push(worldInfoMessage);
         }
 
-        if (lobbySelection.isLobby && lobbySelection.characters.length > 0) {
+        const worldInfoMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('wechat');
+        if (worldInfoMessage) messages.push(worldInfoMessage);
+
+        if (profileContextEnabled && lobbySelection.isLobby && lobbySelection.characters.length > 0) {
             const lobbyCharacterSummary = lobbySelection.characters.map(item => this._formatLobbyCharacterDetail(item)).join('\n');
             messages.push({
                 role: 'system',
@@ -7827,7 +7829,7 @@ renderChatRoom(chat) {
             });
         }
 
-        if (lobbySelection.isLobby && lobbySelection.groups.length > 0) {
+        if (profileContextEnabled && lobbySelection.isLobby && lobbySelection.groups.length > 0) {
             const lobbyGroupSummary = lobbySelection.groups.map(item => {
                 const memberText = Array.isArray(item.members) && item.members.length > 0
                     ? `（成员：${item.members.join('、')}）`
@@ -7847,7 +7849,7 @@ renderChatRoom(chat) {
         // ========================================
         // 从 DOM 读取用户 Persona
         const personaTextarea = document.getElementById('persona_description');
-        if (!lobbySelection.isLobby && personaTextarea && personaTextarea.value && personaTextarea.value.trim()) {
+        if (profileContextEnabled && !lobbySelection.isLobby && personaTextarea && personaTextarea.value && personaTextarea.value.trim()) {
             messages.push({
                 role: 'system',
                 content: `【用户信息】\n${personaTextarea.value.trim()}`,
@@ -7856,7 +7858,7 @@ renderChatRoom(chat) {
             });
         }
 
-        if (lobbySelection.isLobby) {
+        if (profileContextEnabled && lobbySelection.isLobby) {
             if (lobbyUserProfiles.length > 0) {
                 const profileText = lobbyUserProfiles.map(item => `【${item.name}】\n${item.description || '暂无该用户人设'}`).join('\n\n');
                 messages.push({
@@ -9170,6 +9172,7 @@ renderChatRoom(chat) {
         const currentChat = this.app.currentChat || {};
         const isGroupChat = currentChat.type === 'group';
         const honeyInjectEnabled = !isGroupChat && this.app.wechatData.isHoneyHistoryInjectionEnabledForChat?.(currentChat.id);
+        const profileContextEnabled = isGroupChat || this.app.wechatData.isProfileContextInjectionEnabledForChat?.(currentChat.id) !== false;
         const isBlocked = this._isBlockedSingleChat(currentChat);
         const html = `
             <div class="wechat-app">
@@ -9196,6 +9199,19 @@ renderChatRoom(chat) {
                     </div>
 
                     ${!isGroupChat ? `
+                    <div style="background: #fff; padding: 15px 20px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div style="min-width: 0;">
+                                <div style="font-size: 16px; color: #000;">注入角色卡和用户信息</div>
+                                <div style="font-size: 12px; color: #999; margin-top: 3px; line-height: 1.35;">关闭后，仅当前好友聊天不再带入角色卡、用户 Persona 和大厅角色/用户资料</div>
+                            </div>
+                            <label class="toggle-switch" style="flex: 0 0 auto;">
+                                <input type="checkbox" id="wechat-profile-context-toggle" ${profileContextEnabled ? 'checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
                     <div style="background: #fff; padding: 15px 20px; margin-bottom: 10px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
                             <div style="min-width: 0;">
@@ -9242,6 +9258,14 @@ renderChatRoom(chat) {
         // 设置背景按钮
         document.getElementById('set-bg-btn')?.addEventListener('click', () => {
             this.showBackgroundPicker();
+        });
+
+        document.getElementById('wechat-profile-context-toggle')?.addEventListener('change', (e) => {
+            const enabled = !!e.target.checked;
+            const ok = this.app.wechatData.setProfileContextInjectionForChat?.(this.app.currentChat?.id, enabled);
+            if (ok) {
+                this.app.phoneShell.showNotification('微信', enabled ? '已开启角色卡和用户信息注入' : '已关闭此好友的角色卡和用户信息注入', '💬');
+            }
         });
 
         document.getElementById('wechat-honey-history-toggle')?.addEventListener('change', (e) => {

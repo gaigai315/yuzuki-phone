@@ -191,6 +191,20 @@ export class WechatData {
         return true;
     }
 
+    isProfileContextInjectionEnabledForChat(chatId) {
+        const chat = this.getChat(chatId);
+        if (!chat || chat.type === 'group') return true;
+        return chat.injectProfileContextEnabled !== false;
+    }
+
+    setProfileContextInjectionForChat(chatId, enabled) {
+        const chat = this.getChat(chatId);
+        if (!chat || chat.type === 'group') return false;
+        chat.injectProfileContextEnabled = !!enabled;
+        this.saveData();
+        return true;
+    }
+
     getHoneyHistoryInjectionChats() {
         const chats = Array.isArray(this.data?.chats) ? this.data.chats : [];
         return chats.filter(chat => this.isHoneyHistoryInjectionEnabledForChat(chat?.id));
