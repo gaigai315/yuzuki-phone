@@ -105,6 +105,10 @@ export class WerewolfView {
         const nextExpanded = !!expanded;
         if (this._chatExpanded === nextExpanded) return;
         this._chatExpanded = nextExpanded;
+        if (!nextExpanded) {
+            this._expandedChatDays.clear();
+            this._refreshChatScroll();
+        }
         const root = document.querySelector('.games-werewolf-app');
         const chat = document.querySelector('.games-werewolf-chat');
         const toggle = document.getElementById('games-werewolf-chat-toggle');
@@ -120,6 +124,38 @@ export class WerewolfView {
 
     _collapseChatPanel() {
         this._setChatPanelExpanded(false);
+    }
+
+    _refreshChatScroll() {
+        const scroll = document.querySelector('.games-werewolf-chat-scroll');
+        if (!scroll) return;
+        const state = this.app.werewolfData.getState();
+        scroll.innerHTML = (state.chat || []).length
+            ? this._renderChatRows(state)
+            : '<div class="games-werewolf-chat-empty">暂无发言</div>';
+        this._bindChatDayToggles();
+    }
+
+    _setButtonBusy(button, label = '处理中') {
+        if (!button) return;
+        button.disabled = true;
+        const icon = button.querySelector('i');
+        const text = button.querySelector('span');
+        if (icon) {
+            icon.className = 'fa-solid fa-spinner fa-spin';
+        }
+        if (text) text.textContent = label;
+        else button.textContent = label;
+    }
+
+    _setActionButtonBusy(buttonId, label = '处理中') {
+        this._setButtonBusy(document.getElementById(buttonId), label);
+    }
+
+    _setVoteTargetsBusy(label = '结算中') {
+        document.querySelectorAll('.games-werewolf-vote-target').forEach(btn => {
+            this._setButtonBusy(btn, label);
+        });
     }
 
     clearUserSpeechInput() {
@@ -150,27 +186,22 @@ export class WerewolfView {
             if (e.target?.closest?.('.games-werewolf-chat')) return;
             this._collapseChatPanel();
         });
-        document.querySelectorAll('.games-werewolf-chat-day-toggle[data-day]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const day = Number(btn.dataset.day || 0);
-                if (!day) return;
-                if (this._expandedChatDays.has(day)) this._expandedChatDays.delete(day);
-                else this._expandedChatDays.add(day);
-                this.render();
-            });
-        });
+        this._bindChatDayToggles();
         document.getElementById('games-werewolf-start')?.addEventListener('click', () => {
             this._inviteOpen = true;
             this.render();
         });
         document.getElementById('games-werewolf-continue-speech')?.addEventListener('click', () => {
+            this._setActionButtonBusy('games-werewolf-continue-speech', '续接中');
             this.app.continueWerewolfSpeech();
         });
         document.getElementById('games-werewolf-resolve-vote')?.addEventListener('click', () => {
+            this._setActionButtonBusy('games-werewolf-resolve-vote', '结算中');
             this.app.resolveWerewolfVote();
         });
         document.querySelectorAll('.games-werewolf-vote-target[data-seat]').forEach(btn => {
             btn.addEventListener('click', () => {
+                this._setVoteTargetsBusy('结算中');
                 this.app.submitWerewolfUserVote(Number(btn.dataset.seat || 0));
             });
         });
@@ -225,6 +256,18 @@ export class WerewolfView {
         this._bindInviteEvents();
         this._bindSettingsEvents();
         this._bindRecordEvents();
+    }
+
+    _bindChatDayToggles() {
+        document.querySelectorAll('.games-werewolf-chat-day-toggle[data-day]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const day = Number(btn.dataset.day || 0);
+                if (!day) return;
+                if (this._expandedChatDays.has(day)) this._expandedChatDays.delete(day);
+                else this._expandedChatDays.add(day);
+                this._refreshChatScroll();
+            });
+        });
     }
 
     _bindInviteEvents() {

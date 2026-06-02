@@ -406,7 +406,6 @@ export class GamesApp extends PokerApp {
         if (!state || state.gameOver || state.phase !== 'vote' || state.voting) return;
         if (!this.werewolfData.canUserVote?.()) {
             this.werewolfData.setVoting?.(true);
-            this.werewolfView.render();
             try {
                 const result = await this._callWerewolfVoteAi(null);
                 if (result?.success === false) throw new Error(result.error || 'AI 请求失败');
@@ -446,7 +445,6 @@ export class GamesApp extends PokerApp {
         const userVote = { voterSeat: Number(user.seat), targetSeat: Number(target?.seat || 0) };
         this.werewolfData.addSystemNotice(`${userVote.voterSeat}号已${userVote.targetSeat ? '投票' : '弃票'}，等待其他玩家投票。`);
         this.werewolfData.setVoting?.(true);
-        this.werewolfView.render();
         try {
             const result = await this._callWerewolfVoteAi(userVote);
             if (result?.success === false) throw new Error(result.error || 'AI 请求失败');
@@ -557,7 +555,7 @@ export class GamesApp extends PokerApp {
         const state = this.werewolfData.getState();
         const user = (state.players || []).find(player => player.isUser);
         const livePlayers = (state.players || []).filter(player => !player.empty && player.alive !== false);
-        const publicLog = (state.chat || []).map(item => item.seat ? `${item.seat}号：${item.text}` : `系统：${item.text}`).slice(-24);
+        const publicLog = this._formatWerewolfPublicChatLog(state);
         const wolfChat = (Array.isArray(state.wolfChat) ? state.wolfChat : []).slice(-12).map(item => {
             const speaker = (state.players || []).find(player => Number(player.seat) === Number(item.seat));
             return `${item.seat || '狼队'}号${speaker?.name ? ` ${speaker.name}` : ''}：${item.text}`;
@@ -607,7 +605,7 @@ export class GamesApp extends PokerApp {
         const actorList = Array.isArray(actors) ? actors.filter(Boolean) : [actors].filter(Boolean);
         const actor = actorList[0];
         const livePlayers = (state?.players || []).filter(player => !player.empty && player.alive !== false);
-        const publicLog = (state?.chat || []).map(item => item.seat ? `${item.seat}号：${item.text}` : `系统：${item.text}`).slice(-18);
+        const publicLog = this._formatWerewolfPublicChatLog(state);
         const roleLines = livePlayers.map(player => {
             const visibleRole = step === 'werewolf' && player.role === '狼人'
                 ? '狼人同伴'
@@ -877,7 +875,7 @@ export class GamesApp extends PokerApp {
         const livePlayers = (state?.players || []).filter(player => !player.empty && player.alive !== false);
         const userSeat = Number(state?.players?.find?.(player => player.isUser)?.seat || 0);
         const aiVoters = livePlayers.filter(player => Number(player.seat) !== userSeat);
-        const publicLog = (state?.chat || []).map(item => item.seat ? `${item.seat}号：${item.text}` : `系统：${item.text}`).slice(-32);
+        const publicLog = this._formatWerewolfPublicChatLog(state);
         const messages = [
             {
                 role: 'system',
@@ -921,7 +919,7 @@ export class GamesApp extends PokerApp {
         if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
         await this._waitWerewolfApiCooldown();
         const state = this.werewolfData.getState();
-        const publicLog = (state?.chat || []).map(item => item.seat ? `${item.seat}号：${item.text}` : `系统：${item.text}`).slice(-30);
+        const publicLog = this._formatWerewolfPublicChatLog(state);
         const messages = [
             {
                 role: 'system',
@@ -1001,6 +999,17 @@ export class GamesApp extends PokerApp {
         const topCount = Number(sorted[0]?.[1] || 0);
         const tied = sorted.filter(item => Number(item[1]) === topCount);
         return tied.length === 1 ? Number(sorted[0]?.[0] || 0) : 0;
+    }
+
+    _formatWerewolfPublicChatLog(state = null) {
+        const safeState = state || this.werewolfData?.getState?.() || {};
+        const players = Array.isArray(safeState.players) ? safeState.players : [];
+        return (Array.isArray(safeState.chat) ? safeState.chat : []).map(item => {
+            const day = Number(item?.day || 0) ? `第${Number(item.day)}天 ` : '';
+            if (Number(item?.seat || 0) === 0) return `${day}系统：${item?.text || ''}`;
+            const player = players.find(playerItem => Number(playerItem.seat) === Number(item.seat));
+            return `${day}${item.seat}号${player?.name ? ` ${player.name}` : ''}：${item?.text || ''}`;
+        });
     }
 
     _fallbackWerewolfVoteTarget(userVote = null) {

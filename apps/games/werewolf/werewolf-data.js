@@ -419,7 +419,6 @@ export class WerewolfData {
             day: this.state.day,
             visibility: 'public'
         });
-        if (this.state.chat.length > 120) this.state.chat = this.state.chat.slice(-120);
         this.state.lastSpeechAt = Date.now();
         const player = this.state.players.find(item => Number(item.seat) === speakerSeat);
         if (player && !options.keepNotice) {
@@ -477,10 +476,11 @@ export class WerewolfData {
             speakerPrivateRole: speaker.role || '村民',
             players: this.state.players.map(playerItem => this._publicPlayer(playerItem)),
             publicLog: (this.state.chat || []).map(item => {
-                if (Number(item.seat || 0) === 0) return `系统：${item.text}`;
+                const dayPrefix = Number(item.day || 0) ? `第${Number(item.day)}天 ` : '';
+                if (Number(item.seat || 0) === 0) return `${dayPrefix}系统：${item.text}`;
                 const target = this.state.players.find(playerItem => Number(playerItem.seat) === Number(item.seat));
-                return `${item.seat}号${target?.name ? ` ${target.name}` : ''}：${item.text}`;
-            }).slice(-24),
+                return `${dayPrefix}${item.seat}号${target?.name ? ` ${target.name}` : ''}：${item.text}`;
+            }),
             roleSummary: this.state.players
                 .filter(playerItem => !playerItem.isUser)
                 .map(playerItem => `${playerItem.seat}号 ${playerItem.name}：${playerItem.role}，${playerItem.personality || '普通玩家'}`),
