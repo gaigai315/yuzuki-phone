@@ -1108,7 +1108,7 @@ export class GamesApp extends PokerApp {
 
     _formatWerewolfPublicStateMessage(context = {}) {
         const playerLines = (context.players || [])
-            .map(player => `${player.seat}号 ${player.name}：${player.status}${player.isUser ? '，用户本人' : ''}${player.personality ? `，${player.personality}` : ''}`)
+            .map(player => `${player.seat}号 ${player.name}：${player.status}${player.isUser ? '，用户本人' : ''}`)
             .join('\n');
         return [
             '【场上公开玩家状态】',
@@ -1148,6 +1148,7 @@ export class GamesApp extends PokerApp {
             '【当前发言任务】',
             '以下身份信息只给当前发言玩家用于策略判断。',
             `当前该 ${speakerSeat || '?'}号 ${context.speaker?.name || '玩家'} 发言。`,
+            `当前发言玩家性格及语言风格：${context.speaker?.personality || '普通玩家，自然发言'}。`,
             `当前发言玩家真实身份：${context.speakerPrivateRole || '村民'}。`,
             wolfMates ? `狼人同伴：${wolfMates}。` : '',
             seerChecks.length ? `你的预言家查验结果：${seerChecks.join('；')}。` : '',
