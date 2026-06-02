@@ -2770,7 +2770,7 @@ export class HoneyData {
                     '新增未总结直播记录：',
                     inputText,
                     '<蜜语记录总结>',
-                    '更新后的完整摘要，180-500字',
+                    '更新后的完整摘要',
                     '</蜜语记录总结>'
                 ].join('\n'),
                 isPhoneMessage: true
