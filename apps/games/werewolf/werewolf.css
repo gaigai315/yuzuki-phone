@@ -496,6 +496,7 @@
     padding: 0;
     box-sizing: border-box;
     overflow: visible;
+    pointer-events: auto;
 }
 
 .games-werewolf-chat-toggle {
@@ -510,6 +511,8 @@
     gap: 8px;
     font: inherit;
     cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .games-werewolf-chat-toggle span {
@@ -547,6 +550,7 @@
 
 .games-werewolf-chat.is-expanded .games-werewolf-chat-scroll {
     display: block;
+    z-index: 60;
 }
 
 .games-werewolf-app.is-chat-expanded .games-werewolf-chat-scroll {

@@ -15,7 +15,7 @@ import { WerewolfView } from './werewolf/werewolf-view.js';
 import { buildGameSillyTavernContextMessages } from './common/games-ai-context.js';
 
 const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
-const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.35', import.meta.url).href;
+const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.36', import.meta.url).href;
 const WEREWOLF_API_COOLDOWN_MS = 5000;
 const CATBOX_PRELOAD_ASSETS = [
     new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
@@ -346,13 +346,25 @@ export class GamesApp extends PokerApp {
         if (!state || state.gameOver) return;
         const user = state?.players?.find?.(player => player.isUser);
         const isWitchTurn = state?.phase === 'night' && state?.nightStep === 'witch' && user?.role === '女巫';
+        const isSeerTurn = state?.phase === 'night' && state?.nightStep === 'seer' && user?.role === '预言家';
         const usePotion = String(payload.usePotion || '').trim();
         const targetSeat = Number(payload.targetSeat || 0);
+        let seerResultText = '';
         if (isWitchTurn && usePotion === 'poison' && targetSeat && targetSeat === Number(user.seat || 0)) {
             this.phoneShell?.showNotification?.('狼人杀', '女巫不能对自己使用毒药，已按跳过处理。', '🌙');
             payload = { ...payload, targetSeat: 0, usePotion: '' };
         } else if (isWitchTurn && !usePotion) {
             this.phoneShell?.showNotification?.('狼人杀', '你选择不使用药剂，夜晚继续。', '🌙');
+        }
+        if (isSeerTurn) {
+            const target = (state.players || []).find(player => Number(player.seat) === targetSeat && !player.empty && player.alive !== false);
+            if (!target || Number(target.seat) === Number(user.seat || 0)) {
+                this.phoneShell?.showNotification?.('狼人杀', '请选择一名可查验的玩家', '⚠️');
+                return;
+            }
+            const resultRole = target.role === '狼人' ? '狼人' : '好人';
+            payload = { ...payload, result: { seat: targetSeat, role: resultRole } };
+            seerResultText = `查验结果：${targetSeat}号 ${target.name || '玩家'} 是${resultRole}。`;
         }
         if (state.nightStep === 'werewolf' && user?.role === '狼人') {
             payload = {
@@ -363,6 +375,10 @@ export class GamesApp extends PokerApp {
             };
         }
         this.werewolfData.applyUserNightAction(payload);
+        if (seerResultText) {
+            this.werewolfData.addSystemNotice(`${seerResultText} 夜晚继续。`);
+            this.phoneShell?.showNotification?.('预言家查验', seerResultText, '🔮');
+        }
         this.werewolfView.render();
         this.driveWerewolfNight();
     }
@@ -616,9 +632,19 @@ export class GamesApp extends PokerApp {
         });
         const killedSeat = Number(state.lastKilledSeat || 0);
         const witchPotions = this.werewolfData.getWitchPotions?.() || { antidote: true, poison: true };
+        const wolfTeamText = actorList.map(item => `${item.seat}号 ${item.name}`).join('、');
+        const seerChecks = step === 'seer'
+            ? (Array.isArray(state.seerChecks) ? state.seerChecks : [])
+                .filter(item => Number(item.actorSeat || 0) === Number(actor?.seat || 0))
+                .map(item => `第 ${Number(item.day || 1)} 夜查验 ${Number(item.targetSeat || 0)}号：${item.resultRole === '狼人' ? '狼人' : '好人'}`)
+                .filter(Boolean)
+            : [];
+        const wolfActionInstruction = actorList.length > 1
+            ? '你是狼人阵营。请模拟存活狼人短暂内部讨论，再给出最终袭击目标。目标必须是非狼人存活玩家，只写座位号。'
+            : '你是狼人阵营。目前只剩一名存活狼人，请独自决定今晚袭击目标。目标必须是非狼人存活玩家，只写座位号。';
         const formatRule = [
             '<狼人杀夜晚行动>',
-            step === 'werewolf' ? '讨论：两名狼人用内部语气简短商量，1-4句' : '',
+            step === 'werewolf' && actorList.length > 1 ? '讨论：存活狼人用内部语气简短商量，1-4句' : '',
             '目标：数字座位号或0',
             step === 'witch' ? '药剂：解药/毒药/不用' : '药剂：不用',
             '理由：一句话',
@@ -626,7 +652,7 @@ export class GamesApp extends PokerApp {
         ].filter(Boolean).join('\n');
         const instructionMap = {
             guard: '你是守卫。请选择今晚守护一名存活玩家，可以守自己。目标只写座位号。',
-            werewolf: '你是狼人阵营。请先模拟两名狼人短暂内部讨论，再给出最终袭击目标。目标必须是非狼人存活玩家，只写座位号。',
+            werewolf: wolfActionInstruction,
             seer: '你是预言家。请选择今晚查验一名存活玩家。目标只写座位号。',
             witch: killedSeat
                 ? `你是女巫。今晚被狼人袭击的是 ${killedSeat}号。剩余药剂：解药${witchPotions.antidote ? '可用' : '已用'}，毒药${witchPotions.poison ? '可用' : '已用'}。只能使用仍可用的药，或不用药。`
@@ -646,21 +672,20 @@ export class GamesApp extends PokerApp {
                 ].join('\n')
             }
         ];
-        messages.push(...await buildGameSillyTavernContextMessages('games', this.storage, {
-            includeWorldbook: this.isWerewolfWorldbookEnabled()
-        }));
+        messages.push(...await this._buildWerewolfWorldbookMessages());
         messages.push({
             role: 'user',
             isPhoneMessage: true,
             content: [
                 `当前阶段：第 ${state.day || 1} 夜，${this._formatWerewolfNightStepName(step)}。`,
                 step === 'werewolf'
-                    ? `当前狼人同伴：${actorList.map(item => `${item.seat}号 ${item.name}`).join('、')}。`
+                    ? `当前存活狼人：${wolfTeamText || '无'}。${actorList.length > 1 ? '请由存活狼人共同决定目标。' : '请由唯一存活狼人决定目标。'}`
                     : `当前行动者：${actor.seat}号 ${actor.name}，身份：${actor.role}。`,
                 '存活玩家和你的身份视角：',
                 roleLines.join('\n'),
                 killedSeat ? `女巫可见刀口：${killedSeat}号。` : '',
                 step === 'witch' ? `女巫剩余药剂：解药${witchPotions.antidote ? '可用' : '已用'}，毒药${witchPotions.poison ? '可用' : '已用'}。` : '',
+                seerChecks.length ? `你的历史查验：${seerChecks.join('；')}。` : '',
                 '公开记录：',
                 publicLog.length ? publicLog.map(line => `- ${line}`).join('\n') : '- 暂无',
                 '返回格式：',
@@ -940,7 +965,7 @@ export class GamesApp extends PokerApp {
                     `当前第 ${state.day || 1} 天，${player.seat}号 ${player.name} 被投票放逐。`,
                     `你的真实身份：${player.role || '村民'}。`,
                     player.role === '狼人'
-                        ? `狼人同伴：${(state.players || []).filter(item => item.role === '狼人').map(item => `${item.seat}号 ${item.name}`).join('、')}`
+                        ? `存活狼人同伴：${(state.players || []).filter(item => item.role === '狼人' && item.alive !== false).map(item => `${item.seat}号 ${item.name}`).join('、')}`
                         : '',
                     '公开记录：',
                     publicLog.map(line => `- ${line}`).join('\n') || '- 暂无',
@@ -1031,16 +1056,14 @@ export class GamesApp extends PokerApp {
     async _buildWerewolfSpeechMessages(player) {
         const context = this.werewolfData.buildSpeechContext(player);
         if (!context) throw new Error('狼人杀上下文为空');
-        const extraContextMessages = await buildGameSillyTavernContextMessages('games', this.storage, {
-            includeWorldbook: this.isWerewolfWorldbookEnabled()
-        });
         const messages = [
             {
                 role: 'system',
                 name: 'SYSTEM (狼人杀规则)',
                 isPhoneMessage: true,
-                content: this._formatWerewolfRulesMessage(extraContextMessages)
+                content: this._formatWerewolfRulesMessage()
             },
+            ...await this._buildWerewolfWorldbookMessages(),
             {
                 role: 'system',
                 name: 'SYSTEM (场上公开状态)',
@@ -1063,20 +1086,15 @@ export class GamesApp extends PokerApp {
         return messages;
     }
 
-    _formatWerewolfRulesMessage(extraMessages = []) {
-        const extraText = (Array.isArray(extraMessages) ? extraMessages : [])
-            .map(message => {
-                const label = String(message?.name || message?.role || '外部上下文').trim();
-                const content = String(message?.content || '').trim();
-                return content ? `【${label}】\n${content}` : '';
-            })
-            .filter(Boolean)
-            .join('\n\n');
-        return [
-            this.getWerewolfPrompt(),
-            extraText ? '【酒馆/世界书补充上下文】' : '',
-            extraText
-        ].filter(Boolean).join('\n\n');
+    async _buildWerewolfWorldbookMessages() {
+        return buildGameSillyTavernContextMessages('games', this.storage, {
+            includeWorldbook: this.isWerewolfWorldbookEnabled(),
+            includeRecentChat: false
+        });
+    }
+
+    _formatWerewolfRulesMessage() {
+        return this.getWerewolfPrompt();
     }
 
     _formatWerewolfPublicStateMessage(context = {}) {
@@ -1108,16 +1126,22 @@ export class GamesApp extends PokerApp {
         const speakerSeat = Number(context.speaker?.seat || 0);
         const wolfMates = context.speakerPrivateRole === '狼人'
             ? (state?.players || [])
-                .filter(player => player.role === '狼人')
+                .filter(player => player.role === '狼人' && player.alive !== false)
                 .map(player => `${player.seat}号 ${player.name}`)
                 .join('、')
             : '';
+        const seerChecks = context.speakerPrivateRole === '预言家' && Array.isArray(context.seerChecks)
+            ? context.seerChecks
+                .map(item => `第 ${Number(item.day || 1)} 夜查验 ${Number(item.targetSeat || 0)}号：${item.resultRole === '狼人' ? '狼人' : '好人'}`)
+                .filter(Boolean)
+            : [];
         return [
             '【当前发言任务】',
             '以下身份信息只给当前发言玩家用于策略判断。',
             `当前该 ${speakerSeat || '?'}号 ${context.speaker?.name || '玩家'} 发言。`,
             `当前发言玩家真实身份：${context.speakerPrivateRole || '村民'}。`,
             wolfMates ? `狼人同伴：${wolfMates}。` : '',
+            seerChecks.length ? `你的预言家查验结果：${seerChecks.join('；')}。` : '',
             '其他玩家真实身份不得在发言中泄露；除非场上公开信息已经说明，否则不要假装知道。',
             '禁止描写心理活动、动作、表情或旁白，不要使用括号补充任何非发言内容。',
             '请只输出当前玩家的公开发言。格式：',

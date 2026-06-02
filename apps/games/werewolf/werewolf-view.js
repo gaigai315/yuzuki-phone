@@ -97,6 +97,7 @@ export class WerewolfView {
 
         this.app.phoneShell.setContent(html, 'games-werewolf');
         this._bindEvents();
+        if (this._recordOpen) this._scrollRecordListToBottom();
     }
 
     destroy() {}
@@ -124,6 +125,12 @@ export class WerewolfView {
 
     _collapseChatPanel() {
         this._setChatPanelExpanded(false);
+    }
+
+    _toggleChatPanel(event = null) {
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        this._setChatPanelExpanded(!this._chatExpanded);
     }
 
     _refreshChatScroll() {
@@ -178,10 +185,14 @@ export class WerewolfView {
             this._settingsOpen = true;
             this.render();
         });
-        document.getElementById('games-werewolf-chat-toggle')?.addEventListener('click', () => {
-            this._setChatPanelExpanded(!this._chatExpanded);
+        const chatToggle = document.getElementById('games-werewolf-chat-toggle');
+        chatToggle?.addEventListener('pointerup', e => {
+            this._toggleChatPanel(e);
         });
-        document.querySelector('.games-werewolf-app')?.addEventListener('click', e => {
+        chatToggle?.addEventListener('click', e => {
+            this._toggleChatPanel(e);
+        });
+        document.querySelector('.games-werewolf-app')?.addEventListener('pointerup', e => {
             if (!this._chatExpanded) return;
             if (e.target?.closest?.('.games-werewolf-chat')) return;
             this._collapseChatPanel();
@@ -241,6 +252,7 @@ export class WerewolfView {
         document.getElementById('games-werewolf-record')?.addEventListener('click', () => {
             this._recordOpen = true;
             this.render();
+            this._scrollRecordListToBottom();
         });
         document.getElementById('games-werewolf-continue')?.addEventListener('click', () => {
             this.closeEntryPrompt();
@@ -336,6 +348,13 @@ export class WerewolfView {
             if (e.target?.id !== 'games-werewolf-record-overlay') return;
             this._recordOpen = false;
             this.render();
+        });
+    }
+
+    _scrollRecordListToBottom() {
+        requestAnimationFrame(() => {
+            const list = document.querySelector('.games-werewolf-record-list');
+            if (list) list.scrollTop = list.scrollHeight;
         });
     }
 
@@ -705,17 +724,17 @@ export class WerewolfView {
                     <div class="games-werewolf-invite-head">
                         <div>
                             <div class="games-werewolf-entry-title">狼人杀设置</div>
-                            <div class="games-werewolf-entry-desc">默认提示词与酒馆上下文</div>
+                            <div class="games-werewolf-entry-desc">默认提示词与世界书</div>
                         </div>
                         <button class="games-werewolf-icon-btn" id="games-werewolf-settings-close" type="button" aria-label="关闭">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
                     <label class="games-werewolf-setting-toggle">
-                        <span>使用酒馆世界书</span>
+                        <span>使用世界书</span>
                         <input id="games-werewolf-worldbook-enabled" type="checkbox" ${worldbookChecked}>
                     </label>
-                    <div class="games-werewolf-setting-desc">开启后发言会注入世界书、角色卡、用户信息和最近酒馆上下文。</div>
+                    <div class="games-werewolf-setting-desc">请求会注入角色卡和用户信息；开启后额外注入已勾选世界书，不注入酒馆最近正文。</div>
                     <div class="games-werewolf-worldbook-list" id="games-werewolf-worldbook-list">
                         <div class="games-werewolf-setting-desc">正在读取当前可用世界书...</div>
                     </div>
@@ -789,7 +808,7 @@ export class WerewolfView {
             const sources = await manager.listAvailableWorldbooks({ includeEntries: false, force: true });
             const selection = manager.getSelectionState('games');
             if (!sources.length) {
-                container.innerHTML = '<div class="games-werewolf-setting-desc">未读取到酒馆世界书列表。</div>';
+                container.innerHTML = '<div class="games-werewolf-setting-desc">未读取到世界书列表。</div>';
                 return;
             }
             const isSelected = source => selection.initialized && manager.matchesSelection?.(source, selection.ids);
@@ -834,7 +853,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.35', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.36', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {

@@ -96,6 +96,8 @@ export async function buildGameSillyTavernContextMessages(appKey, storage, optio
     const personaMessage = buildPersonaMessage();
     if (personaMessage) messages.push(personaMessage);
 
-    messages.push(...buildRecentChatMessages(context, storage, options.limitKey || 'phone-context-limit'));
+    if (options.includeRecentChat !== false) {
+        messages.push(...buildRecentChatMessages(context, storage, options.limitKey || 'phone-context-limit'));
+    }
     return messages;
 }

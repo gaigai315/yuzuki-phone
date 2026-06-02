@@ -109,6 +109,7 @@ export class WerewolfData {
         ];
         this.state.privateLog = [];
         this.state.replayLog = [];
+        this.state.seerChecks = [];
         this._assignRoles();
         this._updateUserRoleHint();
         this.recordReplay('system', '8人局已开始，身份已分配。', { visibility: 'private' });
@@ -206,7 +207,7 @@ export class WerewolfData {
         const user = this.state.players.find(player => player.isUser);
         if (!user || user.role !== '狼人') return [];
         return this.state.players
-            .filter(player => !player.empty && player.role === '狼人')
+            .filter(player => !player.empty && player.role === '狼人' && player.alive !== false)
             .map(player => this._publicPlayer(player));
     }
 
@@ -276,7 +277,7 @@ export class WerewolfData {
             this.state.eliminatedSeat = 0;
             this.state.voting = false;
             this.state.notice = '本轮投票无人出局，进入夜晚。';
-            this.addSpeech(0, '本轮投票无人出局。', { system: true, keepNotice: true });
+        this.addSpeech(0, '本轮投票无人出局。', { system: true, keepNotice: true, skipReplay: true });
             this.recordReplay('vote', this._formatVoteReplay(null, this.state.voteResult), { visibility: 'public', phase: 'vote' });
             this.startNextNight();
             return this.state;
@@ -293,7 +294,7 @@ export class WerewolfData {
         this.state.phase = 'last_words';
         this.state.lastWordsDone = false;
         this.state.notice = `${seat}号 ${target.name || '玩家'} 被放逐，请发表遗言。`;
-        this.addSpeech(0, `${seat}号 ${target.name || '玩家'} 被投票放逐。`, { system: true, keepNotice: true });
+        this.addSpeech(0, `${seat}号 ${target.name || '玩家'} 被投票放逐。`, { system: true, keepNotice: true, skipReplay: true });
         this.recordReplay('vote', this._formatVoteReplay(target, this.state.voteResult), { visibility: 'public', phase: 'vote' });
         this._checkWinCondition();
         this._persist();
@@ -304,7 +305,7 @@ export class WerewolfData {
         const speakerSeat = Number(seat || this.state.eliminatedSeat || 0);
         const speech = String(text || '').trim();
         if (!speakerSeat || !speech || this.state.phase !== 'last_words') return this.state;
-        this.addSpeech(speakerSeat, `遗言：${speech}`);
+        this.addSpeech(speakerSeat, `遗言：${speech}`, { skipReplay: true });
         this.recordReplay('last_words', `${speakerSeat}号遗言：${speech}`, { visibility: 'public', phase: 'last_words' });
         this.state.lastWordsDone = true;
         this.state.notice = `${speakerSeat}号遗言结束。`;
@@ -325,7 +326,7 @@ export class WerewolfData {
         this.state.lastWordsDone = false;
         this.state.lastKilledSeat = 0;
         this.state.notice = `第 ${this.state.day} 夜开始，天黑请闭眼。`;
-        this.addSpeech(0, `第 ${this.state.day} 夜开始。`, { system: true, keepNotice: true });
+        this.addSpeech(0, `第 ${this.state.day} 夜开始。`, { system: true, keepNotice: true, skipReplay: true });
         this.recordReplay('system', `第 ${this.state.day} 夜开始。`, { visibility: 'public', phase: 'night' });
         this._persist();
         return this.state;
@@ -353,9 +354,14 @@ export class WerewolfData {
             const target = this.state.players.find(player => Number(player.seat) === Number(action.targetSeat));
             if (!target || target.role === '狼人') action.targetSeat = 0;
         }
+        if (safeStep === 'seer' && action.targetSeat && !action.result?.role) {
+            const target = this.state.players.find(player => Number(player.seat) === Number(action.targetSeat));
+            action.result = target ? { seat: action.targetSeat, role: target.role === '狼人' ? '狼人' : '好人' } : null;
+        }
         if (safeStep === 'witch' && !action.usePotion) action.targetSeat = 0;
         this.state.nightActions[safeStep] = action;
         if (safeStep === 'werewolf') this.state.lastKilledSeat = action.targetSeat || 0;
+        if (safeStep === 'seer') this._recordSeerCheck(action);
         if (safeStep === 'witch') this._consumeWitchPotion(action.usePotion);
         this._recordNightAction(action);
         this._advanceNightStep();
@@ -372,7 +378,7 @@ export class WerewolfData {
         this.state.currentSpeaker = this._firstAliveSeatFrom(1);
         this.state.notice = result.notice;
         this.state.players = this.state.players.map(player => ({ ...player, active: false }));
-        this.addSpeech(0, result.notice, { system: true, keepNotice: true });
+        this.addSpeech(0, result.notice, { system: true, keepNotice: true, skipReplay: true });
         this.recordReplay('system', result.notice, { visibility: 'public' });
         if (this.state.currentSpeaker) {
             this.state.notice = this._isUserSeat(this.state.currentSpeaker)
@@ -415,10 +421,12 @@ export class WerewolfData {
             at: Date.now(),
             system: !!options.system
         });
-        this.recordReplay(speakerSeat ? 'speech' : 'system', speakerSeat ? `${speakerSeat}号：${speech}` : speech, {
-            day: this.state.day,
-            visibility: 'public'
-        });
+        if (!options.skipReplay) {
+            this.recordReplay(speakerSeat ? 'speech' : 'system', speakerSeat ? `${speakerSeat}号：${speech}` : speech, {
+                day: this.state.day,
+                visibility: 'public'
+            });
+        }
         this.state.lastSpeechAt = Date.now();
         const player = this.state.players.find(item => Number(item.seat) === speakerSeat);
         if (player && !options.keepNotice) {
@@ -432,7 +440,6 @@ export class WerewolfData {
         const notice = String(text || '').trim();
         if (!notice) return this.state;
         this.state.notice = notice;
-        this.addSpeech(0, notice, { system: true, keepNotice: true });
         this._persist();
         return this.state;
     }
@@ -448,7 +455,7 @@ export class WerewolfData {
             this.state.currentSpeaker = nextSeat || 0;
             this.state.notice = '本轮白天发言结束，等待投票流程。';
             this.state.phase = 'vote';
-            this.addSpeech(0, '本轮白天发言结束，进入投票准备。', { system: true, keepNotice: true });
+            this.addSpeech(0, '本轮白天发言结束，进入投票准备。', { system: true, keepNotice: true, skipReplay: true });
         } else {
             this.state.currentSpeaker = nextSeat;
             this.state.notice = this._isUserSeat(nextSeat)
@@ -462,13 +469,16 @@ export class WerewolfData {
     skipDeadSpeaker() {
         const speaker = this.getCurrentSpeaker();
         if (!speaker || speaker.alive !== false) return this.state;
-        this.addSpeech(0, `${speaker.seat}号玩家已死亡，跳过发言。`, { system: true, keepNotice: true });
+        this.addSpeech(0, `${speaker.seat}号玩家已死亡，跳过发言。`, { system: true, keepNotice: true, skipReplay: true });
         return this.markSpeakerDone(speaker.seat);
     }
 
     buildSpeechContext(player) {
         const speaker = player || this.getCurrentSpeaker();
         if (!speaker) return null;
+        const seerChecks = speaker.role === '预言家'
+            ? this._getSeerChecksForSeat(speaker.seat)
+            : [];
         return {
             day: Number(this.state.day || 1),
             phase: this.state.phase,
@@ -484,6 +494,7 @@ export class WerewolfData {
             roleSummary: this.state.players
                 .filter(playerItem => !playerItem.isUser)
                 .map(playerItem => `${playerItem.seat}号 ${playerItem.name}：${playerItem.role}，${playerItem.personality || '普通玩家'}`),
+            seerChecks,
             userSeat: this.state.players.find(playerItem => playerItem.isUser)?.seat || 0
         };
     }
@@ -541,6 +552,7 @@ export class WerewolfData {
             roleRevealMode: 'open',
             privateLog: [],
             replayLog: [],
+            seerChecks: [],
             notice: '点击开始游戏，邀请微信好友入座。',
             chat: [],
             players: Array.from({ length: 8 }, (_, index) => {
@@ -601,7 +613,8 @@ export class WerewolfData {
             winner: String(state.winner || ''),
             roleRevealMode: this._normalizeRoleRevealMode(state.roleRevealMode),
             privateLog: Array.isArray(state.privateLog) ? state.privateLog : [],
-            replayLog: Array.isArray(state.replayLog) ? state.replayLog : []
+            replayLog: Array.isArray(state.replayLog) ? state.replayLog : [],
+            seerChecks: Array.isArray(state.seerChecks) ? state.seerChecks : []
         };
         next.players = next.players.map(player => ({
             ...player,
@@ -645,6 +658,36 @@ export class WerewolfData {
             this.state.witchPotions = { antidote: true, poison: true };
         }
         this.state.witchPotions[potion] = false;
+    }
+
+    _recordSeerCheck(action = {}) {
+        const actorSeat = Number(action.actorSeat || 0);
+        const targetSeat = Number(action.targetSeat || action.result?.seat || 0);
+        if (!actorSeat || !targetSeat) return;
+        const resultRole = action.result?.role === '狼人' ? '狼人' : '好人';
+        if (!Array.isArray(this.state.seerChecks)) this.state.seerChecks = [];
+        this.state.seerChecks.push({
+            day: Number(this.state.day || 1),
+            actorSeat,
+            targetSeat,
+            resultRole,
+            at: Number(action.at || Date.now())
+        });
+        if (this.state.seerChecks.length > 80) this.state.seerChecks = this.state.seerChecks.slice(-80);
+    }
+
+    _getSeerChecksForSeat(seat) {
+        const actorSeat = Number(seat || 0);
+        if (!actorSeat) return [];
+        return (Array.isArray(this.state.seerChecks) ? this.state.seerChecks : [])
+            .filter(item => Number(item.actorSeat || 0) === actorSeat)
+            .map(item => ({
+                day: Number(item.day || 1),
+                actorSeat,
+                targetSeat: Number(item.targetSeat || 0),
+                resultRole: item.resultRole === '狼人' ? '狼人' : '好人'
+            }))
+            .filter(item => item.targetSeat);
     }
 
     _normalizePotionForAction(step, payload = {}, options = {}) {
@@ -791,7 +834,7 @@ export class WerewolfData {
         this.state.speaking = false;
         this.state.players = this.state.players.map(player => ({ ...player, active: false }));
         this.state.notice = notice;
-        this.addSpeech(0, notice, { system: true, keepNotice: true });
+        this.addSpeech(0, notice, { system: true, keepNotice: true, skipReplay: true });
         this.recordReplay('system', notice, { visibility: 'public', phase: 'ended' });
         return this.state;
     }
