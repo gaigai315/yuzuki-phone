@@ -1295,6 +1295,22 @@ export class ChatView {
         return names;
     }
 
+    async _getHoneyHostSummaryForWechatContact(contact = {}) {
+        const contactName = String(contact?.name || '').trim();
+        if (!contactName) return '';
+        try {
+            const mod = await import('../honey/honey-data.js');
+            const HoneyData = mod?.HoneyData;
+            if (!HoneyData) return '';
+            const honeyData = window.VirtualPhone?.honeyApp?.honeyData || new HoneyData(this.app.storage || window.VirtualPhone?.storage);
+            const summary = honeyData.getHostHistorySummary?.(contactName);
+            return String(summary?.text || '').trim();
+        } catch (error) {
+            console.warn('[Wechat] 读取蜜语记录总结失败:', error);
+            return '';
+        }
+    }
+
     _collectGroupParticipantsForFilter(chat = null, context = null) {
         const targetChat = chat || this.app.currentChat;
         if (!targetChat || targetChat.type !== 'group') return [];
@@ -7907,6 +7923,13 @@ renderChatRoom(chat) {
                 if (currentContact.honeyHiddenBackground) {
                     contactNotes.push(`隐藏设定：${currentContact.honeyHiddenBackground}`);
                     contactNotes.push('这段隐藏设定是该联系人在后续微信聊天里的持续前提。你必须记住你们是怎么认识的，但不要生硬复述成说明书。');
+                }
+                if (currentContact.sourceApp === 'honey' || currentContact.sourceLabel === '蜜语' || currentContact.sourceLabel === '主播') {
+                    const honeySummary = await this._getHoneyHostSummaryForWechatContact(currentContact);
+                    if (honeySummary) {
+                        contactNotes.push(`蜜语记录总结：${honeySummary}`);
+                        contactNotes.push('这段总结来自用户在蜜语中的手动总结记录，可作为当前微信聊天的关系背景。');
+                    }
                 }
                 if (currentContact.remark) {
                     contactNotes.push(`备注：${currentContact.remark}`);

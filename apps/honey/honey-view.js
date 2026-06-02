@@ -2317,7 +2317,11 @@ export class HoneyView {
     renderHistoryPage() {
         const hostName = this._historyHostName || '未知主播';
         const historyMap = this.app?.honeyData?.getHostHistory?.(hostName) || {};
-        const dateKeys = Object.keys(historyMap).sort((a, b) => String(a).localeCompare(String(b)));
+        const summary = this.app?.honeyData?.getHostHistorySummary?.(hostName) || {};
+        const summaryText = String(summary.text || '').trim();
+        const dateKeys = Object.keys(historyMap)
+            .filter(key => key && !String(key).startsWith('_'))
+            .sort((a, b) => String(a).localeCompare(String(b)));
 
         let chatHtml = '';
         const seenTurns = new Set();
@@ -2353,12 +2357,17 @@ export class HoneyView {
                 <div class="honey-nav">
                     <button class="honey-back-btn" id="honey-back-from-history"><i class="fa-solid fa-chevron-left"></i></button>
                     <div class="honey-nav-title" style="font-size: 14px;">${this._escapeHtml(hostName)} 的记录</div>
-                    <!-- 占位按钮，保证标题绝对居中 -->
-                    <button class="honey-icon-btn" style="visibility: hidden;"><i class="fa-solid fa-gear"></i></button>
+                    <button class="honey-icon-btn" id="honey-history-summary-btn" title="总结记录" aria-label="总结记录"><i class="fa-solid fa-wand-magic-sparkles"></i></button>
                 </div>
                 
                 <!-- 内容滚动区（利用 css 中已有的 honey-content flex 属性） -->
                 <div class="honey-content" style="background: linear-gradient(160deg, rgba(54, 26, 68, 0.98), rgba(28, 15, 36, 0.98)); padding: 12px; overflow-y: auto; -webkit-overflow-scrolling: touch;">
+                    ${summaryText ? `
+                        <div style="margin: 8px 0 14px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.12); color: #fff;">
+                            <div style="font-size: 12px; font-weight: 800; margin-bottom: 8px;">蜜语记录总结</div>
+                            <div style="font-size: 11px; line-height: 1.55; white-space: pre-wrap;">${this._escapeHtml(summaryText)}</div>
+                        </div>
+                    ` : ''}
                     ${chatHtml || '<div style="text-align: center; color: #ffffff !important; opacity: 0.72; margin-top: 50px; font-size: 12px;">暂无互动记录</div>'}
                 </div>
             </div>
@@ -2376,6 +2385,30 @@ export class HoneyView {
                 this.render();
             };
         }
+
+        currentView.querySelector('#honey-history-summary-btn')?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                const result = await this.app?.honeyData?.summarizeHostHistory?.(hostName);
+                if (result?.changed) {
+                    const remaining = Number(result.remaining || 0);
+                    this.app.phoneShell.showNotification('蜜语', `已总结 ${result.added || 0} 条新记录${remaining > 0 ? `，还有 ${remaining} 条待总结` : ''}`, '✅');
+                } else {
+                    this.app.phoneShell.showNotification('蜜语', '没有新的未总结记录', 'ℹ️');
+                }
+                this.renderHistoryPage();
+            } catch (err) {
+                console.error('蜜语记录总结失败:', err);
+                this.app.phoneShell.showNotification('总结失败', err?.message || String(err || '请稍后重试'), '❌');
+                if (btn?.isConnected) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>';
+                }
+            }
+        });
 
         setTimeout(() => {
             const contentBox = currentView.querySelector('.honey-content');

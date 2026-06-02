@@ -2701,6 +2701,112 @@ export class HoneyData {
         return parsed && typeof parsed === 'object' ? parsed : {};
     }
 
+    getHostHistorySummary(hostName) {
+        const history = this.getHostHistory(hostName);
+        const summary = history?._summary && typeof history._summary === 'object' ? history._summary : {};
+        return {
+            text: String(summary.text || '').trim(),
+            coveredTurnHashes: Array.isArray(summary.coveredTurnHashes) ? summary.coveredTurnHashes.map(item => String(item || '')).filter(Boolean) : [],
+            updatedAt: Number(summary.updatedAt || 0) || 0
+        };
+    }
+
+    _collectUnsummarizedHostHistoryTurns(hostName) {
+        const history = this.getHostHistory(hostName);
+        const summary = this.getHostHistorySummary(hostName);
+        const covered = new Set(summary.coveredTurnHashes);
+        const turns = [];
+        Object.keys(history)
+            .filter(key => key && !String(key).startsWith('_'))
+            .sort((a, b) => String(a).localeCompare(String(b)))
+            .forEach(dateKey => {
+                const dayScene = history[dateKey];
+                const dayTurns = this._normalizeContinuePromptTurns(dayScene?.promptTurns);
+                dayTurns.forEach(turn => {
+                    const hash = this._simpleHash(String(dateKey) + String(turn.assistantContext || '') + String(turn.userMessage || ''));
+                    if (!hash || covered.has(hash)) return;
+                    turns.push({
+                        hash,
+                        date: dateKey,
+                        userMessage: String(turn.userMessage || '').trim(),
+                        assistantContext: String(turn.assistantContext || '').trim()
+                    });
+                });
+            });
+        return { history, summary, turns };
+    }
+
+    async summarizeHostHistory(hostName) {
+        const safeHostName = this._sanitizeInlineText(hostName || '', 40);
+        if (!safeHostName) throw new Error('主播名称为空');
+        const { history, summary, turns } = this._collectUnsummarizedHostHistoryTurns(safeHostName);
+        if (!turns.length) return { changed: false, summary };
+
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager) throw new Error('API Manager 未初始化');
+        const selectedTurns = turns.slice(0, 60);
+        const inputText = selectedTurns.map((turn, index) => [
+            `#${index + 1} ${turn.date}`,
+            turn.userMessage ? `用户：${turn.userMessage}` : '',
+            turn.assistantContext ? `直播记录：${turn.assistantContext}` : ''
+        ].filter(Boolean).join('\n')).join('\n\n');
+        const messages = [
+            {
+                role: 'system',
+                content: [
+                    '你是蜜语主播互动记录摘要助手。',
+                    '请把新增直播互动整理进一份长期关系摘要，供后续微信聊天理解双方关系。',
+                    '保留关键事实、关系进展、暧昧/冲突、承诺、主播对用户的态度、称呼和不能忘的隐藏设定。',
+                    '不要逐字复述，不要写 Markdown，不要编造新增记录外的事实。',
+                    '必须只返回 <蜜语记录总结> 标签包裹内容。'
+                ].join('\n'),
+                isPhoneMessage: true
+            },
+            {
+                role: 'user',
+                content: [
+                    `主播：${safeHostName}`,
+                    summary.text ? `已有摘要：\n${summary.text}` : '已有摘要：暂无',
+                    '新增未总结直播记录：',
+                    inputText,
+                    '<蜜语记录总结>',
+                    '更新后的完整摘要，180-500字',
+                    '</蜜语记录总结>'
+                ].join('\n'),
+                isPhoneMessage: true
+            }
+        ];
+
+        const timeoutMs = 90000;
+        let timeoutId = null;
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('蜜语记录总结超时，请重试')), timeoutMs);
+        });
+        const result = await Promise.race([
+            apiManager.callAI(messages, { max_tokens: 900, preserve_roles: false, appId: 'honey' }),
+            timeoutPromise
+        ]).finally(() => {
+            if (timeoutId) clearTimeout(timeoutId);
+        });
+        if (!result?.success) throw new Error(result?.error || 'AI 返回为空');
+
+        const rawText = String(result.summary || result.content || result.text || '').trim();
+        const tagged = rawText.match(/<蜜语记录总结>([\s\S]*?)<\/蜜语记录总结>/)?.[1] || rawText;
+        const nextText = this._sanitizeHoneySecret(tagged, 900);
+        if (!nextText) throw new Error('AI 未返回有效总结');
+
+        const nextSummary = {
+            text: nextText,
+            coveredTurnHashes: [...new Set([...summary.coveredTurnHashes, ...selectedTurns.map(turn => turn.hash)])],
+            updatedAt: Date.now()
+        };
+        history._summary = nextSummary;
+        const key = this._hostHistoryStorageKey(safeHostName);
+        this._setStored(key, JSON.stringify(history));
+        this._scheduleFlushChatPersistence();
+        return { changed: true, summary: nextSummary, added: selectedTurns.length, remaining: Math.max(0, turns.length - selectedTurns.length) };
+    }
+
     saveHostHistory(hostName, dateStr, sceneData) {
         const key = this._hostHistoryStorageKey(hostName);
         if (!key || !sceneData || typeof sceneData !== 'object') return;
