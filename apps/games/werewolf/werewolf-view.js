@@ -24,10 +24,12 @@ export class WerewolfView {
         const phaseLabel = state.phase === 'night' ? '黑夜' : state.phase === 'setup' ? '匹配' : state.phase === 'vote' ? '投票' : state.phase === 'last_words' ? '遗言' : state.phase === 'ended' ? '结束' : '白天';
         const themeClass = state.phase === 'night' ? 'games-werewolf-night-theme' : 'games-werewolf-day-theme';
         const phaseIcon = state.phase === 'night' ? 'fa-moon' : 'fa-sun';
+        const forceChatExpanded = !!(this.app.werewolfData.canUserSpeak?.() || this.app.werewolfData.canUserLastWords?.());
+        const chatExpanded = this._chatExpanded || forceChatExpanded;
         const currentPlayer = players.find(player => Number(player.seat) === Number(state.currentSpeaker));
         const nightInfo = this.app.werewolfData.getNightStepInfo?.() || {};
         const html = `
-            <div class="games-app games-werewolf-app ${themeClass} ${this._chatExpanded ? 'is-chat-expanded' : ''}">
+            <div class="games-app games-werewolf-app ${themeClass} ${chatExpanded ? 'is-chat-expanded' : ''}">
                 <div class="games-werewolf-backdrop" aria-hidden="true"></div>
 
                 <div class="games-werewolf-topbar">
@@ -64,10 +66,10 @@ export class WerewolfView {
                         <span>系统公告：</span><strong>${this._escape(state.notice || '点击开始游戏。')}</strong>
                     </div>
 
-                    <div class="games-werewolf-chat ${this._chatExpanded ? 'is-expanded' : ''}">
-                        <button class="games-werewolf-chat-toggle" id="games-werewolf-chat-toggle" type="button" aria-expanded="${this._chatExpanded ? 'true' : 'false'}">
+                    <div class="games-werewolf-chat ${chatExpanded ? 'is-expanded' : ''}">
+                        <button class="games-werewolf-chat-toggle" id="games-werewolf-chat-toggle" type="button" aria-expanded="${chatExpanded ? 'true' : 'false'}">
                             <span>发言区</span>
-                            <i class="fa-solid fa-chevron-${this._chatExpanded ? 'down' : 'up'}"></i>
+                            <i class="fa-solid fa-chevron-${chatExpanded ? 'down' : 'up'}"></i>
                         </button>
                         <div class="games-werewolf-chat-scroll">
                             ${(state.chat || []).length
@@ -396,7 +398,7 @@ export class WerewolfView {
             女巫: 'Witch.png',
             狼人: 'Werewolf.png',
             村民: 'Villager.png',
-            预言家: 'Villager.png'
+            预言家: 'Seer.png'
         };
         const file = map[String(role || '').trim()];
         return file ? new URL(`./assets/${file}`, import.meta.url).href : '';
@@ -852,7 +854,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.45', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.46', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {

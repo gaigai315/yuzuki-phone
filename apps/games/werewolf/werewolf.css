@@ -278,10 +278,7 @@
 }
 
 .games-werewolf-player.is-empty .games-werewolf-avatar {
-    background:
-        radial-gradient(circle at 50% 24%, rgba(141, 203, 255, 0.18), transparent 24%),
-        linear-gradient(180deg, rgba(244, 250, 255, 0.86), rgba(218, 232, 240, 0.8)),
-        linear-gradient(145deg, rgba(9, 24, 35, 0.92), rgba(2, 7, 13, 0.88));
+    background: transparent;
 }
 
 .games-werewolf-player.is-user .games-werewolf-avatar {
