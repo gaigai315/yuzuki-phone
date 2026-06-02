@@ -854,7 +854,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.42', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.43', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {
