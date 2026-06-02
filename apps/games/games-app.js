@@ -17,6 +17,7 @@ import { buildGameSillyTavernContextMessages } from './common/games-ai-context.j
 const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
 const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.48', import.meta.url).href;
 const WEREWOLF_API_COOLDOWN_MS = 5000;
+const WEREWOLF_LAST_WORDS_TIMEOUT_MS = 180000;
 const CATBOX_PRELOAD_ASSETS = [
     new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
     new URL('./catbox/assets/wxxw2.png', import.meta.url).href,
@@ -480,27 +481,36 @@ export class GamesApp extends PokerApp {
     }
 
     async driveWerewolfLastWords() {
+        if (this._werewolfLastWordsDriving) return;
         const state = this.werewolfData.getState();
         if (!state || state.gameOver || state.phase !== 'last_words') return;
+        this._werewolfLastWordsDriving = true;
         const player = this.werewolfData.getEliminatedPlayer();
-        if (!player) {
-            this.werewolfData.startNextNight();
-            this.werewolfView.render();
-            await this.driveWerewolfNight();
-            return;
-        }
-        if (player.isUser) {
-            this.werewolfView.render();
-            return;
-        }
         try {
+            if (!player) {
+                this.werewolfData.startNextNight();
+                this.werewolfView.render();
+                await this.driveWerewolfNight();
+                return;
+            }
+            if (player.isUser) {
+                this.werewolfView.render();
+                return;
+            }
+            this.werewolfData.setActiveSpeaker(player.seat, true);
+            this.werewolfView.render();
             const result = await this._callWerewolfLastWordsAi(player);
             if (result?.success === false) throw new Error(result.error || 'AI 请求失败');
             const words = this._parseWerewolfLastWords(result?.summary || result?.content || result?.text || '');
             this.werewolfData.addLastWords(player.seat, words || '我没什么好说的，后面的人自己盘。');
         } catch (error) {
             console.warn('[Werewolf] 遗言 AI 失败:', error);
-            this.werewolfData.addLastWords(player.seat, '我没什么好说的，后面的人自己盘。');
+            const message = this._formatError?.(error, '遗言失败') || error?.message || '遗言失败';
+            this.werewolfData.applySpeechError(`${player?.seat || '?'}号遗言中断，点击续接遗言可继续。${message}`);
+            this.phoneShell?.showNotification?.('狼人杀遗言失败', `${player?.seat || '?'}号：${message}`, '❌');
+            return;
+        } finally {
+            this._werewolfLastWordsDriving = false;
         }
         if (this.werewolfData.getState()?.gameOver) {
             this.werewolfView.render();
@@ -856,6 +866,10 @@ export class GamesApp extends PokerApp {
             await this.driveWerewolfNight();
             return;
         }
+        if (phase === 'last_words') {
+            await this.driveWerewolfLastWords();
+            return;
+        }
         await this.driveWerewolfDaySpeeches();
     }
 
@@ -978,7 +992,21 @@ export class GamesApp extends PokerApp {
             }
         ];
         this._lastWerewolfApiRequestAt = Date.now();
-        return apiManager.callAI(messages, { appId: 'games', temperature: 0.86, max_tokens: 420 });
+        return this._withWerewolfTimeout(
+            apiManager.callAI(messages, { appId: 'games', temperature: 0.86, max_tokens: 420 }),
+            WEREWOLF_LAST_WORDS_TIMEOUT_MS,
+            '狼人杀遗言请求超时，请点击续接遗言重试'
+        );
+    }
+
+    _withWerewolfTimeout(promise, timeoutMs, message) {
+        let timer = null;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(message || '狼人杀请求超时，请重试')), timeoutMs);
+        });
+        return Promise.race([promise, timeout]).finally(() => {
+            if (timer) clearTimeout(timer);
+        });
     }
 
     _parseWerewolfVoteDecision(text = '') {

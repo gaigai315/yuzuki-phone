@@ -661,6 +661,14 @@ export class WerewolfData {
                 alive: player.alive !== false
             };
         });
+        if (next.phase === 'last_words' && next.speaking && !next.lastWordsDone) {
+            const eliminated = next.players.find(player => Number(player.seat) === Number(next.eliminatedSeat || 0));
+            if (eliminated && !eliminated.isUser) {
+                next.speaking = false;
+                next.players = next.players.map(player => ({ ...player, active: false }));
+                next.notice = `${eliminated.seat}号遗言中断，点击续接遗言可继续。`;
+            }
+        }
         return next;
     }
 

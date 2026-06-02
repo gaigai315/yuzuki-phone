@@ -610,14 +610,17 @@ export class WerewolfView {
             `;
         }
         if (state.phase === 'last_words') {
+            const canUserLastWords = this.app.werewolfData.canUserLastWords?.();
+            const isWaitingLastWords = !!state.speaking;
+            const canContinueLastWords = !canUserLastWords && !isWaitingLastWords && !state.lastWordsDone;
             return `
                 <button class="games-werewolf-action" type="button" disabled>
                     <i class="fa-solid fa-comment-dots"></i>
                     <span>遗言</span>
                 </button>
-                <button class="games-werewolf-action games-werewolf-action-primary is-waiting" type="button" disabled>
-                    <i class="fa-solid fa-spinner fa-spin"></i>
-                    <span>等待</span>
+                <button class="games-werewolf-action games-werewolf-action-primary ${isWaitingLastWords ? 'is-waiting' : ''}" ${canContinueLastWords ? 'id="games-werewolf-continue-speech"' : ''} type="button" ${canContinueLastWords ? '' : 'disabled'}>
+                    <i class="fa-solid ${isWaitingLastWords ? 'fa-spinner fa-spin' : canContinueLastWords ? 'fa-forward-step' : 'fa-pen'}"></i>
+                    <span>${isWaitingLastWords ? '等待' : canContinueLastWords ? '续接遗言' : '请发言'}</span>
                 </button>
             `;
         }
