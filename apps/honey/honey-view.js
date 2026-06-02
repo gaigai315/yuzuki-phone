@@ -2406,7 +2406,7 @@ export class HoneyView {
                         <span class="honey-mine-request-avatar${item.avatarUrl ? ' is-photo' : ''}"${item.avatarUrl ? ` style="${this._buildAvatarInlineStyle(item.avatarUrl)}"` : ''}></span>
                         <span class="honey-mine-request-meta">
                             <span class="honey-mine-request-name">${this._escapeHtml(item.name)}</span>
-                            <span class="honey-mine-request-source">${this._escapeHtml(item.source || '直播间申请')}</span>
+                            <span class="honey-mine-request-source">${this._escapeHtml(item.requestType === 'host' ? '主播申请' : (item.source || '直播间申请'))}</span>
                         </span>
                         <span class="honey-mine-request-inline-actions">
                             <button class="honey-follow-action-btn honey-follow-action-btn-compact" data-action="accept-honey-friend" data-name="${this._escapeHtml(item.name)}">同意</button>
@@ -2424,7 +2424,7 @@ export class HoneyView {
                     <span class="honey-follow-host-avatar${item.avatarUrl ? ' is-photo' : ''}"${item.avatarUrl ? ` style="${this._buildAvatarInlineStyle(item.avatarUrl)}"` : ''}></span>
                     <span class="honey-mine-friend-meta">
                         <span class="honey-mine-friend-head">
-                            <span class="honey-follow-host-name">${this._escapeHtml(item.name)} <span class="honey-mine-friend-badge"><i class="fa-solid fa-heart"></i>蜜语</span></span>
+                            <span class="honey-follow-host-name">${this._escapeHtml(item.name)} <span class="honey-mine-friend-badge"><i class="fa-solid fa-heart"></i>${this._escapeHtml(item.requestType === 'host' ? '主播' : '蜜语')}</span></span>
                             <span class="honey-mine-friend-actions">
                                 <button class="honey-follow-action-btn honey-follow-action-btn-compact" data-action="open-honey-friend-chat" data-name="${this._escapeHtml(item.name)}">聊天</button>
                                 <button class="honey-follow-action-btn honey-follow-action-btn-compact is-danger" data-action="remove-honey-friend" data-name="${this._escapeHtml(item.name)}">删除</button>
@@ -3692,7 +3692,7 @@ export class HoneyView {
             if (action === 'accept-honey-friend') {
                 const accepted = this.app?.honeyData?.acceptHoneyFriendRequest?.(name);
                 if (accepted) {
-                    this.app?.honeyData?.ensureHoneyFriendWechatChat?.(accepted);
+                    this.app?.honeyData?.ensureHoneyAcceptedRequestWechatChat?.(accepted);
                     this.app.phoneShell.showNotification('已通过', `${accepted.name} 已加入好友列表并同步到微信`, '✅');
                 }
                 this.render();
@@ -3700,7 +3700,7 @@ export class HoneyView {
             }
 
             if (action === 'open-honey-friend-chat') {
-                const linked = this.app?.honeyData?.ensureHoneyFriendWechatChat?.(name);
+                const linked = this.app?.honeyData?.ensureHoneyAcceptedRequestWechatChat?.(name);
                 if (linked?.chat?.id) {
                     this._openWechatChatFromHoney(linked.chat.id);
                 } else {

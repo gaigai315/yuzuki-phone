@@ -1262,6 +1262,11 @@ export class HoneyData {
             message: this._sanitizeInlineText(item.message || item.text || item.reason || '', 80),
             source: this._sanitizeInlineText(item.source || fallbackSource || '直播间', 24) || '直播间',
             sourceApp: this._sanitizeInlineText(item.sourceApp || item.app || 'honey', 16) || 'honey',
+            sourceLabel: this._sanitizeInlineText(item.sourceLabel || item.label || '', 24),
+            requestType: /host|broadcaster|anchor|streamer|主播|其他直播间/i.test(String(item.requestType || item.sourceType || item.type || item.sourceLabel || item.source || fallbackSource || ''))
+                ? 'host'
+                : 'viewer',
+            hostType: this._sanitizeInlineText(item.hostType || item.figure || item.category || item.role || '', 24),
             acceptedAtPhoneTime: this._sanitizeInlineText(
                 item.acceptedAtPhoneTime
                 || item.acceptTime
@@ -1549,6 +1554,9 @@ export class HoneyData {
                         message: item.message || current[currentIndex].message || '',
                         source: item.source || current[currentIndex].source || '直播间',
                         sourceApp: item.sourceApp || current[currentIndex].sourceApp || 'honey',
+                        sourceLabel: item.sourceLabel || current[currentIndex].sourceLabel || '',
+                        requestType: item.requestType || current[currentIndex].requestType || 'viewer',
+                        hostType: item.hostType || current[currentIndex].hostType || '',
                         hiddenBackground: item.hiddenBackground || current[currentIndex].hiddenBackground || ''
                     };
                 }
@@ -1625,6 +1633,9 @@ export class HoneyData {
                 message: request.message || friends[existingIndex].message || '',
                 source: request.source || friends[existingIndex].source || '好友',
                 sourceApp: request.sourceApp || friends[existingIndex].sourceApp || 'honey',
+                sourceLabel: request.sourceLabel || friends[existingIndex].sourceLabel || '',
+                requestType: request.requestType || friends[existingIndex].requestType || 'viewer',
+                hostType: request.hostType || friends[existingIndex].hostType || '',
                 acceptedAtPhoneTime,
                 hiddenBackground: acceptedHiddenBackground
             };
@@ -1636,6 +1647,9 @@ export class HoneyData {
                 message: request.message,
                 source: request.source || '好友',
                 sourceApp: request.sourceApp || 'honey',
+                sourceLabel: request.sourceLabel || '',
+                requestType: request.requestType || 'viewer',
+                hostType: request.hostType || '',
                 acceptedAtPhoneTime,
                 hiddenBackground: acceptedHiddenBackground
             });
@@ -1647,6 +1661,16 @@ export class HoneyData {
             acceptedAtPhoneTime,
             hiddenBackground: acceptedHiddenBackground
         };
+    }
+
+    _isHoneyHostFriendLike(item = {}) {
+        const requestType = String(item?.requestType || '').trim().toLowerCase();
+        const sourceLabel = String(item?.sourceLabel || '').trim();
+        const source = String(item?.source || '').trim();
+        if (requestType === 'host') return true;
+        if (/主播|其他直播间|微信邀约/.test(`${sourceLabel} ${source}`)) return true;
+        const nameKey = this._normalizeHostNameKey(item?.name || '');
+        return !!nameKey && this.getFollowedHosts().some(host => this._normalizeHostNameKey(host?.name || '') === nameKey);
     }
 
     rejectHoneyFriendRequest(name) {
@@ -1818,6 +1842,34 @@ export class HoneyData {
         });
 
         return { friend, contact, chat, wechatData };
+    }
+
+    ensureHoneyAcceptedRequestWechatChat(nameOrFriend) {
+        const accepted = (typeof nameOrFriend === 'object' && nameOrFriend)
+            ? this._normalizeHoneySocialPerson(nameOrFriend, '好友')
+            : this.getHoneyFriends().find(item => this._normalizeHostNameKey(item?.name || '') === this._normalizeHostNameKey(nameOrFriend));
+        if (!accepted) return null;
+
+        if (this._isHoneyHostFriendLike(accepted)) {
+            const host = this.getFollowedHostByName(accepted.name) || {
+                name: accepted.name,
+                avatarUrl: accepted.avatarUrl || '',
+                figure: accepted.hostType || '主播',
+                intro: accepted.hiddenBackground || accepted.message || '',
+                liveTitle: accepted.source || `${accepted.name} 的直播间`,
+                sourceApp: 'honey',
+                sourceLabel: '主播'
+            };
+            return this.ensureFollowedHostWechatChat(host, {
+                avatarUrl: accepted.avatarUrl || host.avatarUrl || '',
+                message: accepted.message || '',
+                decisionMessage: accepted.message || '',
+                intro: host.intro || accepted.hiddenBackground || '',
+                title: host.liveTitle || accepted.source || `${accepted.name} 的直播间`
+            });
+        }
+
+        return this.ensureHoneyFriendWechatChat(accepted);
     }
 
     _buildFollowedHostWechatBackground(host = {}, options = {}) {
@@ -3743,10 +3795,24 @@ export class HoneyData {
             { start: /(?:^|\n)\s*好友申请\s*[：:]\s*/i, end: null }
         ]);
         if (friendRequestSection) {
+            const currentHostKey = this._normalizeHostNameKey(data.host || '');
             data.friendRequests = String(friendRequestSection || '')
                 .split('\n')
                 .map(line => this._parseHoneyFriendRequestLine(line, data.host || '直播间'))
                 .filter(Boolean)
+                .map(item => {
+                    const requestNameKey = this._normalizeHostNameKey(item?.name || '');
+                    const isCurrentHost = !!currentHostKey && requestNameKey === currentHostKey;
+                    const isHostSource = /主播|其他直播间/.test(String(item?.source || item?.sourceLabel || ''));
+                    if (!isCurrentHost && !isHostSource) return item;
+                    return {
+                        ...item,
+                        requestType: 'host',
+                        sourceLabel: '主播',
+                        hostType: item.hostType || '主播',
+                        source: item.source || data.host || '主播'
+                    };
+                })
                 .slice(0, 4);
         }
 
