@@ -556,7 +556,7 @@ export class SettingsApp {
     _getTtsProviderDefaults(provider) {
         const defaults = {
             minimax_cn: { url: 'https://api.minimaxi.com/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
-            minimax_intl: { url: 'https://api.minimax.chat/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
+            minimax_intl: { url: 'https://api.minimax.io/v1/t2a_v2', model: 'speech-2.8-hd', voice: 'Chinese (Mandarin)_Warm_Girl' },
             openai: { url: 'https://api.openai.com/v1/audio/speech', model: 'tts-1', voice: 'alloy' },
             nimo: { url: 'https://api.xiaomimimo.com/v1', model: 'mimo-v2.5-tts', voice: 'mimo_default' },
             volcengine: { url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', model: 'seed-tts-2.0', voice: 'BV700_streaming', resourceId: 'seed-tts-2.0' }
@@ -590,7 +590,7 @@ export class SettingsApp {
 
         const legacyUrl = String(this.storage.get('phone-tts-url') || '').trim().toLowerCase();
         if (legacyUrl.includes('minimaxi.com')) return 'minimax_cn';
-        if (legacyUrl.includes('minimax.chat')) return 'minimax_intl';
+        if (legacyUrl.includes('minimax.chat') || legacyUrl.includes('minimax.io')) return 'minimax_intl';
         if (legacyUrl.includes('xiaomimimo.com') || /\/chat\/completions\b/.test(legacyUrl)) return 'nimo';
         if (legacyUrl.includes('api.openai.com') || /\/audio\/speech\b/.test(legacyUrl)) return 'openai';
         return 'minimax_cn';
@@ -1991,7 +1991,7 @@ export class SettingsApp {
                                             <select id="phone-tts-url-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
                                                 <option value="">-- 快速选择 --</option>
                                                 <option value="https://api.minimaxi.com/v1/t2a_v2">MiniMax 国内版</option>
-                                                <option value="https://api.minimax.chat/v1/t2a_v2">MiniMax 国际版</option>
+                                                <option value="https://api.minimax.io/v1/t2a_v2">MiniMax 国际版</option>
                                                 <option value="https://api.openai.com/v1/audio/speech">OpenAI 官方</option>
                                                 <option value="https://api.xiaomimimo.com/v1">MiMo 官方</option>
                                                 <option value="https://openspeech.bytedance.com/api/v3/tts/unidirectional">火山引擎/豆包</option>
@@ -7260,11 +7260,18 @@ export class SettingsApp {
         const inferTtsProviderFromUrl = (urlValue, fallback = '') => {
             const url = String(urlValue || '').trim().toLowerCase();
             if (url.includes('minimaxi.com')) return 'minimax_cn';
-            if (url.includes('minimax.chat')) return 'minimax_intl';
+            if (url.includes('minimax.chat') || url.includes('minimax.io')) return 'minimax_intl';
             if (url.includes('xiaomimimo.com') || /\/chat\/completions\b/.test(url)) return 'nimo';
             if (url.includes('openspeech.bytedance.com')) return 'volcengine';
             if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
             return String(fallback || '').trim() || 'minimax_cn';
+        };
+        const normalizeTtsProviderUrl = (provider, urlValue) => {
+            const rawUrl = String(urlValue || '').trim();
+            if (provider === 'minimax_intl' && /api\.minimax\.chat/i.test(rawUrl)) {
+                return this._getTtsProviderDefaults('minimax_intl').url;
+            }
+            return rawUrl;
         };
         const getCurrentMainProviderFromForm = () => inferTtsProviderFromUrl(ttsUrl?.value || '', getSelectedMainTtsProvider());
         const refreshTtsPresetOptions = () => {
@@ -7421,10 +7428,10 @@ export class SettingsApp {
             await this.storage.set('phone-tts-provider', val);
             // 联动填充默认 URL 和模型
             const d = this._getTtsProviderDefaults(val);
-            const nextUrl = this._getTtsProviderValue(val, 'url') || d.url || '';
+            const nextUrl = normalizeTtsProviderUrl(val, this._getTtsProviderValue(val, 'url') || d.url || '');
             const nextKey = this._getTtsProviderValue(val, 'key') || '';
             const nextModel = this._getTtsProviderValue(val, 'model') || d.model || '';
-            const nextVoice = this._getTtsProviderValue(val, 'voice') || '';
+            const nextVoice = this._getTtsProviderValue(val, 'voice') || d.voice || '';
             const nextAppId = this._getTtsProviderValue(val, 'app-id') || '';
             const nextResourceId = this._getTtsProviderValue(val, 'resource-id') || d.resourceId || 'seed-tts-2.0';
             if (ttsUrl) { ttsUrl.value = nextUrl; await this.storage.set('phone-tts-url', nextUrl); }
@@ -7453,9 +7460,10 @@ export class SettingsApp {
 
         // 接口地址预设下拉 → 填入输入框
         if (ttsUrlPreset) ttsUrlPreset.addEventListener('change', async (e) => {
-            const val = e.target.value;
+            const rawVal = e.target.value;
+            const inferredProvider = inferTtsProviderFromUrl(rawVal, getSelectedMainTtsProvider());
+            const val = normalizeTtsProviderUrl(inferredProvider, rawVal);
             if (!val) return;
-            const inferredProvider = inferTtsProviderFromUrl(val, getSelectedMainTtsProvider());
             await this.storage.set('phone-tts-main-provider', inferredProvider);
             await this.storage.set('phone-tts-provider', inferredProvider);
             if (ttsProvider) ttsProvider.value = inferredProvider;
@@ -7478,8 +7486,10 @@ export class SettingsApp {
         });
 
         if (ttsUrl) ttsUrl.addEventListener('change', async (e) => {
-            const nextUrl = String(e.target.value || '').trim();
-            const inferredProvider = inferTtsProviderFromUrl(nextUrl, getSelectedMainTtsProvider());
+            const rawNextUrl = String(e.target.value || '').trim();
+            const inferredProvider = inferTtsProviderFromUrl(rawNextUrl, getSelectedMainTtsProvider());
+            const nextUrl = normalizeTtsProviderUrl(inferredProvider, rawNextUrl);
+            if (ttsUrl) ttsUrl.value = nextUrl;
             const defaults = this._getTtsProviderDefaults(inferredProvider);
             const nextModel = this._getTtsProviderValue(inferredProvider, 'model') || defaults.model || '';
             const nextVoice = this._getTtsProviderValue(inferredProvider, 'voice') || defaults.voice || '';

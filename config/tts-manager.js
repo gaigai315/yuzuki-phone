@@ -25,9 +25,9 @@ export class TtsManager {
                 voice: 'female-shaonv'
             },
             minimax_intl: {
-                url: 'https://api.minimax.chat/v1/t2a_v2',
-                model: 'speech-02-hd',
-                voice: 'female-shaonv'
+                url: 'https://api.minimax.io/v1/t2a_v2',
+                model: 'speech-2.8-hd',
+                voice: 'Chinese (Mandarin)_Warm_Girl'
             },
             openai: {
                 url: 'https://api.openai.com/v1/audio/speech',
@@ -65,7 +65,7 @@ export class TtsManager {
     _inferProviderFromUrl(apiUrl = '', fallback = 'minimax_cn') {
         const url = String(apiUrl || '').trim().toLowerCase();
         if (url.includes('minimaxi.com')) return 'minimax_cn';
-        if (url.includes('minimax.chat')) return 'minimax_intl';
+        if (url.includes('minimax.chat') || url.includes('minimax.io')) return 'minimax_intl';
         if (url.includes('xiaomimimo.com') || /\/chat\/completions\b/.test(url)) return 'nimo';
         if (url.includes('openspeech.bytedance.com')) return 'volcengine';
         if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
@@ -84,6 +84,9 @@ export class TtsManager {
         const scopedUrl = this._getStoredProviderValue(provider, 'url');
         const legacyUrl = this._getStoredProviderValue(provider, 'url', 'phone-tts-url');
         let apiUrl = scopedUrl || (provider === 'volcengine' ? defaults.url : legacyUrl) || defaults.url || '';
+        if (provider === 'minimax_intl' && /api\.minimax\.chat/i.test(apiUrl)) {
+            apiUrl = defaults.url;
+        }
         if (!apiUrl && rawLegacyUrl) {
             apiUrl = rawLegacyUrl;
         }
@@ -621,18 +624,31 @@ export class TtsManager {
                     'Authorization': `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
-                    model: model || 'speech-02-hd',
+                    model: model || (provider === 'minimax_intl' ? 'speech-2.8-hd' : 'speech-02-hd'),
                     text: inputText,
                     stream: false,
+                    language_boost: 'auto',
+                    output_format: 'hex',
                     voice_setting: { voice_id: voice || 'female-shaonv', speed: 1.0, vol: 1.0, pitch: 0 },
-                    audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3' }
+                    audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
                 })
             });
-            if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-
-            const resData = await response.json();
+            const responseText = await response.text().catch(() => '');
+            let resData = null;
+            try {
+                resData = JSON.parse(responseText || '{}');
+            } catch (_e) {
+                resData = null;
+            }
+            const minimaxError = resData?.base_resp?.status_msg
+                || resData?.error?.message
+                || resData?.message
+                || responseText;
+            if (!response.ok) {
+                throw new Error(`MiniMax HTTP ${response.status}${minimaxError ? `：${String(minimaxError).slice(0, 300)}` : ''}`);
+            }
             if (resData?.base_resp?.status_code !== 0) {
-                throw new Error(resData?.base_resp?.status_msg || 'MiniMax请求失败');
+                throw new Error(minimaxError || 'MiniMax请求失败');
             }
             const hexAudio = String(resData?.data?.audio || '').trim();
             if (!hexAudio) throw new Error('TTS 未返回音频数据');

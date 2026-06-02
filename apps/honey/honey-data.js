@@ -1884,9 +1884,8 @@ export class HoneyData {
             `来源直播间：${title}`,
             `身份：${figure}`
         ];
-        if (intro) parts.push(`主播简介：${intro}`);
+        if (intro) parts.push(`请求加微信的申请留言：${intro}`);
         if (favorability !== null) parts.push(`当前好感度：${favorability}%`);
-        if (decisionMessage) parts.push(`通过好友申请时的回复：${decisionMessage}`);
         return this._sanitizeHoneySecret(parts.join(' '), 260);
     }
 
