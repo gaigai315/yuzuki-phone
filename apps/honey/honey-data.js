@@ -2711,6 +2711,18 @@ export class HoneyData {
         };
     }
 
+    clearHostHistorySummary(hostName) {
+        const safeHostName = this._sanitizeInlineText(hostName || '', 40);
+        const key = this._hostHistoryStorageKey(safeHostName);
+        if (!key) return false;
+        const history = this.getHostHistory(safeHostName);
+        if (!history?._summary) return false;
+        delete history._summary;
+        this._setStored(key, JSON.stringify(history));
+        this._scheduleFlushChatPersistence();
+        return true;
+    }
+
     _collectUnsummarizedHostHistoryTurns(hostName) {
         const history = this.getHostHistory(hostName);
         const summary = this.getHostHistorySummary(hostName);

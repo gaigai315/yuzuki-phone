@@ -2363,8 +2363,11 @@ export class HoneyView {
                 <!-- 内容滚动区（利用 css 中已有的 honey-content flex 属性） -->
                 <div class="honey-content" style="background: linear-gradient(160deg, rgba(54, 26, 68, 0.98), rgba(28, 15, 36, 0.98)); padding: 12px; overflow-y: auto; -webkit-overflow-scrolling: touch;">
                     ${summaryText ? `
-                        <div style="margin: 8px 0 14px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.12); color: #fff;">
-                            <div style="font-size: 12px; font-weight: 800; margin-bottom: 8px;">蜜语记录总结</div>
+                        <div style="position: relative; margin: 8px 0 14px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.12); color: #fff;">
+                            <button id="honey-history-summary-delete" type="button" aria-label="删除总结" title="删除总结" style="position: absolute; right: 8px; top: 8px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.92); display: flex; align-items: center; justify-content: center;">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                            <div style="font-size: 12px; font-weight: 800; margin: 0 30px 8px 0;">蜜语记录总结</div>
                             <div style="font-size: 11px; line-height: 1.55; white-space: pre-wrap;">${this._escapeHtml(summaryText)}</div>
                         </div>
                     ` : ''}
@@ -2407,6 +2410,16 @@ export class HoneyView {
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>';
                 }
+            }
+        });
+
+        currentView.querySelector('#honey-history-summary-delete')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!confirm('确定删除这条蜜语记录总结吗？\n\n原始互动记录会保留，之后可以重新总结。')) return;
+            const ok = this.app?.honeyData?.clearHostHistorySummary?.(hostName);
+            if (ok) {
+                this.app.phoneShell.showNotification('蜜语', '已删除记录总结，可重新总结', '🗑️');
+                this.renderHistoryPage();
             }
         });
 
