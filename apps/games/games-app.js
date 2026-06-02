@@ -586,6 +586,7 @@ export class GamesApp extends PokerApp {
         const user = (state.players || []).find(player => player.isUser);
         const livePlayers = (state.players || []).filter(player => !player.empty && player.alive !== false);
         const publicLog = this._formatWerewolfPublicChatLog(state);
+        const voteHistory = this._formatWerewolfVoteHistory(state);
         const wolfChat = (Array.isArray(state.wolfChat) ? state.wolfChat : []).slice(-12).map(item => {
             const speaker = (state.players || []).find(player => Number(player.seat) === Number(item.seat));
             return `${item.seat || '狼队'}号${speaker?.name ? ` ${speaker.name}` : ''}：${item.text}`;
@@ -618,6 +619,8 @@ export class GamesApp extends PokerApp {
                     targetPool || '无',
                     '公开记录：',
                     publicLog.map(line => `- ${line}`).join('\n') || '- 暂无',
+                    '历史投票结果：',
+                    voteHistory.map(line => `- ${line}`).join('\n') || '- 暂无',
                     '狼队私聊记录：',
                     wolfChat.map(line => `- ${line}`).join('\n') || '- 暂无',
                     '<狼人杀狼队建议>',
@@ -636,6 +639,7 @@ export class GamesApp extends PokerApp {
         const actor = actorList[0];
         const livePlayers = (state?.players || []).filter(player => !player.empty && player.alive !== false);
         const publicLog = this._formatWerewolfPublicChatLog(state);
+        const voteHistory = this._formatWerewolfVoteHistory(state);
         const roleLines = livePlayers.map(player => {
             const visibleRole = step === 'werewolf' && player.role === '狼人'
                 ? '狼人同伴'
@@ -702,6 +706,8 @@ export class GamesApp extends PokerApp {
                 seerChecks.length ? `你的历史查验：${seerChecks.join('；')}。` : '',
                 '公开记录：',
                 publicLog.length ? publicLog.map(line => `- ${line}`).join('\n') : '- 暂无',
+                '历史投票结果：',
+                voteHistory.length ? voteHistory.map(line => `- ${line}`).join('\n') : '- 暂无',
                 '返回格式：',
                 formatRule
             ].filter(Boolean).join('\n')
@@ -920,6 +926,7 @@ export class GamesApp extends PokerApp {
         const userSeat = Number(state?.players?.find?.(player => player.isUser)?.seat || 0);
         const aiVoters = livePlayers.filter(player => Number(player.seat) !== userSeat);
         const publicLog = this._formatWerewolfPublicChatLog(state);
+        const voteHistory = this._formatWerewolfVoteHistory(state);
         const messages = [
             {
                 role: 'system',
@@ -947,6 +954,8 @@ export class GamesApp extends PokerApp {
                     aiVoters.map(player => `${player.seat}号 ${player.name}`).join('\n') || '无',
                     '公开发言记录：',
                     publicLog.map(line => `- ${line}`).join('\n') || '- 暂无',
+                    '历史投票结果：',
+                    voteHistory.map(line => `- ${line}`).join('\n') || '- 暂无',
                     '请只模拟“需要你模拟投票的玩家”的投票，不要输出用户票；每个需要模拟的存活玩家必须写一票，可以投存活玩家，也可以弃票写 0。格式：',
                     '<狼人杀投票>',
                     '票型：2->3，3->0，4->3',
@@ -966,6 +975,7 @@ export class GamesApp extends PokerApp {
         await this._waitWerewolfApiCooldown();
         const state = this.werewolfData.getState();
         const publicLog = this._formatWerewolfPublicChatLog(state);
+        const voteHistory = this._formatWerewolfVoteHistory(state);
         const messages = [
             {
                 role: 'system',
@@ -990,6 +1000,8 @@ export class GamesApp extends PokerApp {
                         : '',
                     '公开记录：',
                     publicLog.map(line => `- ${line}`).join('\n') || '- 暂无',
+                    '历史投票结果：',
+                    voteHistory.map(line => `- ${line}`).join('\n') || '- 暂无',
                     '<狼人杀遗言>',
                     '遗言内容',
                     '</狼人杀遗言>'
@@ -1079,6 +1091,22 @@ export class GamesApp extends PokerApp {
         });
     }
 
+    _formatWerewolfVoteHistory(stateOrContext = null) {
+        const source = stateOrContext || this.werewolfData?.getState?.() || {};
+        const rawList = Array.isArray(source.voteHistory)
+            ? source.voteHistory
+            : (Array.isArray(source.replayLog)
+                ? source.replayLog.filter(item => String(item?.type || '') === 'vote' && String(item?.visibility || 'public') === 'public')
+                : []);
+        return rawList
+            .map(item => {
+                const day = Number(item?.day || 0) || 1;
+                const text = String(item?.text || '').trim();
+                return text ? `第${day}天 ${text}` : '';
+            })
+            .filter(Boolean);
+    }
+
     _fallbackWerewolfVoteTarget(userVote = null) {
         const state = this.werewolfData.getState();
         const live = (state?.players || []).filter(player => !player.empty && player.alive !== false);
@@ -1155,11 +1183,14 @@ export class GamesApp extends PokerApp {
         const logLines = (context.publicLog || []).length
             ? context.publicLog.map(line => `- ${line}`).join('\n')
             : '- 暂无';
+        const voteLines = this._formatWerewolfVoteHistory(context);
         return [
             '【发言简报与系统公告】',
             Number(context.day || 1) === 1 ? '当前是首日白天，系统尚未公布任何夜晚技能结果；禁止凭空声称查杀、金水、银水、刀口或验人结果。' : '',
             '系统公告与已公开发言记录：',
-            logLines
+            logLines,
+            '已公开投票结果：',
+            voteLines.length ? voteLines.map(line => `- ${line}`).join('\n') : '- 暂无'
         ].filter(Boolean).join('\n');
     }
 
@@ -1186,6 +1217,7 @@ export class GamesApp extends PokerApp {
             wolfMates ? `狼人同伴：${wolfMates}。` : '',
             seerChecks.length ? `你的预言家查验结果：${seerChecks.join('；')}。` : '',
             '其他玩家真实身份不得在发言中泄露；除非场上公开信息已经说明，否则不要假装知道。',
+            '可以基于已公开投票结果分析“谁投了谁、谁跟票、谁弃票、谁票型异常”，并据此提出怀疑或辩解。',
             '禁止描写心理活动、动作、表情或旁白，不要使用括号补充任何非发言内容。',
             '请只输出当前玩家的公开发言。格式：',
             '<狼人杀发言>',

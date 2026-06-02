@@ -492,6 +492,7 @@ export class WerewolfData {
             speaker: this._publicPlayer(speaker),
             speakerPrivateRole: speaker.role || '村民',
             players: this.state.players.map(playerItem => this._publicPlayer(playerItem)),
+            voteHistory: this._buildPublicVoteHistory(),
             publicLog: (this.state.chat || []).map(item => {
                 const dayPrefix = Number(item.day || 0) ? `第${Number(item.day)}天 ` : '';
                 if (Number(item.seat || 0) === 0) return `${dayPrefix}系统：${item.text}`;
@@ -504,6 +505,18 @@ export class WerewolfData {
             seerChecks,
             userSeat: this.state.players.find(playerItem => playerItem.isUser)?.seat || 0
         };
+    }
+
+    _buildPublicVoteHistory() {
+        const replayLog = Array.isArray(this.state.replayLog) ? this.state.replayLog : [];
+        return replayLog
+            .filter(item => String(item?.type || '') === 'vote' && String(item?.visibility || 'public') === 'public')
+            .map(item => ({
+                day: Number(item.day || 1),
+                text: String(item.text || '').trim(),
+                at: Number(item.at || 0)
+            }))
+            .filter(item => item.text);
     }
 
     _publicPlayer(player) {
