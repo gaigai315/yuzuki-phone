@@ -23,6 +23,7 @@ export class WerewolfView {
         const players = state.players || [];
         const phaseLabel = state.phase === 'night' ? '黑夜' : state.phase === 'setup' ? '匹配' : state.phase === 'vote' ? '投票' : state.phase === 'last_words' ? '遗言' : state.phase === 'ended' ? '结束' : '白天';
         const themeClass = state.phase === 'night' ? 'games-werewolf-night-theme' : 'games-werewolf-day-theme';
+        const phaseIcon = state.phase === 'night' ? 'fa-moon' : 'fa-sun';
         const currentPlayer = players.find(player => Number(player.seat) === Number(state.currentSpeaker));
         const nightInfo = this.app.werewolfData.getNightStepInfo?.() || {};
         const html = `
@@ -49,7 +50,7 @@ export class WerewolfView {
                         </div>
 
                         <div class="games-werewolf-oracle">
-                            <div class="games-werewolf-moon"><i class="fa-solid fa-moon"></i></div>
+                            <div class="games-werewolf-moon"><i class="fa-solid ${phaseIcon}"></i></div>
                             <div class="games-werewolf-day">第 <strong>${Number(state.day || 1)}</strong> 天</div>
                             <div class="games-werewolf-phase">${this._escape(phaseLabel)}</div>
                             <div class="games-werewolf-divider"></div>
@@ -186,9 +187,6 @@ export class WerewolfView {
             this.render();
         });
         const chatToggle = document.getElementById('games-werewolf-chat-toggle');
-        chatToggle?.addEventListener('pointerup', e => {
-            this._toggleChatPanel(e);
-        });
         chatToggle?.addEventListener('click', e => {
             this._toggleChatPanel(e);
         });
@@ -854,7 +852,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.43', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.45', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {

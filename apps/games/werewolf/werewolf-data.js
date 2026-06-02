@@ -843,8 +843,20 @@ export class WerewolfData {
     }
 
     _formatVoteReplay(target, voteResult) {
+        const getName = (seat) => {
+            const player = this.state.players.find(item => Number(item.seat) === Number(seat));
+            return player?.name ? `${seat}号${player.name}` : `${seat}号`;
+        };
         const votes = Array.isArray(voteResult?.votes) && voteResult.votes.length
-            ? voteResult.votes.map(item => `${item.voterSeat}号->${Number(item.targetSeat || 0) ? `${item.targetSeat}号` : '弃票'}`).join('，')
+            ? voteResult.votes
+                .slice()
+                .sort((a, b) => Number(a.voterSeat) - Number(b.voterSeat))
+                .map(item => {
+                    const voter = getName(item.voterSeat);
+                    const targetSeat = Number(item.targetSeat || 0);
+                    return `${voter}->${targetSeat ? getName(targetSeat) : '弃票'}`;
+                })
+                .join('，')
             : '投票明细未记录';
         const reason = voteResult?.reason ? `，理由：${voteResult.reason}` : '';
         if (!target) return `投票结果：无人出局。${votes}${reason}`;

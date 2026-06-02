@@ -15,7 +15,7 @@ import { WerewolfView } from './werewolf/werewolf-view.js';
 import { buildGameSillyTavernContextMessages } from './common/games-ai-context.js';
 
 const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
-const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.43', import.meta.url).href;
+const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.45', import.meta.url).href;
 const WEREWOLF_API_COOLDOWN_MS = 5000;
 const CATBOX_PRELOAD_ASSETS = [
     new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
@@ -909,7 +909,9 @@ export class GamesApp extends PokerApp {
                 content: [
                     '你是狼人杀投票裁判，负责根据公开发言和玩家公开人物信息模拟 AI 玩家投票。',
                     '用户已经先投票，你不能改写用户这一票，也不要为用户投票。',
-                    '允许弃票，弃票目标写 0。',
+                    '除已死亡玩家外，所有需要你模拟投票的存活 AI 玩家都必须逐个输出一票。',
+                    '允许弃票，但弃票也必须写入票型，格式为“座位号->0”。',
+                    '票型里不得遗漏任何“需要你模拟投票的玩家”。',
                     '只能使用公开信息，不要读取、推断或泄露任何真实身份。',
                     '必须返回标签格式，不要 Markdown，不要解释。'
                 ].join('\n')
@@ -926,7 +928,7 @@ export class GamesApp extends PokerApp {
                     aiVoters.map(player => `${player.seat}号 ${player.name}`).join('\n') || '无',
                     '公开发言记录：',
                     publicLog.map(line => `- ${line}`).join('\n') || '- 暂无',
-                    '请只模拟“需要你模拟投票的玩家”的投票，不要输出用户票；可以投存活玩家，也可以弃票写 0。格式：',
+                    '请只模拟“需要你模拟投票的玩家”的投票，不要输出用户票；每个需要模拟的存活玩家必须写一票，可以投存活玩家，也可以弃票写 0。格式：',
                     '<狼人杀投票>',
                     '票型：2->3，3->0，4->3',
                     '出局：0',
@@ -996,6 +998,7 @@ export class GamesApp extends PokerApp {
     _normalizeWerewolfVoteDecision(decision = {}, userVote = null) {
         const state = this.werewolfData.getState();
         const liveSeats = new Set((state?.players || []).filter(player => !player.empty && player.alive !== false).map(player => Number(player.seat)));
+        const liveSeatList = [...liveSeats].sort((a, b) => a - b);
         const userSeat = Number(userVote?.voterSeat || 0);
         const votes = (Array.isArray(decision.votes) ? decision.votes : [])
             .filter(vote => liveSeats.has(Number(vote.voterSeat)) && (Number(vote.targetSeat) === 0 || liveSeats.has(Number(vote.targetSeat))))
@@ -1004,6 +1007,12 @@ export class GamesApp extends PokerApp {
         if (userVote && liveSeats.has(Number(userVote.voterSeat)) && (Number(userVote.targetSeat) === 0 || liveSeats.has(Number(userVote.targetSeat)))) {
             votes.unshift({ voterSeat: Number(userVote.voterSeat), targetSeat: Number(userVote.targetSeat) });
         }
+        const votedSeats = new Set(votes.map(vote => Number(vote.voterSeat)));
+        liveSeatList.forEach(seat => {
+            if (votedSeats.has(seat)) return;
+            votes.push({ voterSeat: seat, targetSeat: 0 });
+        });
+        votes.sort((a, b) => Number(a.voterSeat) - Number(b.voterSeat));
         const targetSeat = this._resolveWerewolfVoteTarget(votes);
         return {
             targetSeat,
