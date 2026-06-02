@@ -361,6 +361,7 @@ export class WerewolfView {
     _renderPlayerCard(player) {
         const alive = player.alive !== false;
         const isEmptySeat = !!player.empty && !player.isUser;
+        const hasAvatar = !!this.app.resolvePlayerAvatar?.(player);
         const classes = [
             'games-werewolf-player',
             `games-werewolf-seat-${player.seat}`,
@@ -368,6 +369,7 @@ export class WerewolfView {
             player.active ? 'is-active' : '',
             player.isUser ? 'is-user' : '',
             isEmptySeat ? 'is-empty' : '',
+            !isEmptySeat && !hasAvatar ? 'has-no-avatar' : '',
             !alive ? 'is-dead' : ''
         ].filter(Boolean).join(' ');
         return `
@@ -855,7 +857,7 @@ export class WerewolfView {
         const link = document.createElement('link');
         link.id = 'games-werewolf-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./werewolf.css?v=1.0.47', import.meta.url).href;
+        link.href = new URL('./werewolf.css?v=1.0.48', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
         return new Promise(resolve => {

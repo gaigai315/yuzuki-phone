@@ -281,6 +281,10 @@
     background: transparent;
 }
 
+.games-werewolf-player.has-no-avatar .games-werewolf-avatar {
+    background: #05080d;
+}
+
 .games-werewolf-player.is-user .games-werewolf-avatar {
     border-color: transparent;
     box-shadow: none;
