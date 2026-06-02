@@ -925,8 +925,6 @@ export class GamesApp extends PokerApp {
         const livePlayers = (state?.players || []).filter(player => !player.empty && player.alive !== false);
         const userSeat = Number(state?.players?.find?.(player => player.isUser)?.seat || 0);
         const aiVoters = livePlayers.filter(player => Number(player.seat) !== userSeat);
-        const publicLog = this._formatWerewolfPublicChatLog(state);
-        const voteHistory = this._formatWerewolfVoteHistory(state);
         const messages = [
             {
                 role: 'system',
@@ -943,20 +941,27 @@ export class GamesApp extends PokerApp {
                 ].join('\n')
             },
             {
-                role: 'user',
+                role: 'system',
+                name: 'SYSTEM (狼人杀当前场况)',
                 isPhoneMessage: true,
                 content: [
                     `当前第 ${state.day || 1} 天，进入投票。`,
-                    userVote ? `用户投票：${userVote.voterSeat}号 -> ${userVote.targetSeat ? `${userVote.targetSeat}号` : '弃票'}。` : '',
+                    userVote ? `用户已投票：${userVote.voterSeat}号 -> ${userVote.targetSeat ? `${userVote.targetSeat}号` : '弃票'}。` : '用户尚未投票，本次由系统模拟投票结算。',
+                    `用户座位：${userSeat || '?'}号。`,
                     '存活玩家：',
-                    livePlayers.map(player => `${player.seat}号 ${player.name}：${player.personality || '普通玩家'}，公开状态=${player.alive === false ? '死亡' : '存活'}`).join('\n'),
+                    livePlayers.map(player => `${player.seat}号 ${player.name}：${player.personality || '普通玩家'}，公开状态=${player.alive === false ? '死亡' : '存活'}`).join('\n') || '无'
+                ].join('\n')
+            },
+            ...this._buildWerewolfPublicRecordMessages(state),
+            {
+                role: 'user',
+                name: 'USER (投票模拟任务)',
+                isPhoneMessage: true,
+                content: [
                     '需要你模拟投票的玩家：',
                     aiVoters.map(player => `${player.seat}号 ${player.name}`).join('\n') || '无',
-                    '公开发言记录：',
-                    publicLog.map(line => `- ${line}`).join('\n') || '- 暂无',
-                    '历史投票结果：',
-                    voteHistory.map(line => `- ${line}`).join('\n') || '- 暂无',
-                    '请只模拟“需要你模拟投票的玩家”的投票，不要输出用户票；每个需要模拟的存活玩家必须写一票，可以投存活玩家，也可以弃票写 0。格式：',
+                    '请只模拟上面这些存活 AI 玩家投票，不要输出用户票；每个需要模拟的玩家必须写一票，可以投存活玩家，也可以弃票写 0。',
+                    '回复格式：',
                     '<狼人杀投票>',
                     '票型：2->3，3->0，4->3',
                     '出局：0',
@@ -1091,6 +1096,57 @@ export class GamesApp extends PokerApp {
         });
     }
 
+    _buildWerewolfPublicRecordMessages(state = null) {
+        const safeState = state || this.werewolfData?.getState?.() || {};
+        const players = Array.isArray(safeState.players) ? safeState.players : [];
+        const recordsByDay = new Map();
+        const ensureDay = (day) => {
+            const safeDay = Number(day || 0) || 1;
+            if (!recordsByDay.has(safeDay)) recordsByDay.set(safeDay, { speeches: [], votes: [] });
+            return recordsByDay.get(safeDay);
+        };
+
+        (Array.isArray(safeState.chat) ? safeState.chat : []).forEach(item => {
+            const day = Number(item?.day || 0) || 1;
+            const target = ensureDay(day);
+            if (Number(item?.seat || 0) === 0) {
+                target.speeches.push(`系统：${item?.text || ''}`);
+                return;
+            }
+            const player = players.find(playerItem => Number(playerItem.seat) === Number(item.seat));
+            target.speeches.push(`${item.seat}号${player?.name ? ` ${player.name}` : ''}：${item?.text || ''}`);
+        });
+
+        const voteItems = Array.isArray(safeState.voteHistory)
+            ? safeState.voteHistory
+            : (Array.isArray(safeState.replayLog)
+                ? safeState.replayLog.filter(item => String(item?.type || '') === 'vote' && String(item?.visibility || 'public') === 'public')
+                : []);
+        voteItems.forEach(item => {
+            const day = Number(item?.day || 0) || 1;
+            const text = String(item?.text || '').trim();
+            if (text) ensureDay(day).votes.push(text);
+        });
+
+        const currentDay = Number(safeState.day || 1) || 1;
+        for (let day = 1; day <= currentDay; day += 1) ensureDay(day);
+
+        return [...recordsByDay.entries()]
+            .sort((a, b) => Number(a[0]) - Number(b[0]))
+            .map(([day, record]) => ({
+                role: 'system',
+                name: `SYSTEM (狼人杀第${day}天公开记录)`,
+                isPhoneMessage: true,
+                content: [
+                    `【第 ${day} 天公开记录】`,
+                    '公开发言与系统公告：',
+                    record.speeches.length ? record.speeches.map(line => `- ${line}`).join('\n') : '- 暂无',
+                    '当天投票结果：',
+                    record.votes.length ? record.votes.map(line => `- ${line}`).join('\n') : '- 暂无'
+                ].join('\n')
+            }));
+    }
+
     _formatWerewolfVoteHistory(stateOrContext = null) {
         const source = stateOrContext || this.werewolfData?.getState?.() || {};
         const rawList = Array.isArray(source.voteHistory)
@@ -1136,15 +1192,15 @@ export class GamesApp extends PokerApp {
             ...await this._buildWerewolfWorldbookMessages(),
             {
                 role: 'system',
-                name: 'SYSTEM (场上公开状态)',
-                isPhoneMessage: true,
-                content: this._formatWerewolfPublicStateMessage(context)
-            },
-            {
-                role: 'system',
                 name: 'SYSTEM (发言简报与系统公告)',
                 isPhoneMessage: true,
                 content: this._formatWerewolfPublicLogMessage(context)
+            },
+            {
+                role: 'system',
+                name: 'SYSTEM (场上公开状态)',
+                isPhoneMessage: true,
+                content: this._formatWerewolfPublicStateMessage(context)
             },
             {
                 role: 'user',
@@ -1171,10 +1227,14 @@ export class GamesApp extends PokerApp {
         const playerLines = (context.players || [])
             .map(player => `${player.seat}号 ${player.name}：${player.status}${player.isUser ? '，用户本人' : ''}`)
             .join('\n');
+        const isOpenReveal = String(context.roleRevealMode || 'open') !== 'hidden';
         return [
             '【场上公开玩家状态】',
             `当前：第 ${context.day || 1} 天白天。`,
             `用户座位：${context.userSeat || '?'}号。`,
+            isOpenReveal
+                ? '本局为明牌模式：死亡或被投票放逐的玩家会公开真实身份；场上状态中写明的公开身份就是已公开事实，可以直接作为发言依据。'
+                : '本局为暗牌模式：死亡或被投票放逐的玩家不会公开真实身份；除公开发言和系统公告外，不得断言其真实身份。',
             playerLines || '暂无'
         ].join('\n');
     }

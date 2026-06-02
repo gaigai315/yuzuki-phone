@@ -489,6 +489,7 @@ export class WerewolfData {
         return {
             day: Number(this.state.day || 1),
             phase: this.state.phase,
+            roleRevealMode: this._normalizeRoleRevealMode(this.state.roleRevealMode),
             speaker: this._publicPlayer(speaker),
             speakerPrivateRole: speaker.role || '村民',
             players: this.state.players.map(playerItem => this._publicPlayer(playerItem)),
