@@ -2332,7 +2332,7 @@ export class HoneyView {
             let addedDate = false;
 
             dayTurns.forEach(turn => {
-                const hash = this.app?.honeyData?._simpleHash(String(turn.assistantContext || '') + String(turn.userMessage || ''));
+                const hash = this.app?.honeyData?._simpleHash(String(dateKey) + String(turn.assistantContext || '') + String(turn.userMessage || ''));
                 if (!seenTurns.has(hash)) {
                     seenTurns.add(hash);
                     if (!addedDate) {
@@ -2364,10 +2364,13 @@ export class HoneyView {
                 <div class="honey-content" style="background: linear-gradient(160deg, rgba(54, 26, 68, 0.98), rgba(28, 15, 36, 0.98)); padding: 12px; overflow-y: auto; -webkit-overflow-scrolling: touch;">
                     ${summaryText ? `
                         <div style="position: relative; margin: 8px 0 14px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.12); color: #fff;">
+                            <button id="honey-history-summary-clear-turns" type="button" aria-label="清理已总结原文" title="清理已总结原文" style="position: absolute; right: 40px; top: 8px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.92); display: flex; align-items: center; justify-content: center;">
+                                <i class="fa-solid fa-broom"></i>
+                            </button>
                             <button id="honey-history-summary-delete" type="button" aria-label="删除总结" title="删除总结" style="position: absolute; right: 8px; top: 8px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.92); display: flex; align-items: center; justify-content: center;">
                                 <i class="fa-solid fa-xmark"></i>
                             </button>
-                            <div style="font-size: 12px; font-weight: 800; margin: 0 30px 8px 0;">蜜语记录总结</div>
+                            <div style="font-size: 12px; font-weight: 800; margin: 0 62px 8px 0;">蜜语记录总结</div>
                             <div style="font-size: 11px; line-height: 1.55; white-space: pre-wrap;">${this._escapeHtml(summaryText)}</div>
                         </div>
                     ` : ''}
@@ -2411,6 +2414,15 @@ export class HoneyView {
                     btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>';
                 }
             }
+        });
+
+        currentView.querySelector('#honey-history-summary-clear-turns')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!confirm('确定清理这条总结已经覆盖的原始直播历史吗？\n\n总结会保留，未总结的新记录也会保留。')) return;
+            const result = this.app?.honeyData?.clearSummarizedHostHistoryTurns?.(hostName);
+            const removed = Number(result?.removed || 0);
+            this.app.phoneShell.showNotification('蜜语', removed > 0 ? `已清理 ${removed} 条已总结原文` : '没有可清理的已总结原文', removed > 0 ? '🧹' : 'ℹ️');
+            this.renderHistoryPage();
         });
 
         currentView.querySelector('#honey-history-summary-delete')?.addEventListener('click', (e) => {

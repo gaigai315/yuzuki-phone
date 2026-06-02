@@ -2723,6 +2723,45 @@ export class HoneyData {
         return true;
     }
 
+    clearSummarizedHostHistoryTurns(hostName) {
+        const safeHostName = this._sanitizeInlineText(hostName || '', 40);
+        const key = this._hostHistoryStorageKey(safeHostName);
+        if (!key) return { removed: 0 };
+        const history = this.getHostHistory(safeHostName);
+        const summary = this.getHostHistorySummary(safeHostName);
+        const covered = new Set(summary.coveredTurnHashes);
+        if (!covered.size) return { removed: 0 };
+
+        let removed = 0;
+        Object.keys(history)
+            .filter(dateKey => dateKey && !String(dateKey).startsWith('_'))
+            .forEach(dateKey => {
+                const dayScene = history[dateKey];
+                const turns = this._normalizeContinuePromptTurns(dayScene?.promptTurns);
+                if (!turns.length) return;
+                const keptTurns = turns.filter(turn => {
+                    const hash = this._simpleHash(String(dateKey) + String(turn.assistantContext || '') + String(turn.userMessage || ''));
+                    const shouldRemove = covered.has(hash);
+                    if (shouldRemove) removed += 1;
+                    return !shouldRemove;
+                });
+                if (keptTurns.length) {
+                    history[dateKey] = {
+                        ...dayScene,
+                        promptTurns: keptTurns
+                    };
+                } else {
+                    delete history[dateKey];
+                }
+            });
+
+        if (removed > 0) {
+            this._setStored(key, JSON.stringify(history));
+            this._scheduleFlushChatPersistence();
+        }
+        return { removed };
+    }
+
     _collectUnsummarizedHostHistoryTurns(hostName) {
         const history = this.getHostHistory(hostName);
         const summary = this.getHostHistorySummary(hostName);
@@ -3619,10 +3658,20 @@ export class HoneyData {
 
                 if (isFollowed) {
                     const historyMap = this.getHostHistory(safeHost);
-                    const dateKeys = Object.keys(historyMap).sort((a, b) => String(a).localeCompare(String(b)));
+                    const summary = this.getHostHistorySummary(safeHost);
+                    const covered = new Set(summary.coveredTurnHashes);
+                    const dateKeys = Object.keys(historyMap)
+                        .filter(key => key && !String(key).startsWith('_'))
+                        .sort((a, b) => String(a).localeCompare(String(b)));
 
                     const allTurns = [];
                     const seenTurns = new Set();
+                    if (summary.text) {
+                        allTurns.push({
+                            role: 'system',
+                            content: `【蜜语记录总结：${safeHost}】\n${summary.text}\n以上是该主播已总结的长期互动背景。`
+                        });
+                    }
 
                     dateKeys.forEach(dateKey => {
                         const dayScene = historyMap[dateKey];
@@ -3630,7 +3679,8 @@ export class HoneyData {
 
                         let addedForDate = false;
                         dayTurns.forEach(turn => {
-                            const hash = this._simpleHash(String(turn.assistantContext || '') + String(turn.userMessage || ''));
+                            const hash = this._simpleHash(String(dateKey) + String(turn.assistantContext || '') + String(turn.userMessage || ''));
+                            if (covered.has(hash)) return;
                             // 使用 hash 去重，防止跨日结算时的数据重复追加
                             if (seenTurns.has(hash)) return;
                             if (!addedForDate) {
