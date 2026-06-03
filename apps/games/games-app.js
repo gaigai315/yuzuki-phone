@@ -1560,6 +1560,15 @@ export class GamesApp extends PokerApp {
         super.backToLobby();
     }
 
+    deactivate() {
+        this.clearPokerSession?.();
+        this.removePhoneChromeTheme?.();
+        this.game2048View?.destroy?.();
+        this.sudokuView?.destroy?.();
+        this.catboxView?.destroy?.();
+        this.werewolfView?.destroy?.();
+    }
+
     handleSwipeBack() {
         if (this.currentView === 'game2048' || this.currentView === 'sudoku' || this.currentView === 'catbox' || this.currentView === 'werewolf') {
             this.backToLobby();

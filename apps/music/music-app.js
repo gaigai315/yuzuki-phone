@@ -57,6 +57,11 @@ export class MusicApp {
         this.view?.updateDisplay?.();
     }
 
+    deactivate() {
+        this.view?._stopProgressTimer?.();
+        this.view?.updateDisplay?.();
+    }
+
     endWechatListening(reason = '') {
         const wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
         const sessions = wechatData?.data?.musicListening || {};

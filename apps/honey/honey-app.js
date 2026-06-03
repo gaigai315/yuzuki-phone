@@ -72,4 +72,9 @@ export class HoneyApp {
     destroy() {
         this.honeyView?.removePhoneChromeTheme?.();
     }
+
+    deactivate() {
+        this.honeyView?.releaseInactiveResources?.();
+        this.honeyView?.removePhoneChromeTheme?.();
+    }
 }

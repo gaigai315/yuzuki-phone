@@ -7736,21 +7736,45 @@ if (window.GGP_Loaded) {
             function releasePhoneInactiveResources(activeAppId = null) {
                 try {
                     const phone = window.VirtualPhone || {};
+                    const appEntries = [
+                        ['wechat', phone.wechatApp],
+                        ['phone', phone.phoneApp],
+                        ['honey', phone.honeyApp],
+                        ['games', phone.gamesApp],
+                        ['music', phone.musicApp],
+                        ['weibo', phone.weiboApp],
+                        ['diary', phone.diaryApp],
+                        ['calendar', phone.calendarApp],
+                        ['album', phone.albumApp],
+                        ['mofo', phone.mofoApp],
+                        ['settings', phone.settingsApp]
+                    ];
+                    appEntries.forEach(([appId, appInstance]) => {
+                        if (appId === activeAppId) return;
+                        appInstance?.deactivate?.();
+                    });
                     if (activeAppId !== 'wechat') {
-                        phone.wechatApp?.chatView?.releaseInactiveResources?.();
+                        if (!phone.wechatApp?.deactivate) phone.wechatApp?.chatView?.releaseInactiveResources?.();
                     }
                     if (activeAppId !== 'phone') {
-                        phone.phoneApp?.phoneCallView?.releaseInactiveResources?.();
+                        if (!phone.phoneApp?.deactivate && phone.phoneApp?.phoneCallView?.currentView !== 'active' && phone.phoneApp?.phoneCallView?.currentView !== 'incoming') {
+                            phone.phoneApp?.phoneCallView?.releaseInactiveResources?.();
+                        }
                     }
                     if (activeAppId !== 'honey') {
-                        phone.honeyApp?.honeyView?.removePhoneChromeTheme?.();
+                        if (!phone.honeyApp?.deactivate) {
+                            phone.honeyApp?.honeyView?.releaseInactiveResources?.();
+                            phone.honeyApp?.honeyView?.removePhoneChromeTheme?.();
+                        }
                     }
                     if (activeAppId !== 'games') {
-                        phone.gamesApp?.clearPokerSession?.();
-                        phone.gamesApp?.removePhoneChromeTheme?.();
+                        if (!phone.gamesApp?.deactivate) {
+                            phone.gamesApp?.clearPokerSession?.();
+                            phone.gamesApp?.removePhoneChromeTheme?.();
+                        }
                     }
                     if (activeAppId !== 'music') {
-                        phone.musicApp?.view?._stopProgressTimer?.();
+                        if (!phone.musicApp?.deactivate) phone.musicApp?.view?._stopProgressTimer?.();
                     }
                 } catch (error) {
                     console.warn('[VirtualPhone] 低内存资源回收失败:', error);

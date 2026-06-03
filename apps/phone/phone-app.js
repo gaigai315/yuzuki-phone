@@ -104,4 +104,9 @@ export class PhoneApp {
         this.phoneCallView.clearTtsCache?.();
         this.phoneCallView.chatMessages = [];
     }
+
+    deactivate() {
+        if (this.phoneCallView.currentView === 'active' || this.phoneCallView.currentView === 'incoming') return;
+        this.phoneCallView.releaseInactiveResources?.();
+    }
 }

@@ -80,6 +80,10 @@ export class WechatApp {
         }
     }
 
+    deactivate() {
+        this.chatView?.releaseInactiveResources?.();
+    }
+
     _getUserCustomChatCss() {
         try {
             // 🔥 改为从全局配置中读取，所有会话共享
