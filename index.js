@@ -7733,12 +7733,35 @@ if (window.GGP_Loaded) {
                 }
             });
 
+            function releasePhoneInactiveResources(activeAppId = null) {
+                try {
+                    const phone = window.VirtualPhone || {};
+                    if (activeAppId !== 'wechat') {
+                        phone.wechatApp?.chatView?.releaseInactiveResources?.();
+                    }
+                    if (activeAppId !== 'phone') {
+                        phone.phoneApp?.phoneCallView?.releaseInactiveResources?.();
+                    }
+                    if (activeAppId !== 'honey') {
+                        phone.honeyApp?.honeyView?.removePhoneChromeTheme?.();
+                    }
+                    if (activeAppId !== 'games') {
+                        phone.gamesApp?.clearPokerSession?.();
+                        phone.gamesApp?.removePhoneChromeTheme?.();
+                    }
+                    if (activeAppId !== 'music') {
+                        phone.musicApp?.view?._stopProgressTimer?.();
+                    }
+                } catch (error) {
+                    console.warn('[VirtualPhone] 低内存资源回收失败:', error);
+                }
+            }
+
             // 监听返回主页
             window.addEventListener('phone:goHome', () => {
+                releasePhoneInactiveResources(null);
                 currentApp = null;
                 window.currentWechatApp = null;
-                window.VirtualPhone?.gamesApp?.clearPokerSession?.();
-                window.VirtualPhone?.gamesApp?.removePhoneChromeTheme?.();
                 if (homeScreen) homeScreen.render({ forceDomRefresh: true });
             });
 
@@ -7757,11 +7780,8 @@ if (window.GGP_Loaded) {
                 if (Date.now() < homeGuardUntil) {
                     return;
                 }
+                releasePhoneInactiveResources(appId);
                 currentApp = appId;
-                if (appId !== 'games') {
-                    window.VirtualPhone?.gamesApp?.clearPokerSession?.();
-                    window.VirtualPhone?.gamesApp?.removePhoneChromeTheme?.();
-                }
 
                 const app = currentApps.find(a => a.id === appId);
                 if (app) {

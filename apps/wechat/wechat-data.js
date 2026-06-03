@@ -1712,6 +1712,21 @@ export class WechatData {
         }
     }
 
+    releaseLoadedMessages({ keepChatIds = [] } = {}) {
+        const keep = new Set((Array.isArray(keepChatIds) ? keepChatIds : [])
+            .map(id => String(id || '').trim())
+            .filter(Boolean));
+        Object.keys(this.data.messages || {}).forEach((chatId) => {
+            if (keep.has(chatId)) return;
+            if (this._messagesDirty[chatId]) {
+                this._saveMessages(chatId);
+                this._messagesDirty[chatId] = false;
+            }
+            delete this.data.messages[chatId];
+            delete this._messagesLoaded[chatId];
+        });
+    }
+
     getContactByName(name) {
         // 优先从联系人列表找
         let contact = this.data.contacts.find(c => c.name === name)

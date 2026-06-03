@@ -22,6 +22,9 @@ export class ApiManager {
         this.csrfTokenCacheTime = 0;
         this.proxyRouteHints = new Map();
         this._activeRequestCount = 0;
+        this._tavernSettingsCache = null;
+        this._tavernSettingsCacheAt = 0;
+        this._tavernSettingsCacheTTL = 30000;
     }
 
     getActiveRequestCount() {
@@ -411,6 +414,33 @@ export class ApiManager {
         }
     }
 
+    async _getCachedTavernSettings() {
+        const now = Date.now();
+        if (this._tavernSettingsCache && now - this._tavernSettingsCacheAt < this._tavernSettingsCacheTTL) {
+            return this._tavernSettingsCache;
+        }
+
+        const settingsRes = await fetch('/api/settings/get', {
+            method: 'POST',
+            headers: await this._getJsonRequestHeaders(),
+            credentials: 'include',
+            body: JSON.stringify({})
+        });
+
+        if (!settingsRes.ok) {
+            const errText = await settingsRes.text().catch(() => '');
+            throw new Error(`无法读取酒馆配置: ${settingsRes.status} ${errText}`.trim());
+        }
+
+        const serverData = await settingsRes.json();
+        const parsedSettings = typeof serverData?.settings === 'string'
+            ? JSON.parse(serverData.settings || '{}')
+            : (serverData?.settings || serverData || {});
+        this._tavernSettingsCache = parsedSettings;
+        this._tavernSettingsCacheAt = now;
+        return parsedSettings;
+    }
+
     // ========================================
     // 🛡️ 通道 A: 酒馆原生 API (终极流式兜底，完美防502/504/400)
     // ========================================
@@ -441,23 +471,7 @@ export class ApiManager {
             // 🌟 1. 核心修复：向后端请求配置，并正确进行 JSON.parse()
             let parsedSettings = {};
             try {
-                const settingsRes = await fetch('/api/settings/get', {
-                    method: 'POST',
-                    headers: await this._getJsonRequestHeaders(),
-                    credentials: 'include',
-                    body: JSON.stringify({})
-                });
-
-                if (!settingsRes.ok) {
-                    const errText = await settingsRes.text().catch(() => '');
-                    throw new Error(`无法读取酒馆配置: ${settingsRes.status} ${errText}`.trim());
-                }
-
-                const serverData = await settingsRes.json();
-                // 酒馆的 settings 通常是字符串；部分移动端/旧版构建可能直接返回对象。
-                parsedSettings = typeof serverData?.settings === 'string'
-                    ? JSON.parse(serverData.settings || '{}')
-                    : (serverData?.settings || serverData || {});
+                parsedSettings = await this._getCachedTavernSettings();
             } catch (settingsError) {
                 console.warn('[ApiManager] 读取酒馆配置失败，回退 generateRaw:', this._formatError(settingsError, 'settings/get 失败'));
                 return await this._callTavernGenerateRawFallback(cleanMessages, this._resolveResponseLength(null, options), options);

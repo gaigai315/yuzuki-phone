@@ -55,7 +55,7 @@ export class HoneyView {
         this._honeyTtsActiveBlobCached = false;
         this._honeyTtsCache = new Map();
         this._honeyTtsCacheOrder = [];
-        this._honeyTtsMaxCacheSize = 20;
+        this._honeyTtsMaxCacheSize = 12;
         this._activeLiveSettlement = null;
         this._dismissedLiveCollabRequestFingerprint = '';
         this._isEndCollabConfirmOpen = false;
@@ -8255,6 +8255,10 @@ export class HoneyView {
     }
 
     _cleanupTransient() {
+        clearTimeout(this._recommendRefreshTimer);
+        this._recommendRefreshTimer = null;
+        clearTimeout(this._liveRefreshTimer);
+        this._liveRefreshTimer = null;
         if (this._liveBatchTimer) {
             clearTimeout(this._liveBatchTimer);
             this._liveBatchTimer = null;
@@ -8269,6 +8273,15 @@ export class HoneyView {
         }
     }
 
+    releaseInactiveResources() {
+        this._cleanupTransient();
+        this._stopHoneyTtsPlayback();
+        this._clearHoneyTtsCache();
+        this._livePendingUserLines = [];
+        this._livePendingDisplayLines = [];
+        this._liveSendInFlight = false;
+    }
+
     _applyPhoneChromeTheme() {
         document.querySelectorAll('.phone-body-panel-honey').forEach(el => el.classList.remove('phone-body-panel-honey'));
         const panel = document.querySelector('.phone-body-panel');
@@ -8276,7 +8289,7 @@ export class HoneyView {
     }
 
     removePhoneChromeTheme() {
-        this._cleanupTransient();
+        this.releaseInactiveResources();
         const panel = document.querySelector('.phone-body-panel');
         panel?.classList.remove('phone-body-panel-honey');
     }

@@ -45,7 +45,7 @@ export class ChatView {
         this._isMessageInlineEditing = false;
         this._wechatTtsCache = new Map();
         this._wechatTtsCacheOrder = [];
-        this._wechatTtsCacheLimit = 80;
+        this._wechatTtsCacheLimit = 24;
         this._imagePromptGenerationLocks = new Set();
         this.customEmojiSelectionMode = false;
         this.selectedCustomEmojiIds = new Set();
@@ -1309,6 +1309,36 @@ export class ChatView {
             console.warn('[Wechat] 读取蜜语记录总结失败:', error);
             return '';
         }
+    }
+
+    clearTtsCache({ keepRecent = 0 } = {}) {
+        const keepCount = Math.max(0, Number.parseInt(keepRecent, 10) || 0);
+        const keepKeys = new Set(keepCount > 0 ? this._wechatTtsCacheOrder.slice(-keepCount) : []);
+        this._wechatTtsCache.forEach((blobUrl, key) => {
+            if (keepKeys.has(key)) return;
+            if (blobUrl) {
+                try { URL.revokeObjectURL(blobUrl); } catch (e) { /* ignore */ }
+            }
+            this._wechatTtsCache.delete(key);
+        });
+        this._wechatTtsCacheOrder = this._wechatTtsCacheOrder.filter(key => this._wechatTtsCache.has(key));
+    }
+
+    releaseInactiveResources() {
+        if (this.audioPlayer) {
+            try {
+                this.audioPlayer.pause();
+                this.audioPlayer.removeAttribute('src');
+                this.audioPlayer.load?.();
+            } catch (e) { /* ignore */ }
+        }
+        this.currentPlayingMsgId = null;
+        this.currentPlayingCallMsgId = null;
+        this.currentTtsRound = null;
+        this.clearTtsCache({ keepRecent: 6 });
+        this.app?.wechatData?.releaseLoadedMessages?.({
+            keepChatIds: [this.app?.currentChat?.id].filter(Boolean)
+        });
     }
 
     _collectGroupParticipantsForFilter(chat = null, context = null) {

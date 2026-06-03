@@ -28,7 +28,7 @@ export class PhoneCallView {
         this.currentTtsRound = null;
         this._phoneCallTtsCache = new Map();
         this._phoneCallTtsCacheOrder = [];
-        this._phoneCallTtsCacheLimit = 80;
+        this._phoneCallTtsCacheLimit = 24;
         this.returnViewAfterSettings = 'main';
         this.contactSelectionMode = false;
         this.selectedContactIds = new Set();
@@ -1536,6 +1536,18 @@ export class PhoneCallView {
         });
         this._phoneCallTtsCache.clear();
         this._phoneCallTtsCacheOrder = [];
+    }
+
+    releaseInactiveResources() {
+        this.clearTtsCache();
+        if (this.callTimer) {
+            clearInterval(this.callTimer);
+            this.callTimer = null;
+        }
+        if (this.dialingTimer) {
+            clearTimeout(this.dialingTimer);
+            this.dialingTimer = null;
+        }
     }
 
     _getGlobalTtsVoice() {
