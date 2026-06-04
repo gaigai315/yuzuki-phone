@@ -470,12 +470,18 @@ export class DiaryData {
         const title = this._extractTitleFromContent(text) || '';
         const newDateMatch = text.match(/^日期[:：]\s*(.+)$/m);
         const newWeatherMatch = text.match(/^天气[:：]\s*(.+)$/m);
-        const newBodyMatch = text.match(/^日记正文[:：]\s*\n?([\s\S]*?)(?=\n\s*落款[:：]|\s*$)/m);
+        const newBodyMatch = text.match(/^日记正文[:：][^\S\r\n]*\n?([\s\S]*?)(?=\n[^\S\r\n]*落款[:：]|(?![\s\S]))/m);
         const newAuthorMatch = text.match(/^落款[:：]\s*(?:\n\s*)?(.+)$/m);
-        const isNewFormat = !!(title && newDateMatch && newBodyMatch && newAuthorMatch);
+        const isNewFormat = !!(title && newDateMatch && newBodyMatch);
 
         if (isNewFormat) {
-            const rawBody = String(newBodyMatch?.[1] || '').trim();
+            const explicitAuthor = this._normalizeDiaryAuthorName(newAuthorMatch?.[1] || '');
+            const rawBodyWithMaybeAuthor = String(newBodyMatch?.[1] || '').trim();
+            const inferredAuthor = explicitAuthor ? '' : this._extractBareAuthorLine(rawBodyWithMaybeAuthor);
+            const rawBody = inferredAuthor
+                ? this._removeBareAuthorLine(rawBodyWithMaybeAuthor, inferredAuthor)
+                : rawBodyWithMaybeAuthor;
+            const author = explicitAuthor || inferredAuthor;
             const body = this.stripPhotoPromptTags(rawBody)
                 .replace(/\n{3,}/g, '\n\n')
                 .trim();
@@ -484,11 +490,11 @@ export class DiaryData {
                 title,
                 date: String(newDateMatch?.[1] || '').trim(),
                 weather: String(newWeatherMatch?.[1] || '').trim(),
-                author: this._normalizeDiaryAuthorName(newAuthorMatch?.[1] || ''),
+                author,
                 body,
                 rawBody,
                 photos: this.extractPhotoPrompts(rawBody, {
-                    author: this._normalizeDiaryAuthorName(newAuthorMatch?.[1] || '')
+                    author
                 }).photos
             };
         }
@@ -771,6 +777,36 @@ export class DiaryData {
             .replace(/\s*[（(]\s*已拉黑\s*[）)]\s*$/g, '')
             .replace(/^(?:署名|作者|日记人|姓名)[:：]\s*/g, '')
             .trim();
+    }
+
+    _extractBareAuthorLine(content = '') {
+        const lines = String(content || '')
+            .replace(/\r\n/g, '\n')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean);
+        if (lines.length < 2) return '';
+
+        const candidate = this._normalizeDiaryAuthorName(lines[lines.length - 1]);
+        if (!candidate) return '';
+        if (candidate.length < 2 || candidate.length > 12) return '';
+        if (!/^[\u3400-\u9fff·・]{2,12}$/.test(candidate)) return '';
+        if (/[，。！？、；：,.!?;:]/.test(candidate)) return '';
+        return candidate;
+    }
+
+    _removeBareAuthorLine(content = '', author = '') {
+        const safeAuthor = String(author || '').trim();
+        if (!safeAuthor) return String(content || '').trim();
+        const lines = String(content || '').replace(/\r\n/g, '\n').split('\n');
+        for (let i = lines.length - 1; i >= 0; i--) {
+            if (!String(lines[i] || '').trim()) continue;
+            if (this._normalizeDiaryAuthorName(lines[i]) === safeAuthor) {
+                lines.splice(i, 1);
+            }
+            break;
+        }
+        return lines.join('\n').trim();
     }
 
     async _resolveDiaryPhotoContact(photo = {}, entry = null) {
@@ -1614,6 +1650,11 @@ export class DiaryData {
     _extractAuthorFromContent(content) {
         const newMatch = String(content || '').match(/^落款[:：]\s*(.+)$/m);
         if (newMatch) return this._normalizeDiaryAuthorName(newMatch[1]);
+        const newBodyMatch = String(content || '').replace(/\r\n/g, '\n').match(/^日记正文[:：][^\S\r\n]*\n?([\s\S]*?)(?=\n[^\S\r\n]*落款[:：]|(?![\s\S]))/m);
+        if (newBodyMatch) {
+            const bareAuthor = this._extractBareAuthorLine(newBodyMatch[1]);
+            if (bareAuthor) return bareAuthor;
+        }
         return this._extractLegacyAuthorFromContent(content);
     }
 
