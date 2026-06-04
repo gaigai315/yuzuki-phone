@@ -450,6 +450,7 @@ export class WeiboView {
                             }
                             const descriptionText = parsedMedia.descriptionText || String(imageState?.description || '').trim() || promptText;
                             const safePromptText = this._escapeHtml(descriptionText);
+                            const safeTagText = this._escapeHtml(this._hasCjkText(promptText) ? '缺少英文Tag' : promptText);
                             const generationStatus = isDirectImage
                                 ? 'done'
                                 : (String(imageState?.status || '').trim() || 'idle');
@@ -483,7 +484,12 @@ export class WeiboView {
                                         position: relative; overflow: hidden;
                                     ">
                                         <div style="width: 100%; height: 100%; padding: 6px; padding-bottom: 20px; overflow-y: auto; box-sizing: border-box; display: flex;">
-                                            <div style="margin: auto; font-size: 10px; color: #666; line-height: 1.4; word-break: break-word; white-space: pre-wrap; text-align: center; width: 100%;">${safePromptText}</div>
+                                            <div style="margin: auto; font-size: 10px; color: #666; line-height: 1.4; word-break: break-word; white-space: pre-wrap; text-align: center; width: 100%;">
+                                                <div style="font-weight:700; margin-bottom:4px;">中文描述</div>
+                                                <div>${safePromptText}</div>
+                                                <div style="font-weight:700; margin:8px 0 4px;">英文Tag</div>
+                                                <div>${safeTagText}</div>
+                                            </div>
                                         </div>
                                         <div class="weibo-image-prompt-restore" title="恢复卡片正面" style="
                                             position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,0.5); color:#fff;
@@ -541,7 +547,12 @@ export class WeiboView {
                                         position: relative; overflow: hidden;
                                     ">
                                         <div style="width: 100%; height: 100%; padding: 6px; padding-bottom: 20px; overflow-y: auto; box-sizing: border-box; display: flex;">
-                                            <div style="margin: auto; font-size: 10px; color: #666; line-height: 1.4; word-break: break-word; white-space: pre-wrap; text-align: center; width: 100%;">${safePromptText}</div>
+                                            <div style="margin: auto; font-size: 10px; color: #666; line-height: 1.4; word-break: break-word; white-space: pre-wrap; text-align: center; width: 100%;">
+                                                <div style="font-weight:700; margin-bottom:4px;">中文描述</div>
+                                                <div>${safePromptText}</div>
+                                                <div style="font-weight:700; margin:8px 0 4px;">英文Tag</div>
+                                                <div>${safeTagText}</div>
+                                            </div>
                                         </div>
                                         <div class="weibo-image-prompt-restore" title="恢复卡片正面" style="
                                             position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,0.5); color:#fff;
@@ -2507,6 +2518,21 @@ export class WeiboView {
         const slotPromptText = String(parsedMedia.promptText || promptText || '').trim();
         if (!slotPromptText) return;
         const displayDescription = String(descriptionText || parsedMedia.descriptionText || slotPromptText || '').trim();
+        if (this._hasCjkText(slotPromptText)) {
+            this._setWeiboPostImageState(post, index, {
+                status: 'failed',
+                error: '缺少英文生图Tag：第二个括号必须只写英文逗号分隔 tags',
+                prompt: slotPromptText,
+                description: displayDescription,
+                mediaType: safeMediaType,
+                imageModel: '',
+                imageProvider: ''
+            });
+            this._persistPostMediaTarget(posts, source, post);
+            this._refreshPostMediaUI(postId);
+            this.app.phoneShell.showNotification('生图格式错误', '缺少英文生图Tag，请使用 [图片]（中文描述）（English tags）', '⚠️');
+            return;
+        }
 
         if (!imageManager || typeof imageManager.generate !== 'function') {
             this._setWeiboPostImageState(post, index, {
@@ -3900,7 +3926,8 @@ export class WeiboView {
     }
 
     _buildWeiboImagePromptWithUserTags(parsedMedia = {}, promptText = '') {
-        const basePrompt = String(promptText || '').trim();
+        const parsedPrompt = this._parsePromptDescriptionPair(promptText);
+        const basePrompt = String(parsedPrompt.prompt || promptText || '').trim();
         if (String(parsedMedia?.mediaType || '').trim() !== '用户照片' && parsedMedia?.useUserReference !== true) {
             return basePrompt;
         }
@@ -3918,7 +3945,8 @@ export class WeiboView {
     }
 
     _parsePromptDescriptionPair(rawValue = '') {
-        const raw = String(rawValue || '').trim();
+        const raw = String(rawValue || '').trim()
+            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '');
         const parts = [];
         const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
         let match;
@@ -3937,6 +3965,10 @@ export class WeiboView {
             description: single,
             prompt: single
         };
+    }
+
+    _hasCjkText(value = '') {
+        return /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(String(value || ''));
     }
 
     _getWeiboPostImageState(post, index) {

@@ -2336,7 +2336,8 @@ getWeekday(date) {
     }
 
     _parseImagePromptText(rawValue = '') {
-        const raw = String(rawValue || '').trim();
+        const raw = String(rawValue || '').trim()
+            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '');
         const parts = [];
         const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
         let match;

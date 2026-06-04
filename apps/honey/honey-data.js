@@ -18,12 +18,22 @@ export class HoneyData {
         this.storage = storage;
         this.customLiveVideosGlobalKey = 'global_honey_custom_live_videos';
         this.customLiveVideosLegacyKey = 'honey_custom_live_videos';
+        this.explicitGlobalHoneyKeys = new Set([
+            'global_honey_bg_video',
+            'global_honey_custom_live_videos'
+        ]);
+        this.maxStoredTopicScenes = 36;
+        this.maxStoredHostHistoryDays = 14;
+        this.maxStoredPromptTurns = 100;
+        this.maxStoredComments = 30;
+        this.maxStoredGifts = 24;
         this._recommendCache = null;
         this._topicScenesCache = null;
         this._selectedTopicCache = null;
         this._lastSceneCache = null;
         this._flushTimer = null;
         this.globalSocialStore = new GlobalSocialStore(storage);
+        this._scheduleLegacyGlobalHoneyMigration();
         this._bootstrapHoneyGlobalSocialData();
     }
 
@@ -237,22 +247,43 @@ export class HoneyData {
             .toLowerCase();
     }
 
+    _isExplicitGlobalHoneyKey(key) {
+        return this.explicitGlobalHoneyKeys.has(String(key || '').trim());
+    }
+
     _resolveHoneyStorageKey(key) {
         const safeKey = String(key || '').trim();
         if (!safeKey) return '';
-        if (/^global_honey_/i.test(safeKey)) return safeKey;
-        if (/^honey_/i.test(safeKey)) return `global_${safeKey}`;
+        if (this._isExplicitGlobalHoneyKey(safeKey)) return safeKey;
+        if (/^global_honey_/i.test(safeKey)) return safeKey.replace(/^global_/i, '');
         return safeKey;
+    }
+
+    _resolveLegacyHoneyStorageKey(key, primaryKey = '') {
+        const safeKey = String(key || '').trim();
+        const primary = String(primaryKey || '').trim();
+        if (!safeKey || this._isExplicitGlobalHoneyKey(safeKey)) return '';
+        if (/^global_honey_/i.test(safeKey) && primary && primary !== safeKey) return safeKey;
+        if (/^honey_/i.test(primary)) return `global_${primary}`;
+        if (/^honey_/i.test(safeKey)) return `global_${safeKey}`;
+        return '';
     }
 
     _getStored(key, fallback = null) {
         const safeKey = String(key || '').trim();
         if (!safeKey) return fallback;
-        const globalKey = this._resolveHoneyStorageKey(safeKey);
+        const primaryKey = this._resolveHoneyStorageKey(safeKey);
+        const legacyKey = this._resolveLegacyHoneyStorageKey(safeKey, primaryKey);
 
-        let value = this.storage?.get?.(globalKey);
-        if ((value === null || value === undefined || value === '') && globalKey !== safeKey) {
-            value = this.storage?.get?.(safeKey);
+        let value = this.storage?.get?.(primaryKey);
+        if ((value === null || value === undefined || value === '') && legacyKey && legacyKey !== primaryKey) {
+            value = this.storage?.get?.(legacyKey);
+            if (value !== null && value !== undefined && value !== '') {
+                value = this._compactSerializedHoneyValue(primaryKey, value);
+                this.storage?.set?.(primaryKey, value);
+                this.storage?.remove?.(legacyKey);
+                this._scheduleFlushChatPersistence(1200);
+            }
         }
         if (value === null || value === undefined || value === '') return fallback;
         return value;
@@ -261,8 +292,12 @@ export class HoneyData {
     _setStored(key, value) {
         const safeKey = String(key || '').trim();
         if (!safeKey) return;
-        const globalKey = this._resolveHoneyStorageKey(safeKey);
-        this.storage?.set?.(globalKey, value);
+        const primaryKey = this._resolveHoneyStorageKey(safeKey);
+        this.storage?.set?.(primaryKey, value);
+        const legacyKey = this._resolveLegacyHoneyStorageKey(safeKey, primaryKey);
+        if (legacyKey && legacyKey !== primaryKey) {
+            this.storage?.remove?.(legacyKey);
+        }
     }
 
     _getStoredRaw(key, fallback = null) {
@@ -282,11 +317,62 @@ export class HoneyData {
     _removeStored(key, alsoLegacy = true) {
         const safeKey = String(key || '').trim();
         if (!safeKey) return;
-        const globalKey = this._resolveHoneyStorageKey(safeKey);
-        this.storage?.remove?.(globalKey);
-        if (alsoLegacy && globalKey !== safeKey) {
-            this.storage?.remove?.(safeKey);
+        const primaryKey = this._resolveHoneyStorageKey(safeKey);
+        this.storage?.remove?.(primaryKey);
+        const legacyKey = this._resolveLegacyHoneyStorageKey(safeKey, primaryKey);
+        if (alsoLegacy && legacyKey && legacyKey !== primaryKey) {
+            this.storage?.remove?.(legacyKey);
         }
+    }
+
+    _scheduleLegacyGlobalHoneyMigration() {
+        if (!this.storage || typeof this.storage.getExtensionSettings !== 'function') return;
+        setTimeout(() => this._migrateLegacyGlobalHoneyDataToChatStore(), 800);
+    }
+
+    _migrateLegacyGlobalHoneyDataToChatStore() {
+        try {
+            const extStore = this.storage?.getExtensionSettings?.();
+            if (!extStore || typeof extStore !== 'object') return;
+            const keys = Object.keys(extStore)
+                .filter(key => /^global_honey_/i.test(key))
+                .filter(key => !this._isExplicitGlobalHoneyKey(key));
+            if (!keys.length) return;
+
+            keys.forEach((legacyKey) => {
+                const primaryKey = this._resolveHoneyStorageKey(legacyKey);
+                if (!primaryKey || primaryKey === legacyKey) return;
+                this.storage?.set?.(primaryKey, this._compactSerializedHoneyValue(primaryKey, extStore[legacyKey]));
+                this.storage?.remove?.(legacyKey);
+            });
+            this._scheduleFlushChatPersistence(1200);
+            console.log(`[HoneyData] 已迁移 ${keys.length} 个旧版 global_honey 数据到聊天存储，避免 settings.json 膨胀`);
+        } catch (e) {
+            console.warn('[HoneyData] 迁移旧版蜜语全局数据失败:', e);
+        }
+    }
+
+    _compactSerializedHoneyValue(key, value) {
+        const safeKey = String(key || '').trim();
+        if (!safeKey || value === null || value === undefined || value === '') return value;
+        try {
+            const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+            if (/^honey_topic_scenes$/i.test(safeKey)) {
+                return JSON.stringify(this._compactTopicScenes(parsed));
+            }
+            if (/^honey_last_scene$/i.test(safeKey)) {
+                return JSON.stringify(this._compactStoredScene(parsed, { full: true }));
+            }
+            if (/^honey_history_/i.test(safeKey)) {
+                return JSON.stringify(this._compactHostHistory(parsed));
+            }
+            if (/^honey_recommend_topics$/i.test(safeKey) && Array.isArray(parsed)) {
+                return JSON.stringify(parsed.slice(-24).map(item => this._compactStoredScene(item, { full: false })));
+            }
+        } catch (e) {
+            return value;
+        }
+        return value;
     }
 
     _getHoneyGlobalContactId(personLike) {
@@ -457,8 +543,8 @@ export class HoneyData {
         };
     }
 
-    _normalizeContinuePromptTurns(turns, maxTurns = 200) {
-        const safeMax = Math.max(1, Number(maxTurns) || 200);
+    _normalizeContinuePromptTurns(turns, maxTurns = 100) {
+        const safeMax = Math.max(1, Number(maxTurns) || 100);
         return (Array.isArray(turns) ? turns : [])
             .map((turn) => {
                 const assistantContext = this._normalizeLiveAssistantContextLabel(
@@ -846,7 +932,7 @@ export class HoneyData {
     }
 
     saveTopicScenes(scenes) {
-        const safe = scenes && typeof scenes === 'object' ? scenes : {};
+        const safe = this._compactTopicScenes(scenes);
         this._topicScenesCache = safe;
         this._setStored('honey_topic_scenes', JSON.stringify(safe));
         this._scheduleFlushChatPersistence();
@@ -874,11 +960,12 @@ export class HoneyData {
         const safeTopicKey = /^topic_[a-z0-9]+$/i.test(refKey)
             ? refKey.toLowerCase()
             : String(scene._topicKey || `topic_${this._simpleHash(`${safeTitle}__0`)}`).trim();
-        scenes[key] = this._stripInlineGeneratedImagesFromScene({
+        scenes[key] = this._compactStoredScene({
             ...scene,
             _topicTitle: safeTitle,
-            _topicKey: safeTopicKey
-        });
+            _topicKey: safeTopicKey,
+            updatedAt: Date.now()
+        }, { full: true });
         this.saveTopicScenes(scenes);
     }
 
@@ -2693,6 +2780,97 @@ export class HoneyData {
         return next;
     }
 
+    _trimText(value, maxLen = 500) {
+        return String(value || '').trim().slice(0, Math.max(0, Number(maxLen) || 0));
+    }
+
+    _compactStoredScene(scene = {}, options = {}) {
+        if (!scene || typeof scene !== 'object') return {};
+        const full = options.full === true;
+        const next = this._stripInlineGeneratedImagesFromScene(this._deepCloneSceneData(scene));
+        const keepArray = (value, max, itemMax = 180) => (Array.isArray(value) ? value : [])
+            .map(item => {
+                if (typeof item === 'string') return this._trimText(item, itemMax);
+                if (item && typeof item === 'object') {
+                    const compact = {};
+                    Object.entries(item).forEach(([key, val]) => {
+                        if (typeof val === 'string') compact[key] = this._trimText(val, itemMax);
+                        else if (typeof val === 'number' || typeof val === 'boolean') compact[key] = val;
+                    });
+                    return compact;
+                }
+                return '';
+            })
+            .filter(item => typeof item === 'string' ? !!item : Object.keys(item || {}).length > 0)
+            .slice(-Math.max(0, Number(max) || 0));
+
+        next.title = this._trimText(next.title, 80);
+        next.host = this._trimText(next.host, 50);
+        next.intro = this._trimText(next.intro, full ? 220 : 140);
+        next.description = this._trimText(next.description, full ? 1200 : 520);
+        next.naiPrompt = this._trimText(next.naiPrompt, 900);
+        next.imageGenerationPrompt = this._trimText(next.imageGenerationPrompt, 900);
+        next.comments = keepArray(next.comments, full ? this.maxStoredComments : 12, 180);
+        next.gifts = keepArray(next.gifts, full ? this.maxStoredGifts : 10, 160);
+        next.userChats = keepArray(next.userChats, full ? 60 : 16, 180);
+        next.promptTurns = this._normalizeContinuePromptTurns(next.promptTurns)
+            .slice(-(full ? this.maxStoredPromptTurns : 12))
+            .map(turn => ({
+                userMessage: this._trimText(turn.userMessage, 220),
+                assistantContext: this._trimText(turn.assistantContext, full ? 900 : 420)
+            }))
+            .filter(turn => turn.userMessage || turn.assistantContext);
+        next.naiTagHistory = keepArray(next.naiTagHistory, 8, 500);
+        next.friendRequests = keepArray(next.friendRequests, 8, 160);
+        next.collabRequests = keepArray(next.collabRequests, 8, 160);
+        next.interactionRecords = keepArray(next.interactionRecords, 12, 180);
+
+        if (next.audienceGiftTotals && typeof next.audienceGiftTotals === 'object') {
+            next.audienceGiftTotals = Object.fromEntries(
+                Object.entries(next.audienceGiftTotals)
+                    .slice(-30)
+                    .map(([key, val]) => [this._trimText(key, 32), Math.max(0, Number(val) || 0)])
+                    .filter(([key]) => !!key)
+            );
+        }
+
+        return next;
+    }
+
+    _compactTopicScenes(scenes = {}) {
+        const source = scenes && typeof scenes === 'object' ? scenes : {};
+        const entries = Object.entries(source)
+            .filter(([, scene]) => scene && typeof scene === 'object')
+            .map(([key, scene], index) => {
+                const timestamp = Number(scene.updatedAt || scene.imageGenerationStartedAt || scene.lastActiveAt || scene.createdAt || 0) || index;
+                return [key, this._compactStoredScene(scene, { full: true }), timestamp];
+            })
+            .sort((a, b) => b[2] - a[2])
+            .slice(0, this.maxStoredTopicScenes);
+        return Object.fromEntries(entries.map(([key, scene]) => [key, scene]));
+    }
+
+    _compactHostHistory(history = {}) {
+        const source = history && typeof history === 'object' ? history : {};
+        const summary = source._summary && typeof source._summary === 'object'
+            ? {
+                text: this._trimText(source._summary.text, 900),
+                coveredTurnHashes: Array.isArray(source._summary.coveredTurnHashes)
+                    ? source._summary.coveredTurnHashes.map(item => String(item || '').trim()).filter(Boolean).slice(-240)
+                    : [],
+                updatedAt: Number(source._summary.updatedAt || 0) || 0
+            }
+            : null;
+        const dayEntries = Object.keys(source)
+            .filter(key => key && !String(key).startsWith('_'))
+            .sort((a, b) => String(b).localeCompare(String(a)))
+            .slice(0, this.maxStoredHostHistoryDays)
+            .map(dateKey => [dateKey, this._compactStoredScene(source[dateKey], { full: false })]);
+        const next = Object.fromEntries(dayEntries);
+        if (summary && (summary.text || summary.coveredTurnHashes.length)) next._summary = summary;
+        return next;
+    }
+
     getHostHistory(hostName) {
         const key = this._hostHistoryStorageKey(hostName);
         if (!key) return {};
@@ -2862,8 +3040,11 @@ export class HoneyData {
         if (!key || !sceneData || typeof sceneData !== 'object') return;
         const dateKey = this._normalizeSceneDate(dateStr);
         const history = this.getHostHistory(hostName);
-        history[dateKey] = this._stripInlineGeneratedImagesFromScene(this._deepCloneSceneData(sceneData));
-        this._setStored(key, JSON.stringify(history));
+        history[dateKey] = this._compactStoredScene({
+            ...sceneData,
+            updatedAt: Date.now()
+        }, { full: false });
+        this._setStored(key, JSON.stringify(this._compactHostHistory(history)));
         this._scheduleFlushChatPersistence();
     }
 
@@ -2876,7 +3057,10 @@ export class HoneyData {
 
     saveLastSceneData(scene) {
         if (!scene || typeof scene !== 'object') return;
-        const safeScene = this._stripInlineGeneratedImagesFromScene(scene);
+        const safeScene = this._compactStoredScene({
+            ...scene,
+            updatedAt: Date.now()
+        }, { full: true });
         this._lastSceneCache = safeScene;
         this._setStored('honey_last_scene', JSON.stringify(safeScene));
         this._scheduleFlushChatPersistence();
@@ -3079,6 +3263,18 @@ export class HoneyData {
             Object.keys(chatStore)
                 .filter(key => /^(?:honey_history_|global_honey_history_)/i.test(String(key || '')))
                 .forEach((key) => this._removeStored(key));
+        }
+        const extStore = this.storage?.getExtensionSettings?.();
+        if (extStore && typeof extStore === 'object') {
+            const removedExtKeys = Object.keys(extStore)
+                .filter(key => /^(?:honey_history_|global_honey_history_)/i.test(String(key || '')))
+                .filter((key) => {
+                    delete extStore[key];
+                    return true;
+                });
+            if (removedExtKeys.length > 0) {
+                this.storage?.saveExtensionSettings?.();
+            }
         }
 
         this._topicScenesCache = {};

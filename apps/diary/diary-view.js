@@ -614,7 +614,13 @@ export class DiaryView {
                 <button class="diary-photo-tool diary-photo-regenerate" type="button" data-photo-id="${this._escapeAttr(photo.id)}" title="重新生成">↻</button>
                 <button class="diary-photo-tool diary-photo-flip" type="button" title="查看照片说明">↪</button>
             `;
-            const backText = reason || '这张照片还没有留下说明。';
+            const tagText = /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(String(photo?.prompt || '')) ? '缺少英文Tag' : (prompt || '未提供英文Tag');
+            const backText = `
+                <div style="font-weight:700; margin-bottom:6px;">中文说明</div>
+                <div>${reason || '这张照片还没有留下说明。'}</div>
+                <div style="font-weight:700; margin:10px 0 6px;">英文Tag</div>
+                <div>${tagText}</div>
+            `;
             const frontCaption = rawType === '个人图片' ? '「 私人影像 」' : '「 沉溺于那片海 」';
             return `
                 <div class="diary-photo-card diary-photo-card-${index + 1} diary-photo-stack-${stackOffset}" role="button" tabindex="0" data-photo-id="${this._escapeAttr(photo.id)}" data-photo-index="${index}" style="--diary-photo-rotate:${rotate}; --diary-photo-stack-offset:${stackOffset};">

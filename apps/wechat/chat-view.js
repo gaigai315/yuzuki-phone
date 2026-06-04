@@ -3278,14 +3278,28 @@ renderChatRoom(chat) {
         if (status === 'loading') return;
         this._imagePromptGenerationLocks.add(generationLockKey);
 
-        const promptText = String(message.imagePrompt || message.content || '').trim();
+        const rawPromptText = String(message.imagePrompt || message.content || '').trim();
+        const parsedRawPrompt = this._parseImagePromptText(rawPromptText);
+        const promptText = String(parsedRawPrompt.prompt || rawPromptText).trim();
         if (!promptText) {
             this._imagePromptGenerationLocks.delete(generationLockKey);
             this.app.phoneShell?.showNotification('提示', '这条图片消息缺少描述，无法生成', '⚠️');
             return;
         }
-        const parsedCurrentPrompt = this._parseImagePromptText(String(message.content || ''));
-        const descriptionText = String(message.imageDescription || parsedCurrentPrompt.description || promptText).trim();
+        const parsedCurrentPrompt = this._parseImagePromptText(String(message.content || rawPromptText || ''));
+        const descriptionText = String(message.imageDescription || parsedRawPrompt.description || parsedCurrentPrompt.description || promptText).trim();
+        if (this._hasCjkText(promptText)) {
+            this._imagePromptGenerationLocks.delete(generationLockKey);
+            this.app.phoneShell?.showNotification('生图格式错误', '缺少英文生图Tag，请使用 [图片]（中文描述）（English tags）', '⚠️');
+            this.app.wechatData.updateMessageById(chatId, safeMessageId, {
+                imagePrompt: promptText,
+                imageDescription: descriptionText,
+                imageGenStatus: 'failed',
+                imageGenError: '缺少英文生图Tag：第二个括号必须只写英文逗号分隔 tags'
+            });
+            this._refreshVisibleChatMessages(chatId);
+            return;
+        }
 
         const imageManager = window.VirtualPhone?.imageGenerationManager;
         if (!imageManager || typeof imageManager.generate !== 'function') {
@@ -3521,7 +3535,8 @@ renderChatRoom(chat) {
     }
 
     _buildWechatImagePromptWithContactTags(message = {}, promptText = '') {
-        const basePrompt = String(promptText || '').trim();
+        const parsedPrompt = this._parseImagePromptText(promptText);
+        const basePrompt = String(parsedPrompt.prompt || promptText || '').trim();
         if (message?.useUserReference === true || String(message?.mediaType || '').trim() === '用户照片') {
             const userInfo = this.app?.wechatData?.getUserInfo?.() || {};
             const userTags = String(userInfo?.naiPromptTags || userInfo?.imageTags || '')
@@ -3570,6 +3585,10 @@ renderChatRoom(chat) {
         const parsedPrompt = this._parseImagePromptText(String(msg?.content || ''));
         const descriptionRaw = String(msg?.imageDescription || parsedPrompt.description || promptRaw).trim() || promptRaw;
         const descriptionText = this._escapeHtml(descriptionRaw);
+        const promptLabel = this._hasCjkText(promptRaw)
+            ? '缺少英文Tag'
+            : promptRaw;
+        const promptLabelHtml = this._escapeHtml(promptLabel);
         const cardId = this.escapeInlineStickerAttr(String(msg?.id || `imgprompt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`));
         const generatedImageUrl = String(msg?.generatedImageUrl || '').trim();
         const safeImageUrl = this.escapeInlineStickerAttr(generatedImageUrl);
@@ -3689,7 +3708,12 @@ renderChatRoom(chat) {
                             text-align:center;
                             width:100%;
                             text-shadow:0 1px 2px rgba(0,0,0,0.18);
-                        ">${descriptionText}</div>
+                        ">
+                            <div style="font-weight:700; margin-bottom:6px;">中文描述</div>
+                            <div>${descriptionText}</div>
+                            <div style="font-weight:700; margin:10px 0 6px;">英文Tag</div>
+                            <div>${promptLabelHtml}</div>
+                        </div>
                     </div>
                     <div class="message-image-prompt-restore" data-message-id="${cardId}" title="恢复卡片正面" style="
                         position:absolute;
@@ -3838,7 +3862,8 @@ renderChatRoom(chat) {
     }
 
     _parseImagePromptText(rawValue = '') {
-        const raw = String(rawValue || '').trim();
+        const raw = String(rawValue || '').trim()
+            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '');
         const parts = [];
         const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
         let match;
@@ -3859,6 +3884,10 @@ renderChatRoom(chat) {
             description: single,
             prompt: single
         };
+    }
+
+    _hasCjkText(value = '') {
+        return /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(String(value || ''));
     }
 
     _formatImagePromptTagForPrompt(msg = {}) {

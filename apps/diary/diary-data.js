@@ -616,6 +616,13 @@ export class DiaryData {
         if (!imageManager || typeof imageManager.generate !== 'function') {
             throw new Error('生图管理器未初始化');
         }
+        if (this._hasCjkText(photo.prompt)) {
+            this.updateEntryPhoto(entryId, photoId, {
+                status: 'failed',
+                error: '缺少英文生图Tag：第二个括号必须只写英文逗号分隔 tags'
+            });
+            throw new Error('缺少英文生图Tag，请使用 [图片]（中文照片说明）（English tags）');
+        }
         if (this.storage && imageManager.storage !== this.storage) {
             imageManager.storage = this.storage;
         }
@@ -836,6 +843,10 @@ export class DiaryData {
         return `${contactTags}, ${basePrompt}`;
     }
 
+    _hasCjkText(value = '') {
+        return /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(String(value || ''));
+    }
+
     async _imageUrlToDiaryReferenceDataUrl(url) {
         const safeUrl = String(url || '').trim();
         if (!safeUrl) return '';
@@ -985,7 +996,12 @@ export class DiaryData {
         const apiManager = window.VirtualPhone?.apiManager;
         if (!apiManager) throw new Error('API Manager 未初始化');
 
-        const result = await apiManager.callAI(messages, { max_tokens: context.max_response_length, appId: 'diary' });
+        const configuredMaxTokens = Number.parseInt(context.max_response_length, 10)
+            || Number.parseInt(context.max_length, 10)
+            || Number.parseInt(context.amount_gen, 10)
+            || 0;
+        const diaryMaxTokens = Math.max(1800, configuredMaxTokens || 0);
+        const result = await apiManager.callAI(messages, { max_tokens: diaryMaxTokens, appId: 'diary' });
         
         if (!result.success) {
             throw new Error(result.error || '日记生成失败');

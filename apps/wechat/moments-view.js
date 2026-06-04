@@ -125,9 +125,11 @@ export class MomentsView {
     renderMomentImage(rawImage, index, moment = null) {
         const parsed = this._parseMomentImageItem(rawImage);
         const state = this._getMomentImageState(moment, index);
-        const promptText = state?.prompt || parsed.promptText || String(rawImage || '').trim();
-        const descriptionText = state?.description || parsed.descriptionText || promptText;
+        const statePrompt = this._parsePromptDescriptionPair(state?.prompt || '');
+        const promptText = statePrompt.prompt || parsed.promptText || String(rawImage || '').trim();
+        const descriptionText = state?.description || statePrompt.description || parsed.descriptionText || promptText;
         const safePrompt = this._escapeHtml(descriptionText || '图片描述');
+        const safeTags = this._escapeHtml(this._hasCjkText(promptText) ? '缺少英文Tag' : promptText);
         if (parsed.isDirectImage) {
             return `
                 <div class="moment-image-generated-box">
@@ -137,7 +139,12 @@ export class MomentsView {
                     </button>
                     <button class="moment-image-show-desc" title="查看图片描述">描述</button>
                     <div class="moment-image-desc-panel">
-                        <div class="moment-image-desc-text">${safePrompt || '暂无图片描述'}</div>
+                        <div class="moment-image-desc-text">
+                            <div style="font-weight:700; margin-bottom:4px;">中文描述</div>
+                            <div>${safePrompt || '暂无图片描述'}</div>
+                            <div style="font-weight:700; margin:8px 0 4px;">英文Tag</div>
+                            <div>${safeTags}</div>
+                        </div>
                         <button class="moment-image-restore" title="恢复图片">恢复</button>
                     </div>
                 </div>
@@ -168,7 +175,12 @@ export class MomentsView {
                     <button class="moment-image-show-desc" title="查看图片描述">描述</button>
                 </div>
                 <div class="moment-image-desc-panel">
-                    <div class="moment-image-desc-text">${safePrompt || '暂无图片描述'}</div>
+                    <div class="moment-image-desc-text">
+                        <div style="font-weight:700; margin-bottom:4px;">中文描述</div>
+                        <div>${safePrompt || '暂无图片描述'}</div>
+                        <div style="font-weight:700; margin:8px 0 4px;">英文Tag</div>
+                        <div>${safeTags}</div>
+                    </div>
                     <button class="moment-image-restore" title="恢复卡片正面">恢复</button>
                 </div>
             </div>
@@ -235,7 +247,8 @@ export class MomentsView {
                 const momentEl = btn.closest('.moment-item');
                 const momentId = momentEl?.dataset?.momentId || '';
                 const index = Number.parseInt(btn.dataset.index, 10);
-                const promptText = String(btn.dataset.prompt || '').trim();
+                const parsedPrompt = this._parsePromptDescriptionPair(btn.dataset.prompt || '');
+                const promptText = String(parsedPrompt.prompt || btn.dataset.prompt || '').trim();
                 const descriptionText = String(btn.dataset.description || '').trim();
                 await this.generateMomentImage({ momentId, index, promptText, descriptionText });
             });
@@ -248,7 +261,8 @@ export class MomentsView {
                 const momentEl = btn.closest('.moment-item');
                 const momentId = momentEl?.dataset?.momentId || '';
                 const index = Number.parseInt(btn.dataset.index, 10);
-                const promptText = String(btn.dataset.prompt || '').trim();
+                const parsedPrompt = this._parsePromptDescriptionPair(btn.dataset.prompt || '');
+                const promptText = String(parsedPrompt.prompt || btn.dataset.prompt || '').trim();
                 const descriptionText = String(btn.dataset.description || '').trim();
                 await this.generateMomentImage({ momentId, index, promptText, descriptionText, clearPreviousImage: true });
             });
@@ -661,7 +675,8 @@ export class MomentsView {
     }
 
     _parsePromptDescriptionPair(rawValue = '') {
-        const raw = String(rawValue || '').trim();
+        const raw = String(rawValue || '').trim()
+            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '');
         const parts = [];
         const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
         let match;
@@ -680,6 +695,10 @@ export class MomentsView {
             description: single,
             prompt: single
         };
+    }
+
+    _hasCjkText(value = '') {
+        return /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(String(value || ''));
     }
 
     _collectMomentManagedImageUrls(moment) {
@@ -786,9 +805,24 @@ export class MomentsView {
     }
 
     async generateMomentImage({ momentId, index, promptText, descriptionText = '', clearPreviousImage = false } = {}) {
+        const parsedIncomingPrompt = this._parsePromptDescriptionPair(promptText);
+        promptText = String(parsedIncomingPrompt.prompt || promptText || '').trim();
+        descriptionText = String(descriptionText || parsedIncomingPrompt.description || '').trim();
         if (!momentId || !Number.isInteger(index) || index < 0 || !promptText) return;
         const moment = this._getMomentById(momentId);
         if (!moment) return;
+        if (this._hasCjkText(promptText)) {
+            this._setMomentImageState(moment, index, {
+                status: 'failed',
+                error: '缺少英文生图Tag：第二个括号必须只写英文逗号分隔 tags',
+                prompt: promptText,
+                description: descriptionText || promptText
+            });
+            await this.app.wechatData.saveData();
+            this._refreshMomentImageUI(momentId);
+            this.app.phoneShell.showNotification('生图格式错误', '缺少英文生图Tag，请使用 [图片]（中文描述）（English tags）', '⚠️');
+            return;
+        }
         const currentState = this._getMomentImageState(moment, index);
         if (currentState?.status === 'loading') return;
 
@@ -1028,7 +1062,8 @@ export class MomentsView {
     }
 
     _buildMomentImagePromptWithContactTags(moment = null, index = 0, promptText = '') {
-        const basePrompt = String(promptText || '').trim();
+        const parsedPrompt = this._parsePromptDescriptionPair(promptText);
+        const basePrompt = String(parsedPrompt.prompt || promptText || '').trim();
         const parsed = this._parseMomentImageItem(Array.isArray(moment?.images) ? moment.images[index] : '');
         const state = this._getMomentImageState(moment, index);
         const useUserReference = parsed.useUserReference === true
