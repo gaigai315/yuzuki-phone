@@ -4685,14 +4685,14 @@ export class HoneyView {
             forceTopicTitle: topicTitle,
             forceTopicKey: topicKey
         }).then(() => {
-            if (this.currentPage === 'live') this.render();
+            if (this._isActiveLiveTopic(topicKey, topicTitle)) this.render();
         }).catch(err => {
             console.error('蜜语主题生成失败:', err);
-            if (this.currentSceneData) {
+            if (this._isActiveLiveTopic(topicKey, topicTitle) && this.currentSceneData) {
                 this.currentSceneData.description = `获取失败：${err.message || err}`;
                 this._persistCurrentScene();
             }
-            if (this.currentPage === 'live') this.render();
+            if (this._isActiveLiveTopic(topicKey, topicTitle)) this.render();
         });
     }
 
@@ -7449,6 +7449,17 @@ export class HoneyView {
         ).trim();
     }
 
+    _isActiveLiveTopic(topicKey = '', topicTitle = '') {
+        if (this.currentPage !== 'live') return false;
+        const safeKey = String(topicKey || '').trim();
+        const safeTitle = String(topicTitle || '').trim();
+        const activeKey = this._getActiveTopicKey();
+        const activeTitle = this._getActiveTopicTitle();
+        return (!!safeKey && activeKey === safeKey)
+            || (!safeKey && !!safeTitle && activeTitle === safeTitle)
+            || (!!safeTitle && activeTitle === safeTitle && !activeKey);
+    }
+
     _resolveSceneNaiPrompt(sceneLike) {
         const scene = sceneLike || {};
         const direct = String(
@@ -7682,11 +7693,7 @@ export class HoneyView {
 
         try {
             const isRequestStillActive = () => {
-                const activeKey = this._getActiveTopicKey();
-                const activeTitle = this._getActiveTopicTitle();
-                return (topicKey && activeKey === topicKey)
-                    || (!topicKey && activeTitle === topicTitle)
-                    || (!!activeTitle && activeTitle === topicTitle && !activeKey);
+                return this._isActiveLiveTopic(topicKey, topicTitle);
             };
 
             let workingScene = this.app?.honeyData?.getTopicScene?.(topicKey || topicTitle, topicTitle);
