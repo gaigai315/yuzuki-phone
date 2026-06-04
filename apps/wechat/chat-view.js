@@ -2099,6 +2099,17 @@ renderChatRoom(chat) {
                 // 🔥 日期变化时强制显示日期分隔符（线下转线上跨天场景）
                 const isDateChanged = msgDate && msgDate !== lastRenderedDate;
                 // 🔥 常规：间隔达到3分钟或日期变化；新增：AI首条>1分钟也显示时间胶囊
+                const isManualTimeMarker = msg?.isTimeMarker === true || msg?.type === 'time_marker';
+                if (isManualTimeMarker) {
+                    const markerText = this._buildWechatTimeDividerText(msg, { forceDate: true });
+                    if (markerText) {
+                        html += this.renderManualTimeMarkerDivider(msg, index, markerText);
+                        lastRenderedTimestamp = msgTimestamp;
+                        if (msgDate) lastRenderedDate = msgDate;
+                    }
+                    return;
+                }
+
                 if (isDateChanged || shouldShowAiFirstDivider || msgTimestamp - lastRenderedTimestamp >= 3 * 60 * 1000 || (index === 0 && msgTimestamp)) {
                     let displayText = '';
                     if (isDateChanged) {
@@ -2126,10 +2137,6 @@ renderChatRoom(chat) {
                     }
                 }
 
-                if (msg?.isTimeMarker === true || msg?.type === 'time_marker') {
-                    return;
-                }
-
                 html += this.renderMessage(msg, userInfo, index);
             } catch (e) {
                 console.error('渲染单条消息失败，已跳过:', e, msg);
@@ -2139,6 +2146,43 @@ renderChatRoom(chat) {
         // 渲染完成后尝试水合表情包占位符
         this.scheduleInlineStickerHydration();
         return html;
+    }
+
+    _buildWechatTimeDividerText(msg = {}, { forceDate = false } = {}) {
+        const msgTimestamp = Number(msg?.timestamp || 0);
+        const msgDate = msg?.date ? this._normalizeWechatDateDisplay(msg.date) : null;
+        const time = String(msg?.time || '').trim();
+        if (forceDate && msgDate) {
+            return `${msgDate}${msg.weekday ? ' ' + msg.weekday : ''}${time ? ' ' + time : ''}`.trim();
+        }
+        if (time) return time;
+        if (msgTimestamp) {
+            const dateText = this._formatWechatDateFromTimestamp(msgTimestamp);
+            const timeText = this._formatWechatTimeFromTimestamp(msgTimestamp);
+            return forceDate ? `${dateText} ${timeText}`.trim() : timeText;
+        }
+        return '';
+    }
+
+    renderManualTimeMarkerDivider(msg, messageIndex, displayText) {
+        const messageId = String(msg?.id || '').trim();
+        return `
+            <div class="message-time-divider wechat-manual-time-marker" data-message-id="${this._escapeHtml(messageId)}" data-message-index="${Number(messageIndex)}" style="
+                display: flex;
+                justify-content: center;
+                margin: 15px 0;
+                position: relative;
+            ">
+                <span class="time-divider-text" style="
+                    padding: 3px 10px;
+                    font-size: 10px;
+                    color: #b0b0b0;
+                    cursor: default;
+                    -webkit-user-select: none;
+                    user-select: none;
+                ">${this._escapeHtml(displayText)}</span>
+            </div>
+        `;
     }
 
     _getCurrentMessageSelectionChatId() {
@@ -2167,6 +2211,7 @@ renderChatRoom(chat) {
         messagesDiv.innerHTML = this.renderMessagesWithDateDividers(messages, userInfo);
 
         this.bindMessageLongPressEvents();
+        this.bindManualTimeMarkerEvents();
         this.bindSpecialMessageEvents();
         this.bindInnerThoughtEvents();
         this.bindMessageSelectionEvents();
@@ -2509,6 +2554,7 @@ renderChatRoom(chat) {
         // 4. 重新绑定事件。这里不能影响发送主流程，否则会出现 API 已完成但微信一直黄灯。
         try {
             this.bindMessageLongPressEvents();
+            this.bindManualTimeMarkerEvents();
             this.bindSpecialMessageEvents();
             this.bindInnerThoughtEvents();
             this.bindMessageSelectionEvents();
@@ -6486,6 +6532,7 @@ renderChatRoom(chat) {
 
         // 🔧 绑定消息气泡长按/点击事件
         this.bindMessageLongPressEvents();
+        this.bindManualTimeMarkerEvents();
         this.bindMessageSelectionEvents();
 
         // 🔊 语音气泡点击播放逻辑
@@ -6719,6 +6766,167 @@ renderChatRoom(chat) {
             const index = resolveMessageIndexFromElement(msgElement);
             if (index !== -1) this.showMessageMenu(index);
         });
+    }
+
+    bindManualTimeMarkerEvents() {
+        const currentView = this.getCurrentWechatView();
+        const messagesDiv = currentView?.querySelector('#chat-messages');
+        if (!messagesDiv || messagesDiv._manualTimeMarkerEventsBound) return;
+        messagesDiv._manualTimeMarkerEventsBound = true;
+
+        let pressTimer = null;
+        let touchStartTarget = null;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let longPressTriggered = false;
+
+        const clearPress = () => {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+        };
+
+        const resolveMarkerIndex = (markerEl) => {
+            const messages = this.app?.wechatData?.getMessages?.(this.app?.currentChat?.id) || [];
+            const messageId = String(markerEl?.dataset?.messageId || '').trim();
+            if (messageId) {
+                const indexById = messages.findIndex(msg => String(msg?.id || '').trim() === messageId);
+                if (indexById !== -1) return indexById;
+            }
+            const domIndex = Number.parseInt(markerEl?.dataset?.messageIndex || '', 10);
+            return Number.isInteger(domIndex) ? domIndex : -1;
+        };
+
+        const openMarkerMenu = (markerEl) => {
+            const index = resolveMarkerIndex(markerEl);
+            if (index < 0) return;
+            const messages = this.app?.wechatData?.getMessages?.(this.app?.currentChat?.id) || [];
+            const marker = messages[index];
+            if (!marker || !(marker?.isTimeMarker === true || marker?.type === 'time_marker')) return;
+            this.showManualTimeMarkerMenu(markerEl, index, String(marker?.id || '').trim());
+        };
+
+        messagesDiv.addEventListener('touchstart', (e) => {
+            if (this._isMessageSelectionActiveForCurrentChat()) return;
+            const markerEl = e.target.closest('.wechat-manual-time-marker');
+            if (!markerEl) return;
+
+            touchStartTarget = markerEl;
+            longPressTriggered = false;
+            const firstTouch = e.touches && e.touches[0] ? e.touches[0] : null;
+            touchStartX = firstTouch ? Number(firstTouch.clientX) : 0;
+            touchStartY = firstTouch ? Number(firstTouch.clientY) : 0;
+            clearPress();
+            pressTimer = setTimeout(() => {
+                longPressTriggered = true;
+                openMarkerMenu(markerEl);
+            }, 500);
+        }, { passive: true });
+
+        messagesDiv.addEventListener('touchmove', (e) => {
+            if (!touchStartTarget) return;
+            const currentTouch = e.touches && e.touches[0] ? e.touches[0] : null;
+            if (!currentTouch) return;
+            const dx = Math.abs(Number(currentTouch.clientX) - touchStartX);
+            const dy = Math.abs(Number(currentTouch.clientY) - touchStartY);
+            if (dx > 10 || dy > 10) {
+                clearPress();
+                touchStartTarget = null;
+                longPressTriggered = false;
+            }
+        }, { passive: true });
+
+        messagesDiv.addEventListener('touchend', (e) => {
+            clearPress();
+            if (longPressTriggered) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            touchStartTarget = null;
+            longPressTriggered = false;
+        }, { passive: false });
+
+        messagesDiv.addEventListener('touchcancel', () => {
+            clearPress();
+            touchStartTarget = null;
+            longPressTriggered = false;
+        }, { passive: true });
+
+        messagesDiv.addEventListener('contextmenu', (e) => {
+            const markerEl = e.target.closest('.wechat-manual-time-marker');
+            if (!markerEl) return;
+            e.preventDefault();
+            openMarkerMenu(markerEl);
+        });
+
+        messagesDiv.addEventListener('dblclick', (e) => {
+            const markerEl = e.target.closest('.wechat-manual-time-marker');
+            if (!markerEl) return;
+            openMarkerMenu(markerEl);
+        });
+    }
+
+    showManualTimeMarkerMenu(markerEl, messageIndex, messageId = '') {
+        const currentView = this.getCurrentWechatView();
+        if (!currentView || !markerEl) return;
+
+        currentView.querySelectorAll('.message-action-menu, .wechat-time-marker-menu').forEach(menu => menu.remove());
+        if (typeof this._activeCloseMenu === 'function') {
+            document.removeEventListener('click', this._activeCloseMenu);
+            document.removeEventListener('touchend', this._activeCloseMenu);
+            this._activeCloseMenu = null;
+        }
+        if (typeof this._activeTimeMarkerCloseMenu === 'function') {
+            document.removeEventListener('click', this._activeTimeMarkerCloseMenu);
+            document.removeEventListener('touchend', this._activeTimeMarkerCloseMenu);
+            this._activeTimeMarkerCloseMenu = null;
+        }
+
+        markerEl.style.position = 'relative';
+        const menuEl = document.createElement('div');
+        menuEl.className = 'wechat-time-marker-menu';
+        menuEl.style.cssText = `
+            position: absolute;
+            left: 50%;
+            bottom: 100%;
+            transform: translateX(-50%);
+            margin-bottom: 4px;
+            z-index: 120;
+        `;
+        menuEl.innerHTML = `
+            <div style="display:flex; background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); border-radius:4px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.12); white-space:nowrap;">
+                <button class="wechat-time-marker-delete" type="button" style="background:transparent; color:#ff3b30; border:none; padding:5px 10px; font-size:11px; cursor:pointer;">删除时间推进</button>
+            </div>
+        `;
+        markerEl.appendChild(menuEl);
+
+        const cleanupMenu = () => {
+            currentView.querySelectorAll('.wechat-time-marker-menu').forEach(menu => menu.remove());
+            if (typeof this._activeTimeMarkerCloseMenu === 'function') {
+                document.removeEventListener('click', this._activeTimeMarkerCloseMenu);
+                document.removeEventListener('touchend', this._activeTimeMarkerCloseMenu);
+                this._activeTimeMarkerCloseMenu = null;
+            }
+        };
+
+        menuEl.querySelector('.wechat-time-marker-delete')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            cleanupMenu();
+            this.deleteManualTimeMarker(messageIndex, messageId);
+        });
+
+        setTimeout(() => {
+            const openedAt = Date.now();
+            const closeMenu = (evt) => {
+                if (Date.now() - openedAt < 350) return;
+                if (menuEl.contains(evt.target)) return;
+                cleanupMenu();
+            };
+            this._activeTimeMarkerCloseMenu = closeMenu;
+            document.addEventListener('click', closeMenu);
+            document.addEventListener('touchend', closeMenu);
+        }, 0);
     }
 
     // 🔥 发送按钮点击处理（抽取为独立方法，方便复用）
@@ -9873,13 +10081,18 @@ renderChatRoom(chat) {
             document.removeEventListener('touchend', this._activeCloseMenu);
             this._activeCloseMenu = null;
         }
+        if (typeof this._activeTimeMarkerCloseMenu === 'function') {
+            document.removeEventListener('click', this._activeTimeMarkerCloseMenu);
+            document.removeEventListener('touchend', this._activeTimeMarkerCloseMenu);
+            this._activeTimeMarkerCloseMenu = null;
+        }
 
         const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
         const message = messages[messageIndex];
         if (!message) return;
 
         // 移除当前视图旧菜单
-        currentView.querySelectorAll('.message-action-menu').forEach(menu => menu.remove());
+        currentView.querySelectorAll('.message-action-menu, .wechat-time-marker-menu').forEach(menu => menu.remove());
 
         // 获取消息元素并判断对齐方向。优先用 message id 定位，避免隐藏/过滤消息导致 DOM 顺序和数据下标偏移。
         const messageId = String(message?.id || '').trim();
@@ -10140,6 +10353,27 @@ renderChatRoom(chat) {
         }
     }
 
+    deleteManualTimeMarker(messageIndex, messageId = '') {
+        const chatId = String(this.app?.currentChat?.id || '').trim();
+        if (!chatId) return;
+
+        const messages = this.app.wechatData.getMessages(chatId) || [];
+        const safeMessageId = String(messageId || '').trim();
+        const resolvedIndex = safeMessageId
+            ? messages.findIndex(msg => String(msg?.id || '').trim() === safeMessageId)
+            : messageIndex;
+        const safeIndex = resolvedIndex !== -1 ? resolvedIndex : messageIndex;
+        const marker = messages[safeIndex];
+        if (!marker || !(marker?.isTimeMarker === true || marker?.type === 'time_marker')) return;
+
+        this.app.wechatData.deleteMessage(chatId, safeIndex);
+        this._refreshCurrentChatMessages({ keepScroll: true });
+
+        this.app.phoneShell?.updateStatusBarTime?.();
+        window.VirtualPhone?.home?.render?.({ forceDomRefresh: true });
+        this.app.phoneShell?.showNotification?.('已删除', '时间推进已删除', '✅');
+    }
+
     // 🔄 撤回消息
     recallMessage(messageIndex, messageId = '') {
         const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
@@ -10170,6 +10404,7 @@ renderChatRoom(chat) {
             messagesDiv.innerHTML = this.renderMessagesWithDateDividers(updatedMessages, userInfo);
             // 🔥 重新绑定长按事件
             this.bindMessageLongPressEvents();
+            this.bindManualTimeMarkerEvents();
         }
     }
 
