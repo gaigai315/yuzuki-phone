@@ -450,7 +450,7 @@ export class DiaryData {
     }
 
     _getPhotoPromptTagRegex() {
-        return /\[(用户照片|个人图片|图片)\]\s*[（(]([\s\S]*?)[）)](?:\s*[（(]([\s\S]*?)[）)])?/g;
+        return /\[(用户照片|个人图片|图片)\][^\S\r\n]*[（(]([^\r\n]*?)[）)](?:[^\S\r\n]*[（(]([^\r\n]*?)[）)])?/g;
     }
 
     parseDiaryContent(content = {}) {
