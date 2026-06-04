@@ -303,6 +303,30 @@ export class HoneyView {
         return !!document.querySelector('.phone-view-current .honey-app');
     }
 
+    _isCurrentLiveRoot(root = null) {
+        const liveRoot = root || document.querySelector('.phone-view-current .honey-page-live');
+        if (!liveRoot || !liveRoot.isConnected) return false;
+        if (this.currentPage !== 'live') return false;
+        return !!liveRoot.closest?.('.phone-view-current');
+    }
+
+    _playLiveVideoIfCurrent(liveVideo, root = null) {
+        if (!liveVideo) return false;
+        const liveRoot = root || liveVideo.closest?.('.honey-page-live');
+        if (!this._isCurrentLiveRoot(liveRoot)) {
+            liveVideo.pause?.();
+            return false;
+        }
+        const playPromise = liveVideo.play?.();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(error => {
+                if (!liveVideo.isConnected || !this._isCurrentLiveRoot(liveRoot)) return;
+                console.warn('直播视频自动播放被浏览器拦截:', error);
+            });
+        }
+        return true;
+    }
+
     _refreshHoneyImageGenerationView(sourceRoot = null) {
         if (!this._isCurrentHoneyView()) return false;
         const isCurrentLiveRoot = this.currentPage === 'live'
@@ -1159,7 +1183,7 @@ export class HoneyView {
         const generatedImageUrl = String(data.naiImageUrl || data.generatedImageUrl || data.imageUrl || '').trim();
         const liveVideoUrl = generatedImageUrl ? '' : this._buildLiveVideoUrl(data);
         const liveVideoHtml = liveVideoUrl
-            ? `<video id="honey-live-video-el" src="${this._escapeHtml(liveVideoUrl)}" class="honey-live-video" autoplay loop muted playsinline webkit-playsinline preload="auto"></video>`
+            ? `<video id="honey-live-video-el" src="${this._escapeHtml(liveVideoUrl)}" class="honey-live-video" loop muted playsinline webkit-playsinline preload="metadata"></video>`
             : '';
         const liveGlassHtml = generatedImageUrl
             ? ''
@@ -1708,19 +1732,18 @@ export class HoneyView {
                     liveVideo = document.createElement('video');
                     liveVideo.id = 'honey-live-video-el';
                     liveVideo.className = 'honey-live-video';
-                    liveVideo.autoplay = true;
                     liveVideo.loop = true;
                     liveVideo.muted = true;
                     liveVideo.playsInline = true;
                     liveVideo.setAttribute('webkit-playsinline', '');
-                    liveVideo.preload = 'auto';
+                    liveVideo.preload = 'metadata';
                     naiPlaceholder.prepend(liveVideo);
                 }
                 if (liveVideo.getAttribute('src') !== liveVideoUrl) {
                     liveVideo.setAttribute('src', liveVideoUrl);
                     liveVideo.load?.();
                 }
-                liveVideo.play?.().catch?.(() => {});
+                this._playLiveVideoIfCurrent(liveVideo, root);
             } else if (liveVideo) {
                 liveVideo.pause?.();
                 liveVideo.remove();
@@ -3539,10 +3562,7 @@ export class HoneyView {
                         liveVideo.dataset.retryCount = String(retryCount + 1);
                         liveVideo.src = nextUrl;
                         liveVideo.load();
-                        const retryPlay = liveVideo.play();
-                        if (retryPlay && typeof retryPlay.catch === 'function') {
-                            retryPlay.catch(() => {});
-                        }
+                        this._playLiveVideoIfCurrent(liveVideo, root);
                         console.warn('蜜语直播视频加载失败，已切换候选源:', failedSrc || '(empty src)', '=>', nextUrl);
                         return;
                     }
@@ -3554,10 +3574,7 @@ export class HoneyView {
                     liveVideo.dataset.retryCount = String(retryCount + 1);
                     liveVideo.src = repickedUrl;
                     liveVideo.load();
-                    const repickPlay = liveVideo.play();
-                    if (repickPlay && typeof repickPlay.catch === 'function') {
-                        repickPlay.catch(() => {});
-                    }
+                    this._playLiveVideoIfCurrent(liveVideo, root);
                     console.warn('蜜语直播视频加载失败，已重新挑选视频源:', failedSrc || '(empty src)', '=>', repickedUrl);
                     return;
                 }
@@ -3565,13 +3582,7 @@ export class HoneyView {
                 console.warn('蜜语直播视频加载失败:', failedSrc || '(empty src)');
                 this.app?.phoneShell?.showNotification?.('蜜语', '视频无法解码或地址失效，请重传 H.264 MP4', '⚠️');
             });
-            const playPromise = liveVideo.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    if (!liveVideo.isConnected) return;
-                    console.warn('直播视频自动播放被浏览器拦截:', error);
-                });
-            }
+            this._playLiveVideoIfCurrent(liveVideo, root);
         }
         if (liveSoundBtn && liveVideo) {
             liveSoundBtn.addEventListener('click', (e) => {
@@ -8273,8 +8284,15 @@ export class HoneyView {
         }
     }
 
+    _pauseLiveVideos() {
+        document.querySelectorAll('.honey-page-live #honey-live-video-el').forEach(video => {
+            video.pause?.();
+        });
+    }
+
     releaseInactiveResources() {
         this._cleanupTransient();
+        this._pauseLiveVideos();
         this._stopHoneyTtsPlayback();
         this._clearHoneyTtsCache();
         this._livePendingUserLines = [];

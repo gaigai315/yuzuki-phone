@@ -4093,3 +4093,35 @@ body.phone-input-active .honey-page-live .honey-live-bottom {
 body.phone-input-active .honey-page-live.is-user-live .honey-live-bottom {
     padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)) !important;
 }
+
+@media (max-width: 500px), (hover: none) and (pointer: coarse) {
+    .honey-meta-title.is-marquee .honey-meta-title-track,
+    .honey-live-gift-text-track.marquee,
+    .honey-live-gifts-list.is-scrolling .honey-live-gifts-track {
+        animation-iteration-count: 2;
+    }
+
+    .honey-meta-title-track,
+    .honey-live-gift-text-track,
+    .honey-live-gifts-track {
+        will-change: auto;
+    }
+
+    .honey-nav,
+    .honey-tabs,
+    .honey-live-collab-modal-panel {
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+    }
+
+    .honey-live-header,
+    .honey-live-gifts.is-expanded .honey-live-gifts-list {
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+
+    .honey-nai-glass {
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+    }
+}
