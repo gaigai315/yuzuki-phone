@@ -2337,13 +2337,37 @@ getWeekday(date) {
 
     _parseImagePromptText(rawValue = '') {
         const raw = String(rawValue || '').trim()
-            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '');
+            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '')
+            .trim();
         const parts = [];
-        const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
-        let match;
-        while ((match = bracketRegex.exec(raw)) !== null) {
-            const text = String(match[1] || '').trim();
+        let scanIndex = 0;
+        while (scanIndex < raw.length && /\s/.test(raw[scanIndex])) scanIndex += 1;
+        if (raw[scanIndex] !== '（' && raw[scanIndex] !== '(') {
+            return {
+                description: raw,
+                prompt: raw
+            };
+        }
+
+        while (scanIndex < raw.length) {
+            while (scanIndex < raw.length && /\s/.test(raw[scanIndex])) scanIndex += 1;
+            if (raw[scanIndex] !== '（' && raw[scanIndex] !== '(') break;
+            const group = this._readBracketGroupAt(raw, scanIndex);
+            if (!group) {
+                scanIndex += 1;
+                continue;
+            }
+            const text = String(group.text || '').trim();
             if (text) parts.push(text);
+            scanIndex = group.endIndex;
+        }
+
+        const trailingText = raw.slice(scanIndex).trim();
+        if (trailingText) {
+            return {
+                description: raw,
+                prompt: raw
+            };
         }
 
         if (parts.length >= 2) {
@@ -2358,6 +2382,31 @@ getWeekday(date) {
             description: single,
             prompt: single
         };
+    }
+
+    _readBracketGroupAt(value = '', startIndex = 0) {
+        const text = String(value || '');
+        const opener = text[startIndex];
+        if (opener !== '（' && opener !== '(') return null;
+
+        const closer = opener === '（' ? '）' : ')';
+        let depth = 1;
+        for (let index = startIndex + 1; index < text.length; index += 1) {
+            const char = text[index];
+            if (opener === '(' && char === '(') {
+                depth += 1;
+                continue;
+            }
+            if (char !== closer) continue;
+            depth -= 1;
+            if (depth === 0) {
+                return {
+                    text: text.slice(startIndex + 1, index),
+                    endIndex: index + 1
+                };
+            }
+        }
+        return null;
     }
 
     // 🔥 通过聊天对象同步头像（更可靠）

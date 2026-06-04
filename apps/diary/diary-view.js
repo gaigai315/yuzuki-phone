@@ -26,6 +26,7 @@ export class DiaryView {
         this.tocManageMode = false;
         this.tocSelectedIds = new Set();
         this._diaryPhotoActiveIndexByEntry = new Map();
+        this._diaryManualRunToken = 0;
     }
 
     loadCSS() {
@@ -1072,15 +1073,26 @@ export class DiaryView {
 
             // 🔥 使用全局状态判断是否正在运行
             if (this._getDiaryGenerationState()?.running || window.VirtualPhone?.isDiaryBatchRunning) {
+                this._diaryManualRunToken += 1;
                 this.app.diaryData.stopBatch = true;
+                this._requestDiaryGenerationStop();
                 this._setDiaryGenerationState({
                     ...this._getDiaryGenerationState(),
-                    running: true,
-                    stopping: true,
-                    status: '正在停止...'
+                    running: false,
+                    stopping: false,
+                    done: false,
+                    error: false,
+                    stopped: true,
+                    status: '已停止',
+                    finishedAt: Date.now()
                 });
-                btn.textContent = '🛑 正在停止...';
-                btn.disabled = true;
+                if (window.VirtualPhone) {
+                    window.VirtualPhone.isDiaryBatchRunning = false;
+                    delete window.VirtualPhone.diaryBatchProgress;
+                }
+                btn.textContent = '🚀 开始生成日记';
+                btn.disabled = false;
+                if (statusEl) statusEl.textContent = '已停止';
                 return;
             }
 
@@ -1093,6 +1105,8 @@ export class DiaryView {
             if (end - start < 2) { alert('楼层范围太小，至少需要2层'); return; }
 
             this.app.diaryData.stopBatch = false;
+            const runToken = ++this._diaryManualRunToken;
+            const isStaleRun = () => runToken !== this._diaryManualRunToken;
             this._setDiaryGenerationState({
                 running: true,
                 stopping: false,
@@ -1111,6 +1125,7 @@ export class DiaryView {
 
                 if (batchModeEnabled && (end - start) > batchSize) {
                     await data.batchGenerateDiary(start, end, batchSize, (current, total, status) => {
+                        if (isStaleRun()) return;
                         this._setDiaryGenerationState({
                             running: true,
                             stopping: false,
@@ -1130,6 +1145,7 @@ export class DiaryView {
                     });
                     this._syncDiaryGenerationStatusUI();
                     const diaries = await data.callAIToWriteDiary(start, end);
+                    if (isStaleRun() || this.app.diaryData.stopBatch) return;
                     for (const diary of diaries) {
                         data.addEntry({
                             content: diary.content,
@@ -1141,25 +1157,57 @@ export class DiaryView {
                         });
                     }
                 }
-                this._setDiaryGenerationState({
-                    running: false,
-                    done: true,
-                    status: '生成完成！',
-                    finishedAt: Date.now()
-                });
+                if (isStaleRun()) return;
+                if (this.app.diaryData.stopBatch) {
+                    this._setDiaryGenerationState({
+                        running: false,
+                        stopping: false,
+                        done: false,
+                        error: false,
+                        stopped: true,
+                        status: '已停止',
+                        finishedAt: Date.now()
+                    });
+                } else {
+                    this._setDiaryGenerationState({
+                        running: false,
+                        stopping: false,
+                        done: true,
+                        stopped: false,
+                        status: '生成完成！',
+                        finishedAt: Date.now()
+                    });
+                }
                 this._syncDiaryGenerationStatusUI();
             } catch (err) {
                 console.error('[DiaryView] 生成日记失败:', err);
+                if (isStaleRun()) return;
+                if (this.app.diaryData.stopBatch || /(?:已停止|已中断|AbortError|aborted|cancel)/i.test(String(err?.message || err || ''))) {
+                    this._setDiaryGenerationState({
+                        running: false,
+                        stopping: false,
+                        done: false,
+                        error: false,
+                        stopped: true,
+                        status: '已停止',
+                        finishedAt: Date.now()
+                    });
+                    this._syncDiaryGenerationStatusUI();
+                    return;
+                }
                 this._setDiaryGenerationState({
                     running: false,
+                    stopping: false,
                     error: true,
                     status: `失败: ${err.message}`,
                     finishedAt: Date.now()
                 });
                 this._syncDiaryGenerationStatusUI();
             } finally {
-                this.app.diaryData.stopBatch = false;
-                this._syncDiaryGenerationStatusUI();
+                if (!isStaleRun()) {
+                    this.app.diaryData.stopBatch = false;
+                    this._syncDiaryGenerationStatusUI();
+                }
             }
         };
 
@@ -1335,6 +1383,28 @@ export class DiaryView {
         return window.VirtualPhone.diaryGenerationState;
     }
 
+    _requestDiaryGenerationStop() {
+        try {
+            const context = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
+            [
+                context?.stopGeneration,
+                context?.stopGenerationDebounced,
+                window.stopGeneration,
+                window.stopGenerationDebounced,
+                window.abortGeneration,
+                window.cancelGeneration
+            ].forEach(fn => {
+                if (typeof fn === 'function') {
+                    try { fn.call(context || window); } catch (e) { }
+                }
+            });
+            const stopButton = document.querySelector('#mes_stop, #send_but[title*="停止"], #send_but[title*="Stop"], .mes_stop, [data-action="stop"]');
+            stopButton?.click?.();
+        } catch (e) {
+            console.warn('[DiaryView] 请求停止日记生成失败:', e);
+        }
+    }
+
     _syncDiaryGenerationStatusUI() {
         const btn = document.getElementById('diary-manual-run');
         const statusEl = document.getElementById('diary-manual-status');
@@ -1369,6 +1439,11 @@ export class DiaryView {
 
         if (state?.done) {
             statusEl.textContent = '✅ 生成完成！';
+            return;
+        }
+
+        if (state?.stopped) {
+            statusEl.textContent = '已停止';
             return;
         }
 

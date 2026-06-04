@@ -2209,18 +2209,31 @@ renderChatRoom(chat) {
         const chatRoom = currentView?.querySelector('.chat-room');
         if (!chatRoom) return;
 
-        chatRoom.querySelectorAll('.wechat-message-selection-bar').forEach(el => el.remove());
+        const bars = Array.from(chatRoom.querySelectorAll('.wechat-message-selection-bar'));
+        const existingBar = bars[0] || null;
+        bars.slice(1).forEach(el => el.remove());
         const inputArea = chatRoom.querySelector('.chat-input-area');
 
         if (!this._isMessageSelectionActiveForCurrentChat()) {
             if (inputArea) inputArea.style.removeProperty('display');
+            existingBar?.remove();
             return;
         }
 
         if (inputArea) inputArea.style.display = 'none';
-        chatRoom.insertAdjacentHTML('beforeend', this._renderMessageSelectionBar());
+        let bar = existingBar;
+        if (!bar) {
+            chatRoom.insertAdjacentHTML('beforeend', this._renderMessageSelectionBar());
+            bar = chatRoom.querySelector('.wechat-message-selection-bar');
+            this._bindMessageSelectionBarEvents(bar);
+        } else {
+            this._updateMessageSelectionBarState(bar);
+        }
+    }
 
-        const bar = chatRoom.querySelector('.wechat-message-selection-bar');
+    _bindMessageSelectionBarEvents(bar) {
+        if (!bar || bar.dataset.bound === '1') return;
+        bar.dataset.bound = '1';
         bar?.querySelector('[data-action="delete"]')?.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -2241,6 +2254,55 @@ renderChatRoom(chat) {
             e.stopPropagation();
             this.exitMessageSelectionMode();
         });
+    }
+
+    _updateMessageSelectionBarState(bar = null) {
+        const targetBar = bar || this.getCurrentWechatView()?.querySelector('.wechat-message-selection-bar');
+        if (!targetBar) return;
+        const selectedCount = this.selectedMessageIds?.size || 0;
+        const deleteBtn = targetBar.querySelector('[data-action="delete"]');
+        const deleteTailBtn = targetBar.querySelector('[data-action="delete-tail"]');
+
+        if (deleteBtn) {
+            deleteBtn.disabled = selectedCount <= 0;
+            deleteBtn.classList.toggle('is-danger', selectedCount > 0);
+            deleteBtn.classList.toggle('is-disabled', selectedCount <= 0);
+            const label = deleteBtn.querySelector('span');
+            if (label) label.textContent = `删除${selectedCount > 0 ? `(${selectedCount})` : ''}`;
+        }
+
+        if (deleteTailBtn) {
+            deleteTailBtn.disabled = selectedCount <= 0;
+            deleteTailBtn.classList.toggle('is-disabled', selectedCount <= 0);
+        }
+    }
+
+    _syncMessageSelectionDom(messageId = '') {
+        const currentView = this.getCurrentWechatView();
+        const messagesDiv = currentView?.querySelector('#chat-messages');
+        if (!messagesDiv) return;
+
+        const syncItem = (item) => {
+            const id = String(item?.dataset?.messageId || '').trim();
+            if (!id) return;
+            const selected = this.selectedMessageIds?.has(id) || false;
+            item.classList.toggle('is-selected', selected);
+            const check = item.querySelector('.message-select-check');
+            if (check) {
+                check.classList.toggle('checked', selected);
+                check.setAttribute('aria-label', selected ? '取消选择' : '选择消息');
+                check.innerHTML = selected ? '<i class="fa-solid fa-check"></i>' : '';
+            }
+        };
+
+        const safeMessageId = String(messageId || '').trim();
+        if (safeMessageId) {
+            Array.from(messagesDiv.querySelectorAll('.chat-message[data-message-id]'))
+                .filter(item => String(item.dataset.messageId || '').trim() === safeMessageId)
+                .forEach(syncItem);
+        } else {
+            messagesDiv.querySelectorAll('.chat-message[data-message-id]').forEach(syncItem);
+        }
     }
 
     _syncSelectedMessageIdsWithData(chatId = null) {
@@ -2291,7 +2353,8 @@ renderChatRoom(chat) {
         } else {
             this.selectedMessageIds.add(safeMessageId);
         }
-        this._refreshCurrentChatMessages({ keepScroll: true });
+        this._syncMessageSelectionDom(safeMessageId);
+        this._syncMessageSelectionBar();
     }
 
     selectAllMessagesInCurrentChat() {
@@ -2301,7 +2364,8 @@ renderChatRoom(chat) {
         this.selectedMessageIds = new Set(
             messages.map(msg => String(msg?.id || '').trim()).filter(Boolean)
         );
-        this._refreshCurrentChatMessages({ keepScroll: true });
+        this._syncMessageSelectionDom();
+        this._syncMessageSelectionBar();
     }
 
     deleteSelectedMessages() {
@@ -3580,10 +3644,10 @@ renderChatRoom(chat) {
     }
 
     renderImagePromptCard(msg) {
-        const promptRaw = String(msg?.imagePrompt || msg?.content || '待生成图片').trim() || '待生成图片';
+        const displayPrompt = this._normalizeImagePromptDisplayFields(msg);
+        const promptRaw = displayPrompt.prompt || '待生成图片';
         const promptText = this._escapeHtml(promptRaw);
-        const parsedPrompt = this._parseImagePromptText(String(msg?.content || ''));
-        const descriptionRaw = String(msg?.imageDescription || parsedPrompt.description || promptRaw).trim() || promptRaw;
+        const descriptionRaw = displayPrompt.description || promptRaw;
         const descriptionText = this._escapeHtml(descriptionRaw);
         const promptLabel = this._hasCjkText(promptRaw)
             ? '缺少英文Tag'
@@ -3861,15 +3925,75 @@ renderChatRoom(chat) {
         return `${otherName}发起了一起听歌邀请。当前正在一起听${songText}${progress}。`;
     }
 
+    _normalizeImagePromptDisplayFields(msg = {}) {
+        const fallback = '待生成图片';
+        const contentRaw = String(msg?.content || '').trim();
+        const imagePromptRaw = String(msg?.imagePrompt || '').trim();
+        const imageDescriptionRaw = String(msg?.imageDescription || '').trim();
+        let prompt = imagePromptRaw || contentRaw || fallback;
+        let description = imageDescriptionRaw || this._parseImagePromptText(contentRaw).description || prompt;
+        const parsedCandidates = [imageDescriptionRaw, imagePromptRaw, contentRaw]
+            .map(value => this._parseImagePromptText(value))
+            .filter(parsed => parsed.description && parsed.prompt && parsed.description !== parsed.prompt);
+        const splitCandidate = parsedCandidates.find(parsed => !this._hasCjkText(parsed.prompt)) || parsedCandidates[0];
+
+        if (splitCandidate) {
+            const descriptionLooksRaw = !description
+                || description === prompt
+                || this._looksLikeImagePromptMarkup(description)
+                || (this._hasCjkText(description) && !this._hasCjkText(splitCandidate.prompt) && description.includes(splitCandidate.prompt));
+            const promptLooksBad = !prompt
+                || this._looksLikeImagePromptMarkup(prompt)
+                || (this._hasCjkText(prompt) && !this._hasCjkText(splitCandidate.prompt));
+
+            if (descriptionLooksRaw) description = splitCandidate.description;
+            if (promptLooksBad) prompt = splitCandidate.prompt;
+        }
+
+        return {
+            description: String(description || fallback).trim() || fallback,
+            prompt: String(prompt || fallback).trim() || fallback
+        };
+    }
+
+    _looksLikeImagePromptMarkup(value = '') {
+        return /^\s*\[(?:用户照片|个人图片|图片|视频)\]/i.test(String(value || '').trim())
+            || /^\s*[（(][\s\S]+[）)]\s*[（(][\s\S]+[）)]\s*$/.test(String(value || '').trim());
+    }
+
     _parseImagePromptText(rawValue = '') {
         const raw = String(rawValue || '').trim()
-            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '');
+            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '')
+            .trim();
         const parts = [];
-        const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
-        let match;
-        while ((match = bracketRegex.exec(raw)) !== null) {
-            const text = String(match[1] || '').trim();
+        let scanIndex = 0;
+        while (scanIndex < raw.length && /\s/.test(raw[scanIndex])) scanIndex += 1;
+        if (raw[scanIndex] !== '（' && raw[scanIndex] !== '(') {
+            return {
+                description: raw,
+                prompt: raw
+            };
+        }
+
+        while (scanIndex < raw.length) {
+            while (scanIndex < raw.length && /\s/.test(raw[scanIndex])) scanIndex += 1;
+            if (raw[scanIndex] !== '（' && raw[scanIndex] !== '(') break;
+            const group = this._readBracketGroupAt(raw, scanIndex);
+            if (!group) {
+                scanIndex += 1;
+                continue;
+            }
+            const text = String(group.text || '').trim();
             if (text) parts.push(text);
+            scanIndex = group.endIndex;
+        }
+
+        const trailingText = raw.slice(scanIndex).trim();
+        if (trailingText) {
+            return {
+                description: raw,
+                prompt: raw
+            };
         }
 
         if (parts.length >= 2) {
@@ -3884,6 +4008,31 @@ renderChatRoom(chat) {
             description: single,
             prompt: single
         };
+    }
+
+    _readBracketGroupAt(value = '', startIndex = 0) {
+        const text = String(value || '');
+        const opener = text[startIndex];
+        if (opener !== '（' && opener !== '(') return null;
+
+        const closer = opener === '（' ? '）' : ')';
+        let depth = 1;
+        for (let index = startIndex + 1; index < text.length; index += 1) {
+            const char = text[index];
+            if (opener === '(' && char === '(') {
+                depth += 1;
+                continue;
+            }
+            if (char !== closer) continue;
+            depth -= 1;
+            if (depth === 0) {
+                return {
+                    text: text.slice(startIndex + 1, index),
+                    endIndex: index + 1
+                };
+            }
+        }
+        return null;
     }
 
     _hasCjkText(value = '') {
@@ -4954,14 +5103,24 @@ renderChatRoom(chat) {
             }];
         }
 
-        const inlineSpecialRegex = /\[(?:同意收养|拒绝收养)\]|\[使用[：:]\s*[^x×\]\s]+\s*[x×]\s*\d+\]\s*(?:[（(][\s\S]*?[）)])?|\[(?:用户照片|个人图片|图片|视频)\]\s*[（(]\s*[\s\S]+?\s*[）)](?:\s*[（(]\s*[\s\S]+?\s*[）)])?|\[(?:收款|领取红包|退回转账|退回红包)\](?:\s*[（(]\s*[^）)]*\s*[）)])?|\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*蜜语\s*\]|【\s*蜜语\s*】)\s*(?:[（(]\s*[^）)]*\s*[）)])?|(?:\[\s*音乐\s*\]|【\s*音乐\s*】)\s*[（(]\s*[^，,）)]+?(?:\s*[，,]\s*[^）)]+?)?\s*[）)]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
+        const inlineSpecialRegex = /\[(?:同意收养|拒绝收养)\]|\[使用[：:]\s*[^x×\]\s]+\s*[x×]\s*\d+\]\s*(?:[（(][\s\S]*?[）)])?|\[(?:收款|领取红包|退回转账|退回红包)\](?:\s*[（(]\s*[^）)]*\s*[）)])?|\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*蜜语\s*\]|【\s*蜜语\s*】)\s*(?:[（(]\s*[^）)]*\s*[）)])?|(?:\[\s*音乐\s*\]|【\s*音乐\s*】)\s*[（(]\s*[^，,）)]+?(?:\s*[，,]\s*[^）)]+?)?\s*[）)]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
+        const inlineMatches = [];
+        this._collectInlineImagePromptMatches(rawContent).forEach(item => inlineMatches.push(item));
+        let regexMatch;
+        while ((regexMatch = inlineSpecialRegex.exec(rawContent)) !== null) {
+            inlineMatches.push({
+                index: regexMatch.index,
+                raw: regexMatch[0]
+            });
+        }
+        inlineMatches.sort((a, b) => a.index - b.index || b.raw.length - a.raw.length);
         let hasMatch = false;
         let lastIndex = 0;
         let usedQuote = false;
         const result = [];
 
-        let match;
-        while ((match = inlineSpecialRegex.exec(rawContent)) !== null) {
+        for (const match of inlineMatches) {
+            if (match.index < lastIndex) continue;
             hasMatch = true;
 
             const beforeText = rawContent.slice(lastIndex, match.index).trim();
@@ -4974,7 +5133,7 @@ renderChatRoom(chat) {
                 usedQuote = true;
             }
 
-            const specialRaw = match[0].trim();
+            const specialRaw = match.raw.trim();
             const special = this.parseSpecialMessage(specialRaw);
             if (special) {
                 result.push({
@@ -4988,7 +5147,7 @@ renderChatRoom(chat) {
                 usedQuote = true;
             }
 
-            lastIndex = match.index + match[0].length;
+            lastIndex = match.index + match.raw.length;
         }
 
         if (!hasMatch) return [message];
@@ -5003,6 +5162,32 @@ renderChatRoom(chat) {
         }
 
         return result.filter(m => (m.specialMessage || String(m.content || '').trim()));
+    }
+
+    _collectInlineImagePromptMatches(rawContent = '') {
+        const content = String(rawContent || '');
+        const tagRegex = /\[(用户照片|个人图片|图片|视频)\]/g;
+        const matches = [];
+        let tagMatch;
+        while ((tagMatch = tagRegex.exec(content)) !== null) {
+            let cursor = tagRegex.lastIndex;
+            while (cursor < content.length && /\s/.test(content[cursor])) cursor += 1;
+
+            const firstGroup = this._readBracketGroupAt(content, cursor);
+            if (!firstGroup) continue;
+            cursor = firstGroup.endIndex;
+            while (cursor < content.length && /\s/.test(content[cursor])) cursor += 1;
+
+            const secondGroup = this._readBracketGroupAt(content, cursor);
+            if (secondGroup) cursor = secondGroup.endIndex;
+
+            matches.push({
+                index: tagMatch.index,
+                raw: content.slice(tagMatch.index, cursor)
+            });
+            tagRegex.lastIndex = cursor;
+        }
+        return matches;
     }
 
     _applyWechatPaymentAction(chatId, action = {}, actorName = '') {
