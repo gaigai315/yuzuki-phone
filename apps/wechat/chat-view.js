@@ -2031,7 +2031,7 @@ renderChatRoom(chat) {
                     ${this.showQuickReplies ? this.renderQuickReplyPanel() : ''}
 
                     <!-- 引用预览栏 - 仿真实微信浅灰条 -->
-                    ${this.activeQuote ? `<div class="active-quote-bar" style="padding: 2px 8px; background: rgba(0,0,0,0.05); font-size: 10px; color: #888; display: flex; justify-content: space-between; align-items: center; line-height: 1.2;"><div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">${this.activeQuote.sender}: ${this.activeQuote.content.length > 20 ? this.activeQuote.content.substring(0, 20) + '...' : this.activeQuote.content}</div><button id="cancel-quote-btn" style="background: none; border: none; color: #aaa; cursor: pointer; padding: 0 4px; font-size: 10px; line-height: 1;"><i class="fa-solid fa-xmark"></i></button></div>` : ''}
+                    ${this.activeQuote ? `<div class="active-quote-bar" style="padding: 2px 8px; background: rgba(0,0,0,0.05); font-size: 10px; color: #888; display: flex; justify-content: space-between; align-items: center; line-height: 1.2;"><div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">${this._escapeHtml(this.activeQuote.sender)}: ${this._escapeHtml(this.activeQuote.content.length > 20 ? this.activeQuote.content.substring(0, 20) + '...' : this.activeQuote.content)}</div><button id="cancel-quote-btn" style="background: none; border: none; color: #aaa; cursor: pointer; padding: 0 4px; font-size: 10px; line-height: 1;"><i class="fa-solid fa-xmark"></i></button></div>` : ''}
 
                     <!-- 输入行 -->
                     <div class="chat-input-bar" style="display: flex; align-items: center; justify-content: space-between; background: transparent !important;">
@@ -2130,7 +2130,7 @@ renderChatRoom(chat) {
                     return;
                 }
 
-                html += this.renderMessage(msg, userInfo);
+                html += this.renderMessage(msg, userInfo, index);
             } catch (e) {
                 console.error('渲染单条消息失败，已跳过:', e, msg);
             }
@@ -2523,7 +2523,7 @@ renderChatRoom(chat) {
     }
 
     // 渲染单条消息（全新红包样式）
-    renderMessage(msg, userInfo) {
+    renderMessage(msg, userInfo, messageIndex = -1) {
         if (msg?.isTimeMarker === true || msg?.type === 'time_marker') {
             return '';
         }
@@ -2546,7 +2546,7 @@ renderChatRoom(chat) {
         // 🔥🔥🔥 系统消息特殊处理（居中透明气泡）
         if (msg.type === 'system' || msg.from === 'system') {
             return `
-            <div class="chat-message message-system${selectionClass}${selectedClass}" data-message-id="${this._escapeHtml(messageId)}" style="
+            <div class="chat-message message-system${selectionClass}${selectedClass}" data-message-id="${this._escapeHtml(messageId)}" data-message-index="${Number(messageIndex)}" style="
                 display: flex;
                 justify-content: center;
                 margin: 12px 0;
@@ -3071,10 +3071,10 @@ renderChatRoom(chat) {
         }
 
         // 🔥 引用内容：独立的 div，不影响气泡宽度
-        const quoteHtml = msg.quote ? `<div style="font-size: 10px; color: #888; background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 3px; margin-top: 3px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">${msg.quote.sender}: ${msg.quote.content.length > 10 ? msg.quote.content.substring(0, 10) + '...' : msg.quote.content}</div>` : '';
+        const quoteHtml = msg.quote ? `<div style="font-size: 10px; color: #888; background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 3px; margin-top: 3px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">${this._escapeHtml(msg.quote.sender)}: ${this._escapeHtml(msg.quote.content.length > 10 ? msg.quote.content.substring(0, 10) + '...' : msg.quote.content)}</div>` : '';
 
         return `
-        <div class="chat-message ${isMe ? 'message-right' : 'message-left'}${selectionClass}${selectedClass}" data-message-id="${this._escapeHtml(messageId)}">
+        <div class="chat-message ${isMe ? 'message-right' : 'message-left'}${selectionClass}${selectedClass}" data-message-id="${this._escapeHtml(messageId)}" data-message-index="${Number(messageIndex)}">
             ${selectionCheckHtml}
             ${!isMe ? `<div class="message-avatar">${this.app.renderAvatar(senderAvatar, '👤', senderName)}</div>` : ''}
             <div class="message-content" style="display: inline-flex; flex-direction: column; ${isMe ? 'align-items: flex-end;' : 'align-items: flex-start;'}">
@@ -6602,8 +6602,13 @@ renderChatRoom(chat) {
         if (!messagesDiv) return;
         const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-poker-card, .message-music-card, .message-music-listen-card';
         const resolveMessageIndexFromElement = (msgElement) => {
-            const messageId = String(msgElement?.dataset?.messageId || '').trim();
             const messages = this.app?.wechatData?.getMessages?.(this.app?.currentChat?.id) || [];
+            const domIndex = Number.parseInt(msgElement?.dataset?.messageIndex || '', 10);
+            if (Number.isInteger(domIndex) && domIndex >= 0 && domIndex < messages.length) {
+                return domIndex;
+            }
+
+            const messageId = String(msgElement?.dataset?.messageId || '').trim();
             if (messageId) {
                 const indexById = messages.findIndex(msg => String(msg?.id || '').trim() === messageId);
                 if (indexById !== -1) return indexById;
@@ -6711,8 +6716,7 @@ renderChatRoom(chat) {
             const msgElement = e.target.closest('.chat-message');
             if (!msgElement) return;
 
-            const allMessages = messagesDiv.querySelectorAll('.chat-message');
-            const index = Array.from(allMessages).indexOf(msgElement);
+            const index = resolveMessageIndexFromElement(msgElement);
             if (index !== -1) this.showMessageMenu(index);
         });
     }
@@ -9882,7 +9886,9 @@ renderChatRoom(chat) {
         const allMessageElements = Array.from(messagesDiv.querySelectorAll('.chat-message'));
         const messageElement = messageId
             ? allMessageElements.find(el => String(el?.dataset?.messageId || '').trim() === messageId)
-            : allMessageElements[messageIndex];
+            || allMessageElements.find(el => Number.parseInt(el?.dataset?.messageIndex || '', 10) === messageIndex)
+            : allMessageElements.find(el => Number.parseInt(el?.dataset?.messageIndex || '', 10) === messageIndex)
+            || allMessageElements[messageIndex];
         if (!messageElement) return;
 
         const isRight = messageElement.classList.contains('message-right');
@@ -9915,17 +9921,17 @@ renderChatRoom(chat) {
         let buttonsHtml = '';
 
         if (isTextMessage || isLocationMessage) {
-            buttonsHtml += `<button class="msg-action-btn" data-action="edit" data-index="${messageIndex}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">编辑</button>`;
+            buttonsHtml += `<button class="msg-action-btn" data-action="edit" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">编辑</button>`;
         }
-        buttonsHtml += `<button class="msg-action-btn" data-action="multi-select" data-index="${messageIndex}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">多选</button>`;
+        buttonsHtml += `<button class="msg-action-btn" data-action="multi-select" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">多选</button>`;
         if (isTextMessage || isImageMessage) {
-            buttonsHtml += `<button class="msg-action-btn" data-action="quote" data-index="${messageIndex}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">引用</button>`;
+            buttonsHtml += `<button class="msg-action-btn" data-action="quote" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">引用</button>`;
         }
         if (hasCallTranscript) {
-            buttonsHtml += `<button class="msg-action-btn" data-action="view" data-index="${messageIndex}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">查看</button>`;
+            buttonsHtml += `<button class="msg-action-btn" data-action="view" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">查看</button>`;
         }
-        buttonsHtml += `<button class="msg-action-btn" data-action="recall" data-index="${messageIndex}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">撤回</button>`;
-        buttonsHtml += `<button class="msg-action-btn" data-action="delete" data-index="${messageIndex}" style="background: transparent; color: #ff3b30; border: none; padding: 4px 8px; font-size: 11px; cursor: pointer;">删除</button>`;
+        buttonsHtml += `<button class="msg-action-btn" data-action="recall" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">撤回</button>`;
+        buttonsHtml += `<button class="msg-action-btn" data-action="delete" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #ff3b30; border: none; padding: 4px 8px; font-size: 11px; cursor: pointer;">删除</button>`;
 
         const menuEl = document.createElement('div');
         menuEl.className = 'message-action-menu';
@@ -9961,22 +9967,28 @@ renderChatRoom(chat) {
                 e.stopPropagation();
                 const action = btn.dataset.action;
                 const index = parseInt(btn.dataset.index);
+                const actionMessageId = String(btn.dataset.messageId || '').trim();
+                const messages = this.app.wechatData.getMessages(this.app.currentChat.id) || [];
+                const resolvedIndex = actionMessageId
+                    ? messages.findIndex(msg => String(msg?.id || '').trim() === actionMessageId)
+                    : index;
+                const safeIndex = resolvedIndex !== -1 ? resolvedIndex : index;
 
                 cleanupMenu(); // 🔥 核心：执行任何操作前，先打扫干净战场！
 
                 if (action === 'delete') {
-                    this.deleteMessage(index);
+                    this.deleteMessage(safeIndex, actionMessageId);
                 } else if (action === 'edit') {
-                    this.editMessage(index);
+                    this.editMessage(safeIndex, actionMessageId);
                 } else if (action === 'multi-select') {
-                    const targetMessage = this.app.wechatData.getMessages(this.app.currentChat.id)?.[index];
+                    const targetMessage = messages?.[safeIndex];
                     this.enterMessageSelectionMode(targetMessage?.id || null);
                 } else if (action === 'recall') {
-                    this.recallMessage(index);
+                    this.recallMessage(safeIndex, actionMessageId);
                 } else if (action === 'quote') {
-                    this.quoteMessage(index);
+                    this.quoteMessage(safeIndex, actionMessageId);
                 } else if (action === 'view') {
-                    this.viewCallTranscript(index);
+                    this.viewCallTranscript(safeIndex, actionMessageId);
                 }
             });
         });
@@ -9997,9 +10009,12 @@ renderChatRoom(chat) {
     }
 
     // 📄 查看通话 transcript（长按菜单 -> 查看）
-    viewCallTranscript(messageIndex) {
+    viewCallTranscript(messageIndex, messageId = '') {
         const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
-        const message = messages[messageIndex];
+        const safeMessageId = String(messageId || '').trim();
+        const message = safeMessageId
+            ? messages.find(msg => String(msg?.id || '').trim() === safeMessageId)
+            : messages[messageIndex];
         if (!message || message.type !== 'call_record') return;
 
         const transcript = Array.isArray(message.transcript) ? message.transcript : [];
@@ -10101,12 +10116,19 @@ renderChatRoom(chat) {
     }
 
     // 🗑️ 删除消息
-    deleteMessage(messageIndex) {
+    deleteMessage(messageIndex, messageId = '') {
         // 直接删除，不需要确认（因为已经是长按操作了）
         const chatId = this.app.currentChat.id;
         const messages = this.app.wechatData.getMessages(chatId) || [];
-        const deletedImageUrls = this._collectManagedWechatGeneratedImages(messages[messageIndex]);
-        this.app.wechatData.deleteMessage(chatId, messageIndex);
+        const safeMessageId = String(messageId || '').trim();
+        const resolvedIndex = safeMessageId
+            ? messages.findIndex(msg => String(msg?.id || '').trim() === safeMessageId)
+            : messageIndex;
+        const safeIndex = resolvedIndex !== -1 ? resolvedIndex : messageIndex;
+        if (!messages[safeIndex]) return;
+
+        const deletedImageUrls = this._collectManagedWechatGeneratedImages(messages[safeIndex]);
+        this.app.wechatData.deleteMessage(chatId, safeIndex);
         this._cleanupWechatGeneratedImages(deletedImageUrls);
 
         // 🔥 局部刷新：只更新消息列表，不重绘整个界面
@@ -10119,9 +10141,12 @@ renderChatRoom(chat) {
     }
 
     // 🔄 撤回消息
-    recallMessage(messageIndex) {
+    recallMessage(messageIndex, messageId = '') {
         const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
-        const message = messages[messageIndex];
+        const safeMessageId = String(messageId || '').trim();
+        const message = safeMessageId
+            ? messages.find(msg => String(msg?.id || '').trim() === safeMessageId)
+            : messages[messageIndex];
         if (!message) return;
 
         // 获取发送者名字
@@ -10149,9 +10174,12 @@ renderChatRoom(chat) {
     }
 
     // 💬 引用消息
-    quoteMessage(messageIndex) {
+    quoteMessage(messageIndex, messageId = '') {
         const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
-        const message = messages[messageIndex];
+        const safeMessageId = String(messageId || '').trim();
+        const message = safeMessageId
+            ? messages.find(msg => String(msg?.id || '').trim() === safeMessageId)
+            : messages[messageIndex];
         if (!message || message.type === 'system') return;
 
         // 获取发送者名字
@@ -10166,7 +10194,10 @@ renderChatRoom(chat) {
         }
 
         // 设置当前引用
-        this.activeQuote = { sender, content };
+        this.activeQuote = {
+            sender,
+            content
+        };
         this.app.render();
 
         // 聚焦输入框
@@ -10177,16 +10208,27 @@ renderChatRoom(chat) {
     }
 
     // ✏️ 编辑消息（直接在气泡上编辑）
-    editMessage(messageIndex) {
+    editMessage(messageIndex, messageId = '') {
         const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
-        const message = messages[messageIndex];
+        const safeMessageId = String(messageId || '').trim();
+        const resolvedIndex = safeMessageId
+            ? messages.findIndex(msg => String(msg?.id || '').trim() === safeMessageId)
+            : messageIndex;
+        const safeIndex = resolvedIndex !== -1 ? resolvedIndex : messageIndex;
+        const message = messages[safeIndex];
+        if (!message) return;
 
         // 🔥 找到对应的消息气泡
         const currentView = this.getCurrentWechatView();
         const messagesDiv = currentView?.querySelector('#chat-messages');
         if (!messagesDiv) return;
-        const messageElements = messagesDiv.querySelectorAll('.chat-message');
-        const messageEl = messageElements[messageIndex];
+        const targetMessageId = String(message?.id || '').trim();
+        const messageElements = Array.from(messagesDiv.querySelectorAll('.chat-message'));
+        const messageEl = targetMessageId
+            ? messageElements.find(el => String(el?.dataset?.messageId || '').trim() === targetMessageId)
+            || messageElements.find(el => Number.parseInt(el?.dataset?.messageIndex || '', 10) === safeIndex)
+            : messageElements.find(el => Number.parseInt(el?.dataset?.messageIndex || '', 10) === safeIndex)
+            || messageElements[safeIndex];
         if (!messageEl) return;
 
         const textEl = messageEl.querySelector('.message-text, .message-location');
@@ -10301,9 +10343,9 @@ renderChatRoom(chat) {
             const newContent = textarea.value.trim();
             if (newContent) {
                 if (isCallRecord) {
-                    this._saveCallRecordTranscript(messageIndex, newContent);
+                    this._saveCallRecordTranscript(safeIndex, newContent);
                 } else {
-                    this.app.wechatData.editMessage(this.app.currentChat.id, messageIndex, newContent);
+                    this.app.wechatData.editMessage(this.app.currentChat.id, safeIndex, newContent);
                 }
                 finishInlineEditAndRefresh();
                 this.app.phoneShell.showNotification('已修改', '消息已更新', '✅');
@@ -10317,9 +10359,9 @@ renderChatRoom(chat) {
                 const newContent = textarea.value.trim();
                 if (newContent) {
                     if (isCallRecord) {
-                        this._saveCallRecordTranscript(messageIndex, newContent);
+                        this._saveCallRecordTranscript(safeIndex, newContent);
                     } else {
-                        this.app.wechatData.editMessage(this.app.currentChat.id, messageIndex, newContent);
+                        this.app.wechatData.editMessage(this.app.currentChat.id, safeIndex, newContent);
                     }
                     finishInlineEditAndRefresh();
                     this.app.phoneShell.showNotification('已修改', '消息已更新', '✅');
