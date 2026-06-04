@@ -6416,6 +6416,16 @@ renderChatRoom(chat) {
         const messagesDiv = currentView?.querySelector('#chat-messages');
         if (!messagesDiv) return;
         const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-poker-card, .message-music-card, .message-music-listen-card';
+        const resolveMessageIndexFromElement = (msgElement) => {
+            const messageId = String(msgElement?.dataset?.messageId || '').trim();
+            const messages = this.app?.wechatData?.getMessages?.(this.app?.currentChat?.id) || [];
+            if (messageId) {
+                const indexById = messages.findIndex(msg => String(msg?.id || '').trim() === messageId);
+                if (indexById !== -1) return indexById;
+            }
+            const allMessages = messagesDiv.querySelectorAll('.chat-message');
+            return Array.from(allMessages).indexOf(msgElement);
+        };
 
         // 🔥 性能核武器：确保整个聊天列表只绑定 1 次事件
         // 不再随消息数量增多而造成几何级卡顿！
@@ -6449,8 +6459,7 @@ renderChatRoom(chat) {
             }
 
             pressTimer = setTimeout(() => {
-                const allMessages = messagesDiv.querySelectorAll('.chat-message');
-                const index = Array.from(allMessages).indexOf(msgElement);
+                const index = resolveMessageIndexFromElement(msgElement);
                 if (index !== -1) {
                     longPressTriggered = true;
                     if (targetBubble.closest('.message-weibo-card')) {
@@ -6504,8 +6513,7 @@ renderChatRoom(chat) {
             if (!msgElement) return;
 
             e.preventDefault();
-            const allMessages = messagesDiv.querySelectorAll('.chat-message');
-            const index = Array.from(allMessages).indexOf(msgElement);
+            const index = resolveMessageIndexFromElement(msgElement);
             if (index !== -1) this.showMessageMenu(index);
         });
 
@@ -9684,8 +9692,12 @@ renderChatRoom(chat) {
         // 移除当前视图旧菜单
         currentView.querySelectorAll('.message-action-menu').forEach(menu => menu.remove());
 
-        // 获取消息元素并判断对齐方向
-        const messageElement = messagesDiv.querySelectorAll('.chat-message')[messageIndex];
+        // 获取消息元素并判断对齐方向。优先用 message id 定位，避免隐藏/过滤消息导致 DOM 顺序和数据下标偏移。
+        const messageId = String(message?.id || '').trim();
+        const allMessageElements = Array.from(messagesDiv.querySelectorAll('.chat-message'));
+        const messageElement = messageId
+            ? allMessageElements.find(el => String(el?.dataset?.messageId || '').trim() === messageId)
+            : allMessageElements[messageIndex];
         if (!messageElement) return;
 
         const isRight = messageElement.classList.contains('message-right');
