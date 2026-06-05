@@ -3927,14 +3927,16 @@ renderChatRoom(chat) {
         if (msg.type === 'poker_card') {
             const poker = msg.pokerData || {};
             const title = String(poker.title || '德州扑克牌局记录').trim();
-            const desc = String(poker.desc || '').trim();
-            return `[德州扑克分享]${title ? ` ${title}` : ''}${desc ? `：${desc}` : ''}`;
+            const content = String(poker.content || poker.desc || '').trim();
+            const header = `[德州扑克分享]${title ? ` ${title}` : ''}`;
+            return content ? `${header}\n${content}` : header;
         }
         if (msg.type === 'werewolf_card') {
             const werewolf = msg.werewolfData || {};
             const title = String(werewolf.title || '狼人杀复盘记录').trim();
-            const desc = String(werewolf.desc || '').trim();
-            return `[狼人杀复盘分享]${title ? ` ${title}` : ''}${desc ? `：${desc}` : ''}`;
+            const content = String(werewolf.content || werewolf.desc || '').trim();
+            const header = `[狼人杀复盘分享]${title ? ` ${title}` : ''}`;
+            return content ? `${header}\n${content}` : header;
         }
         if (msg.type === 'music_listen') {
             return this._formatMusicListenMessageForPrompt(msg, targetChat);
