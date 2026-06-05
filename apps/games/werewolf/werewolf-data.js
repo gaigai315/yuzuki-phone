@@ -3,7 +3,8 @@
  *  狼人杀数据
  * ======================================================== */
 
-const STORAGE_KEY = 'games_werewolf_state';
+const LEGACY_STORAGE_KEY = 'games_werewolf_state';
+const STORAGE_KEY = 'chat_games_werewolf_state';
 
 const ROLE_POOL = ['狼人', '狼人', '预言家', '女巫', '守卫', '村民', '村民', '村民'];
 const NIGHT_STEPS = ['guard', 'werewolf', 'seer', 'witch'];
@@ -540,6 +541,7 @@ export class WerewolfData {
     _loadState() {
         const saved = this.storage?.get?.(STORAGE_KEY);
         if (this._isValidState(saved)) {
+            this._removeLegacyGlobalState();
             if (saved.phase === 'setup' && this._shouldRandomizeLegacyUserSeat(saved)) {
                 return this._createInitialState();
             }
@@ -550,7 +552,24 @@ export class WerewolfData {
             }
             return migrated;
         }
+
+        const legacySaved = this.storage?.get?.(LEGACY_STORAGE_KEY);
+        if (this._isValidState(legacySaved)) {
+            const migrated = this._migrateState(legacySaved);
+            this.state = migrated;
+            this._persist();
+            this._removeLegacyGlobalState();
+            return migrated;
+        }
+
+        this._removeLegacyGlobalState();
         return this._createInitialState();
+    }
+
+    _removeLegacyGlobalState() {
+        if (this.storage?.get?.(LEGACY_STORAGE_KEY) !== undefined && this.storage?.get?.(LEGACY_STORAGE_KEY) !== null) {
+            this.storage?.remove?.(LEGACY_STORAGE_KEY);
+        }
     }
 
     _createEmptyPlayer(seat) {

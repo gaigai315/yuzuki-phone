@@ -35,6 +35,7 @@ export class PhoneStorage {
             /^wechat_/,           // 微信数据
             /^weibo_/,            // 微博数据
             /^honey_/,            // 蜜语数据
+            /^chat_games_/,        // 按聊天独立的游戏存档
             /^pending[_-]contacts$/, // 待处理联系人
             /^chat_/,             // 聊天相关
             /^message_/,          // 消息相关

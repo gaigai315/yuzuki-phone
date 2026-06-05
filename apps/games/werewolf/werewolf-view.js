@@ -298,7 +298,7 @@ export class WerewolfView {
                 if (!id) return;
                 if (this._selectedContactIds.has(id)) this._selectedContactIds.delete(id);
                 else if (this._selectedContactIds.size < this._emptySeatCount()) this._selectedContactIds.add(id);
-                this.render();
+                this._refreshInviteSelection();
             });
         });
         document.getElementById('games-werewolf-invite-start')?.addEventListener('click', () => {
@@ -355,6 +355,26 @@ export class WerewolfView {
         requestAnimationFrame(() => {
             const list = document.querySelector('.games-werewolf-record-list');
             if (list) list.scrollTop = list.scrollHeight;
+        });
+    }
+
+    _refreshInviteSelection() {
+        const required = this._emptySeatCount();
+        const selectedCount = this._selectedContactIds.size;
+        const countEl = document.getElementById('games-werewolf-invite-count');
+        if (countEl) countEl.textContent = `${selectedCount}/${required}`;
+
+        document.querySelectorAll('.games-werewolf-contact-choice[data-contact-id]').forEach(btn => {
+            const id = String(btn.dataset.contactId || '').trim();
+            const checked = !!id && this._selectedContactIds.has(id);
+            const disabled = !checked && selectedCount >= required;
+            btn.classList.toggle('is-active', checked);
+            btn.disabled = disabled;
+            const icon = btn.querySelector('i');
+            if (icon) {
+                icon.classList.toggle('fa-check', checked);
+                icon.classList.toggle('fa-plus', !checked);
+            }
         });
     }
 
@@ -696,7 +716,7 @@ export class WerewolfView {
                     <div class="games-werewolf-invite-head">
                         <div>
                             <div class="games-werewolf-entry-title">邀请微信好友</div>
-                            <div class="games-werewolf-entry-desc">已选 ${this._selectedContactIds.size}/${required}，未选空位会由 AI 补齐</div>
+                            <div class="games-werewolf-entry-desc">已选 <span id="games-werewolf-invite-count">${this._selectedContactIds.size}/${required}</span>，未选空位会由 AI 补齐</div>
                         </div>
                         <button class="games-werewolf-icon-btn" id="games-werewolf-invite-close" type="button" aria-label="关闭">
                             <i class="fa-solid fa-xmark"></i>
