@@ -28,6 +28,7 @@ const PHONE_SHELL_SCALE_DEFAULT = 100;
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const CARD_LAYOUT_CUSTOM_CSS_KEY = 'phone-card-layout-custom-css';
+const SETTINGS_IMAGE_MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 const WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS = [
     'offline-wechat-prompt-enabled',
@@ -677,9 +678,22 @@ export class SettingsApp {
             .map(option => `<option value="${option.id}" ${selectedProvider === option.id ? 'selected' : ''}>${option.label}</option>`)
             .join('');
         const isGeneralInteractionOpen = this.storage.get('phone-settings-general-interaction-open') === true;
-        const isGeneralLimitsOpen = this.storage.get('phone-settings-general-limits-open') === true;
-        const isGeneralOnlineInjectionOpen = this.storage.get('phone-settings-general-online-injection-open') === true || isGeneralLimitsOpen;
-        const isGeneralOfflineInjectionOpen = this.storage.get('phone-settings-general-offline-injection-open') === true || isGeneralLimitsOpen;
+        const readStoredBool = (key, fallback = false) => {
+            const value = this.storage.get(key, undefined);
+            if (value === undefined || value === null) return fallback;
+            return value === true || value === 'true';
+        };
+        const hasStoredValue = (key) => {
+            const value = this.storage.get(key, undefined);
+            return value !== undefined && value !== null;
+        };
+        const isGeneralLimitsOpen = readStoredBool('phone-settings-general-limits-open');
+        const isGeneralOnlineInjectionOpen = hasStoredValue('phone-settings-general-online-injection-open')
+            ? readStoredBool('phone-settings-general-online-injection-open')
+            : isGeneralLimitsOpen;
+        const isGeneralOfflineInjectionOpen = hasStoredValue('phone-settings-general-offline-injection-open')
+            ? readStoredBool('phone-settings-general-offline-injection-open')
+            : isGeneralLimitsOpen;
         const isGeneralPersonalizationOpen = this.storage.get('phone-settings-general-personalization-open') === true;
         const isGeneralTextColorOpen = this.storage.get('phone-settings-general-text-color-open') === true;
         const isGeneralTimeOpen = this.storage.get('phone-settings-general-time-open') === true;
@@ -1702,12 +1716,12 @@ export class SettingsApp {
                             <!-- 壁纸设置 -->
                             <div class="setting-item">
                                 <div class="setting-label">手机壁纸</div>
-                                <div class="setting-desc">支持jpg/png，最大5MB</div>
+                                <div class="setting-desc">支持 jpg/png/webp，最大20MB；HEIC请先转为JPG/PNG</div>
                                 <div style="margin-top: 10px; display: flex; gap: 8px;">
-                                    <label for="upload-wallpaper" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
+                                    <button type="button" id="choose-wallpaper-btn" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
                                         <i class="fa-solid fa-upload"></i> 选择壁纸
-                                    </label>
-                                    <input type="file" id="upload-wallpaper" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display: none;">
+                                    </button>
+                                    <input type="file" id="upload-wallpaper" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0;">
                                     <button id="delete-wallpaper" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); color: #999; border-radius: 6px;">
                                         <i class="fa-solid fa-trash"></i> 删除
                                     </button>
@@ -1719,12 +1733,12 @@ export class SettingsApp {
 
                             <div class="setting-item">
                                 <div class="setting-label">卡片布局时间图片</div>
-                                <div class="setting-desc">用于卡片布局顶部时间区域；未设置时显示透明毛玻璃</div>
+                                <div class="setting-desc">用于卡片布局顶部时间区域；最大20MB，HEIC请先转为JPG/PNG</div>
                                 <div style="margin-top: 10px; display: flex; gap: 8px;">
-                                    <label for="upload-card-time-image" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
+                                    <button type="button" id="choose-card-time-image-btn" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
                                         <i class="fa-solid fa-upload"></i> 选择图片
-                                    </label>
-                                    <input type="file" id="upload-card-time-image" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display: none;">
+                                    </button>
+                                    <input type="file" id="upload-card-time-image" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0;">
                                     <button id="delete-card-time-image" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); color: #999; border-radius: 6px;">
                                         <i class="fa-solid fa-trash"></i> 删除
                                     </button>
@@ -3482,7 +3496,7 @@ export class SettingsApp {
                         </div>
                         <div style="font-size: 9px; margin-top: 3px; color: #666;">${this._escapeHtml(displayName)}</div>
                     </div>
-                    <input type="file" id="upload-icon-${app.id}" accept="image/png, image/jpeg, image/gif, image/webp, image/svg+xml, image/*" style="position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden;" class="app-icon-upload" data-app-id="${app.id}" tabindex="-1">
+                    <input type="file" id="upload-icon-${app.id}" accept="image/png, image/jpeg, image/gif, image/webp, image/svg+xml, image/*" style="position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0;" class="app-icon-upload" data-app-id="${app.id}" tabindex="-1">
                 </div>
             `;
         }).join('');
@@ -4046,6 +4060,20 @@ export class SettingsApp {
             }
         }));
 
+        const formatImageUploadError = (err) => {
+            const message = String(err?.message || err || '未知错误').trim() || '未知错误';
+            if (/Failed to fetch|NetworkError|Load failed|Network request failed/i.test(message)) {
+                return `${message}\n\n请确认当前页面能访问 /api/backgrounds/upload 和 /backgrounds/，移动端反代或登录 Cookie 异常时会导致上传失败。`;
+            }
+            return message;
+        };
+
+        document.getElementById('choose-wallpaper-btn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('upload-wallpaper')?.click?.();
+        });
+
         document.getElementById('upload-wallpaper')?.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -4060,7 +4088,7 @@ export class SettingsApp {
                     outputWidth: 400,
                     outputHeight: 800,
                     quality: 0.85,
-                    maxFileSize: 5 * 1024 * 1024
+                    maxFileSize: SETTINGS_IMAGE_MAX_FILE_SIZE
                 });
 
                 const croppedImage = await cropper.open(file);
@@ -4096,7 +4124,7 @@ export class SettingsApp {
                 alert('✅ 壁纸上传成功！');
             } catch (err) {
                 if (err.message !== '用户取消') {
-                    alert('❌ 上传失败：' + err.message);
+                    alert('❌ 上传失败：' + formatImageUploadError(err));
                 }
             }
         });
@@ -4151,6 +4179,12 @@ export class SettingsApp {
             this.phoneShell?.showNotification?.('已删除', '手机壁纸已删除', '✅');
         }));
 
+        document.getElementById('choose-card-time-image-btn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('upload-card-time-image')?.click?.();
+        });
+
         document.getElementById('upload-card-time-image')?.addEventListener('change', async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
@@ -4162,9 +4196,9 @@ export class SettingsApp {
                     outputWidth: 800,
                     outputHeight: 320,
                     preserveTransparency: true,
-                    outputFormat: ['image/png', 'image/svg+xml', 'image/webp'].includes(file.type) ? 'image/png' : 'image/jpeg',
+                    outputFormat: ['image/png', 'image/svg+xml', 'image/webp'].includes(String(file.type || '').toLowerCase()) ? 'image/png' : 'image/jpeg',
                     quality: 0.85,
-                    maxFileSize: 5 * 1024 * 1024
+                    maxFileSize: SETTINGS_IMAGE_MAX_FILE_SIZE
                 });
 
                 const croppedImage = await cropper.open(file);
@@ -4185,7 +4219,7 @@ export class SettingsApp {
                 alert('✅ 时间卡片图片上传成功！');
             } catch (err) {
                 if (err.message !== '用户取消') {
-                    alert('❌ 上传失败：' + err.message);
+                    alert('❌ 上传失败：' + formatImageUploadError(err));
                 }
             }
         });
@@ -4319,9 +4353,9 @@ export class SettingsApp {
                         outputWidth: 200,
                         outputHeight: 200,
                         preserveTransparency: true, // 支持PNG透明
-                        outputFormat: ['image/png', 'image/svg+xml', 'image/webp'].includes(file.type) ? 'image/png' : 'image/jpeg',
+                        outputFormat: ['image/png', 'image/svg+xml', 'image/webp'].includes(String(file.type || '').toLowerCase()) ? 'image/png' : 'image/jpeg',
                         quality: 0.9,
-                        maxFileSize: 5 * 1024 * 1024
+                        maxFileSize: SETTINGS_IMAGE_MAX_FILE_SIZE
                     });
 
                     const croppedImage = await cropper.open(file);
@@ -4345,7 +4379,7 @@ export class SettingsApp {
                     this.render();
                 } catch (err) {
                     if (err.message !== '用户取消') {
-                        alert('❌ 上传失败：' + err.message);
+                        alert('❌ 上传失败：' + formatImageUploadError(err));
                     }
                 }
             });

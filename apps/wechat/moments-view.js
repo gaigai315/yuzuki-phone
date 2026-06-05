@@ -1720,6 +1720,70 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
         return rows.length > 0 ? rows.join('\n') : '暂无';
     }
 
+    _isHoneyMomentContact(contact = {}) {
+        const sourceApp = String(contact?.sourceApp || contact?.extra?.sourceApp || '').trim().toLowerCase();
+        const sourceLabel = String(contact?.sourceLabel || contact?.extra?.sourceLabel || '').trim();
+        const relation = String(contact?.relation || contact?.extra?.relation || '').trim();
+        return sourceApp === 'honey'
+            || sourceLabel.includes('蜜语')
+            || sourceLabel.includes('主播')
+            || relation.includes('蜜语')
+            || relation.includes('主播');
+    }
+
+    _trimMomentPromptText(value, maxLength = 260) {
+        const text = String(value || '').replace(/\s+/g, ' ').trim();
+        if (!text) return '';
+        if (text.length <= maxLength) return text;
+        return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+    }
+
+    async _getHoneyMomentHistorySummary(contact = {}) {
+        const contactName = String(contact?.name || '').trim();
+        if (!contactName) return '';
+        try {
+            const mod = await import('../honey/honey-data.js');
+            const HoneyData = mod?.HoneyData;
+            if (!HoneyData) return '';
+            const honeyData = window.VirtualPhone?.honeyApp?.honeyData || new HoneyData(this.app.storage || window.VirtualPhone?.storage);
+            const summary = honeyData.getHostHistorySummary?.(contactName);
+            return this._trimMomentPromptText(summary?.text || '', 280);
+        } catch (error) {
+            console.warn('[朋友圈] 读取蜜语好友资料失败:', error);
+            return '';
+        }
+    }
+
+    async _buildMomentContactInfo(contact = {}) {
+        const name = String(contact?.name || '').trim();
+        if (!name) return '';
+
+        const relation = String(contact?.relation || '好友').trim() || '好友';
+        const naiTags = String(contact?.naiPromptTags || contact?.imageTags || '').trim();
+        const hasReferenceImage = !!String(contact?.naiReferenceImage || contact?.referenceImage || '').trim()
+            && contact?.naiReferenceEnabled !== false
+            && contact?.naiReferenceEnabled !== 'false';
+
+        const notes = [];
+        if (naiTags) notes.push(`专属生图Tag: ${this._trimMomentPromptText(naiTags, 180)}`);
+        if (hasReferenceImage) notes.push('已设置个人形象参考图');
+
+        if (this._isHoneyMomentContact(contact)) {
+            const sourceLabel = String(contact?.sourceLabel || '').trim();
+            const honeySource = String(contact?.honeySource || sourceLabel || '蜜语').trim();
+            const visibleIntro = this._trimMomentPromptText(contact?.honeyVisibleIntro || '', 260);
+            const hiddenBackground = this._trimMomentPromptText(contact?.honeyHiddenBackground || '', 320);
+            const historySummary = await this._getHoneyMomentHistorySummary(contact);
+
+            notes.push(`蜜语资料: ${honeySource}`);
+            if (visibleIntro) notes.push(`对外申请话术: ${visibleIntro}`);
+            if (hiddenBackground) notes.push(`隐藏设定: ${hiddenBackground}`);
+            if (historySummary) notes.push(`蜜语互动摘要: ${historySummary}`);
+        }
+
+        return `${name}(${relation}${notes.length ? `；${notes.join('；')}` : ''})`;
+    }
+
     // 从AI加载朋友圈
     async loadMomentsFromAI() {
         if (this.isLoading) return;
@@ -1767,18 +1831,9 @@ ${memoryLines.slice(0, 10).join('\n')}
             }
 
             // 构建联系人信息
-            const contactsInfo = contacts.map(c => {
-                const name = String(c?.name || '').trim();
-                const relation = String(c?.relation || '好友').trim() || '好友';
-                const naiTags = String(c?.naiPromptTags || c?.imageTags || '').trim();
-                const hasReferenceImage = !!String(c?.naiReferenceImage || c?.referenceImage || '').trim()
-                    && c?.naiReferenceEnabled !== false
-                    && c?.naiReferenceEnabled !== 'false';
-                const imageNotes = [];
-                if (naiTags) imageNotes.push(`专属生图Tag: ${naiTags}`);
-                if (hasReferenceImage) imageNotes.push('已设置个人形象参考图');
-                return `${name}(${relation}${imageNotes.length ? `；${imageNotes.join('；')}` : ''})`;
-            }).join('、');
+            const contactsInfo = (await Promise.all(contacts.map(c => this._buildMomentContactInfo(c))))
+                .filter(Boolean)
+                .join('、');
             const personalImageTagInfo = this._formatMomentPersonalImageTagInfo(contacts);
             momentsPrompt = String(momentsPrompt || '').replace(/\{\{personalImageTagInfo\}\}/g, personalImageTagInfo);
 
@@ -1793,6 +1848,7 @@ ${memoryInfo}
 ${contactsInfo}
 
 请根据已注入的角色卡、用户信息、世界书和最近剧情对话，为联系人生成符合当前故事情境的朋友圈动态。
+带有“蜜语资料”的联系人也是微信通讯录好友；生成朋友圈时应参考其蜜语来源、对外话术、隐藏设定和互动摘要，不要忽略这类联系人。朋友圈是公开/半公开动态，请把私密设定转化为适合朋友圈可见范围的生活化表达，不要直接泄露隐私细节。
 
 要求：
 1. 每个联系人生成0-1条朋友圈（根据角色性格决定是否发）

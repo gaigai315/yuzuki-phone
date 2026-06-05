@@ -39,8 +39,29 @@ export class ImageCropper {
     // 打开裁剪器
     open(file) {
         return new Promise((resolve, reject) => {
-            if (!file || !file.type.startsWith('image/')) {
+            const fileName = String(file?.name || '').trim();
+            const fileType = String(file?.type || '').trim().toLowerCase();
+            const imageExtRe = /\.(png|jpe?g|gif|webp|svg|bmp|avif|heic|heif)$/i;
+            const isLikelyImage = !!file && (fileType.startsWith('image/') || (!fileType && imageExtRe.test(fileName)));
+            const isHeicLike = /(?:heic|heif)$/i.test(fileName) || /heic|heif/i.test(fileType);
+            const inferImageType = () => {
+                if (fileType.startsWith('image/')) return fileType;
+                if (/\.png$/i.test(fileName)) return 'image/png';
+                if (/\.webp$/i.test(fileName)) return 'image/webp';
+                if (/\.gif$/i.test(fileName)) return 'image/gif';
+                if (/\.svg$/i.test(fileName)) return 'image/svg+xml';
+                if (/\.bmp$/i.test(fileName)) return 'image/bmp';
+                if (/\.avif$/i.test(fileName)) return 'image/avif';
+                return 'image/jpeg';
+            };
+
+            if (!isLikelyImage) {
                 reject(new Error('请选择图片文件'));
+                return;
+            }
+
+            if (isHeicLike) {
+                reject(new Error('当前浏览器通常无法直接读取 HEIC/HEIF 图片，请先在相册中导出或转换为 JPG/PNG 后再上传'));
                 return;
             }
 
@@ -50,7 +71,7 @@ export class ImageCropper {
             }
 
             // 检测是否为支持透明的图片，统一导出 PNG 保留 alpha。
-            if (['image/png', 'image/svg+xml', 'image/webp'].includes(file.type) && this.options.preserveTransparency) {
+            if (['image/png', 'image/svg+xml', 'image/webp'].includes(fileType) && this.options.preserveTransparency) {
                 this.options.outputFormat = 'image/png';
             }
 
@@ -62,7 +83,10 @@ export class ImageCropper {
                     this.showCropper(resolve, reject);
                 };
                 img.onerror = () => reject(new Error('图片加载失败'));
-                img.src = e.target.result;
+                const dataUrl = String(e.target.result || '');
+                img.src = dataUrl.startsWith('data:;base64,')
+                    ? dataUrl.replace(/^data:;base64,/i, `data:${inferImageType()};base64,`)
+                    : dataUrl;
             };
             reader.onerror = () => reject(new Error('图片读取失败'));
             reader.readAsDataURL(file);

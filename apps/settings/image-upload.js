@@ -422,11 +422,18 @@ export class ImageUploadManager {
 
     async processImage(file, callback) {
         return new Promise((resolve, reject) => {
-            if (!file || !file.type.startsWith('image/')) {
+            const fileName = String(file?.name || '').trim();
+            const fileType = String(file?.type || '').trim().toLowerCase();
+            const isLikelyImage = !!file && (fileType.startsWith('image/') || (!fileType && /\.(png|jpe?g|gif|webp|svg|bmp|avif|heic|heif)$/i.test(fileName)));
+            if (!isLikelyImage) {
                 return reject(new Error('请选择图片文件'));
             }
-            if (file.size > 5 * 1024 * 1024) {
-                return reject(new Error('图片大小不能超过5MB'));
+            if (/(?:heic|heif)$/i.test(fileName) || /heic|heif/i.test(fileType)) {
+                return reject(new Error('当前浏览器通常无法直接读取 HEIC/HEIF 图片，请先在相册中导出或转换为 JPG/PNG 后再上传'));
+            }
+            const maxFileSize = 20 * 1024 * 1024;
+            if (file.size > maxFileSize) {
+                return reject(new Error('图片大小不能超过20MB'));
             }
 
             const reader = new FileReader();
@@ -718,50 +725,15 @@ export class ImageUploadManager {
 
         if (toCheck.size === 0) return;
 
-        const reachableMap = new Map();
+        const unreachable = [];
         for (const path of toCheck.keys()) {
-            reachableMap.set(path, await this._probeBackgroundPathReachable(path));
-        }
-
-        let changed = false;
-        let wallpaperChanged = false;
-        let iconChanged = false;
-
-        if (wallpaper && reachableMap.get(wallpaper) === false) {
-            this.cache.wallpaper = null;
-            changed = true;
-            wallpaperChanged = true;
-            console.warn('[ImageUpload] 已清理失效壁纸路径:', wallpaper);
-        }
-
-        Object.keys(iconMap).forEach((appId) => {
-            const path = String(iconMap[appId] || '').trim();
-            if (path && reachableMap.get(path) === false) {
-                delete this.cache.appIcons[appId];
-                changed = true;
-                iconChanged = true;
-                console.warn(`[ImageUpload] 已清理失效APP图标路径(${appId}):`, path);
+            if (await this._probeBackgroundPathReachable(path) === false) {
+                unreachable.push(path);
             }
-        });
-
-        Object.keys(avatarMap).forEach((charId) => {
-            const path = String(avatarMap[charId] || '').trim();
-            if (path && reachableMap.get(path) === false) {
-                delete this.cache.avatars[charId];
-                changed = true;
-                console.warn(`[ImageUpload] 已清理失效头像路径(${charId}):`, path);
-            }
-        });
-
-        if (!changed) return;
-
-        await this._saveCache();
-
-        if (wallpaperChanged) {
-            window.dispatchEvent(new CustomEvent('phone:updateWallpaper', { detail: { wallpaper: null } }));
         }
-        if (iconChanged) {
-            window.dispatchEvent(new CustomEvent('phone:updateAppIcon'));
+
+        if (unreachable.length > 0) {
+            console.warn('[ImageUpload] 检测到部分 /backgrounds/ 图片暂时不可访问，已保留引用避免移动端/反代误清空:', unreachable);
         }
     }
 
