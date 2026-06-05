@@ -1161,6 +1161,107 @@ export class WechatData {
         this.storage.set(this._getCustomEmojiGlobalKey(), JSON.stringify(normalized), false);
         return normalized;
     }
+
+    _normalizeManagedBackgroundPath(pathLike) {
+        const raw = String(pathLike || '').trim();
+        if (!raw) return '';
+        try {
+            if (/^https?:\/\//i.test(raw)) {
+                return new URL(raw).pathname.split('?')[0].split('#')[0];
+            }
+        } catch (e) { }
+        return raw.split('?')[0].split('#')[0];
+    }
+
+    _collectManagedImagePathsFromValue(value, paths = new Set(), seen = new Set()) {
+        if (value === null || value === undefined) return paths;
+
+        if (typeof value === 'string') {
+            const raw = value.trim();
+            if (!raw) return paths;
+            const direct = this._normalizeManagedBackgroundPath(raw);
+            if (/^\/backgrounds\/phone_[^?#\s)）"'<>]+/i.test(direct)) {
+                paths.add(direct);
+            }
+            const matches = raw.match(/\/backgrounds\/phone_[^?#\s)）"'<>]+/gi) || [];
+            matches.forEach(match => {
+                const normalized = this._normalizeManagedBackgroundPath(match);
+                if (normalized) paths.add(normalized);
+            });
+            return paths;
+        }
+
+        if (typeof value !== 'object' || seen.has(value)) return paths;
+        seen.add(value);
+
+        if (Array.isArray(value)) {
+            value.forEach(item => this._collectManagedImagePathsFromValue(item, paths, seen));
+            return paths;
+        }
+
+        Object.values(value).forEach(item => this._collectManagedImagePathsFromValue(item, paths, seen));
+        return paths;
+    }
+
+    _collectManagedImagePathsFromMessage(message, paths = new Set()) {
+        if (!message || typeof message !== 'object') return paths;
+
+        const mediaFields = [
+            message.generatedImageUrl,
+            message.imageUrl,
+            message.imageData,
+            message.mediaUrl,
+            message.fileUrl,
+            message.url,
+            message.src
+        ];
+
+        if (String(message.type || '').trim() === 'image') {
+            mediaFields.push(message.content, message.image);
+        }
+
+        mediaFields.forEach(value => this._collectManagedImagePathsFromValue(value, paths));
+        return paths;
+    }
+
+    _collectManagedImagePathsFromMessages(messages = []) {
+        const list = Array.isArray(messages) ? messages : [messages];
+        const paths = new Set();
+        list.forEach(message => this._collectManagedImagePathsFromMessage(message, paths));
+        return Array.from(paths);
+    }
+
+    _cleanupManagedImagesForDeletedMessages(messages = []) {
+        const paths = this._collectManagedImagePathsFromMessages(messages);
+        if (paths.length === 0) return;
+
+        const imageManager = window.VirtualPhone?.imageManager;
+        if (!imageManager?.deleteManagedBackgroundByPath) return;
+
+        const runCleanup = () => {
+            paths.forEach(path => {
+                imageManager.deleteManagedBackgroundByPath(path, {
+                    quiet: true,
+                    skipIfReferenced: true
+                }).catch((e) => {
+                    console.warn('⚠️ [微信数据] 清理消息图片文件失败:', path, e);
+                });
+            });
+        };
+
+        if (typeof queueMicrotask === 'function') {
+            queueMicrotask(runCleanup);
+        } else {
+            Promise.resolve().then(runCleanup);
+        }
+    }
+
+    _loadMessagesForChatIds(chatIds = []) {
+        if (!Array.isArray(chatIds) || chatIds.length === 0) return;
+        chatIds.forEach(chatId => {
+            if (chatId) this.getMessages(chatId);
+        });
+    }
     
     async saveData() {
         try {
@@ -1214,6 +1315,8 @@ export class WechatData {
     resetAllData() {
         // 1. 删除每个聊天的独立消息存储键
         const chatIds = Array.isArray(this.data.chats) ? this.data.chats.map(c => c.id) : [];
+        this._loadMessagesForChatIds(chatIds);
+        const deletedMessages = Object.values(this.data.messages || {}).flatMap(messages => Array.isArray(messages) ? messages : []);
         this._removeMessageStoresByChatIds(chatIds);
         this.globalSocialStore?.removeAllAppContacts?.('wechat');
         this._clearLinkedHoneyFriendsForWechatReset();
@@ -1238,6 +1341,7 @@ export class WechatData {
         };
 
         this._saveGlobalCustomEmojis([]);
+        this._cleanupManagedImagesForDeletedMessages(deletedMessages);
 
         // 4. 保存重置后的空数据
         this.saveData();
@@ -1249,6 +1353,8 @@ export class WechatData {
     // 🧹 清理全部聊天数据（保留联系人/朋友圈）
     clearAllChatData() {
         const chatIds = Array.isArray(this.data.chats) ? this.data.chats.map(c => c.id) : [];
+        this._loadMessagesForChatIds(chatIds);
+        const deletedMessages = Object.values(this.data.messages || {}).flatMap(messages => Array.isArray(messages) ? messages : []);
         this._removeMessageStoresByChatIds(chatIds);
 
         this.data.chats = [];
@@ -1258,12 +1364,15 @@ export class WechatData {
         this._messagesDirty = {};
 
         window.VirtualPhone?.timeManager?.resetTime();
+        this._cleanupManagedImagesForDeletedMessages(deletedMessages);
         this.saveData();
         this._flushChatMetadata();
     }
 
     clearContactsAndGroupsForSmartLoad() {
         const chatIds = Array.isArray(this.data.chats) ? this.data.chats.map(c => c.id) : [];
+        this._loadMessagesForChatIds(chatIds);
+        const deletedMessages = Object.values(this.data.messages || {}).flatMap(messages => Array.isArray(messages) ? messages : []);
         this._removeMessageStoresByChatIds(chatIds);
         this.globalSocialStore?.removeAllAppContacts?.('wechat');
         this._clearLinkedHoneyFriendsForWechatReset();
@@ -1280,6 +1389,7 @@ export class WechatData {
         this._messagesLoaded = {};
         this._messagesDirty = {};
 
+        this._cleanupManagedImagesForDeletedMessages(deletedMessages);
         this.saveData();
         this._flushChatMetadata();
         return true;
@@ -2389,7 +2499,8 @@ getWeekday(date) {
         const opener = text[startIndex];
         if (opener !== '（' && opener !== '(') return null;
 
-        const closer = opener === '（' ? '）' : ')';
+        const primaryCloser = opener === '（' ? '）' : ')';
+        const alternateCloser = opener === '（' ? ')' : '）';
         let depth = 1;
         for (let index = startIndex + 1; index < text.length; index += 1) {
             const char = text[index];
@@ -2397,7 +2508,7 @@ getWeekday(date) {
                 depth += 1;
                 continue;
             }
-            if (char !== closer) continue;
+            if (char !== primaryCloser && char !== alternateCloser) continue;
             depth -= 1;
             if (depth === 0) {
                 return {
@@ -3200,6 +3311,7 @@ parseAIResponse(text) {
     deleteMessage(chatId, messageIndex) {
         if (this.data.messages[chatId] && this.data.messages[chatId][messageIndex]) {
             const deletedMsg = this.data.messages[chatId][messageIndex];
+            const deletedMessages = [deletedMsg];
 
             // 🔥 如果删除的是通话记录(call_record)，同时删除相关的通话文字(call_text)
             if (deletedMsg.type === 'call_record') {
@@ -3213,6 +3325,7 @@ parseAIResponse(text) {
                     const msg = this.data.messages[chatId][i];
                     if (msg.type === 'call_text' && msg.callType === callType) {
                         // 同一类型的通话文字，删除
+                        deletedMessages.push(msg);
                         this.data.messages[chatId].splice(i, 1);
                         messageIndex--; // 调整索引
                         i--;
@@ -3228,6 +3341,7 @@ parseAIResponse(text) {
 
             // 删除目标消息
             this.data.messages[chatId].splice(messageIndex, 1);
+            this._cleanupManagedImagesForDeletedMessages(deletedMessages);
 
             // 🔥 更新聊天列表的 lastMessage
             const chat = this.getChat(chatId);
@@ -3302,8 +3416,10 @@ parseAIResponse(text) {
     // 🗑️ 清空聊天的所有消息
     clearMessages(chatId) {
         if (this.data.messages[chatId]) {
+            const deletedMessages = Array.isArray(this.data.messages[chatId]) ? [...this.data.messages[chatId]] : [];
             // 清空消息数组
             this.data.messages[chatId] =[];
+            this._cleanupManagedImagesForDeletedMessages(deletedMessages);
 
             // 更新聊天列表信息
             const chat = this.getChat(chatId);
@@ -3344,13 +3460,16 @@ parseAIResponse(text) {
         });
 
         let isDirty = false;
+        const deletedMessages = [];
 
         for (const chatId in this.data.messages) {
             const messages = Array.isArray(this.data.messages[chatId]) ? this.data.messages[chatId] : [];
             const originalLen = messages.length;
             this.data.messages[chatId] = messages.filter(m => {
                 if (!m?.fromMainChatTag) return true;
-                return Number(m.tavernMessageIndex) !== targetIndex;
+                const shouldDelete = Number(m.tavernMessageIndex) === targetIndex;
+                if (shouldDelete) deletedMessages.push(m);
+                return !shouldDelete;
             });
 
             if (this.data.messages[chatId].length !== originalLen) {
@@ -3377,6 +3496,7 @@ parseAIResponse(text) {
         }
 
         if (isDirty) {
+            this._cleanupManagedImagesForDeletedMessages(deletedMessages);
             for (const chatId in this._messagesDirty) {
                 if (this._messagesDirty[chatId]) {
                     this._saveMessages(chatId);
@@ -3404,6 +3524,7 @@ parseAIResponse(text) {
         });
 
         let isDirty = false;
+        const deletedMessages = [];
 
         for (const chatId in this.data.messages) {
             const originalLen = this.data.messages[chatId].length;
@@ -3418,6 +3539,7 @@ parseAIResponse(text) {
                 // 只有正文 <wechat>/<回复> 标签同步出来的消息，才跟随酒馆楼层回滚。
                 // 小手机线上聊天是独立会话流，不能被正文生成/重抽/滑动清掉。
                 if (m.tavernMessageIndex !== undefined && m.tavernMessageIndex >= targetTavernIndex) {
+                    deletedMessages.push(m);
                     return false;
                 }
                 return true;
@@ -3449,6 +3571,7 @@ parseAIResponse(text) {
 
         // 如果真的发生了回滚，保存并重置时间锚点
         if (isDirty) {
+            this._cleanupManagedImagesForDeletedMessages(deletedMessages);
             // 🔥 核心修复：必须同步保存每个被修改的聊天消息，确保存储立即更新
             for (const chatId in this._messagesDirty) {
                 if (this._messagesDirty[chatId]) {
@@ -3490,8 +3613,11 @@ parseAIResponse(text) {
 
     // 🗑️ 删除聊天
     deleteChat(chatId) {
+        this.getMessages(chatId);
+        const deletedMessages = Array.isArray(this.data.messages[chatId]) ? [...this.data.messages[chatId]] : [];
         this.data.chats = this.data.chats.filter(c => c.id !== chatId);
         delete this.data.messages[chatId];
+        this._cleanupManagedImagesForDeletedMessages(deletedMessages);
 
         // 🔥 同时删除独立存储的消息
         try {

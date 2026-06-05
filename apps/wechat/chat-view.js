@@ -4061,7 +4061,8 @@ renderChatRoom(chat) {
         const opener = text[startIndex];
         if (opener !== '（' && opener !== '(') return null;
 
-        const closer = opener === '（' ? '）' : ')';
+        const primaryCloser = opener === '（' ? '）' : ')';
+        const alternateCloser = opener === '（' ? ')' : '）';
         let depth = 1;
         for (let index = startIndex + 1; index < text.length; index += 1) {
             const char = text[index];
@@ -4069,7 +4070,7 @@ renderChatRoom(chat) {
                 depth += 1;
                 continue;
             }
-            if (char !== closer) continue;
+            if (char !== primaryCloser && char !== alternateCloser) continue;
             depth -= 1;
             if (depth === 0) {
                 return {

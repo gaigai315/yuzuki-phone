@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.2.4';
+const ST_PHONE_VERSION = '1.2.5';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
@@ -41,13 +41,10 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-06-01',
+    date: '2026-06-05',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【优化】优化微信智能加载联系人及钱包资产评估的 AI 请求结构。',
-        '【优化】微信好友支持对单个好友会话关闭角色卡和用户信息注入，适用于微信蜜语好友聊天。',
-        '【修复】修复未绑定固定音色时，角色性别兜底音色可能不生效的问题。',
-        '【修复】优化游戏部分 bug。'
+        '【修复】修复微信清理数据时，用户发送图片可能残留在 backgrounds 文件夹的问题。'
     ]
 };
 
@@ -5745,7 +5742,7 @@ if (window.GGP_Loaded) {
 
         // [用户照片/个人图片/图片/视频](描述) / [用户照片/个人图片/图片/视频]（描述）
         // 兼容线下同步里把说话人留在正文中的格式：张三：[个人图片]（tag）
-        const imageMatch = /^(?:(.{1,40})[：:]\s*)?\[(用户照片|个人图片|图片|视频)\]\s*[（(]\s*([\s\S]+?)\s*[)）]\s*$/.exec(String(content || '').trim());
+        const imageMatch = /^(?:(.{1,40})[：:]\s*)?\[(用户照片|个人图片|图片|视频)\]\s*([\s\S]+?)\s*$/.exec(String(content || '').trim());
         if (imageMatch) {
             const inlineSender = String(imageMatch[1] || '').trim();
             const promptText = String(imageMatch[3] || '').trim();
@@ -8116,8 +8113,35 @@ if (window.GGP_Loaded) {
                 document.getElementById('weibo-custom-avatar-frame-style')?.remove();
             };
 
+            const cleanupWechatManagedMessageImagesBeforeStorageClear = async () => {
+                try {
+                    await loadUIModules();
+                    if (!window.VirtualPhone) window.VirtualPhone = {};
+                    if (!window.VirtualPhone.imageManager && ImageUploadManager) {
+                        window.VirtualPhone.imageManager = new ImageUploadManager(storage);
+                    }
+
+                    let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
+                    if (!wechatData) {
+                        const module = await import('./apps/wechat/wechat-data.js');
+                        wechatData = new module.WechatData(storage);
+                    }
+
+                    if (!wechatData?.data?.chats || !wechatData?._cleanupManagedImagesForDeletedMessages) return;
+                    const chatIds = Array.isArray(wechatData.data.chats) ? wechatData.data.chats.map(c => c?.id).filter(Boolean) : [];
+                    chatIds.forEach(chatId => wechatData.getMessages?.(chatId));
+                    const deletedMessages = Object.values(wechatData.data.messages || {})
+                        .flatMap(messages => Array.isArray(messages) ? messages : []);
+                    wechatData.data.messages = {};
+                    wechatData._cleanupManagedImagesForDeletedMessages(deletedMessages);
+                } catch (e) {
+                    console.warn('[ST-Phone] 清理微信消息图片失败:', e);
+                }
+            };
+
             // 监听清空数据
             window.addEventListener('phone:clearCurrentData', async () => { // 🔥 加上 async
+                await cleanupWechatManagedMessageImagesBeforeStorageClear();
                 if (window.VirtualPhone?.honeyApp) {
                     try {
                         await window.VirtualPhone.honeyApp.honeyData?.cleanupGeneratedImageFiles?.([
@@ -8178,6 +8202,7 @@ if (window.GGP_Loaded) {
             });
 
             window.addEventListener('phone:clearAllData', async () => { // 🔥 加上 async
+                await cleanupWechatManagedMessageImagesBeforeStorageClear();
                 if (window.VirtualPhone?.honeyApp) {
                     try {
                         await window.VirtualPhone.honeyApp.honeyData?.cleanupGeneratedImageFiles?.([
