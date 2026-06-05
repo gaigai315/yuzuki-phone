@@ -678,6 +678,8 @@ export class SettingsApp {
             .join('');
         const isGeneralInteractionOpen = this.storage.get('phone-settings-general-interaction-open') === true;
         const isGeneralLimitsOpen = this.storage.get('phone-settings-general-limits-open') === true;
+        const isGeneralOnlineInjectionOpen = this.storage.get('phone-settings-general-online-injection-open') === true || isGeneralLimitsOpen;
+        const isGeneralOfflineInjectionOpen = this.storage.get('phone-settings-general-offline-injection-open') === true || isGeneralLimitsOpen;
         const isGeneralPersonalizationOpen = this.storage.get('phone-settings-general-personalization-open') === true;
         const isGeneralTextColorOpen = this.storage.get('phone-settings-general-text-color-open') === true;
         const isGeneralTimeOpen = this.storage.get('phone-settings-general-time-open') === true;
@@ -1372,6 +1374,12 @@ export class SettingsApp {
                             </div>
                         </div>
 
+                        <div class="setting-section" style="padding: 10px 12px;">
+                            <button id="setting-reset-all-prompts" class="setting-btn" style="width: 100%; padding: 9px 12px; font-size: 12px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border: 1px solid rgba(7,193,96,0.25); color: #0b8f52; border-radius: 10px; font-weight: 700;">
+                                <i class="fa-solid fa-rotate"></i> 一键更新所有提示词（恢复默认）
+                            </button>
+                        </div>
+
                         <details data-settings-fold-key="phone-settings-general-interaction-open" ${isGeneralInteractionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
                                 <span>📡 互动模式</span>
@@ -1450,12 +1458,6 @@ export class SettingsApp {
                                 </label>
                             </div>
 
-                            <div class="setting-item setting-button" style="margin-top: 10px;">
-                                <button id="setting-reset-all-prompts" class="setting-btn" style="width: 100%; padding: 8px 12px; font-size: 12px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border: 1px solid rgba(7,193,96,0.25); color: #0b8f52; border-radius: 8px;">
-                                    <i class="fa-solid fa-rotate"></i> 一键更新所有提示词（恢复默认）
-                                </button>
-                            </div>
-
                             <div class="setting-info">
                                 <strong>使用说明：</strong><br>
                                 1. 开启"互通模式"或"线上模式"<br>
@@ -1465,9 +1467,9 @@ export class SettingsApp {
                             </div>
                         </details>
 
-                        <details data-settings-fold-key="phone-settings-general-limits-open" ${isGeneralLimitsOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                        <details data-settings-fold-key="phone-settings-general-online-injection-open" ${isGeneralOnlineInjectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>📨 注入设置</span>
+                                <span>📨 线上注入设置</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
@@ -1495,7 +1497,30 @@ export class SettingsApp {
                                        style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
                             </div>
 
-                            <div class="settings-subsection-title">📴 手机线下注入</div>
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">单人通话内记录条数</span>
+                                <input type="number" id="wechat-single-call-history-limit" min="0" max="9999"
+                                       value="${readNonNegativeStorageNumber(this.storage, 'wechat-single-call-history-limit', 30)}"
+                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 14px; color: #000;">群通话内记录条数</span>
+                                <input type="number" id="wechat-group-call-history-limit" min="0" max="9999"
+                                       value="${readNonNegativeStorageNumber(this.storage, 'wechat-group-call-history-limit', 50)}"
+                                       style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+                            </div>
+                        </details>
+
+                        <details data-settings-fold-key="phone-settings-general-offline-injection-open" ${isGeneralOfflineInjectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                            <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
+                                <span>📴 线下注入设置</span>
+                                ${SETTINGS_FOLD_ARROW_HTML}
+                            </summary>
+                            <div style="padding: 10px 10px 4px;">
+
+                            <div class="settings-subsection-title">微信线下记录</div>
 
                             <div class="setting-item setting-toggle">
                                 <div>
@@ -4564,6 +4589,20 @@ export class SettingsApp {
             const validLimit = Math.max(0, Math.min(9999, Number.isFinite(limit) ? limit : 200));
             e.target.value = validLimit;
             await this.storage.set('wechat-group-chat-limit', validLimit);
+        });
+
+        document.getElementById('wechat-single-call-history-limit')?.addEventListener('change', async (e) => {
+            const limit = Number.parseInt(e.target.value, 10);
+            const validLimit = Math.max(0, Math.min(9999, Number.isFinite(limit) ? limit : 30));
+            e.target.value = validLimit;
+            await this.storage.set('wechat-single-call-history-limit', validLimit);
+        });
+
+        document.getElementById('wechat-group-call-history-limit')?.addEventListener('change', async (e) => {
+            const limit = Number.parseInt(e.target.value, 10);
+            const validLimit = Math.max(0, Math.min(9999, Number.isFinite(limit) ? limit : 50));
+            e.target.value = validLimit;
+            await this.storage.set('wechat-group-call-history-limit', validLimit);
         });
 
         // 🔥 线下单聊发送条数设置

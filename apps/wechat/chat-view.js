@@ -12321,6 +12321,10 @@ ${groupParticipants.join('、') || '暂无成员'}
             const targetChat = this.app.currentChat;
             const isGroupCall = targetChat?.type === 'group';
             const groupParticipants = this._getGroupChatParticipants(targetChat);
+            const callHistoryLimit = isGroupCall
+                ? this._readNonNegativeLimit('wechat-group-call-history-limit', 50)
+                : this._readNonNegativeLimit('wechat-single-call-history-limit', 30);
+            const recentCallHistory = callHistoryLimit > 0 ? chatHistory.slice(-callHistoryLimit) : [];
 
             // 🔥 精简的通话提示词 - 只包含必要信息
             const prompt = isGroupCall
@@ -12330,14 +12334,14 @@ ${groupParticipants.join('、') || '暂无成员'}
 ${userName}说：${message}
 
 最近通话记录：
-${chatHistory.slice(-8).map(h => `${h.from === 'me' ? userName : h.from}: ${h.text}`).join('\n')}
+${recentCallHistory.map(h => `${h.from === 'me' ? userName : h.from}: ${h.text}`).join('\n')}
 
 请以群成员的身份继续通话。回复时必须使用“发送者: 内容”格式，且发送者必须来自可发言成员名单。`
                 : `【${callTypeName}通话中】
 ${userName}说：${message}
 
 通话记录：
-${chatHistory.slice(-5).map(h => `${h.from === 'me' ? userName : contactName}: ${h.text}`).join('\n')}
+${recentCallHistory.map(h => `${h.from === 'me' ? userName : contactName}: ${h.text}`).join('\n')}
 
 请以${contactName}的身份回复。`;
 
