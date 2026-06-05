@@ -2946,6 +2946,7 @@ export class SettingsApp {
                         <button id="phone-image-prompt-preset-export" class="setting-btn" style="height: 30px; padding: 0 8px; font-size: 12px; background: #eef6ff; color: #1d4f91; border: 1px solid #b9d6fb; border-radius: 8px; cursor: pointer;">导出预设</button>
                         <button id="phone-image-prompt-preset-import" class="setting-btn" style="height: 30px; padding: 0 8px; font-size: 12px; background: #fff7ed; color: #8a4d16; border: 1px solid #f1c38c; border-radius: 8px; cursor: pointer;">导入预设</button>
                     </div>
+                    <button id="phone-image-prompt-preset-clear-all" class="setting-btn" style="width: 100%; height: 30px; margin-top: 8px; padding: 0 8px; font-size: 12px; background: #fff; color: #d33; border: 1px solid rgba(211,51,51,0.28); border-radius: 8px; cursor: pointer;">一键删除所有 NAI 预设</button>
                     <input type="file" id="phone-image-prompt-preset-import-file" accept=".json,application/json,text/json" style="display: none;">
                 </div>
 
@@ -4784,6 +4785,7 @@ export class SettingsApp {
         const imagePromptPresetSaveBtn = document.getElementById('phone-image-prompt-preset-save');
         const imagePromptPresetNewBtn = document.getElementById('phone-image-prompt-preset-new');
         const imagePromptPresetDeleteBtn = document.getElementById('phone-image-prompt-preset-delete');
+        const imagePromptPresetClearAllBtn = document.getElementById('phone-image-prompt-preset-clear-all');
         const imagePromptPresetExportBtn = document.getElementById('phone-image-prompt-preset-export');
         const imagePromptPresetImportBtn = document.getElementById('phone-image-prompt-preset-import');
         const imagePromptPresetImportFile = document.getElementById('phone-image-prompt-preset-import-file');
@@ -4893,6 +4895,27 @@ export class SettingsApp {
             }
             await setPresetDimension(widthId, widthValue, fallbackWidth);
             await setPresetDimension(heightId, heightValue, fallbackHeight);
+        };
+        const restoreDefaultImageAppSizes = async () => {
+            const defaults = {
+                'phone-image-honey-width': 832,
+                'phone-image-honey-height': 1216,
+                'phone-image-wechat-width': 512,
+                'phone-image-wechat-height': 512,
+                'phone-image-weibo-width': 1024,
+                'phone-image-weibo-height': 1024,
+                'phone-image-diary-width': 512,
+                'phone-image-diary-height': 512,
+                'phone-image-width': 832,
+                'phone-image-height': 1216
+            };
+            for (const [key, value] of Object.entries(defaults)) {
+                const inputs = Array.from(document.querySelectorAll(`#${key}, [data-phone-image-number-key="${key}"]`));
+                inputs.forEach(input => {
+                    input.value = String(value);
+                });
+                await this.storage.set(key, value);
+            }
         };
         const getImageGenerationPresetSettings = () => ({
             novelaiModel: String(imageNovelaiModel?.value || '').trim() || 'nai-diffusion-4-5-full',
@@ -6458,6 +6481,51 @@ export class SettingsApp {
             this.phoneShell?.showNotification?.('已删除生图设定', target.name, '🗑️');
         });
 
+        imagePromptPresetClearAllBtn?.addEventListener('click', async () => {
+            const presetMap = this._getImagePromptPresetMap();
+            const scopes = Array.from(new Set(this._getImagePromptAppDefs().map(def => this._normalizeImagePresetScope(def.id))));
+            const totalCount = scopes.reduce((sum, scope) => {
+                const list = this._getImagePromptPresets(scope);
+                return sum + list.length;
+            }, 0);
+            if (totalCount <= 0) {
+                for (const scope of scopes) {
+                    await this.storage.set(`phone-image-${scope}-active-prompt-preset`, '');
+                    await this.storage.set(`phone-image-${scope}-fixed-prompt`, '');
+                    await this.storage.set(`phone-image-${scope}-fixed-prompt-end`, '');
+                    await this.storage.set(`phone-image-${scope}-negative-prompt`, '');
+                }
+                await restoreDefaultImageAppSizes();
+                fillImagePromptPresetSelect([], '');
+                if (imagePromptPresetSelect) imagePromptPresetSelect.value = '';
+                if (imagePromptPresetName) imagePromptPresetName.value = '';
+                await setImagePromptForm(this._getImagePromptDraft(getActiveImagePromptApp()));
+                this.phoneShell?.showNotification?.('NAI 预设', '没有可删除的 NAI 预设，已恢复默认尺寸', '✅');
+                return;
+            }
+            if (!confirm(`确定删除全部 ${totalCount} 套 NAI 生图预设吗？\n\n会清空蜜语、微信/日记、微博的 NAI 预设和当前选择，并恢复默认初始尺寸；API Key、模型和连接设置不会删除。`)) return;
+
+            scopes.forEach(scope => {
+                presetMap[scope] = [];
+            });
+            await this.storage.set('phone-image-prompt-presets-by-app', JSON.stringify(presetMap));
+            await this.storage.set('phone-image-prompt-presets', JSON.stringify([]));
+            for (const scope of scopes) {
+                await this.storage.set(`phone-image-${scope}-active-prompt-preset`, '');
+                await this.storage.set(`phone-image-${scope}-fixed-prompt`, '');
+                await this.storage.set(`phone-image-${scope}-fixed-prompt-end`, '');
+                await this.storage.set(`phone-image-${scope}-negative-prompt`, '');
+            }
+            await restoreDefaultImageAppSizes();
+
+            const appKey = getActiveImagePromptApp();
+            fillImagePromptPresetSelect([], '');
+            if (imagePromptPresetSelect) imagePromptPresetSelect.value = '';
+            if (imagePromptPresetName) imagePromptPresetName.value = '';
+            await setImagePromptForm(this._getImagePromptDraft(appKey));
+            this.phoneShell?.showNotification?.('已清空 NAI 预设', `已删除 ${totalCount} 套预设并恢复默认尺寸`, '🗑️');
+        });
+
         imagePromptPresetExportBtn?.addEventListener('click', async () => {
             const appKey = getActiveImagePromptApp();
             const presets = this._getImagePromptPresets(appKey);
@@ -7186,23 +7254,7 @@ export class SettingsApp {
         });
 
         document.getElementById('phone-image-reset-app-sizes')?.addEventListener('click', async () => {
-            const defaults = {
-                'phone-image-honey-width': 832,
-                'phone-image-honey-height': 1216,
-                'phone-image-wechat-width': 512,
-                'phone-image-wechat-height': 512,
-                'phone-image-weibo-width': 1024,
-                'phone-image-weibo-height': 1024,
-                'phone-image-diary-width': 512,
-                'phone-image-diary-height': 512,
-                'phone-image-width': 832,
-                'phone-image-height': 1216
-            };
-            for (const [key, value] of Object.entries(defaults)) {
-                const input = document.getElementById(key);
-                if (input) input.value = String(value);
-                await this.storage.set(key, value);
-            }
+            await restoreDefaultImageAppSizes();
             this.phoneShell?.showNotification?.('生图尺寸', '已恢复默认尺寸', '✅');
         });
 
