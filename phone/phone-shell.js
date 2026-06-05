@@ -199,7 +199,7 @@ export class PhoneShell {
         };
         const resolveGestureControlHost = (node) => {
             if (!node || typeof node.closest !== 'function') return null;
-            return node.closest('input[type="range"], [role="slider"], .phone-gesture-control, .games-2048-board, .honey-live-visibility-modal, .mofo-app');
+            return node.closest('input[type="range"], [role="slider"], .phone-gesture-control, .games-2048-board, .honey-live-visibility-modal, .mofo-app, #wechat-werewolf-preview-modal');
         };
 
         // 🔥 核心修复 1：移除屏幕宽度限制，全面接管虚拟手机的触摸滑动！
@@ -250,6 +250,7 @@ export class PhoneShell {
                 '.weibo-forward-overlay', '.weibo-forward-dialog', '.weibo-forward-dialog-compose', '.weibo-forward-list',
                 '#wechat-weibo-preview-modal', '#wechat-weibo-preview-modal > div',
                 '#wechat-poker-preview-modal', '#wechat-poker-preview-modal > div', '.wechat-poker-preview-body',
+                '#wechat-werewolf-preview-modal', '#wechat-werewolf-preview-modal > div', '.wechat-werewolf-preview-body',
                 '.wechat-call-transcript-overlay', '.wechat-call-transcript-panel', '.wechat-call-transcript-body',
                 '.phone-image-viewer-overlay', '.phone-image-viewer-stage',
                 '#st-phone-update-modal', '.st-phone-update-dialog', '.st-phone-update-content', '.st-phone-update-list',

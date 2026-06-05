@@ -2210,6 +2210,8 @@ getMessagePreview(message) {
             return '[微博分享]';
         case 'poker_card':
             return '[德州扑克分享]';
+        case 'werewolf_card':
+            return '[狼人杀复盘分享]';
         case 'catbox_coadopt_invite':
             return message.catboxInviteStatus === 'accepted'
                 ? '[猫盒共养邀请：已接收]'

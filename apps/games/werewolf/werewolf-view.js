@@ -12,6 +12,8 @@ export class WerewolfView {
         this._inviteOpen = false;
         this._settingsOpen = false;
         this._recordOpen = false;
+        this._shareOverlayOpen = false;
+        this._shareTarget = null;
         this._selectedContactIds = new Set();
         this._userSpeechInput = '';
         this._expandedChatDays = new Set();
@@ -251,6 +253,8 @@ export class WerewolfView {
         });
         document.getElementById('games-werewolf-record')?.addEventListener('click', () => {
             this._recordOpen = true;
+            this._shareOverlayOpen = false;
+            this._shareTarget = null;
             this.render();
             this._scrollRecordListToBottom();
         });
@@ -268,6 +272,7 @@ export class WerewolfView {
         this._bindInviteEvents();
         this._bindSettingsEvents();
         this._bindRecordEvents();
+        this._bindShareEvents();
     }
 
     _bindChatDayToggles() {
@@ -342,12 +347,75 @@ export class WerewolfView {
     _bindRecordEvents() {
         document.getElementById('games-werewolf-record-close')?.addEventListener('click', () => {
             this._recordOpen = false;
+            this._shareOverlayOpen = false;
+            this._shareTarget = null;
             this.render();
         });
         document.getElementById('games-werewolf-record-overlay')?.addEventListener('click', e => {
             if (e.target?.id !== 'games-werewolf-record-overlay') return;
             this._recordOpen = false;
+            this._shareOverlayOpen = false;
+            this._shareTarget = null;
             this.render();
+        });
+        document.getElementById('games-werewolf-share-record')?.addEventListener('click', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._shareOverlayOpen = true;
+            this._shareTarget = null;
+            this.render();
+            this._scrollRecordListToBottom();
+        });
+    }
+
+    _bindShareEvents() {
+        document.getElementById('games-werewolf-share-close')?.addEventListener('click', () => {
+            this._shareOverlayOpen = false;
+            this._shareTarget = null;
+            this.render();
+            this._scrollRecordListToBottom();
+        });
+        document.getElementById('games-werewolf-share-back')?.addEventListener('click', () => {
+            this._shareTarget = null;
+            this.render();
+            this._scrollRecordListToBottom();
+        });
+        document.getElementById('games-werewolf-share-cancel')?.addEventListener('click', () => {
+            this._shareTarget = null;
+            this.render();
+            this._scrollRecordListToBottom();
+        });
+        document.getElementById('games-werewolf-share-overlay')?.addEventListener('click', e => {
+            if (e.target?.id !== 'games-werewolf-share-overlay') return;
+            this._shareOverlayOpen = false;
+            this._shareTarget = null;
+            this.render();
+            this._scrollRecordListToBottom();
+        });
+        document.querySelectorAll('.games-werewolf-share-contact[data-name]').forEach(item => {
+            item.addEventListener('click', () => {
+                const name = String(item.dataset.name || '').trim();
+                const target = this._getShareTargets().find(entry => entry.name === name) || { name };
+                this._shareTarget = target;
+                this.render();
+                this._scrollRecordListToBottom();
+            });
+        });
+        document.getElementById('games-werewolf-share-send')?.addEventListener('click', async () => {
+            const target = this._shareTarget;
+            if (!target?.name) return;
+            const btn = document.getElementById('games-werewolf-share-send');
+            if (btn) btn.disabled = true;
+            try {
+                await this.app.shareWerewolfToWechat(target.name);
+                this.app.phoneShell?.showNotification?.('分享成功', `已发送给 ${target.name}`, '✅');
+                this._shareOverlayOpen = false;
+                this._shareTarget = null;
+                this.render();
+            } catch (error) {
+                this.app.phoneShell?.showNotification?.('分享失败', error?.message || '发送失败', '❌');
+                if (btn) btn.disabled = false;
+            }
         });
     }
 
@@ -792,9 +860,14 @@ export class WerewolfView {
                             <div class="games-werewolf-entry-title">狼人杀复盘</div>
                             <div class="games-werewolf-entry-desc">${gameOver ? '游戏已结束，完整后台记录已解锁' : '游戏进行中，仅显示公开记录和脱敏夜晚记录'}</div>
                         </div>
-                        <button class="games-werewolf-icon-btn" id="games-werewolf-record-close" type="button" aria-label="关闭">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <button class="games-werewolf-icon-btn" id="games-werewolf-share-record" type="button" aria-label="分享到微信" title="分享到微信">
+                                <i class="fa-solid fa-share-nodes"></i>
+                            </button>
+                            <button class="games-werewolf-icon-btn" id="games-werewolf-record-close" type="button" aria-label="关闭">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="games-werewolf-record-list">
                         ${records.length ? records.map(item => `
@@ -804,9 +877,100 @@ export class WerewolfView {
                             </div>
                         `).join('') : '<div class="games-werewolf-contact-empty">暂无复盘记录</div>'}
                     </div>
+                    ${this._renderShareOverlay()}
                 </div>
             </div>
         `;
+    }
+
+    _renderShareOverlay() {
+        if (!this._shareOverlayOpen) return '';
+        const shareText = this.app.getWerewolfShareText?.() || '';
+        const preview = shareText.split('\n').slice(0, 5).join('\n');
+        const target = this._shareTarget;
+        if (target) {
+            return `
+                <div class="games-share-overlay" id="games-werewolf-share-overlay">
+                    <div class="games-share-dialog games-share-compose">
+                        <div class="games-share-header">
+                            <button class="games-share-close" id="games-werewolf-share-back" type="button"><i class="fa-solid fa-chevron-left"></i></button>
+                            <span>发送给</span>
+                            <button class="games-share-close" id="games-werewolf-share-close" type="button"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div class="games-share-recipient">
+                            <div class="games-share-avatar">${this.app.renderPlayerAvatar({ name: target.name, avatar: target.avatar })}</div>
+                            <div class="games-share-name">${this._escape(target.name)}</div>
+                        </div>
+                        <div class="games-share-preview">
+                            <div class="games-share-card">
+                                <div class="games-share-card-icon">狼</div>
+                                <div>
+                                    <div class="games-share-card-title">狼人杀复盘记录</div>
+                                    <div class="games-share-card-desc">${this._escape(preview)}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="games-share-actions">
+                            <button class="games-share-action games-share-cancel" id="games-werewolf-share-cancel" type="button">取消</button>
+                            <button class="games-share-action games-share-send" id="games-werewolf-share-send" type="button">发送</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        const targets = this._getShareTargets();
+        return `
+            <div class="games-share-overlay" id="games-werewolf-share-overlay">
+                <div class="games-share-dialog">
+                    <div class="games-share-header">
+                        <span>分享到微信</span>
+                        <button class="games-share-close" id="games-werewolf-share-close" type="button"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="games-share-preview">
+                        <div class="games-share-card">
+                            <div class="games-share-card-icon">狼</div>
+                            <div>
+                                <div class="games-share-card-title">狼人杀复盘记录</div>
+                                <div class="games-share-card-desc">${this._escape(preview)}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="games-share-list">
+                        ${targets.length ? targets.map(item => `
+                            <button class="games-share-contact games-werewolf-share-contact" type="button" data-name="${this._escapeAttr(item.name)}">
+                                <span class="games-share-avatar">${this.app.renderPlayerAvatar({ name: item.name, avatar: item.avatar })}</span>
+                                <span class="games-share-name">${this._escape(item.name)}</span>
+                            </button>
+                        `).join('') : '<div class="games-share-empty">请先在微信中添加联系人</div>'}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    _getShareTargets() {
+        const wechatData = this.app.getWechatData?.();
+        if (!wechatData) return [];
+        const contacts = (wechatData.getContacts?.() || [])
+            .filter(item => item && String(item.name || '').trim())
+            .map(item => ({
+                name: String(item.name || '').trim(),
+                avatar: this.app.resolveContactAvatar?.(item, wechatData) || item.avatar || ''
+            }));
+        const groups = (wechatData.getChatList?.() || [])
+            .filter(item => item?.type === 'group' && String(item.name || '').trim())
+            .map(item => ({
+                name: String(item.name || '').trim(),
+                avatar: item.avatar || '👥',
+                isGroup: true
+            }));
+        const seen = new Set();
+        return [...contacts, ...groups].filter(item => {
+            if (seen.has(item.name)) return false;
+            seen.add(item.name);
+            return true;
+        });
     }
 
     _getDisplayRecord(item = {}, gameOver = false) {

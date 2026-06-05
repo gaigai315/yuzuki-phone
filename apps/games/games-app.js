@@ -192,6 +192,151 @@ export class GamesApp extends PokerApp {
         return !!enabled;
     }
 
+    getWerewolfShareText() {
+        const state = this.werewolfData?.getState?.() || {};
+        const gameOver = !!state.gameOver || state.phase === 'ended';
+        const roleMode = state.roleRevealMode === 'hidden' ? '暗牌局' : '明牌局';
+        const winnerText = state.winner === 'werewolves'
+            ? '狼人阵营胜利'
+            : (state.winner === 'villagers' ? '好人阵营胜利' : '未结算');
+        const phaseMap = { setup: '准备', night: '夜晚', day: '白天', vote: '投票', last_words: '遗言', ended: '结束' };
+        const visibilityText = item => item?.visibility === 'public' ? '公开' : '后台';
+        const displayRecordText = (item = {}) => {
+            if (gameOver) return String(item.text || '').trim();
+            if (item.visibility === 'public') return String(item.text || '').trim();
+            return String(item.redactedText || '').trim();
+        };
+        const players = (state.players || [])
+            .filter(player => player && !player.empty)
+            .map(player => {
+                const roleText = gameOver || state.roleRevealMode !== 'hidden'
+                    ? ` / ${player.role || '未知'}`
+                    : '';
+                const aliveText = player.alive === false ? '死亡' : '存活';
+                return `${player.seat}号 ${player.name || '玩家'}${roleText} / ${aliveText}`;
+            });
+        const records = (Array.isArray(state.replayLog) ? state.replayLog : [])
+            .map(item => ({
+                meta: `第${Number(item.day || 1)}天 · ${phaseMap[item.phase] || item.phase || '记录'} · ${visibilityText(item)}`,
+                text: displayRecordText(item)
+            }))
+            .filter(item => item.text);
+        const storyTime = this._getWerewolfStoryShareTimeParts();
+        return [
+            '[狼人杀复盘]',
+            storyTime.sharedAt ? `分享时间：${storyTime.sharedAt}` : '',
+            `局型：${roleMode}`,
+            `结果：${winnerText}`,
+            '',
+            '玩家：',
+            players.length ? players.map(line => `- ${line}`).join('\n') : '- 暂无',
+            '',
+            '复盘记录：',
+            records.length ? records.map(item => `【${item.meta}】\n${item.text}`).join('\n\n') : '暂无复盘记录'
+        ].filter(line => line !== '').join('\n');
+    }
+
+    buildWerewolfShareCardData(shareText = '') {
+        const content = String(shareText || this.getWerewolfShareText() || '').trim();
+        const state = this.werewolfData?.getState?.() || {};
+        const lines = content
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean);
+        const summaryLines = lines
+            .filter(line => !/^\[[^\]]+\]$/.test(line))
+            .slice(0, 3);
+        return {
+            title: '狼人杀复盘记录',
+            desc: summaryLines.join(' / ') || '点击查看完整复盘内容',
+            content,
+            result: state.winner === 'werewolves' ? '狼人阵营胜利' : (state.winner === 'villagers' ? '好人阵营胜利' : ''),
+            sharedAt: this._getWerewolfStoryShareTimeParts().sharedAt
+        };
+    }
+
+    _getWerewolfStoryShareTimeParts() {
+        try {
+            const timeManager = window.VirtualPhone?.timeManager;
+            const storyTime = timeManager?.getCurrentStoryTime?.();
+            const date = String(storyTime?.date || '').trim();
+            const time = String(storyTime?.time || '').trim().replace('：', ':');
+            if (date && /^\d{1,2}:\d{2}$/.test(time)) {
+                const timestamp = Number.isFinite(Number(storyTime?.timestamp))
+                    ? Number(storyTime.timestamp)
+                    : (typeof timeManager?.parseTimeToTimestamp === 'function' ? timeManager.parseTimeToTimestamp(storyTime) : 0);
+                return {
+                    date,
+                    time,
+                    weekday: storyTime?.weekday || '',
+                    timestamp: Number.isFinite(Number(timestamp)) ? Number(timestamp) : 0,
+                    sharedAt: [date, storyTime?.weekday, time].filter(Boolean).join(' ')
+                };
+            }
+        } catch (error) {
+            console.warn('[Games] 读取狼人杀分享时间失败:', error);
+        }
+        return { date: '', time: '', weekday: '', timestamp: 0, sharedAt: '' };
+    }
+
+    async shareWerewolfToWechat(targetName, options = {}) {
+        const friendName = String(targetName || '').trim();
+        if (!friendName) throw new Error('未选择微信好友');
+        const wechatData = this.getWechatData();
+        if (!wechatData) throw new Error('微信数据库加载失败');
+
+        const shareText = String(options.shareText || this.getWerewolfShareText() || '').trim();
+        if (!shareText) throw new Error('暂无可分享的狼人杀复盘');
+
+        let chat = (wechatData.getChatList?.() || []).find(item => String(item?.name || '').trim() === friendName);
+        if (!chat) {
+            const contact = (wechatData.getContacts?.() || []).find(item => String(item?.name || '').trim() === friendName);
+            if (contact) {
+                chat = wechatData.createChat({
+                    id: `chat_${contact.id || Date.now()}`,
+                    contactId: contact.id,
+                    name: contact.name,
+                    type: 'single',
+                    avatar: contact.avatar || ''
+                });
+            }
+        }
+        if (!chat) {
+            chat = wechatData.createChat({
+                name: friendName,
+                type: 'single',
+                avatar: '👤'
+            });
+        }
+
+        const userInfo = wechatData.getUserInfo?.() || {};
+        const storyTime = this._getWerewolfStoryShareTimeParts();
+        const werewolfData = this.buildWerewolfShareCardData(shareText);
+        wechatData.addMessage(chat.id, {
+            from: 'me',
+            content: '[狼人杀复盘分享]',
+            type: 'werewolf_card',
+            werewolfData,
+            avatar: userInfo.avatar || '',
+            time: storyTime.time || undefined,
+            date: storyTime.date || undefined,
+            weekday: storyTime.weekday || undefined,
+            timestamp: storyTime.timestamp || undefined
+        });
+
+        if (chat) {
+            chat.unread = (chat.unread || 0) + 1;
+            chat.lastMessage = '[狼人杀复盘分享]';
+            chat.time = storyTime.time || chat.time;
+            if (storyTime.timestamp) {
+                chat.timestamp = storyTime.timestamp;
+            }
+        }
+        wechatData.saveData?.();
+        this._syncWechatHomeBadge(wechatData);
+        return { success: true, chatId: chat.id, chatName: chat.name };
+    }
+
     async startWerewolfMatch(invitedContacts = []) {
         const emptySeats = this.werewolfData.getEmptySeats();
         if (!emptySeats.length) {
@@ -981,6 +1126,11 @@ export class GamesApp extends PokerApp {
         const state = this.werewolfData.getState();
         const publicLog = this._formatWerewolfPublicChatLog(state);
         const voteHistory = this._formatWerewolfVoteHistory(state);
+        const isOpenReveal = String(state?.roleRevealMode || 'open') !== 'hidden';
+        const isEliminatedWolf = String(player?.role || '').trim() === '狼人';
+        const lastWordsRoleRule = isEliminatedWolf && isOpenReveal
+            ? '当前为明牌局，你作为被放逐狼人时身份已经公开，不需要继续装好人；可以坦然以狼人视角发表遗言、带节奏、卖队友、干扰好人判断或留下误导。'
+            : '狼人可以继续伪装、带节奏、卖队友或混淆视听；好人应尽量交代视角和怀疑对象。';
         const messages = [
             {
                 role: 'system',
@@ -989,7 +1139,7 @@ export class GamesApp extends PokerApp {
                 content: [
                     '你正在扮演被白天投票放逐的狼人杀玩家发表遗言。',
                     '你知道自己的真实身份，但不能知道其他非同阵营玩家的真实身份。',
-                    '狼人可以继续伪装、带节奏、卖队友或混淆视听；好人应尽量交代视角和怀疑对象。',
+                    lastWordsRoleRule,
                     '遗言必须是公开发言，40-140字。',
                     '必须只返回 <狼人杀遗言> 标签包裹内容。'
                 ].join('\n')
@@ -999,6 +1149,7 @@ export class GamesApp extends PokerApp {
                 isPhoneMessage: true,
                 content: [
                     `当前第 ${state.day || 1} 天，${player.seat}号 ${player.name} 被投票放逐。`,
+                    `当前局型：${isOpenReveal ? '明牌局' : '暗牌局'}。`,
                     `你的真实身份：${player.role || '村民'}。`,
                     player.role === '狼人'
                         ? `存活狼人同伴：${(state.players || []).filter(item => item.role === '狼人' && item.alive !== false).map(item => `${item.seat}号 ${item.name}`).join('、')}`
