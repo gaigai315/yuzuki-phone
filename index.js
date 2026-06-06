@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.2.5';
+const ST_PHONE_VERSION = '1.2.6';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
@@ -41,15 +41,11 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-06-05',
+    date: '2026-06-06',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【修复】修复微信清理数据时，用户发送图片可能残留在 backgrounds 文件夹的问题。',
-        '【修复】修复微信正文图片标签解析时，中文描述与英文生图 Tag 可能被错误合并的问题。',
-        '【优化】微信语音/视频通话内记录条数改为可设置，避免长通话只携带过少上下文。',
-        '【优化】优化设置页布局，将线上/线下注入设置拆分，并将一键更新提示词入口移到常规页顶层。',
-        '【优化】朋友圈生成会注入蜜语好友资料，让蜜语好友/主播更容易按人设发布动态。',
-        '【修复】提升移动端壁纸和 APP 图标上传兼容性，减少图片过大、HEIC 格式和 backgrounds 路径误清理导致的替换失败。'
+        '【修复】修复论坛魔坊从快速回复面板进入详情时未按模板与 CSS 渲染、误显示为字段表格的问题。',
+        '【修复】修复微信正文/用户回复中被酒馆正则或 Markdown 实体化的异常内容可能污染小手机页面，导致单个会话底部输入栏显示错乱的问题。'
     ]
 };
 
@@ -936,6 +932,32 @@ if (window.GGP_Loaded) {
         const match = String(text || '').match(/<\s*wechat\b[^>]*>([\s\S]*?)<\s*\/\s*wechat\s*>/i);
         if (!match) return '';
         return stripWechatCommentWrapper(match[1]);
+    }
+
+    function decodePhoneTagBoundaryEntities(text, tagNames = ['wechat']) {
+        let out = String(text || '');
+        const names = Array.isArray(tagNames) ? tagNames : [tagNames];
+        names
+            .map(name => String(name || '').trim())
+            .filter(Boolean)
+            .forEach(name => {
+                const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const tagHead = /^[A-Za-z][A-Za-z0-9_-]*$/.test(name)
+                    ? `${escapedName}\\b`
+                    : escapedName;
+                out = out
+                    .replace(new RegExp(`&lt;(\\s*)(${tagHead}[\\s\\S]*?)&gt;`, 'gi'), '<$1$2>')
+                    .replace(new RegExp(`&#60;(\\s*)(${tagHead}[\\s\\S]*?)&#62;`, 'gi'), '<$1$2>')
+                    .replace(new RegExp(`&lt;(\\s*)/(\\s*)(${tagHead}[\\s\\S]*?)(\\s*)&gt;`, 'gi'), '<$1/$2$3$4>')
+                    .replace(new RegExp(`&#60;(\\s*)/(\\s*)(${tagHead}[\\s\\S]*?)(\\s*)&#62;`, 'gi'), '<$1/$2$3$4>');
+            });
+        return out;
+    }
+
+    function decodeWechatTextEntities(text) {
+        return String(text || '')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&');
     }
     let _isFallbackNotificationShowing = false;
     let _currentFallbackNotificationData = null;
@@ -5415,13 +5437,9 @@ if (window.GGP_Loaded) {
         // 例如 <a href="金额：100元">转账</a> → [转账](金额：100元)
         // 这解决了 [转账](金额：xx元) 等格式被 markdown 引擎吞掉的问题
         normalizedText = normalizedText.replace(/<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi, '[$2]($1)');
-        // 兼容被转义后的标签（例如 &lt;wechat&gt;）
-        normalizedText = normalizedText
-            .replace(/&lt;/gi, '<')
-            .replace(/&gt;/gi, '>')
-            .replace(/&amp;/gi, '&')
-            .replace(/&#60;/gi, '<')
-            .replace(/&#62;/gi, '>');
+        // 兼容被转义后的微信标签，但不要把消息正文里的 HTML 实体还原成真实标签。
+        // 外部酒馆正则/Markdown 可能会把正文里的 <style> 等内容实体化；这里若全量解码，会污染小手机 DOM。
+        normalizedText = decodePhoneTagBoundaryEntities(normalizedText, ['wechat']);
 
         const results = [];
         const textStoryTime = (() => {
@@ -5465,6 +5483,7 @@ if (window.GGP_Loaded) {
                 .replace(/<div[^>]*>/gi, '')
                 .replace(/\r\n/g, '\n')
                 .replace(/&nbsp;/gi, ' ')     // 清除空格实体
+                .replace(/&amp;/gi, '&')      // 普通文本实体还原，但保留 &lt; / &gt; 防止 HTML 污染
                 .replace(/\u200B/g, '')       // 移除零宽字符
                 .replace(/^\s*[\r\n]/gm, ''); // 移除多余的空行
 
@@ -6569,11 +6588,12 @@ if (window.GGP_Loaded) {
     function processUserReplyTags(text, tavernIndex, batchId) {
         if (!text) return;
 
-        // 兼容酒馆原生 < > 和被转义的 &lt; &gt;
-        const replyRegex = /(?:<|&lt;)回复([^>&]+?)(?:>|&gt;)([\s\S]*?)(?:<|&lt;)\/回复\1(?:>|&gt;)/gi;
+        // 兼容酒馆原生 < > 和被转义的 &lt; &gt;，只还原 <回复> 标签边界，避免正文 HTML 污染微信窗口
+        const replySource = decodePhoneTagBoundaryEntities(text, ['回复']);
+        const replyRegex = /<回复([^>]+?)>([\s\S]*?)<\/回复\1>/gi;
         let match;
 
-        while ((match = replyRegex.exec(text)) !== null) {
+        while ((match = replyRegex.exec(replySource)) !== null) {
             const contactName = match[1].trim();
             let rawContent = match[2];
 
@@ -6581,7 +6601,7 @@ if (window.GGP_Loaded) {
 
             //  核心清洗：处理酒馆的 <br> 换行和 HTML 实体标签
             rawContent = rawContent.replace(/<br\s*\/?>/gi, '\n');
-            rawContent = rawContent.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+            rawContent = decodeWechatTextEntities(rawContent);
             rawContent = rawContent.replace(/<[^>]+>/g, ''); // 移除剩余的段落等P标签
             const content = rawContent.trim();
 

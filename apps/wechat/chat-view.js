@@ -2591,6 +2591,7 @@ renderChatRoom(chat) {
 
         // 🔥🔥🔥 系统消息特殊处理（居中透明气泡）
         if (msg.type === 'system' || msg.from === 'system') {
+            const systemContent = this._escapeHtml(msg.content || '');
             return `
             <div class="chat-message message-system${selectionClass}${selectedClass}" data-message-id="${this._escapeHtml(messageId)}" data-message-index="${Number(messageIndex)}" style="
                 display: flex;
@@ -2607,7 +2608,7 @@ renderChatRoom(chat) {
                     max-width: 80%;
                     text-align: center;
                 ">
-                    ${msg.content || ''}
+                    ${systemContent}
                 </div>
             </div>
         `;
@@ -2630,13 +2631,14 @@ renderChatRoom(chat) {
             case 'image':
                 {
                     const isCustomEmojiImage = !!(msg.customEmojiId || msg.customEmojiName || msg.customEmojiDescription);
+                    const safeImageContent = this.escapeInlineStickerAttr(msg.content || '');
                     const customEmojiBoxStyle = isCustomEmojiImage
                         ? 'width: 112px; max-width: 38vw; max-height: 112px;'
                         : '';
                     const customEmojiImgStyle = isCustomEmojiImage
                         ? 'width: 100%; max-height: 112px; object-fit: contain;'
                         : '';
-                    messageBody = `<div class="message-image-box ${isCustomEmojiImage ? 'message-image-box-custom-emoji' : ''}" style="position: relative; display: inline-block; line-height: 0; ${customEmojiBoxStyle}"><img src="${msg.content}" class="message-image" style="${customEmojiImgStyle}"></div>`;
+                    messageBody = `<div class="message-image-box ${isCustomEmojiImage ? 'message-image-box-custom-emoji' : ''}" style="position: relative; display: inline-block; line-height: 0; ${customEmojiBoxStyle}"><img src="${safeImageContent}" class="message-image" style="${customEmojiImgStyle}"></div>`;
                 }
                 break;
             case 'image_prompt':
@@ -2708,10 +2710,10 @@ renderChatRoom(chat) {
                 // 🔥 1. 语音条：【完全复用 .message-text 类】，保证 padding、颜色、圆角、小尾巴和纯文字框 100% 像素级一致！
                 // 使用 display: flex 实现左右对齐
                 messageBody += `
-                <div class="message-text voice-bubble-playable" id="voice-bubble-${msg.id || Math.random().toString(36).substr(2, 9)}" data-text="${(voiceText || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}" style="width: ${dynamicWidth}px; display: flex; justify-content: space-between; align-items: center; box-sizing: border-box; cursor: pointer;">
+                <div class="message-text voice-bubble-playable" id="voice-bubble-${this.escapeInlineStickerAttr(msg.id || Math.random().toString(36).substr(2, 9))}" data-text="${this.escapeInlineStickerAttr(voiceText || '')}" style="width: ${dynamicWidth}px; display: flex; justify-content: space-between; align-items: center; box-sizing: border-box; cursor: pointer;">
                     ${isMe
-                        ? `<span>${durationStr}</span> ${voiceSvgRight}`
-                        : `${voiceSvgLeft} <span>${durationStr}</span>`}
+                        ? `<span>${this._escapeHtml(durationStr)}</span> ${voiceSvgRight}`
+                        : `${voiceSvgLeft} <span>${this._escapeHtml(durationStr)}</span>`}
                 </div>
             `;
 
@@ -2730,7 +2732,7 @@ renderChatRoom(chat) {
                         max-width: 100%;
                         box-sizing: border-box;
                         text-align: left;
-                    ">${voiceText}</div>
+                    ">${this._escapeHtml(voiceText)}</div>
                 `;
                 }
                 messageBody += `</div>`;
@@ -2744,7 +2746,7 @@ renderChatRoom(chat) {
                         : (paymentStatus === 'received' ? '已接收' : '收到转账'));
                 const formattedAmount = parseFloat(msg.amount || 0).toFixed(2);
                 messageBody = `
-                <div class="message-transfer ${isTransferOpened ? 'opened' : ''}" data-msg-id="${msg.id}">
+                <div class="message-transfer ${isTransferOpened ? 'opened' : ''}" data-msg-id="${this._escapeHtml(msg.id || '')}">
                     <div class="rp-main">
                         <div class="rp-icon">
                             <!-- fake-world transfer2-outlined.svg 原版图标 -->
@@ -2754,7 +2756,7 @@ renderChatRoom(chat) {
                         </div>
                         <div class="rp-content">
                             <div class="rp-title">¥${formattedAmount}</div>
-                            <div class="rp-subtitle">${transferSubtitle}</div>
+                            <div class="rp-subtitle">${this._escapeHtml(transferSubtitle)}</div>
                         </div>
                     </div>
                     <div class="rp-footer">微信转账</div>
@@ -2776,17 +2778,18 @@ renderChatRoom(chat) {
                 const phoneSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`;
                 const videoSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="14" rx="2" ry="2"/><polygon points="23 7 16 12 23 17 23 7"/></svg>`;
                 const callSvg = msg.callType === 'video' ? videoSvg : phoneSvg;
+                const safeCallStatusText = this._escapeHtml(callStatusText);
                 if (isMe) {
-                    messageBody = `<div class="message-text" style="display: inline-flex; align-items: center; gap: 6px;">${callStatusText} ${callSvg}</div>`;
+                    messageBody = `<div class="message-text" style="display: inline-flex; align-items: center; gap: 6px;">${safeCallStatusText} ${callSvg}</div>`;
                 } else {
-                    messageBody = `<div class="message-text" style="display: inline-flex; align-items: center; gap: 6px;">${callSvg} ${callStatusText}</div>`;
+                    messageBody = `<div class="message-text" style="display: inline-flex; align-items: center; gap: 6px;">${callSvg} ${safeCallStatusText}</div>`;
                 }
                 break;
             }
 
             case 'redpacket':
                 messageBody = `
-                <div class="message-redpacket ${(isRedPacketOpened || isPaymentRefunded) ? 'opened' : ''}" data-msg-id="${msg.id}">
+                <div class="message-redpacket ${(isRedPacketOpened || isPaymentRefunded) ? 'opened' : ''}" data-msg-id="${this._escapeHtml(msg.id || '')}">
                     <div class="rp-main">
                         <div class="rp-icon">
                             <!-- 微信经典红包图标 -->
@@ -2798,7 +2801,7 @@ renderChatRoom(chat) {
                             </svg>
                         </div>
                         <div class="rp-content">
-                            <div class="rp-title">${msg.wish || '恭喜发财，大吉大利'}</div>
+                            <div class="rp-title">${this._escapeHtml(msg.wish || '恭喜发财，大吉大利')}</div>
                             <!-- 没被领取时不显示副标题，对齐原生 -->
                             ${isPaymentRefunded ? `<div class="rp-subtitle">已退回</div>` : (isRedPacketOpened ? `<div class="rp-subtitle">${isMe ? '已被领取' : '已领取'}</div>` : '')}
                         </div>
@@ -2810,7 +2813,7 @@ renderChatRoom(chat) {
 
             // 表情包消息：优先走 ALAPI 图片，失败降级为“关键词占位卡片”
            case 'sticker':
-                const stickerKeyword = msg.keyword || '发呆';
+                const stickerKeyword = String(msg.keyword || '发呆');
                 
                 // 🌟🌟🌟 新增核心：优先检查是否匹配本地“我的表情” 🌟🌟🌟
                 const customEmojis = this.app.wechatData.getCustomEmojis();
@@ -2822,7 +2825,7 @@ renderChatRoom(chat) {
                     // 匹配到了用户自定义表情，直接渲染本地图片，跳过 ALAPI！
                     messageBody = `
                     <div class="message-sticker-box" style="line-height:1.2;">
-                        <img src="${matchedCustomEmoji.image}" alt="${this._escapeHtml(matchedCustomEmoji.name)}" style="max-width: 140px; max-height: 140px; border-radius: 8px; object-fit: contain;">
+                        <img src="${this.escapeInlineStickerAttr(matchedCustomEmoji.image)}" alt="${this._escapeHtml(matchedCustomEmoji.name)}" style="max-width: 140px; max-height: 140px; border-radius: 8px; object-fit: contain;">
                     </div>`;
                     break;
                 }
@@ -2845,13 +2848,13 @@ renderChatRoom(chat) {
             case 'weibo_card': {
                 const wb = msg.weiboData || {};
                 messageBody = `
-                <div class="message-weibo-card" data-msg-id="${msg.id || ''}" style="background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; overflow: hidden; max-width: 220px; cursor: pointer;">
+                <div class="message-weibo-card" data-msg-id="${this._escapeHtml(msg.id || '')}" style="background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; overflow: hidden; max-width: 220px; cursor: pointer;">
                     <div style="padding: 10px;">
                         <div style="font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                            ${wb.blogger || '微博'}
+                            ${this._escapeHtml(wb.blogger || '微博')}
                         </div>
                         <div style="font-size: 12px; color: #666; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
-                            ${(wb.content || '').substring(0, 80)}
+                            ${this._escapeHtml((wb.content || '').substring(0, 80))}
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; justify-content: flex-start; gap: 6px; padding: 6px 10px; background: #f5f5f5; border-top: 1px solid #eee;">
@@ -3150,8 +3153,8 @@ renderChatRoom(chat) {
             ${selectionCheckHtml}
             ${!isMe ? `<div class="message-avatar">${this.app.renderAvatar(senderAvatar, '👤', senderName)}</div>` : ''}
             <div class="message-content" style="display: inline-flex; flex-direction: column; ${isMe ? 'align-items: flex-end;' : 'align-items: flex-start;'}">
-                ${!isMe && isGroupChat ? `<div class="message-sender" style="font-size: 12px; color: #576b95; margin-bottom: 2px;">${senderName}</div>` : ''}
-                <div style="display: inline-block;">${messageBody}</div>
+                ${!isMe && isGroupChat ? `<div class="message-sender" style="font-size: 12px; color: #576b95; margin-bottom: 2px;">${this._escapeHtml(senderName)}</div>` : ''}
+                <div style="display: inline-block; max-width:100%;">${messageBody}</div>
                 ${quoteHtml}
             </div>
             ${isMe ? `<div class="message-avatar">${this.app.renderAvatar(userInfo.avatar, '😊', userInfo.name)}</div>` : ''}
@@ -3266,8 +3269,8 @@ renderChatRoom(chat) {
                     ${this.emojiTab === 'custom' ? `
                         <!-- 自定义表情 -->
                         ${customEmojis.map(emoji => `
-                            <span class="emoji-item custom-emoji-item ${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'is-selected' : ''}" data-emoji-type="custom" data-emoji-id="${emoji.id}" data-selection-mode="${isSelectionMode ? '1' : '0'}" title="${this._escapeHtml(String(emoji.description || emoji.name || '表情'))}" style="position:relative;${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'outline:2px solid #07c160; outline-offset:1px; border-radius:10px;' : ''}">
-                                <img src="${emoji.image}" alt="${emoji.name}">
+                            <span class="emoji-item custom-emoji-item ${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'is-selected' : ''}" data-emoji-type="custom" data-emoji-id="${this._escapeHtml(emoji.id || '')}" data-selection-mode="${isSelectionMode ? '1' : '0'}" title="${this._escapeHtml(String(emoji.description || emoji.name || '表情'))}" style="position:relative;${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'outline:2px solid #07c160; outline-offset:1px; border-radius:10px;' : ''}">
+                                <img src="${this.escapeInlineStickerAttr(emoji.image || '')}" alt="${this._escapeHtml(emoji.name || '')}">
                                 ${isSelectionMode ? `<span style="position:absolute; top:2px; right:2px; width:14px; height:14px; border-radius:50%; background:${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '#07c160' : 'rgba(255,255,255,0.9)'}; border:1px solid ${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '#07c160' : '#ccc'}; color:#fff; font-size:10px; line-height:12px; text-align:center;">${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '✓' : ''}</span>` : ''}
                             </span>
                         `).join('')}
@@ -4367,7 +4370,7 @@ renderChatRoom(chat) {
             '[吐]': '🤮'
         };
 
-        let result = text;
+        let result = this._escapeHtml(text);
         // 0️⃣ 文本内联表情包：[表情包](关键词) / [表情包]（关键词）
         // 单独一整条的表情包消息会在数据层被识别为 `sticker` 类型，不走这里
         // 仅走关键词 -> emoji 映射，不走任何外部图源请求
@@ -4389,10 +4392,10 @@ renderChatRoom(chat) {
         // 2️⃣ 替换自定义表情
         const customEmojis = this.app.wechatData.getCustomEmojis();
         customEmojis.forEach(emoji => {
-            const pattern = `[${emoji.name}]`;
+            const pattern = `[${this._escapeHtml(emoji.name)}]`;
             if (result.includes(pattern)) {
                 result = result.split(pattern).join(
-                    `<img src="${emoji.image}" style="width:16px;height:16px;vertical-align:text-bottom;border-radius:4px;" alt="${emoji.name}" title="${emoji.name}">`
+                    `<img src="${this.escapeInlineStickerAttr(emoji.image || '')}" style="width:16px;height:16px;vertical-align:text-bottom;border-radius:4px;" alt="${this._escapeHtml(emoji.name || '')}" title="${this._escapeHtml(emoji.name || '')}">`
                 );
             }
         });
@@ -11490,13 +11493,14 @@ renderChatRoom(chat) {
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
                 const senderLabelHtml = isGroupCall
-                    ? `<div class="call-msg-sender-label" style="font-size:10px; color:rgba(255,255,255,0.86); margin:0 0 4px 2px;">${entry.sender}</div>`
+                    ? `<div class="call-msg-sender-label" style="font-size:10px; color:rgba(255,255,255,0.86); margin:0 0 4px 2px;">${this._escapeHtml(entry.sender)}</div>`
                     : '';
+                const safeEntryText = this._escapeHtml(entry.text);
                 const aiMsgHtml = `
                     <div class="call-msg-row" style="display: flex; justify-content: flex-start;">
                         <div style="max-width: 75%; display:flex; flex-direction:column; align-items:flex-start;">
                             ${senderLabelHtml}
-                            <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="video" data-round-id="${roundId}" data-sender="${this._escapeHtml(entry.sender)}" data-text="${this._escapeHtml(entry.text)}" style="max-width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.85); color: #333; border-radius: 12px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${entry.text}</div>
+                            <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="video" data-round-id="${roundId}" data-sender="${this._escapeHtml(entry.sender)}" data-text="${safeEntryText}" style="max-width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.85); color: #333; border-radius: 12px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${safeEntryText}</div>
                         </div>
                     </div>
                 `;
@@ -12816,13 +12820,14 @@ ${recentCallHistory.map(h => `${h.from === 'me' ? userName : contactName}: ${h.t
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
                 const senderLabelHtml = isGroupCall
-                    ? `<div class="call-msg-sender-label" style="font-size:10px; color:rgba(0,0,0,0.48); margin:0 0 4px 2px;">${entry.sender}</div>`
+                    ? `<div class="call-msg-sender-label" style="font-size:10px; color:rgba(0,0,0,0.48); margin:0 0 4px 2px;">${this._escapeHtml(entry.sender)}</div>`
                     : '';
+                const safeEntryText = this._escapeHtml(entry.text);
                 const aiMsgHtml = `
                     <div class="call-msg-row" style="display: flex; justify-content: flex-start;">
                         <div style="max-width: 80%; display:flex; flex-direction:column; align-items:flex-start;">
                             ${senderLabelHtml}
-                            <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="voice" data-round-id="${roundId}" data-sender="${this._escapeHtml(entry.sender)}" data-text="${this._escapeHtml(entry.text)}" style="max-width: 100%; padding: 6px 10px; background: rgba(255,255,255,0.85); color: #333; border-radius: 10px; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${entry.text}</div>
+                            <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="voice" data-round-id="${roundId}" data-sender="${this._escapeHtml(entry.sender)}" data-text="${safeEntryText}" style="max-width: 100%; padding: 6px 10px; background: rgba(255,255,255,0.85); color: #333; border-radius: 10px; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${safeEntryText}</div>
                         </div>
                     </div>
                 `;
