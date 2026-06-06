@@ -2571,7 +2571,7 @@
 }
 
 .honey-live-gifts-list.is-scrolling .honey-live-gifts-track {
-    animation: honeyGiftFeedScroll var(--honey-gift-scroll-duration, 8s) linear infinite;
+    animation: honeyGiftFeedScroll var(--honey-gift-scroll-duration, 8s) linear 1 forwards;
 }
 
 .honey-live-gift-item {
@@ -2799,7 +2799,7 @@
     max-width: none;
     text-overflow: clip;
     overflow: visible;
-    animation: honeyIntroMarquee var(--honey-intro-marquee-duration, 16s) linear infinite;
+    animation: honeyIntroMarquee var(--honey-intro-marquee-duration, 16s) linear 1 forwards;
 }
 
 .honey-live-gift-text-track.marquee .honey-live-gift-text {
@@ -4229,7 +4229,7 @@ body.phone-input-active .honey-page-live.is-user-live .honey-live-bottom {
     .honey-meta-title.is-marquee .honey-meta-title-track,
     .honey-live-gift-text-track.marquee,
     .honey-live-gifts-list.is-scrolling .honey-live-gifts-track {
-        animation-iteration-count: 2;
+        animation-iteration-count: 1;
     }
 
     .honey-meta-title-track,

@@ -3280,6 +3280,7 @@ export class HoneyData {
         this._topicScenesCache = {};
         this._selectedTopicCache = '';
         this._lastSceneCache = null;
+        this.saveHoneyFriendRequests([]);
         this._removeStored('honey_topic_scenes');
         this._removeStored('honey_selected_topic');
         this._removeStored('honey_selected_topic_key');

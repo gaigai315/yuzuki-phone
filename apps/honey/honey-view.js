@@ -247,7 +247,7 @@ export class HoneyView {
     }
 
     _loadCSS() {
-        const cssHref = this._getHoneyAssetUrl('honey.css?v=20260506-nai-debug');
+        const cssHref = this._getHoneyAssetUrl('honey.css?v=20260606-ticker-once');
         const styleId = 'honey-css-inline';
         const existing = document.getElementById(styleId);
         if (existing?.getAttribute('data-source') === cssHref) {
@@ -4622,7 +4622,7 @@ export class HoneyView {
         }
 
         root.querySelector('#honey-clear-data')?.addEventListener('click', async () => {
-            const ok = confirm('确定一键清理蜜语的所有生成内容？\n\n将删除：\n1) 推荐与直播缓存\n2) 关注列表与关注历史备份\n3) 当前会话中的 <Honey> 标签内容\n4) 蜜语生成并保存到 /backgrounds/ 的直播图片\n\n此操作不可恢复。');
+            const ok = confirm('确定一键清理蜜语的所有生成内容？\n\n将删除：\n1) 推荐与直播缓存\n2) 关注列表与关注历史备份\n3) 蜜语好友申请\n4) 当前会话中的 <Honey> 标签内容\n5) 蜜语生成并保存到 /backgrounds/ 的直播图片\n\n此操作不可恢复。');
             if (!ok) return;
 
             try {
@@ -7021,6 +7021,8 @@ export class HoneyView {
         wrap.classList.remove('is-marquee');
         clone.textContent = '';
         clone.style.removeProperty('margin-left');
+        track.style.removeProperty('animation');
+        track.style.removeProperty('transform');
         track.style.removeProperty('--honey-title-cycle-distance');
         track.style.removeProperty('--honey-title-marquee-duration');
 
@@ -7051,6 +7053,8 @@ export class HoneyView {
         track.classList.remove('marquee');
         clone.textContent = '';
         clone.style.removeProperty('margin-left');
+        track.style.removeProperty('animation');
+        track.style.removeProperty('transform');
         track.style.removeProperty('--honey-intro-marquee-distance');
         track.style.removeProperty('--honey-intro-marquee-duration');
 
@@ -8401,15 +8405,42 @@ export class HoneyView {
         }
     }
 
-    _pauseLiveVideos() {
-        document.querySelectorAll('.honey-page-live #honey-live-video-el').forEach(video => {
+    _pauseHoneyVideos() {
+        document.querySelectorAll('.honey-page-live #honey-live-video-el, .honey-page-recommend #honey-bg-video-el').forEach(video => {
             video.pause?.();
+        });
+    }
+
+    _stopHoneyAnimations() {
+        document.querySelectorAll('.honey-live-gifts-list.is-scrolling').forEach(el => {
+            el.classList.remove('is-scrolling');
+        });
+        document.querySelectorAll('.honey-live-gifts-track').forEach(el => {
+            el.style.animation = 'none';
+            el.style.transform = 'translate3d(0, 0, 0)';
+        });
+        document.querySelectorAll('.honey-live-gift-text-track.marquee').forEach(el => {
+            el.classList.remove('marquee');
+            el.style.animation = 'none';
+            el.style.transform = 'translate3d(0, 0, 0)';
+            el.style.removeProperty('--honey-intro-marquee-distance');
+            el.style.removeProperty('--honey-intro-marquee-duration');
+        });
+        document.querySelectorAll('.honey-meta-title.is-marquee').forEach(el => {
+            el.classList.remove('is-marquee');
+        });
+        document.querySelectorAll('.honey-meta-title-track').forEach(el => {
+            el.style.animation = 'none';
+            el.style.transform = 'translate3d(0, 0, 0)';
+            el.style.removeProperty('--honey-title-cycle-distance');
+            el.style.removeProperty('--honey-title-marquee-duration');
         });
     }
 
     releaseInactiveResources() {
         this._cleanupTransient();
-        this._pauseLiveVideos();
+        this._pauseHoneyVideos();
+        this._stopHoneyAnimations();
         this._stopHoneyTtsPlayback();
         this._clearHoneyTtsCache();
         this._livePendingUserLines = [];
