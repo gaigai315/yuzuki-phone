@@ -2738,6 +2738,12 @@ if (window.GGP_Loaded) {
                     background: rgba(255,255,255,0.25);
                     padding: 8px;
                 }
+                .mofo-template-preview {
+                    min-width: 0;
+                    overflow: auto;
+                    -webkit-overflow-scrolling: touch;
+                    touch-action: pan-x pan-y;
+                }
                 .mofo-kv-row {
                     display: flex;
                     justify-content: space-between;
@@ -3208,9 +3214,6 @@ if (window.GGP_Loaded) {
                         const safeState = (stateObj && typeof stateObj === 'object' && !Array.isArray(stateObj))
                             ? stateObj
                             : {};
-                        const exprList = extractTemplateExprList(rawTemplate);
-                        const hasMissingExpr = exprList.some(expr => !resolveTemplateExpr(safeState, expr).exists);
-                        if (hasMissingExpr) return { ok: false, html: '' };
                         const rendered = (typeof mofoData?.renderTemplate === 'function')
                             ? mofoData.renderTemplate(rawTemplate, safeState)
                             : rawTemplate;
@@ -3322,7 +3325,6 @@ if (window.GGP_Loaded) {
                             `;
                         }
 
-                        const safeCss = String(current.cssText || '').replace(/<\/style/gi, '<\\/style');
                         const stateEntries = Object.entries(current.state || {});
                         const rows = stateEntries.length > 0
                             ? stateEntries.map(([k, v]) => `
@@ -3332,10 +3334,25 @@ if (window.GGP_Loaded) {
                                 </div>
                             `).join('')
                             : '<div style="font-size:11px; color:#5d78a4;">暂无抓取值</div>';
+                        const scopeToken = String(current.id || current.tagName || current.name || 'mofo')
+                            .trim()
+                            .toLowerCase()
+                            .replace(/[^a-z0-9_-]+/g, '-')
+                            .replace(/^-+|-+$/g, '')
+                            || 'mofo';
+                        const safeCss = scopeMofoCssText(
+                            current.cssText || '',
+                            `#mofo-detail-page[data-mofo-scope="${scopeToken}"] .mofo-template-preview`
+                        );
+                        const htmlTemplate = String(current.htmlTemplate ?? current.templateHtml ?? current['html模板'] ?? '').trim();
+                        const renderedTemplate = renderMofoTemplatePreview(htmlTemplate, current.state || {});
+                        const previewBody = renderedTemplate.ok
+                            ? `<div class="mofo-template-preview">${renderedTemplate.html}</div>`
+                            : `<div class="mofo-preview-card">${rows}</div>`;
 
                         return `
                             <style>${safeCss}</style>
-                            <div id="mofo-detail-page">
+                            <div id="mofo-detail-page" data-mofo-scope="${escapeHtml(scopeToken)}">
                                 <div class="inline-reply-section-title" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
                                     <button type="button" id="mofo-detail-back-btn" style="border:1px solid rgba(116, 139, 184, 0.55); border-radius:7px; background:rgba(255,255,255,0.34); color:#264672; font-size:11px; padding:4px 8px; cursor:pointer;">← 返回</button>
                                     <span>${escapeHtml(current.name || '魔坊详情')}</span>
@@ -3349,7 +3366,7 @@ if (window.GGP_Loaded) {
                                     <div style="font-size:10px; color:${current.offlinePromptEnabled === false ? '#9a6a76' : '#2f6a54'}; margin-bottom:6px;">
                                         线下提示词注入：${current.offlinePromptEnabled === false ? '未启用' : '已启用'}
                                     </div>
-                                    <div class="mofo-preview-card">${rows}</div>
+                                    ${previewBody}
                                     <div style="margin-top:7px; font-size:10px; color:#5876a4; line-height:1.5; white-space:pre-wrap; max-height:100px; overflow:auto;">${escapeHtml(current.promptTemplate || '未设置提示词模板')}</div>
                                     <div style="display:flex; gap:6px; margin-top:8px;">
                                         <button type="button" id="mofo-detail-edit-btn" style="flex:1; border:1px solid rgba(116, 139, 184, 0.55); border-radius:8px; background:rgba(255,255,255,0.35); color:#284a76; font-size:11px; padding:6px 8px; cursor:pointer; font-weight:700;">编辑</button>
