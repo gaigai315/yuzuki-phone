@@ -2233,6 +2233,7 @@ export class WeiboData {
 
     clearAllData() {
         this.clearCache();
+        window.VirtualPhone?._suppressAutoWeiboTrigger?.(60000, 'clear_weibo_data');
 
         // 当前聊天下的微博数据可能包含动态详情键/楼层键，直接按前缀彻底清空，避免“清空后残留旧微博”。
         const chatStore = this.storage?._getChatMetadataStore?.();
@@ -2270,7 +2271,9 @@ export class WeiboData {
             if (msg.is_user) return; // 微博通常是AI发的，跳过用户消息
             
             // 清理当前显示的消息
+            regex.lastIndex = 0;
             if (msg.mes && regex.test(msg.mes)) {
+                regex.lastIndex = 0;
                 msg.mes = msg.mes.replace(regex, '').trim();
                 modified = true;
             }
@@ -2278,7 +2281,9 @@ export class WeiboData {
             // 清理隐藏的滑动分支 (swipes)
             if (msg.swipes) {
                 msg.swipes.forEach((swipe, idx) => {
+                    regex.lastIndex = 0;
                     if (swipe && regex.test(swipe)) {
+                        regex.lastIndex = 0;
                         msg.swipes[idx] = swipe.replace(regex, '').trim();
                         modified = true;
                     }
@@ -2288,10 +2293,10 @@ export class WeiboData {
 
         // 如果发生了修改，强制保存酒馆聊天记录
         if (modified) {
-            if (typeof context.saveChatDebounced === 'function') {
-                context.saveChatDebounced();
-            } else if (typeof context.saveChat === 'function') {
+            if (typeof context.saveChat === 'function') {
                 await context.saveChat();
+            } else if (typeof context.saveChatDebounced === 'function') {
+                context.saveChatDebounced();
             }
             console.log('[WeiboData] 已从酒馆源文件中擦除所有微博标签，文件已瘦身！');
         }
