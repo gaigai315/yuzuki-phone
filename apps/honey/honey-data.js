@@ -3758,6 +3758,7 @@ export class HoneyData {
         const safeUserMessageWithNick = this._formatLiveUserMessageForPrompt(safeUserMessage, honeyNickname);
         const historyTurns = this._normalizeContinuePromptTurns(options?.promptTurns);
         const previousRecommendContext = this._buildPreviousRecommendAvoidanceContext(options?.previousRecommendTopics);
+        const recommendSearchKeyword = this._sanitizeInlineText(options?.recommendSearchKeyword || options?.searchKeyword || '', 80);
         const isPrivateLive = String(options?.visibility || options?.currentScene?.visibility || '').trim() === 'private'
             || options?.isPrivateLive === true
             || options?.currentScene?.isPrivateLive === true;
@@ -3832,6 +3833,16 @@ export class HoneyData {
             instructionUserPrompt = '请根据蜜语APP提示词，从零开始生成一套全新的蜜语内容，严格输出 <Honey> 结构。';
             if (previousRecommendContext) {
                 instructionUserPrompt = `${previousRecommendContext}\n\n${instructionUserPrompt}`;
+            }
+            if (recommendSearchKeyword) {
+                instructionUserPrompt = [
+                    instructionUserPrompt,
+                    '',
+                    `【用户搜索关键词】${recommendSearchKeyword}`,
+                    '请把这次推荐页刷新理解为用户主动搜索。生成的“热门推荐/推荐列表”中，大约一半直播间必须明显围绕该关键词或其合理联想展开；另一半保持蜜语随机题材与多样性，不要全部同质化。',
+                    '“当前激情直播”也优先生成一个与该关键词相关、可直接点进观看的直播间。',
+                    '仍然严格遵守蜜语APP原提示词和 <Honey> 输出结构。'
+                ].join('\n');
             }
         } else if (mode === 'continue') {
             instructionUserPrompt = '';

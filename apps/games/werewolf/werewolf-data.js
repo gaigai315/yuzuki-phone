@@ -550,12 +550,18 @@ export class WerewolfData {
                 this.state = migrated;
                 this._persist();
             }
+            if (migrated._werewolfStateMigrated) {
+                delete migrated._werewolfStateMigrated;
+                this.state = migrated;
+                this._persist();
+            }
             return migrated;
         }
 
         const legacySaved = this.storage?.get?.(LEGACY_STORAGE_KEY);
         if (this._isValidState(legacySaved)) {
             const migrated = this._migrateState(legacySaved);
+            if (migrated._werewolfStateMigrated) delete migrated._werewolfStateMigrated;
             this.state = migrated;
             this._persist();
             this._removeLegacyGlobalState();
@@ -700,9 +706,28 @@ export class WerewolfData {
                 next.speaking = false;
                 next.players = next.players.map(player => ({ ...player, active: false }));
                 next.notice = `${eliminated.seat}号遗言中断，点击续接遗言可继续。`;
+                next._werewolfStateMigrated = true;
+            }
+        }
+        if (next.phase === 'night') {
+            const hadRuntimeState = !!next.speaking
+                || !!next.wolfChatLoading
+                || next.players.some(player => !!player.active);
+            if (hadRuntimeState) {
+                next.speaking = false;
+                next.wolfChatLoading = false;
+                next.players = next.players.map(player => ({ ...player, active: false }));
+                next.notice = next.nightStep
+                    ? `夜晚行动中断，点击继续当前游戏可从${this._nightStepLabel(next.nightStep)}续接。`
+                    : '夜晚行动已结束，点击继续当前游戏进入天亮。';
+                next._werewolfStateMigrated = true;
             }
         }
         return next;
+    }
+
+    _nightStepLabel(step = '') {
+        return NIGHT_STEP_LABELS[String(step || '')] || '当前夜晚阶段';
     }
 
     _hasDirtySetupSeats(originalState = {}, migratedState = {}) {

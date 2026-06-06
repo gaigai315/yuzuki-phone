@@ -40,6 +40,7 @@
 .honey-page-live .honey-content {
     gap: 0;
     padding-top: 0;
+    position: relative;
 }
 
 /* 修复：拥有视频时清空父级渐变背景，使用纯黑打底 */
@@ -569,6 +570,136 @@
 
 .honey-pull-refresh-indicator.error .honey-pull-refresh-inner {
     color: #ff8f9c !important;
+}
+
+.honey-page-live .honey-live-pull-refresh-indicator {
+    position: absolute;
+    top: 6px;
+    left: 0;
+    right: 0;
+    height: 40px !important;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 35;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+.honey-page-live .honey-live-pull-refresh-indicator.pulling,
+.honey-page-live .honey-live-pull-refresh-indicator.ready,
+.honey-page-live .honey-live-pull-refresh-indicator.loading,
+.honey-page-live .honey-live-pull-refresh-indicator.success,
+.honey-page-live .honey-live-pull-refresh-indicator.error {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.honey-search-modal {
+    position: absolute;
+    inset: 0;
+    z-index: 2200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    box-sizing: border-box;
+}
+
+.honey-search-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: rgba(10, 6, 12, 0.48);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    cursor: pointer;
+}
+
+.honey-search-panel {
+    position: relative;
+    width: min(100%, 318px);
+    border-radius: 14px;
+    border: 1px solid rgba(255, 199, 226, 0.26);
+    background:
+        radial-gradient(110% 90% at 12% 0%, rgba(255, 131, 181, 0.18), transparent 50%),
+        linear-gradient(155deg, rgba(55, 35, 50, 0.96), rgba(24, 17, 26, 0.97));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        0 18px 42px rgba(5, 2, 8, 0.46);
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.honey-search-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.honey-search-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffe6f2 !important;
+}
+
+.honey-search-close {
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffd8e8 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.honey-search-input {
+    width: 100%;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 214, 234, 0.24);
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff5fa !important;
+    outline: none;
+    padding: 0 11px;
+    box-sizing: border-box;
+    font-size: 13px;
+}
+
+.honey-search-input::placeholder {
+    color: rgba(255, 226, 239, 0.48) !important;
+}
+
+.honey-search-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.honey-search-btn {
+    flex: 1;
+    height: 34px;
+    border: 0;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.honey-search-btn.is-secondary {
+    background: rgba(255, 255, 255, 0.11);
+    color: rgba(255, 231, 242, 0.86) !important;
+}
+
+.honey-search-btn.is-primary {
+    background: linear-gradient(135deg, #ff6fa7, #ff8a5b);
+    color: #fff !important;
 }
 
 .honey-hot-list {

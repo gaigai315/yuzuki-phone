@@ -50,6 +50,7 @@ export class GamesApp extends PokerApp {
         this.werewolfData = new WerewolfData(storage);
         this.werewolfView = new WerewolfView(this);
         this._werewolfDriving = false;
+        this._werewolfNightDriving = false;
         this._lastWerewolfApiRequestAt = 0;
         this._preloadCatboxAssets();
         this._preloadWerewolfAssets();
@@ -465,28 +466,34 @@ export class GamesApp extends PokerApp {
     }
 
     async driveWerewolfNight() {
-        let guard = 0;
-        while (guard < 8) {
-            guard += 1;
-            const state = this.werewolfData.getState();
-            if (!state || state.gameOver || state.phase !== 'night') return;
-            if (!state.nightStep) {
-                this.werewolfData.startDayFromNight();
+        if (this._werewolfNightDriving) return;
+        this._werewolfNightDriving = true;
+        try {
+            let guard = 0;
+            while (guard < 8) {
+                guard += 1;
+                const state = this.werewolfData.getState();
+                if (!state || state.gameOver || state.phase !== 'night') return;
+                if (!state.nightStep) {
+                    this.werewolfData.startDayFromNight();
+                    this.werewolfView.render();
+                    await this.driveWerewolfDaySpeeches();
+                    return;
+                }
+                if (this.werewolfData.isUserNightTurn()) {
+                    this.werewolfView.render();
+                    return;
+                }
+                const ok = await this._runWerewolfAiNightAction();
+                if (ok === false) {
+                    this.werewolfView.render();
+                    return;
+                }
                 this.werewolfView.render();
-                await this.driveWerewolfDaySpeeches();
-                return;
+                await new Promise(resolve => setTimeout(resolve, 450));
             }
-            if (this.werewolfData.isUserNightTurn()) {
-                this.werewolfView.render();
-                return;
-            }
-            const ok = await this._runWerewolfAiNightAction();
-            if (ok === false) {
-                this.werewolfView.render();
-                return;
-            }
-            this.werewolfView.render();
-            await new Promise(resolve => setTimeout(resolve, 450));
+        } finally {
+            this._werewolfNightDriving = false;
         }
     }
 
@@ -529,7 +536,7 @@ export class GamesApp extends PokerApp {
             this.phoneShell?.showNotification?.('预言家查验', seerResultText, '🔮');
         }
         this.werewolfView.render();
-        this.driveWerewolfNight();
+        Promise.resolve().then(() => this.driveWerewolfNight());
     }
 
     submitWerewolfWolfChat(text = '') {

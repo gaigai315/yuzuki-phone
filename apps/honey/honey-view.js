@@ -454,6 +454,7 @@ export class HoneyView {
                     <div class="honey-nav-title">❤️</div>
                     <div style="display: flex; gap: 8px; align-items: center;">
                         ${hasBgVideo ? `<button class="honey-icon-btn" id="honey-bg-sound-btn" title="开启/关闭声音" style="font-size: 15px;"><i class="fa-solid fa-volume-xmark"></i></button>` : ''}
+                        <button class="honey-icon-btn" id="honey-recommend-search-btn" title="搜索推荐" aria-label="搜索推荐"><i class="fa-solid fa-magnifying-glass"></i></button>
                         <button class="honey-icon-btn" id="honey-settings-btn" title="蜜语设置"><i class="fa-solid fa-gear"></i></button>
                     </div>
                 </div>
@@ -517,13 +518,17 @@ export class HoneyView {
         this._syncRecommendRefreshIndicatorByState();
     }
 
-    async handleRecommendRefresh() {
+    async handleRecommendRefresh(options = {}) {
         if (!this._isHoneyLiveEnabled()) {
             this.app.phoneShell.showNotification('蜜语已关闭', '请先在设置中开启蜜语功能', '⚠️');
             return;
         }
         if (this._isGeneratingScene || this._recommendRefreshStatus === 'loading') return;
 
+        const recommendSearchKeyword = String(options?.keyword || options?.recommendSearchKeyword || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 80);
         const previousRecommendTopics = this._cloneRecommendTopicsForPrompt(this.recommendTopics);
         clearTimeout(this._recommendRefreshTimer);
         this._recommendRefreshStatus = 'loading';
@@ -532,7 +537,8 @@ export class HoneyView {
         try {
             const aiData = await this.app.honeyData.generateLiveScene(null, {
                 requestMode: 'from_scratch',
-                previousRecommendTopics
+                previousRecommendTopics,
+                recommendSearchKeyword
             });
 
             const nextRecommendTopics = this._normalizeRecommendTopics(aiData?.recommendTopics);
@@ -561,7 +567,7 @@ export class HoneyView {
             } else {
                 this._syncRecommendRefreshIndicatorByState();
             }
-            this.app.phoneShell.showNotification('蜜语', '已刷新全局蜜语内容', '✅');
+            this.app.phoneShell.showNotification('蜜语', recommendSearchKeyword ? `已按「${recommendSearchKeyword}」刷新蜜语` : '已刷新全局蜜语内容', '✅');
         } catch (err) {
             console.error('蜜语推荐刷新失败:', err);
             this._recommendRefreshStatus = 'error';
@@ -591,6 +597,61 @@ export class HoneyView {
                 heat: String(item.heat || item.viewers || item.playCount || '').trim()
             }))
             .filter(item => item.title || item.host || item.intro);
+    }
+
+    _openRecommendSearchModal() {
+        const root = document.querySelector('.phone-view-current .honey-page-recommend') || document.querySelector('.honey-page-recommend');
+        if (!root) return;
+        root.querySelector('#honey-recommend-search-modal')?.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'honey-recommend-search-modal';
+        modal.className = 'honey-search-modal';
+        modal.innerHTML = `
+            <button class="honey-search-backdrop" type="button" data-action="close-search" aria-label="关闭搜索"></button>
+            <div class="honey-search-panel" role="dialog" aria-modal="true" aria-label="搜索蜜语推荐">
+                <div class="honey-search-head">
+                    <div class="honey-search-title">搜索推荐</div>
+                    <button class="honey-search-close" type="button" data-action="close-search" aria-label="关闭搜索">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <input class="honey-search-input" id="honey-recommend-search-input" type="text" maxlength="80" placeholder="输入关键词，例如：雨夜、乐队、办公室">
+                <div class="honey-search-actions">
+                    <button class="honey-search-btn is-secondary" type="button" data-action="close-search">取消</button>
+                    <button class="honey-search-btn is-primary" type="button" data-action="submit-search">确定</button>
+                </div>
+            </div>
+        `;
+        root.appendChild(modal);
+
+        const input = modal.querySelector('#honey-recommend-search-input');
+        const close = () => modal.remove();
+        const submit = () => {
+            const keyword = String(input?.value || '').replace(/\s+/g, ' ').trim();
+            if (!keyword) {
+                input?.focus?.();
+                return;
+            }
+            close();
+            this.handleRecommendRefresh({ keyword });
+        };
+
+        modal.querySelectorAll('[data-action="close-search"]').forEach(el => {
+            el.addEventListener('click', close);
+        });
+        modal.querySelector('[data-action="submit-search"]')?.addEventListener('click', submit);
+        input?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submit();
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                close();
+            }
+        });
+        setTimeout(() => input?.focus?.(), 30);
     }
 
     _bindRecommendPullRefresh() {
@@ -810,6 +871,7 @@ export class HoneyView {
         if (!wrap || !inner) return;
 
         wrap.classList.remove('loading', 'success', 'error');
+        wrap.classList.add('pulling');
         wrap.classList.toggle('ready', !!ready);
         wrap.style.height = `${Math.max(0, height)}px`;
         inner.innerHTML = `<i class="fa-solid fa-arrow-down"></i> ${text}`;
@@ -819,7 +881,7 @@ export class HoneyView {
         const { wrap, inner } = this._resolveLivePullRefreshElements(sourceRoot);
         if (!wrap || !inner) return;
 
-        wrap.classList.remove('ready', 'loading', 'success', 'error');
+        wrap.classList.remove('ready', 'pulling', 'loading', 'success', 'error');
 
         if (this._liveRefreshStatus === 'loading') {
             wrap.classList.add('loading');
@@ -2931,6 +2993,11 @@ export class HoneyView {
             this._silenceRecommendSpeaker();
             this.openSettings();
         });
+        root.querySelector('#honey-recommend-search-btn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._openRecommendSearchModal();
+        });
 
         root.querySelector('#honey-tab-live')?.addEventListener('click', () => {
             this._silenceRecommendSpeaker();
@@ -3941,6 +4008,9 @@ export class HoneyView {
                 e.preventDefault();
                 e.stopPropagation();
                 if (!hostName) return;
+                const stableTopicKey = this._resolveFollowedHostTopicKey(hostName);
+                const stableTopicTitle = `${hostName} 的直播间`;
+                const cachedStableScene = this.app?.honeyData?.getTopicScene?.(stableTopicKey, stableTopicTitle);
                 const hostHistory = this.app?.honeyData?.getHostHistory?.(hostName) || {};
                 const dateKeys = Object.keys(hostHistory).sort((a, b) => String(b).localeCompare(String(a)));
                 let latestScene = null;
@@ -3950,14 +4020,24 @@ export class HoneyView {
                 let topicToEnter = null;
 
                 // 在线优先展示当前推荐里的主题；离线再回落历史最新场景
-                if (onlineTopic && latestScene) {
+                if (onlineTopic && (cachedStableScene || latestScene)) {
                     topicToEnter = {
-                        ...latestScene,
                         ...onlineTopic,
-                        promptTurns: this.app?.honeyData?._normalizeContinuePromptTurns?.(latestScene.promptTurns) || []
+                        ...(cachedStableScene || latestScene),
+                        title: onlineTopic.title || (cachedStableScene || latestScene).title,
+                        viewers: onlineTopic.viewers || (cachedStableScene || latestScene).viewers,
+                        playCount: onlineTopic.playCount || (cachedStableScene || latestScene).playCount,
+                        fans: onlineTopic.fans || (cachedStableScene || latestScene).fans,
+                        avatarUrl: onlineTopic.avatarUrl || (cachedStableScene || latestScene).avatarUrl,
+                        naiPrompt: onlineTopic.naiPrompt || (cachedStableScene || latestScene).naiPrompt,
+                        imageGenerationPrompt: onlineTopic.imageGenerationPrompt || (cachedStableScene || latestScene).imageGenerationPrompt,
+                        naiImageUrl: onlineTopic.naiImageUrl || (cachedStableScene || latestScene).naiImageUrl,
+                        generatedImageUrl: onlineTopic.generatedImageUrl || (cachedStableScene || latestScene).generatedImageUrl,
+                        imageUrl: onlineTopic.imageUrl || (cachedStableScene || latestScene).imageUrl,
+                        promptTurns: this.app?.honeyData?._normalizeContinuePromptTurns?.((cachedStableScene || latestScene).promptTurns) || []
                     };
                 } else {
-                    topicToEnter = onlineTopic || latestScene;
+                    topicToEnter = onlineTopic || cachedStableScene || latestScene;
                 }
 
                 if (!topicToEnter) {
@@ -3969,8 +4049,9 @@ export class HoneyView {
                     };
                 }
 
-                const topicTitle = String(topicToEnter._topicTitle || topicToEnter.title || `${hostName} 的直播间`).trim();
-                const topicKey = String(topicToEnter._topicKey || this._resolveTopicKey(topicToEnter, topicTitle)).trim();
+                topicToEnter = this._normalizeFollowedHostTopic(topicToEnter, hostName);
+                const topicTitle = String(topicToEnter._topicTitle || topicToEnter.title || stableTopicTitle).trim();
+                const topicKey = String(topicToEnter._topicKey || stableTopicKey || this._resolveTopicKey(topicToEnter, topicTitle)).trim();
 
                 this.currentSceneData = { ...topicToEnter, _topicTitle: topicTitle, _topicKey: topicKey };
                 this.enterLiveFromTopic(this.currentSceneData, { autoGenerateIfMissing: false, backTarget: 'follow' });
@@ -4709,30 +4790,35 @@ export class HoneyView {
             : (inviteSource === 'user_request'
                 ? '微信好友接受了你发起的蜜语邀约。'
                 : String(options?.intro || '').trim());
+        const resetSession = options?.resetSession === true;
+        const stableTopicKey = this._resolveFollowedHostTopicKey(followedHost.name || safeHostName);
+        const cachedScene = resetSession ? null : this.app?.honeyData?.getTopicScene?.(stableTopicKey, topicTitle);
         const topic = {
             ...this._getFallbackTopic(),
+            ...(cachedScene && typeof cachedScene === 'object' ? cachedScene : {}),
             title: topicTitle,
             host: followedHost.name || safeHostName,
             avatarUrl: followedHost.avatarUrl || '',
-            intro: inviteIntro || followedHost.intro || '微信好友发来的蜜语直播邀约。',
+            intro: inviteIntro || cachedScene?.intro || followedHost.intro || '微信好友发来的蜜语直播邀约。',
             fans: followedHost.fans || '',
             favorability: followedHost.favorability ?? 0,
-            description: '主播正在等待你进入直播间。',
+            description: cachedScene?.description || '主播正在等待你进入直播间。',
             _topicTitle: topicTitle,
-            _topicKey: `topic_follow_${this._simpleHash(String(followedHost.name || safeHostName).trim().toLowerCase())}`
+            _topicKey: stableTopicKey
         };
         this.currentSceneData = {
             ...topic,
-            comments: [],
-            userChats: [],
-            promptTurns: [],
-            gifts: [],
-            leaderboard: [],
-            audienceGiftTotals: {},
-            userGiftRank: null
+            comments: Array.isArray(topic.comments) ? topic.comments : [],
+            userChats: Array.isArray(topic.userChats) ? topic.userChats : [],
+            promptTurns: Array.isArray(topic.promptTurns) ? topic.promptTurns : [],
+            gifts: Array.isArray(topic.gifts) ? topic.gifts : [],
+            leaderboard: Array.isArray(topic.leaderboard) ? topic.leaderboard : [],
+            audienceGiftTotals: topic.audienceGiftTotals && typeof topic.audienceGiftTotals === 'object' ? topic.audienceGiftTotals : {},
+            userGiftRank: topic.userGiftRank && typeof topic.userGiftRank === 'object' ? topic.userGiftRank : null
         };
         this.enterLiveFromTopic(this.currentSceneData, {
             autoGenerateIfMissing: options?.autoGenerateIfMissing === true,
+            resetSession,
             backTarget: 'follow',
             forceVisibilityChoice: true
         });
@@ -6469,6 +6555,30 @@ export class HoneyView {
             || '直播间'
         ).trim();
         return `topic_${this._simpleHash(`${title}__0`)}`;
+    }
+
+    _resolveFollowedHostTopicKey(hostName = '') {
+        const safeHostName = String(hostName || '').trim();
+        if (!safeHostName) return '';
+        return `topic_follow_${this._simpleHash(safeHostName.toLowerCase())}`;
+    }
+
+    _normalizeFollowedHostTopic(topicLike = {}, hostName = '', options = {}) {
+        const safeHostName = String(hostName || topicLike?.host || '').trim();
+        const topicTitle = String(
+            options?.title
+            || topicLike?._topicTitle
+            || topicLike?.title
+            || (safeHostName ? `${safeHostName} 的直播间` : '直播间')
+        ).trim();
+        const stableTopicKey = safeHostName ? this._resolveFollowedHostTopicKey(safeHostName) : '';
+        return {
+            ...(topicLike && typeof topicLike === 'object' ? topicLike : {}),
+            host: safeHostName || topicLike?.host || '',
+            title: topicTitle,
+            _topicTitle: topicTitle,
+            _topicKey: stableTopicKey || String(topicLike?._topicKey || this._resolveTopicKey(topicLike, topicTitle)).trim()
+        };
     }
 
     _normalizeRecommendTopics(topics) {

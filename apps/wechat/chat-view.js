@@ -5634,23 +5634,28 @@ renderChatRoom(chat) {
         return window.VirtualPhone.honeyApp;
     }
 
-    async _openHoneyFromWechatContact(contactName, chatId = '') {
+    async _openHoneyFromWechatContact(contactName, chatId = '', options = {}) {
         const safeName = String(contactName || '').trim();
         if (!safeName) return false;
+        const inviteSource = String(options?.inviteSource || 'user_request').trim() || 'user_request';
+        const isFriendInvite = inviteSource === 'friend_invite';
         const honeyApp = await this._ensureHoneyAppReady();
         const host = honeyApp.honeyData?.ensureFollowedHostFromWechat?.(safeName, {
             title: `${safeName} 的直播间`,
-            intro: '微信好友接受了用户发起的蜜语邀约。'
+            intro: isFriendInvite ? '微信好友邀请用户进入蜜语直播间。' : '微信好友接受了用户发起的蜜语邀约。'
         });
-        this.app.wechatData.recordHoneyInviteDecision?.(safeName, 'accepted', { message: '用户主动发起，AI接受' });
+        this.app.wechatData.recordHoneyInviteDecision?.(safeName, 'accepted', {
+            message: isFriendInvite ? '用户接受了微信好友发起的蜜语邀约' : '用户主动发起，AI接受'
+        });
         if (chatId) this.app.wechatData.setHoneyHistoryInjectionForChat?.(chatId, true);
         window.dispatchEvent(new CustomEvent('phone:openApp', { detail: { appId: 'honey' } }));
         setTimeout(() => {
             window.VirtualPhone?.honeyApp?.openFollowedHostLive?.(host?.name || safeName, {
                 autoGenerateIfMissing: false,
                 title: `${safeName} 的直播间`,
-                intro: '微信好友接受了你发起的蜜语邀约。',
-                inviteSource: 'user_request'
+                intro: isFriendInvite ? '你接受了微信好友发起的蜜语邀约。' : '微信好友接受了你发起的蜜语邀约。',
+                inviteSource,
+                resetSession: isFriendInvite
             });
         }, 180);
         return true;
@@ -5740,7 +5745,7 @@ renderChatRoom(chat) {
         overlay.querySelector('.st-phone-honey-invite-action[data-action="accept"]')?.addEventListener('click', () => {
             close();
             this._updateHoneyInviteMessageStatus(chatId, messageId, '已接受');
-            this._openHoneyFromWechatContact(safeContactName, chatId).catch((err) => {
+            this._openHoneyFromWechatContact(safeContactName, chatId, { inviteSource: 'friend_invite' }).catch((err) => {
                 console.error('打开蜜语失败:', err);
                 this.app.phoneShell?.showNotification('蜜语', '打开蜜语失败：' + (err?.message || err), '⚠️');
             });
@@ -5766,7 +5771,7 @@ renderChatRoom(chat) {
             return;
         }
         if (/^(?:接受|同意|接收|accept|yes|ok)$/i.test(status)) {
-            this._openHoneyFromWechatContact(targetName, chatId).catch((err) => {
+            this._openHoneyFromWechatContact(targetName, chatId, { inviteSource: 'friend_invite' }).catch((err) => {
                 console.error('打开蜜语失败:', err);
                 this.app.phoneShell?.showNotification('蜜语', '打开蜜语失败：' + (err?.message || err), '⚠️');
             });
