@@ -141,8 +141,8 @@ export class MusicApp {
             this.view.renderFloatingWidget();
         }
 
-        // 5. 🔥 扫描新会话历史，恢复卡片和歌单
-        this._scanLastMessageForCard();
+        // 5. 扫描新会话历史只恢复卡片，不把历史楼层里的歌曲重新加入歌单
+        this._scanLastMessageForCard(true);
 
         // 6. 触发UI更新（防呆判断）
         if (typeof this.view.updateDisplay === 'function') {
@@ -151,7 +151,7 @@ export class MusicApp {
     }
 
     // 扫描当前会话最后一条消息的 <Music> 标签（备用方案）
-    // isSafeScan: 如果为 true，说明这是酒馆生成新消息时的补救扫描，此时绝对不要乱动播放状态
+    // isSafeScan: 如果为 true，说明这是历史恢复/补救扫描，此时绝对不要重新入队歌曲或乱动播放状态
     _scanLastMessageForCard(isSafeScan = false) {
         try {
             const context = window.SillyTavern?.getContext?.() ||

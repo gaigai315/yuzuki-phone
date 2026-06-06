@@ -7431,7 +7431,7 @@ if (window.GGP_Loaded) {
                 if (!window.VirtualPhone.musicApp) {
                     window.VirtualPhone.musicApp = new module.MusicApp(null, storage);
                     window.VirtualPhone.musicApp.initFloatingWidget();
-                    window.VirtualPhone.musicApp._scanLastMessageForCard();
+                    window.VirtualPhone.musicApp._scanLastMessageForCard(true);
                 }
             }).catch(e => console.warn('🎵 悬浮窗模块加载失败:', e));
         }
