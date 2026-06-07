@@ -4978,6 +4978,7 @@ export class HoneyView {
             minimax_cn: { url: 'https://api.minimaxi.com/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
             minimax_intl: { url: 'https://api.minimax.io/v1/t2a_v2', model: 'speech-2.8-hd', voice: 'Chinese (Mandarin)_Warm_Girl' },
             openai: { url: 'https://api.openai.com/v1/audio/speech', model: 'tts-1', voice: 'alloy' },
+            indextts: { url: 'http://127.0.0.1:7880/v1/audio/speech', model: 'index-tts2', voice: 'default.wav' },
             nimo: { url: 'https://api.xiaomimimo.com/v1', model: 'mimo-v2.5-tts', voice: 'mimo_default' },
             volcengine: { url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', model: 'seed-tts-2.0', voice: 'BV700_streaming' }
         };
@@ -4995,7 +4996,7 @@ export class HoneyView {
             voice,
             hostName: resolvedVoice.hostName || '',
             voiceSource: resolvedVoice.source || 'global',
-            ready: !!apiKey && !!apiUrl && !!voice
+            ready: (provider === 'indextts' || !!apiKey) && !!apiUrl && !!voice
         };
     }
 
@@ -5138,7 +5139,7 @@ export class HoneyView {
         if (!ttsManager) {
             throw new Error('TTS 管理器未初始化');
         }
-        if (!apiKey || !apiUrl) {
+        if ((!apiKey && config.provider !== 'indextts') || !apiUrl) {
             throw new Error('请先配置 TTS 的 API URL 和 API Key / Access Token');
         }
         return ttsManager.requestTTS(text, { provider: config.provider || undefined, voice: voice || undefined });

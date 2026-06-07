@@ -560,6 +560,7 @@ export class SettingsApp {
             minimax_cn: { url: 'https://api.minimaxi.com/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
             minimax_intl: { url: 'https://api.minimax.io/v1/t2a_v2', model: 'speech-2.8-hd', voice: 'Chinese (Mandarin)_Warm_Girl' },
             openai: { url: 'https://api.openai.com/v1/audio/speech', model: 'tts-1', voice: 'alloy' },
+            indextts: { url: 'http://127.0.0.1:7880/v1/audio/speech', model: 'index-tts2', voice: 'default.wav' },
             nimo: { url: 'https://api.xiaomimimo.com/v1', model: 'mimo-v2.5-tts', voice: 'mimo_default' },
             volcengine: { url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', model: 'seed-tts-2.0', voice: 'BV700_streaming', resourceId: 'seed-tts-2.0' }
         };
@@ -585,14 +586,15 @@ export class SettingsApp {
 
     _getCurrentMainTtsProvider() {
         const scoped = String(this.storage.get('phone-tts-main-provider') || '').trim();
-        if (['minimax_cn', 'minimax_intl', 'openai', 'nimo'].includes(scoped)) return scoped;
+        if (['minimax_cn', 'minimax_intl', 'openai', 'indextts', 'nimo'].includes(scoped)) return scoped;
 
         const current = this._getCurrentTtsProvider();
-        if (['minimax_cn', 'minimax_intl', 'openai', 'nimo'].includes(current)) return current;
+        if (['minimax_cn', 'minimax_intl', 'openai', 'indextts', 'nimo'].includes(current)) return current;
 
         const legacyUrl = String(this.storage.get('phone-tts-url') || '').trim().toLowerCase();
         if (legacyUrl.includes('minimaxi.com')) return 'minimax_cn';
         if (legacyUrl.includes('minimax.chat') || legacyUrl.includes('minimax.io')) return 'minimax_intl';
+        if (legacyUrl.includes('127.0.0.1:7880') || legacyUrl.includes('localhost:7880') || legacyUrl.includes('index-tts')) return 'indextts';
         if (legacyUrl.includes('xiaomimimo.com') || /\/(?:v1\/)?chat\/completions\b/.test(legacyUrl)) return 'nimo';
         if (legacyUrl.includes('api.openai.com') || /\/audio\/speech\b/.test(legacyUrl)) return 'openai';
         return 'minimax_cn';
@@ -668,6 +670,7 @@ export class SettingsApp {
             { id: 'minimax_cn', label: 'MiniMax 国内' },
             { id: 'minimax_intl', label: 'MiniMax 国际' },
             { id: 'openai', label: 'OpenAI' },
+            { id: 'indextts', label: 'IndexTTS 本地' },
             { id: 'nimo', label: 'MiMo-V2.5-TTS' },
             { id: 'volcengine', label: '豆包 / 火山引擎' }
         ];
@@ -2041,6 +2044,7 @@ export class SettingsApp {
                                                 <option value="https://api.minimaxi.com/v1/t2a_v2">MiniMax 国内版</option>
                                                 <option value="https://api.minimax.io/v1/t2a_v2">MiniMax 国际版</option>
                                                 <option value="https://api.openai.com/v1/audio/speech">OpenAI 官方</option>
+                                                <option value="http://127.0.0.1:7880/v1/audio/speech">IndexTTS 本地</option>
                                                 <option value="https://api.xiaomimimo.com/v1">MiMo 官方</option>
                                                 <option value="__nimo_public__">MiMo 公益站 / New API</option>
                                                 <option value="https://openspeech.bytedance.com/api/v3/tts/unidirectional">火山引擎/豆包</option>
@@ -2048,9 +2052,9 @@ export class SettingsApp {
                                         </div>
                                         <input type="text" id="phone-tts-url"
                                                value="${currentTtsUrl}"
-                                               placeholder="MiMo公益站可填 https://站点/v1 或纯域名"
+                                               placeholder="本地 IndexTTS 例如 http://127.0.0.1:7880/v1/audio/speech"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                                        <div class="setting-desc" style="margin-top: 6px;">MiMo 兼容 New API 中转：选择 MiMo 后可填公益站纯域名或 /v1；公益站会按 OpenAI TTS 格式请求 /v1/audio/speech。若要强制官方 MiMo chat 格式，可填完整 /v1/chat/completions。</div>
+                                        <div class="setting-desc" style="margin-top: 6px;">IndexTTS 本地请先启动「启动api服务.bat」，接口为 http://127.0.0.1:7880/v1/audio/speech；音色文件放在整合包 api/ckyp 目录。</div>
                                     </div>
 
                                     <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
@@ -2086,7 +2090,7 @@ export class SettingsApp {
                                                value="${currentTtsNimoRelayUrl}"
                                                placeholder="例如 https://xxx.workers.dev"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                                        <div class="setting-desc" style="margin-top: 6px;">公益站若未开放 CORS，浏览器无法直连试听。部署 workers/mimo-tts-relay-worker.js 后把地址填在这里，模型拉取和语音生成都会经 Worker 转发。</div>
+                                        <div class="setting-desc" style="margin-top: 6px;">公益站若未开放 CORS，浏览器无法直连试听。部署 workers/mimo-tts-relay-worker.js 后把地址填在这里，模型拉取、普通 TTS 和 MiMo 复刻都会经 Worker 转发。</div>
                                     </div>
 
                                     <div class="setting-item">
@@ -2098,7 +2102,7 @@ export class SettingsApp {
                                         </div>
                                         <input type="text" id="phone-tts-voice"
                                                value="${currentTtsVoice}"
-                                               placeholder="MiniMax/OpenAI/MiMo 音色 ID；公益站复刻填站点给的音色名"
+                                               placeholder="IndexTTS 填 api/ckyp 下的文件名，例如 default.wav"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
                                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
                                             <button id="phone-tts-preview" style="padding: 2px 8px; border: none; background: none; color: #1677ff; font-size: 10px; cursor: pointer;">试听当前音色</button>
@@ -2110,7 +2114,7 @@ export class SettingsApp {
 
                                     <div class="setting-item">
                                         <div style="font-size: 13px; font-weight: 700; color: #333; margin-bottom: 8px;">MiMo 服务端复刻</div>
-                                        <div class="setting-desc" style="margin-bottom: 8px;">这是小米官方 MiMo 的本地参考音频复刻流程。公益站复刻音色通常只需要在上方音色 ID 填站点给出的 voice 名称，不需要上传参考音频。</div>
+                                        <div class="setting-desc" style="margin-bottom: 8px;">上传参考音频后会保存到酒馆，再用 mimo-v2.5-tts-voiceclone 通过 /v1/chat/completions 发送 data:audio;base64 复刻。公益站必须兼容 MiMo 官方 chat 协议。</div>
 
                                         <input type="text" id="phone-tts-nimo-clone-nick"
                                                placeholder="复刻音色备注，例如：角色A参考音"
@@ -7378,6 +7382,9 @@ export class SettingsApp {
                 { value: 'tts-1-hd', label: 'tts-1-hd' },
                 { value: 'gpt-4o-mini-tts', label: 'gpt-4o-mini-tts' }
             ],
+            indextts: [
+                { value: 'index-tts2', label: 'index-tts2' }
+            ],
             nimo: [
                 { value: 'mimo-v2.5-tts', label: 'mimo-v2.5-tts（预置音色）' },
                 { value: 'mimo-v2.5-tts-voiceclone', label: 'mimo-v2.5-tts-voiceclone（音频复刻）' },
@@ -7397,6 +7404,9 @@ export class SettingsApp {
                 { value: 'sage', label: 'sage' },
                 { value: 'shimmer', label: 'shimmer' }
             ],
+            indextts: [
+                { value: 'default.wav', label: 'default.wav（默认）' }
+            ],
             nimo: [
                 { value: 'mimo_default', label: 'mimo_default（默认）' },
                 { value: '冰糖', label: '冰糖' },
@@ -7415,6 +7425,7 @@ export class SettingsApp {
             const url = String(urlValue || '').trim().toLowerCase();
             if (url.includes('minimaxi.com')) return 'minimax_cn';
             if (url.includes('minimax.chat') || url.includes('minimax.io')) return 'minimax_intl';
+            if (url.includes('127.0.0.1:7880') || url.includes('localhost:7880') || url.includes('index-tts')) return 'indextts';
             if (url.includes('xiaomimimo.com') || /\/(?:v1\/)?chat\/completions\b/.test(url)) return 'nimo';
             if (url.includes('openspeech.bytedance.com')) return 'volcengine';
             if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
@@ -7458,7 +7469,7 @@ export class SettingsApp {
             const provider = getCurrentMainProviderFromForm();
             const safeValue = String(value || '').trim();
             await this.storage.set(this._getTtsProviderConfigKey(provider, field), safeValue);
-            if (['minimax_cn', 'minimax_intl', 'openai', 'nimo'].includes(provider)) {
+            if (['minimax_cn', 'minimax_intl', 'openai', 'indextts', 'nimo'].includes(provider)) {
                 await this.storage.set('phone-tts-main-provider', provider);
                 await this.storage.set('phone-tts-provider', provider);
             }
@@ -7600,7 +7611,11 @@ export class SettingsApp {
                 let blobUrl = '';
                 try {
                     const previewText = '这是一段小手机语音试听。';
-                    blobUrl = await withTimeoutSignal(30000, (signal) => ttsManager.requestTTS(previewText, { provider, voice, signal }));
+                    const currentModel = String(ttsModel?.value || '').trim();
+                    const isNimoVoiceClone = provider === 'nimo' && currentModel === 'mimo-v2.5-tts-voiceclone';
+                    const requestTimeoutMs = isNimoVoiceClone ? 120000 : 30000;
+                    const playbackTimeoutMs = isNimoVoiceClone ? 20000 : 10000;
+                    blobUrl = await withTimeoutSignal(requestTimeoutMs, (signal) => ttsManager.requestTTS(previewText, { provider, voice, signal }));
                     if (ttsPreviewAudio) {
                         ttsPreviewAudio.pause();
                         if (ttsPreviewAudio.src?.startsWith('blob:')) URL.revokeObjectURL(ttsPreviewAudio.src);
@@ -7617,7 +7632,7 @@ export class SettingsApp {
                     };
                     await Promise.race([
                         waitForAudioPlaybackStart(ttsPreviewAudio),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('试听播放超时')), 10000))
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('试听播放超时')), playbackTimeoutMs))
                     ]);
                 } catch (error) {
                     if (blobUrl) URL.revokeObjectURL(blobUrl);
@@ -7649,7 +7664,7 @@ export class SettingsApp {
             if (ttsKey) { ttsKey.value = nextKey; await this.storage.set('phone-tts-key', nextKey); }
             if (ttsModel) { ttsModel.value = nextModel; await this.storage.set('phone-tts-model', nextModel); }
             if (ttsVoice) { ttsVoice.value = nextVoice; }
-            if (['minimax_cn', 'minimax_intl', 'openai', 'nimo'].includes(val)) {
+            if (['minimax_cn', 'minimax_intl', 'openai', 'indextts', 'nimo'].includes(val)) {
                 await this.storage.set('phone-tts-main-provider', val);
             }
             refreshTtsPresetOptions();
@@ -7713,21 +7728,58 @@ export class SettingsApp {
         });
         if (ttsFetchModelsBtn) ttsFetchModelsBtn.addEventListener('click', async () => {
             const provider = getCurrentMainProviderFromForm();
-            if (provider !== 'nimo') {
-                setTtsModelsResult('当前仅支持拉取 MiMo / 公益站 TTS 模型。', true);
+            if (provider !== 'nimo' && provider !== 'indextts') {
+                setTtsModelsResult('当前仅支持拉取 MiMo / IndexTTS 本地模型与音色。', true);
                 return;
             }
             const ttsManager = window.VirtualPhone?.ttsManager;
-            if (!ttsManager?.fetchNimoModels) {
-                setTtsModelsResult('TTS 管理器未初始化，无法拉取模型。', true);
+            if (!ttsManager) {
+                setTtsModelsResult('TTS 管理器未初始化，无法拉取。', true);
                 return;
             }
             await withBusyButton(ttsFetchModelsBtn, '拉取中...', async () => {
                 try {
                     await setMainTtsProviderField('url', String(ttsUrl?.value || '').trim(), 'phone-tts-url');
                     await setMainTtsProviderField('key', String(ttsKey?.value || '').trim(), 'phone-tts-key');
-                    await setNimoTtsField('relay-url', String(ttsNimoRelayUrl?.value || '').trim());
+                    if (provider === 'nimo') await setNimoTtsField('relay-url', String(ttsNimoRelayUrl?.value || '').trim());
                     setTtsModelsResult('正在请求 /v1/models...', false);
+
+                    if (provider === 'indextts') {
+                        if (!ttsManager.fetchIndexTtsVoices) throw new Error('当前版本 TTS 管理器不支持 IndexTTS 音色拉取');
+                        const result = await ttsManager.fetchIndexTtsVoices(
+                            String(ttsUrl?.value || '').trim(),
+                            String(ttsKey?.value || '').trim()
+                        );
+                        const models = Array.isArray(result?.models) ? result.models : [];
+                        const voices = Array.isArray(result?.voices) ? result.voices : [];
+                        if (ttsModelPreset) {
+                            ttsModelPreset.innerHTML = '<option value="">-- 快速选择 --</option>' + models
+                                .map(id => `<option value="${this._escapeHtml(id)}">${this._escapeHtml(id)}</option>`)
+                                .join('');
+                        }
+                        if (ttsVoicePreset) {
+                            ttsVoicePreset.innerHTML = '<option value="">-- 快速选择 --</option>'
+                                + voices.map(id => `<option value="${this._escapeHtml(id)}">${this._escapeHtml(id)}</option>`).join('');
+                        }
+                        const nextModel = models.includes(String(ttsModel?.value || '').trim())
+                            ? String(ttsModel?.value || '').trim()
+                            : (models[0] || 'index-tts2');
+                        const nextVoice = voices.includes(String(ttsVoice?.value || '').trim())
+                            ? String(ttsVoice?.value || '').trim()
+                            : (voices[0] || '');
+                        if (nextModel && ttsModel) {
+                            ttsModel.value = nextModel;
+                            await setMainTtsProviderField('model', nextModel, 'phone-tts-model');
+                        }
+                        if (nextVoice && ttsVoice) {
+                            ttsVoice.value = nextVoice;
+                            await saveTtsVoice(nextVoice);
+                        }
+                        setTtsModelsResult(`已拉取 ${models.length} 个模型、${voices.length} 个本地音色。`, false);
+                        return;
+                    }
+
+                    if (!ttsManager.fetchNimoModels) throw new Error('当前版本 TTS 管理器不支持 MiMo 模型拉取');
                     const models = await ttsManager.fetchNimoModels(
                         String(ttsUrl?.value || '').trim(),
                         String(ttsKey?.value || '').trim(),
@@ -7809,10 +7861,13 @@ export class SettingsApp {
                 const provider = getCurrentMainProviderFromForm();
                 const voice = String(ttsVoice?.value || '').trim();
                 if (provider === 'nimo') {
-                    await setMainTtsProviderField('url', String(ttsUrl?.value || '').trim(), 'phone-tts-url');
+                    const currentNimoUrl = String(ttsUrl?.value || '').trim();
+                    const currentNimoModel = String(ttsModel?.value || '').trim();
+                    const currentNimoRelayUrl = String(ttsNimoRelayUrl?.value || '').trim();
+                    await setMainTtsProviderField('url', currentNimoUrl, 'phone-tts-url');
                     await setMainTtsProviderField('key', String(ttsKey?.value || '').trim(), 'phone-tts-key');
-                    await setMainTtsProviderField('model', String(ttsModel?.value || '').trim(), 'phone-tts-model');
-                    await setNimoTtsField('relay-url', String(ttsNimoRelayUrl?.value || '').trim());
+                    await setMainTtsProviderField('model', currentNimoModel, 'phone-tts-model');
+                    await setNimoTtsField('relay-url', currentNimoRelayUrl);
                 }
                 await saveTtsVoice(voice);
                 await playTtsPreview(provider, voice || undefined, ttsPreviewBtn);

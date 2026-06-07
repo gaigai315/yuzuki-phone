@@ -34,6 +34,11 @@ export class TtsManager {
                 model: 'tts-1',
                 voice: 'alloy'
             },
+            indextts: {
+                url: 'http://127.0.0.1:7880/v1/audio/speech',
+                model: 'index-tts2',
+                voice: 'default.wav'
+            },
             nimo: {
                 url: 'https://api.xiaomimimo.com/v1',
                 model: 'mimo-v2.5-tts',
@@ -66,6 +71,7 @@ export class TtsManager {
         const url = String(apiUrl || '').trim().toLowerCase();
         if (url.includes('minimaxi.com')) return 'minimax_cn';
         if (url.includes('minimax.chat') || url.includes('minimax.io')) return 'minimax_intl';
+        if (url.includes('127.0.0.1:7880') || url.includes('localhost:7880') || url.includes('index-tts')) return 'indextts';
         if (url.includes('xiaomimimo.com') || /\/(?:v1\/)?chat\/completions\b/.test(url)) return 'nimo';
         if (url.includes('openspeech.bytedance.com')) return 'volcengine';
         if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
@@ -465,7 +471,8 @@ export class TtsManager {
         return `${baseUrl}/v1/models`;
     }
 
-    _shouldUseNimoOpenAISpeech(apiUrl = '') {
+    _shouldUseNimoOpenAISpeech(apiUrl = '', model = '') {
+        if (String(model || '').trim() === 'mimo-v2.5-tts-voiceclone') return false;
         const rawInput = String(apiUrl || '').trim().toLowerCase();
         if (!rawInput) return false;
         if (rawInput.includes('xiaomimimo.com')) return false;
@@ -480,7 +487,7 @@ export class TtsManager {
     _formatNimoNetworkError(error) {
         const message = String(error?.message || error || '').trim();
         if (/failed to fetch|networkerror|load failed|err_failed/i.test(message)) {
-            return 'MiMo 公益站请求被浏览器拦截或网络失败。若控制台提示 CORS，请在设置里填写 MiMo TTS Worker 中转地址，或让公益站开放 Access-Control-Allow-Origin。';
+            return 'MiMo 公益站请求网络失败。MiMo 复刻会请求 /v1/chat/completions 并携带 base64 参考音频；若控制台提示 CORS 或 ERR_HTTP2_PROTOCOL_ERROR，通常需要公益站允许浏览器直连并支持较大的请求体，或临时使用 MiMo Worker 中转。';
         }
         if (/aborted|aborterror/i.test(message)) {
             return 'MiMo TTS 请求已超时或被取消';
@@ -544,6 +551,56 @@ export class TtsManager {
         const models = this._normalizeModelListPayload(payload);
         if (!models.length) throw new Error('MiMo 模型列表为空');
         return models;
+    }
+
+    _resolveIndexTtsModelsEndpoint(apiUrl = '') {
+        const raw = String(apiUrl || this._getProviderDefaults('indextts').url || '').trim().replace(/\/+$/, '');
+        if (!raw) return 'http://127.0.0.1:7880/v1/models';
+        if (/\/(?:v1\/)?models$/i.test(raw)) return raw;
+        if (/\/(?:v1\/)?audio\/speech$/i.test(raw)) return raw.replace(/\/audio\/speech$/i, '/models');
+        if (/\/v1$/i.test(raw)) return `${raw}/models`;
+        return `${raw}/v1/models`;
+    }
+
+    async fetchIndexTtsVoices(apiUrl = '', apiKey = '', options = {}) {
+        const endpoint = new URL(this._resolveIndexTtsModelsEndpoint(apiUrl));
+        const headers = {};
+        const safeKey = String(apiKey || this._getStoredProviderValue('indextts', 'key', 'phone-tts-key') || '').trim();
+        if (safeKey) headers.Authorization = `Bearer ${safeKey}`;
+
+        let response;
+        try {
+            response = await this._getRawFetch()(endpoint, {
+                method: 'GET',
+                headers,
+                signal: options.signal
+            });
+        } catch (error) {
+            const message = String(error?.message || error || '').trim();
+            throw new Error(message || 'IndexTTS 本地服务连接失败，请确认启动api服务.bat已运行');
+        }
+
+        const text = await response.text().catch(() => '');
+        let payload = null;
+        try {
+            payload = JSON.parse(text || '{}');
+        } catch (_e) {
+            payload = null;
+        }
+        if (!response.ok) {
+            const message = payload?.detail || payload?.error?.message || payload?.message || text;
+            throw new Error(`IndexTTS 音色列表 HTTP ${response.status}${message ? `：${String(message).slice(0, 300)}` : ''}`);
+        }
+
+        const modelItems = Array.isArray(payload?.data) ? payload.data : [];
+        const voices = [...new Set(modelItems.flatMap(item => Array.isArray(item?.voices) ? item.voices : []))]
+            .map(value => String(value || '').trim())
+            .filter(Boolean);
+        if (!voices.length) throw new Error('IndexTTS 未返回音色列表，请确认 api/ckyp 目录已有参考音频');
+        return {
+            models: this._normalizeModelListPayload(payload),
+            voices
+        };
     }
 
     _formatVolcCloneError(data = {}) {
@@ -724,7 +781,7 @@ export class TtsManager {
         const config = this._resolveConfig(options);
         const { provider, apiKey, apiUrl, model, voice, appId, resourceId, relayUrl } = config;
         const signal = options.signal;
-        if (!apiKey || !apiUrl) {
+        if ((!apiKey && provider !== 'indextts') || !apiUrl) {
             throw new Error('请先配置 TTS 的 API URL 和 API Key / Access Token');
         }
         if (!voice) {
@@ -780,7 +837,7 @@ export class TtsManager {
         if (provider === 'nimo') {
             const safeModel = model || 'mimo-v2.5-tts';
             const rawFetch = this._getRawFetch();
-            if (this._shouldUseNimoOpenAISpeech(apiUrl)) {
+            if (this._shouldUseNimoOpenAISpeech(apiUrl, safeModel)) {
                 const endpoint = new URL(this._resolveNimoOpenAISpeechEndpoint(apiUrl));
                 const publicVoicePayload = await this._resolveNimoVoicePayload(voice, safeModel);
                 const speechPayload = {
@@ -850,16 +907,33 @@ export class TtsManager {
             };
 
             const endpoint = new URL(this._resolveNimoChatCompletionsEndpoint(apiUrl));
-            const response = await rawFetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'api-key': apiKey,
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                signal,
-                body: JSON.stringify(requestBody)
-            });
+            const nimoRelayUrl = this._normalizeRelayUrl(relayUrl);
+            let response;
+            try {
+                response = nimoRelayUrl
+                    ? await rawFetch(`${nimoRelayUrl}/api/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        signal,
+                        body: JSON.stringify({
+                            apiUrl: String(apiUrl || '').trim(),
+                            apiKey,
+                            payload: requestBody
+                        })
+                    })
+                    : await rawFetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'api-key': apiKey,
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        signal,
+                        body: JSON.stringify(requestBody)
+                    });
+            } catch (error) {
+                throw new Error(this._formatNimoNetworkError(error));
+            }
             if (!response.ok) {
                 const errorText = await response.text().catch(() => '');
                 let errorMessage = errorText;
@@ -886,6 +960,36 @@ export class TtsManager {
             const blob = audio.format === 'pcm16'
                 ? this._pcm16ToWavBlob(bytes, 24000)
                 : new Blob([bytes], { type: audio.format === 'wav' ? 'audio/wav' : 'audio/mpeg' });
+            return URL.createObjectURL(blob);
+        }
+
+        if (provider === 'indextts') {
+            const endpoint = new URL(apiUrl || this._getProviderDefaults('indextts').url);
+            const response = await this._getRawFetch()(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey || 'local'}`
+                },
+                signal,
+                body: JSON.stringify({
+                    model: model || 'index-tts2',
+                    input: inputText,
+                    voice,
+                    response_format: 'wav'
+                })
+            });
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => '');
+                let message = errorText;
+                try {
+                    const parsed = JSON.parse(errorText || '{}');
+                    message = parsed?.detail || parsed?.error?.message || parsed?.message || errorText;
+                } catch (_e) {}
+                throw new Error(`IndexTTS HTTP ${response.status}${message ? `：${String(message).slice(0, 300)}` : ''}`);
+            }
+            const blob = await response.blob();
+            if (!blob || Number(blob.size || 0) <= 0) throw new Error('IndexTTS 未返回音频数据');
             return URL.createObjectURL(blob);
         }
 

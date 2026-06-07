@@ -2633,10 +2633,10 @@ renderChatRoom(chat) {
                     const isCustomEmojiImage = !!(msg.customEmojiId || msg.customEmojiName || msg.customEmojiDescription);
                     const safeImageContent = this.escapeInlineStickerAttr(msg.content || '');
                     const customEmojiBoxStyle = isCustomEmojiImage
-                        ? 'width: 112px; max-width: 38vw; max-height: 112px;'
+                        ? 'max-width: 100%; max-height:min(320px, 46dvh);'
                         : '';
                     const customEmojiImgStyle = isCustomEmojiImage
-                        ? 'width: 100%; max-height: 112px; object-fit: contain;'
+                        ? 'display: block; max-width: 100%; max-height:min(320px, 46dvh); width: auto; height: auto; object-fit: contain;'
                         : '';
                     messageBody = `<div class="message-image-box ${isCustomEmojiImage ? 'message-image-box-custom-emoji' : ''}" style="position: relative; display: inline-block; line-height: 0; ${customEmojiBoxStyle}"><img src="${safeImageContent}" class="message-image" style="${customEmojiImgStyle}"></div>`;
                 }
@@ -2824,8 +2824,8 @@ renderChatRoom(chat) {
                 if (matchedCustomEmoji && matchedCustomEmoji.image) {
                     // 匹配到了用户自定义表情，直接渲染本地图片，跳过 ALAPI！
                     messageBody = `
-                    <div class="message-sticker-box" style="line-height:1.2;">
-                        <img src="${this.escapeInlineStickerAttr(matchedCustomEmoji.image)}" alt="${this._escapeHtml(matchedCustomEmoji.name)}" style="max-width: 140px; max-height: 140px; border-radius: 8px; object-fit: contain;">
+                    <div class="message-sticker-box" style="line-height:0; display:inline-block; max-width:100%; max-height:min(320px, 46dvh);">
+                        <img src="${this.escapeInlineStickerAttr(matchedCustomEmoji.image)}" alt="${this._escapeHtml(matchedCustomEmoji.name)}" style="display:block; max-width:100%; max-height:min(320px, 46dvh); width:auto; height:auto; border-radius:8px; object-fit:contain;">
                     </div>`;
                     break;
                 }
@@ -2837,9 +2837,9 @@ renderChatRoom(chat) {
                     <span class="wechat-sticker-target"
                         data-key="${this.escapeInlineStickerAttr(stickerCacheKey)}"
                         data-keyword="${this.escapeInlineStickerAttr(stickerKeyword)}"
-                        data-image-size="56"
+                        data-fallback-size="56"
                         data-emoji-size="24"
-                        style="display:inline-flex;align-items:center;justify-content:center;min-width:42px;min-height:42px;background:transparent;padding:0;">
+                        style="display:inline-flex;align-items:center;justify-content:center;max-width:100%;max-height:min(320px, 46dvh);background:transparent;padding:0;">
                         ${this.buildStickerKeywordFallbackMarkup(stickerKeyword, 56)}
                     </span>
                 </div>`;
@@ -4763,12 +4763,16 @@ renderChatRoom(chat) {
         if (!node || !node.isConnected) return;
         const safeUrl = String(imageUrl || '');
         const safeKeyword = this.escapeInlineStickerAttr(keyword);
-        const imageSize = Math.max(20, Number(node.dataset.imageSize) || 26);
+        const imageSize = Number(node.dataset.imageSize) || 0;
+        const maxImageSize = imageSize > 0 ? `${Math.max(20, imageSize)}px` : '100%';
+        const maxImageHeight = imageSize > 0 ? `${Math.max(20, imageSize)}px` : 'min(320px, 46dvh)';
         node.style.background = 'transparent';
         node.style.padding = '0';
-        node.style.minWidth = `${Math.round(imageSize * 0.8)}px`;
-        node.style.minHeight = `${Math.round(imageSize * 0.8)}px`;
-        node.innerHTML = `<img src="${safeUrl}" alt="${safeKeyword}" title="${safeKeyword}" referrerpolicy="no-referrer" style="width:${imageSize}px;height:${imageSize}px;object-fit:contain;vertical-align:middle;border-radius:4px;">`;
+        node.style.minWidth = '0';
+        node.style.minHeight = '0';
+        node.style.maxWidth = maxImageSize;
+        node.style.maxHeight = maxImageHeight;
+        node.innerHTML = `<img src="${safeUrl}" alt="${safeKeyword}" title="${safeKeyword}" referrerpolicy="no-referrer" style="display:block;max-width:100%;max-height:${maxImageHeight};width:auto;height:auto;object-fit:contain;vertical-align:middle;border-radius:8px;">`;
         const imgEl = node.querySelector('img');
         if (imgEl) {
             imgEl.addEventListener('error', () => {
@@ -4795,11 +4799,13 @@ renderChatRoom(chat) {
 
     applyInlineStickerFallback(node, keyword) {
         if (!node || !node.isConnected) return;
-        const fallbackSize = Math.max(20, Number(node.dataset.imageSize) || Number(node.dataset.emojiSize) || 26);
+        const fallbackSize = Math.max(20, Number(node.dataset.fallbackSize) || Number(node.dataset.emojiSize) || 26);
         node.style.background = 'transparent';
         node.style.padding = '0';
         node.style.minWidth = `${Math.round(fallbackSize * 0.8)}px`;
         node.style.minHeight = `${Math.round(fallbackSize * 0.8)}px`;
+        node.style.maxWidth = '';
+        node.style.maxHeight = '';
         node.innerHTML = this.buildStickerKeywordFallbackMarkup(keyword, fallbackSize);
     }
 

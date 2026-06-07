@@ -137,6 +137,7 @@ export class ContactsView {
             { id: 'minimax_cn', label: 'MiniMax 国内', placeholder: '例如 female-shaonv' },
             { id: 'minimax_intl', label: 'MiniMax 国际', placeholder: '例如 female-shaonv' },
             { id: 'openai', label: 'OpenAI', placeholder: '例如 alloy' },
+            { id: 'indextts', label: 'IndexTTS 本地', placeholder: '例如 default.wav / 角色.wav' },
             { id: 'nimo', label: 'MiMo-V2.5-TTS', placeholder: '例如 mimo_default / nimo_clone_* / 声音描述' },
             { id: 'volcengine', label: '豆包 / 火山引擎', placeholder: '例如 BV700_streaming' }
         ];
