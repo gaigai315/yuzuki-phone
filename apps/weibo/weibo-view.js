@@ -344,8 +344,7 @@ export class WeiboView {
     // ========================================
 
     renderWeiboPost(post, mode = 'recommend') {
-        const context = this.app.weiboData._getContext();
-        const userName = context?.name1 || '我';
+        const userName = this.app.weiboData._getCurrentWeiboNickname?.() || '我';
         const isLiked = post.likeList?.includes(userName);
         const isListMode = (mode === 'recommend' || mode === 'myPosts' || mode === 'hotSearch');
         const isDetail = (mode === 'detail');
@@ -2022,10 +2021,7 @@ export class WeiboView {
             });
 
             if (result && result.comments && result.comments.length > 0) {
-                const context = this.app.weiboData._getContext();
-                const userName = context?.name1 || '我';
-                const profile = this.app.weiboData.getProfile();
-                const userWeiboNick = (profile?.nickname || userName || '我').trim();
+                const userWeiboNick = this.app.weiboData._getCurrentWeiboNickname?.() || '我';
                 const replyTarget = '@' + userWeiboNick;
 
                 for (const c of result.comments) {
@@ -3428,8 +3424,7 @@ export class WeiboView {
                 }
 
                 if (updatedPost) {
-                    const context = this.app.weiboData._getContext();
-                    const userName = context?.name1 || '我';
+                    const userName = this.app.weiboData._getCurrentWeiboNickname?.() || '我';
                     const isLiked = updatedPost.likeList?.includes(userName);
 
                     const count = btn.querySelector('span');

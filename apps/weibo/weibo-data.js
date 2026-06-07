@@ -203,8 +203,7 @@ export class WeiboData {
     }
 
     _getCurrentLikeUserName() {
-        const context = this._getContext();
-        return String(context?.name1 || '我').trim() || '我';
+        return this._getCurrentWeiboNickname();
     }
 
     _isPostLikedByCurrentUser(post) {
@@ -1365,8 +1364,7 @@ export class WeiboData {
         const post = posts.find(p => p.id === postId);
         if (!post) return;
 
-        const context = this._getContext();
-        const userName = context?.name1 || '我';
+        const userName = this._getCurrentLikeUserName();
 
         if (!post.likeList) post.likeList = [];
 
@@ -1398,8 +1396,7 @@ export class WeiboData {
         const post = detail.posts.find(p => p.id === postId);
         if (!post) return;
 
-        const context = this._getContext();
-        const userName = context?.name1 || '我';
+        const userName = this._getCurrentLikeUserName();
 
         if (!post.likeList) post.likeList = [];
 
@@ -1714,8 +1711,7 @@ export class WeiboData {
 
     async generateReactionForPost(post) {
         return this.queueApiCall(async () => {
-            const context = this._getContext();
-            const userName = context?.name1 || '用户';
+            const userName = this._getCurrentWeiboNickname();
             const contextMessages = await this._collectContextMessages();
             const currentFollowers = this._getCurrentFollowersCount();
             const promptManager = window.VirtualPhone?.promptManager;
@@ -1754,6 +1750,7 @@ export class WeiboData {
                 .replace(/\{\{userName\}\}/g, userName)
                 .replace(/\{\{currentFollowers\}\}/g, String(currentFollowers))
                 .replace(/\{\{postContentDisplay\}\}/g, postContentDisplay);
+            prompt += `\n\n【微博身份约束】当前手机主人的微博昵称是「${userName}」。生成陌生网友评论/点赞时，禁止把「${userName}」当作网友昵称或评论作者；只有描述博主/原微博主人时才可指代此人。`;
             prompt = this._injectCurrentFollowersToPrompt(prompt);
 
             const response = await this._callAI(prompt, contextMessages);
@@ -1794,8 +1791,7 @@ export class WeiboData {
     // ========================================
     async generateReplyForUserComment(post, userComment, replyTo, meta = {}) {
         return this.queueApiCall(async () => {
-            const context = this._getContext();
-            const userName = context?.name1 || '用户';
+            const userName = this._getCurrentWeiboNickname();
             const contextMessages = await this._collectContextMessages();
             const currentFollowers = this._getCurrentFollowersCount();
             const promptManager = window.VirtualPhone?.promptManager;
@@ -1842,6 +1838,7 @@ export class WeiboData {
                 .replace(/\{\{userCommentPrefix\}\}/g, replyTo ? `回复了 ${replyTo}：` : '')
                 .replace(/\{\{userComment\}\}/g, userCommentForPrompt)
                 .replace(/\{\{postBlogger\}\}/g, String(post?.blogger || '博主'));
+            prompt += `\n\n【微博身份约束】当前手机主人的微博昵称是「${userName}」。AI 需要生成的是其他网友/博主对该用户评论的回复，禁止把「${userName}」当作新网友昵称、评论作者或第三方路人。`;
             prompt = this._injectCurrentFollowersToPrompt(prompt);
 
             const response = await this._callAI(prompt, contextMessages);

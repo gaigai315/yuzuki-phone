@@ -97,6 +97,7 @@ export class TtsManager {
         const voice = String(options.voice || globalVoice || '').trim();
         const appId = this._getStoredProviderValue(provider, 'app-id', 'phone-tts-volc-app-id');
         const resourceId = this._getStoredProviderValue(provider, 'resource-id', 'phone-tts-volc-resource-id') || 'seed-tts-2.0';
+        const relayUrl = String(options.relayUrl || this._getStoredProviderValue(provider, 'relay-url') || '').trim();
         return {
             provider,
             apiKey,
@@ -104,7 +105,8 @@ export class TtsManager {
             model,
             voice,
             appId,
-            resourceId
+            resourceId,
+            relayUrl
         };
     }
 
@@ -431,13 +433,117 @@ export class TtsManager {
         const raw = withProtocol.replace(/\/+$/, '');
         return raw
             .replace(/\/(?:v1\/)?chat\/completions$/i, '')
-            .replace(/\/chat$/i, '');
+            .replace(/\/chat$/i, '')
+            .replace(/\/(?:v1\/)?audio\/speech$/i, '')
+            .replace(/\/audio$/i, '');
     }
 
     _resolveNimoChatCompletionsEndpoint(apiUrl = '') {
         const baseUrl = this._normalizeNimoBaseUrl(apiUrl);
         if (/\/v1$/i.test(baseUrl)) return `${baseUrl}/chat/completions`;
         return `${baseUrl}/v1/chat/completions`;
+    }
+
+    _resolveNimoOpenAISpeechEndpoint(apiUrl = '') {
+        const rawInput = String(apiUrl || '').trim();
+        const withProtocol = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput.replace(/^\/+/, '')}`;
+        const raw = withProtocol.replace(/\/+$/, '');
+        if (/\/(?:v1\/)?audio\/speech$/i.test(raw)) return raw;
+        if (/\/audio$/i.test(raw)) return `${raw}/speech`;
+        const baseUrl = this._normalizeNimoBaseUrl(apiUrl);
+        if (/\/v1$/i.test(baseUrl)) return `${baseUrl}/audio/speech`;
+        return `${baseUrl}/v1/audio/speech`;
+    }
+
+    _resolveNimoModelsEndpoint(apiUrl = '') {
+        const rawInput = String(apiUrl || '').trim();
+        const withProtocol = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput.replace(/^\/+/, '')}`;
+        const raw = withProtocol.replace(/\/+$/, '');
+        if (/\/(?:v1\/)?models$/i.test(raw)) return raw;
+        const baseUrl = this._normalizeNimoBaseUrl(apiUrl);
+        if (/\/v1$/i.test(baseUrl)) return `${baseUrl}/models`;
+        return `${baseUrl}/v1/models`;
+    }
+
+    _shouldUseNimoOpenAISpeech(apiUrl = '') {
+        const rawInput = String(apiUrl || '').trim().toLowerCase();
+        if (!rawInput) return false;
+        if (rawInput.includes('xiaomimimo.com')) return false;
+        if (/\/(?:v1\/)?chat\/completions\/?$/i.test(rawInput) || /\/chat\/?$/i.test(rawInput)) return false;
+        return true;
+    }
+
+    _normalizeRelayUrl(relayUrl = '') {
+        return String(relayUrl || '').trim().replace(/\/+$/, '');
+    }
+
+    _formatNimoNetworkError(error) {
+        const message = String(error?.message || error || '').trim();
+        if (/failed to fetch|networkerror|load failed|err_failed/i.test(message)) {
+            return 'MiMo 公益站请求被浏览器拦截或网络失败。若控制台提示 CORS，请在设置里填写 MiMo TTS Worker 中转地址，或让公益站开放 Access-Control-Allow-Origin。';
+        }
+        if (/aborted|aborterror/i.test(message)) {
+            return 'MiMo TTS 请求已超时或被取消';
+        }
+        return message || 'MiMo TTS 请求失败';
+    }
+
+    _normalizeModelListPayload(payload) {
+        const list = Array.isArray(payload)
+            ? payload
+            : (Array.isArray(payload?.data)
+                ? payload.data
+                : (Array.isArray(payload?.models) ? payload.models : []));
+        return [...new Set(list
+            .map((item) => {
+                if (typeof item === 'string') return item;
+                return item?.id || item?.model || item?.name || item?.value || '';
+            })
+            .map(value => String(value || '').trim())
+            .filter(Boolean))];
+    }
+
+    async fetchNimoModels(apiUrl = '', apiKey = '', options = {}) {
+        const endpoint = new URL(this._resolveNimoModelsEndpoint(apiUrl || this._getProviderDefaults('nimo').url));
+        const rawFetch = this._getRawFetch();
+        const safeKey = String(apiKey || this._getStoredProviderValue('nimo', 'key', 'phone-tts-key') || '').trim();
+        const relayUrl = this._normalizeRelayUrl(options.relayUrl || this._getStoredProviderValue('nimo', 'relay-url'));
+        const headers = {};
+        if (safeKey) {
+            headers.Authorization = `Bearer ${safeKey}`;
+            headers['api-key'] = safeKey;
+        }
+        let response;
+        try {
+            response = relayUrl
+                ? await rawFetch(`${relayUrl}/api/models`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiUrl: String(apiUrl || this._getProviderDefaults('nimo').url).trim(), apiKey: safeKey }),
+                    signal: options.signal
+                })
+                : await rawFetch(endpoint, {
+                    method: 'GET',
+                    headers,
+                    signal: options.signal
+                });
+        } catch (error) {
+            throw new Error(this._formatNimoNetworkError(error));
+        }
+        const text = await response.text().catch(() => '');
+        let payload = null;
+        try {
+            payload = JSON.parse(text || '{}');
+        } catch (_e) {
+            payload = null;
+        }
+        if (!response.ok || payload?.success === false) {
+            const message = payload?.error?.message || payload?.error || payload?.message || text;
+            throw new Error(`MiMo 模型列表 HTTP ${response.status}${message ? `：${String(message).slice(0, 300)}` : ''}`);
+        }
+        const models = this._normalizeModelListPayload(payload);
+        if (!models.length) throw new Error('MiMo 模型列表为空');
+        return models;
     }
 
     _formatVolcCloneError(data = {}) {
@@ -616,7 +722,8 @@ export class TtsManager {
         if (!inputText) throw new Error('TTS 文本为空');
 
         const config = this._resolveConfig(options);
-        const { provider, apiKey, apiUrl, model, voice, appId, resourceId } = config;
+        const { provider, apiKey, apiUrl, model, voice, appId, resourceId, relayUrl } = config;
+        const signal = options.signal;
         if (!apiKey || !apiUrl) {
             throw new Error('请先配置 TTS 的 API URL 和 API Key / Access Token');
         }
@@ -631,6 +738,7 @@ export class TtsManager {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
+                signal,
                 body: JSON.stringify({
                     model: model || (provider === 'minimax_intl' ? 'speech-2.8-hd' : 'speech-02-hd'),
                     text: inputText,
@@ -671,6 +779,56 @@ export class TtsManager {
 
         if (provider === 'nimo') {
             const safeModel = model || 'mimo-v2.5-tts';
+            const rawFetch = this._getRawFetch();
+            if (this._shouldUseNimoOpenAISpeech(apiUrl)) {
+                const endpoint = new URL(this._resolveNimoOpenAISpeechEndpoint(apiUrl));
+                const publicVoicePayload = await this._resolveNimoVoicePayload(voice, safeModel);
+                const speechPayload = {
+                    model: safeModel,
+                    input: inputText,
+                    voice: publicVoicePayload || voice,
+                    response_format: 'wav'
+                };
+                const nimoRelayUrl = this._normalizeRelayUrl(relayUrl);
+                let response;
+                try {
+                    response = nimoRelayUrl
+                        ? await rawFetch(`${nimoRelayUrl}/api/speech`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                apiUrl: String(apiUrl || '').trim(),
+                                apiKey,
+                                payload: speechPayload
+                            }),
+                            signal
+                        })
+                        : await rawFetch(endpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${apiKey}`
+                            },
+                            body: JSON.stringify(speechPayload),
+                            signal
+                        });
+                } catch (error) {
+                    throw new Error(this._formatNimoNetworkError(error));
+                }
+                if (!response.ok) {
+                    const errorText = await response.text().catch(() => '');
+                    let errorMessage = errorText;
+                    try {
+                        const parsedError = JSON.parse(errorText || '{}');
+                        errorMessage = parsedError?.error?.message || parsedError?.error || parsedError?.message || errorText;
+                    } catch (_e) {}
+                    throw new Error(`MiMo 公益站 HTTP ${response.status}${errorMessage ? `：${String(errorMessage).slice(0, 300)}` : ''}`);
+                }
+                const blob = await response.blob();
+                if (!blob || Number(blob.size || 0) <= 0) throw new Error('MiMo 公益站未返回音频数据');
+                return URL.createObjectURL(blob);
+            }
+
             const audio = { format: 'wav' };
             const voicePayload = await this._resolveNimoVoicePayload(voice, safeModel);
             if (safeModel !== 'mimo-v2.5-tts-voicedesign') {
@@ -692,7 +850,6 @@ export class TtsManager {
             };
 
             const endpoint = new URL(this._resolveNimoChatCompletionsEndpoint(apiUrl));
-            const rawFetch = this._getRawFetch();
             const response = await rawFetch(endpoint, {
                 method: 'POST',
                 headers: {
@@ -700,6 +857,7 @@ export class TtsManager {
                     'api-key': apiKey,
                     'Authorization': `Bearer ${apiKey}`
                 },
+                signal,
                 body: JSON.stringify(requestBody)
             });
             if (!response.ok) {
@@ -762,6 +920,7 @@ export class TtsManager {
                     'X-Api-Access-Key': apiKey,
                     'X-Api-Resource-Id': effectiveResourceId
                 },
+                signal,
                 body: JSON.stringify(requestPayload)
             });
             if (!response.ok) {
@@ -838,6 +997,7 @@ export class TtsManager {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             },
+            signal,
             body: JSON.stringify({
                 model: model || 'tts-1',
                 input: inputText,

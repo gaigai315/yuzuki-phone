@@ -15,3 +15,21 @@
 - `POST /api/status`
 
 Worker 不内置任何 Token，也不保存数据。用户的 `Access Token`、`APP ID`、`Speaker ID` 会随请求发送到该 Worker，再由 Worker 转发给豆包接口。
+
+# MiMo TTS Relay Worker
+
+这个 Worker 用于代理 MiMo 公益站 / New API 的 OpenAI 兼容 TTS 接口，避免浏览器直连 `/v1/audio/speech` 或 `/v1/models` 时遇到跨域限制。
+
+## 部署
+
+1. 在 Cloudflare Workers 新建一个 Worker。
+2. 把 `mimo-tts-relay-worker.js` 的内容复制进去。
+3. 部署后拿到 `https://xxx.workers.dev` 地址。
+4. 在小手机 `设置 -> 语音 TTS -> 通用 TTS / MiMo -> MiMo Worker 中转` 填入 Worker 地址。
+
+## 接口
+
+- `POST /api/speech`
+- `POST /api/models`
+
+Worker 不内置任何 API Key，也不保存数据。用户填写的公益站地址和 Key 会随请求发送到该 Worker，再由 Worker 转发到公益站。

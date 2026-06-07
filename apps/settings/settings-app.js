@@ -21,6 +21,7 @@ import {
 } from '../../config/tag-filter.js';
 
 const DEFAULT_DOUBAO_CLONE_WORKER_URL = '';
+const DEFAULT_MIMO_TTS_RELAY_URL = '';
 const SETTINGS_FOLD_ARROW_HTML = '<span class="settings-fold-arrow" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>';
 const PHONE_SHELL_SCALE_MIN = 80;
 const PHONE_SHELL_SCALE_MAX = 120;
@@ -644,6 +645,7 @@ export class SettingsApp {
         const currentTtsKey = this._getTtsProviderValue(currentTtsProvider, 'key', 'phone-tts-key');
         const currentTtsModel = this._getTtsProviderValue(currentTtsProvider, 'model', 'phone-tts-model') || currentTtsDefaults.model || '';
         const currentTtsVoice = this._getTtsProviderValue(currentTtsProvider, 'voice', 'phone-tts-voice');
+        const currentTtsNimoRelayUrl = this._getTtsProviderValue('nimo', 'relay-url') || DEFAULT_MIMO_TTS_RELAY_URL;
         const volcTtsKey = this._getTtsProviderValue('volcengine', 'key', 'phone-tts-key');
         const volcTtsVoice = this._getTtsProviderValue('volcengine', 'voice');
         const ttsVoiceHistory = (() => {
@@ -2048,7 +2050,7 @@ export class SettingsApp {
                                                value="${currentTtsUrl}"
                                                placeholder="MiMo公益站可填 https://站点/v1 或纯域名"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                                        <div class="setting-desc" style="margin-top: 6px;">MiMo 兼容 New API 中转：选择 MiMo 后可填公益站纯域名、/v1 或完整 /v1/chat/completions。</div>
+                                        <div class="setting-desc" style="margin-top: 6px;">MiMo 兼容 New API 中转：选择 MiMo 后可填公益站纯域名或 /v1；公益站会按 OpenAI TTS 格式请求 /v1/audio/speech。若要强制官方 MiMo chat 格式，可填完整 /v1/chat/completions。</div>
                                     </div>
 
                                     <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
@@ -2062,14 +2064,29 @@ export class SettingsApp {
                                     <div class="setting-item">
                                         <div style="display: flex; align-items: center; justify-content: space-between;">
                                             <span style="font-size: 14px; color: #000;">语音模型</span>
-                                            <select id="phone-tts-model-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
-                                                <option value="">-- 快速选择 --</option>
-                                            </select>
+                                            <div style="display: flex; align-items: center; gap: 6px;">
+                                                <button id="phone-tts-fetch-models" type="button" style="height: 30px; padding: 0 8px; border: 1px solid #1677ff; border-radius: 8px; background: #fff; color: #1677ff; font-size: 11px; cursor: pointer; white-space: nowrap;">拉取模型</button>
+                                                <select id="phone-tts-model-preset" style="width: 110px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
+                                                    <option value="">-- 快速选择 --</option>
+                                                </select>
+                                            </div>
                                         </div>
                                         <input type="text" id="phone-tts-model"
                                                value="${currentTtsModel}"
                                                placeholder="选择预设或手动输入模型名"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
+                                        <div id="phone-tts-models-result" class="setting-desc" style="margin-top: 6px;">MiMo 公益站可从当前站点 /v1/models 拉取可用模型。</div>
+                                    </div>
+
+                                    <div class="setting-item">
+                                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                                            <span style="font-size: 14px; color: #000;">MiMo Worker 中转</span>
+                                        </div>
+                                        <input type="text" id="phone-tts-nimo-relay-url"
+                                               value="${currentTtsNimoRelayUrl}"
+                                               placeholder="例如 https://xxx.workers.dev"
+                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
+                                        <div class="setting-desc" style="margin-top: 6px;">公益站若未开放 CORS，浏览器无法直连试听。部署 workers/mimo-tts-relay-worker.js 后把地址填在这里，模型拉取和语音生成都会经 Worker 转发。</div>
                                     </div>
 
                                     <div class="setting-item">
@@ -2081,7 +2098,7 @@ export class SettingsApp {
                                         </div>
                                         <input type="text" id="phone-tts-voice"
                                                value="${currentTtsVoice}"
-                                               placeholder="MiniMax/OpenAI/MiMo 音色 ID；MiMo描述模型可填声音描述"
+                                               placeholder="MiniMax/OpenAI/MiMo 音色 ID；公益站复刻填站点给的音色名"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
                                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
                                             <button id="phone-tts-preview" style="padding: 2px 8px; border: none; background: none; color: #1677ff; font-size: 10px; cursor: pointer;">试听当前音色</button>
@@ -2093,7 +2110,7 @@ export class SettingsApp {
 
                                     <div class="setting-item">
                                         <div style="font-size: 13px; font-weight: 700; color: #333; margin-bottom: 8px;">MiMo 服务端复刻</div>
-                                        <div class="setting-desc" style="margin-bottom: 8px;">选择参考音频后会上传到酒馆服务端，小手机只保存路径；调用 MiMo 复刻模型时临时读取发送，不在浏览器保存音频 base64。</div>
+                                        <div class="setting-desc" style="margin-bottom: 8px;">这是小米官方 MiMo 的本地参考音频复刻流程。公益站复刻音色通常只需要在上方音色 ID 填站点给出的 voice 名称，不需要上传参考音频。</div>
 
                                         <input type="text" id="phone-tts-nimo-clone-nick"
                                                placeholder="复刻音色备注，例如：角色A参考音"
@@ -7292,6 +7309,9 @@ export class SettingsApp {
         const ttsVolcResourceId = document.getElementById('phone-tts-volc-resource-id');
         const ttsModel = document.getElementById('phone-tts-model');
         const ttsModelPreset = document.getElementById('phone-tts-model-preset');
+        const ttsFetchModelsBtn = document.getElementById('phone-tts-fetch-models');
+        const ttsModelsResult = document.getElementById('phone-tts-models-result');
+        const ttsNimoRelayUrl = document.getElementById('phone-tts-nimo-relay-url');
         const ttsVoice = document.getElementById('phone-tts-voice');
         const ttsVoicePreset = document.getElementById('phone-tts-voice-preset');
         const ttsVolcVoice = document.getElementById('phone-tts-volc-voice');
@@ -7453,6 +7473,13 @@ export class SettingsApp {
                 await this.storage.set(legacyKey, safeValue);
             }
         };
+        const setNimoTtsField = async (field, value, legacyKey = '') => {
+            const safeValue = String(value || '').trim();
+            await this.storage.set(this._getTtsProviderConfigKey('nimo', field), safeValue);
+            if (legacyKey && getCurrentMainProviderFromForm() === 'nimo') {
+                await this.storage.set(legacyKey, safeValue);
+            }
+        };
         const addTtsVoiceHistory = async (voiceValue, {
             historyKey = 'phone-tts-voice-history',
             presetSelector = '#phone-tts-voice-preset'
@@ -7502,6 +7529,11 @@ export class SettingsApp {
             ttsNimoCloneResult.textContent = message || '';
             ttsNimoCloneResult.style.color = isError ? '#ff3b30' : '#666';
         };
+        const setTtsModelsResult = (message, isError = false) => {
+            if (!ttsModelsResult) return;
+            ttsModelsResult.textContent = message || '';
+            ttsModelsResult.style.color = isError ? '#ff3b30' : '#666';
+        };
         const getCloneForm = () => ({
             apiKey: String(ttsVolcCloneAccessToken?.value || ttsVolcKey?.value || ttsKey?.value || '').trim(),
             appId: String(ttsVolcCloneAppId?.value || ttsVolcAppId?.value || '').trim(),
@@ -7524,6 +7556,39 @@ export class SettingsApp {
                 button.textContent = originalText;
             }
         };
+        const withTimeoutSignal = async (timeoutMs, task) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                return await task(controller.signal);
+            } finally {
+                clearTimeout(timer);
+            }
+        };
+        const waitForAudioPlaybackStart = (audio) => new Promise((resolve, reject) => {
+            let settled = false;
+            const cleanup = () => {
+                audio.removeEventListener('playing', handlePlaying);
+                audio.removeEventListener('canplay', handleCanPlay);
+                audio.removeEventListener('error', handleError);
+            };
+            const settle = (fn, value) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                fn(value);
+            };
+            const handlePlaying = () => settle(resolve);
+            const handleCanPlay = () => settle(resolve);
+            const handleError = () => settle(reject, new Error('音频解码或播放失败'));
+            audio.addEventListener('playing', handlePlaying, { once: true });
+            audio.addEventListener('canplay', handleCanPlay, { once: true });
+            audio.addEventListener('error', handleError, { once: true });
+            const playPromise = audio.play();
+            if (playPromise?.then) {
+                playPromise.then(() => settle(resolve)).catch(error => settle(reject, error));
+            }
+        });
         let ttsPreviewAudio = null;
         const playTtsPreview = async (provider, voice, button) => {
             const ttsManager = window.VirtualPhone?.ttsManager;
@@ -7532,18 +7597,30 @@ export class SettingsApp {
                 return;
             }
             await withBusyButton(button, '试听中...', async () => {
+                let blobUrl = '';
                 try {
                     const previewText = '这是一段小手机语音试听。';
-                    const blobUrl = await ttsManager.requestTTS(previewText, { provider, voice });
+                    blobUrl = await withTimeoutSignal(30000, (signal) => ttsManager.requestTTS(previewText, { provider, voice, signal }));
                     if (ttsPreviewAudio) {
                         ttsPreviewAudio.pause();
+                        if (ttsPreviewAudio.src?.startsWith('blob:')) URL.revokeObjectURL(ttsPreviewAudio.src);
                         ttsPreviewAudio.src = '';
                     }
                     ttsPreviewAudio = new Audio(blobUrl);
-                    ttsPreviewAudio.onended = () => URL.revokeObjectURL(blobUrl);
-                    ttsPreviewAudio.onerror = () => URL.revokeObjectURL(blobUrl);
-                    await ttsPreviewAudio.play();
+                    ttsPreviewAudio.onended = () => {
+                        URL.revokeObjectURL(blobUrl);
+                        blobUrl = '';
+                    };
+                    ttsPreviewAudio.onerror = () => {
+                        if (blobUrl) URL.revokeObjectURL(blobUrl);
+                        blobUrl = '';
+                    };
+                    await Promise.race([
+                        waitForAudioPlaybackStart(ttsPreviewAudio),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('试听播放超时')), 10000))
+                    ]);
                 } catch (error) {
+                    if (blobUrl) URL.revokeObjectURL(blobUrl);
                     this.phoneShell.showNotification('试听失败', error?.message || '无法播放试听音频', '⚠️');
                 }
             });
@@ -7634,6 +7711,49 @@ export class SettingsApp {
             if (ttsModel) { ttsModel.value = val; await setMainTtsProviderField('model', val, 'phone-tts-model'); }
             e.target.value = ''; // 重置下拉为占位项
         });
+        if (ttsFetchModelsBtn) ttsFetchModelsBtn.addEventListener('click', async () => {
+            const provider = getCurrentMainProviderFromForm();
+            if (provider !== 'nimo') {
+                setTtsModelsResult('当前仅支持拉取 MiMo / 公益站 TTS 模型。', true);
+                return;
+            }
+            const ttsManager = window.VirtualPhone?.ttsManager;
+            if (!ttsManager?.fetchNimoModels) {
+                setTtsModelsResult('TTS 管理器未初始化，无法拉取模型。', true);
+                return;
+            }
+            await withBusyButton(ttsFetchModelsBtn, '拉取中...', async () => {
+                try {
+                    await setMainTtsProviderField('url', String(ttsUrl?.value || '').trim(), 'phone-tts-url');
+                    await setMainTtsProviderField('key', String(ttsKey?.value || '').trim(), 'phone-tts-key');
+                    await setNimoTtsField('relay-url', String(ttsNimoRelayUrl?.value || '').trim());
+                    setTtsModelsResult('正在请求 /v1/models...', false);
+                    const models = await ttsManager.fetchNimoModels(
+                        String(ttsUrl?.value || '').trim(),
+                        String(ttsKey?.value || '').trim(),
+                        { relayUrl: String(ttsNimoRelayUrl?.value || '').trim() }
+                    );
+                    const preferred = models.filter(id => /mimo|tts|voice/i.test(id));
+                    const displayModels = preferred.length ? preferred : models;
+                    if (ttsModelPreset) {
+                        ttsModelPreset.innerHTML = '<option value="">-- 快速选择 --</option>' + displayModels
+                            .map(id => `<option value="${this._escapeHtml(id)}">${this._escapeHtml(id)}</option>`)
+                            .join('');
+                    }
+                    const currentModel = String(ttsModel?.value || '').trim();
+                    const nextModel = displayModels.includes(currentModel) ? currentModel : (displayModels[0] || '');
+                    if (nextModel && ttsModel) {
+                        ttsModel.value = nextModel;
+                        await setMainTtsProviderField('model', nextModel, 'phone-tts-model');
+                    }
+                    setTtsModelsResult(`已拉取 ${models.length} 个模型${preferred.length ? `，显示 ${preferred.length} 个 MiMo/TTS 相关模型` : ''}。`, false);
+                } catch (error) {
+                    const message = error?.message || '拉取 MiMo 模型失败';
+                    setTtsModelsResult(message, true);
+                    this.phoneShell?.showNotification?.('MiMo 模型拉取失败', message, '⚠️');
+                }
+            });
+        });
 
         if (ttsUrl) ttsUrl.addEventListener('change', async (e) => {
             const rawNextUrl = String(e.target.value || '').trim();
@@ -7649,6 +7769,7 @@ export class SettingsApp {
             refreshTtsPresetOptions();
         });
         if (ttsKey) ttsKey.addEventListener('change', async (e) => { await setMainTtsProviderField('key', e.target.value, 'phone-tts-key'); });
+        if (ttsNimoRelayUrl) ttsNimoRelayUrl.addEventListener('change', async (e) => { await setNimoTtsField('relay-url', e.target.value); });
         if (ttsVolcKey) ttsVolcKey.addEventListener('change', async (e) => { await setVolcTtsField('key', e.target.value, 'phone-tts-key'); });
         if (ttsVolcAppId) ttsVolcAppId.addEventListener('change', async (e) => { await setVolcTtsField('app-id', e.target.value, 'phone-tts-volc-app-id'); });
         if (ttsVolcResourceId) ttsVolcResourceId.addEventListener('change', async (e) => { await setVolcTtsField('resource-id', e.target.value, 'phone-tts-volc-resource-id'); });
@@ -7687,6 +7808,12 @@ export class SettingsApp {
             ttsPreviewBtn.addEventListener('click', async () => {
                 const provider = getCurrentMainProviderFromForm();
                 const voice = String(ttsVoice?.value || '').trim();
+                if (provider === 'nimo') {
+                    await setMainTtsProviderField('url', String(ttsUrl?.value || '').trim(), 'phone-tts-url');
+                    await setMainTtsProviderField('key', String(ttsKey?.value || '').trim(), 'phone-tts-key');
+                    await setMainTtsProviderField('model', String(ttsModel?.value || '').trim(), 'phone-tts-model');
+                    await setNimoTtsField('relay-url', String(ttsNimoRelayUrl?.value || '').trim());
+                }
                 await saveTtsVoice(voice);
                 await playTtsPreview(provider, voice || undefined, ttsPreviewBtn);
             });
@@ -7821,16 +7948,19 @@ export class SettingsApp {
                             audioFile: ttsNimoCloneAudio.files[0]
                         });
                         const nimoDefaults = this._getTtsProviderDefaults('nimo');
+                        const currentNimoUrl = String(ttsUrl?.value || this._getTtsProviderValue('nimo', 'url') || '').trim() || nimoDefaults.url;
+                        const currentNimoKey = String(ttsKey?.value || this._getTtsProviderValue('nimo', 'key') || '').trim();
                         await this.storage.set('phone-tts-provider', 'nimo');
                         await this.storage.set('phone-tts-main-provider', 'nimo');
-                        await this.storage.set(this._getTtsProviderConfigKey('nimo', 'url'), nimoDefaults.url);
-                        await this.storage.set(this._getTtsProviderConfigKey('nimo', 'key'), String(ttsKey?.value || '').trim());
+                        await this.storage.set(this._getTtsProviderConfigKey('nimo', 'url'), currentNimoUrl);
+                        await this.storage.set(this._getTtsProviderConfigKey('nimo', 'key'), currentNimoKey);
+                        await this.storage.set(this._getTtsProviderConfigKey('nimo', 'relay-url'), String(ttsNimoRelayUrl?.value || '').trim());
                         await this.storage.set(this._getTtsProviderConfigKey('nimo', 'model'), 'mimo-v2.5-tts-voiceclone');
-                        await this.storage.set('phone-tts-url', nimoDefaults.url);
-                        await this.storage.set('phone-tts-key', String(ttsKey?.value || '').trim());
+                        await this.storage.set('phone-tts-url', currentNimoUrl);
+                        await this.storage.set('phone-tts-key', currentNimoKey);
                         await this.storage.set('phone-tts-model', 'mimo-v2.5-tts-voiceclone');
                         if (ttsProvider) ttsProvider.value = 'nimo';
-                        if (ttsUrl) ttsUrl.value = nimoDefaults.url;
+                        if (ttsUrl) ttsUrl.value = currentNimoUrl;
                         if (ttsModel) ttsModel.value = 'mimo-v2.5-tts-voiceclone';
                         refreshTtsPresetOptions();
                         await saveTtsVoice(voice.id);
