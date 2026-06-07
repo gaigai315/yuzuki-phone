@@ -2022,13 +2022,12 @@ export class WeiboView {
 
             if (result && result.comments && result.comments.length > 0) {
                 const userWeiboNick = this.app.weiboData._getCurrentWeiboNickname?.() || '我';
-                const replyTarget = '@' + userWeiboNick;
+                const replyTarget = userWeiboNick.startsWith('@') ? userWeiboNick : '@' + userWeiboNick;
 
                 for (const c of result.comments) {
                     // 模拟打字延迟，制造真实感
                     await new Promise(r => setTimeout(r, 1000 + Math.random() * 1500));
-                    const aiReplyTo = c.replyTo ? String(c.replyTo).trim() : null;
-                    const finalReplyTo = aiReplyTo || replyTarget;
+                    const finalReplyTo = replyTarget;
                     const replyRootIndex = Number.isInteger(meta?.replyRootIndex) ? meta.replyRootIndex : null;
 
                     if (reactionMode === 'recommend' || reactionMode === 'myPosts') {

@@ -749,6 +749,23 @@ export class WeiboData {
         return finalName.startsWith('@') ? finalName : `@${finalName}`;
     }
 
+    _normalizeBareName(name = '') {
+        return String(name || '')
+            .replace(/^@+/, '')
+            .trim();
+    }
+
+    _stripDuplicateReplyMention(text = '', replyTo = '') {
+        let safeText = String(text || '').trim();
+        const target = this._normalizeBareName(replyTo);
+        if (!safeText || !target) return safeText;
+
+        const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const duplicatePrefix = new RegExp(`^@?${escaped}\\s*[：:]\\s*`, 'u');
+        safeText = safeText.replace(duplicatePrefix, '').trim();
+        return safeText;
+    }
+
     // 将当前粉丝数注入提示词；若模板未提供占位，也自动补充一行硬约束
     _injectCurrentFollowersToPrompt(promptText) {
         const followers = this._getCurrentFollowersCount();
@@ -1492,13 +1509,15 @@ export class WeiboData {
         const defaultName = this._getCurrentWeiboNickname();
         const finalName = this._normalizeAtName(commenterName || defaultName, defaultName || '我');
         const finalLocation = String(location || '本地');
+        const finalReplyTo = replyTo ? this._normalizeAtName(replyTo) : null;
+        const finalText = this._stripDuplicateReplyMention(text, finalReplyTo);
 
         if (!post.commentList) post.commentList = [];
         post.commentList.push({
             name: finalName,
             location: finalLocation,
-            text: text,
-            replyTo: replyTo,
+            text: finalText,
+            replyTo: finalReplyTo,
             replyRootIndex: Number.isInteger(meta?.replyRootIndex) ? meta.replyRootIndex : null
         });
         post.comments = post.commentList.length;
@@ -1523,13 +1542,15 @@ export class WeiboData {
         const defaultName = this._getCurrentWeiboNickname();
         const finalName = this._normalizeAtName(commenterName || defaultName, defaultName || '我');
         const finalLocation = String(location || '本地');
+        const finalReplyTo = replyTo ? this._normalizeAtName(replyTo) : null;
+        const finalText = this._stripDuplicateReplyMention(text, finalReplyTo);
 
         if (!post.commentList) post.commentList = [];
         post.commentList.push({
             name: finalName,
             location: finalLocation,
-            text: text,
-            replyTo: replyTo,
+            text: finalText,
+            replyTo: finalReplyTo,
             replyRootIndex: Number.isInteger(meta?.replyRootIndex) ? meta.replyRootIndex : null
         });
         post.comments = post.commentList.length;
