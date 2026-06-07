@@ -27,6 +27,7 @@ export class WechatApp {
         this._avatarPoolLoaded = false;
         this._avatarPoolLoading = false;
         this._avatarPoolPromise = null;
+        this._missingAvatarPaths = new Set();
         this._isAvatarManagerOpen = false;
         this._wechatPanelMode = 'main'; // main | settings | avatar-manager
         this._isWalletEvaluating = false;
@@ -4161,6 +4162,75 @@ export class WechatApp {
         return this._avatarPoolPromise;
     }
 
+    _normalizeAvatarPathForLookup(value = '') {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        try {
+            if (/^https?:\/\//i.test(raw)) {
+                return new URL(raw).pathname.split('?')[0].split('#')[0];
+            }
+        } catch (e) { }
+        return raw.split('?')[0].split('#')[0];
+    }
+
+    _isManagedWechatAvatarPath(value = '') {
+        return /^\/backgrounds\/phone_(?:contact|avatar|wechat|chat|group|friend)_/i.test(this._normalizeAvatarPathForLookup(value));
+    }
+
+    handleWechatAvatarImageError(img, avatarValue = '') {
+        const normalizedPath = this._normalizeAvatarPathForLookup(avatarValue || img?.getAttribute?.('data-avatar-src') || img?.getAttribute?.('src') || '');
+        img?.remove?.();
+        if (!normalizedPath || !this._isManagedWechatAvatarPath(normalizedPath) || this._missingAvatarPaths.has(normalizedPath)) return;
+        this._missingAvatarPaths.add(normalizedPath);
+        this._clearMissingWechatAvatarPath(normalizedPath);
+    }
+
+    _clearMissingWechatAvatarPath(pathLike = '') {
+        const path = this._normalizeAvatarPathForLookup(pathLike);
+        if (!path) return false;
+        const data = this.wechatData?.data;
+        if (!data) return false;
+        let changed = false;
+        const samePath = (value) => this._normalizeAvatarPathForLookup(value) === path;
+
+        if (samePath(data.userInfo?.avatar)) {
+            data.userInfo.avatar = '';
+            changed = true;
+        }
+        (Array.isArray(data.contacts) ? data.contacts : []).forEach((contact) => {
+            if (samePath(contact?.avatar)) {
+                contact.avatar = '';
+                changed = true;
+                this.wechatData?._syncHoneyContactToGlobalStore?.(contact);
+            }
+        });
+        (Array.isArray(data.chats) ? data.chats : []).forEach((chat) => {
+            if (samePath(chat?.avatar)) {
+                chat.avatar = '';
+                changed = true;
+            }
+        });
+        Object.values(data.messages || {}).forEach((messages) => {
+            if (!Array.isArray(messages)) return;
+            messages.forEach((message) => {
+                if (samePath(message?.avatar)) {
+                    message.avatar = '';
+                    changed = true;
+                }
+                if (samePath(message?.senderAvatar)) {
+                    message.senderAvatar = '';
+                    changed = true;
+                }
+            });
+        });
+
+        if (changed) {
+            this.wechatData.saveData?.();
+            this.render?.();
+        }
+        return changed;
+    }
+
     renderAvatar(avatar, defaultEmoji = '👤', fallbackName = '') {
         const avatarStr = String(avatar || '').trim();
         this._ensureWechatAvatarPoolLoaded();
@@ -4204,10 +4274,14 @@ export class WechatApp {
 
         // 用户自定义头像优先；如果图片资源被删除/失效，自动回退到性别默认头像。
         if (this._isCustomAvatarValue(avatarStr)) {
+            if (this._missingAvatarPaths.has(this._normalizeAvatarPathForLookup(avatarStr))) return autoAvatar
+                ? `<span style="display:block;position:relative;width:100%;height:100%;">${initialHtml}<img src="${escapeAttr(autoAvatar)}" style="${imageStyle};position:absolute;inset:0;" onerror="this.remove();"></span>`
+                : initialHtml;
+            const errorHandler = 'window.VirtualPhone?.wechatApp?.handleWechatAvatarImageError?.(this)';
             if (autoAvatar) {
-                return `<span style="display:block;position:relative;width:100%;height:100%;">${initialHtml}<img src="${escapeAttr(avatarStr)}" style="${imageStyle};position:absolute;inset:0;" onerror="this.onerror=function(){this.remove();};this.src='${escapeAttr(autoAvatar)}';"></span>`;
+                return `<span style="display:block;position:relative;width:100%;height:100%;">${initialHtml}<img src="${escapeAttr(avatarStr)}" data-avatar-src="${escapeAttr(avatarStr)}" style="${imageStyle};position:absolute;inset:0;" onerror="${errorHandler};this.onerror=function(){this.remove();};this.src='${escapeAttr(autoAvatar)}';"></span>`;
             }
-            return `<span style="display:block;position:relative;width:100%;height:100%;">${initialHtml}<img src="${escapeAttr(avatarStr)}" style="${imageStyle};position:absolute;inset:0;" onerror="this.remove();"></span>`;
+            return `<span style="display:block;position:relative;width:100%;height:100%;">${initialHtml}<img src="${escapeAttr(avatarStr)}" data-avatar-src="${escapeAttr(avatarStr)}" style="${imageStyle};position:absolute;inset:0;" onerror="${errorHandler}"></span>`;
         }
 
         // 联系人头像池：无自定义头像时，按性别随机分配（稳定映射）

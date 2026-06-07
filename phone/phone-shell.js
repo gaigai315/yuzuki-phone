@@ -1069,6 +1069,15 @@ export class PhoneShell {
             const avatarRaw = String(meta.avatar || '').trim();
             if (avatarRaw && isLikelyImagePath(avatarRaw)) {
                 const img = document.createElement('img');
+                img.onerror = () => {
+                    img.remove();
+                    if (avatarEl.querySelector('.notification-avatar-text')) return;
+                    const avatarText = document.createElement('span');
+                    avatarText.className = 'notification-avatar-text';
+                    avatarText.textContent = String(meta.avatarText || (meta.isGroup ? Array.from(String(meta.name || '').trim())[0] || '群' : (data.icon === '📱' ? '微' : '👤')));
+                    avatarEl.appendChild(avatarText);
+                    window.VirtualPhone?.wechatApp?.handleWechatAvatarImageError?.(img, avatarRaw);
+                };
                 img.src = avatarRaw;
                 img.alt = String(meta.name || 'avatar');
                 avatarEl.appendChild(img);

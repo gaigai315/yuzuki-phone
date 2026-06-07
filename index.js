@@ -8626,6 +8626,84 @@ if (window.GGP_Loaded) {
                                                 ])
                                                 .filter(([key, description]) => key && description)
                                         );
+                                        const normalizeWeiboCardText = (value) => String(value || '')
+                                            .replace(/\r\n/g, '\n')
+                                            .replace(/&nbsp;/gi, ' ')
+                                            .replace(/\u00a0/g, ' ')
+                                            .replace(/\u3000/g, ' ')
+                                            .split('\n')
+                                            .map(line => line.trim())
+                                            .join('\n')
+                                            .replace(/\n{3,}/g, '\n\n')
+                                            .trim();
+                                        const formatWeiboCardForOfflinePrompt = (msg = {}) => {
+                                            const isPlaceholderOnly = (value) => {
+                                                const text = normalizeWeiboCardText(value);
+                                                return !text || /^\[(?:微博分享|微博新闻|weibo_card)\]$/i.test(text);
+                                            };
+                                            const formatMedia = (raw, index) => {
+                                                const text = normalizeWeiboCardText(raw);
+                                                if (!text) return '';
+                                                const tagged = text.match(/^\[(用户照片|个人图片|图片|视频)\]\s*([\s\S]*)$/);
+                                                if (tagged) {
+                                                    const type = tagged[1] || '图片';
+                                                    const desc = String(tagged[2] || '').trim();
+                                                    return desc ? `[${type}]${desc}` : `[${type}${index ? index + 1 : ''}]`;
+                                                }
+                                                if (/^(?:https?:|data:image|blob:)/i.test(text) || /\.(?:png|jpe?g|gif|webp|avif)(?:[?#].*)?$/i.test(text)) {
+                                                    return `[图片${index ? index + 1 : ''}]`;
+                                                }
+                                                return text;
+                                            };
+
+                                            const wb = msg?.weiboData && typeof msg.weiboData === 'object' ? msg.weiboData : {};
+                                            const hasWeiboData = Object.keys(wb).length > 0;
+                                            const fullContent = normalizeWeiboCardText(msg.content);
+                                            if (!hasWeiboData) {
+                                                return isPlaceholderOnly(fullContent) ? '[微博分享]' : (fullContent || '[微博分享]');
+                                            }
+
+                                            const lines = [];
+                                            const blogger = normalizeWeiboCardText(wb.blogger || '');
+                                            const bloggerType = normalizeWeiboCardText(wb.bloggerType || '');
+                                            const body = normalizeWeiboCardText(wb.content || '');
+                                            const time = normalizeWeiboCardText(wb.originalTime || wb.time || '');
+                                            const device = normalizeWeiboCardText(wb.device || '');
+                                            const forward = Number.parseInt(wb.forward, 10) || 0;
+                                            const commentsCount = Number.parseInt(wb.comments, 10) || (Array.isArray(wb.commentList) ? wb.commentList.length : 0);
+                                            const likes = Number.parseInt(wb.likes, 10) || 0;
+
+                                            lines.push(`[微博分享]${blogger ? ` ${blogger}${bloggerType ? `（${bloggerType}）` : ''}` : ''}`);
+                                            if (time || device) lines.push(`时间：${[time, device ? `来自${device}` : ''].filter(Boolean).join(' ')}`);
+                                            if (body) lines.push(`正文：${body}`);
+
+                                            const mediaLines = (Array.isArray(wb.images) ? wb.images : [])
+                                                .map((item, index) => formatMedia(item, index))
+                                                .filter(Boolean);
+                                            if (mediaLines.length > 0) lines.push(`配图：${mediaLines.join(' ')}`);
+                                            if (forward || commentsCount || likes) lines.push(`数据：转发 ${forward} | 评论 ${commentsCount} | 点赞 ${likes}`);
+
+                                            const commentLines = (Array.isArray(wb.commentList) ? wb.commentList : [])
+                                                .map((comment) => {
+                                                    const name = normalizeWeiboCardText(comment?.name || '网友');
+                                                    const replyTo = normalizeWeiboCardText(comment?.replyTo || '');
+                                                    const location = normalizeWeiboCardText(comment?.location || '');
+                                                    const text = normalizeWeiboCardText(comment?.text || '');
+                                                    if (!text) return '';
+                                                    const replyText = replyTo ? `回复${replyTo}` : '';
+                                                    const locationText = location ? `（ip${location}）` : '';
+                                                    return `${name}${locationText}${replyText}：${text}`;
+                                                })
+                                                .filter(Boolean);
+                                            if (commentLines.length > 0) {
+                                                lines.push('评论区：');
+                                                lines.push(...commentLines);
+                                            }
+
+                                            const rebuilt = lines.filter(Boolean).join('\n').trim();
+                                            if (rebuilt && rebuilt !== '[微博分享]') return rebuilt;
+                                            return isPlaceholderOnly(fullContent) ? '[微博分享]' : (fullContent || '[微博分享]');
+                                        };
                                         const honeyInviteStates = [];
                                         allChats.forEach((chat) => {
                                             if (!chat || chat.type === 'group' || !chat.honeyInviteState) return;
@@ -8785,8 +8863,7 @@ if (window.GGP_Loaded) {
                                                             ? `[表情包]（${customEmojiDescription}）`
                                                             : (imgUrl ? `[发送了图片] 图片地址: ${imgUrl}` : '[发送了图片]');
                                                     } else if (msg.type === 'weibo_card') {
-                                                        // 微博转发卡片：直接使用完整content（含正文+评论）
-                                                        content = msg.content || '[微博分享]';
+                                                        content = formatWeiboCardForOfflinePrompt(msg);
                                                     } else if (msg.type === 'poker_card') {
                                                         const poker = msg.pokerData || {};
                                                         content = poker.content || poker.desc || msg.content || '[德州扑克分享]';
