@@ -592,7 +592,7 @@ export class SettingsApp {
         const legacyUrl = String(this.storage.get('phone-tts-url') || '').trim().toLowerCase();
         if (legacyUrl.includes('minimaxi.com')) return 'minimax_cn';
         if (legacyUrl.includes('minimax.chat') || legacyUrl.includes('minimax.io')) return 'minimax_intl';
-        if (legacyUrl.includes('xiaomimimo.com') || /\/chat\/completions\b/.test(legacyUrl)) return 'nimo';
+        if (legacyUrl.includes('xiaomimimo.com') || /\/(?:v1\/)?chat\/completions\b/.test(legacyUrl)) return 'nimo';
         if (legacyUrl.includes('api.openai.com') || /\/audio\/speech\b/.test(legacyUrl)) return 'openai';
         return 'minimax_cn';
     }
@@ -2024,6 +2024,13 @@ export class SettingsApp {
                                     ${SETTINGS_FOLD_ARROW_HTML}
                                 </summary>
                                 <div style="padding: 10px 10px 4px;">
+                                    <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                        <span style="font-size: 14px; color: #000;">TTS 服务商</span>
+                                        <select id="phone-tts-provider" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
+                                            ${renderTtsProviderOptions(currentTtsProvider)}
+                                        </select>
+                                    </div>
+
                                     <div class="setting-item">
                                         <div style="display: flex; align-items: center; justify-content: space-between;">
                                             <span style="font-size: 14px; color: #000;">API 接口地址</span>
@@ -2033,13 +2040,15 @@ export class SettingsApp {
                                                 <option value="https://api.minimax.io/v1/t2a_v2">MiniMax 国际版</option>
                                                 <option value="https://api.openai.com/v1/audio/speech">OpenAI 官方</option>
                                                 <option value="https://api.xiaomimimo.com/v1">MiMo 官方</option>
+                                                <option value="__nimo_public__">MiMo 公益站 / New API</option>
                                                 <option value="https://openspeech.bytedance.com/api/v3/tts/unidirectional">火山引擎/豆包</option>
                                             </select>
                                         </div>
                                         <input type="text" id="phone-tts-url"
                                                value="${currentTtsUrl}"
-                                               placeholder="选择预设或手动输入地址"
+                                               placeholder="MiMo公益站可填 https://站点/v1 或纯域名"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
+                                        <div class="setting-desc" style="margin-top: 6px;">MiMo 兼容 New API 中转：选择 MiMo 后可填公益站纯域名、/v1 或完整 /v1/chat/completions。</div>
                                     </div>
 
                                     <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
@@ -7386,7 +7395,7 @@ export class SettingsApp {
             const url = String(urlValue || '').trim().toLowerCase();
             if (url.includes('minimaxi.com')) return 'minimax_cn';
             if (url.includes('minimax.chat') || url.includes('minimax.io')) return 'minimax_intl';
-            if (url.includes('xiaomimimo.com') || /\/chat\/completions\b/.test(url)) return 'nimo';
+            if (url.includes('xiaomimimo.com') || /\/(?:v1\/)?chat\/completions\b/.test(url)) return 'nimo';
             if (url.includes('openspeech.bytedance.com')) return 'volcengine';
             if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
             return String(fallback || '').trim() || 'minimax_cn';
@@ -7398,7 +7407,7 @@ export class SettingsApp {
             }
             return rawUrl;
         };
-        const getCurrentMainProviderFromForm = () => inferTtsProviderFromUrl(ttsUrl?.value || '', getSelectedMainTtsProvider());
+        const getCurrentMainProviderFromForm = () => getSelectedMainTtsProvider();
         const refreshTtsPresetOptions = () => {
             const provider = getCurrentMainProviderFromForm();
             if (ttsModelPreset) {
@@ -7426,7 +7435,7 @@ export class SettingsApp {
             }
         };
         const setMainTtsProviderField = async (field, value, legacyKey = '') => {
-            const provider = inferTtsProviderFromUrl(ttsUrl?.value || '', getSelectedMainTtsProvider());
+            const provider = getCurrentMainProviderFromForm();
             const safeValue = String(value || '').trim();
             await this.storage.set(this._getTtsProviderConfigKey(provider, field), safeValue);
             if (['minimax_cn', 'minimax_intl', 'openai', 'nimo'].includes(provider)) {
@@ -7586,6 +7595,22 @@ export class SettingsApp {
         // 接口地址预设下拉 → 填入输入框
         if (ttsUrlPreset) ttsUrlPreset.addEventListener('change', async (e) => {
             const rawVal = e.target.value;
+            if (rawVal === '__nimo_public__') {
+                await this.storage.set('phone-tts-main-provider', 'nimo');
+                await this.storage.set('phone-tts-provider', 'nimo');
+                if (ttsProvider) ttsProvider.value = 'nimo';
+                const defaults = this._getTtsProviderDefaults('nimo');
+                const storedUrl = this._getTtsProviderValue('nimo', 'url') || '';
+                const nextUrl = /xiaomimimo\.com/i.test(storedUrl) ? '' : storedUrl;
+                const nextModel = this._getTtsProviderValue('nimo', 'model') || defaults.model || '';
+                const nextVoice = this._getTtsProviderValue('nimo', 'voice') || defaults.voice || '';
+                if (ttsUrl) { ttsUrl.value = nextUrl; await setMainTtsProviderField('url', nextUrl, 'phone-tts-url'); }
+                if (ttsModel) { ttsModel.value = nextModel; await setMainTtsProviderField('model', nextModel, 'phone-tts-model'); }
+                if (ttsVoice) { ttsVoice.value = nextVoice; await setMainTtsProviderField('voice', nextVoice, 'phone-tts-voice'); }
+                refreshTtsPresetOptions();
+                e.target.value = '';
+                return;
+            }
             const inferredProvider = inferTtsProviderFromUrl(rawVal, getSelectedMainTtsProvider());
             const val = normalizeTtsProviderUrl(inferredProvider, rawVal);
             if (!val) return;
@@ -7612,7 +7637,7 @@ export class SettingsApp {
 
         if (ttsUrl) ttsUrl.addEventListener('change', async (e) => {
             const rawNextUrl = String(e.target.value || '').trim();
-            const inferredProvider = inferTtsProviderFromUrl(rawNextUrl, getSelectedMainTtsProvider());
+            const inferredProvider = getCurrentMainProviderFromForm();
             const nextUrl = normalizeTtsProviderUrl(inferredProvider, rawNextUrl);
             if (ttsUrl) ttsUrl.value = nextUrl;
             const defaults = this._getTtsProviderDefaults(inferredProvider);
@@ -7660,7 +7685,7 @@ export class SettingsApp {
         }
         if (ttsPreviewBtn) {
             ttsPreviewBtn.addEventListener('click', async () => {
-                const provider = inferTtsProviderFromUrl(ttsUrl?.value || '', getSelectedMainTtsProvider());
+                const provider = getCurrentMainProviderFromForm();
                 const voice = String(ttsVoice?.value || '').trim();
                 await saveTtsVoice(voice);
                 await playTtsPreview(provider, voice || undefined, ttsPreviewBtn);

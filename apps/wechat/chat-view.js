@@ -3427,7 +3427,8 @@ renderChatRoom(chat) {
         }
         const parsedCurrentPrompt = this._parseImagePromptText(String(message.content || rawPromptText || ''));
         const descriptionText = String(message.imageDescription || parsedRawPrompt.description || parsedCurrentPrompt.description || promptText).trim();
-        if (this._hasCjkText(promptText)) {
+        const allowChinesePrompt = this._isWechatImageProviderOpenAI();
+        if (this._hasCjkText(promptText) && !allowChinesePrompt) {
             this._imagePromptGenerationLocks.delete(generationLockKey);
             this.app.phoneShell?.showNotification('生图格式错误', '缺少英文生图Tag，请使用 [图片]（中文描述）（English tags）', '⚠️');
             this.app.wechatData.updateMessageById(chatId, safeMessageId, {
@@ -3724,7 +3725,7 @@ renderChatRoom(chat) {
         const promptText = this._escapeHtml(promptRaw);
         const descriptionRaw = displayPrompt.description || promptRaw;
         const descriptionText = this._escapeHtml(descriptionRaw);
-        const promptLabel = this._hasCjkText(promptRaw)
+        const promptLabel = this._hasCjkText(promptRaw) && !this._isWechatImageProviderOpenAI()
             ? '缺少英文Tag'
             : promptRaw;
         const promptLabelHtml = this._escapeHtml(promptLabel);
@@ -4205,6 +4206,22 @@ renderChatRoom(chat) {
 
     _hasCjkText(value = '') {
         return /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(String(value || ''));
+    }
+
+    _isWechatImageProviderOpenAI() {
+        const imageManager = window.VirtualPhone?.imageGenerationManager;
+        if (imageManager?.resolveProvider) {
+            return String(imageManager.resolveProvider({ app: 'wechat' }) || '').trim().toLowerCase() === 'openai';
+        }
+        const storage = this.app?.storage || window.VirtualPhone?.storage;
+        const appBindingsRaw = storage?.get?.('phone-image-provider-app-bindings');
+        let appBindings = {};
+        try {
+            appBindings = typeof appBindingsRaw === 'string' ? JSON.parse(appBindingsRaw || '{}') : (appBindingsRaw || {});
+        } catch (_e) {
+            appBindings = {};
+        }
+        return String(appBindings?.wechat || storage?.get?.('phone-image-provider') || 'novelai').trim().toLowerCase() === 'openai';
     }
 
     _formatImagePromptTagForPrompt(msg = {}) {

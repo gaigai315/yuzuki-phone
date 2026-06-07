@@ -45,7 +45,9 @@ const ST_PHONE_CURRENT_UPDATE = {
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
         '【修复】修复论坛魔坊从快速回复面板进入详情时未按模板与 CSS 渲染、误显示为字段表格的问题。',
-        '【修复】修复微信正文/用户回复中被酒馆正则或 Markdown 实体化的异常内容可能污染小手机页面，导致单个会话底部输入栏显示错乱的问题。'
+        '【修复】修复微信正文/用户回复中被酒馆正则或 Markdown 实体化的异常内容可能污染小手机页面，导致单个会话底部输入栏显示错乱的问题。',
+        '【优化】MiMo TTS 支持 New API / 公益站中转，可填写纯域名、/v1 或完整 /v1/chat/completions 地址。',
+        '【优化】GPT 微信生图支持中文描述，使用 OpenAI/GPT 生图时 [图片]（中文描述）会直接请求 GPT；其他生图服务仍保持英文 tag 要求。'
     ]
 };
 
@@ -809,7 +811,7 @@ if (window.GGP_Loaded) {
             import('./config/api-manager.js'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
             import('./config/prompt-manager.js'),  // 👈 取消懒加载
-            import('./config/tts-manager.js?v=20260530-mimo-server-clone'),
+            import('./config/tts-manager.js?v=20260607-mimo-public-relay'),
             import('./config/image-generation-manager.js?v=20260527-nai-ref-values'),
             import('./config/worldbook-manager.js')
         ]);

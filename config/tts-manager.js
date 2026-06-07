@@ -66,7 +66,7 @@ export class TtsManager {
         const url = String(apiUrl || '').trim().toLowerCase();
         if (url.includes('minimaxi.com')) return 'minimax_cn';
         if (url.includes('minimax.chat') || url.includes('minimax.io')) return 'minimax_intl';
-        if (url.includes('xiaomimimo.com') || /\/chat\/completions\b/.test(url)) return 'nimo';
+        if (url.includes('xiaomimimo.com') || /\/(?:v1\/)?chat\/completions\b/.test(url)) return 'nimo';
         if (url.includes('openspeech.bytedance.com')) return 'volcengine';
         if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
         return String(fallback || '').trim() || 'minimax_cn';
@@ -429,7 +429,15 @@ export class TtsManager {
         const rawInput = String(apiUrl || 'https://api.xiaomimimo.com/v1').trim();
         const withProtocol = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
         const raw = withProtocol.replace(/\/+$/, '');
-        return raw.replace(/\/chat\/completions$/i, '');
+        return raw
+            .replace(/\/(?:v1\/)?chat\/completions$/i, '')
+            .replace(/\/chat$/i, '');
+    }
+
+    _resolveNimoChatCompletionsEndpoint(apiUrl = '') {
+        const baseUrl = this._normalizeNimoBaseUrl(apiUrl);
+        if (/\/v1$/i.test(baseUrl)) return `${baseUrl}/chat/completions`;
+        return `${baseUrl}/v1/chat/completions`;
     }
 
     _formatVolcCloneError(data = {}) {
@@ -683,7 +691,7 @@ export class TtsManager {
                 audio
             };
 
-            const endpoint = new URL(`${this._normalizeNimoBaseUrl(apiUrl)}/chat/completions`);
+            const endpoint = new URL(this._resolveNimoChatCompletionsEndpoint(apiUrl));
             const rawFetch = this._getRawFetch();
             const response = await rawFetch(endpoint, {
                 method: 'POST',
