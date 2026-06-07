@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.2.6';
+const ST_PHONE_VERSION = '1.2.7';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
@@ -41,13 +41,10 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-06-06',
+    date: '2026-06-07',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【修复】修复论坛魔坊从快速回复面板进入详情时未按模板与 CSS 渲染、误显示为字段表格的问题。',
-        '【修复】修复微信正文/用户回复中被酒馆正则或 Markdown 实体化的异常内容可能污染小手机页面，导致单个会话底部输入栏显示错乱的问题。',
-        '【优化】MiMo TTS 支持 New API / 公益站中转，可填写纯域名、/v1 或完整 /v1/chat/completions 地址。',
-        '【优化】GPT 微信生图支持中文描述，使用 OpenAI/GPT 生图时 [图片]（中文描述）会直接请求 GPT；其他生图服务仍保持英文 tag 要求。'
+        '【优化】音乐播放器新增一个兜底音乐源，当前音乐源不可用时会自动降级尝试播放。'
     ]
 };
 
