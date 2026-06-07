@@ -1,7 +1,7 @@
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, api-key'
 };
 
 function jsonResponse(body, init = {}) {
@@ -37,9 +37,17 @@ function resolveTargetUrl(apiUrl = '', target = 'speech') {
         if (/\/(?:v1\/)?audio\/speech$/i.test(raw)) return raw;
         if (/\/audio$/i.test(raw)) return `${raw}/speech`;
     }
+    if (target === 'chat') {
+        if (/\/(?:v1\/)?chat\/completions$/i.test(raw)) return raw;
+        if (/\/chat$/i.test(raw)) return `${raw}/completions`;
+    }
     if (target === 'models' && /\/(?:v1\/)?models$/i.test(raw)) return raw;
     const baseUrl = normalizeBaseUrl(apiUrl);
     if (!baseUrl) return '';
+    if (target === 'chat') {
+        if (/\/v1$/i.test(baseUrl)) return `${baseUrl}/chat/completions`;
+        return `${baseUrl}/v1/chat/completions`;
+    }
     if (/\/v1$/i.test(baseUrl)) return target === 'models' ? `${baseUrl}/models` : `${baseUrl}/audio/speech`;
     return target === 'models' ? `${baseUrl}/v1/models` : `${baseUrl}/v1/audio/speech`;
 }
@@ -87,6 +95,45 @@ async function handleSpeech(request) {
         headers: {
             ...corsHeaders,
             'Content-Type': contentType || 'audio/wav',
+            'Cache-Control': 'no-store'
+        }
+    });
+}
+
+async function handleChat(request) {
+    const body = await readJson(request);
+    const apiUrl = String(body.apiUrl || body.baseUrl || '').trim();
+    const apiKey = String(body.apiKey || '').trim();
+    const payload = body.payload && typeof body.payload === 'object' ? body.payload : null;
+    const targetUrl = resolveTargetUrl(apiUrl, 'chat');
+
+    if (!targetUrl || !apiKey || !payload) {
+        return jsonResponse({ success: false, error: '缺少 apiUrl、apiKey 或 payload' }, { status: 400 });
+    }
+
+    const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'api-key': apiKey,
+            'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(payload)
+    });
+
+    const text = await response.text().catch(() => '');
+    if (!response.ok) {
+        return jsonResponse({
+            success: false,
+            error: `MiMo HTTP ${response.status}${text ? `：${text.slice(0, 500)}` : ''}`
+        }, { status: response.status });
+    }
+
+    return new Response(text, {
+        status: response.status,
+        headers: {
+            ...corsHeaders,
+            'Content-Type': response.headers.get('Content-Type') || 'application/json;charset=UTF-8',
             'Cache-Control': 'no-store'
         }
     });
@@ -146,6 +193,9 @@ export default {
             }
             if (url.pathname === '/api/speech' && request.method === 'POST') {
                 return await handleSpeech(request);
+            }
+            if (url.pathname === '/api/chat' && request.method === 'POST') {
+                return await handleChat(request);
             }
             if (url.pathname === '/api/models' && request.method === 'POST') {
                 return await handleModels(request);

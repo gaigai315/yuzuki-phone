@@ -18,7 +18,7 @@ Worker 不内置任何 Token，也不保存数据。用户的 `Access Token`、`
 
 # MiMo TTS Relay Worker
 
-这个 Worker 用于代理 MiMo 公益站 / New API 的 OpenAI 兼容 TTS 接口，避免浏览器直连 `/v1/audio/speech` 或 `/v1/models` 时遇到跨域限制。
+这个 Worker 用于代理 MiMo 公益站 / New API 的 OpenAI 兼容 TTS 接口，以及 MiMo 官方 chat/completions 复刻接口，避免浏览器直连 `/v1/audio/speech`、`/v1/chat/completions` 或 `/v1/models` 时遇到跨域限制。
 
 ## 部署
 
@@ -30,6 +30,7 @@ Worker 不内置任何 Token，也不保存数据。用户的 `Access Token`、`
 ## 接口
 
 - `POST /api/speech`
+- `POST /api/chat`
 - `POST /api/models`
 
 Worker 不内置任何 API Key，也不保存数据。用户填写的公益站地址和 Key 会随请求发送到该 Worker，再由 Worker 转发到公益站。
