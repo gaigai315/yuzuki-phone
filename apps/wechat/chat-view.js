@@ -2012,10 +2012,11 @@ renderChatRoom(chat) {
         const isCurrentChatSending = this.isSending && String(this._activeSendingChatId || '') === String(chat.id || '');
         const hasInputText = String(this.inputText || '').trim() !== '';
         const rightButtonIsMore = !isCurrentChatSending && !hasInputText;
+        const safeChatId = this._escapeHtml(String(chat?.id || '').trim());
 
         return `
-    <div class="chat-room">
-                <div class="chat-messages" id="chat-messages">
+    <div class="chat-room" data-chat-id="${safeChatId}">
+                <div class="chat-messages" id="chat-messages" data-chat-id="${safeChatId}">
                     ${this.renderMessagesWithDateDividers(messages, userInfo)}
                 </div>
 
@@ -2197,16 +2198,16 @@ renderChatRoom(chat) {
     }
 
     _refreshCurrentChatMessages(options = {}) {
-        const currentView = this.getCurrentWechatView();
-        const messagesDiv = currentView?.querySelector('#chat-messages');
-        if (!messagesDiv || !this.app.currentChat?.id) return;
+        const chatId = String(this.app.currentChat?.id || '').trim();
+        const messagesDiv = this._getVisibleChatMessagesContainer(chatId);
+        if (!messagesDiv || !chatId) return false;
 
         const keepScroll = options.keepScroll !== false;
         const previousTop = messagesDiv.scrollTop;
         const previousHeight = messagesDiv.scrollHeight;
         const wasNearBottom = previousHeight - previousTop - messagesDiv.clientHeight < 100;
 
-        const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
+        const messages = this.app.wechatData.getMessages(chatId);
         const userInfo = this.app.wechatData.getUserInfo();
         messagesDiv.innerHTML = this.renderMessagesWithDateDividers(messages, userInfo);
 
@@ -2217,13 +2218,14 @@ renderChatRoom(chat) {
         this.bindMessageSelectionEvents();
         this._syncMessageSelectionBar();
 
-        if (!keepScroll) return;
+        if (!keepScroll) return true;
         if (wasNearBottom) {
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         } else {
             const delta = messagesDiv.scrollHeight - previousHeight;
             messagesDiv.scrollTop = Math.max(0, previousTop + delta);
         }
+        return true;
     }
 
     _renderMessageSelectionBar() {
@@ -2250,8 +2252,7 @@ renderChatRoom(chat) {
     }
 
     _syncMessageSelectionBar() {
-        const currentView = this.getCurrentWechatView();
-        const chatRoom = currentView?.querySelector('.chat-room');
+        const chatRoom = this._getCurrentChatRoom(this.app.currentChat?.id);
         if (!chatRoom) return;
 
         const bars = Array.from(chatRoom.querySelectorAll('.wechat-message-selection-bar'));
@@ -2376,7 +2377,17 @@ renderChatRoom(chat) {
         this.showMore = false;
         this._setCustomEmojiSelectionMode(false);
         this._syncSelectedMessageIdsWithData(chatId);
-        this._refreshCurrentChatMessages({ keepScroll: true });
+        const refreshed = this._refreshCurrentChatMessages({ keepScroll: true });
+        if (!refreshed && typeof this.app.render === 'function') {
+            this.app.render();
+        }
+        setTimeout(() => {
+            if (!this._isMessageSelectionActiveForCurrentChat()) return;
+            this._syncSelectedMessageIdsWithData(chatId);
+            this._syncMessageSelectionBar();
+            this._syncMessageSelectionDom();
+            this.bindMessageSelectionEvents();
+        }, 0);
     }
 
     exitMessageSelectionMode() {
@@ -2633,10 +2644,10 @@ renderChatRoom(chat) {
                     const isCustomEmojiImage = !!(msg.customEmojiId || msg.customEmojiName || msg.customEmojiDescription);
                     const safeImageContent = this.escapeInlineStickerAttr(msg.content || '');
                     const customEmojiBoxStyle = isCustomEmojiImage
-                        ? 'max-width: 100%; max-height:min(320px, 46dvh);'
+                        ? 'max-width:min(156px, 100%); max-height:156px;'
                         : '';
                     const customEmojiImgStyle = isCustomEmojiImage
-                        ? 'display: block; max-width: 100%; max-height:min(320px, 46dvh); width: auto; height: auto; object-fit: contain;'
+                        ? 'display: block; max-width:100%; max-height:156px; width:auto; height:auto; object-fit:contain;'
                         : '';
                     messageBody = `<div class="message-image-box ${isCustomEmojiImage ? 'message-image-box-custom-emoji' : ''}" style="position: relative; display: inline-block; line-height: 0; ${customEmojiBoxStyle}"><img src="${safeImageContent}" class="message-image" style="${customEmojiImgStyle}"></div>`;
                 }
@@ -2824,8 +2835,8 @@ renderChatRoom(chat) {
                 if (matchedCustomEmoji && matchedCustomEmoji.image) {
                     // 匹配到了用户自定义表情，直接渲染本地图片，跳过 ALAPI！
                     messageBody = `
-                    <div class="message-sticker-box" style="line-height:0; display:inline-block; max-width:100%; max-height:min(320px, 46dvh);">
-                        <img src="${this.escapeInlineStickerAttr(matchedCustomEmoji.image)}" alt="${this._escapeHtml(matchedCustomEmoji.name)}" style="display:block; max-width:100%; max-height:min(320px, 46dvh); width:auto; height:auto; border-radius:8px; object-fit:contain;">
+                    <div class="message-sticker-box" style="line-height:0; display:inline-block; max-width:min(156px, 100%); max-height:156px;">
+                        <img src="${this.escapeInlineStickerAttr(matchedCustomEmoji.image)}" alt="${this._escapeHtml(matchedCustomEmoji.name)}" style="display:block; max-width:100%; max-height:156px; width:auto; height:auto; border-radius:8px; object-fit:contain;">
                     </div>`;
                     break;
                 }
@@ -2839,7 +2850,7 @@ renderChatRoom(chat) {
                         data-keyword="${this.escapeInlineStickerAttr(stickerKeyword)}"
                         data-fallback-size="56"
                         data-emoji-size="24"
-                        style="display:inline-flex;align-items:center;justify-content:center;max-width:100%;max-height:min(320px, 46dvh);background:transparent;padding:0;">
+                        style="display:inline-flex;align-items:center;justify-content:center;max-width:min(156px, 100%);max-height:156px;background:transparent;padding:0;">
                         ${this.buildStickerKeywordFallbackMarkup(stickerKeyword, 56)}
                     </span>
                 </div>`;
@@ -3378,9 +3389,37 @@ renderChatRoom(chat) {
         if (targetChatId && activeChatId && activeChatId !== targetChatId) return null;
 
         const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : null;
-        return currentView?.querySelector?.('#chat-messages')
+        const escapedChatId = this._escapeCssIdentifier(targetChatId);
+        const selector = targetChatId
+            ? `#chat-messages[data-chat-id="${escapedChatId}"]`
+            : '#chat-messages';
+        return currentView?.querySelector?.(selector)
+            || document.querySelector(`.phone-view-current ${selector}`)
+            || currentView?.querySelector?.('#chat-messages')
             || document.querySelector('.phone-view-current #chat-messages')
             || document.getElementById('chat-messages');
+    }
+
+    _getCurrentChatRoom(chatId = null) {
+        const targetChatId = String(chatId || this.app.currentChat?.id || '').trim();
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : null;
+        if (targetChatId) {
+            const selector = `.chat-room[data-chat-id="${this._escapeCssIdentifier(targetChatId)}"]`;
+            const matched = currentView?.querySelector?.(selector)
+                || document.querySelector(`.phone-view-current ${selector}`);
+            if (matched) return matched;
+        }
+        return currentView?.querySelector?.('.chat-room')
+            || document.querySelector('.phone-view-current .chat-room')
+            || document.querySelector('.chat-room');
+    }
+
+    _escapeCssIdentifier(value) {
+        const text = String(value || '');
+        if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+            return CSS.escape(text);
+        }
+        return text.replace(/["\\]/g, '\\$&');
     }
 
     _refreshVisibleChatMessages(chatId) {
@@ -4764,8 +4803,8 @@ renderChatRoom(chat) {
         const safeUrl = String(imageUrl || '');
         const safeKeyword = this.escapeInlineStickerAttr(keyword);
         const imageSize = Number(node.dataset.imageSize) || 0;
-        const maxImageSize = imageSize > 0 ? `${Math.max(20, imageSize)}px` : '100%';
-        const maxImageHeight = imageSize > 0 ? `${Math.max(20, imageSize)}px` : 'min(320px, 46dvh)';
+        const maxImageSize = imageSize > 0 ? `${Math.max(20, imageSize)}px` : 'min(156px, 100%)';
+        const maxImageHeight = imageSize > 0 ? `${Math.max(20, imageSize)}px` : '156px';
         node.style.background = 'transparent';
         node.style.padding = '0';
         node.style.minWidth = '0';
