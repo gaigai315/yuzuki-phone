@@ -2078,7 +2078,7 @@ export class HoneyView {
         `;
     }
 
-    _buildSceneRetagPrompt(scene = {}, oldPrompt = '') {
+    _buildSceneRetagPrompt(scene = {}) {
         const safe = (value, maxLen = 1200) => String(value || '').trim().slice(0, maxLen);
         const comments = (Array.isArray(scene.comments) ? scene.comments : [])
             .map(item => typeof item === 'string'
@@ -2117,18 +2117,14 @@ export class HoneyView {
             '',
             comments.length ? `【最新评论】\n${comments.join('\n')}` : '【最新评论】\n暂无',
             userChats.length ? `【用户弹幕/互动】\n${userChats.join('\n')}` : '【用户弹幕/互动】\n暂无',
-            gifts.length ? `【打赏记录】\n${gifts.join('\n')}` : '【打赏记录】\n暂无',
-            '',
-            '【需要覆盖的旧 tag】',
-            safe(oldPrompt, 1200) || '无'
+            gifts.length ? `【打赏记录】\n${gifts.join('\n')}` : '【打赏记录】\n暂无'
         ].join('\n');
     }
 
     async _retagCurrentSceneNaiPrompt(sourceRoot = null) {
         if (this._isRetaggingSceneNai) return;
         const scene = this.currentSceneData || {};
-        const oldPrompt = this._resolveSceneNaiPrompt(scene);
-        if (!oldPrompt) {
+        if (!this._resolveSceneNaiPrompt(scene)) {
             this.app?.phoneShell?.showNotification?.('蜜语', '当前直播没有可重筛的 NAI 提示词', '⚠️');
             return;
         }
@@ -2155,7 +2151,7 @@ export class HoneyView {
             if (worldbookMessage) messages.push(worldbookMessage);
             messages.push({
                 role: 'user',
-                content: this._buildSceneRetagPrompt(scene, oldPrompt),
+                content: this._buildSceneRetagPrompt(scene),
                 isPhoneMessage: true
             });
 
