@@ -3376,6 +3376,37 @@ body.phone-input-active .honey-page-live .honey-input-bar {
     letter-spacing: 0.2px;
 }
 
+.honey-scene-tag-history-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px 10px 0;
+}
+
+.honey-scene-tag-history-retag {
+    min-height: 24px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 204, 228, 0.48);
+    background: rgba(255, 154, 200, 0.18);
+    color: #fff4fa !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 0 10px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.honey-scene-tag-history-retag:disabled {
+    opacity: 0.62;
+    cursor: wait;
+}
+
+.honey-scene-tag-history-retag i {
+    font-size: 10px;
+}
+
 .honey-scene-tag-history-close {
     width: 22px;
     height: 22px;

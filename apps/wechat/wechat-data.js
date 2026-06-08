@@ -2116,7 +2116,28 @@ export class WechatData {
         }
 
         // 🔥 将消息真正塞入内存
-        this.data.messages[chatId].push(message);
+        const shouldOrderedInsert = message.fromMainChatTag
+            && message.tavernMessageIndex !== undefined
+            && message.batchId
+            && Number.isFinite(Number(message.mainChatOrder));
+        if (shouldOrderedInsert) {
+            const nextOrder = Number(message.mainChatOrder);
+            let insertIndex = this.data.messages[chatId].length;
+            for (let i = 0; i < this.data.messages[chatId].length; i += 1) {
+                const existing = this.data.messages[chatId][i];
+                if (!existing?.fromMainChatTag) continue;
+                if (Number(existing.tavernMessageIndex) !== Number(message.tavernMessageIndex)) continue;
+                if (String(existing.batchId || '') !== String(message.batchId || '')) continue;
+                const existingOrder = Number(existing.mainChatOrder);
+                if (Number.isFinite(existingOrder) && existingOrder > nextOrder) {
+                    insertIndex = i;
+                    break;
+                }
+            }
+            this.data.messages[chatId].splice(insertIndex, 0, message);
+        } else {
+            this.data.messages[chatId].push(message);
+        }
 
         // 🔥 同步更新聊天列表的预览
         chat = this.getChat(chatId);

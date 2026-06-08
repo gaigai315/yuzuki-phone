@@ -106,6 +106,7 @@ if (window.GGP_Loaded) {
     // 🔥 防重放护盾：仅允许被显式标记的旧楼层重新解析（用于 Swipe/Regenerate）
     const _forcedReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
     const _exactReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
+    const _pendingPromptCleanupFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
 
     function ensureGamesCSSPreloaded() {
         if (_gamesCssPromise) return _gamesCssPromise;
@@ -226,6 +227,32 @@ if (window.GGP_Loaded) {
         }
         _exactReplayFloors.delete(key);
         return true;
+    }
+
+    function markPromptCleanupFloor(floor, ttlMs = 180000, chatId = null) {
+        const key = _makeForcedReplayKey(floor, chatId);
+        if (!key) return;
+        const expireAt = Date.now() + Math.max(5000, Number.parseInt(ttlMs, 10) || 180000);
+        _pendingPromptCleanupFloors.set(key, expireAt);
+    }
+
+    function consumePromptCleanupFloors(chatId = null) {
+        const now = Date.now();
+        const ctx = getContext?.();
+        const safeChatId = String(chatId || ctx?.chatId || 'default').trim() || 'default';
+        const prefix = `${safeChatId}:`;
+        const floors = [];
+        for (const [key, expire] of _pendingPromptCleanupFloors.entries()) {
+            if (!Number.isFinite(expire) || expire <= now) {
+                _pendingPromptCleanupFloors.delete(key);
+                continue;
+            }
+            if (!key.startsWith(prefix)) continue;
+            const floor = Number.parseInt(key.slice(prefix.length), 10);
+            if (Number.isFinite(floor) && floor >= 0) floors.push(floor);
+            _pendingPromptCleanupFloors.delete(key);
+        }
+        return Array.from(new Set(floors)).sort((a, b) => a - b);
     }
 
     function checkBetaLock() {
@@ -5557,6 +5584,7 @@ if (window.GGP_Loaded) {
                         contact: currentContact,
                         chatType: currentChatType,
                         chatTypeSource: currentChatTypeSource,
+                        sourceIndex: match.index,
                         date: currentDate || textStoryTime?.date || '',
                         weekday: currentWeekday || (
                             (!currentDate || normalizeWechatDateText(currentDate) === normalizeWechatDateText(textStoryTime?.date)) ? textStoryTime?.weekday : ''
@@ -6244,6 +6272,7 @@ if (window.GGP_Loaded) {
                     batchId: data.batchId,                 // 🔥 传入批次ID
                     isHistoryReplay: data.isHistoryReplay, // 🔥 传入历史回放标记
                     fromMainChatTag: true,                 // 🔥 标记来自正文解析，用于流式碎片清洗
+                    mainChatOrder: ((Number.isFinite(data.sourceIndex) ? data.sourceIndex : 0) * 100000) + index,
                     amount: msg.amount,
                     desc: msg.desc,
                     wish: msg.wish,
@@ -6586,7 +6615,7 @@ if (window.GGP_Loaded) {
     }
 
     //  新增：处理用户主动在正文发送的 <回复xxx> 标签 (兼顾转义、换行与终极防 F5 刷新复读)
-    function processUserReplyTags(text, tavernIndex, batchId) {
+    function processUserReplyTags(text, tavernIndex, batchId, options = {}) {
         if (!text) return;
 
         // 兼容酒馆原生 < > 和被转义的 &lt; &gt;，只还原 <回复> 标签边界，避免正文 HTML 污染微信窗口
@@ -6597,6 +6626,7 @@ if (window.GGP_Loaded) {
         while ((match = replyRegex.exec(replySource)) !== null) {
             const contactName = match[1].trim();
             let rawContent = match[2];
+            const sourceIndex = Number.isFinite(options.sourceIndex) ? options.sourceIndex : match.index;
 
             if (!contactName || !rawContent) continue;
 
@@ -6745,7 +6775,7 @@ if (window.GGP_Loaded) {
                     ? wechatData.getCustomEmojis()
                     : [];
 
-                lines.forEach(line => {
+                lines.forEach((line, lineIndex) => {
                     const trimmedLine = line.trim();
                     if (!trimmedLine) return;
 
@@ -6791,7 +6821,8 @@ if (window.GGP_Loaded) {
                         avatar: wechatData.getUserInfo().avatar || '',
                         tavernMessageIndex: tavernIndex, // 🔥 传入楼层索引
                         batchId: batchId,                // 🔥 传入批次ID
-                        fromMainChatTag: true            // 🔥 标记来自正文解析
+                        fromMainChatTag: true,           // 🔥 标记来自正文解析
+                        mainChatOrder: (sourceIndex * 100000) + lineIndex
                     };
 
                     // 与微信线上逻辑对齐：
@@ -6844,6 +6875,48 @@ if (window.GGP_Loaded) {
                 console.error('❌ 解析用户<回复>标签失败:', err);
             });
         }
+    }
+
+    function processWechatLikeTagsInSourceOrder(text, tavernIndex, batchId, isHistoryReplay = false, exactReplayForMessage = false) {
+        const sourceText = String(text || '');
+        if (!sourceText) return;
+
+        const tasks = [];
+        const replySource = decodePhoneTagBoundaryEntities(sourceText, ['回复']);
+        const replyRegex = /<回复([^>]+?)>[\s\S]*?<\/回复\1>/gi;
+        let replyMatch;
+        while ((replyMatch = replyRegex.exec(replySource)) !== null) {
+            tasks.push({
+                kind: 'reply',
+                index: replyMatch.index,
+                raw: replyMatch[0]
+            });
+        }
+
+        const wechatTagDataList = parseLightweightWechatTag(sourceText);
+        wechatTagDataList.forEach((wechatTagData) => {
+            if (wechatTagData?.type === 'empty') return;
+            tasks.push({
+                kind: 'wechat',
+                index: Number.isFinite(wechatTagData.sourceIndex) ? wechatTagData.sourceIndex : Number.MAX_SAFE_INTEGER,
+                data: wechatTagData
+            });
+        });
+
+        tasks
+            .sort((a, b) => a.index - b.index)
+            .forEach((task) => {
+                if (task.kind === 'reply') {
+                    processUserReplyTags(task.raw, tavernIndex, batchId, { sourceIndex: task.index });
+                    return;
+                }
+                if (task.kind === 'wechat' && task.data) {
+                    task.data.isHistoryReplay = isHistoryReplay || exactReplayForMessage;
+                    task.data.tavernMessageIndex = tavernIndex;
+                    task.data.batchId = batchId;
+                    handlePhoneTag(task.data);
+                }
+            });
     }
 
     function onMessageReceived(messageId) {
@@ -6940,18 +7013,7 @@ if (window.GGP_Loaded) {
             if (message.is_user) {
                 const listenUserMessages = isPhoneUserMessageListenerEnabled();
                 if (isPhoneFeatureEnabled() && !isHistoryReplay && (listenUserMessages || hasExplicitUserReplyTag(text) || hasExplicitWechatTag(text))) {
-                    processUserReplyTags(text, index, currentBatchId); // 🔥 传入 index 和 batchId
-                    const userWechatTagDataList = parseLightweightWechatTag(text);
-                    if (userWechatTagDataList.length > 0) {
-                        userWechatTagDataList.forEach(wechatTagData => {
-                            if (wechatTagData.type !== 'empty') {
-                                wechatTagData.isHistoryReplay = true;
-                                wechatTagData.tavernMessageIndex = index;
-                                wechatTagData.batchId = currentBatchId;
-                                handlePhoneTag(wechatTagData);
-                            }
-                        });
-                    }
+                    processWechatLikeTagsInSourceOrder(text, index, currentBatchId, true, false);
                 }
                 // 用户楼层同样参与微博自动触发判断
                 if (listenUserMessages) {
@@ -6985,7 +7047,7 @@ if (window.GGP_Loaded) {
 
                 // 🔥 新增：让 AI 也能使用 <回复xx> 标签替用户发消息
                 if (!isHistoryReplay) {
-                    processUserReplyTags(text, index, currentBatchId); // 🔥 传入 index 和 batchId
+                    processWechatLikeTagsInSourceOrder(text, index, currentBatchId, isHistoryReplay, exactReplayForMessage);
                     processMofoTags(text, { source: 'assistant', messageIndex: index }).then(updates => {
                         // 只要有魔坊条目匹配到更新，优先弹 changed 的；否则弹第一个匹配项
                         if (!Array.isArray(updates) || updates.length === 0) return;
@@ -6995,19 +7057,6 @@ if (window.GGP_Loaded) {
                         }
                     }).catch(e => console.warn('Mofo tag process error:', e));
                 }
-                // 解析微信标签
-                const wechatTagDataList = parseLightweightWechatTag(text);
-                if (wechatTagDataList.length > 0) {
-                    wechatTagDataList.forEach(wechatTagData => {
-                        if (wechatTagData.type !== 'empty') {
-                            wechatTagData.isHistoryReplay = isHistoryReplay || exactReplayForMessage;
-                            wechatTagData.tavernMessageIndex = index;
-                            wechatTagData.batchId = currentBatchId; // 🔥 传入批次ID
-                            handlePhoneTag(wechatTagData);
-                        }
-                    });
-                }
-
                 // 兼容旧版 <Phone> 标签
                 const commands = parsePhoneCommands(text);
                 commands.forEach(cmd => executePhoneCommand(cmd));
@@ -8336,12 +8385,15 @@ if (window.GGP_Loaded) {
                 if (context.event_types.MESSAGE_SWIPED) {
                     context.eventSource.on(context.event_types.MESSAGE_SWIPED, function (id) {
                         markForcedReplayFloor(id, 180000);
+                        markPromptCleanupFloor(id, 180000);
                         
                         // 第一步：雷霆手段！只要发生滑动，立刻、无条件斩杀当前楼层的旧微信数据！
                         try {
                             const wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                             let hasRolledBack = false;
-                            if (wechatDataInstance && typeof wechatDataInstance.rollbackToFloor === 'function') {
+                            if (wechatDataInstance && typeof wechatDataInstance.removeMainChatTagMessagesAtFloor === 'function') {
+                                hasRolledBack = wechatDataInstance.removeMainChatTagMessagesAtFloor(id);
+                            } else if (wechatDataInstance && typeof wechatDataInstance.rollbackToFloor === 'function') {
                                 hasRolledBack = wechatDataInstance.rollbackToFloor(id);
                             }
                             // 🔥 终极防闪退保护
@@ -8377,6 +8429,15 @@ if (window.GGP_Loaded) {
                     });
                 }
 
+                $(document).on('click', '.swipe_left, .swipe_right', function () {
+                    const mesEl = $(this).closest('.mes');
+                    const mesId = parseInt(mesEl.attr('mesid'), 10);
+                    if (!Number.isNaN(mesId)) {
+                        markForcedReplayFloor(mesId, 180000);
+                        markPromptCleanupFloor(mesId, 180000);
+                    }
+                });
+
                 // 🔥 监听编辑按钮点击，退出编辑后重新隐藏标签；保存正文编辑时精确重放该楼层微信标签
                 $(document).on('click', '.mes_edit_done, .mes_edit_ok', function () {
                     const mesEl = $(this).closest('.mes');
@@ -8409,6 +8470,7 @@ if (window.GGP_Loaded) {
                         const mesId = parseInt(mesEl.attr('mesid'), 10);
                         if (!isNaN(mesId)) {
                             markForcedReplayFloor(mesId, 180000);
+                            markPromptCleanupFloor(mesId, 180000);
                             setTimeout(() => {
                                 try {
                                     const wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
@@ -8537,10 +8599,29 @@ if (window.GGP_Loaded) {
                                 if (ctx && ctx.chat) {
                                     const targetFloor = ctx.chat.length;
 
-                                    const wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
+                                    let hasRolledBack = false;
+                                    const cleanupFloors = consumePromptCleanupFloors(ctx.chatId);
+                                    let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
+                                    if (!wechatDataInstance && storage) {
+                                        try {
+                                            const module = await import('./apps/wechat/wechat-data.js');
+                                            if (!window.VirtualPhone) window.VirtualPhone = {};
+                                            window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
+                                            wechatDataInstance = window.VirtualPhone.cachedWechatData;
+                                        } catch (e) {
+                                            console.warn('[手机插件] 请求前初始化微信数据失败，跳过微信楼层清理:', e);
+                                        }
+                                    }
+                                    if (wechatDataInstance && typeof wechatDataInstance.removeMainChatTagMessagesAtFloor === 'function') {
+                                        cleanupFloors.forEach((floor) => {
+                                            if (floor <= targetFloor) {
+                                                hasRolledBack = wechatDataInstance.removeMainChatTagMessagesAtFloor(floor) || hasRolledBack;
+                                            }
+                                        });
+                                    }
                                     if (wechatDataInstance && typeof wechatDataInstance.rollbackToFloor === 'function') {
                                         // 物理抹除：以真实的酒馆将要生成的楼层为准，彻底斩除未来废案！
-                                        const hasRolledBack = wechatDataInstance.rollbackToFloor(targetFloor);
+                                        hasRolledBack = wechatDataInstance.rollbackToFloor(targetFloor) || hasRolledBack;
 
                                         // 🔥 终极防闪退保护：只有真正删除了废案，并且【当前屏幕上没有通话弹窗】时，才允许刷新界面！
                                         if (hasRolledBack && window.currentWechatApp) {

@@ -68,6 +68,7 @@ export class HoneyView {
         this._isGiftPickerOpen = false;
         this._lastLiveTurnRetry = null;
         this._isSceneTagHistoryOpen = false;
+        this._isRetaggingSceneNai = false;
         this._restoreSessionState();
         this._loadCSS();
     }
@@ -1901,7 +1902,9 @@ export class HoneyView {
                 id: String(item.id || `${ts}_${idx}`),
                 ts,
                 prompt,
-                source: String(item.source || 'ai').trim() || 'ai'
+                source: String(item.source || 'ai').trim() || 'ai',
+                topicKey: String(item.topicKey || '').trim(),
+                topicTitle: String(item.topicTitle || '').trim()
             });
         });
         output.sort((a, b) => a.ts - b.ts);
@@ -1959,6 +1962,45 @@ export class HoneyView {
             topicTitle: String(topicTitle || '').trim()
         }];
         return this._filterSceneTagHistoryByTopic(next, topicKey, topicTitle).slice(-60);
+    }
+
+    _replaceLatestSceneNaiTagHistoryForTopic(history = [], prompt = '', {
+        source = 'ai_retag',
+        topicKey = '',
+        topicTitle = ''
+    } = {}) {
+        const safePrompt = String(prompt || '').trim();
+        const safeHistory = this._normalizeSceneNaiTagHistory(history);
+        if (!safePrompt) return safeHistory;
+        const safeKey = String(topicKey || '').trim().toLowerCase();
+        const safeTitle = String(topicTitle || '').trim();
+        let targetIndex = -1;
+        for (let i = safeHistory.length - 1; i >= 0; i -= 1) {
+            const itemKey = String(safeHistory[i]?.topicKey || '').trim().toLowerCase();
+            const itemTitle = String(safeHistory[i]?.topicTitle || '').trim();
+            if ((safeKey && itemKey && itemKey === safeKey)
+                || (!safeKey && safeTitle && itemTitle && itemTitle === safeTitle)
+                || (!itemKey && !itemTitle)) {
+                targetIndex = i;
+                break;
+            }
+        }
+        if (targetIndex < 0 && safeHistory.length > 0) targetIndex = safeHistory.length - 1;
+
+        const nextItem = {
+            id: `${Date.now()}_${safeHistory.length + 1}`,
+            ts: Date.now(),
+            prompt: safePrompt,
+            source: String(source || 'ai_retag').trim() || 'ai_retag',
+            topicKey: String(topicKey || '').trim(),
+            topicTitle: String(topicTitle || '').trim()
+        };
+        if (targetIndex >= 0) {
+            nextItem.id = String(safeHistory[targetIndex]?.id || nextItem.id);
+            safeHistory[targetIndex] = nextItem;
+            return safeHistory.slice(-60);
+        }
+        return [...safeHistory, nextItem].slice(-60);
     }
 
     _formatSceneTagHistoryTime(ts = 0) {
@@ -2022,12 +2064,144 @@ export class HoneyView {
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
+                    <div class="honey-scene-tag-history-actions">
+                        <button class="honey-scene-tag-history-retag" id="honey-scene-tag-history-retag" type="button" ${this._isRetaggingSceneNai ? 'disabled' : ''}>
+                            <i class="fa-solid ${this._isRetaggingSceneNai ? 'fa-spinner fa-spin' : 'fa-arrows-rotate'}"></i>
+                            <span>${this._isRetaggingSceneNai ? '重筛中' : '重筛最新Tag'}</span>
+                        </button>
+                    </div>
                     <div class="honey-scene-tag-history-list" id="honey-scene-tag-history-list">
                         ${this._buildSceneTagHistoryPanelInnerHtml(sceneData)}
                     </div>
                 </div>
             </div>
         `;
+    }
+
+    _buildSceneRetagPrompt(scene = {}, oldPrompt = '') {
+        const safe = (value, maxLen = 1200) => String(value || '').trim().slice(0, maxLen);
+        const comments = (Array.isArray(scene.comments) ? scene.comments : [])
+            .map(item => typeof item === 'string'
+                ? item
+                : `${item?.user || item?.name || '观众'}：${item?.text || item?.content || ''}`)
+            .map(item => safe(item, 160))
+            .filter(Boolean)
+            .slice(-8);
+        const userChats = (Array.isArray(scene.userChats) ? scene.userChats : [])
+            .map(item => typeof item === 'string'
+                ? item
+                : `${item?.sender || item?.name || '用户'}：${item?.text || item?.content || item?.message || ''}`)
+            .map(item => safe(item, 180))
+            .filter(Boolean)
+            .slice(-8);
+        const gifts = (Array.isArray(scene.gifts) ? scene.gifts : [])
+            .map(item => safe(typeof item === 'string' ? item : JSON.stringify(item), 120))
+            .filter(Boolean)
+            .slice(-6);
+        return [
+            '请只重写当前蜜语直播画面的 NovelAI 英文生图 tag。',
+            '要求：',
+            '1. 只改写画面 tag，不续写剧情，不输出解释。',
+            '2. 必须结合当前直播剧情、主播、标题、评论/弹幕互动，生成更贴合这一帧的英文逗号分隔 NAI tags。',
+            '3. 不要输出中文句子，不要输出 Markdown，不要输出多余内容。',
+            '4. 最终只输出一行，格式必须是：[画面]：[NAI英文tag提示词: tag1, tag2, tag3]',
+            '',
+            '【当前直播信息】',
+            `主播：${safe(scene.host, 80) || '未知'}`,
+            `标题：${safe(scene.title || scene._topicTitle, 120) || '未知'}`,
+            `分类：${safe(scene.tag || scene.category || scene.recommendCategory, 80) || '无'}`,
+            `简介：${safe(scene.intro, 400) || '无'}`,
+            '',
+            '【当前直播剧情】',
+            safe(scene.description, 1800) || '暂无剧情正文',
+            '',
+            comments.length ? `【最新评论】\n${comments.join('\n')}` : '【最新评论】\n暂无',
+            userChats.length ? `【用户弹幕/互动】\n${userChats.join('\n')}` : '【用户弹幕/互动】\n暂无',
+            gifts.length ? `【打赏记录】\n${gifts.join('\n')}` : '【打赏记录】\n暂无',
+            '',
+            '【需要覆盖的旧 tag】',
+            safe(oldPrompt, 1200) || '无'
+        ].join('\n');
+    }
+
+    async _retagCurrentSceneNaiPrompt(sourceRoot = null) {
+        if (this._isRetaggingSceneNai) return;
+        const scene = this.currentSceneData || {};
+        const oldPrompt = this._resolveSceneNaiPrompt(scene);
+        if (!oldPrompt) {
+            this.app?.phoneShell?.showNotification?.('蜜语', '当前直播没有可重筛的 NAI 提示词', '⚠️');
+            return;
+        }
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager || typeof apiManager.callAI !== 'function') {
+            this.app?.phoneShell?.showNotification?.('蜜语', 'API Manager 未初始化', '❌');
+            return;
+        }
+
+        this._isRetaggingSceneNai = true;
+        const retagBtn = sourceRoot?.querySelector?.('#honey-scene-tag-history-retag');
+        if (retagBtn) {
+            retagBtn.disabled = true;
+            retagBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>重筛中</span>';
+        }
+
+        try {
+            const messages = [{
+                role: 'system',
+                content: '你是蜜语 APP 的 NovelAI tag 重写器。你只能按用户指定格式输出一行新的画面 tag，不得输出解释、剧情、寒暄或其他内容。',
+                isPhoneMessage: true
+            }];
+            const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('honey');
+            if (worldbookMessage) messages.push(worldbookMessage);
+            messages.push({
+                role: 'user',
+                content: this._buildSceneRetagPrompt(scene, oldPrompt),
+                isPhoneMessage: true
+            });
+
+            const result = await apiManager.callAI(messages, {
+                max_tokens: 500,
+                preserve_roles: false,
+                appId: 'honey'
+            });
+            if (!result?.success) throw new Error(result?.error || 'AI 返回为空');
+            const rawText = String(result.summary || result.content || result.text || '').trim();
+            const nextPrompt = String(this.app?.honeyData?._extractNaiPrompt?.(rawText) || '').trim();
+            if (!nextPrompt) throw new Error('AI 未返回有效的 [画面] NAI tag');
+
+            const topicKey = this._getActiveTopicKey();
+            const topicTitle = this._getActiveTopicTitle();
+            const nextHistory = this._replaceLatestSceneNaiTagHistoryForTopic(
+                this._getSceneNaiTagHistory(scene),
+                nextPrompt,
+                { source: 'ai_retag', topicKey, topicTitle }
+            );
+            this.currentSceneData = {
+                ...(this.currentSceneData || scene),
+                naiPrompt: nextPrompt,
+                imageGenerationPrompt: nextPrompt,
+                naiTagHistory: nextHistory,
+                _topicTitle: topicTitle,
+                _topicKey: topicKey
+            };
+            this._persistCurrentScene();
+
+            const listEl = sourceRoot?.querySelector?.('#honey-scene-tag-history-list');
+            if (listEl) {
+                listEl.innerHTML = this._buildSceneTagHistoryPanelInnerHtml(this.currentSceneData);
+            }
+            this.app?.phoneShell?.showNotification?.('蜜语', '最新 NAI tag 已重筛并覆盖', '✅');
+        } catch (err) {
+            console.error('[Honey] 重筛 NAI tag 失败:', err);
+            this.app?.phoneShell?.showNotification?.('重筛失败', err?.message || String(err || 'AI 请求失败'), '❌');
+        } finally {
+            this._isRetaggingSceneNai = false;
+            const nextRetagBtn = sourceRoot?.querySelector?.('#honey-scene-tag-history-retag');
+            if (nextRetagBtn) {
+                nextRetagBtn.disabled = false;
+                nextRetagBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><span>重筛最新Tag</span>';
+            }
+        }
     }
 
     _canRetryLastLiveTurn() {
@@ -3307,6 +3481,11 @@ export class HoneyView {
         }
         root.querySelector('#honey-scene-tag-history-close')?.addEventListener('click', closeSceneTagHistory);
         root.querySelector('#honey-scene-tag-history-backdrop')?.addEventListener('click', closeSceneTagHistory);
+        root.querySelector('#honey-scene-tag-history-retag')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._retagCurrentSceneNaiPrompt(root);
+        });
         root.querySelector('#honey-scene-tag-history-panel')?.addEventListener('click', (e) => {
             e.stopPropagation();
         });
