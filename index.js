@@ -9930,18 +9930,34 @@ if (window.GGP_Loaded) {
 
                                     const appendWechatOnlineToOfflineHintToLastUserMessage = () => {
                                         try {
-                                            const pending = window.VirtualPhone?._pendingWechatOnlineToOfflineHint;
+                                            const markerKey = 'st_phone_pending_wechat_online_to_offline_hint';
+                                            const clearPending = () => {
+                                                if (window.VirtualPhone?._pendingWechatOnlineToOfflineHint) {
+                                                    delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
+                                                }
+                                                try {
+                                                    sessionStorage.removeItem(markerKey);
+                                                } catch (_) {}
+                                            };
+                                            let pending = window.VirtualPhone?._pendingWechatOnlineToOfflineHint;
+                                            if (!pending?.active) {
+                                                try {
+                                                    pending = JSON.parse(sessionStorage.getItem(markerKey) || 'null');
+                                                } catch (_) {
+                                                    pending = null;
+                                                }
+                                            }
                                             if (!pending?.active) return;
 
                                             const createdAt = Number(pending.createdAt || 0);
                                             if (createdAt && Date.now() - createdAt > 2 * 60 * 1000) {
-                                                delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
+                                                clearPending();
                                                 return;
                                             }
 
                                             const targetIndex = findLastNormalUserMessageIndex();
                                             if (targetIndex < 0) {
-                                                delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
+                                                clearPending();
                                                 return;
                                             }
 
@@ -9953,11 +9969,14 @@ if (window.GGP_Loaded) {
                                             const hintRegex = /\n*\s*<线上转下线>[\s\S]*?<\/线上转下线>/g;
                                             const cleaned = content.replace(hintRegex, '').trimEnd();
                                             messages[targetIndex] = cloneSplitMessage(msg, `${cleaned}\n\n${hintBlock}`.trim());
-                                            delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
+                                            clearPending();
                                         } catch (e) {
                                             if (window.VirtualPhone?._pendingWechatOnlineToOfflineHint) {
                                                 delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
                                             }
+                                            try {
+                                                sessionStorage.removeItem('st_phone_pending_wechat_online_to_offline_hint');
+                                            } catch (_) {}
                                             console.warn('⚠️ [手机] 追加线上转下线提示失败:', e);
                                         }
                                     };

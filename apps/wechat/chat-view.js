@@ -8336,13 +8336,22 @@ renderChatRoom(chat) {
 
             // 🔥 新增：如果触发了线下联动，自动关闭手机并点击酒馆发送按钮
             if (triggerOffline) {
-                if (!window.VirtualPhone) window.VirtualPhone = {};
-                window.VirtualPhone._pendingWechatOnlineToOfflineHint = {
-                    active: true,
-                    chatId: savedChatId,
-                    chatName: savedChatName,
-                    createdAt: Date.now()
+                const markWechatOnlineToOfflineHintPending = () => {
+                    const payload = {
+                        active: true,
+                        chatId: savedChatId,
+                        chatName: savedChatName,
+                        createdAt: Date.now()
+                    };
+                    if (!window.VirtualPhone) window.VirtualPhone = {};
+                    window.VirtualPhone._pendingWechatOnlineToOfflineHint = payload;
+                    try {
+                        sessionStorage.setItem('st_phone_pending_wechat_online_to_offline_hint', JSON.stringify(payload));
+                    } catch (e) {
+                        console.warn('⚠️ [微信] 写入线上转线下提示标记失败:', e);
+                    }
                 };
+                markWechatOnlineToOfflineHintPending();
                 setTimeout(() => {
                     // 1. 优雅地关闭手机面板
                     const drawerIcon = document.getElementById('phoneDrawerIcon');
@@ -8363,6 +8372,7 @@ renderChatRoom(chat) {
                         // 🔥 直接点击发送按钮，绝不触发任何 input 事件，完美避开 AutoComplete 报错
                         const sendBtn = document.getElementById('send_but');
                         if (sendBtn) {
+                            markWechatOnlineToOfflineHintPending();
                             sendBtn.click();
                         }
                     }, 500);
