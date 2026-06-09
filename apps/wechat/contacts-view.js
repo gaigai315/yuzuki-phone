@@ -1376,8 +1376,10 @@ export class ContactsView {
                 return;
             }
 
-            const exists = this.app.wechatData.findContactByNameLoose?.(name, { includeChats: false })
-                || this.app.wechatData.getContacts().find(c => c.name === name);
+            const exists = this.app.wechatData.getContacts().find(c =>
+                String(c?.name || '').trim() === name
+                || this.app.wechatData._isSameLookupName?.(c.name, name)
+            );
             if (exists) {
                 this.app.phoneShell.showNotification('提示', '该好友已存在', '⚠️');
                 return;
