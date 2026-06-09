@@ -1494,7 +1494,7 @@ export class HoneyView {
                         <div class="honey-scene-modal-head">
                             <div class="honey-scene-modal-title">直播实况</div>
                             <div class="honey-scene-modal-actions">
-                                <button class="honey-scene-tts-btn honey-scene-retry-btn" id="honey-scene-retry-btn" type="button" title="重新生成本轮回复" aria-label="重新生成本轮回复" ${this._lastLiveTurnRetry ? '' : 'disabled'}>
+                                <button class="honey-scene-tts-btn honey-scene-retry-btn" id="honey-scene-retry-btn" type="button" title="重新生成本轮回复" aria-label="重新生成本轮回复" ${this._canRetryLastLiveTurn() ? '' : 'disabled'}>
                                     <i class="fa-solid fa-rotate-right"></i>
                                 </button>
                                 <button class="honey-scene-tts-btn" id="honey-scene-tts-btn" type="button" title="播放剧情语音" aria-label="播放剧情语音">
@@ -1862,6 +1862,12 @@ export class HoneyView {
         if (sceneModalEl) sceneModalEl.textContent = sceneText;
         const sceneInlineEl = root.querySelector('#honey-ui-scene');
         if (sceneInlineEl) sceneInlineEl.textContent = sceneText;
+        const retryBtn = root.querySelector('#honey-scene-retry-btn');
+        if (retryBtn) {
+            const canRetry = this._canRetryLastLiveTurn();
+            retryBtn.disabled = !canRetry;
+            retryBtn.classList.toggle('is-loading', this._liveSendInFlight && canRetry);
+        }
         const tagHistoryListEl = root.querySelector('#honey-scene-tag-history-list');
         if (tagHistoryListEl) {
             tagHistoryListEl.innerHTML = this._buildSceneTagHistoryPanelInnerHtml(data);
@@ -2202,7 +2208,7 @@ export class HoneyView {
 
     _canRetryLastLiveTurn() {
         const retry = this._lastLiveTurnRetry;
-        if (!retry?.snapshot || !retry.userMessage) return false;
+        if (!retry?.snapshot || typeof retry.snapshot !== 'object') return false;
         const activeTopicTitle = String(this._getActiveTopicTitle() || '').trim();
         const activeTopicKey = String(this._getActiveTopicKey() || '').trim();
         const retryTopicTitle = String(retry.topicTitle || '').trim();
@@ -2211,13 +2217,14 @@ export class HoneyView {
             || (!retryTopicKey && retryTopicTitle && retryTopicTitle === activeTopicTitle);
     }
 
-    _storeLiveTurnRetrySnapshot({ topicTitle = '', topicKey = '', userMessage = '', sceneSnapshot = null } = {}) {
+    _storeLiveTurnRetrySnapshot({ topicTitle = '', topicKey = '', userMessage = '', sceneSnapshot = null, resetSession = false } = {}) {
         const safeMessage = String(userMessage || '').trim();
-        if (!safeMessage || !sceneSnapshot || typeof sceneSnapshot !== 'object') return;
+        if (!sceneSnapshot || typeof sceneSnapshot !== 'object') return;
         this._lastLiveTurnRetry = {
             topicTitle: String(topicTitle || '').trim(),
             topicKey: String(topicKey || '').trim(),
             userMessage: safeMessage,
+            resetSession: resetSession === true,
             snapshot: this._cloneLiveSceneData(sceneSnapshot),
             createdAt: Date.now()
         };
@@ -2256,7 +2263,7 @@ export class HoneyView {
 
         try {
             await this._generateCurrentTopicScene({
-                resetSession: false,
+                resetSession: retry.resetSession === true,
                 notify: false,
                 forceTopicTitle: topicTitle,
                 forceTopicKey: topicKey,
@@ -7998,14 +8005,13 @@ export class HoneyView {
             }
 
             const sceneSnapshotBeforeRequest = JSON.parse(JSON.stringify(workingScene || {}));
-            if (normalizedUserMessage) {
-                this._storeLiveTurnRetrySnapshot({
-                    topicTitle,
-                    topicKey,
-                    userMessage: normalizedUserMessage,
-                    sceneSnapshot: sceneSnapshotBeforeRequest
-                });
-            }
+            this._storeLiveTurnRetrySnapshot({
+                topicTitle,
+                topicKey,
+                userMessage: normalizedUserMessage,
+                sceneSnapshot: sceneSnapshotBeforeRequest,
+                resetSession
+            });
             const restoreSceneSnapshot = () => {
                 const restoredScene = {
                     ...sceneSnapshotBeforeRequest,

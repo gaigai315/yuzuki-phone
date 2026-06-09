@@ -406,33 +406,22 @@ export class PhoneShell {
                     target.style.transition = 'transform 0.25s ease-out';
                     target.style.transform = 'translate3d(100%, 0, 0)';
 
-                    setTimeout(() => {
-                        // 🔥 不在这里重置样式，交由 setContent 智能图层交换接管
-                        // 🔥 先弹出历史栈
-                        if (this.viewHistory.length > 1) {
-                            this.viewHistory.pop();
-                        }
-                        // 触发返回事件，让当前APP处理
-                        window.dispatchEvent(new CustomEvent('phone:swipeBack'));
-                    }, 250);
+                    this._dispatchSwipeBackWithFallback(target);
                 }
             } else if (this.isSwiping && target) {
                 // 滑动距离不够，回弹恢复原位
-                target.style.transition = 'transform 0.2s ease-out';
-                target.style.transform = 'translate3d(0, 0, 0)';
-                if (action === 'close') {
-                    target.style.opacity = '1';
-                }
-
-                setTimeout(() => {
-                    if (target) {
-                        target.style.transition = '';
-                        target.style.transform = '';
-                        target.style.opacity = '';
-                    }
-                }, 200);
+                this._resetSwipeLayer(target, { animate: true, resetOpacity: action === 'close' });
             }
 
+            this.isSwiping = false;
+            this.swipeAction = null;
+            slideTarget = null;
+        }, { passive: true });
+
+        phoneBody.addEventListener('touchcancel', () => {
+            if (slideTarget) {
+                this._resetSwipeLayer(slideTarget, { animate: true, resetOpacity: this.swipeAction === 'close' });
+            }
             this.isSwiping = false;
             this.swipeAction = null;
             slideTarget = null;
@@ -556,30 +545,11 @@ export class PhoneShell {
                     target.style.transition = 'transform 0.25s ease-out';
                     target.style.transform = 'translate3d(100%, 0, 0)';
 
-                    setTimeout(() => {
-                        // 🔥 不在这里重置样式，交由 setContent 智能图层交换接管
-                        // 🔥 先弹出历史栈
-                        if (this.viewHistory.length > 1) {
-                            this.viewHistory.pop();
-                        }
-                        window.dispatchEvent(new CustomEvent('phone:swipeBack'));
-                    }, 250);
+                    this._dispatchSwipeBackWithFallback(target);
                 }
             } else if (this.isSwiping && target) {
                 // 滑动距离不够，回弹恢复原位
-                target.style.transition = 'transform 0.2s ease-out';
-                target.style.transform = 'translate3d(0, 0, 0)';
-                if (action === 'close') {
-                    target.style.opacity = '1';
-                }
-
-                setTimeout(() => {
-                    if (target) {
-                        target.style.transition = '';
-                        target.style.transform = '';
-                        target.style.opacity = '';
-                    }
-                }, 200);
+                this._resetSwipeLayer(target, { animate: true, resetOpacity: action === 'close' });
             }
 
             this.isSwiping = false;
@@ -590,12 +560,59 @@ export class PhoneShell {
 
         document.addEventListener('pointercancel', (e) => {
             if (!isPointerDown || activeSwipePointerId !== e.pointerId) return;
+            if (pointerSlideTarget) {
+                this._resetSwipeLayer(pointerSlideTarget, { animate: true, resetOpacity: this.swipeAction === 'close' });
+            }
             isPointerDown = false;
             this.isSwiping = false;
             this.swipeAction = null;
             pointerSlideTarget = null;
             activeSwipePointerId = null;
         });
+    }
+
+    _resetSwipeLayer(target, { animate = false, resetOpacity = true } = {}) {
+        if (!target || !target.isConnected) return;
+        if (animate) {
+            target.style.transition = 'transform 0.2s ease-out';
+            target.style.transform = 'translate3d(0, 0, 0)';
+            if (resetOpacity) target.style.opacity = '1';
+            setTimeout(() => {
+                if (!target.isConnected) return;
+                target.style.transition = '';
+                target.style.transform = '';
+                if (resetOpacity) target.style.opacity = '';
+            }, 220);
+            return;
+        }
+        target.style.transition = '';
+        target.style.transform = '';
+        if (resetOpacity) target.style.opacity = '';
+    }
+
+    _dispatchSwipeBackWithFallback(target) {
+        const startViewId = target?.getAttribute?.('data-view-id') || '';
+        let poppedView = null;
+        setTimeout(() => {
+            if (this.viewHistory.length > 1) {
+                poppedView = this.viewHistory.pop();
+            }
+            window.dispatchEvent(new CustomEvent('phone:swipeBack'));
+
+            setTimeout(() => {
+                if (!target || !target.isConnected) return;
+                const currentView = this.container?.querySelector('.phone-view-current');
+                const currentViewId = currentView?.getAttribute?.('data-view-id') || '';
+                const transform = String(target.style.transform || '').trim();
+                const isStillShifted = !!transform && !/^translate3d\(\s*0(?:px)?\s*,\s*0(?:px)?\s*,\s*0(?:px)?\s*\)$/i.test(transform);
+                if (currentView === target && currentViewId === startViewId && isStillShifted) {
+                    this._resetSwipeLayer(target, { animate: true, resetOpacity: false });
+                    if (poppedView?.id && !this.viewHistory.some(item => item.id === poppedView.id)) {
+                        this.viewHistory.push(poppedView);
+                    }
+                }
+            }, 550);
+        }, 250);
     }
 
      bindPanelEvents() {

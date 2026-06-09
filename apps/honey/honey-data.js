@@ -225,6 +225,16 @@ export class HoneyData {
             candidates.push(cleaned.slice(0, 1200));
         };
 
+        const screenPromptPattern = /(?:^|\n)\s*[\[【]?\s*画面\s*[\]】]?\s*[:：]\s*/i;
+        const screenPromptMatch = text.match(screenPromptPattern);
+        if (screenPromptMatch && typeof screenPromptMatch.index === 'number') {
+            const rest = text.slice(screenPromptMatch.index + screenPromptMatch[0].length);
+            const endPattern = /(?:^|\n)\s*(?:\[\s*评论区\s*\]|评论区|好友申请|互动记录|榜单|打赏记录|直播剧情描写|剧情面板|直播实况|---\s*热门推荐\s*---|---\s*当前\s*激情直播\s*---)\s*[：:]?/i;
+            const endMatch = rest.match(endPattern);
+            const section = rest.slice(0, endMatch && typeof endMatch.index === 'number' ? endMatch.index : rest.length);
+            push(section);
+        }
+
         [
             /(?:^|\n)\s*[\[【]?\s*画面\s*[\]】]?\s*[:：]\s*[\[【]\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)?\s*[\]】]\s*([^\n]+)/ig,
             /\[\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)\s*[:：]\s*([^\]\n]+)/ig,

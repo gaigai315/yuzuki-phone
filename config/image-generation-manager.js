@@ -1461,6 +1461,218 @@ export class ImageGenerationManager {
         return this._isNovelAIV45Model(config?.model) ? 19 : 58;
     }
 
+    _cleanNovelAIPromptSegment(text) {
+        return String(text || '')
+            .replace(/[，、]/g, ', ')
+            .replace(/\s*,\s*/g, ', ')
+            .replace(/(?:^|,\s*)(?:,+\s*)+/g, ', ')
+            .replace(/,\s*,+/g, ', ')
+            .replace(/^["'“”‘’\s,]+|["'“”‘’\s,]+$/g, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+    }
+
+    _stripNovelAICharacterNameTags(text) {
+        const roleWords = new Set([
+            '1boy', '1girl', '1other', 'mature male', 'adult male', 'adult woman', 'adult female',
+            'young man', 'young woman', 'handsome', 'beautiful', 'male focus', 'female focus'
+        ]);
+        const visualWords = /^(?:long|short|messy|black|white|blonde|brown|silver|red|blue|green|golden|dark|light|open|half|bound|blindfold|shirt|robe|cassock|suit|pants|dress|lingerie|hair|eyes?|smile|gaze|flushed|sweating|panting|looking|holding|grabbing|pinned|kneeling|sitting|standing|leaning|lying|source#|target#|mutual#)/i;
+        return this._cleanNovelAIPromptSegment(text)
+            .split(/\s*,\s*/)
+            .map(item => item.trim())
+            .filter(Boolean)
+            .filter((item, index) => {
+                const lower = item.toLowerCase();
+                if (this._isNovelAIManagedBoilerplateTag(lower)) return false;
+                if (roleWords.has(lower) || visualWords.test(item)) return true;
+                if (/^(?:dragon|tiger|wolf|fox|lion|snake|rabbit|bunny|cat|dog)$/i.test(item)) return false;
+                if (index <= 2 && /^[A-Z][a-z]{2,18}$/.test(item)) return false;
+                return true;
+            })
+            .join(', ');
+    }
+
+    _isNovelAIManagedBoilerplateTag(tag = '') {
+        const lower = String(tag || '').trim().toLowerCase();
+        if (!lower) return false;
+        const managed = new Set([
+            'amazing quality',
+            'very aesthetic',
+            'absurdres',
+            'highres',
+            'best quality',
+            'masterpiece',
+            'anime illustration',
+            'digital illustration',
+            'highly finished',
+            'character study',
+            'photo (medium)'
+        ]);
+        return managed.has(lower);
+    }
+
+    _stripNovelAIManagedBoilerplateTags(text) {
+        return this._cleanNovelAIPromptSegment(text)
+            .split(/\s*,\s*/)
+            .map(item => item.trim())
+            .filter(Boolean)
+            .filter(item => !this._isNovelAIManagedBoilerplateTag(item))
+            .join(', ');
+    }
+
+    _resolveNovelAICharacterPosition(value = '') {
+        const raw = String(value || '').trim().replace(/\s+/g, '');
+        if (!raw) return null;
+
+        const gridMatch = raw.match(/^([a-e])([1-5])$/i);
+        if (gridMatch) {
+            const axis = { a: 0.1, b: 0.3, c: 0.5, d: 0.7, e: 0.9 };
+            return {
+                x: axis[gridMatch[1].toLowerCase()] || 0.5,
+                y: axis[gridMatch[2]] || 0.5
+            };
+        }
+
+        const aliases = new Map([
+            ['中', [0.5, 0.5]],
+            ['中心', [0.5, 0.5]],
+            ['中央', [0.5, 0.5]],
+            ['左', [0.3, 0.5]],
+            ['右', [0.7, 0.5]],
+            ['上', [0.5, 0.3]],
+            ['下', [0.5, 0.7]],
+            ['左上', [0.3, 0.3]],
+            ['上左', [0.3, 0.3]],
+            ['右上', [0.7, 0.3]],
+            ['上右', [0.7, 0.3]],
+            ['左下', [0.3, 0.7]],
+            ['下左', [0.3, 0.7]],
+            ['右下', [0.7, 0.7]],
+            ['下右', [0.7, 0.7]],
+            ['左左', [0.1, 0.5]],
+            ['右右', [0.9, 0.5]],
+            ['上上', [0.5, 0.1]],
+            ['下下', [0.5, 0.9]],
+            ['左左上上', [0.1, 0.1]],
+            ['上上左左', [0.1, 0.1]],
+            ['右右上上', [0.9, 0.1]],
+            ['上上右右', [0.9, 0.1]],
+            ['左左下下', [0.1, 0.9]],
+            ['下下左左', [0.1, 0.9]],
+            ['右右下下', [0.9, 0.9]],
+            ['下下右右', [0.9, 0.9]]
+        ]);
+        if (aliases.has(raw)) {
+            const [x, y] = aliases.get(raw);
+            return { x, y };
+        }
+
+        if (/^[左右上下]+$/.test(raw)) {
+            const clamp = (num) => Math.max(0.1, Math.min(0.9, Math.round(num * 10) / 10));
+            const left = (raw.match(/左/g) || []).length;
+            const right = (raw.match(/右/g) || []).length;
+            const up = (raw.match(/上/g) || []).length;
+            const down = (raw.match(/下/g) || []).length;
+            return {
+                x: clamp(0.5 + (right - left) * 0.2),
+                y: clamp(0.5 + (down - up) * 0.2)
+            };
+        }
+
+        const lower = raw.toLowerCase();
+        const englishAliases = new Map([
+            ['center', [0.5, 0.5]],
+            ['middle', [0.5, 0.5]],
+            ['left', [0.3, 0.5]],
+            ['right', [0.7, 0.5]],
+            ['top', [0.5, 0.3]],
+            ['upper', [0.5, 0.3]],
+            ['bottom', [0.5, 0.7]],
+            ['lower', [0.5, 0.7]],
+            ['upperleft', [0.3, 0.3]],
+            ['topleft', [0.3, 0.3]],
+            ['upperright', [0.7, 0.3]],
+            ['topright', [0.7, 0.3]],
+            ['lowerleft', [0.3, 0.7]],
+            ['bottomleft', [0.3, 0.7]],
+            ['lowerright', [0.7, 0.7]],
+            ['bottomright', [0.7, 0.7]]
+        ]);
+        const englishKey = lower.replace(/[-_\s]+/g, '');
+        if (englishAliases.has(englishKey)) {
+            const [x, y] = englishAliases.get(englishKey);
+            return { x, y };
+        }
+
+        return null;
+    }
+
+    _extractNovelAICharacterPosition(text = '') {
+        let position = null;
+        const content = String(text || '').replace(/\{\s*(?:位置|position)\s*[:：]?\s*([^{}]+?)\s*\}/gi, (match, value) => {
+            if (!position) position = this._resolveNovelAICharacterPosition(value);
+            return '';
+        });
+        return { content, position };
+    }
+
+    _parseNovelAICharacterPromptSyntax(prompt = '', negativePrompt = '') {
+        const source = String(prompt || '');
+        const characters = [];
+        const blockPattern = /\{\s*人物\s*([\s\S]*?)\s*人物\s*\}/g;
+        let match;
+
+        while ((match = blockPattern.exec(source)) && characters.length < 6) {
+            const rawBlock = String(match[1] || '');
+            const positionResult = this._extractNovelAICharacterPosition(rawBlock);
+            let charText = positionResult.content;
+            let charNegative = '';
+            const negativeMatch = charText.match(/(?:^|[,，]\s*)ntags\s*=\s*([\s\S]*)$/i);
+            if (negativeMatch) {
+                charNegative = negativeMatch[1] || '';
+                charText = charText.slice(0, negativeMatch.index);
+            }
+
+            const charCaption = this._stripNovelAICharacterNameTags(charText);
+            const negativeCaption = this._cleanNovelAIPromptSegment(charNegative);
+            if (!charCaption && !negativeCaption) continue;
+            characters.push({
+                charCaption,
+                negativeCaption,
+                center: positionResult.position
+            });
+        }
+
+        if (characters.length === 0) {
+            return {
+                baseCaption: this._cleanNovelAIPromptSegment(source),
+                negativeBaseCaption: this._cleanNovelAIPromptSegment(negativePrompt),
+                characters: [],
+                useCoords: false
+            };
+        }
+
+        const baseCaption = this._stripNovelAIManagedBoilerplateTags(source.replace(blockPattern, ''));
+        return {
+            baseCaption,
+            negativeBaseCaption: this._cleanNovelAIPromptSegment(negativePrompt),
+            characters,
+            useCoords: characters.some(item => item.center)
+        };
+    }
+
+    _buildNovelAICharCaptions(characters = [], key = 'charCaption') {
+        return (Array.isArray(characters) ? characters : [])
+            .map((item) => {
+                const entry = {
+                    char_caption: this._cleanNovelAIPromptSegment(item?.[key] || '')
+                };
+                if (item?.center) entry.centers = [item.center];
+                return entry;
+            });
+    }
+
     async _buildNovelAIPayload(options, config) {
         const appKey = String(options.app || '').trim().toLowerCase();
         const rawPrompt = this._joinPrompt([
@@ -1472,8 +1684,11 @@ export class ImageGenerationManager {
             config.negativePrompt,
             options.negativePrompt
         ]);
-        const prompt = rawPrompt;
-        const negativePrompt = rawNegativePrompt;
+        const parsedV4Prompt = this._isNovelAIV4Model(config.model)
+            ? this._parseNovelAICharacterPromptSyntax(rawPrompt, rawNegativePrompt)
+            : null;
+        const prompt = parsedV4Prompt?.baseCaption || rawPrompt;
+        const negativePrompt = parsedV4Prompt?.negativeBaseCaption || rawNegativePrompt;
         const seed = Number(options.seed ?? config.seed);
         let width = Number(options.width || config.width);
         let height = Number(options.height || config.height);
@@ -1515,18 +1730,18 @@ export class ImageGenerationManager {
                 v4_prompt: {
                     caption: {
                         base_caption: prompt,
-                        char_captions: []
+                        char_captions: this._buildNovelAICharCaptions(parsedV4Prompt?.characters, 'charCaption')
                     },
-                    use_coords: false,
+                    use_coords: parsedV4Prompt?.useCoords === true,
                     use_order: true,
                     legacy_uc: false
                 },
                 v4_negative_prompt: {
                     caption: {
                         base_caption: negativePrompt,
-                        char_captions: []
+                        char_captions: this._buildNovelAICharCaptions(parsedV4Prompt?.characters, 'negativeCaption')
                     },
-                    use_coords: false,
+                    use_coords: parsedV4Prompt?.useCoords === true,
                     use_order: true,
                     legacy_uc: false
                 }
