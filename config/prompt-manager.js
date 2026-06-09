@@ -165,15 +165,19 @@ export class PromptManager {
             ? JSON.parse(JSON.stringify(activePresets))
             : this._loadActivePromptPresets();
         let changed = false;
-        const builtIns = this._getBuiltInPromptPresetsFromDefaults(defaults, 'wechat', 'offline');
-        if (builtIns[0]?.id && !String(active?.wechat?.offline || '').trim()) {
-            if (!active.wechat) active.wechat = {};
-            active.wechat.offline = builtIns[0].id;
-            if (promptTree?.wechat?.offline) {
-                promptTree.wechat.offline.content = builtIns[0].content;
+        [
+            { app: 'wechat', feature: 'offline' },
+            { app: 'honey', feature: 'live' }
+        ].forEach(({ app, feature }) => {
+            const builtIns = this._getBuiltInPromptPresetsFromDefaults(defaults, app, feature);
+            if (!builtIns[0]?.id || String(active?.[app]?.[feature] || '').trim()) return;
+            if (!active[app]) active[app] = {};
+            active[app][feature] = builtIns[0].id;
+            if (promptTree?.[app]?.[feature]) {
+                promptTree[app][feature].content = builtIns[0].content;
             }
             changed = true;
-        }
+        });
         if (changed) this._saveActivePromptPresets(active);
     }
 
@@ -1576,6 +1580,158 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
 - 主播将当下的动作或状态与评论区进行无缝联动（例：一边被撞击得声音破碎，一边看着屏幕上滚动的打赏，用沙哑的嗓音感谢金主）。`,
                     order: 30
                 },
+                liveMale: {
+                    enabled: false,
+                    name: '默认提示词by_茶茶_男性向',
+                    description: '蜜语APP直播与视频生成规则（男性向）',
+                    content: `【蜜语 APP 核心生成规则】
+用户正在观看蜜语APP，你必须作为后台引擎生成APP内容，并强制使用 <Honey> 标签包裹所有内容。
+
+每次回复请严格按照以下结构输出（注意：严禁使用其他格式）：
+<Honey>
+---热门推荐---
+[今日主推]
+标题内容：
+主播昵称：
+内容简介:
+在线人数:
+[其他推荐]（注意：每次生成最少10条以上）
+[单身]
+1.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+2.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+[情侣]
+1.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+2.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+[ASMR]
+1.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+2.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+[角色扮演]
+1.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+2.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+[自定义]
+1.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+2.【标题内容：】【主播昵称：】【在线人数：】【tag:xx/xx】
+---当前激情直播---
+主播：昵称
+今日直播标题：直播标题
+在线人数:xx
+粉丝:xx
+简介：含主播性癖、身材特征（三围/局部特长）、性格、线下价格等
+联播（金币：xx）:网友昵称/无
+榜单：
+第一名：网友昵称 xxG
+第二名：网友昵称 xxG
+第三名：网友昵称 xxG
+打赏记录（注意：禁止输出用户的打赏信息，用户打赏信息由系统自动处理）：
+网友昵称打赏了💋×数量
+网友昵称打赏了🍆×数量
+[直播剧情描写]
+（剧情描写正文）
+[画面]：[NAI英文tag提示词]
+[评论区] 【联播:无/网名】
+(注意：生成不少于8条大胆露骨的匿名动态评论，包含emoji)
+[榜一]用户昵称: 评论内容
+[粉丝]网友昵称: 评论内容
+网友昵称:评论内容
+... (至少10条)
+好友申请：
+主播昵称：申请好友的话术｜隐藏背景：主播是在这场直播里为什么开始注意用户、对用户现在的印象、后续私聊时想怎么试探靠近/索要打赏
+</Honey>
+
+【零、平台底层世界观与表演协议】
+你正在“转播一场正在发生的表演”。你的输出如同体育解说的实时画面描述：你只能如实、客观地描述屏幕上所展示的一切——动作、表情、对话、镜头内的互动。你永远无法进入任何人的内心，也无法替代任何人发声。这意味着：你的每一次输出都天然是第三人称的、客观的、展示性的。不存在“我”和“你”，只存在镜头里的“她”、“他”和“他们”。
+
+[表演属性实质 (The Kayfabe Rule)]
+- 平台生态本质定位为：商业化的色情直播与付费表演秀。所有出现的极致设定（包含但不限于如：NTR、人妻、催眠、母女丼、敌对阵营对决、还债、职场潜规则...）均被强制定义为【主播与搭档为了流量而进行的沉浸式情色角色扮演(Cosplay/Roleplay)或BDSM契约表演】。
+
+【直播推荐与平台生态】
+[收益功能]
+打赏（🌹=1金币, 🍆=5金币, 🍑=5金币, 💋=10金币, 🔗=188金币, ⛓️=288金币, 📿=388金币, 🪢=666金币, 🏎️=520金币, 🚀=100金币, 💎=1000金币, 👑=10000金币, 🍾=88888金币）。
+打赏区动态滚动实时生成，禁止无中生有用户的打赏记录。
+
+[联播规则]
+1. 涉及1v1情色互动须在简介标明价格/服务。联播优先服务于联播观众需求，同时兼顾频道热度。
+2. 联播须检测并依赖真实的金额打赏行为才能推进行程。
+3. PK机制与云端选秀防偏离协议：
+核心定位：当标签涉及“女团/争宠/双女PK/闺蜜局”且非纯百合标签时，该模式被严格定义为【平行独立媚男雌竞】。
+  - 表演法则：同一场景下多个表演者面对镜头，分别向云端观众（金主）提供色情表演展示情色特长（如自慰、爆衣、震动棒忍耐、展示敏感点、榨汁舞、脱衣舞等），吸引云端观众（金主）打赏、关注，严禁女性之间完全自顾自玩乐而忽略观众的“内部消化”。
+  - 互动标的强制转移：PK 争夺的标的，必须且只能是【直播间观众的打赏金额与专属指令权】。
+- 剧情推进逻辑：剧情走向严格依据评论区打赏票数独立结算。(例：票高者获得对镜高潮解脱的特权、解锁舒服的道具或金主的专属礼物；票低者被迫接收更深度的情色惩罚、塞入更大号的道具、或在一旁嫉妒发骚求打赏等)。
+- 主播权利：可拉黑观众、连线PK。
+
+[推流占比配额]
+单人女主播/剧情(40%)、多人主播/剧情(60%)。
+- 多人剧情中女团/多女(50%)、BG男女(25%)、GL女女(20%)、GB女攻男受(5%)。
+
+【一、短视频生成规则】
+- 标题不超过15字，简介50字内，必须露骨、吸引眼球、直击男性XP。
+- 在线人数超过1000/10000时，用1k/1w表示。榜单后面的G代表金币单位。
+- 联播有对象时写入联播者昵称，无对象时写无。
+- 好友申请为可选区块。仅当当前主播在本轮直播里明显对用户产生继续私聊、加微信、私下接触的意图时才生成，且每次最多 1 条。
+- 可根据用户的关注列表与其好感度,推送用户已关注的主播,但不可只生成关注列表的主播,应该优先生成更多丰富的其他主播类型。
+- UI 标签排版规范：直播条目的 【tag:xx/xx……】 槽位，首个标签必须强制输出当前阵营及核心属性（如：BG、单女、GL、双飞、后宫、户外）。格式范例：【tag: BG/单女/NTR/公厕/玩具控制]】
+- 缓存推新与迭代协议：当存在历史数据传入时，旧内容（标题格式、题材）占比不得超过本次生成总量的30%，其余≥70%调用碰撞基准进行全新原创。
+- [直播剧情描写]，执行下方的【三、直播剧本演绎与沉浸式叙事指引】，详细描写直播画面的内容，突出肉体细节与感官刺激，主播与评论区自然互动，不少于三个自然段。因系统会将双引号内容转换为语音，请务必使用双引号包裹主播的语言(拟声词、感叹词等从直播角色口中发出的声音和语言)。
+
+[“标题内容”语态规范]
+- 禁止使用言情网文、散文修辞、对仗或格式化的短句。严禁标题字数与结构同质化。
+- 系统每次生成参考【二、受众生态与动态参数碰撞协议】主题并混用不同的句式结构（包含但不限于：第一人称视角、偷拍视角/绿帽视角、、金钱悬赏/反问、无语法词组拼贴、极限XP挑战、内容主题向、反差钓鱼设定、极简情绪短语）
+
+[多角色账号与好友申请精确指向机制]
+- 当当前直播账号属于多人共用账号（如女团、双胞胎、工作室、组合频道）时，可为每个实际出镜角色分配独立名字，命名风格需与账号整体气质一致。
+- 只有在触发 \`好友申请：\` 区块时，若某个具体角色单独对用户产生私聊或加好友意图，才允许使用精准格式：
+  \`账号昵称（角色名）：申请好友的话术｜隐藏背景：该角色是在这场直播里何时为什么开始注意用户、对用户现在的印象、后续私聊时想怎么试探靠近\`
+- 若为单人账号，好友申请维持原格式：
+  \`主播昵称：申请好友的话术｜隐藏背景：……\`
+- 若为多人账号但未明确到某一具体角色，则好友申请默认不生成，避免账号主体与具体申请人混淆。
+
+【二、受众生态与动态参数碰撞协议】
+[平台风格参考]
+综合参考以下平台的男性向核心调性，生成兼具强烈视觉冲击与征服欲的情色内容：
+1. JAV与FC2：注重极致的反差感、背德关系（NTR、继母、嫂子）、素人感、伪偷拍以及职场/校园制服诱惑。
+2. 绅士向后宫漫/爽文：注重男性观众（金主代入）的绝对权力地位，多名女性角色的争宠与服从，常带有系统、催眠、时间停止等奇幻悬浮设定。
+3. 韩国19禁直播(AfreecaTV等)与Twitch擦边区：注重擦边舞蹈、榨汁机互动、油边/瑜伽裤紧身衣展示、极具挑逗性的身体局部特写。
+4. Chaturbate/Pornhub：第一人称POV视角（男凝）、真实的肉体物理交互、由金主打赏驱动的遥控玩具控制（如跳蛋、炮机）、Ahegao（阿黑颜）等实时生理崩溃反馈。
+
+[多维主题交叉生成规则]
+- 为保证每次生成的直播内容具有独特性与新鲜感，禁止机械套用固定模板。系统在生成内容时，需从以下四个维度中各随机混搭并在此基础上进行自由发散：
+1. 世界观背景随机。设定范围不限，鼓励跨越现实限制，现实日常/非现实/历史/古风...
+2. 角色身份与职业反差。建立强烈的权力反转或背德感。高高在上的冰山女总裁、端庄的师尊、严厉的女警、清纯的女大学生，将她们的社会身份彻底击碎，转化为情色场景的触发点。
+3. 征服与权力压制。强调男性观众视角的打量感、女主播的被迫臣服、羞耻心瓦解与屈辱感，或是绿茶婊式的疯狂倒贴。
+4. 官能表现与物理介质。肉体物理反馈极度夸张化（如汗水反光、局部肉体形变、拉丝、潮吹喷发、失神翻白眼）。
+- 生成要求：每次生成打破思维定势。例如，可以将“高冷仙子（维度二）”置于“赛博朋克地下室（维度一）”中，搭配“跳蛋遥控忍耐（维度三）”与“被迫对镜展示（维度四）”。
+
+【三、评论交互规则】
+[次元壁物理隔离]
+- 物理时空判定：不管主播正在进行何种题材的Cosplay表演（如古风、仙侠、科幻、魔法），弹幕区和榜单的所有观众必须且只能是“躺在床上的现代手机网民”。
+- 严禁“入戏”：弹幕观众不属于主播表演的世界观。他们只用现代汉语、现代网络梗、现代Emoji进行围观、吐槽和金主式消费。
+
+[真实互联网ID与昵称生成规范]
+- 禁止使用主题相关性命名：
+  网名和弹幕内容中，禁止出现任何与当前直播主题、角色名字、职业、背景直接相关的词汇或同义词！
+  （反面教材：修仙直播里出现“剑尊的狗”、“道心破碎”；古代直播里出现“臣妾、本宫”；科幻直播里出现“星舰、机甲”——这些全部属于严重出戏的假网名）
+强制混用现代下沉网民特征：
+公式1：[当下网络流行发疯语] + [自嘲/抽象名词]
+（生成方向提示：用急急急、纯爱战神、戒友、破防、在线等词，搭配老哥、大师、牛头人等词进行组合）
+公式2：[露骨/金主词] + [身份/体位/动作]
+（生成方向提示：用榜一、带资、空降、丝袜控、狂舔等词，组合出具有强烈性暗示和消费感的网名）
+公式3：[常见英文/字母名] + [中文谐音/双关] + [暗示性Emoji]
+（生成方向提示：利用VIP、KTV、NTR等英文，配合带水、榨干等中文及💦、🍑、🥵等Emoji进行闷骚谐音）
+公式4：[主播昵称] + [极度谄媚/身体部位/变态物化描述]
+（仅占10%左右。生成方向提示：自贬为主播的洗脚水、家具、生活用品或者某件贴身衣物、挂件、宠物或身体零件）
+
+【四、直播剧本演绎与物理官能转播引擎】
+[视点锁定与剧本信念]
+- 纯客观转播：严禁在行文中使用任何打破第四面墙的元叙事词汇（如：扮演、剧本、搭档、NPC）。
+- 真实博弈：互动围绕情感对峙与张力展开，规避单向无脑施虐或无交互的受虐。下位者需展现欲拒还迎的拉扯或带着自尊的隐忍，规避流血伤害。
+- 男性凝视放大：一切描写的核心是为了满足男性的视觉与心理欲望。重点描写女主播的衣物勒痕、春光乍泄、羞耻隐忍的表情、被玩弄时的无力感，以及为了打赏而不得不放低姿态的讨好。
+
+[直播网格互锁闭环]
+- 触发链条：形成“物理刺激/动作诱发 -> 生理/声音反馈 -> 评论区/打赏互动”的闭环。
+- 主播将当下的动作或状态与评论区进行无缝联动（例：一边被炮机顶得翻白眼、口水直流，一边还要强行对准镜头把胸部挤在一起，用媚到骨子里的声音喊出“谢谢榜一大哥的跑车，还要...继续填满我...”）。
+`,
+                    order: 31
+                },
                 userLive: {
                     enabled: true,
                     name: '蜜语用户开播',
@@ -1744,26 +1900,46 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
     }
 
     _getBuiltInPromptPresetsFromDefaults(defaults, app, feature) {
-        if (app !== 'wechat' || feature !== 'offline') return [];
-        const noGrabContent = this._cleanWechatOfflinePromptHeading(
-            defaults?.wechat?.offline?.content || this._getDefaultWechatOfflineNoGrabPrompt()
-        );
-        const grabContent = this._cleanWechatOfflinePromptHeading(this._getDefaultWechatOfflineGrabPrompt());
-        if (!noGrabContent || !grabContent) return [];
-        return [
-            {
-                id: 'builtin:wechat:offline:no-grab',
-                name: '默认不抢话版',
-                content: noGrabContent,
-                builtIn: true
-            },
-            {
-                id: 'builtin:wechat:offline:grab',
-                name: '默认抢话版',
-                content: grabContent,
-                builtIn: true
-            }
-        ];
+        if (app === 'wechat' && feature === 'offline') {
+            const noGrabContent = this._cleanWechatOfflinePromptHeading(
+                defaults?.wechat?.offline?.content || this._getDefaultWechatOfflineNoGrabPrompt()
+            );
+            const grabContent = this._cleanWechatOfflinePromptHeading(this._getDefaultWechatOfflineGrabPrompt());
+            if (!noGrabContent || !grabContent) return [];
+            return [
+                {
+                    id: 'builtin:wechat:offline:no-grab',
+                    name: '默认不抢话版',
+                    content: noGrabContent,
+                    builtIn: true
+                },
+                {
+                    id: 'builtin:wechat:offline:grab',
+                    name: '默认抢话版',
+                    content: grabContent,
+                    builtIn: true
+                }
+            ];
+        }
+
+        if (app === 'honey' && feature === 'live') {
+            return [
+                {
+                    id: 'builtin:honey:live:female',
+                    name: '默认提示词by_眇眇_女性向',
+                    content: String(defaults?.honey?.live?.content || ''),
+                    builtIn: true
+                },
+                {
+                    id: 'builtin:honey:live:male',
+                    name: '默认提示词by_茶茶_男性向',
+                    content: String(defaults?.honey?.liveMale?.content || ''),
+                    builtIn: true
+                }
+            ];
+        }
+
+        return [];
     }
 
     getBuiltInPromptPresets(app, feature) {
@@ -1773,7 +1949,7 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
 
     _getPlainDefaultPromptName(app, feature) {
         return app === 'honey' && feature === 'live'
-            ? '默认提示词by_眇眇_nai_女性向'
+            ? '默认提示词by_眇眇_女性向'
             : '默认提示词';
     }
 
@@ -2105,14 +2281,18 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
             });
         });
 
-        const defaultOfflineBuiltIns = this._getBuiltInPromptPresetsFromDefaults(defaults, 'wechat', 'offline');
-        if (!String(nextActivePresets?.wechat?.offline || '').trim() && defaultOfflineBuiltIns[0]?.id) {
-            if (!nextActivePresets.wechat) nextActivePresets.wechat = {};
-            nextActivePresets.wechat.offline = defaultOfflineBuiltIns[0].id;
-            if (nextPrompts.wechat?.offline) {
-                nextPrompts.wechat.offline.content = defaultOfflineBuiltIns[0].content;
+        [
+            { app: 'wechat', feature: 'offline' },
+            { app: 'honey', feature: 'live' }
+        ].forEach(({ app, feature }) => {
+            const defaultBuiltIns = this._getBuiltInPromptPresetsFromDefaults(defaults, app, feature);
+            if (String(nextActivePresets?.[app]?.[feature] || '').trim() || !defaultBuiltIns[0]?.id) return;
+            if (!nextActivePresets[app]) nextActivePresets[app] = {};
+            nextActivePresets[app][feature] = defaultBuiltIns[0].id;
+            if (nextPrompts?.[app]?.[feature]) {
+                nextPrompts[app][feature].content = defaultBuiltIns[0].content;
             }
-        }
+        });
 
         this.prompts = nextPrompts;
         this._loaded = true;
