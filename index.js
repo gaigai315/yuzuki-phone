@@ -101,12 +101,47 @@ if (window.GGP_Loaded) {
     let _wechatMessageSoundLastAt = 0;
     let _gamesModulePromise = null;
     let _gamesCssPromise = null;
+    let _pendingWechatOnlineToOfflineHint = null;
     const PHONE_PANEL_DESKTOP_SIDE_KEY = 'phone-panel-desktop-side';
     const PHONE_PANEL_DESKTOP_POSITION_KEY = 'phone-panel-desktop-position';
     // 🔥 防重放护盾：仅允许被显式标记的旧楼层重新解析（用于 Swipe/Regenerate）
     const _forcedReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
     const _exactReplayFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
     const _pendingPromptCleanupFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
+
+    function markWechatOnlineToOfflineTransferPending(payload = {}) {
+        _pendingWechatOnlineToOfflineHint = {
+            active: true,
+            chatId: String(payload.chatId || '').trim(),
+            chatName: String(payload.chatName || '').trim(),
+            createdAt: Date.now()
+        };
+        try {
+            sessionStorage.setItem('st_phone_pending_wechat_online_to_offline_hint', JSON.stringify(_pendingWechatOnlineToOfflineHint));
+        } catch (e) {
+            console.warn('⚠️ [微信] 写入线上转线下提示标记失败:', e);
+        }
+        return _pendingWechatOnlineToOfflineHint;
+    }
+
+    function getWechatOnlineToOfflineTransferPending() {
+        let pending = _pendingWechatOnlineToOfflineHint;
+        if (!pending?.active) {
+            try {
+                pending = JSON.parse(sessionStorage.getItem('st_phone_pending_wechat_online_to_offline_hint') || 'null');
+            } catch (_) {
+                pending = null;
+            }
+        }
+        return pending?.active ? pending : null;
+    }
+
+    function clearWechatOnlineToOfflineTransferPending() {
+        _pendingWechatOnlineToOfflineHint = null;
+        try {
+            sessionStorage.removeItem('st_phone_pending_wechat_online_to_offline_hint');
+        } catch (_) {}
+    }
 
     function ensureGamesCSSPreloaded() {
         if (_gamesCssPromise) return _gamesCssPromise;
@@ -7690,6 +7725,7 @@ if (window.GGP_Loaded) {
                 notify: showUnifiedPhoneNotification,
                 checkCalendarScheduleReminders: checkCalendarScheduleReminders,
                 playWechatMessageSound: playWechatMessageSound,
+                markWechatOnlineToOfflineTransferPending: markWechatOnlineToOfflineTransferPending,
                 showCurrentUpdateInfo: async () => showPhoneUpdateModal('local', await fetchLocalUpdateNotes(ST_PHONE_VERSION), {
                     primaryText: '知道了'
                 }),
@@ -9904,10 +9940,7 @@ if (window.GGP_Loaded) {
                                             const anchorRegex = /\n*\s*(?:<时间提示>[\s\S]*?<\/时间提示>|【手机时间锚点】[\s\S]*?(?=\n{2,}|$))/g;
 
                                             const targetIndex = findLastNormalUserMessageIndex();
-                                            if (targetIndex < 0) {
-                                                delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
-                                                return;
-                                            }
+                                            if (targetIndex < 0) return;
 
                                             {
                                                 const msg = messages[targetIndex];
@@ -9930,59 +9963,25 @@ if (window.GGP_Loaded) {
 
                                     const appendWechatOnlineToOfflineHintToLastUserMessage = () => {
                                         try {
-                                            const markerKey = 'st_phone_pending_wechat_online_to_offline_hint';
-                                            const textareaMarker = '<!-- ST_PHONE_WECHAT_ONLINE_TO_OFFLINE -->';
-                                            const clearPending = () => {
-                                                if (window.VirtualPhone?._pendingWechatOnlineToOfflineHint) {
-                                                    delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
-                                                }
-                                                try {
-                                                    sessionStorage.removeItem(markerKey);
-                                                } catch (_) {}
-                                            };
-                                            let pending = window.VirtualPhone?._pendingWechatOnlineToOfflineHint;
-                                            if (!pending?.active) {
-                                                try {
-                                                    pending = JSON.parse(sessionStorage.getItem(markerKey) || 'null');
-                                                } catch (_) {
-                                                    pending = null;
-                                                }
-                                            }
+                                            const pending = getWechatOnlineToOfflineTransferPending();
+                                            if (!pending?.active) return;
 
                                             const targetIndex = findLastNormalUserMessageIndex();
-                                            if (targetIndex < 0) {
-                                                clearPending();
-                                                return;
-                                            }
+                                            if (targetIndex < 0) return;
 
                                             const msg = messages[targetIndex];
                                             let content = msg.content ?? msg.mes ?? msg.text ?? (Array.isArray(msg.parts) && msg.parts[0] ? msg.parts[0].text : '');
                                             if (typeof content !== 'string') content = String(content ?? '');
 
-                                            const hasTextareaMarker = content.includes(textareaMarker);
-                                            if (!pending?.active && !hasTextareaMarker) return;
-
                                             const createdAt = Number(pending.createdAt || 0);
-                                            if (!hasTextareaMarker && createdAt && Date.now() - createdAt > 2 * 60 * 1000) {
-                                                clearPending();
-                                                return;
-                                            }
+                                            if (createdAt && Date.now() - createdAt > 2 * 60 * 1000) return;
 
                                             const hintBlock = '<线上转下线>注意：这是微信线上剧情触发的线下剧情。请把微信最后几条消息视为刚刚发生的前置事实，必须衔接线上微信后的剧情、角色位置和角色线下见面状态；如果微信中已经出现“我进来了”“到了”“开门了”“见到你了”等内容，线下剧情必须承认角色已经抵达/进入/见面。严禁将角色重新写成仍在别处、尚未到达、未见面，或跳过微信里已经发生的动作。</线上转下线>';
                                             const hintRegex = /\n*\s*<线上转下线>[\s\S]*?<\/线上转下线>/g;
-                                            const cleaned = content
-                                                .replace(textareaMarker, '')
-                                                .replace(hintRegex, '')
-                                                .trimEnd();
+                                            const cleaned = content.replace(hintRegex, '').trimEnd();
                                             messages[targetIndex] = cloneSplitMessage(msg, `${cleaned}\n\n${hintBlock}`.trim());
-                                            clearPending();
+                                            clearWechatOnlineToOfflineTransferPending();
                                         } catch (e) {
-                                            if (window.VirtualPhone?._pendingWechatOnlineToOfflineHint) {
-                                                delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
-                                            }
-                                            try {
-                                                sessionStorage.removeItem('st_phone_pending_wechat_online_to_offline_hint');
-                                            } catch (_) {}
                                             console.warn('⚠️ [手机] 追加线上转下线提示失败:', e);
                                         }
                                     };

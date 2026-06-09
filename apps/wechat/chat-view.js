@@ -8337,31 +8337,10 @@ renderChatRoom(chat) {
             // 🔥 新增：如果触发了线下联动，自动关闭手机并点击酒馆发送按钮
             if (triggerOffline) {
                 const markWechatOnlineToOfflineHintPending = () => {
-                    const payload = {
-                        active: true,
+                    window.VirtualPhone?.markWechatOnlineToOfflineTransferPending?.({
                         chatId: savedChatId,
-                        chatName: savedChatName,
-                        createdAt: Date.now()
-                    };
-                    if (!window.VirtualPhone) window.VirtualPhone = {};
-                    window.VirtualPhone._pendingWechatOnlineToOfflineHint = payload;
-                    try {
-                        sessionStorage.setItem('st_phone_pending_wechat_online_to_offline_hint', JSON.stringify(payload));
-                    } catch (e) {
-                        console.warn('⚠️ [微信] 写入线上转线下提示标记失败:', e);
-                    }
-                };
-                const appendWechatOnlineToOfflineTextareaMarker = () => {
-                    const marker = '<!-- ST_PHONE_WECHAT_ONLINE_TO_OFFLINE -->';
-                    const textarea = document.getElementById('send_textarea');
-                    if (!textarea) return false;
-
-                    const current = String(textarea.value || '');
-                    if (current.includes(marker)) return true;
-
-                    textarea.value = `${current.trimEnd()}\n${marker}`.trimStart();
-                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                    return true;
+                        chatName: savedChatName
+                    });
                 };
                 markWechatOnlineToOfflineHintPending();
                 setTimeout(() => {
@@ -8385,16 +8364,7 @@ renderChatRoom(chat) {
                         const sendBtn = document.getElementById('send_but');
                         if (sendBtn) {
                             markWechatOnlineToOfflineHintPending();
-                            appendWechatOnlineToOfflineTextareaMarker();
                             sendBtn.click();
-                            setTimeout(() => {
-                                const textarea = document.getElementById('send_textarea');
-                                const marker = '<!-- ST_PHONE_WECHAT_ONLINE_TO_OFFLINE -->';
-                                if (textarea && String(textarea.value || '').includes(marker)) {
-                                    textarea.value = String(textarea.value || '').replace(marker, '').trim();
-                                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                                }
-                            }, 800);
                         }
                     }, 500);
                 }, 1500); // 延迟1.5秒，确保用户有时间看完最后一条微信消息
