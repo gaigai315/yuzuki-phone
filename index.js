@@ -9965,7 +9965,7 @@ if (window.GGP_Loaded) {
                                             let content = msg.content ?? msg.mes ?? msg.text ?? (Array.isArray(msg.parts) && msg.parts[0] ? msg.parts[0].text : '');
                                             if (typeof content !== 'string') content = String(content ?? '');
 
-                                            const hintBlock = '<线上转下线>注意：此为线上剧情触发了线下剧情，请注意线上剧情，角色位置，角色线下见面，应该继续承接线上的剧情。</线上转下线>';
+                                            const hintBlock = '<线上转下线>注意：这是微信线上剧情触发的线下剧情。请把微信最后几条消息视为刚刚发生的前置事实，必须衔接线上微信后的剧情、角色位置和角色线下见面状态；如果微信中已经出现“我进来了”“到了”“开门了”“见到你了”等内容，线下剧情必须承认角色已经抵达/进入/见面。严禁将角色重新写成仍在别处、尚未到达、未见面，或跳过微信里已经发生的动作。</线上转下线>';
                                             const hintRegex = /\n*\s*<线上转下线>[\s\S]*?<\/线上转下线>/g;
                                             const cleaned = content.replace(hintRegex, '').trimEnd();
                                             messages[targetIndex] = cloneSplitMessage(msg, `${cleaned}\n\n${hintBlock}`.trim());
