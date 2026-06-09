@@ -8351,6 +8351,18 @@ renderChatRoom(chat) {
                         console.warn('⚠️ [微信] 写入线上转线下提示标记失败:', e);
                     }
                 };
+                const appendWechatOnlineToOfflineTextareaMarker = () => {
+                    const marker = '<!-- ST_PHONE_WECHAT_ONLINE_TO_OFFLINE -->';
+                    const textarea = document.getElementById('send_textarea');
+                    if (!textarea) return false;
+
+                    const current = String(textarea.value || '');
+                    if (current.includes(marker)) return true;
+
+                    textarea.value = `${current.trimEnd()}\n${marker}`.trimStart();
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    return true;
+                };
                 markWechatOnlineToOfflineHintPending();
                 setTimeout(() => {
                     // 1. 优雅地关闭手机面板
@@ -8373,7 +8385,16 @@ renderChatRoom(chat) {
                         const sendBtn = document.getElementById('send_but');
                         if (sendBtn) {
                             markWechatOnlineToOfflineHintPending();
+                            appendWechatOnlineToOfflineTextareaMarker();
                             sendBtn.click();
+                            setTimeout(() => {
+                                const textarea = document.getElementById('send_textarea');
+                                const marker = '<!-- ST_PHONE_WECHAT_ONLINE_TO_OFFLINE -->';
+                                if (textarea && String(textarea.value || '').includes(marker)) {
+                                    textarea.value = String(textarea.value || '').replace(marker, '').trim();
+                                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
+                            }, 800);
                         }
                     }, 500);
                 }, 1500); // 延迟1.5秒，确保用户有时间看完最后一条微信消息
