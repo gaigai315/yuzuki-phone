@@ -9974,13 +9974,15 @@ if (window.GGP_Loaded) {
                                             if (typeof content !== 'string') content = String(content ?? '');
 
                                             const createdAt = Number(pending.createdAt || 0);
-                                            if (createdAt && Date.now() - createdAt > 2 * 60 * 1000) return;
+                                            if (createdAt && Date.now() - createdAt > 2 * 60 * 1000) {
+                                                clearWechatOnlineToOfflineTransferPending();
+                                                return;
+                                            }
 
                                             const hintBlock = '<线上转下线>注意：这是微信线上剧情触发的线下剧情。请把微信最后几条消息视为刚刚发生的前置事实，必须衔接线上微信后的剧情、角色位置和角色线下见面状态；如果微信中已经出现“我进来了”“到了”“开门了”“见到你了”等内容，线下剧情必须承认角色已经抵达/进入/见面。严禁将角色重新写成仍在别处、尚未到达、未见面，或跳过微信里已经发生的动作。</线上转下线>';
                                             const hintRegex = /\n*\s*<线上转下线>[\s\S]*?<\/线上转下线>/g;
                                             const cleaned = content.replace(hintRegex, '').trimEnd();
                                             messages[targetIndex] = cloneSplitMessage(msg, `${cleaned}\n\n${hintBlock}`.trim());
-                                            clearWechatOnlineToOfflineTransferPending();
                                         } catch (e) {
                                             console.warn('⚠️ [手机] 追加线上转下线提示失败:', e);
                                         }
@@ -10172,9 +10174,12 @@ if (window.GGP_Loaded) {
                             if (targetArray) {
                                 // 🌟 1. 核心防御：连同外层 bodyObj 一起检查，防止变量被移动端或 Claude 抽离到 system 字段
                                 const hasMacros = JSON.stringify(bodyObj).match(/\{\{\s*PHONE_PROMPT\s*\}\}|\{\{\s*PHONE_HISTORY\s*\}\}|\{\{\s*WEIBO_HISTORY\s*\}\}|\{\{\s*MUSIC_PROMPT\s*\}\}|\{\{\s*MOFO_PROMPT\s*\}\}|\{\{\s*DIARY_HISTORY\s*\}\}|\{\{\s*CALENDAR_REMINDER\s*\}\}/i);
+                                const hasWechatOnlineToOfflinePending = !!getWechatOnlineToOfflineTransferPending();
 
-                                if (hasMacros) {
-                                    console.log('🚨 [手机插件] 警告：酒馆发送过快导致 Hook 被无视，请求体残留变量！正在执行网卡级底层强行注入...');
+                                if (hasMacros || hasWechatOnlineToOfflinePending) {
+                                    if (hasMacros) {
+                                        console.log('🚨 [手机插件] 警告：酒馆发送过快导致 Hook 被无视，请求体残留变量！正在执行网卡级底层强行注入...');
+                                    }
                                     
                                     let safeEvent = { chat: targetArray, prompt: [] };
                                     
@@ -10197,6 +10202,9 @@ if (window.GGP_Loaded) {
                                         bodyObj.system = newSysParts.join('\n\n');
                                     }
                                     
+                                    if (hasWechatOnlineToOfflinePending) {
+                                        clearWechatOnlineToOfflineTransferPending();
+                                    }
                                     console.log('✅ [手机插件] 底层强行注入完毕，完美缝合防抢跑！');
                                 }
 
