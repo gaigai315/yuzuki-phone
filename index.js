@@ -9619,6 +9619,17 @@ if (window.GGP_Loaded) {
                                         return cloned;
                                     };
 
+                                    const findLastNormalUserMessageIndex = () => {
+                                        for (let i = messages.length - 1; i >= 0; i--) {
+                                            const msg = messages[i];
+                                            const isUserMessage = msg?.role === 'user'
+                                                || msg?.is_user === true
+                                                || msg?.is_user === 'true';
+                                            if (isUserMessage && !msg?.isPhoneMessage && !msg?.isMusicMessage) return i;
+                                        }
+                                        return -1;
+                                    };
+
                                     // 🔥 辅助函数：原地拆分注入 (Gaigai 终极防弹版)
                                     const injectIntoMessages = (targetVar, contentToInject, identifier) => {
                                         const normalizedVarName = String(targetVar || '').replace(/[{}]/g, '').trim();
@@ -9892,18 +9903,11 @@ if (window.GGP_Loaded) {
                                             ].join('\n');
                                             const anchorRegex = /\n*\s*(?:<时间提示>[\s\S]*?<\/时间提示>|【手机时间锚点】[\s\S]*?(?=\n{2,}|$))/g;
 
-                                            const findTargetUserMessageIndex = () => {
-                                                for (let i = messages.length - 1; i >= 0; i--) {
-                                                    const msg = messages[i];
-                                                    const isUserMessage = msg?.role === 'user'
-                                                        || msg?.is_user === true
-                                                        || msg?.is_user === 'true';
-                                                    if (isUserMessage && !msg?.isPhoneMessage && !msg?.isMusicMessage) return i;
-                                                }
-                                                return -1;
-                                            };
-                                            const targetIndex = findTargetUserMessageIndex();
-                                            if (targetIndex < 0) return;
+                                            const targetIndex = findLastNormalUserMessageIndex();
+                                            if (targetIndex < 0) {
+                                                delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
+                                                return;
+                                            }
 
                                             {
                                                 const msg = messages[targetIndex];
@@ -9923,6 +9927,41 @@ if (window.GGP_Loaded) {
                                         }
                                     };
                                     appendPhoneTimeAnchorToLastUserMessage();
+
+                                    const appendWechatOnlineToOfflineHintToLastUserMessage = () => {
+                                        try {
+                                            const pending = window.VirtualPhone?._pendingWechatOnlineToOfflineHint;
+                                            if (!pending?.active) return;
+
+                                            const createdAt = Number(pending.createdAt || 0);
+                                            if (createdAt && Date.now() - createdAt > 2 * 60 * 1000) {
+                                                delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
+                                                return;
+                                            }
+
+                                            const targetIndex = findLastNormalUserMessageIndex();
+                                            if (targetIndex < 0) {
+                                                delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
+                                                return;
+                                            }
+
+                                            const msg = messages[targetIndex];
+                                            let content = msg.content ?? msg.mes ?? msg.text ?? (Array.isArray(msg.parts) && msg.parts[0] ? msg.parts[0].text : '');
+                                            if (typeof content !== 'string') content = String(content ?? '');
+
+                                            const hintBlock = '<线上转下线>注意：此为线上剧情触发了线下剧情，请注意线上剧情，角色位置，角色线下见面，应该继续承接线上的剧情。</线上转下线>';
+                                            const hintRegex = /\n*\s*<线上转下线>[\s\S]*?<\/线上转下线>/g;
+                                            const cleaned = content.replace(hintRegex, '').trimEnd();
+                                            messages[targetIndex] = cloneSplitMessage(msg, `${cleaned}\n\n${hintBlock}`.trim());
+                                            delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
+                                        } catch (e) {
+                                            if (window.VirtualPhone?._pendingWechatOnlineToOfflineHint) {
+                                                delete window.VirtualPhone._pendingWechatOnlineToOfflineHint;
+                                            }
+                                            console.warn('⚠️ [手机] 追加线上转下线提示失败:', e);
+                                        }
+                                    };
+                                    appendWechatOnlineToOfflineHintToLastUserMessage();
 
                                     // ========================================
                                     // 🔥 终极防线：无条件清洗发送给大模型的数据上下文

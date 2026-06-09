@@ -8336,6 +8336,13 @@ renderChatRoom(chat) {
 
             // 🔥 新增：如果触发了线下联动，自动关闭手机并点击酒馆发送按钮
             if (triggerOffline) {
+                if (!window.VirtualPhone) window.VirtualPhone = {};
+                window.VirtualPhone._pendingWechatOnlineToOfflineHint = {
+                    active: true,
+                    chatId: savedChatId,
+                    chatName: savedChatName,
+                    createdAt: Date.now()
+                };
                 setTimeout(() => {
                     // 1. 优雅地关闭手机面板
                     const drawerIcon = document.getElementById('phoneDrawerIcon');
