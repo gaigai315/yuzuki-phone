@@ -2084,7 +2084,7 @@ export class HoneyView {
         `;
     }
 
-    _buildSceneRetagPrompt(scene = {}) {
+    _buildSceneRetagContext(scene = {}) {
         const safe = (value, maxLen = 1200) => String(value || '').trim().slice(0, maxLen);
         const comments = (Array.isArray(scene.comments) ? scene.comments : [])
             .map(item => typeof item === 'string'
@@ -2105,14 +2105,7 @@ export class HoneyView {
             .filter(Boolean)
             .slice(-6);
         return [
-            '请只重写当前蜜语直播画面的 NovelAI 英文生图 tag。',
-            '要求：',
-            '1. 只改写画面 tag，不续写剧情，不输出解释。',
-            '2. 必须结合当前直播剧情、主播、标题、评论/弹幕互动，生成更贴合这一帧的英文逗号分隔 NAI tags。',
-            '3. 不要输出中文句子，不要输出 Markdown，不要输出多余内容。',
-            '4. 最终只输出一行，格式必须是：[画面]：[NAI英文tag提示词: tag1, tag2, tag3]',
-            '',
-            '【当前直播信息】',
+            '【当前蜜语直播上下文】',
             `主播：${safe(scene.host, 80) || '未知'}`,
             `标题：${safe(scene.title || scene._topicTitle, 120) || '未知'}`,
             `分类：${safe(scene.tag || scene.category || scene.recommendCategory, 80) || '无'}`,
@@ -2124,6 +2117,17 @@ export class HoneyView {
             comments.length ? `【最新评论】\n${comments.join('\n')}` : '【最新评论】\n暂无',
             userChats.length ? `【用户弹幕/互动】\n${userChats.join('\n')}` : '【用户弹幕/互动】\n暂无',
             gifts.length ? `【打赏记录】\n${gifts.join('\n')}` : '【打赏记录】\n暂无'
+        ].join('\n');
+    }
+
+    _buildSceneRetagInstruction() {
+        return [
+            '请只重写当前蜜语直播画面的 NovelAI 英文生图 tag。',
+            '要求：',
+            '1. 只改写画面 tag，不续写剧情，不输出解释。',
+            '2. 必须结合前文当前直播剧情、主播、标题、评论/弹幕互动，生成更贴合这一帧的英文逗号分隔 NAI tags。',
+            '3. 不要输出中文句子，不要输出 Markdown，不要输出多余内容。',
+            '4. 最终只输出一行，格式必须是：[画面]：[NAI英文tag提示词: tag1, tag2, tag3]'
         ].join('\n');
     }
 
@@ -2153,11 +2157,16 @@ export class HoneyView {
                 content: '你是蜜语 APP 的 NovelAI tag 重写器。你只能按用户指定格式输出一行新的画面 tag，不得输出解释、剧情、寒暄或其他内容。',
                 isPhoneMessage: true
             }];
+            messages.push({
+                role: 'assistant',
+                content: this._buildSceneRetagContext(scene),
+                isPhoneMessage: true
+            });
             const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('honey');
             if (worldbookMessage) messages.push(worldbookMessage);
             messages.push({
                 role: 'user',
-                content: this._buildSceneRetagPrompt(scene),
+                content: this._buildSceneRetagInstruction(),
                 isPhoneMessage: true
             });
 
