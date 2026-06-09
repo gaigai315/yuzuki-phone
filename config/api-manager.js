@@ -104,6 +104,9 @@ export class ApiManager {
             apiKey: activeProfile.apiKey || activeProfile.key || config.apiKey || '',
             model: activeProfile.model || config.model || '',
             maxTokens: parseInt(activeProfile.maxTokens, 10) || parseInt(config.maxTokens, 10) || 8192,
+            temperature: Number.isFinite(Number.parseFloat(activeProfile.temperature))
+                ? Number.parseFloat(activeProfile.temperature)
+                : (Number.isFinite(Number.parseFloat(config.temperature)) ? Number.parseFloat(config.temperature) : undefined),
             useStream: activeProfile.useStream !== false
         };
     }
@@ -117,6 +120,7 @@ export class ApiManager {
             apiKey: String(config.apiKey || config.key || '').trim(),
             model: String(config.model || ''),
             maxTokens: parseInt(config.maxTokens, 10) || 8192,
+            temperature: Number.isFinite(Number.parseFloat(config.temperature)) ? Number.parseFloat(config.temperature) : undefined,
             useStream: config.useStream !== false
         };
     }
@@ -707,7 +711,11 @@ export class ApiManager {
         const maxTokens = Number.isFinite(minMaxTokens) && minMaxTokens > 0
             ? Math.max(resolvedMaxTokens, minMaxTokens)
             : resolvedMaxTokens;
-        const temperature = apiConfig.temperature || 0.7;
+        const optionTemperature = Number.parseFloat(options?.temperature);
+        const configTemperature = Number.parseFloat(apiConfig?.temperature);
+        const temperature = Number.isFinite(optionTemperature)
+            ? optionTemperature
+            : (Number.isFinite(configTemperature) ? configTemperature : 1.0);
         const enableStream = apiConfig.useStream !== false;
 
         const sourceMessages = Array.isArray(messages)
