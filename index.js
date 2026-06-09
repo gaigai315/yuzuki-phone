@@ -9961,17 +9961,10 @@ if (window.GGP_Loaded) {
                                     };
                                     appendPhoneTimeAnchorToLastUserMessage();
 
-                                    const appendWechatOnlineToOfflineHintToLastUserMessage = () => {
+                                    const appendWechatOnlineToOfflineHintAsTailUserMessage = () => {
                                         try {
                                             const pending = getWechatOnlineToOfflineTransferPending();
                                             if (!pending?.active) return;
-
-                                            const targetIndex = findLastNormalUserMessageIndex();
-                                            if (targetIndex < 0) return;
-
-                                            const msg = messages[targetIndex];
-                                            let content = msg.content ?? msg.mes ?? msg.text ?? (Array.isArray(msg.parts) && msg.parts[0] ? msg.parts[0].text : '');
-                                            if (typeof content !== 'string') content = String(content ?? '');
 
                                             const createdAt = Number(pending.createdAt || 0);
                                             if (createdAt && Date.now() - createdAt > 2 * 60 * 1000) {
@@ -9981,13 +9974,38 @@ if (window.GGP_Loaded) {
 
                                             const hintBlock = '<线上转下线>注意：这是微信线上剧情触发的线下剧情。请把微信最后几条消息视为刚刚发生的前置事实，必须衔接线上微信后的剧情、角色位置和角色线下见面状态；如果微信中已经出现“我进来了”“到了”“开门了”“见到你了”等内容，线下剧情必须承认角色已经抵达/进入/见面。严禁将角色重新写成仍在别处、尚未到达、未见面，或跳过微信里已经发生的动作。</线上转下线>';
                                             const hintRegex = /\n*\s*<线上转下线>[\s\S]*?<\/线上转下线>/g;
-                                            const cleaned = content.replace(hintRegex, '').trimEnd();
-                                            messages[targetIndex] = cloneSplitMessage(msg, `${cleaned}\n\n${hintBlock}`.trim());
+                                            for (let i = messages.length - 1; i >= 0; i--) {
+                                                const msg = messages[i];
+                                                let content = msg.content ?? msg.mes ?? msg.text ?? (Array.isArray(msg.parts) && msg.parts[0] ? msg.parts[0].text : '');
+                                                if (typeof content !== 'string') content = String(content ?? '');
+                                                hintRegex.lastIndex = 0;
+                                                if (!hintRegex.test(content)) continue;
+                                                hintRegex.lastIndex = 0;
+                                                const cleaned = content.replace(hintRegex, '').trim();
+                                                if (!cleaned && msg?.identifier === 'wechat_online_to_offline_hint') {
+                                                    messages.splice(i, 1);
+                                                    continue;
+                                                }
+                                                if (msg.content !== undefined) msg.content = cleaned;
+                                                if (msg.mes !== undefined) msg.mes = cleaned;
+                                                if (msg.text !== undefined) msg.text = cleaned;
+                                                if (Array.isArray(msg.parts) && msg.parts[0]?.text !== undefined) msg.parts[0].text = cleaned;
+                                            }
+
+                                            const isGemini = messages.length > 0 && messages[0]?.parts !== undefined;
+                                            messages.push({
+                                                role: 'user',
+                                                content: hintBlock,
+                                                parts: isGemini ? [{ text: hintBlock }] : undefined,
+                                                name: 'SYSTEM (微信线上转线下)',
+                                                isPhoneMessage: true,
+                                                identifier: 'wechat_online_to_offline_hint'
+                                            });
                                         } catch (e) {
                                             console.warn('⚠️ [手机] 追加线上转下线提示失败:', e);
                                         }
                                     };
-                                    appendWechatOnlineToOfflineHintToLastUserMessage();
+                                    appendWechatOnlineToOfflineHintAsTailUserMessage();
 
                                     // ========================================
                                     // 🔥 终极防线：无条件清洗发送给大模型的数据上下文
