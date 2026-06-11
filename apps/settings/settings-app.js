@@ -2656,7 +2656,9 @@ export class SettingsApp {
         const sdUpscaler = String(this.storage.get('phone-image-sd-upscaler') || '').trim();
         const sdRestoreFaces = this.storage.get('phone-image-sd-restore-faces') === true || this.storage.get('phone-image-sd-restore-faces') === 'true';
         const sdADetailer = this.storage.get('phone-image-sd-adetailer') === true || this.storage.get('phone-image-sd-adetailer') === 'true';
+        const comfyuiMode = String(this.storage.get('phone-image-comfyui-mode') || 'local').trim() === 'remote' ? 'remote' : 'local';
         const comfyuiUrl = String(this.storage.get('phone-image-comfyui-url') || 'http://127.0.0.1:8188').trim();
+        const comfyuiRemoteUrl = String(this.storage.get('phone-image-comfyui-remote-url') || '').trim();
         const comfyuiModel = String(this.storage.get('phone-image-comfyui-model') || '').trim();
         const comfyuiSampler = String(this.storage.get('phone-image-comfyui-sampler') || 'euler').trim() || 'euler';
         const comfyuiScheduler = String(this.storage.get('phone-image-comfyui-scheduler') || 'normal').trim() || 'normal';
@@ -2864,7 +2866,7 @@ export class SettingsApp {
                             <option value="novelai" ${provider === 'novelai' ? 'selected' : ''}>NovelAI / NAI</option>
                             <option value="openai" ${provider === 'openai' ? 'selected' : ''}>GPT / OpenAI兼容</option>
                             <option value="sd" ${provider === 'sd' ? 'selected' : ''}>本地 SD</option>
-                            <option value="comfyui" ${provider === 'comfyui' ? 'selected' : ''}>本地 ComfyUI</option>
+                            <option value="comfyui" ${provider === 'comfyui' ? 'selected' : ''}>ComfyUI</option>
                             <option value="siliconflow" ${provider === 'siliconflow' ? 'selected' : ''}>硅基流动</option>
                         </select>
                     </div>
@@ -3307,17 +3309,35 @@ export class SettingsApp {
             </div>
 
             <div class="setting-section" id="phone-image-comfyui-section" style="${comfyuiDisplay}">
-                <div class="setting-section-title">本地 ComfyUI</div>
+                <div class="setting-section-title">ComfyUI</div>
 
                 ${this._renderImageProviderAppBinding('comfyui', imageProviderAppBindings)}
 
-                <div class="setting-item">
-                    <div class="setting-label">ComfyUI 地址</div>
-                    <div class="setting-desc">填写本地或局域网 ComfyUI 地址，默认端口通常是 8188。</div>
+                <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 14px; color: #000;">连接位置</span>
+                    <select id="phone-image-comfyui-mode" style="width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                        <option value="local" ${comfyuiMode === 'local' ? 'selected' : ''}>本地</option>
+                        <option value="remote" ${comfyuiMode === 'remote' ? 'selected' : ''}>远端 / 云端</option>
+                    </select>
+                </div>
+
+                <div class="setting-item" id="phone-image-comfyui-local-url-row" style="${comfyuiMode === 'local' ? '' : 'display: none;'}">
+                    <div class="setting-label">本地 ComfyUI 地址</div>
+                    <div class="setting-desc">切到“本地”时使用，默认端口通常是 8188。</div>
                     <input type="text" id="phone-image-comfyui-url"
                            value="${this._escapeHtml(comfyuiUrl)}"
                            placeholder="http://127.0.0.1:8188"
                            style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                </div>
+
+                <div class="setting-item" id="phone-image-comfyui-remote-url-row" style="${comfyuiMode === 'remote' ? '' : 'display: none;'}">
+                    <div class="setting-label">远端 ComfyUI 地址</div>
+                    <div class="setting-desc">填写云端 ComfyUI 的公开 Base URL；工作流、模型和占位符仍使用同一套配置。</div>
+                    <input type="text" id="phone-image-comfyui-remote-url"
+                           value="${this._escapeHtml(comfyuiRemoteUrl)}"
+                           placeholder="https://your-comfyui.example.com"
+                           style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                    <div class="setting-desc" style="margin-top: 6px;">远端服务需要开放 /object_info、/prompt、/history、/view 和 /upload/image，并允许浏览器跨域访问。</div>
                 </div>
 
                 <div class="setting-item">
@@ -6698,9 +6718,25 @@ export class SettingsApp {
         ];
         const fallbackComfyUISamplers = ['euler', 'euler_ancestral', 'dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_sde', 'ddim'];
         const fallbackComfyUISchedulers = ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform'];
+        const getComfyUIMode = () => String(document.getElementById('phone-image-comfyui-mode')?.value || 'local').trim() === 'remote' ? 'remote' : 'local';
+        const getActiveComfyUIUrl = () => {
+            const mode = getComfyUIMode();
+            const localUrl = String(document.getElementById('phone-image-comfyui-url')?.value || '').trim() || 'http://127.0.0.1:8188';
+            const remoteUrl = String(document.getElementById('phone-image-comfyui-remote-url')?.value || '').trim();
+            return mode === 'remote' ? (remoteUrl || localUrl) : localUrl;
+        };
+        const updateComfyUIModeRows = () => {
+            const localRow = document.getElementById('phone-image-comfyui-local-url-row');
+            const remoteRow = document.getElementById('phone-image-comfyui-remote-url-row');
+            const isRemote = getComfyUIMode() === 'remote';
+            if (localRow) localRow.style.display = isRemote ? 'none' : '';
+            if (remoteRow) remoteRow.style.display = isRemote ? '' : 'none';
+        };
         const saveComfyUISettings = async () => {
+            await this.storage.set('phone-image-comfyui-mode', getComfyUIMode());
             const textFields = [
                 ['phone-image-comfyui-url', 'http://127.0.0.1:8188'],
+                ['phone-image-comfyui-remote-url', ''],
                 ['phone-image-comfyui-model', ''],
                 ['phone-image-comfyui-sampler', 'euler'],
                 ['phone-image-comfyui-scheduler', 'normal'],
@@ -6717,8 +6753,14 @@ export class SettingsApp {
                 await this.storage.set(id, value);
             }
         };
+        document.getElementById('phone-image-comfyui-mode')?.addEventListener('change', async () => {
+            updateComfyUIModeRows();
+            await saveComfyUISettings();
+        });
+        updateComfyUIModeRows();
         [
             'phone-image-comfyui-url',
+            'phone-image-comfyui-remote-url',
             'phone-image-comfyui-model',
             'phone-image-comfyui-sampler',
             'phone-image-comfyui-scheduler',
@@ -6929,14 +6971,17 @@ export class SettingsApp {
             const oldText = btn?.textContent || '连接并刷新 ComfyUI 数据';
             try {
                 await saveComfyUISettings();
-                const comfyUrlValue = String(document.getElementById('phone-image-comfyui-url')?.value || '').trim() || 'http://127.0.0.1:8188';
+                const comfyUrlValue = getActiveComfyUIUrl();
+                if (getComfyUIMode() === 'remote' && !String(document.getElementById('phone-image-comfyui-remote-url')?.value || '').trim()) {
+                    throw new Error('请先填写远端 ComfyUI 地址');
+                }
                 const imageManager = window.VirtualPhone?.imageGenerationManager;
                 if (!imageManager?.fetchComfyUIResources) throw new Error('生图管理器未初始化');
                 if (btn) {
                     btn.disabled = true;
                     btn.textContent = '刷新中...';
                 }
-                setStatus('正在读取 ComfyUI /object_info...', '#6366f1');
+                setStatus(`正在读取 ${getComfyUIMode() === 'remote' ? '远端' : '本地'} ComfyUI /object_info...`, '#6366f1');
                 const resources = await imageManager.fetchComfyUIResources(comfyUrlValue);
                 const savedModel = String(this.storage.get('phone-image-comfyui-model') || '').trim();
                 const savedSampler = String(this.storage.get('phone-image-comfyui-sampler') || 'euler').trim() || 'euler';
@@ -6981,6 +7026,9 @@ export class SettingsApp {
                 await this.storage.set('phone-image-provider', 'comfyui');
                 await this.storage.set('phone-image-enabled', true);
                 await saveComfyUISettings();
+                if (getComfyUIMode() === 'remote' && !String(document.getElementById('phone-image-comfyui-remote-url')?.value || '').trim()) {
+                    throw new Error('请先填写远端 ComfyUI 地址');
+                }
                 const imageManager = window.VirtualPhone?.imageGenerationManager;
                 if (!imageManager?.generate) throw new Error('生图管理器未初始化');
                 if (btn) {

@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.2.7';
+const ST_PHONE_VERSION = '1.2.8';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
@@ -41,12 +41,11 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-06-07',
+    date: '2026-06-11',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【优化】音乐播放器新增一个兜底音乐源，当前音乐源不可用时会自动降级尝试播放。',
-        '【优化】TTS 新增 IndexTTS 本地服务商，支持通过本地 API 调用参考音色生成语音。',
-        '【优化】微信表情包尺寸显示优化，小图保持原尺寸，大图按聊天窗口宽高等比缩放。'
+        '【优化】狼人杀游戏机制：新局改为从第 1 夜开始，守卫不能连续守护同一名玩家。',
+        '【新增】ComfyUI 支持本地 / 远端云端连接切换，远程地址可在生图设置中单独配置。'
     ]
 };
 

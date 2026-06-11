@@ -72,6 +72,17 @@ export class ImageGenerationManager {
         return baseUrl;
     }
 
+    _normalizeComfyUIMode(value) {
+        return String(value || '').trim().toLowerCase() === 'remote' ? 'remote' : 'local';
+    }
+
+    _getComfyUIEndpointUrl(overrides = {}) {
+        const mode = this._normalizeComfyUIMode(overrides.comfyuiMode || this._get('phone-image-comfyui-mode', 'local'));
+        const localUrl = this._normalizeComfyUIBaseUrl(overrides.comfyuiUrl || this._get('phone-image-comfyui-url', 'http://127.0.0.1:8188'));
+        const remoteUrl = this._normalizeComfyUIBaseUrl(overrides.comfyuiRemoteUrl || this._get('phone-image-comfyui-remote-url', ''));
+        return mode === 'remote' ? remoteUrl : localUrl;
+    }
+
     _normalizeApiBaseUrl(value, fallback = '') {
         let baseUrl = String(value || fallback || '').trim().replace(/\/+$/, '');
         if (!baseUrl) return '';
@@ -706,7 +717,10 @@ export class ImageGenerationManager {
             openaiPublicRelayUrl: String(overrides.openaiPublicRelayUrl || this._get('phone-image-openai-public-relay-url', '')).trim(),
             openaiMode: 'images',
             openaiQuality: String(overrides.openaiQuality || this._get('phone-image-openai-quality', 'auto')).trim() || 'auto',
-            comfyuiUrl: this._normalizeComfyUIBaseUrl(overrides.comfyuiUrl || this._get('phone-image-comfyui-url', 'http://127.0.0.1:8188')),
+            comfyuiMode: this._normalizeComfyUIMode(overrides.comfyuiMode || this._get('phone-image-comfyui-mode', 'local')),
+            comfyuiUrl: this._getComfyUIEndpointUrl(overrides),
+            comfyuiLocalUrl: this._normalizeComfyUIBaseUrl(overrides.comfyuiUrl || this._get('phone-image-comfyui-url', 'http://127.0.0.1:8188')),
+            comfyuiRemoteUrl: this._normalizeComfyUIBaseUrl(overrides.comfyuiRemoteUrl || this._get('phone-image-comfyui-remote-url', '')),
             comfyuiWorkflow: String(overrides.comfyuiWorkflow ?? comfyuiAppWorkflow?.workflow ?? this._get('phone-image-comfyui-workflow', '')).trim(),
             comfyuiNodeMapping: String(overrides.comfyuiNodeMapping ?? comfyuiAppWorkflow?.nodeMapping ?? this._get('phone-image-comfyui-node-mapping', '')).trim(),
             comfyuiModel: String(overrides.comfyuiModel || comfyuiAppWorkflow?.comfyuiModel || comfyuiAppWorkflow?.model || this._get('phone-image-comfyui-model', '')).trim(),
@@ -1987,8 +2001,10 @@ export class ImageGenerationManager {
         return values;
     }
 
-    async fetchComfyUIResources(baseUrl) {
-        const normalizedUrl = this._normalizeComfyUIBaseUrl(baseUrl || this._get('phone-image-comfyui-url', 'http://127.0.0.1:8188'));
+    async fetchComfyUIResources(baseUrl = null, options = {}) {
+        const normalizedUrl = baseUrl
+            ? this._normalizeComfyUIBaseUrl(baseUrl)
+            : this._getComfyUIEndpointUrl(options);
         if (!normalizedUrl) throw new Error('未配置 ComfyUI 服务地址');
 
         const now = Date.now();

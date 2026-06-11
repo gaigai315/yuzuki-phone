@@ -583,16 +583,18 @@ export class WerewolfView {
     _renderNightActionBox(state, nightInfo = {}) {
         if (state.phase !== 'night' || !nightInfo.isUserTurn) return '';
         const role = String(nightInfo.role || state.userRole || '').trim();
+        const lastGuardSeat = Number(nightInfo.lastGuardSeat || state.lastGuardSeat || 0);
         const targets = this.app.werewolfData.getNightTargets({
             includeSelf: role === '守卫' || role === '女巫',
-            excludeRoles: role === '狼人' ? ['狼人'] : []
+            excludeRoles: role === '狼人' ? ['狼人'] : [],
+            excludeSeats: role === '守卫' && lastGuardSeat ? [lastGuardSeat] : []
         });
         const userSeat = Number((state.players || []).find(player => player.isUser)?.seat || 0);
         const wolfMates = role === '狼人'
             ? (state.players || []).filter(player => player.role === '狼人').map(player => `${player.seat}号 ${player.name}`).join('、')
             : '';
         const titleMap = {
-            守卫: '选择今晚守护的玩家',
+            守卫: lastGuardSeat ? `选择今晚守护的玩家（不能守 ${lastGuardSeat} 号）` : '选择今晚守护的玩家',
             狼人: '选择今晚袭击的玩家',
             预言家: '选择今晚查验的玩家',
             女巫: '选择今晚使用药剂的目标'

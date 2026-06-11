@@ -88,15 +88,17 @@ export class WerewolfData {
             };
         });
         this.state.matching = false;
-        this.state.phase = 'day';
+        this.state.phase = 'night';
         this.state.day = 1;
+        this.state.dayStarted = false;
         this.state.round = 1;
         this.state.speaking = false;
-        this.state.currentSpeaker = this._firstAliveSeatFrom(1);
-        this.state.nightStep = '';
+        this.state.currentSpeaker = 0;
+        this.state.nightStep = 'guard';
         this.state.nightActions = this._createNightActions();
         this.state.wolfChat = [];
         this.state.wolfChatLoading = false;
+        this.state.lastGuardSeat = 0;
         this.state.lastKilledSeat = 0;
         this.state.eliminatedSeat = 0;
         this.state.lastWordsDone = false;
@@ -105,13 +107,11 @@ export class WerewolfData {
         this.state.gameOver = false;
         this.state.winner = '';
         this.state.roleRevealMode = this._normalizeRoleRevealMode(this.state.roleRevealMode);
-        this.state.notice = this.state.currentSpeaker
-            ? `第 1 天白天开始，请 ${this.state.currentSpeaker} 号玩家发言。`
-            : '第 1 天白天开始。';
+        this.state.notice = '第 1 夜开始，天黑请闭眼。';
         this.state.chat = [
             {
                 seat: 0,
-                text: '8人局已开始，第 1 天白天开始。'
+                text: '8人局已开始，第 1 夜开始。'
             }
         ];
         this.state.privateLog = [];
@@ -121,7 +121,7 @@ export class WerewolfData {
         this._updateUserRoleHint();
         this.recordReplay('system', '8人局已开始，身份已分配。', { visibility: 'private' });
         this.recordReplay('system', `用户座位 ${this.state.players.find(player => player.isUser)?.seat || '?'}号，身份：${this.state.userRole || '未知'}。`, { visibility: 'private' });
-        this.recordReplay('system', '第 1 天白天开始。', { visibility: 'public', phase: 'day' });
+        this.recordReplay('system', '第 1 夜开始。', { visibility: 'public', phase: 'night' });
         this._persist();
         return this.state;
     }
@@ -175,7 +175,8 @@ export class WerewolfData {
             label: NIGHT_STEP_LABELS[step] || '夜晚行动',
             role: NIGHT_STEP_ROLES[step] || '',
             isUserTurn: this.isUserNightTurn(),
-            witchPotions: this.getWitchPotions()
+            witchPotions: this.getWitchPotions(),
+            lastGuardSeat: Number(this.state.lastGuardSeat || 0)
         };
     }
 
@@ -200,12 +201,16 @@ export class WerewolfData {
         const includeSelf = !!options.includeSelf;
         const user = this.state.players.find(player => player.isUser);
         const excludeSeat = Number(options.excludeSeat || 0);
+        const excludeSeats = Array.isArray(options.excludeSeats)
+            ? options.excludeSeats.map(seat => Number(seat || 0)).filter(Boolean)
+            : [];
         const excludeRoles = Array.isArray(options.excludeRoles)
             ? options.excludeRoles.map(role => String(role || '').trim()).filter(Boolean)
             : [];
         return this.state.players
             .filter(player => !player.empty && player.alive !== false)
             .filter(player => !excludeSeat || Number(player.seat) !== excludeSeat)
+            .filter(player => !excludeSeats.includes(Number(player.seat)))
             .filter(player => !excludeRoles.includes(String(player.role || '').trim()))
             .filter(player => includeSelf || !user || Number(player.seat) !== Number(user.seat))
             .map(player => this._publicPlayer(player));
@@ -358,6 +363,9 @@ export class WerewolfData {
             reason: String(payload.reason || '').trim(),
             at: Date.now()
         };
+        if (safeStep === 'guard' && Number(action.targetSeat) === Number(this.state.lastGuardSeat || 0)) {
+            action.targetSeat = 0;
+        }
         if (safeStep === 'werewolf') {
             const target = this.state.players.find(player => Number(player.seat) === Number(action.targetSeat));
             if (!target || target.role === '狼人') action.targetSeat = 0;
@@ -369,6 +377,7 @@ export class WerewolfData {
         if (safeStep === 'witch' && !action.usePotion) action.targetSeat = 0;
         this.state.nightActions[safeStep] = action;
         if (safeStep === 'werewolf') this.state.lastKilledSeat = action.targetSeat || 0;
+        if (safeStep === 'guard' && action.targetSeat) this.state.lastGuardSeat = action.targetSeat;
         if (safeStep === 'seer') this._recordSeerCheck(action);
         if (safeStep === 'witch') this._consumeWitchPotion(action.usePotion);
         this._recordNightAction(action);
@@ -379,7 +388,12 @@ export class WerewolfData {
 
     startDayFromNight() {
         const result = this._resolveNightResult();
-        this.state.day = Number(this.state.day || 1) + 1;
+        if (this.state.dayStarted) {
+            this.state.day = Number(this.state.day || 1) + 1;
+        } else {
+            this.state.day = Math.max(1, Number(this.state.day || 1));
+            this.state.dayStarted = true;
+        }
         this.state.phase = 'day';
         this.state.nightStep = '';
         this.state.speaking = false;
@@ -605,12 +619,14 @@ export class WerewolfData {
             matching: false,
             speaking: false,
             day: 1,
+            dayStarted: false,
             round: 1,
             currentSpeaker: 0,
             nightStep: '',
             nightActions: this._createNightActions(),
             wolfChat: [],
             wolfChatLoading: false,
+            lastGuardSeat: 0,
             witchPotions: { antidote: true, poison: true },
             lastKilledSeat: 0,
             eliminatedSeat: 0,
@@ -653,12 +669,14 @@ export class WerewolfData {
         const next = {
             ...state,
             speaking: !!state.speaking,
+            dayStarted: typeof state.dayStarted === 'boolean' ? state.dayStarted : this._inferDayStarted(state),
             round: Number(state.round || 1),
             chat: Array.isArray(state.chat) ? state.chat : [],
             nightStep: String(state.nightStep || ''),
             nightActions: state.nightActions && typeof state.nightActions === 'object' ? state.nightActions : this._createNightActions(),
             wolfChat: Array.isArray(state.wolfChat) ? state.wolfChat : [],
             wolfChatLoading: !!state.wolfChatLoading,
+            lastGuardSeat: Number(state.lastGuardSeat || 0),
             witchPotions: state.witchPotions && typeof state.witchPotions === 'object' ? state.witchPotions : { antidote: true, poison: true },
             lastKilledSeat: Number(state.lastKilledSeat || 0),
             eliminatedSeat: Number(state.eliminatedSeat || 0),
@@ -1031,6 +1049,20 @@ export class WerewolfData {
 
     _normalizeRoleRevealMode(mode = '') {
         return String(mode || '').trim() === 'hidden' ? 'hidden' : 'open';
+    }
+
+    _inferDayStarted(state = {}) {
+        const phase = String(state.phase || '');
+        const day = Number(state.day || 1);
+        if (phase === 'setup') return false;
+        if (phase === 'night' && day <= 1 && String(state.nightStep || '')) {
+            const logs = Array.isArray(state.replayLog) ? state.replayLog : [];
+            const chats = Array.isArray(state.chat) ? state.chat : [];
+            const hasDayRecord = logs.some(item => ['day', 'vote', 'last_words', 'speech'].includes(String(item?.phase || item?.type || '')))
+                || chats.some(item => ['day', 'vote', 'last_words'].includes(String(item?.phase || '')) || /第\s*1\s*天|白天|投票|发言/.test(String(item?.text || '')));
+            return hasDayRecord;
+        }
+        return true;
     }
 
     _shouldRandomizeLegacyUserSeat(state) {

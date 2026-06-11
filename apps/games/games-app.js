@@ -141,12 +141,17 @@ export class GamesApp extends PokerApp {
         this.werewolfData.updateUserInfo(this._getWerewolfUserInfo());
         this.werewolfView.openEntryPrompt();
         this.werewolfView.render();
+        const state = this.werewolfData.getState();
+        if (state?.phase === 'night' && !this.werewolfData.isUserNightTurn?.()) {
+            Promise.resolve().then(() => this.driveWerewolfNight());
+        }
     }
 
     startNewWerewolfGame(options = {}) {
         this.werewolfData.reset(this._getWerewolfUserInfo(), options);
         this.werewolfView.closeEntryPrompt();
         this.werewolfView.render();
+        this.driveWerewolfNight();
     }
 
     getWechatContactsForWerewolf() {
@@ -361,7 +366,7 @@ export class GamesApp extends PokerApp {
             }
             this.werewolfData.applyMatchedPlayers([...invited, ...generated]);
             this.werewolfView.render();
-            await this.driveWerewolfDaySpeeches();
+            await this.driveWerewolfNight();
         } catch (error) {
             console.warn('[Werewolf] 匹配失败:', error);
             const message = this._formatError?.(error, '匹配失败') || error?.message || '匹配失败';
@@ -745,7 +750,7 @@ export class GamesApp extends PokerApp {
         });
         const targetPool = livePlayers
             .filter(player => player.role !== '狼人')
-            .map(player => `${player.seat}号 ${player.name}：${player.personality || '普通玩家'}`)
+            .map(player => `${player.seat}号 ${player.name}：存活`)
             .join('\n');
         const messages = [
             {
@@ -755,7 +760,7 @@ export class GamesApp extends PokerApp {
                 content: [
                     '你正在扮演用户的 AI 狼人队友，在夜晚私聊里给出建议。',
                     '这是狼人内部信息，不是公开发言。',
-                    '你知道狼队成员，但不知道神职身份，只能根据公开发言和人物信息推测刀人目标。',
+                    '你知道狼队成员，但不知道神职身份，只能根据座位、姓名、公开发言和投票记录推测刀人目标。',
                     '不要替用户最终决定，只给简短建议和理由。',
                     '必须只返回 <狼人杀狼队建议> 标签包裹内容。'
                 ].join('\n')
@@ -821,7 +826,7 @@ export class GamesApp extends PokerApp {
             '</狼人杀夜晚行动>'
         ].filter(Boolean).join('\n');
         const instructionMap = {
-            guard: '你是守卫。请选择今晚守护一名存活玩家，可以守自己。目标只写座位号。',
+            guard: `你是守卫。请选择今晚守护一名存活玩家，可以守自己，但不能连续守和上一晚相同的目标${state.lastGuardSeat ? `。上次守护的是 ${state.lastGuardSeat} 号` : ''}。目标只写座位号。`,
             werewolf: wolfActionInstruction,
             seer: '你是预言家。请选择今晚查验一名存活玩家。目标只写座位号。',
             witch: killedSeat
@@ -937,7 +942,9 @@ export class GamesApp extends PokerApp {
         };
         if (step === 'guard') {
             const guard = livePlayers.find(player => player.role === '守卫');
-            const target = pick(livePlayers);
+            const lastGuardSeat = Number(state.lastGuardSeat || 0);
+            const targets = livePlayers.filter(player => Number(player.seat) !== lastGuardSeat);
+            const target = pick(targets.length ? targets : livePlayers);
             this.werewolfData.applyNightAction(step, { targetSeat: target?.seat || 0 }, { actorSeat: guard?.seat || 0 });
             return;
         }
