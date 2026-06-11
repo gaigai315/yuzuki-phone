@@ -1582,7 +1582,7 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
                 },
                 liveMale: {
                     enabled: false,
-                    name: '默认提示词by_茶茶_男性向',
+                    name: '默认提示词by_荼荼_男性向',
                     description: '蜜语APP直播与视频生成规则（男性向）',
                     content: `【蜜语 APP 核心生成规则】
 用户正在观看蜜语APP，你必须作为后台引擎生成APP内容，并强制使用 <Honey> 标签包裹所有内容。
@@ -1932,7 +1932,7 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
                 },
                 {
                     id: 'builtin:honey:live:male',
-                    name: '默认提示词by_茶茶_男性向',
+                    name: '默认提示词by_荼荼_男性向',
                     content: String(defaults?.honey?.liveMale?.content || ''),
                     builtIn: true
                 }
