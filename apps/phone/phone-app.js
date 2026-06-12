@@ -102,6 +102,7 @@ export class PhoneApp {
             this.phoneCallView.dialingTimer = null;
         }
         this.phoneCallView.clearTtsCache?.();
+        this.phoneCallView.clearPersistedTtsCache?.();
         this.phoneCallView.chatMessages = [];
     }
 

@@ -282,6 +282,7 @@ export class PhoneCallView {
             ev?.stopPropagation?.();
             if (deleting) return;
             deleting = true;
+            this.clearCallRecordTtsCache(record);
             this.app.phoneCallData.deleteCallRecord(record.id);
             this.renderMain();
         };
@@ -579,16 +580,20 @@ export class PhoneCallView {
         // 构建消息列表
         let messagesHtml = '';
         if (record.transcript && record.transcript.length > 0) {
-            record.transcript.forEach(msg => {
+            record.transcript.forEach((msg, index) => {
                 const isUser = msg.from === 'me';
                 const cssClass = isUser ? 'phone-call-message-user' : 'phone-call-message-ai';
+                const msgId = String(msg?._id || `${record.id || 'record'}_${index}`).trim();
+                const ttsKey = String(msg?._ttsCacheKey || '').trim();
                 if (!isUser && msg.text && msg.text.includes('\n')) {
                     // AI消息按行拆分为多个气泡
-                    msg.text.split('\n').filter(l => l.trim()).forEach(line => {
-                        messagesHtml += `<div class="${cssClass}">${this._escapeHtml(line.trim())}</div>`;
+                    msg.text.split('\n').filter(l => l.trim()).forEach((line, lineIndex) => {
+                        const lineText = line.trim();
+                        messagesHtml += `<div class="${cssClass}" data-msg-id="${this._escapeAttr(`${msgId}_${lineIndex}`)}" data-phone-call-caller="${this._escapeAttr(record.caller || '')}" data-phone-call-tts-text="${this._escapeAttr(lineText)}">${this._escapeHtml(lineText)}</div>`;
                     });
                 } else {
-                    messagesHtml += `<div class="${cssClass}">${this._escapeHtml(msg.text)}</div>`;
+                    const ttsAttrs = isUser ? '' : ` data-msg-id="${this._escapeAttr(msgId)}" data-phone-call-caller="${this._escapeAttr(record.caller || '')}" data-phone-call-tts-text="${this._escapeAttr(msg.text || '')}" data-phone-call-tts-key="${this._escapeAttr(ttsKey)}"`;
+                    messagesHtml += `<div class="${cssClass}"${ttsAttrs}>${this._escapeHtml(msg.text)}</div>`;
                 }
             });
         }
@@ -625,6 +630,8 @@ export class PhoneCallView {
         document.getElementById('phone-call-transcript-back')?.addEventListener('click', () => {
             this.renderMain();
         });
+
+        this._bindCallTtsBubbleClickEvents(document.getElementById('phone-call-transcript-messages'));
     }
 
     // ========================================
@@ -965,7 +972,10 @@ export class PhoneCallView {
                     for (let i = 0; i < aiLines.length; i++) {
                         const bubble = document.getElementById(bubbleIds[i]);
                         if (bubble) {
-                            await this.playTTS(aiLines[i], bubble);
+                            await this.playTTS(aiLines[i], bubble, {
+                                caller: callerName,
+                                messageId: String(bubble.dataset?.msgId || bubble.id || '').trim()
+                            });
                         }
                     }
                 }
@@ -1530,12 +1540,56 @@ export class PhoneCallView {
     clearTtsCache() {
         this.stopTTS();
         this._phoneCallTtsCache.forEach((blobUrl) => {
-            if (blobUrl) {
+            if (blobUrl && String(blobUrl).startsWith('blob:')) {
                 try { URL.revokeObjectURL(blobUrl); } catch (e) { /* ignore */ }
             }
         });
         this._phoneCallTtsCache.clear();
         this._phoneCallTtsCacheOrder = [];
+    }
+
+    clearPersistedTtsCache() {
+        const prefixes = [
+            'virtual_phone_phone_call_tts_cache_',
+            'virtual_phone_phone-call-tts-cache-'
+        ];
+        try {
+            Object.keys(localStorage || {}).forEach((key) => {
+                if (prefixes.some(prefix => String(key || '').startsWith(prefix))) localStorage.removeItem(key);
+            });
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    clearCallRecordTtsCache(record = {}) {
+        const caller = String(record?.caller || '').trim();
+        const ttsConfig = this._resolveCallerTtsVoice(caller, { allowGlobalFallback: true });
+        const provider = String(ttsConfig?.provider || '').trim();
+        const voice = String(ttsConfig?.voice || '').trim();
+        const transcript = Array.isArray(record?.transcript) ? record.transcript : [];
+        transcript.forEach((msg, index) => {
+            if (!msg || msg.from === 'me') return;
+            const msgId = String(msg?._id || `${record.id || 'record'}_${index}`).trim();
+            const text = String(msg.text || '').trim();
+            if (!msgId && !text) return;
+            if (msg._ttsCacheKey) {
+                this._removePersistedPhoneCallTtsCacheByKey(msg._ttsCacheKey);
+            }
+            if (text.includes('\n')) {
+                text.split('\n').filter(line => line.trim()).forEach((line, lineIndex) => {
+                    this._removePersistedPhoneCallTtsCache({
+                        bubbleId: `${msgId}_${lineIndex}`,
+                        caller,
+                        provider,
+                        voice,
+                        text: line.trim()
+                    });
+                });
+                return;
+            }
+            this._removePersistedPhoneCallTtsCache({ bubbleId: msgId, caller, provider, voice, text });
+        });
     }
 
     releaseInactiveResources() {
@@ -1611,6 +1665,72 @@ export class PhoneCallView {
         ].join('\u001f');
     }
 
+    _getPhoneCallTtsStorageKey(parts = {}) {
+        const raw = this._buildPhoneCallTtsCacheKey(parts);
+        let hash = 2166136261;
+        for (let i = 0; i < raw.length; i++) {
+            hash ^= raw.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return `phone_call_tts_cache_${(hash >>> 0).toString(16)}_${raw.length}`;
+    }
+
+    async _blobUrlToDataUrl(url = '') {
+        const safeUrl = String(url || '').trim();
+        if (!safeUrl || safeUrl.startsWith('data:')) return safeUrl;
+        if (!safeUrl.startsWith('blob:')) return '';
+        try {
+            const response = await fetch(safeUrl);
+            if (!response.ok) return '';
+            const blob = await response.blob();
+            return await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => resolve('');
+                reader.readAsDataURL(blob);
+            });
+        } catch (e) {
+            return '';
+        }
+    }
+
+    _getPersistedPhoneCallTtsCache(parts = {}) {
+        const key = this._getPhoneCallTtsStorageKey(parts);
+        return String(this.app?.storage?.get?.(key, '') || '').trim();
+    }
+
+    _getPersistedPhoneCallTtsCacheByKey(key = '') {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return '';
+        return String(this.app?.storage?.get?.(safeKey, '') || '').trim();
+    }
+
+    async _storePersistedPhoneCallTtsCache(parts = {}, audioUrl = '') {
+        const dataUrl = await this._blobUrlToDataUrl(audioUrl);
+        if (!dataUrl || !dataUrl.startsWith('data:audio/')) return;
+        const key = this._getPhoneCallTtsStorageKey(parts);
+        await this.app?.storage?.set?.(key, dataUrl);
+    }
+
+    async _storePersistedPhoneCallTtsCacheByKey(key = '', audioUrl = '') {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        const dataUrl = await this._blobUrlToDataUrl(audioUrl);
+        if (!dataUrl || !dataUrl.startsWith('data:audio/')) return;
+        await this.app?.storage?.set?.(safeKey, dataUrl);
+    }
+
+    _removePersistedPhoneCallTtsCache(parts = {}) {
+        const key = this._getPhoneCallTtsStorageKey(parts);
+        this.app?.storage?.remove?.(key);
+    }
+
+    _removePersistedPhoneCallTtsCacheByKey(key = '') {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        this.app?.storage?.remove?.(safeKey);
+    }
+
     _touchPhoneCallTtsCacheKey(cacheKey = '') {
         if (!cacheKey) return;
         this._phoneCallTtsCacheOrder = this._phoneCallTtsCacheOrder.filter(key => key !== cacheKey);
@@ -1620,7 +1740,7 @@ export class PhoneCallView {
     _storePhoneCallTtsCache(cacheKey = '', blobUrl = '') {
         if (!cacheKey || !blobUrl) return;
         const existed = this._phoneCallTtsCache.get(cacheKey);
-        if (existed && existed !== blobUrl) {
+        if (existed && existed !== blobUrl && String(existed).startsWith('blob:')) {
             try { URL.revokeObjectURL(existed); } catch (e) { /* ignore */ }
         }
         this._phoneCallTtsCache.set(cacheKey, blobUrl);
@@ -1630,7 +1750,7 @@ export class PhoneCallView {
             const oldKey = this._phoneCallTtsCacheOrder.shift();
             const oldUrl = this._phoneCallTtsCache.get(oldKey);
             this._phoneCallTtsCache.delete(oldKey);
-            if (oldUrl) {
+            if (oldUrl && String(oldUrl).startsWith('blob:')) {
                 try { URL.revokeObjectURL(oldUrl); } catch (e) { /* ignore */ }
             }
         }
@@ -1665,15 +1785,22 @@ export class PhoneCallView {
                 const targetBubble = allBubbles[i];
                 const text = String(targetBubble.dataset?.phoneCallTtsText || targetBubble.textContent || '').trim();
                 if (!text) continue;
-                await this.playTTS(text, targetBubble);
+                await this.playTTS(text, targetBubble, {
+                    caller: String(targetBubble.dataset?.phoneCallCaller || this.currentCaller || '').trim(),
+                    messageId: String(targetBubble.dataset?.msgId || targetBubble.id || '').trim(),
+                    storageKey: String(targetBubble.dataset?.phoneCallTtsKey || '').trim()
+                });
             }
         });
     }
 
-    async playTTS(text, bubble) {
+    async playTTS(text, bubble, options = {}) {
         await this._ensurePhoneWechatDataLoaded();
         const ttsManager = window.VirtualPhone?.ttsManager;
-        const ttsConfig = this._resolveCallerTtsVoice(this.currentCaller, { allowGlobalFallback: true });
+        const callerName = String(options.caller || this.currentCaller || '').trim();
+        const messageId = String(options.messageId || bubble?.dataset?.msgId || bubble?.id || '').trim();
+        const explicitStorageKey = String(options.storageKey || bubble?.dataset?.phoneCallTtsKey || '').trim();
+        const ttsConfig = this._resolveCallerTtsVoice(callerName, { allowGlobalFallback: true });
         const voice = String(ttsConfig?.voice || '').trim();
         const provider = String(ttsConfig?.provider || '').trim();
         const textToSpeak = String(text || '').trim();
@@ -1691,19 +1818,34 @@ export class PhoneCallView {
             }
 
             const cacheKey = this._buildPhoneCallTtsCacheKey({
-                bubbleId: bubble?.id || '',
-                caller: this.currentCaller,
+                bubbleId: messageId,
+                caller: callerName,
                 provider,
                 voice,
                 text: textToSpeak
             });
+            const persistedParts = {
+                bubbleId: messageId,
+                caller: callerName,
+                provider,
+                voice,
+                text: textToSpeak
+            };
+            const storageKey = explicitStorageKey || this._getPhoneCallTtsStorageKey(persistedParts);
             let blobUrl = this._phoneCallTtsCache.get(cacheKey) || '';
             if (blobUrl) {
                 this._touchPhoneCallTtsCacheKey(cacheKey);
             } else {
-                blobUrl = await ttsManager.requestTTS(textToSpeak, { provider: provider || undefined, voice: voice || undefined });
+                blobUrl = this._getPersistedPhoneCallTtsCacheByKey(storageKey);
+                if (!blobUrl) {
+                    blobUrl = await ttsManager.requestTTS(textToSpeak, { provider: provider || undefined, voice: voice || undefined });
+                    this._storePersistedPhoneCallTtsCacheByKey(storageKey, blobUrl);
+                }
                 this._storePhoneCallTtsCache(cacheKey, blobUrl);
             }
+            if (bubble) bubble.dataset.phoneCallTtsKey = storageKey;
+            const targetMsg = this.chatMessages.find(msg => String(msg?._id || '').trim() === messageId);
+            if (targetMsg) targetMsg._ttsCacheKey = storageKey;
 
             // 播放并等待播放完毕
             this.audioPlayer.src = blobUrl;
@@ -1969,6 +2111,16 @@ export class PhoneCallView {
                 ev?.stopPropagation?.();
                 if (deleting) return;
                 deleting = true;
+                const targetMsg = this.chatMessages.find(msg => String(msg?._id || '').trim() === msgId);
+                if (targetMsg && targetMsg.from !== 'me') {
+                    if (targetMsg._ttsCacheKey) this._removePersistedPhoneCallTtsCacheByKey(targetMsg._ttsCacheKey);
+                    else this._removePersistedPhoneCallTtsCache({
+                        bubbleId: msgId,
+                        caller: String(this.currentCaller || targetMsg.from || '').trim(),
+                        ...this._resolveCallerTtsVoice(String(this.currentCaller || targetMsg.from || '').trim(), { allowGlobalFallback: true }),
+                        text: String(targetMsg.text || bubble.dataset.phoneCallTtsText || '').trim()
+                    });
+                }
                 this.chatMessages = this.chatMessages.filter(msg => String(msg?._id || '').trim() !== msgId);
                 bubble.remove();
                 deleteBtn.remove();
