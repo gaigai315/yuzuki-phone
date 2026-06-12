@@ -289,6 +289,26 @@ if (window.GGP_Loaded) {
         return Array.from(new Set(floors)).sort((a, b) => a - b);
     }
 
+    function getLatestAssistantFloorFromContext(ctx = null) {
+        const context = ctx || getContext?.();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        for (let i = chat.length - 1; i >= 0; i--) {
+            const msg = chat[i];
+            if (!msg || msg.is_user) continue;
+            return i;
+        }
+        return chat.length > 0 ? chat.length - 1 : 0;
+    }
+
+    function getRegenerateTargetFloor(button = null) {
+        const mesEl = button ? $(button).closest('.mes') : $();
+        if (mesEl.length > 0) {
+            const mesId = parseInt(mesEl.attr('mesid'), 10);
+            if (!Number.isNaN(mesId)) return mesId;
+        }
+        return getLatestAssistantFloorFromContext();
+    }
+
     function checkBetaLock() {
         return true;
     }
@@ -8499,30 +8519,31 @@ if (window.GGP_Loaded) {
 
                 // ⏪⏪⏪ 核心修复 3：直接监听"重新生成"按钮点击，瞬间回滚小手机数据 ⏪⏪⏪
                 $(document).on('click', '[data-i18n="Regenerate"]', function () {
-                    // 获取当前点击的重新生成按钮所在的楼层
-                    const mesEl = $(this).closest('.mes');
-                    if (mesEl.length > 0) {
-                        const mesId = parseInt(mesEl.attr('mesid'), 10);
-                        if (!isNaN(mesId)) {
-                            markForcedReplayFloor(mesId, 180000);
-                            markPromptCleanupFloor(mesId, 180000);
-                            setTimeout(() => {
-                                try {
-                                    const wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
-                                    if (wechatDataInstance && typeof wechatDataInstance.rollbackToFloor === 'function') {
-                                        // 瞬间斩除废案数据
-                                        const hasRolledBack = wechatDataInstance.rollbackToFloor(mesId);
-                                        // 🔥 终极防闪退保护
-                                        if (hasRolledBack && window.currentWechatApp) {
-                                            const isCallOverlayVisible = !!document.querySelector('.call-fullscreen');
-                                            if (!isCallOverlayVisible) {
-                                                setTimeout(() => window.currentWechatApp.render(), 20);
-                                            }
+                    // 获取当前点击的重新生成按钮所在的楼层；底部全局“重新生成”按钮不在 .mes 内，需要兜底到最后一条 AI 楼层。
+                    const mesId = getRegenerateTargetFloor(this);
+                    if (!Number.isNaN(mesId)) {
+                        markForcedReplayFloor(mesId, 180000);
+                        markPromptCleanupFloor(mesId, 180000);
+                        setTimeout(() => {
+                            try {
+                                const wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
+                                let hasRolledBack = false;
+                                if (wechatDataInstance && typeof wechatDataInstance.removeMainChatTagMessagesAtFloor === 'function') {
+                                    hasRolledBack = wechatDataInstance.removeMainChatTagMessagesAtFloor(mesId) || hasRolledBack;
+                                }
+                                if (wechatDataInstance && typeof wechatDataInstance.rollbackToFloor === 'function') {
+                                    // 瞬间斩除废案数据
+                                    hasRolledBack = wechatDataInstance.rollbackToFloor(mesId) || hasRolledBack;
+                                    // 🔥 终极防闪退保护
+                                    if (hasRolledBack && window.currentWechatApp) {
+                                        const isCallOverlayVisible = !!document.querySelector('.call-fullscreen');
+                                        if (!isCallOverlayVisible) {
+                                            setTimeout(() => window.currentWechatApp.render(), 20);
                                         }
                                     }
-                                } catch(e) {}
-                            }, 10); // 极小延迟确保 DOM 不阻塞
-                        }
+                                }
+                            } catch(e) {}
+                        }, 10); // 极小延迟确保 DOM 不阻塞
                     }
                 });
 
@@ -8632,10 +8653,11 @@ if (window.GGP_Loaded) {
                             try {
                                 const ctx = getContext();
                                 if (ctx && ctx.chat) {
-                                    const targetFloor = ctx.chat.length;
-
                                     let hasRolledBack = false;
                                     const cleanupFloors = consumePromptCleanupFloors(ctx.chatId);
+                                    const targetFloor = cleanupFloors.length > 0
+                                        ? Math.min(...cleanupFloors)
+                                        : ctx.chat.length;
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
@@ -8649,7 +8671,7 @@ if (window.GGP_Loaded) {
                                     }
                                     if (wechatDataInstance && typeof wechatDataInstance.removeMainChatTagMessagesAtFloor === 'function') {
                                         cleanupFloors.forEach((floor) => {
-                                            if (floor <= targetFloor) {
+                                            if (floor >= 0) {
                                                 hasRolledBack = wechatDataInstance.removeMainChatTagMessagesAtFloor(floor) || hasRolledBack;
                                             }
                                         });
