@@ -799,6 +799,32 @@ export class WeiboView {
         this.bindPostDetailEvents(postId, mode);
     }
 
+    _scrollDetailToComment(rootIndex = null, commentIndex = null) {
+        const scrollArea = document.getElementById('weibo-detail-scroll-area');
+        if (!scrollArea) return;
+
+        if (!Number.isInteger(rootIndex)) {
+            setTimeout(() => {
+                if (scrollArea.isConnected) scrollArea.scrollTop = scrollArea.scrollHeight;
+            }, 50);
+            return;
+        }
+
+        setTimeout(() => {
+            if (!scrollArea.isConnected) return;
+            const target =
+                (Number.isInteger(commentIndex)
+                    ? scrollArea.querySelector(`[data-comment-index="${commentIndex}"]`)
+                    : null) ||
+                scrollArea.querySelector(`[data-comment-root-index="${rootIndex}"]`);
+
+            if (!target) return;
+            const targetTop = target.getBoundingClientRect().top;
+            const areaTop = scrollArea.getBoundingClientRect().top;
+            scrollArea.scrollTop += targetTop - areaTop - 12;
+        }, 50);
+    }
+
     bindPostDetailEvents(postId, mode) {
         // 返回
         document.getElementById('weibo-detail-page-back')?.addEventListener('click', (e) => {
@@ -873,13 +899,8 @@ export class WeiboView {
                 // 🔥 核心修复：直接重新渲染整个详情页，确保评论100%精准显示在正文下方，且包含正确的回复对象
                 this.renderPostDetail(postId, mode);
                 
-                // 滚动到底部查看最新评论
-                const scrollArea = document.getElementById('weibo-detail-scroll-area');
-                if (scrollArea) {
-                    setTimeout(() => {
-                        scrollArea.scrollTop = scrollArea.scrollHeight;
-                    }, 50);
-                }
+                // 普通评论滚到底部；楼中楼回复回到被回复的主楼，避免误以为回复被追加到了微博底部。
+                this._scrollDetailToComment(replyRootIndex, replyCommentIndex);
                 
                 // 🔥 触发AI自动回复用户的评论 (已静默)
                 this.triggerCommentAIReaction(postId, text, replyTo, mode, { replyRootIndex, replyCommentIndex, hotSearchTitle });
@@ -1858,16 +1879,17 @@ export class WeiboView {
                 subComments: [] 
             };
 
-            // 如果没有回复对象，或者是回复博主本人的，视为主评论
+            if (commentObj.replyRootIndex !== null && rootByOriginalIndex.has(commentObj.replyRootIndex)) {
+                rootByOriginalIndex.get(commentObj.replyRootIndex).subComments.push(commentObj);
+                return;
+            }
+
+            // 如果没有回复对象，或者是直接回复微博正文作者，视为主评论。
+            // 显式 replyRootIndex 已在上方优先处理，避免回复评论区里的博主评论时被错误追加到底部。
             if (!cleanReplyTo || cleanReplyTo === post.blogger) {
                 groupedComments.push(commentObj);
                 rootByOriginalIndex.set(idx, commentObj);
             } else {
-                if (commentObj.replyRootIndex !== null && rootByOriginalIndex.has(commentObj.replyRootIndex)) {
-                    rootByOriginalIndex.get(commentObj.replyRootIndex).subComments.push(commentObj);
-                    return;
-                }
-
                 // 如果有回复对象，倒序向上寻找属于哪个主评论的圈子
                 let foundParent = false;
                 for (let i = groupedComments.length - 1; i >= 0; i--) {
@@ -1915,7 +1937,7 @@ export class WeiboView {
                         : (Math.floor(Math.abs(Math.sin((mainComment.cleanName.charCodeAt(0) || 0) + idx)) * 150) + 2);
 
                     return `
-                    <div class="weibo-new-comment">
+                    <div class="weibo-new-comment" data-comment-root-index="${mainComment.originalIndex}" data-comment-index="${mainComment.originalIndex}">
                         <div class="wnc-avatar">
                             <div class="wnc-avatar-circle">${avatarChar}</div>
                         </div>
@@ -2056,6 +2078,10 @@ export class WeiboView {
 
                 if (stillSameDetail) {
                     this.renderPostDetail(postId, reactionMode);
+                    this._scrollDetailToComment(
+                        Number.isInteger(meta?.replyRootIndex) ? meta.replyRootIndex : null,
+                        null
+                    );
                 }
             }
         } catch (e) {
