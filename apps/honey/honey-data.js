@@ -877,6 +877,17 @@ export class HoneyData {
         return lines.join('\n').trim();
     }
 
+    _getCurrentPhoneStoryTimeInfo() {
+        const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || null;
+        const safe = storyTime && typeof storyTime === 'object' ? storyTime : {};
+        return {
+            time: String(safe.time || '').trim(),
+            date: String(safe.date || '').trim(),
+            weekday: String(safe.weekday || '').trim(),
+            timestamp: Number(safe.timestamp || 0) || Date.now()
+        };
+    }
+
     _scheduleFlushChatPersistence(delayMs = 420) {
         if (this._flushTimer) {
             clearTimeout(this._flushTimer);
@@ -2941,7 +2952,15 @@ export class HoneyData {
                 coveredTurnHashes: Array.isArray(source._summary.coveredTurnHashes)
                     ? source._summary.coveredTurnHashes.map(item => String(item || '').trim()).filter(Boolean).slice(-240)
                     : [],
-                updatedAt: Number(source._summary.updatedAt || 0) || 0
+                updatedAt: Number(source._summary.updatedAt || 0) || 0,
+                storyTime: source._summary.storyTime && typeof source._summary.storyTime === 'object'
+                    ? {
+                        time: String(source._summary.storyTime.time || '').trim(),
+                        date: String(source._summary.storyTime.date || '').trim(),
+                        weekday: String(source._summary.storyTime.weekday || '').trim(),
+                        timestamp: Number(source._summary.storyTime.timestamp || 0) || 0
+                    }
+                    : null
             }
             : null;
         const dayEntries = Object.keys(source)
@@ -2967,7 +2986,15 @@ export class HoneyData {
         return {
             text: String(summary.text || '').trim(),
             coveredTurnHashes: Array.isArray(summary.coveredTurnHashes) ? summary.coveredTurnHashes.map(item => String(item || '')).filter(Boolean) : [],
-            updatedAt: Number(summary.updatedAt || 0) || 0
+            updatedAt: Number(summary.updatedAt || 0) || 0,
+            storyTime: summary.storyTime && typeof summary.storyTime === 'object'
+                ? {
+                    time: String(summary.storyTime.time || '').trim(),
+                    date: String(summary.storyTime.date || '').trim(),
+                    weekday: String(summary.storyTime.weekday || '').trim(),
+                    timestamp: Number(summary.storyTime.timestamp || 0) || 0
+                }
+                : null
         };
     }
 
@@ -3114,10 +3141,12 @@ export class HoneyData {
         const nextText = String(tagged || '').replace(/<[^>]*>/g, ' ').trim();
         if (!nextText) throw new Error('AI 未返回有效总结');
 
+        const phoneStoryTime = this._getCurrentPhoneStoryTimeInfo();
         const nextSummary = {
             text: nextText,
             coveredTurnHashes: [...new Set([...summary.coveredTurnHashes, ...selectedTurns.map(turn => turn.hash)])],
-            updatedAt: Date.now()
+            updatedAt: phoneStoryTime.timestamp || Date.now(),
+            storyTime: phoneStoryTime
         };
         history._summary = nextSummary;
         const key = this._hostHistoryStorageKey(safeHostName);

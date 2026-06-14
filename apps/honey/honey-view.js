@@ -2590,6 +2590,7 @@ export class HoneyView {
         const historyMap = this.app?.honeyData?.getHostHistory?.(hostName) || {};
         const summary = this.app?.honeyData?.getHostHistorySummary?.(hostName) || {};
         const summaryText = String(summary.text || '').trim();
+        const summaryTimeText = this._formatHoneySummaryStoryTime(summary);
         const dateKeys = Object.keys(historyMap)
             .filter(key => key && !String(key).startsWith('_'))
             .sort((a, b) => String(a).localeCompare(String(b)));
@@ -2648,6 +2649,7 @@ export class HoneyView {
                                 <i class="fa-solid fa-xmark"></i>
                             </button>
                             <div style="font-size: 12px; font-weight: 800; margin: 0 62px 8px 0;">蜜语记录总结</div>
+                            ${summaryTimeText ? `<div style="font-size: 10px; color: rgba(255,255,255,0.58); margin: -3px 62px 8px 0;">${this._escapeHtml(summaryTimeText)}</div>` : ''}
                             <div style="font-size: 11px; line-height: 1.55; white-space: pre-wrap;">${this._escapeHtml(summaryText)}</div>
                         </div>
                     ` : ''}
@@ -2716,6 +2718,16 @@ export class HoneyView {
             const contentBox = currentView.querySelector('.honey-content');
             if (contentBox) contentBox.scrollTop = contentBox.scrollHeight;
         }, 50);
+    }
+
+    _formatHoneySummaryStoryTime(summary = {}) {
+        const storyTime = summary?.storyTime && typeof summary.storyTime === 'object' ? summary.storyTime : null;
+        const storyDate = String(storyTime?.date || '').trim();
+        const storyClock = String(storyTime?.time || '').trim();
+        if (storyDate || storyClock) {
+            return `总结时间：${[storyDate, storyClock].filter(Boolean).join(' ')}`;
+        }
+        return '';
     }
 
     renderMinePage() {
