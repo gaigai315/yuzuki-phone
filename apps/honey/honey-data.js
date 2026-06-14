@@ -175,6 +175,13 @@ export class HoneyData {
             .slice(0, maxLen);
     }
 
+    _sanitizePromptLine(value = '') {
+        return String(value || '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     _buildPreviousRecommendAvoidanceContext(previousTopics) {
         if (!Array.isArray(previousTopics) || previousTopics.length === 0) return '';
         const lines = previousTopics
@@ -553,8 +560,9 @@ export class HoneyData {
         };
     }
 
-    _normalizeContinuePromptTurns(turns, maxTurns = 100) {
+    _normalizeContinuePromptTurns(turns, maxTurns = 100, options = {}) {
         const safeMax = Math.max(1, Number(maxTurns) || 100);
+        const preserveLength = options?.preserveLength === true;
         return (Array.isArray(turns) ? turns : [])
             .map((turn) => {
                 const assistantContext = this._normalizeLiveAssistantContextLabel(
@@ -563,7 +571,14 @@ export class HoneyData {
                 )
                     .replace(/\r/g, '')
                     .trim();
-                const rawUserMessage = this._sanitizeInlineText(turn?.userMessage || turn?.user || '', 220);
+                const rawUserMessage = preserveLength
+                    ? String(turn?.userMessage || turn?.user || '')
+                        .replace(/\r/g, '')
+                        .split('\n')
+                        .map(line => this._sanitizePromptLine(line))
+                        .filter(Boolean)
+                        .join('\n')
+                    : this._sanitizeInlineText(turn?.userMessage || turn?.user || '', 220);
                 const userMessage = this._formatLiveUserMessageForPrompt(rawUserMessage);
                 if (!assistantContext || !userMessage) return null;
                 return { assistantContext, userMessage };
@@ -589,7 +604,7 @@ export class HoneyData {
         const safeLines = String(message || '')
             .replace(/\r/g, '')
             .split('\n')
-            .map(line => this._sanitizeInlineText(line, 220))
+            .map(line => this._sanitizePromptLine(line))
             .filter(Boolean);
         if (safeLines.length <= 0) return '';
 
@@ -736,7 +751,7 @@ export class HoneyData {
             ? runtimeDescription
                 .replace(/\r/g, '')
                 .split('\n')
-                .map(line => this._sanitizeInlineText(line, 220))
+                .map(line => this._sanitizePromptLine(line))
                 .filter(Boolean)
                 .slice(-8)
             : [];
@@ -2797,6 +2812,7 @@ export class HoneyData {
     _compactStoredScene(scene = {}, options = {}) {
         if (!scene || typeof scene !== 'object') return {};
         const full = options.full === true;
+        const preservePromptTurnLength = options.preservePromptTurnLength === true;
         const next = this._stripInlineGeneratedImagesFromScene(this._deepCloneSceneData(scene));
         const keepArray = (value, max, itemMax = 180) => (Array.isArray(value) ? value : [])
             .map(item => {
@@ -2817,17 +2833,17 @@ export class HoneyData {
         next.title = this._trimText(next.title, 80);
         next.host = this._trimText(next.host, 50);
         next.intro = this._trimText(next.intro, full ? 220 : 140);
-        next.description = this._trimText(next.description, full ? 1200 : 520);
+        next.description = preservePromptTurnLength ? String(next.description || '').trim() : this._trimText(next.description, full ? 1200 : 520);
         next.naiPrompt = this._trimText(next.naiPrompt, 900);
         next.imageGenerationPrompt = this._trimText(next.imageGenerationPrompt, 900);
         next.comments = keepArray(next.comments, full ? this.maxStoredComments : 12, 180);
         next.gifts = keepArray(next.gifts, full ? this.maxStoredGifts : 10, 160);
         next.userChats = keepArray(next.userChats, full ? 60 : 16, 180);
-        next.promptTurns = this._normalizeContinuePromptTurns(next.promptTurns)
-            .slice(-(full ? this.maxStoredPromptTurns : 12))
+        next.promptTurns = this._normalizeContinuePromptTurns(next.promptTurns, this.maxStoredPromptTurns, { preserveLength: preservePromptTurnLength })
+            .slice(-(full || preservePromptTurnLength ? this.maxStoredPromptTurns : 12))
             .map(turn => ({
-                userMessage: this._trimText(turn.userMessage, 220),
-                assistantContext: this._trimText(turn.assistantContext, full ? 900 : 420)
+                userMessage: preservePromptTurnLength ? String(turn.userMessage || '').trim() : this._trimText(turn.userMessage, 220),
+                assistantContext: preservePromptTurnLength ? String(turn.assistantContext || '').trim() : this._trimText(turn.assistantContext, full ? 900 : 420)
             }))
             .filter(turn => turn.userMessage || turn.assistantContext);
         next.naiTagHistory = keepArray(next.naiTagHistory, 8, 500);
@@ -2864,7 +2880,7 @@ export class HoneyData {
         const source = history && typeof history === 'object' ? history : {};
         const summary = source._summary && typeof source._summary === 'object'
             ? {
-                text: this._trimText(source._summary.text, 900),
+                text: String(source._summary.text || '').trim(),
                 coveredTurnHashes: Array.isArray(source._summary.coveredTurnHashes)
                     ? source._summary.coveredTurnHashes.map(item => String(item || '').trim()).filter(Boolean).slice(-240)
                     : [],
@@ -2875,7 +2891,7 @@ export class HoneyData {
             .filter(key => key && !String(key).startsWith('_'))
             .sort((a, b) => String(b).localeCompare(String(a)))
             .slice(0, this.maxStoredHostHistoryDays)
-            .map(dateKey => [dateKey, this._compactStoredScene(source[dateKey], { full: false })]);
+            .map(dateKey => [dateKey, this._compactStoredScene(source[dateKey], { full: true, preservePromptTurnLength: true })]);
         const next = Object.fromEntries(dayEntries);
         if (summary && (summary.text || summary.coveredTurnHashes.length)) next._summary = summary;
         return next;
@@ -2905,7 +2921,7 @@ export class HoneyData {
         const history = this.getHostHistory(safeHostName);
         if (!history?._summary) return false;
         delete history._summary;
-        this._setStored(key, JSON.stringify(history));
+        this._setStored(key, JSON.stringify(this._compactHostHistory(history)));
         this._scheduleFlushChatPersistence();
         return true;
     }
@@ -2924,7 +2940,7 @@ export class HoneyData {
             .filter(dateKey => dateKey && !String(dateKey).startsWith('_'))
             .forEach(dateKey => {
                 const dayScene = history[dateKey];
-                const turns = this._normalizeContinuePromptTurns(dayScene?.promptTurns);
+                const turns = this._normalizeContinuePromptTurns(dayScene?.promptTurns, this.maxStoredPromptTurns, { preserveLength: true });
                 if (!turns.length) return;
                 const keptTurns = turns.filter(turn => {
                     const hash = this._simpleHash(String(dateKey) + String(turn.assistantContext || '') + String(turn.userMessage || ''));
@@ -2943,7 +2959,7 @@ export class HoneyData {
             });
 
         if (removed > 0) {
-            this._setStored(key, JSON.stringify(history));
+            this._setStored(key, JSON.stringify(this._compactHostHistory(history)));
             this._scheduleFlushChatPersistence();
         }
         return { removed };
@@ -2959,7 +2975,7 @@ export class HoneyData {
             .sort((a, b) => String(a).localeCompare(String(b)))
             .forEach(dateKey => {
                 const dayScene = history[dateKey];
-                const dayTurns = this._normalizeContinuePromptTurns(dayScene?.promptTurns);
+                const dayTurns = this._normalizeContinuePromptTurns(dayScene?.promptTurns, this.maxStoredPromptTurns, { preserveLength: true });
                 dayTurns.forEach(turn => {
                     const hash = this._simpleHash(String(dateKey) + String(turn.assistantContext || '') + String(turn.userMessage || ''));
                     if (!hash || covered.has(hash)) return;
@@ -3020,8 +3036,16 @@ export class HoneyData {
         const timeoutPromise = new Promise((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error('蜜语记录总结超时，请重试')), timeoutMs);
         });
+        const context = this._getContext();
         const result = await Promise.race([
-            apiManager.callAI(messages, { max_tokens: 900, preserve_roles: false, appId: 'honey' }),
+            apiManager.callAI(messages, {
+                max_tokens: Number.parseInt(context?.max_response_length, 10)
+                    || Number.parseInt(context?.max_length, 10)
+                    || Number.parseInt(context?.maxContextLength, 10)
+                    || 8192,
+                preserve_roles: false,
+                appId: 'honey'
+            }),
             timeoutPromise
         ]).finally(() => {
             if (timeoutId) clearTimeout(timeoutId);
@@ -3030,7 +3054,7 @@ export class HoneyData {
 
         const rawText = String(result.summary || result.content || result.text || '').trim();
         const tagged = rawText.match(/<蜜语记录总结>([\s\S]*?)<\/蜜语记录总结>/)?.[1] || rawText;
-        const nextText = this._sanitizeHoneySecret(tagged, 900);
+        const nextText = String(tagged || '').replace(/<[^>]*>/g, ' ').trim();
         if (!nextText) throw new Error('AI 未返回有效总结');
 
         const nextSummary = {
@@ -3040,7 +3064,7 @@ export class HoneyData {
         };
         history._summary = nextSummary;
         const key = this._hostHistoryStorageKey(safeHostName);
-        this._setStored(key, JSON.stringify(history));
+        this._setStored(key, JSON.stringify(this._compactHostHistory(history)));
         this._scheduleFlushChatPersistence();
         return { changed: true, summary: nextSummary, added: selectedTurns.length, remaining: Math.max(0, turns.length - selectedTurns.length) };
     }
@@ -3053,7 +3077,7 @@ export class HoneyData {
         history[dateKey] = this._compactStoredScene({
             ...sceneData,
             updatedAt: Date.now()
-        }, { full: false });
+        }, { full: true, preservePromptTurnLength: true });
         this._setStored(key, JSON.stringify(this._compactHostHistory(history)));
         this._scheduleFlushChatPersistence();
     }
@@ -3588,7 +3612,7 @@ export class HoneyData {
         const safeUserMessage = String(options?.userMessage || '')
             .replace(/\r/g, '')
             .split('\n')
-            .map(line => this._sanitizeInlineText(line, 220))
+            .map(line => this._sanitizePromptLine(line))
             .filter(Boolean)
             .join('\n');
         const safeUserMessageWithNick = this._formatLiveUserMessageForPrompt(safeUserMessage, profile.nickname);
@@ -3763,7 +3787,7 @@ export class HoneyData {
         const safeUserMessage = String(options?.userMessage || '')
             .replace(/\r/g, '')
             .split('\n')
-            .map(line => this._sanitizeInlineText(line, 220))
+            .map(line => this._sanitizePromptLine(line))
             .filter(Boolean)
             .join('\n');
         const safeUserMessageWithNick = this._formatLiveUserMessageForPrompt(safeUserMessage, honeyNickname);
@@ -3892,7 +3916,7 @@ export class HoneyData {
 
                     dateKeys.forEach(dateKey => {
                         const dayScene = historyMap[dateKey];
-                        const dayTurns = this._normalizeContinuePromptTurns(dayScene?.promptTurns);
+                        const dayTurns = this._normalizeContinuePromptTurns(dayScene?.promptTurns, this.maxStoredPromptTurns, { preserveLength: true });
 
                         let addedForDate = false;
                         dayTurns.forEach(turn => {

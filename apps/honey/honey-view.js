@@ -2599,7 +2599,11 @@ export class HoneyView {
 
         dateKeys.forEach(dateKey => {
             const dayScene = historyMap[dateKey];
-            const dayTurns = this.app?.honeyData?._normalizeContinuePromptTurns(dayScene?.promptTurns) || [];
+            const dayTurns = this.app?.honeyData?._normalizeContinuePromptTurns(
+                dayScene?.promptTurns,
+                this.app?.honeyData?.maxStoredPromptTurns,
+                { preserveLength: true }
+            ) || [];
             let addedDate = false;
 
             dayTurns.forEach(turn => {
