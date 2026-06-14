@@ -514,6 +514,14 @@ export class HoneyData {
             .trim();
     }
 
+    _isFollowedHostScene(scene = {}) {
+        const hostName = this._stripFollowStateSuffix(scene?.host || scene?.name || '');
+        const hostKey = this._normalizeHostNameKey(hostName);
+        if (!hostKey) return false;
+        return this.getFollowedHosts()
+            .some(item => this._normalizeHostNameKey(this._stripFollowStateSuffix(item?.name || '')) === hostKey);
+    }
+
     _clampFavorability(value, fallback = 0) {
         const num = Number.parseFloat(value);
         if (!Number.isFinite(num)) return fallback;
@@ -571,6 +579,12 @@ export class HoneyData {
                 )
                     .replace(/\r/g, '')
                     .trim();
+                const responseContext = this._normalizeLiveAssistantContextLabel(
+                    String(turn?.responseContext || turn?.aiResponseContext || turn?.resultContext || ''),
+                    { asHistory: true }
+                )
+                    .replace(/\r/g, '')
+                    .trim();
                 const rawUserMessage = preserveLength
                     ? String(turn?.userMessage || turn?.user || '')
                         .replace(/\r/g, '')
@@ -581,7 +595,7 @@ export class HoneyData {
                     : this._sanitizeInlineText(turn?.userMessage || turn?.user || '', 220);
                 const userMessage = this._formatLiveUserMessageForPrompt(rawUserMessage);
                 if (!assistantContext || !userMessage) return null;
-                return { assistantContext, userMessage };
+                return responseContext ? { assistantContext, responseContext, userMessage } : { assistantContext, userMessage };
             })
             .filter(Boolean)
             .slice(-safeMax);
@@ -747,25 +761,26 @@ export class HoneyData {
         const runtimeDescription = this._isMeaningfulDescription(rawDescription)
             ? rawDescription
             : previousDescription;
+        const preserveRuntimeContextLength = options?.preserveRuntimeContextLength === true || this._isFollowedHostScene(currentScene);
         const descLines = this._isMeaningfulDescription(runtimeDescription)
             ? runtimeDescription
                 .replace(/\r/g, '')
                 .split('\n')
                 .map(line => this._sanitizePromptLine(line))
                 .filter(Boolean)
-                .slice(-8)
             : [];
+        if (!preserveRuntimeContextLength) descLines.splice(0, Math.max(0, descLines.length - 8));
 
         const commentsSource = externalComments || currentScene?.comments || [];
         const comments = (Array.isArray(commentsSource) ? commentsSource : [])
             .map(line => this._sanitizeInlineText(line, 160))
             .filter(Boolean)
-            .slice(-12);
+            .slice(-(preserveRuntimeContextLength ? 120 : 12));
 
         const gifts = (Array.isArray(currentScene?.gifts) ? currentScene.gifts : [])
             .map(line => this._sanitizeInlineText(line, 100))
             .filter(Boolean)
-            .slice(-6);
+            .slice(-(preserveRuntimeContextLength ? 60 : 6));
         const collabInfo = this._normalizeHoneyCollabRequest(currentScene?.collabRequestInfo || null);
         const collabRequests = this._extractHoneyCollabRequests('', currentScene?.collabRequests || []);
 
@@ -985,12 +1000,16 @@ export class HoneyData {
         const safeTopicKey = /^topic_[a-z0-9]+$/i.test(refKey)
             ? refKey.toLowerCase()
             : String(scene._topicKey || `topic_${this._simpleHash(`${safeTitle}__0`)}`).trim();
-        scenes[key] = this._compactStoredScene({
+        const sceneForStorage = {
             ...scene,
             _topicTitle: safeTitle,
             _topicKey: safeTopicKey,
             updatedAt: Date.now()
-        }, { full: true });
+        };
+        scenes[key] = this._compactStoredScene(sceneForStorage, {
+            full: true,
+            preservePromptTurnLength: this._isFollowedHostScene(sceneForStorage)
+        });
         this.saveTopicScenes(scenes);
     }
 
@@ -2843,9 +2862,10 @@ export class HoneyData {
             .slice(-(full || preservePromptTurnLength ? this.maxStoredPromptTurns : 12))
             .map(turn => ({
                 userMessage: preservePromptTurnLength ? String(turn.userMessage || '').trim() : this._trimText(turn.userMessage, 220),
-                assistantContext: preservePromptTurnLength ? String(turn.assistantContext || '').trim() : this._trimText(turn.assistantContext, full ? 900 : 420)
+                assistantContext: preservePromptTurnLength ? String(turn.assistantContext || '').trim() : this._trimText(turn.assistantContext, full ? 900 : 420),
+                responseContext: preservePromptTurnLength ? String(turn.responseContext || '').trim() : this._trimText(turn.responseContext, full ? 1600 : 520)
             }))
-            .filter(turn => turn.userMessage || turn.assistantContext);
+            .filter(turn => turn.userMessage || turn.assistantContext || turn.responseContext);
         next.naiTagHistory = keepArray(next.naiTagHistory, 8, 500);
         next.friendRequests = keepArray(next.friendRequests, 8, 160);
         next.collabRequests = keepArray(next.collabRequests, 8, 160);
@@ -2869,7 +2889,10 @@ export class HoneyData {
             .filter(([, scene]) => scene && typeof scene === 'object')
             .map(([key, scene], index) => {
                 const timestamp = Number(scene.updatedAt || scene.imageGenerationStartedAt || scene.lastActiveAt || scene.createdAt || 0) || index;
-                return [key, this._compactStoredScene(scene, { full: true }), timestamp];
+                return [key, this._compactStoredScene(scene, {
+                    full: true,
+                    preservePromptTurnLength: this._isFollowedHostScene(scene)
+                }), timestamp];
             })
             .sort((a, b) => b[2] - a[2])
             .slice(0, this.maxStoredTopicScenes);
@@ -2983,7 +3006,7 @@ export class HoneyData {
                         hash,
                         date: dateKey,
                         userMessage: String(turn.userMessage || '').trim(),
-                        assistantContext: String(turn.assistantContext || '').trim()
+                        assistantContext: String(turn.responseContext || turn.assistantContext || '').trim()
                     });
                 });
             });
@@ -3094,7 +3117,10 @@ export class HoneyData {
         const safeScene = this._compactStoredScene({
             ...scene,
             updatedAt: Date.now()
-        }, { full: true });
+        }, {
+            full: true,
+            preservePromptTurnLength: this._isFollowedHostScene(scene)
+        });
         this._lastSceneCache = safeScene;
         this._setStored('honey_last_scene', JSON.stringify(safeScene));
         this._scheduleFlushChatPersistence();
@@ -3616,7 +3642,7 @@ export class HoneyData {
             .filter(Boolean)
             .join('\n');
         const safeUserMessageWithNick = this._formatLiveUserMessageForPrompt(safeUserMessage, profile.nickname);
-        const historyTurns = this._normalizeContinuePromptTurns(options?.promptTurns);
+        const historyTurns = this._normalizeContinuePromptTurns(options?.promptTurns, this.maxStoredPromptTurns, { preserveLength: true });
         const mode = String(options?.requestMode || '').trim();
         const isPrivateLive = String(options?.visibility || options?.currentScene?.visibility || '').trim() === 'private'
             || options?.isPrivateLive === true
@@ -3764,9 +3790,11 @@ export class HoneyData {
         this._syncHoneyUserProfileFromUserLiveScene(parsed);
         if (mode === 'continue') {
             const nextPromptTurns = [...historyTurns];
+            const responseContext = responseText;
             if (runtimeContext && safeUserMessageWithNick) {
                 nextPromptTurns.push({
                     assistantContext: this._normalizeLiveAssistantContextLabel(runtimeContext, { asHistory: true }),
+                    responseContext: this._normalizeLiveAssistantContextLabel(responseContext, { asHistory: true }),
                     userMessage: safeUserMessageWithNick
                 });
             }
@@ -3791,7 +3819,7 @@ export class HoneyData {
             .filter(Boolean)
             .join('\n');
         const safeUserMessageWithNick = this._formatLiveUserMessageForPrompt(safeUserMessage, honeyNickname);
-        const historyTurns = this._normalizeContinuePromptTurns(options?.promptTurns);
+        const historyTurns = this._normalizeContinuePromptTurns(options?.promptTurns, this.maxStoredPromptTurns, { preserveLength: true });
         const previousRecommendContext = this._buildPreviousRecommendAvoidanceContext(options?.previousRecommendTopics);
         const recommendSearchKeyword = this._sanitizeInlineText(options?.recommendSearchKeyword || options?.searchKeyword || '', 80);
         const isPrivateLive = String(options?.visibility || options?.currentScene?.visibility || '').trim() === 'private'
@@ -4037,9 +4065,11 @@ export class HoneyData {
         const parsed = this.parseHoneyContent(responseText);
         if (mode === 'continue') {
             const nextPromptTurns = [...historyTurns];
+            const responseContext = responseText;
             if (runtimeContext && safeUserMessageWithNick) {
                 nextPromptTurns.push({
                     assistantContext: this._normalizeLiveAssistantContextLabel(runtimeContext, { asHistory: true }),
+                    responseContext: this._normalizeLiveAssistantContextLabel(responseContext, { asHistory: true }),
                     userMessage: safeUserMessageWithNick
                 });
             }

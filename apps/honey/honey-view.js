@@ -2609,6 +2609,7 @@ export class HoneyView {
             dayTurns.forEach(turn => {
                 const hash = this.app?.honeyData?._simpleHash(String(dateKey) + String(turn.assistantContext || '') + String(turn.userMessage || ''));
                 if (!seenTurns.has(hash)) {
+                    const displayContext = String(turn.responseContext || turn.assistantContext || '').trim();
                     seenTurns.add(hash);
                     if (!addedDate) {
                         chatHtml += `<div style="text-align: center; margin: 15px 0 10px; font-size: 10px; color: rgba(255,255,255,0.4);">――― ${dateKey} ―――</div>`;
@@ -2619,7 +2620,7 @@ export class HoneyView {
                             <div style="max-width: 85%; padding: 8px 12px; background: #ff4785; color: #fff; border-radius: 14px 4px 14px 14px; font-size: 12px; word-break: break-word; box-shadow: 0 2px 8px rgba(255, 71, 133, 0.3);">${this._escapeHtml(turn.userMessage)}</div>
                         </div>
                         <div style="display: flex; justify-content: flex-start; margin-bottom: 18px;">
-                            <div style="max-width: 90%; padding: 10px 12px; background: rgba(255,255,255,0.1); color: #eef2ff; border-radius: 4px 14px 14px 14px; font-size: 11px; line-height: 1.5; word-break: break-word; border: 1px solid rgba(255,255,255,0.08);">${this._escapeHtml(turn.assistantContext).replace(/\n/g, '<br>')}</div>
+                            <div style="max-width: 90%; padding: 10px 12px; background: rgba(255,255,255,0.1); color: #eef2ff; border-radius: 4px 14px 14px 14px; font-size: 11px; line-height: 1.5; word-break: break-word; border: 1px solid rgba(255,255,255,0.08);">${this._escapeHtml(displayContext).replace(/\n/g, '<br>')}</div>
                         </div>
                     `;
                 }
@@ -4229,7 +4230,11 @@ export class HoneyView {
                         naiImageUrl: onlineTopic.naiImageUrl || (cachedStableScene || latestScene).naiImageUrl,
                         generatedImageUrl: onlineTopic.generatedImageUrl || (cachedStableScene || latestScene).generatedImageUrl,
                         imageUrl: onlineTopic.imageUrl || (cachedStableScene || latestScene).imageUrl,
-                        promptTurns: this.app?.honeyData?._normalizeContinuePromptTurns?.((cachedStableScene || latestScene).promptTurns) || []
+                        promptTurns: this.app?.honeyData?._normalizeContinuePromptTurns?.(
+                            (cachedStableScene || latestScene).promptTurns,
+                            this.app?.honeyData?.maxStoredPromptTurns,
+                            { preserveLength: true }
+                        ) || []
                     };
                 } else {
                     topicToEnter = onlineTopic || cachedStableScene || latestScene;
