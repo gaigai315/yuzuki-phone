@@ -2609,6 +2609,7 @@ export class HoneyView {
             dayTurns.forEach(turn => {
                 const hash = this.app?.honeyData?._simpleHash(String(dateKey) + String(turn.assistantContext || '') + String(turn.userMessage || ''));
                 if (!seenTurns.has(hash)) {
+                    const userMessage = String(turn.userMessage || '').trim();
                     const displayContext = String(turn.responseContext || turn.assistantContext || '').trim();
                     seenTurns.add(hash);
                     if (!addedDate) {
@@ -2616,9 +2617,9 @@ export class HoneyView {
                         addedDate = true;
                     }
                     chatHtml += `
-                        <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+                        ${userMessage ? `<div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
                             <div style="max-width: 85%; padding: 8px 12px; background: #ff4785; color: #fff; border-radius: 14px 4px 14px 14px; font-size: 12px; word-break: break-word; box-shadow: 0 2px 8px rgba(255, 71, 133, 0.3);">${this._escapeHtml(turn.userMessage)}</div>
-                        </div>
+                        </div>` : ''}
                         <div style="display: flex; justify-content: flex-start; margin-bottom: 18px;">
                             <div style="max-width: 90%; padding: 10px 12px; background: rgba(255,255,255,0.1); color: #eef2ff; border-radius: 4px 14px 14px 14px; font-size: 11px; line-height: 1.5; word-break: break-word; border: 1px solid rgba(255,255,255,0.08);">${this._escapeHtml(displayContext).replace(/\n/g, '<br>')}</div>
                         </div>

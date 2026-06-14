@@ -8716,7 +8716,6 @@ renderChatRoom(chat) {
                     const honeySummary = await this._getHoneyHostSummaryForWechatContact(currentContact);
                     if (honeySummary) {
                         contactNotes.push(`蜜语记录总结：${honeySummary}`);
-                        contactNotes.push('这段总结来自用户在蜜语中的手动总结记录，可作为当前微信聊天的关系背景。');
                     }
                 }
                 if (currentContact.remark) {

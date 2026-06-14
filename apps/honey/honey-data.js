@@ -580,7 +580,7 @@ export class HoneyData {
         const preserveLength = options?.preserveLength === true;
         return (Array.isArray(turns) ? turns : [])
             .map((turn) => {
-                const assistantContext = this._normalizeLiveAssistantContextLabel(
+                let assistantContext = this._normalizeLiveAssistantContextLabel(
                     String(turn?.assistantContext || turn?.assistant || ''),
                     { asHistory: true }
                 )
@@ -598,7 +598,10 @@ export class HoneyData {
                         .join('\n')
                     : this._sanitizeInlineText(turn?.userMessage || turn?.user || '', 220);
                 const userMessage = this._formatLiveUserMessageForPrompt(rawUserMessage);
-                if (!assistantContext || !userMessage) return null;
+                if (!assistantContext && responseContext) {
+                    assistantContext = this._normalizeLiveAssistantContextLabel(responseContext, { asHistory: true });
+                }
+                if (!assistantContext || (!userMessage && !responseContext)) return null;
                 return responseContext ? { assistantContext, responseContext, userMessage } : { assistantContext, userMessage };
             })
             .filter(Boolean)
@@ -3817,9 +3820,9 @@ export class HoneyData {
         }
         const parsed = this.parseHoneyUserLiveContent(responseText);
         this._syncHoneyUserProfileFromUserLiveScene(parsed);
+        const responseContext = this._buildHoneyInteractionHistoryContext(parsed);
         if (mode === 'continue') {
             const nextPromptTurns = [...historyTurns];
-            const responseContext = this._buildHoneyInteractionHistoryContext(parsed);
             if (runtimeContext && safeUserMessageWithNick) {
                 nextPromptTurns.push({
                     assistantContext: this._normalizeLiveAssistantContextLabel(runtimeContext, { asHistory: true }),
@@ -3828,6 +3831,12 @@ export class HoneyData {
                 });
             }
             parsed.promptTurns = nextPromptTurns;
+        } else if (responseContext) {
+            parsed.promptTurns = [{
+                assistantContext: this._normalizeLiveAssistantContextLabel(responseContext, { asHistory: true }),
+                responseContext,
+                userMessage: ''
+            }];
         }
         return parsed;
     }
@@ -4092,9 +4101,9 @@ export class HoneyData {
             throw new Error('AI 未返回有效 Honey 内容');
         }
         const parsed = this.parseHoneyContent(responseText);
+        const responseContext = this._buildHoneyInteractionHistoryContext(parsed);
         if (mode === 'continue') {
             const nextPromptTurns = [...historyTurns];
-            const responseContext = this._buildHoneyInteractionHistoryContext(parsed);
             if (runtimeContext && safeUserMessageWithNick) {
                 nextPromptTurns.push({
                     assistantContext: this._normalizeLiveAssistantContextLabel(runtimeContext, { asHistory: true }),
@@ -4103,6 +4112,12 @@ export class HoneyData {
                 });
             }
             parsed.promptTurns = nextPromptTurns;
+        } else if (responseContext) {
+            parsed.promptTurns = [{
+                assistantContext: this._normalizeLiveAssistantContextLabel(responseContext, { asHistory: true }),
+                responseContext,
+                userMessage: ''
+            }];
         }
         return parsed;
     }
