@@ -182,6 +182,13 @@ export class HoneyData {
             .trim();
     }
 
+    _sanitizePromptBlockLine(value = '') {
+        return String(value || '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\r/g, '')
+            .trim();
+    }
+
     _buildPreviousRecommendAvoidanceContext(previousTopics) {
         if (!Array.isArray(previousTopics) || previousTopics.length === 0) return '';
         const lines = previousTopics
@@ -579,10 +586,7 @@ export class HoneyData {
                 )
                     .replace(/\r/g, '')
                     .trim();
-                const responseContext = this._normalizeLiveAssistantContextLabel(
-                    String(turn?.responseContext || turn?.aiResponseContext || turn?.resultContext || ''),
-                    { asHistory: true }
-                )
+                const responseContext = String(turn?.responseContext || turn?.aiResponseContext || turn?.resultContext || '')
                     .replace(/\r/g, '')
                     .trim();
                 const rawUserMessage = preserveLength
@@ -841,6 +845,33 @@ export class HoneyData {
         } catch (e) {
             return fallback;
         }
+    }
+
+    _buildHoneyInteractionHistoryContext(scene = {}) {
+        if (!scene || typeof scene !== 'object') return '';
+        const lines = [];
+        const description = String(scene.description || '').trim();
+        if (description && this._isMeaningfulDescription(description)) {
+            lines.push('【直播正文】');
+            lines.push(description);
+        }
+        const gifts = (Array.isArray(scene.gifts) ? scene.gifts : [])
+            .map(item => String(item || '').trim())
+            .filter(Boolean);
+        if (gifts.length > 0) {
+            if (lines.length) lines.push('');
+            lines.push('【打赏记录】');
+            lines.push(...gifts);
+        }
+        const comments = (Array.isArray(scene.comments) ? scene.comments : [])
+            .map(item => String(item || '').trim())
+            .filter(Boolean);
+        if (comments.length > 0) {
+            if (lines.length) lines.push('');
+            lines.push('【评论区】');
+            lines.push(...comments);
+        }
+        return lines.join('\n').trim();
     }
 
     _scheduleFlushChatPersistence(delayMs = 420) {
@@ -2833,13 +2864,13 @@ export class HoneyData {
         const full = options.full === true;
         const preservePromptTurnLength = options.preservePromptTurnLength === true;
         const next = this._stripInlineGeneratedImagesFromScene(this._deepCloneSceneData(scene));
-        const keepArray = (value, max, itemMax = 180) => (Array.isArray(value) ? value : [])
+        const keepArray = (value, max, itemMax = 180, options = {}) => (Array.isArray(value) ? value : [])
             .map(item => {
-                if (typeof item === 'string') return this._trimText(item, itemMax);
+                if (typeof item === 'string') return options.preserveLength ? String(item || '').trim() : this._trimText(item, itemMax);
                 if (item && typeof item === 'object') {
                     const compact = {};
                     Object.entries(item).forEach(([key, val]) => {
-                        if (typeof val === 'string') compact[key] = this._trimText(val, itemMax);
+                        if (typeof val === 'string') compact[key] = options.preserveLength ? String(val || '').trim() : this._trimText(val, itemMax);
                         else if (typeof val === 'number' || typeof val === 'boolean') compact[key] = val;
                     });
                     return compact;
@@ -2847,7 +2878,7 @@ export class HoneyData {
                 return '';
             })
             .filter(item => typeof item === 'string' ? !!item : Object.keys(item || {}).length > 0)
-            .slice(-Math.max(0, Number(max) || 0));
+            .slice(options.preserveLength ? 0 : -Math.max(0, Number(max) || 0));
 
         next.title = this._trimText(next.title, 80);
         next.host = this._trimText(next.host, 50);
@@ -2855,8 +2886,8 @@ export class HoneyData {
         next.description = preservePromptTurnLength ? String(next.description || '').trim() : this._trimText(next.description, full ? 1200 : 520);
         next.naiPrompt = this._trimText(next.naiPrompt, 900);
         next.imageGenerationPrompt = this._trimText(next.imageGenerationPrompt, 900);
-        next.comments = keepArray(next.comments, full ? this.maxStoredComments : 12, 180);
-        next.gifts = keepArray(next.gifts, full ? this.maxStoredGifts : 10, 160);
+        next.comments = keepArray(next.comments, full ? this.maxStoredComments : 12, 180, { preserveLength: preservePromptTurnLength });
+        next.gifts = keepArray(next.gifts, full ? this.maxStoredGifts : 10, 160, { preserveLength: preservePromptTurnLength });
         next.userChats = keepArray(next.userChats, full ? 60 : 16, 180);
         next.promptTurns = this._normalizeContinuePromptTurns(next.promptTurns, this.maxStoredPromptTurns, { preserveLength: preservePromptTurnLength })
             .slice(-(full || preservePromptTurnLength ? this.maxStoredPromptTurns : 12))
@@ -3430,7 +3461,7 @@ export class HoneyData {
                 const rankRaw = this._sanitizeInlineText(item.rank || item.type || '', 12);
                 const rank = rankRaw ? `[${rankRaw}]` : '';
                 const name = this._sanitizeInlineText(item.name || item.nickname || item.user || '匿名', 24) || '匿名';
-                const text = this._sanitizeInlineText(item.text || item.content || item.message || '', 180);
+                const text = this._sanitizePromptBlockLine(item.text || item.content || item.message || '');
                 if (!text) return '';
                 return `${rank}${name}: ${text}`.trim();
             })
@@ -3457,9 +3488,8 @@ export class HoneyData {
                 }
             );
             const gifts = (Array.isArray(live?.gifts) ? live.gifts : [])
-                .map(item => this._sanitizeInlineText(item, 100))
-                .filter(line => this._isHoneyGiftRecordLine(line))
-                .slice(-8);
+                .map(item => this._sanitizePromptBlockLine(item))
+                .filter(line => this._isHoneyGiftRecordLine(line));
             const leaderboard = (Array.isArray(live?.leaderboard) ? live.leaderboard : [])
                 .map((item, idx) => {
                     if (!item || typeof item !== 'object') return null;
@@ -3563,9 +3593,8 @@ export class HoneyData {
         const gifts = String(giftsSection || '')
             .split('\n')
             .map(line => line.replace(/^\s*(?:[-*•]+|\d{1,2}\s*[\.、])\s*/, '').trim())
-            .map(line => this._sanitizeInlineText(line, 100))
-            .filter(line => this._isHoneyGiftRecordLine(line))
-            .slice(-8);
+            .map(line => this._sanitizePromptBlockLine(line))
+            .filter(line => this._isHoneyGiftRecordLine(line));
         const comments = this._filterOutUserSpokenHoneyComments(
             String(commentsSection || '')
                 .split('\n')
@@ -3790,11 +3819,11 @@ export class HoneyData {
         this._syncHoneyUserProfileFromUserLiveScene(parsed);
         if (mode === 'continue') {
             const nextPromptTurns = [...historyTurns];
-            const responseContext = responseText;
+            const responseContext = this._buildHoneyInteractionHistoryContext(parsed);
             if (runtimeContext && safeUserMessageWithNick) {
                 nextPromptTurns.push({
                     assistantContext: this._normalizeLiveAssistantContextLabel(runtimeContext, { asHistory: true }),
-                    responseContext: this._normalizeLiveAssistantContextLabel(responseContext, { asHistory: true }),
+                    responseContext,
                     userMessage: safeUserMessageWithNick
                 });
             }
@@ -4065,11 +4094,11 @@ export class HoneyData {
         const parsed = this.parseHoneyContent(responseText);
         if (mode === 'continue') {
             const nextPromptTurns = [...historyTurns];
-            const responseContext = responseText;
+            const responseContext = this._buildHoneyInteractionHistoryContext(parsed);
             if (runtimeContext && safeUserMessageWithNick) {
                 nextPromptTurns.push({
                     assistantContext: this._normalizeLiveAssistantContextLabel(runtimeContext, { asHistory: true }),
-                    responseContext: this._normalizeLiveAssistantContextLabel(responseContext, { asHistory: true }),
+                    responseContext,
                     userMessage: safeUserMessageWithNick
                 });
             }
@@ -4190,6 +4219,7 @@ export class HoneyData {
             data.gifts = giftsSection
                 .split('\n')
                 .map(line => line.replace(/^\s*(?:[-*•]+|\d{1,2}\s*[\.、])\s*/, '').trim())
+                .map(line => this._sanitizePromptBlockLine(line))
                 .filter(line => this._isHoneyGiftRecordLine(line));
         }
 
@@ -4333,12 +4363,12 @@ export class HoneyData {
         const fallbackUserSplit = text.match(/^([^:：\s]{1,24})\s*[：:]\s*(.+)$/);
         if (fallbackUserSplit) {
             const user = this._sanitizeInlineText(fallbackUserSplit[1], 24);
-            const content = this._sanitizeInlineText(fallbackUserSplit[2], 180);
+            const content = this._sanitizePromptBlockLine(fallbackUserSplit[2]);
             if (!user || !content) return '';
             return `${rankPrefix}${user}: ${content}`.trim();
         }
 
-        const fallback = this._sanitizeInlineText(text, 180);
+        const fallback = this._sanitizePromptBlockLine(text);
         if (!fallback) return '';
         return `${rankPrefix}匿名: ${fallback}`.trim();
     }
