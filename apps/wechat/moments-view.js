@@ -1739,14 +1739,14 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
     }
 
     async _getHoneyMomentHistorySummary(contact = {}) {
-        const contactName = String(contact?.name || '').trim();
-        if (!contactName) return '';
+        const hostName = String(contact?.honeyHostName || contact?.honeySource || contact?.name || '').trim();
+        if (!hostName) return '';
         try {
             const mod = await import('../honey/honey-data.js');
             const HoneyData = mod?.HoneyData;
             if (!HoneyData) return '';
             const honeyData = window.VirtualPhone?.honeyApp?.honeyData || new HoneyData(this.app.storage || window.VirtualPhone?.storage);
-            const summary = honeyData.getHostHistorySummary?.(contactName);
+            const summary = honeyData.getHostHistorySummary?.(hostName);
             const summaryText = typeof honeyData.formatHostHistorySummaryForContext === 'function'
                 ? honeyData.formatHostHistorySummaryForContext(summary)
                 : String(summary?.text || '').trim();
