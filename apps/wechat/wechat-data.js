@@ -121,6 +121,7 @@ export class WechatData {
                         letter: this.getFirstLetter(safeName),
                         sourceApp: String(entry?.extra?.sourceApp || '').trim(),
                         sourceLabel: String(entry?.extra?.sourceLabel || '').trim(),
+                        honeyHostName: String(entry?.extra?.honeyHostName || '').trim(),
                         honeySource: String(entry?.extra?.honeySource || '').trim(),
                         honeyVisibleIntro: String(entry?.extra?.honeyVisibleIntro || '').trim(),
                         honeyHiddenBackground: String(entry?.extra?.honeyHiddenBackground || '').trim()
@@ -135,6 +136,7 @@ export class WechatData {
                 const avatar = String(entry?.avatar || '').trim();
                 const relation = String(entry?.relation || '').trim();
                 const sourceLabel = String(entry?.extra?.sourceLabel || '').trim();
+                const honeyHostName = String(entry?.extra?.honeyHostName || '').trim();
                 if (!target.avatar && avatar) {
                     target.avatar = avatar;
                     changed = true;
@@ -145,6 +147,10 @@ export class WechatData {
                 }
                 if (sourceLabel === '主播' && target.sourceLabel !== '主播') {
                     target.sourceLabel = '主播';
+                    changed = true;
+                }
+                if (honeyHostName && target.honeyHostName !== honeyHostName) {
+                    target.honeyHostName = honeyHostName;
                     changed = true;
                 }
                 if (relation.includes('主播') && !String(target.relation || '').includes('主播')) {
@@ -173,6 +179,7 @@ export class WechatData {
                     remark: String(contact.remark || ''),
                     sourceApp: String(contact.sourceApp || ''),
                     sourceLabel: String(contact.sourceLabel || ''),
+                    honeyHostName: String(contact.honeyHostName || ''),
                     honeySource: String(contact.honeySource || ''),
                     honeyVisibleIntro: String(contact.honeyVisibleIntro || ''),
                     honeyHiddenBackground: String(contact.honeyHiddenBackground || '')
@@ -2439,6 +2446,7 @@ getWeekday(date) {
             if (!existed.relation && contact?.relation) existed.relation = contact.relation;
             if (contact?.sourceApp) existed.sourceApp = contact.sourceApp;
             if (contact?.sourceLabel) existed.sourceLabel = contact.sourceLabel;
+            if (contact?.honeyHostName) existed.honeyHostName = contact.honeyHostName;
             if (contact?.honeySource) existed.honeySource = contact.honeySource;
             if (contact?.honeyVisibleIntro) existed.honeyVisibleIntro = contact.honeyVisibleIntro;
             if (contact?.honeyHiddenBackground) existed.honeyHiddenBackground = contact.honeyHiddenBackground;
@@ -3769,19 +3777,31 @@ parseAIResponse(text) {
     _removeLinkedHoneyFriend(contact) {
         const safeName = String(contact?.name || '').trim();
         if (!safeName) return;
+        const safeHostName = String(contact?.honeyHostName || contact?.extra?.honeyHostName || contact?.honeySource || '').trim();
         try {
             const honeyData = window.VirtualPhone?.honeyApp?.honeyData || null;
             if (honeyData && typeof honeyData.removeHoneyFriend === 'function') {
                 honeyData.removeHoneyFriend(safeName, { skipWechatDelete: true });
                 if (typeof honeyData.removeFollowedHost === 'function') {
                     honeyData.removeFollowedHost(safeName);
+                    if (safeHostName && safeHostName !== safeName) {
+                        honeyData.removeFollowedHost(safeHostName);
+                    }
                 }
                 return;
             }
 
             const globalHoneyContacts = this.globalSocialStore?.getContactsByApp?.('honey') || [];
             globalHoneyContacts
-                .filter(item => this._normalizeContactNameKey(item?.name || '') === this._normalizeContactNameKey(safeName))
+                .filter(item => {
+                    const entryNameKey = this._normalizeContactNameKey(item?.name || '');
+                    const hostNameKey = this._normalizeContactNameKey(item?.extra?.honeyHostName || item?.extra?.honeySource || '');
+                    const safeNameKey = this._normalizeContactNameKey(safeName);
+                    const safeHostNameKey = this._normalizeContactNameKey(safeHostName);
+                    return entryNameKey === safeNameKey
+                        || (safeHostNameKey && entryNameKey === safeHostNameKey)
+                        || (safeHostNameKey && hostNameKey === safeHostNameKey);
+                })
                 .forEach((match) => {
                     if (match?.appContactId) {
                         this.globalSocialStore?.removeAppContact?.('honey', match.appContactId);

@@ -5790,18 +5790,19 @@ renderChatRoom(chat) {
         const isFriendInvite = inviteSource === 'friend_invite';
         const honeyApp = await this._ensureHoneyAppReady();
         const host = honeyApp.honeyData?.ensureFollowedHostFromWechat?.(safeName, {
-            title: `${safeName} 的直播间`,
+            title: '',
             intro: isFriendInvite ? '微信好友邀请用户进入蜜语直播间。' : '微信好友接受了用户发起的蜜语邀约。'
         });
+        const hostName = host?.name || safeName;
         this.app.wechatData.recordHoneyInviteDecision?.(safeName, 'accepted', {
             message: isFriendInvite ? '用户接受了微信好友发起的蜜语邀约' : '用户主动发起，AI接受'
         });
         if (chatId) this.app.wechatData.setHoneyHistoryInjectionForChat?.(chatId, true);
         window.dispatchEvent(new CustomEvent('phone:openApp', { detail: { appId: 'honey' } }));
         setTimeout(() => {
-            window.VirtualPhone?.honeyApp?.openFollowedHostLive?.(host?.name || safeName, {
+            window.VirtualPhone?.honeyApp?.openFollowedHostLive?.(hostName, {
                 autoGenerateIfMissing: false,
-                title: `${safeName} 的直播间`,
+                title: `${hostName} 的直播间`,
                 intro: isFriendInvite ? '你接受了微信好友发起的蜜语邀约。' : '微信好友接受了你发起的蜜语邀约。',
                 inviteSource,
                 resetSession: isFriendInvite

@@ -141,6 +141,7 @@ export class HoneyData {
             if (!Array.isArray(contacts) || contacts.length === 0) return null;
             return wechatData.getContactByName?.(safeHostName)
                 || contacts.find(item => this._normalizeHostNameKey(item?.name || '') === this._normalizeHostNameKey(safeHostName))
+                || contacts.find(item => this._normalizeHostNameKey(this._resolveHoneyHostNameFromWechatContact(item)) === this._normalizeHostNameKey(safeHostName))
                 || null;
         } catch (e) {
             return null;
@@ -464,6 +465,14 @@ export class HoneyData {
         return /host|broadcaster|anchor|streamer|主播|其他直播间|微信邀约/i.test(
             `${requestType} ${sourceLabel} ${source} ${relation} ${hidden} ${scope} ${fallbackSource || ''}`
         );
+    }
+
+    _resolveHoneyHostNameFromWechatContact(contact = {}, fallbackName = '') {
+        const direct = this._sanitizeInlineText(contact?.honeyHostName || contact?.extra?.honeyHostName || '', 40);
+        if (direct) return direct;
+        const source = this._sanitizeInlineText(contact?.honeySource || contact?.extra?.honeySource || '', 40);
+        if (source && !/^(?:关注主播|直播间|好友|蜜语|主播)$/i.test(source)) return source;
+        return this._sanitizeInlineText(fallbackName || contact?.name || '', 40);
     }
 
     _bootstrapHoneyGlobalSocialData() {
@@ -2087,6 +2096,9 @@ export class HoneyData {
         const isHostFriend = this._isHoneyHostFriendLike(friend);
         const relation = isHostFriend ? '蜜语主播' : '蜜语好友';
         const sourceLabel = isHostFriend ? '主播' : '蜜语';
+        const honeyHostName = isHostFriend
+            ? (this._sanitizeInlineText(friend.source || '', 40) || friend.name)
+            : '';
 
         if (!contact) {
             const contactId = `contact_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -2099,6 +2111,7 @@ export class HoneyData {
                 relation,
                 sourceApp: 'honey',
                 sourceLabel,
+                honeyHostName,
                 honeySource: friend.source || '直播间',
                 honeyVisibleIntro: friend.message || '',
                 honeyHiddenBackground: hiddenBackground
@@ -2115,6 +2128,7 @@ export class HoneyData {
                 relation: nextRelation,
                 sourceApp: 'honey',
                 sourceLabel,
+                honeyHostName: honeyHostName || contact.honeyHostName || '',
                 honeySource: friend.source || contact.honeySource || '直播间',
                 honeyVisibleIntro: friend.message || contact.honeyVisibleIntro || '',
                 honeyHiddenBackground: hiddenBackground || contact.honeyHiddenBackground || ''
@@ -2125,6 +2139,7 @@ export class HoneyData {
                 relation: nextRelation,
                 sourceApp: 'honey',
                 sourceLabel,
+                honeyHostName: honeyHostName || contact.honeyHostName || '',
                 honeySource: friend.source || contact.honeySource || '直播间',
                 honeyVisibleIntro: friend.message || contact.honeyVisibleIntro || '',
                 honeyHiddenBackground: hiddenBackground || contact.honeyHiddenBackground || ''
@@ -2162,11 +2177,14 @@ export class HoneyData {
             extra: {
                 sourceApp: friend.sourceApp || 'honey',
                 sourceLabel,
+                honeyHostName,
                 honeySource: friend.source || '',
                 honeyVisibleIntro: friend.message || '',
                 honeyHiddenBackground: hiddenBackground || '',
                 acceptedAtPhoneTime: friend.acceptedAtPhoneTime || '',
-                honeyScope: isHostFriend ? 'followed_host' : 'friend'
+                requestType: isHostFriend ? 'host' : (friend.requestType || 'viewer'),
+                hostType: friend.hostType || '',
+                honeyScope: 'friend'
             }
         });
         this.globalSocialStore?.upsertContact?.({
@@ -2178,6 +2196,7 @@ export class HoneyData {
             extra: {
                 sourceApp: 'honey',
                 sourceLabel,
+                honeyHostName,
                 honeySource: friend.source || '',
                 honeyVisibleIntro: friend.message || '',
                 honeyHiddenBackground: hiddenBackground || ''
@@ -2195,22 +2214,7 @@ export class HoneyData {
 
         if (this._isHoneyHostFriendLike(accepted)) {
             if (this._isHoneyWechatContactDeleted(accepted.name || nameOrFriend) && typeof nameOrFriend !== 'object') return null;
-            const host = this.getFollowedHostByName(accepted.name) || {
-                name: accepted.name,
-                avatarUrl: accepted.avatarUrl || '',
-                figure: accepted.hostType || '主播',
-                intro: accepted.hiddenBackground || accepted.message || '',
-                liveTitle: accepted.source || `${accepted.name} 的直播间`,
-                sourceApp: 'honey',
-                sourceLabel: '主播'
-            };
-            return this.ensureFollowedHostWechatChat(host, {
-                avatarUrl: accepted.avatarUrl || host.avatarUrl || '',
-                message: accepted.message || '',
-                decisionMessage: accepted.message || '',
-                intro: host.intro || accepted.hiddenBackground || '',
-                title: host.liveTitle || accepted.source || `${accepted.name} 的直播间`
-            });
+            return this.ensureHoneyFriendWechatChat(accepted);
         }
 
         if (this._isHoneyWechatContactDeleted(accepted.name || nameOrFriend) && typeof nameOrFriend !== 'object') return null;
@@ -2258,7 +2262,9 @@ export class HoneyData {
         const wechatData = this._getWechatDataBridge();
         const contacts = wechatData.getContacts();
         const contactNameKey = this._normalizeWechatContactNameKey(safeHostName);
-        let contact = contacts.find(item => this._normalizeWechatContactNameKey(item?.name || '') === contactNameKey) || null;
+        let contact = contacts.find(item => this._normalizeWechatContactNameKey(item?.name || '') === contactNameKey)
+            || contacts.find(item => this._normalizeHostNameKey(this._resolveHoneyHostNameFromWechatContact(item)) === this._normalizeHostNameKey(safeHostName))
+            || null;
         const avatar = String(options?.avatarUrl || host.avatarUrl || '').trim() || '👤';
         const hiddenBackground = this._buildFollowedHostWechatBackground(host, options);
         const visibleIntro = this._sanitizeInlineText(options?.message || options?.decisionMessage || `${safeHostName} 已同意添加微信。`, 120);
@@ -2275,6 +2281,7 @@ export class HoneyData {
                 relation,
                 sourceApp: 'honey',
                 sourceLabel: '主播',
+                honeyHostName: safeHostName,
                 honeySource: '关注主播',
                 honeyVisibleIntro: visibleIntro,
                 honeyHiddenBackground: hiddenBackground
@@ -2290,6 +2297,7 @@ export class HoneyData {
                 relation: nextRelation,
                 sourceApp: 'honey',
                 sourceLabel: '主播',
+                honeyHostName: contact.honeyHostName || safeHostName,
                 honeySource: contact.honeySource || '关注主播',
                 honeyVisibleIntro: visibleIntro || contact.honeyVisibleIntro || '',
                 honeyHiddenBackground: hiddenBackground || contact.honeyHiddenBackground || ''
@@ -2300,6 +2308,7 @@ export class HoneyData {
                 relation: nextRelation,
                 sourceApp: 'honey',
                 sourceLabel: '主播',
+                honeyHostName: contact.honeyHostName || safeHostName,
                 honeySource: contact.honeySource || '关注主播',
                 honeyVisibleIntro: visibleIntro || contact.honeyVisibleIntro || '',
                 honeyHiddenBackground: hiddenBackground || contact.honeyHiddenBackground || ''
@@ -2361,6 +2370,7 @@ export class HoneyData {
             extra: {
                 sourceApp: 'honey',
                 sourceLabel: '主播',
+                honeyHostName: safeHostName,
                 honeySource: '关注主播',
                 wechatContactId: String(contact.id || ''),
                 wechatChatId: String(chat?.id || ''),
@@ -2377,6 +2387,7 @@ export class HoneyData {
             extra: {
                 sourceApp: 'honey',
                 sourceLabel: '主播',
+                honeyHostName: safeHostName,
                 honeySource: '关注主播',
                 honeyVisibleIntro: visibleIntro || '',
                 honeyHiddenBackground: hiddenBackground || ''
@@ -2757,10 +2768,13 @@ export class HoneyData {
     }
 
     ensureFollowedHostFromWechat(contactName, options = {}) {
-        const safeHostName = this._sanitizeInlineText(contactName || '', 40);
-        if (!safeHostName) return null;
+        const safeContactName = this._sanitizeInlineText(contactName || '', 40);
+        if (!safeContactName) return null;
         const wechatData = this._getWechatDataBridge();
-        const contact = wechatData.getContactByName(safeHostName);
+        const contact = wechatData.getContactByName(safeContactName)
+            || (wechatData.getContacts?.() || []).find(item => this._normalizeHostNameKey(this._resolveHoneyHostNameFromWechatContact(item)) === this._normalizeHostNameKey(safeContactName));
+        const safeHostName = this._resolveHoneyHostNameFromWechatContact(contact || {}, options?.hostName || safeContactName);
+        if (!safeHostName) return null;
         const chat = contact?.id ? wechatData.getChatByContactId(contact.id) : null;
         const avatarUrl = String(options?.avatarUrl || contact?.avatar || chat?.avatar || '').trim();
         const title = this._sanitizeInlineText(options?.title || `${safeHostName} 的直播间`, 40);
@@ -2783,6 +2797,7 @@ export class HoneyData {
             fans: existingIndex >= 0 ? list[existingIndex].fans : '',
             sourceApp: 'wechat',
             sourceLabel: '微信邀约',
+            wechatContactName: safeContactName,
             wechatContactId: String(contact?.id || ''),
             wechatChatId: String(chat?.id || '')
         };
@@ -2808,6 +2823,8 @@ export class HoneyData {
             extra: {
                 sourceApp: 'wechat',
                 sourceLabel: '微信邀约',
+                honeyHostName: safeHostName,
+                wechatContactName: safeContactName,
                 wechatContactId: String(contact?.id || ''),
                 wechatChatId: String(chat?.id || ''),
                 honeyScope: 'followed_host'
@@ -2820,7 +2837,8 @@ export class HoneyData {
         const safeHostName = this._sanitizeInlineText(hostName || '', 40);
         if (!safeHostName) return '';
         const wechatData = this._getWechatDataBridge();
-        const contact = wechatData.getContactByName(safeHostName);
+        const contact = wechatData.getContactByName(safeHostName)
+            || (wechatData.getContacts?.() || []).find(item => this._normalizeHostNameKey(this._resolveHoneyHostNameFromWechatContact(item)) === this._normalizeHostNameKey(safeHostName));
         const chat = contact?.id
             ? wechatData.getChatByContactId(contact.id)
             : wechatData.getChatList().find(item => item.type !== 'group' && this._normalizeHostNameKey(item.name || '') === this._normalizeHostNameKey(safeHostName));

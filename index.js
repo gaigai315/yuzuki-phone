@@ -1540,17 +1540,18 @@ if (window.GGP_Loaded) {
         try {
             const honeyApp = await ensureHoneyAppReady();
             const host = honeyApp.honeyData?.ensureFollowedHostFromWechat?.(safeContactName, {
-                title: `${safeContactName} 的直播间`,
+                title: '',
                 intro: '你接受了微信好友发起的蜜语邀约。'
             });
+            const hostName = host?.name || safeContactName;
             wechatData.recordHoneyInviteDecision?.(safeContactName, 'accepted', { message });
             if (chatId) wechatData.setHoneyHistoryInjectionForChat?.(chatId, true);
             window.dispatchEvent(new CustomEvent('phone:openApp', { detail: { appId: 'honey' } }));
             setTimeout(() => {
                 const app = window.VirtualPhone?.honeyApp;
-                app?.openFollowedHostLive?.(host?.name || safeContactName, {
+                app?.openFollowedHostLive?.(hostName, {
                     autoGenerateIfMissing: false,
-                    title: `${safeContactName} 的直播间`,
+                    title: `${hostName} 的直播间`,
                     intro: '微信好友主动邀请你进入蜜语直播间。',
                     inviteSource: 'friend_invite'
                 });
