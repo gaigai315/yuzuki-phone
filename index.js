@@ -18,6 +18,8 @@ const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.3.0';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
+const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
+const ST_PHONE_HONEY_CSS_URL = new URL('./apps/honey/honey.css?v=20260606-ticker-once', import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
 const ST_PHONE_GAMES_CSS_URL = new URL('./apps/games/poker/poker.css?v=1.0.0', import.meta.url).href;
 const ST_PHONE_UPDATE_MANIFEST_URLS = [
@@ -98,6 +100,8 @@ if (window.GGP_Loaded) {
     let _phoneKeyboardLikelyOpenUntil = 0;
     let _wechatMessageAudio = null;
     let _wechatMessageSoundLastAt = 0;
+    let _honeyModulePromise = null;
+    let _honeyCssPromise = null;
     let _gamesModulePromise = null;
     let _gamesCssPromise = null;
     let _pendingWechatOnlineToOfflineHint = null;
@@ -140,6 +144,77 @@ if (window.GGP_Loaded) {
         try {
             sessionStorage.removeItem('st_phone_pending_wechat_online_to_offline_hint');
         } catch (_) {}
+    }
+
+    function ensureHoneyCSSPreloaded() {
+        if (_honeyCssPromise) return _honeyCssPromise;
+        _honeyCssPromise = new Promise(resolve => {
+            const existing = document.getElementById('honey-css-link') || document.querySelector('link[href*="/apps/honey/honey.css"]');
+            if (existing) {
+                if (existing.dataset.loaded === 'true' || existing.sheet) resolve();
+                else {
+                    existing.addEventListener('load', resolve, { once: true });
+                    existing.addEventListener('error', resolve, { once: true });
+                }
+                return;
+            }
+
+            const link = document.createElement('link');
+            link.id = 'honey-css-link';
+            link.rel = 'stylesheet';
+            link.href = ST_PHONE_HONEY_CSS_URL;
+            link.addEventListener('load', () => {
+                link.dataset.loaded = 'true';
+                resolve();
+            }, { once: true });
+            link.addEventListener('error', resolve, { once: true });
+            document.head.appendChild(link);
+        });
+        return _honeyCssPromise;
+    }
+
+    function loadHoneyModule() {
+        if (!_honeyModulePromise) {
+            _honeyModulePromise = import(ST_PHONE_HONEY_MODULE_URL).catch(error => {
+                _honeyModulePromise = null;
+                throw error;
+            });
+        }
+        return _honeyModulePromise;
+    }
+
+    function preloadHoneyAppAssets() {
+        try {
+            if (!document.getElementById('honey-module-preload')) {
+                const link = document.createElement('link');
+                link.id = 'honey-module-preload';
+                link.rel = 'modulepreload';
+                link.href = ST_PHONE_HONEY_MODULE_URL;
+                document.head.appendChild(link);
+            }
+            ensureHoneyCSSPreloaded();
+            loadHoneyModule().catch(error => console.warn('⚠️ 蜜语模块预加载失败，点击时将重试:', error));
+        } catch (error) {
+            console.warn('⚠️ 蜜语资源预加载失败:', error);
+        }
+    }
+
+    function scheduleHoneyAppPreload() {
+        const run = () => preloadHoneyAppAssets();
+        if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(run, { timeout: 2000 });
+        } else {
+            setTimeout(run, 800);
+        }
+    }
+
+    function showHoneyLoadingView() {
+        phoneShell?.setContent?.(`
+            <div class="honey-app honey-loading" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#140f13;color:#fff;font-size:13px;">
+                <i class="fa-solid fa-spinner fa-spin" style="font-size:22px;color:#ff5aa5;"></i>
+                <div style="font-weight:700;letter-spacing:0;">蜜语加载中...</div>
+            </div>
+        `, 'honey-loading');
     }
 
     function ensureGamesCSSPreloaded() {
@@ -7810,6 +7885,7 @@ if (window.GGP_Loaded) {
                     createInlineReplyButton();
                     schedulePhoneUpdateNotices();
                     startWechatOnlineProactiveScheduler();
+                    scheduleHoneyAppPreload();
                     scheduleGamesAppPreload();
 
                     // 🎵 悬浮窗初始化：若开启了全局悬浮窗，懒加载音乐模块并创建
@@ -8116,7 +8192,11 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '微博模块加载失败', '❌');
                         });
                 } else if (appId === 'honey') {
-                    import(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`)
+                    ensureHoneyCSSPreloaded();
+                    if (!window.VirtualPhone.honeyApp) {
+                        showHoneyLoadingView();
+                    }
+                    loadHoneyModule()
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.honeyApp) {
