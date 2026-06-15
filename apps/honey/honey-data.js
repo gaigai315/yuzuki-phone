@@ -773,7 +773,7 @@ export class HoneyData {
             ? runtimeDescription
                 .replace(/\r/g, '')
                 .split('\n')
-                .map(line => this._sanitizePromptLine(line))
+                .map(line => this._sanitizePromptLine(this._normalizeHoneyStoryLine(line)))
                 .filter(Boolean)
             : [];
         if (!preserveRuntimeContextLength) descLines.splice(0, Math.max(0, descLines.length - 8));
@@ -855,8 +855,15 @@ export class HoneyData {
         const lines = [];
         const description = String(scene.description || '').trim();
         if (description && this._isMeaningfulDescription(description)) {
+            const cleanedDescription = description
+                .replace(/\r/g, '')
+                .split('\n')
+                .map(line => this._normalizeHoneyStoryLine(line))
+                .join('\n')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
             lines.push('【直播正文】');
-            lines.push(description);
+            lines.push(cleanedDescription || description);
         }
         const gifts = (Array.isArray(scene.gifts) ? scene.gifts : [])
             .map(item => String(item || '').trim())
@@ -927,6 +934,13 @@ export class HoneyData {
         if (text === '正在连线中...') return false;
         if (text === 'AI 正在根据你的弹幕继续推进直播剧情...') return false;
         return true;
+    }
+
+    _normalizeHoneyStoryLine(line) {
+        return String(line || '')
+            .replace(/\s+$/g, '')
+            .replace(/^\s*(?:[-*•]+\s+|\d{1,2}\s*(?:[、\)）]|[.](?!\d))\s*)/, '')
+            .trimEnd();
     }
 
     _simpleHash(str) {
@@ -3592,7 +3606,12 @@ export class HoneyData {
                 leaderboard: [],
                 intro: this._sanitizeInlineText(live?.intro || profile.intro || '', 120) || profile.intro || '',
                 naiPrompt: this._extractNaiPrompt(live?.naiPrompt || live?.imageGenerationPrompt || live?.imagePrompt || payload?.naiPrompt || payload?.imageGenerationPrompt || ''),
-                description: String(live?.description || live?.scene || live?.story || '').trim()
+                description: String(live?.description || live?.scene || live?.story || '')
+                    .split('\n')
+                    .map(line => this._normalizeHoneyStoryLine(line))
+                    .join('\n')
+                    .replace(/\n{3,}/g, '\n\n')
+                    .trim()
                     || (this._normalizeCollabValue(live?.collab || live?.collabUser || live?.collabName || '无') !== '无'
                         ? '联播已接通，互动正在持续推进。'
                         : '当前暂无联播剧情，直播主要通过弹幕滚动推进。'),
@@ -3680,7 +3699,7 @@ export class HoneyData {
         const collabRequests = this._extractHoneyCollabRequests(text);
         const cleanedStory = String(storySection || '')
             .split('\n')
-            .map(line => line.replace(/\s+$/g, ''))
+            .map(line => this._normalizeHoneyStoryLine(line))
             .filter(line => !/禁止代替用户|禁止替用户|不要代替user|请为用户的直播间/.test(line))
             .join('\n')
             .replace(/\n{3,}/g, '\n\n')
@@ -4312,7 +4331,7 @@ export class HoneyData {
         if (storySection) {
             const cleanedStory = storySection
                 .split('\n')
-                .map(line => line.replace(/\s+$/g, ''))
+                .map(line => this._normalizeHoneyStoryLine(line))
                 .filter(line => !/UI内嵌叙事深化协议|不少于三个自然段|强制执行下方/.test(line))
                 .filter(line => !/^\s*(?:\(|（).*(?:\)|）)\s*$/.test(line))
                 .join('\n')
