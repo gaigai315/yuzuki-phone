@@ -51,7 +51,11 @@ export class WechatData {
         const relation = String(contactLike?.relation || '').trim();
         const sourceApp = String(contactLike?.sourceApp || contactLike?.extra?.sourceApp || '').trim().toLowerCase();
         const sourceLabel = String(contactLike?.sourceLabel || contactLike?.extra?.sourceLabel || '').trim();
-        return sourceApp === 'honey' || sourceLabel.includes('蜜语') || relation.includes('蜜语');
+        return sourceApp === 'honey'
+            || sourceLabel.includes('蜜语')
+            || sourceLabel.includes('主播')
+            || relation.includes('蜜语')
+            || relation.includes('主播');
     }
 
     _seedHoneyContactsFromGlobalStore() {
@@ -97,12 +101,21 @@ export class WechatData {
 
                 const avatar = String(entry?.avatar || '').trim();
                 const relation = String(entry?.relation || '').trim();
+                const sourceLabel = String(entry?.extra?.sourceLabel || '').trim();
                 if (!target.avatar && avatar) {
                     target.avatar = avatar;
                     changed = true;
                 }
                 if (!target.relation && relation) {
                     target.relation = relation;
+                    changed = true;
+                }
+                if (sourceLabel === '主播' && target.sourceLabel !== '主播') {
+                    target.sourceLabel = '主播';
+                    changed = true;
+                }
+                if (relation.includes('主播') && !String(target.relation || '').includes('主播')) {
+                    target.relation = target.relation ? `${target.relation} / ${relation}` : relation;
                     changed = true;
                 }
             });
@@ -492,6 +505,13 @@ export class WechatData {
             .trim()
             .replace(/\s+/g, '')
             .replace(/[（(][^（）()]*[）)]/g, '')
+            .toLowerCase();
+    }
+
+    _normalizeExactContactName(value = '') {
+        return String(value || '')
+            .trim()
+            .replace(/\s+/g, '')
             .toLowerCase();
     }
 
@@ -2378,11 +2398,17 @@ getWeekday(date) {
 
     addContact(contact) {
         const safeName = String(contact?.name || '').trim();
-        const existed = this.data.contacts.find(c => this._isSameLookupName(c.name, safeName));
+        const safeNameKey = this._normalizeExactContactName(safeName);
+        const existed = this.data.contacts.find(c => this._normalizeExactContactName(c.name) === safeNameKey);
         if (existed) {
             if (!existed.avatar && contact?.avatar) existed.avatar = contact.avatar;
             if (!existed.remark && contact?.remark) existed.remark = contact.remark;
             if (!existed.relation && contact?.relation) existed.relation = contact.relation;
+            if (contact?.sourceApp) existed.sourceApp = contact.sourceApp;
+            if (contact?.sourceLabel) existed.sourceLabel = contact.sourceLabel;
+            if (contact?.honeySource) existed.honeySource = contact.honeySource;
+            if (contact?.honeyVisibleIntro) existed.honeyVisibleIntro = contact.honeyVisibleIntro;
+            if (contact?.honeyHiddenBackground) existed.honeyHiddenBackground = contact.honeyHiddenBackground;
             if (!existed.letter && safeName) existed.letter = this.getFirstLetter(existed.name || safeName);
             this._syncHoneyContactToGlobalStore(existed);
             this.saveData();

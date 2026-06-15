@@ -955,8 +955,10 @@ export class ContactsView {
                 return;
             }
 
+            const nextNameKey = this.app.wechatData._normalizeExactContactName?.(name) || String(name || '').trim().replace(/\s+/g, '').toLowerCase();
             const exists = this.app.wechatData.getContacts().find(c =>
-                c.id !== safeContactId && this.app.wechatData._isSameLookupName?.(c.name, name)
+                c.id !== safeContactId
+                && (this.app.wechatData._normalizeExactContactName?.(c.name) || String(c?.name || '').trim().replace(/\s+/g, '').toLowerCase()) === nextNameKey
             );
             if (exists) {
                 this.app.phoneShell.showNotification('提示', '该名称已被其他联系人使用', '⚠️');
@@ -1376,9 +1378,9 @@ export class ContactsView {
                 return;
             }
 
+            const nextNameKey = this.app.wechatData._normalizeExactContactName?.(name) || String(name || '').trim().replace(/\s+/g, '').toLowerCase();
             const exists = this.app.wechatData.getContacts().find(c =>
-                String(c?.name || '').trim() === name
-                || this.app.wechatData._isSameLookupName?.(c.name, name)
+                (this.app.wechatData._normalizeExactContactName?.(c.name) || String(c?.name || '').trim().replace(/\s+/g, '').toLowerCase()) === nextNameKey
             );
             if (exists) {
                 this.app.phoneShell.showNotification('提示', '该好友已存在', '⚠️');

@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.2.8';
+const ST_PHONE_VERSION = '1.2.9';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
@@ -41,12 +41,10 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-06-11',
+    date: '2026-06-15',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【优化】狼人杀游戏机制：新局改为从第 1 夜开始，守卫不能连续守护同一名玩家。',
-        '【新增】ComfyUI 支持本地 / 远端云端连接切换，远程地址可在生图设置中单独配置。',
-        '【优化】通话 App 语音 TTS 缓存，通话历史可复听语音，删除记录时同步清理缓存。'
+        '【新增】新增 {{HONEY_HISTORY}} 蜜语历史变量，蜜语直播总结会从 {{PHONE_HISTORY}} 分离出来单独注入；自定义全局提示词可把该变量放到希望注入蜜语历史的位置。'
     ]
 };
 
@@ -8559,7 +8557,7 @@ if (window.GGP_Loaded) {
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}'];
+                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
                                 let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
@@ -8572,8 +8570,8 @@ if (window.GGP_Loaded) {
                                         }
                                     });
                                     // 兼容 {{ XXX }}（含空格）
-                                    if (/\{\{\s*(MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER)\s*\}\}/i.test(c)) {
-                                        c = c.replace(/\{\{\s*(MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER)\s*\}\}/gi, '').trim();
+                                    if (/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER)\s*\}\}/i.test(c)) {
+                                        c = c.replace(/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER)\s*\}\}/gi, '').trim();
                                         modified = true;
                                     }
                                     if (modified) {
@@ -8630,6 +8628,7 @@ if (window.GGP_Loaded) {
                             // 📱 收集手机活动记录
                             const wechatOfflineChats = [];
                             const honeyOfflineSummaryByName = new Map();
+                            const honeyOfflineSummaryByText = new Map();
                             const storage = window.VirtualPhone.storage;
                             const isPhoneEnabled = isPhoneFeatureEnabled();
                             const isStorageToggleOn = (key) => {
@@ -8758,7 +8757,18 @@ if (window.GGP_Loaded) {
                                             const safeSummary = String(summaryText || '').trim();
                                             const key = normalizeHoneyOfflineName(safeName);
                                             if (!key || !safeSummary || honeyOfflineSummaryByName.has(key)) return;
-                                            honeyOfflineSummaryByName.set(key, { name: safeName, summary: safeSummary });
+                                            const summaryKey = safeSummary.replace(/\s+/g, '');
+                                            const existing = honeyOfflineSummaryByText.get(summaryKey);
+                                            if (existing) {
+                                                if (!existing.names.some(item => normalizeHoneyOfflineName(item) === key)) {
+                                                    existing.names.push(safeName);
+                                                }
+                                                honeyOfflineSummaryByName.set(key, existing);
+                                                return;
+                                            }
+                                            const item = { names: [safeName], summary: safeSummary };
+                                            honeyOfflineSummaryByText.set(summaryKey, item);
+                                            honeyOfflineSummaryByName.set(key, item);
                                         };
                                         const isHoneySource = (item) => item?.sourceApp === 'honey'
                                             || item?.sourceLabel === '蜜语'
@@ -9221,6 +9231,7 @@ if (window.GGP_Loaded) {
                                     // 将规则与聊天记录分离为多个变量
                                     let phoneRulesContent = '';
                                     let phoneHistoryContent = '';
+                                    let honeyHistoryContent = '';
                                     let weiboHistoryContent = '';
                                     let mofoPromptContent = '';
                                     let diaryHistoryContent = '';
@@ -9413,11 +9424,12 @@ if (window.GGP_Loaded) {
 
                                     // 2.8️⃣ 添加蜜语直播总结（用于线下正文延续蜜语主播关系）
                                     if (honeyOfflineSummaryByName.size > 0) {
-                                        phoneHistoryContent += `【蜜语直播总结】\n`;
-                                        phoneHistoryContent += `以下是蜜语主播直播间历史总结，会影响线下剧情中的关系背景和时间线；不要逐字复述。\n\n`;
-                                        honeyOfflineSummaryByName.forEach(item => {
-                                            phoneHistoryContent += `━━━ ${item.name} 的蜜语直播总结 ━━━\n`;
-                                            phoneHistoryContent += `${item.summary}\n\n`;
+                                        honeyHistoryContent += `【蜜语直播总结】\n`;
+                                        honeyHistoryContent += `以下是蜜语主播直播间历史总结，会影响线下剧情中的关系背景和时间线；不要逐字复述。\n\n`;
+                                        honeyOfflineSummaryByText.forEach(item => {
+                                            const names = Array.isArray(item.names) && item.names.length > 0 ? item.names.join('、') : '蜜语主播';
+                                            honeyHistoryContent += `━━━ ${names} 的蜜语直播总结 ━━━\n`;
+                                            honeyHistoryContent += `${item.summary}\n\n`;
                                         });
                                     }
 
@@ -9775,6 +9787,7 @@ if (window.GGP_Loaded) {
                                         const resolveInjectedSystemName = (id, text) => {
                                             if (id === 'weibo_system_history') return 'SYSTEM (微博)';
                                             if (id === 'phone_system_history') return 'SYSTEM (微信历史)';
+                                            if (id === 'honey_system_history') return 'SYSTEM (蜜语)';
                                             if (id === 'mofo_system_prompt') return 'SYSTEM (魔坊)';
                                             if (id === 'diary_system_history') return 'SYSTEM (日记)';
                                             if (id === 'calendar_system_reminder') return 'SYSTEM (日历)';
@@ -9850,6 +9863,7 @@ if (window.GGP_Loaded) {
                                     // 🔥 分别注入规则和历史记录
                                     injectIntoMessages('{{PHONE_PROMPT}}', phoneRulesContent, 'phone_system_rules');
                                     injectIntoMessages('{{PHONE_HISTORY}}', phoneHistoryContent, 'phone_system_history');
+                                    injectIntoMessages('{{HONEY_HISTORY}}', honeyHistoryContent, 'honey_system_history');
                                     if (weiboInjectEnabled) {
                                         injectIntoMessages('{{WEIBO_HISTORY}}', weiboHistoryContent, 'weibo_system_history');
                                     }
@@ -10092,6 +10106,7 @@ if (window.GGP_Loaded) {
                                             // 1. 清洗占位符变量残骸
                                             const TARGET_VAR = '{{PHONE_PROMPT}}';
                                             const HISTORY_VAR = '{{PHONE_HISTORY}}';
+                                            const HONEY_VAR = '{{HONEY_HISTORY}}';
                                             const WEIBO_VAR = '{{WEIBO_HISTORY}}';
                                             const MUSIC_VAR = '{{MUSIC_PROMPT}}';
                                             const MOFO_VAR = '{{MOFO_PROMPT}}';
@@ -10099,6 +10114,7 @@ if (window.GGP_Loaded) {
                                             const CALENDAR_VAR = '{{CALENDAR_REMINDER}}';
                                             const PHONE_PROMPT_SPACED_REGEX = /\{\{\s*PHONE_PROMPT\s*\}\}/gi;
                                             const PHONE_HISTORY_SPACED_REGEX = /\{\{\s*PHONE_HISTORY\s*\}\}/gi;
+                                            const HONEY_HISTORY_SPACED_REGEX = /\{\{\s*HONEY_HISTORY\s*\}\}/gi;
                                             const WEIBO_HISTORY_SPACED_REGEX = /\{\{\s*WEIBO_HISTORY\s*\}\}/gi;
                                             const MUSIC_PROMPT_SPACED_REGEX = /\{\{\s*MUSIC_PROMPT\s*\}\}/gi;
                                             const MOFO_PROMPT_SPACED_REGEX = /\{\{\s*MOFO_PROMPT\s*\}\}/gi;
@@ -10118,6 +10134,14 @@ if (window.GGP_Loaded) {
                                             }
                                             if (PHONE_HISTORY_SPACED_REGEX.test(c)) {
                                                 c = c.replace(PHONE_HISTORY_SPACED_REGEX, '');
+                                                modified = true;
+                                            }
+                                            if (c.includes(HONEY_VAR)) {
+                                                c = c.split(HONEY_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (HONEY_HISTORY_SPACED_REGEX.test(c)) {
+                                                c = c.replace(HONEY_HISTORY_SPACED_REGEX, '');
                                                 modified = true;
                                             }
                                             if (c.includes(WEIBO_VAR)) {
@@ -10265,7 +10289,7 @@ if (window.GGP_Loaded) {
 
                             if (targetArray) {
                                 // 🌟 1. 核心防御：连同外层 bodyObj 一起检查，防止变量被移动端或 Claude 抽离到 system 字段
-                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{\s*PHONE_PROMPT\s*\}\}|\{\{\s*PHONE_HISTORY\s*\}\}|\{\{\s*WEIBO_HISTORY\s*\}\}|\{\{\s*MUSIC_PROMPT\s*\}\}|\{\{\s*MOFO_PROMPT\s*\}\}|\{\{\s*DIARY_HISTORY\s*\}\}|\{\{\s*CALENDAR_REMINDER\s*\}\}/i);
+                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{\s*PHONE_PROMPT\s*\}\}|\{\{\s*PHONE_HISTORY\s*\}\}|\{\{\s*HONEY_HISTORY\s*\}\}|\{\{\s*WEIBO_HISTORY\s*\}\}|\{\{\s*MUSIC_PROMPT\s*\}\}|\{\{\s*MOFO_PROMPT\s*\}\}|\{\{\s*DIARY_HISTORY\s*\}\}|\{\{\s*CALENDAR_REMINDER\s*\}\}/i);
                                 const hasWechatOnlineToOfflinePending = !!getWechatOnlineToOfflineTransferPending();
 
                                 if (hasMacros || hasWechatOnlineToOfflinePending) {

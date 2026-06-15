@@ -271,6 +271,13 @@ export class HoneyData {
             .toLowerCase();
     }
 
+    _normalizeWechatContactNameKey(name) {
+        return String(name || '')
+            .trim()
+            .replace(/\s+/g, '')
+            .toLowerCase();
+    }
+
     _isExplicitGlobalHoneyKey(key) {
         return this.explicitGlobalHoneyKeys.has(String(key || '').trim());
     }
@@ -1930,11 +1937,13 @@ export class HoneyData {
         if (!friend) return null;
 
         const wechatData = this._getWechatDataBridge();
-        const normalizedKey = this._normalizeHostNameKey(friend.name || '');
+        const normalizedKey = this._normalizeWechatContactNameKey(friend.name || '');
         const contacts = wechatData.getContacts();
-        let contact = contacts.find(item => this._normalizeHostNameKey(item?.name || '') === normalizedKey) || null;
+        let contact = contacts.find(item => this._normalizeWechatContactNameKey(item?.name || '') === normalizedKey) || null;
         const hiddenBackground = friend.hiddenBackground || this._buildHoneyFriendSecretFallback(friend);
-        const relation = '蜜语好友';
+        const isHostFriend = this._isHoneyHostFriendLike(friend);
+        const relation = isHostFriend ? '蜜语主播' : '蜜语好友';
+        const sourceLabel = isHostFriend ? '主播' : '蜜语';
 
         if (!contact) {
             const contactId = `contact_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -1946,7 +1955,7 @@ export class HoneyData {
                 letter: wechatData.getFirstLetter(friend.name),
                 relation,
                 sourceApp: 'honey',
-                sourceLabel: '蜜语',
+                sourceLabel,
                 honeySource: friend.source || '直播间',
                 honeyVisibleIntro: friend.message || '',
                 honeyHiddenBackground: hiddenBackground
@@ -1954,14 +1963,15 @@ export class HoneyData {
             wechatData.addContact(contact);
             contact = wechatData.getContact(contactId) || contact;
         } else {
-            const nextRelation = String(contact.relation || '').includes('蜜语')
+            const relationMarker = isHostFriend ? '主播' : '蜜语';
+            const nextRelation = String(contact.relation || '').includes(relationMarker)
                 ? contact.relation
                 : (contact.relation ? `${contact.relation} / ${relation}` : relation);
             wechatData.updateContact(contact.id, {
                 avatar: friend.avatarUrl || contact.avatar || '👤',
                 relation: nextRelation,
                 sourceApp: 'honey',
-                sourceLabel: '蜜语',
+                sourceLabel,
                 honeySource: friend.source || contact.honeySource || '直播间',
                 honeyVisibleIntro: friend.message || contact.honeyVisibleIntro || '',
                 honeyHiddenBackground: hiddenBackground || contact.honeyHiddenBackground || ''
@@ -1971,7 +1981,7 @@ export class HoneyData {
                 avatar: friend.avatarUrl || contact.avatar || '👤',
                 relation: nextRelation,
                 sourceApp: 'honey',
-                sourceLabel: '蜜语',
+                sourceLabel,
                 honeySource: friend.source || contact.honeySource || '直播间',
                 honeyVisibleIntro: friend.message || contact.honeyVisibleIntro || '',
                 honeyHiddenBackground: hiddenBackground || contact.honeyHiddenBackground || ''
@@ -2005,15 +2015,15 @@ export class HoneyData {
             appContactId: this._getHoneyGlobalContactId(friend),
             name: friend.name,
             avatar: friend.avatarUrl || '',
-            relation: '蜜语好友',
+            relation,
             extra: {
                 sourceApp: friend.sourceApp || 'honey',
-                sourceLabel: friend.source || '好友',
+                sourceLabel,
                 honeySource: friend.source || '',
                 honeyVisibleIntro: friend.message || '',
                 honeyHiddenBackground: hiddenBackground || '',
                 acceptedAtPhoneTime: friend.acceptedAtPhoneTime || '',
-                honeyScope: 'friend'
+                honeyScope: isHostFriend ? 'followed_host' : 'friend'
             }
         });
         this.globalSocialStore?.upsertContact?.({
@@ -2021,10 +2031,10 @@ export class HoneyData {
             appContactId: String(contact.id || ''),
             name: contact.name || friend.name,
             avatar: contact.avatar || friend.avatarUrl || '',
-            relation: contact.relation || '蜜语好友',
+            relation: contact.relation || relation,
             extra: {
                 sourceApp: 'honey',
-                sourceLabel: '蜜语',
+                sourceLabel,
                 honeySource: friend.source || '',
                 honeyVisibleIntro: friend.message || '',
                 honeyHiddenBackground: hiddenBackground || ''
@@ -2097,7 +2107,8 @@ export class HoneyData {
             };
         const wechatData = this._getWechatDataBridge();
         const contacts = wechatData.getContacts();
-        let contact = contacts.find(item => this._normalizeHostNameKey(item?.name || '') === hostKey) || null;
+        const contactNameKey = this._normalizeWechatContactNameKey(safeHostName);
+        let contact = contacts.find(item => this._normalizeWechatContactNameKey(item?.name || '') === contactNameKey) || null;
         const avatar = String(options?.avatarUrl || host.avatarUrl || '').trim() || '👤';
         const hiddenBackground = this._buildFollowedHostWechatBackground(host, options);
         const visibleIntro = this._sanitizeInlineText(options?.message || options?.decisionMessage || `${safeHostName} 已同意添加微信。`, 120);
