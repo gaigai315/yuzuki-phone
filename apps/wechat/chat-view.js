@@ -9178,15 +9178,6 @@ renderChatRoom(chat) {
             wechatTranscript += await appendWechatChatTranscript(targetChat, recentWechatMessages);
         }
 
-        if (!callMode && wechatTranscript) {
-            messages.push({
-                role: 'system',
-                content: wechatTranscript,
-                name: 'SYSTEM (微信记录)',
-                isPhoneMessage: true
-            });
-        }
-
         if (!callMode && catboxCoAdoptContext) {
             messages.push({
                 role: 'system',
@@ -9290,6 +9281,14 @@ renderChatRoom(chat) {
             }
             if (contactProfileMessage) {
                 messages.push(contactProfileMessage);
+            }
+            if (wechatTranscript) {
+                messages.push({
+                    role: 'system',
+                    content: wechatTranscript,
+                    name: 'SYSTEM (微信记录)',
+                    isPhoneMessage: true
+                });
             }
             if (musicListeningContext) {
                 messages.push({
