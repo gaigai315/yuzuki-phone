@@ -2750,12 +2750,17 @@ export class HoneyView {
 
         const requestHtml = friendRequests.length > 0
             ? friendRequests.map((item) => `
+                ${(() => {
+                    const sourceText = item.requestType === 'host'
+                        ? (item.source && item.source !== item.name ? `${item.source} · 主播申请` : '主播申请')
+                        : (item.source || '直播间申请');
+                    return `
                 <div class="honey-mine-request-item">
                     <div class="honey-mine-request-top">
                         <span class="honey-mine-request-avatar${item.avatarUrl ? ' is-photo' : ''}"${item.avatarUrl ? ` style="${this._buildAvatarInlineStyle(item.avatarUrl)}"` : ''}></span>
                         <span class="honey-mine-request-meta">
                             <span class="honey-mine-request-name">${this._escapeHtml(item.name)}</span>
-                            <span class="honey-mine-request-source">${this._escapeHtml(item.requestType === 'host' ? '主播申请' : (item.source || '直播间申请'))}</span>
+                            <span class="honey-mine-request-source">${this._escapeHtml(sourceText)}</span>
                         </span>
                         <span class="honey-mine-request-inline-actions">
                             <button class="honey-follow-action-btn honey-follow-action-btn-compact" data-action="accept-honey-friend" data-name="${this._escapeHtml(item.name)}">同意</button>
@@ -2764,6 +2769,8 @@ export class HoneyView {
                     </div>
                     <div class="honey-mine-request-message">${this._escapeHtml(item.message || '想加你为好友')}</div>
                 </div>
+                    `;
+                })()}
             `).join('')
             : '<div class="honey-follow-empty-desc">当前没有新的好友申请。</div>';
 

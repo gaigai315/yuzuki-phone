@@ -1436,15 +1436,42 @@ export class HoneyData {
             return true;
         });
 
-        const mainMatch = raw.match(/^([^：:\n｜|]{1,24})\s*[：:]\s*(.+)$/);
-        const name = this._sanitizeInlineText(mainMatch?.[1] || raw, 24);
+        const mainMatch = raw.match(/^([^：:\n｜|]{1,48})\s*[：:]\s*(.+)$/);
+        let rawName = this._sanitizeInlineText(mainMatch?.[1] || raw, 48);
+        let accountName = '';
+        const roleAccountMatch = rawName.match(/^(.{1,24}?)[（(]\s*(?:主播账号|账号|频道)\s*[：:]\s*([^）)]{1,32})\s*[）)]$/);
+        const accountRoleMatch = rawName.match(/^(.{1,32}?)[（(]\s*([^（）()]{1,24})\s*[）)]$/);
+        if (roleAccountMatch) {
+            rawName = this._sanitizeInlineText(roleAccountMatch[1], 24);
+            accountName = this._sanitizeInlineText(roleAccountMatch[2], 32);
+        } else if (accountRoleMatch) {
+            const possibleAccount = this._sanitizeInlineText(accountRoleMatch[1], 32);
+            const possibleRole = this._sanitizeInlineText(accountRoleMatch[2], 24);
+            const fallbackKey = this._normalizeHostNameKey(fallbackSource || '');
+            const accountKey = this._normalizeHostNameKey(possibleAccount || '');
+            if ((fallbackKey && accountKey === fallbackKey) || /(?:账号|频道|组合|工作室|男团|女团|双子|直播间)/.test(possibleAccount)) {
+                rawName = possibleRole;
+                accountName = possibleAccount;
+            }
+        }
+
+        const name = this._sanitizeInlineText(rawName, 24);
         const message = this._sanitizeInlineText(mainMatch?.[2] || '想加你为好友', 80) || '想加你为好友';
         if (!name) return null;
+        const source = accountName || fallbackSource;
+        if (accountName) {
+            const accountLine = `来自蜜语主播账号“${accountName}”。`;
+            hiddenBackground = hiddenBackground
+                ? this._sanitizeHoneySecret(`${accountLine}${hiddenBackground}`, 220)
+                : accountLine;
+        }
 
         return this._normalizeHoneySocialPerson({
             name,
             message,
-            source: fallbackSource,
+            source,
+            sourceLabel: accountName ? '主播' : '',
+            requestType: accountName ? 'host' : '',
             hiddenBackground
         }, fallbackSource);
     }
