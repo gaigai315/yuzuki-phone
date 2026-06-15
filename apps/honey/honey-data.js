@@ -1834,7 +1834,8 @@ export class HoneyData {
         const localList = parsed
             .map(item => this._normalizeHoneySocialPerson(item, '好友'))
             .filter(Boolean);
-        return this._mergeHoneyPeopleFromGlobalStore(localList, 'friend');
+        const merged = this._mergeHoneyPeopleFromGlobalStore(localList, 'friend');
+        return this._mergeWechatLinkedFollowedHostsIntoHoneyFriends(merged);
     }
 
     saveHoneyFriends(list) {
@@ -1845,6 +1846,84 @@ export class HoneyData {
         this._removeStored('honey_my_friends');
         // 全局主库模式：不再持续写入会话键，避免污染聊天会话。
         return safeList;
+    }
+
+    _mergeWechatLinkedFollowedHostsIntoHoneyFriends(friendList = []) {
+        const merged = Array.isArray(friendList) ? [...friendList] : [];
+        const friendKeys = new Set(merged.map(item => this._normalizeHostNameKey(item?.name || '')).filter(Boolean));
+        const followedHosts = this.getFollowedHosts();
+        if (!Array.isArray(followedHosts) || followedHosts.length === 0) return merged;
+
+        let changedWechatContacts = false;
+        const wechatData = this._getWechatDataBridge();
+        const contacts = wechatData?.getContacts?.() || [];
+        const chats = wechatData?.getChatList?.() || [];
+
+        followedHosts.forEach((host) => {
+            const hostName = this._sanitizeInlineText(host?.name || host?.hostName || '', 40);
+            const hostKey = this._normalizeHostNameKey(hostName);
+            if (!hostName || !hostKey || friendKeys.has(hostKey)) return;
+            if (this._isHoneyWechatContactDeleted(hostName)) return;
+
+            const linkedContactId = String(host?.wechatContactId || '').trim();
+            const linkedChatId = String(host?.wechatChatId || '').trim();
+            const contact = (linkedContactId ? contacts.find(item => String(item?.id || '') === linkedContactId) : null)
+                || contacts.find(item => this._normalizeHostNameKey(this._resolveHoneyHostNameFromWechatContact(item)) === hostKey)
+                || contacts.find(item => this._normalizeHostNameKey(item?.name || '') === hostKey)
+                || (linkedChatId ? (() => {
+                    const linkedChat = chats.find(item => String(item?.id || '') === linkedChatId);
+                    return linkedChat?.contactId ? contacts.find(item => String(item?.id || '') === String(linkedChat.contactId || '')) : null;
+                })() : null);
+            const chat = contact?.id ? wechatData.getChatByContactId?.(contact.id) : (linkedChatId ? chats.find(item => String(item?.id || '') === linkedChatId) : null);
+            if (!contact && !chat) return;
+
+            if (contact?.id && String(contact.honeyHostName || '').trim() !== hostName) {
+                wechatData.updateContact?.(contact.id, {
+                    sourceApp: 'honey',
+                    sourceLabel: '主播',
+                    honeyHostName: hostName,
+                    honeySource: contact.honeySource || '关注主播',
+                    honeyVisibleIntro: contact.honeyVisibleIntro || host.intro || '',
+                    honeyHiddenBackground: contact.honeyHiddenBackground || this._buildFollowedHostWechatBackground(host, {
+                        title: host.liveTitle || `${hostName} 的直播间`
+                    })
+                });
+                changedWechatContacts = true;
+            }
+
+            const visibleIntro = this._sanitizeInlineText(
+                contact?.honeyVisibleIntro
+                || host.intro
+                || `${hostName} 已成为你的微信好友。`,
+                80
+            );
+            const hiddenBackground = this._sanitizeHoneySecret(
+                contact?.honeyHiddenBackground
+                || this._buildFollowedHostWechatBackground(host, {
+                    title: host.liveTitle || `${hostName} 的直播间`
+                }),
+                220
+            );
+            const recovered = this._normalizeHoneySocialPerson({
+                name: hostName,
+                avatarUrl: host.avatarUrl || contact?.avatar || chat?.avatar || '',
+                message: visibleIntro,
+                source: hostName,
+                sourceApp: 'honey',
+                sourceLabel: '主播',
+                requestType: 'host',
+                hostType: host.figure || '主播',
+                hiddenBackground
+            }, '好友');
+            if (!recovered) return;
+            merged.push(recovered);
+            friendKeys.add(hostKey);
+        });
+
+        if (changedWechatContacts && typeof wechatData?.saveData === 'function') {
+            wechatData.saveData();
+        }
+        return merged;
     }
 
     getHoneyFriendRequests() {
