@@ -2987,6 +2987,7 @@ export class HoneyData {
             return { followed: false, list };
         }
 
+        this._clearHoneyDeletedWechatContact(safeHostName);
         list.push({
             name: safeHostName,
             avatarUrl: safeAvatarUrl,
@@ -3114,8 +3115,9 @@ export class HoneyData {
                 list: currentList
             };
         }
-        const removedHost = currentList.find(item => String(item?.name || '').trim() === safeHostName) || null;
-        const list = currentList.filter(item => String(item?.name || '').trim() !== safeHostName);
+        const hostKey = this._normalizeHostNameKey(safeHostName);
+        const removedHost = currentList.find(item => this._normalizeHostNameKey(item?.name || item?.hostName || '') === hostKey) || null;
+        const list = currentList.filter(item => this._normalizeHostNameKey(item?.name || item?.hostName || '') !== hostKey);
         this.saveFollowedHosts(list);
         this.clearHostRecords(removedHost?.name || safeHostName);
         return {
@@ -3129,7 +3131,8 @@ export class HoneyData {
         if (!safeHostName || !patch || typeof patch !== 'object') return null;
 
         const list = this.getFollowedHosts();
-        const idx = list.findIndex(item => String(item?.name || '').trim() === safeHostName);
+        const hostKey = this._normalizeHostNameKey(safeHostName);
+        const idx = list.findIndex(item => this._normalizeHostNameKey(item?.name || item?.hostName || '') === hostKey);
         if (idx < 0) return null;
 
         list[idx] = {
@@ -3256,11 +3259,18 @@ export class HoneyData {
         const safeHostName = String(hostName || '').trim();
         const hostKey = this._normalizeHostNameKey(safeHostName);
         if (!hostKey) return 0;
+        const appContactId = this._getHoneyGlobalContactId({ name: safeHostName });
 
         return this.globalSocialStore?.removeAppContactsByPredicate?.('honey', (entry) => {
             const entryNameKey = this._normalizeHostNameKey(entry?.name || '');
+            const entryHostKey = this._normalizeHostNameKey(entry?.extra?.honeyHostName || '');
+            const entryAppContactId = String(entry?.appContactId || '').trim();
             const scope = String(entry?.extra?.honeyScope || '').trim().toLowerCase();
-            return entryNameKey === hostKey && scope === 'followed_host';
+            return scope === 'followed_host' && (
+                entryNameKey === hostKey
+                || entryHostKey === hostKey
+                || (!!appContactId && entryAppContactId === appContactId)
+            );
         }) || 0;
     }
 
