@@ -1512,12 +1512,16 @@ if (window.GGP_Loaded) {
     }
 
     async function ensureHoneyAppReady() {
-        if (window.VirtualPhone?.honeyApp) return window.VirtualPhone.honeyApp;
+        if (window.VirtualPhone?.honeyApp) {
+            window.VirtualPhone.honeyApp.attachRuntime?.(phoneShell, storage);
+            return window.VirtualPhone.honeyApp;
+        }
         const module = await import(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`);
         if (!window.VirtualPhone) window.VirtualPhone = {};
         if (!window.VirtualPhone.honeyApp) {
             window.VirtualPhone.honeyApp = new module.HoneyApp(phoneShell, storage);
         }
+        window.VirtualPhone.honeyApp.attachRuntime?.(phoneShell, storage);
         return window.VirtualPhone.honeyApp;
     }
 
@@ -7478,6 +7482,17 @@ if (window.GGP_Loaded) {
             if (window.VirtualPhone.weiboApp) {
                 window.VirtualPhone.weiboApp.clearCache();
             }
+            // 🍯 清空蜜语实例，避免切换会话后复用未绑定当前手机壳/旧会话数据的懒加载实例
+            if (window.VirtualPhone.honeyApp) {
+                try {
+                    window.VirtualPhone.honeyApp.honeyData?.clearGeneratedSessionData?.();
+                    window.VirtualPhone.honeyApp.honeyData?.clearCache?.();
+                    window.VirtualPhone.honeyApp.deactivate?.();
+                } catch (e) {
+                    console.warn('[ST-Phone] 切换会话清理 Honey 实例失败:', e);
+                }
+                window.VirtualPhone.honeyApp = null;
+            }
             // 🪄 清空魔坊缓存
             if (window.VirtualPhone.mofoApp) {
                 window.VirtualPhone.mofoApp.clearCache();
@@ -8002,7 +8017,19 @@ if (window.GGP_Loaded) {
                                     return;
                                 }
 
-                                wechatApp.render();
+                                const renderWechatApp = (retry = false) => {
+                                    try {
+                                        wechatApp.render();
+                                    } catch (renderError) {
+                                        if (!retry && /Cannot read properties of null|Cannot read property/i.test(String(renderError?.message || renderError))) {
+                                            console.warn('⚠️ [微信] 首次渲染遇到移动端 DOM 时序问题，下一帧重试:', renderError);
+                                            requestAnimationFrame(() => renderWechatApp(true));
+                                            return;
+                                        }
+                                        throw renderError;
+                                    }
+                                };
+                                renderWechatApp();
 
                             } catch (initError) {
                                 console.error('❌ [调试] 创建/调用 WechatApp 失败:', initError);
@@ -8093,6 +8120,7 @@ if (window.GGP_Loaded) {
                                 if (!window.VirtualPhone.honeyApp) {
                                     window.VirtualPhone.honeyApp = new module.HoneyApp(phoneShell, storage);
                                 }
+                                window.VirtualPhone.honeyApp.attachRuntime?.(phoneShell, storage);
                                 window.VirtualPhone.honeyApp.render();
                             } catch (initError) {
                                 console.error('❌ 蜜语APP初始化失败:', initError);

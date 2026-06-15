@@ -4511,10 +4511,11 @@ export class WechatApp {
 
     bindEvents() {
         // 🔥🔥 统一管理事件监听，避免重复绑定 🔥🔥
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const wechatRoot = currentView.querySelector?.('.wechat-app') || currentView;
         const addClickListener = (selector, handler) => {
             // 🔥 核心修复1：强制在当前可视图层中查找元素，防止被历史栈中残留的隐藏旧页面拦截事件！
-            const currentView = document.querySelector('.phone-view-current') || document;
-            const element = currentView.querySelector(selector);
+            const element = wechatRoot.querySelector?.(selector);
             if (element) element.onclick = handler; // 🔥 使用 onclick 覆盖
         };
 
@@ -4534,7 +4535,7 @@ export class WechatApp {
         });
 
         // 底部导航切换
-        document.querySelectorAll('.wechat-tab').forEach(tab => {
+        wechatRoot.querySelectorAll?.('.wechat-tab').forEach(tab => {
             tab.onclick = (e) => {
                 const view = e.currentTarget.dataset.view;
                 if (view) {
@@ -4545,7 +4546,7 @@ export class WechatApp {
         });
 
         // 聊天列表点击
-        document.querySelectorAll('.wechat-chat-list .chat-item').forEach(item => {
+        wechatRoot.querySelectorAll?.('.wechat-chat-list .chat-item').forEach(item => {
             item.onclick = (e) => {
                 const chatId = e.currentTarget.dataset.chatId;
                 if (chatId) {
@@ -4840,7 +4841,8 @@ export class WechatApp {
     // 会话列表：长按松开后弹出“编辑/删除”操作
     bindChatListLongPressDelete() {
         if (this.currentChat || this.currentView !== 'chats') return;
-        const list = document.querySelector('.wechat-chat-list');
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const list = currentView.querySelector?.('.wechat-chat-list');
         if (!list) return;
 
         const closeDeleteMenu = () => {
@@ -4996,7 +4998,7 @@ export class WechatApp {
             showDeleteMenu(chatId, item);
         }, true);
 
-        document.querySelectorAll('.wechat-chat-list .chat-item').forEach(item => {
+        list.querySelectorAll?.('.chat-item').forEach(item => {
             const chatId = item.dataset.chatId;
             if (!chatId) return;
 

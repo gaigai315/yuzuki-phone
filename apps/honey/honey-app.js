@@ -32,7 +32,18 @@ export class HoneyApp {
         }
     }
 
+    attachRuntime(phoneShell, storage) {
+        if (phoneShell) this.phoneShell = phoneShell;
+        if (storage) {
+            this.storage = storage;
+            if (this.honeyData) this.honeyData.storage = storage;
+        }
+    }
+
     async render() {
+        if (!this.phoneShell?.setContent) {
+            throw new Error('蜜语运行时未绑定手机壳');
+        }
         // 移动端首次打开时 CSS fetch 可能被宿主页面或网络状态拖住，不能阻塞进入页面。
         this.honeyView.cssPromise?.catch?.(() => {});
         this.honeyView.render();
