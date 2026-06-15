@@ -8658,6 +8658,7 @@ if (window.GGP_Loaded) {
                             const wechatOfflineChats = [];
                             const honeyOfflineSummaryByName = new Map();
                             const honeyOfflineSummaryByText = new Map();
+                            const honeyOfflineSummaryByHost = new Map();
                             const storage = window.VirtualPhone.storage;
                             const isPhoneEnabled = isPhoneFeatureEnabled();
                             const isStorageToggleOn = (key) => {
@@ -8781,11 +8782,28 @@ if (window.GGP_Loaded) {
                                             .replace(/\s+/g, '')
                                             .replace(/[（(][^（）()]*[）)]/g, '')
                                             .toLowerCase();
-                                        const addHoneyOfflineSummary = (name, summaryText) => {
+                                        const resolveHoneyOfflineHostName = (item) => {
+                                            const direct = String(item?.honeyHostName || item?.extra?.honeyHostName || '').trim();
+                                            if (direct) return direct;
+                                            const source = String(item?.honeySource || item?.extra?.honeySource || '').trim();
+                                            if (source && !/^(?:关注主播|直播间|好友|蜜语|主播)$/i.test(source)) return source;
+                                            return String(item?.name || '').trim();
+                                        };
+                                        const addHoneyOfflineSummary = (name, summaryText, hostName = '') => {
                                             const safeName = String(name || '').trim();
+                                            const safeHostName = String(hostName || safeName).trim();
                                             const safeSummary = String(summaryText || '').trim();
                                             const key = normalizeHoneyOfflineName(safeName);
+                                            const hostKey = normalizeHoneyOfflineName(safeHostName);
                                             if (!key || !safeSummary || honeyOfflineSummaryByName.has(key)) return;
+                                            const existingByHost = hostKey ? honeyOfflineSummaryByHost.get(hostKey) : null;
+                                            if (existingByHost) {
+                                                if (!existingByHost.names.some(item => normalizeHoneyOfflineName(item) === key)) {
+                                                    existingByHost.names.push(safeName);
+                                                }
+                                                honeyOfflineSummaryByName.set(key, existingByHost);
+                                                return;
+                                            }
                                             const summaryKey = safeSummary.replace(/\s+/g, '');
                                             const existing = honeyOfflineSummaryByText.get(summaryKey);
                                             if (existing) {
@@ -8793,17 +8811,21 @@ if (window.GGP_Loaded) {
                                                     existing.names.push(safeName);
                                                 }
                                                 honeyOfflineSummaryByName.set(key, existing);
+                                                if (hostKey) honeyOfflineSummaryByHost.set(hostKey, existing);
                                                 return;
                                             }
-                                            const item = { names: [safeName], summary: safeSummary };
+                                            const item = { names: [safeName], hostName: safeHostName, summary: safeSummary };
                                             honeyOfflineSummaryByText.set(summaryKey, item);
+                                            if (hostKey) honeyOfflineSummaryByHost.set(hostKey, item);
                                             honeyOfflineSummaryByName.set(key, item);
                                         };
                                         const isHoneySource = (item) => item?.sourceApp === 'honey'
                                             || item?.sourceLabel === '蜜语'
                                             || item?.sourceLabel === '主播';
-                                        const readHoneyOfflineSummary = async (name) => {
-                                            const safeName = String(name || '').trim();
+                                        const readHoneyOfflineSummary = async (nameOrContact) => {
+                                            const safeName = typeof nameOrContact === 'object'
+                                                ? resolveHoneyOfflineHostName(nameOrContact)
+                                                : String(nameOrContact || '').trim();
                                             if (!safeName) return '';
                                             let honeyData = window.VirtualPhone?.honeyApp?.honeyData;
                                             if (!honeyData?.getHostHistorySummary) {
@@ -8823,8 +8845,9 @@ if (window.GGP_Loaded) {
                                         if (includeHoneyOffline) {
                                             for (const contact of contacts) {
                                                 if (!isHoneySource(contact)) continue;
-                                                const honeySummary = await readHoneyOfflineSummary(contact?.name || '');
-                                                if (honeySummary) addHoneyOfflineSummary(contact?.name || '', honeySummary);
+                                                const honeyHostName = resolveHoneyOfflineHostName(contact);
+                                                const honeySummary = await readHoneyOfflineSummary(contact);
+                                                if (honeySummary) addHoneyOfflineSummary(contact?.name || honeyHostName, honeySummary, honeyHostName);
                                             }
                                         }
                                         const normalizeCustomEmojiImageKey = (value) => {
@@ -8982,8 +9005,9 @@ if (window.GGP_Loaded) {
                                                 continue;
                                             }
                                             if (includeHoneyOffline && isHoneyChat) {
-                                                const honeySummary = await readHoneyOfflineSummary(linkedContact?.name || chat?.name || '');
-                                                if (honeySummary) addHoneyOfflineSummary(linkedContact?.name || chat?.name || '', honeySummary);
+                                                const honeyHostName = linkedContact ? resolveHoneyOfflineHostName(linkedContact) : String(chat?.honeyHostName || chat?.honeySource || chat?.name || '').trim();
+                                                const honeySummary = await readHoneyOfflineSummary(linkedContact || chat);
+                                                if (honeySummary) addHoneyOfflineSummary(linkedContact?.name || chat?.name || honeyHostName, honeySummary, honeyHostName);
                                             }
                                             const isGroup = chat.type === 'group';
                                             if (isGroup && !includeGroupOffline) {

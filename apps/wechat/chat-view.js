@@ -1296,14 +1296,14 @@ export class ChatView {
     }
 
     async _getHoneyHostSummaryForWechatContact(contact = {}) {
-        const contactName = String(contact?.name || '').trim();
-        if (!contactName) return '';
+        const hostName = String(contact?.honeyHostName || contact?.honeySource || contact?.name || '').trim();
+        if (!hostName) return '';
         try {
             const mod = await import('../honey/honey-data.js');
             const HoneyData = mod?.HoneyData;
             if (!HoneyData) return '';
             const honeyData = window.VirtualPhone?.honeyApp?.honeyData || new HoneyData(this.app.storage || window.VirtualPhone?.storage);
-            const summary = honeyData.getHostHistorySummary?.(contactName);
+            const summary = honeyData.getHostHistorySummary?.(hostName);
             if (typeof honeyData.formatHostHistorySummaryForContext === 'function') {
                 return honeyData.formatHostHistorySummaryForContext(summary);
             }
