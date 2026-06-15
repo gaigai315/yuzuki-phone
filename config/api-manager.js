@@ -320,6 +320,50 @@ export class ApiManager {
         }
     }
 
+    _createPhoneRequestSignal(appId = 'phone_online') {
+        try {
+            const rawPerms = this.storage.get('phone_memory_permissions');
+            const allPerms = rawPerms ? (typeof rawPerms === 'string' ? JSON.parse(rawPerms) : rawPerms) : {};
+
+            const basePerms = { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false };
+            const defaultPermsByApp = {
+                wechat: { allowSummary: true, allowVector: true },
+                weibo: { allowSummary: true, allowVector: true },
+                diary: { allowSummary: true, allowVector: true },
+                games: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false },
+                honey: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false },
+                phone_online: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false }
+            };
+            const defaultPerms = { ...basePerms, ...(defaultPermsByApp[appId] || {}) };
+            const currentPerms = { ...defaultPerms, ...(allPerms?.[appId] || {}) };
+
+            return {
+                appName: appId,
+                allowSummary: currentPerms.allowSummary === true,
+                allowTable: currentPerms.allowTable === true,
+                allowVector: currentPerms.allowVector === true,
+                allowPrompt: currentPerms.allowPrompt === true
+            };
+        } catch (e) {
+            console.warn('⚠️ [ApiManager] 读取记忆插件权限失败，已回退默认禁用:', e);
+            return {
+                appName: appId,
+                allowSummary: false,
+                allowTable: false,
+                allowVector: false,
+                allowPrompt: false
+            };
+        }
+    }
+
+    _attachPhoneSignalToPayload(payload, phoneSignal = null) {
+        if (!payload || typeof payload !== 'object' || !phoneSignal) return payload;
+        payload.gaigaiPhoneSignal = phoneSignal;
+        payload.isPhoneMessage = true;
+        payload.isVirtualPhoneApiCall = true;
+        return payload;
+    }
+
     // ========================================
     // 🌐 核心暴露接口
     // ========================================
@@ -333,33 +377,11 @@ export class ApiManager {
         try {
         // 获取当前调用 AI 的 App 标识，默认 phone_online
         const appId = options.appId || 'phone_online';
-
-        // 从存储中读取该 App 的记忆插件权限配置
-        const rawPerms = this.storage.get('phone_memory_permissions');
-        const allPerms = rawPerms ? JSON.parse(rawPerms) : {};
-
-        // 默认权限（仅初始化默认，用户仍可在设置中修改）
-        const basePerms = { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false };
-        const defaultPermsByApp = {
-            wechat: { allowSummary: true, allowVector: true },
-            weibo: { allowSummary: true, allowVector: true },
-            diary: { allowSummary: true, allowVector: true },
-            games: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false },
-            honey: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false },
-            phone_online: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false }
-        };
-        const defaultPerms = { ...basePerms, ...(defaultPermsByApp[appId] || {}) };
-        const currentPerms = { ...defaultPerms, ...(allPerms[appId] || {}) };
+        const phoneSignal = this._createPhoneRequestSignal(appId);
 
         // 给最后一条消息打上通行证标记
         if (Array.isArray(messages) && messages.length > 0) {
-            messages[messages.length - 1].gaigaiPhoneSignal = {
-                appName: appId,
-                allowSummary: currentPerms.allowSummary,
-                allowTable: currentPerms.allowTable,
-                allowVector: currentPerms.allowVector,
-                allowPrompt: currentPerms.allowPrompt
-            };
+            messages[messages.length - 1].gaigaiPhoneSignal = phoneSignal;
             messages[messages.length - 1].isPhoneMessage = true;
             messages[messages.length - 1].isVirtualPhoneApiCall = true; // 🔥 绝杀：专门贴上手机API专用标签
         }
@@ -392,10 +414,10 @@ export class ApiManager {
         const useIndependentAPI = apiConfig && apiConfig.useIndependentAPI === true;
         if (useIndependentAPI) {
             console.log('🚀 [ApiManager] 智能路由 -> 走向独立 API (流式解析模式)');
-            return await this._callIndependentAPI(messages, options, apiConfig);
+            return await this._callIndependentAPI(messages, options, apiConfig, phoneSignal);
         } else {
             console.log('🔄 [ApiManager] 智能路由 -> 走向酒馆原生 API (generateRaw)');
-            return await this._callTavernAPI(messages, options);
+            return await this._callTavernAPI(messages, options, phoneSignal);
         }
         } catch (error) {
             console.error('[ApiManager] callAI 异常详情:', {
@@ -448,7 +470,7 @@ export class ApiManager {
     // ========================================
     // 🛡️ 通道 A: 酒馆原生 API (终极流式兜底，完美防502/504/400)
     // ========================================
-    async _callTavernAPI(messages, options = {}) {
+    async _callTavernAPI(messages, options = {}, phoneSignal = null) {
         const isAbortLike = (err = null) => {
             const msg = String(err?.message || err || '').toLowerCase();
             return err?.name === 'AbortError' || err?.statusText === 'abort' || msg.includes('abort');
@@ -478,7 +500,7 @@ export class ApiManager {
                 parsedSettings = await this._getCachedTavernSettings();
             } catch (settingsError) {
                 console.warn('[ApiManager] 读取酒馆配置失败，回退 generateRaw:', this._formatError(settingsError, 'settings/get 失败'));
-                return await this._callTavernGenerateRawFallback(cleanMessages, this._resolveResponseLength(null, options), options);
+                return await this._callTavernGenerateRawFallback(cleanMessages, this._resolveResponseLength(null, options), options, phoneSignal);
             }
             
             // 兼容不同版本的酒馆设置结构
@@ -541,6 +563,7 @@ export class ApiManager {
                 max_tokens: maxTokens,
                 stream: true  // ✅ 开启流式，彻底解决生成大段微博时的 504 Timeout
             };
+            this._attachPhoneSignalToPayload(payload, phoneSignal);
 
             // 将读取到的高级参数加入 Payload
             if (frequency_penalty !== undefined) payload.frequency_penalty = frequency_penalty;
@@ -598,11 +621,11 @@ export class ApiManager {
                     /invalid url|err_invalid_url|\/chat\/completions/i.test(String(errText || ''))
                 ) {
                     console.warn('⚠️ [ApiManager] 检测到后端 URL 解析失败，自动回退到 generateRaw 兜底');
-                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options);
+                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal);
                 }
                 if (this._isUnauthorizedResponse(response.status, errText)) {
                     console.warn('⚠️ [ApiManager] 原生 API 鉴权仍失败，回退 generateRaw');
-                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options);
+                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal);
                 }
                 return { success: false, error: `原生 API 失败: ${response.status} ${errText || ''}`.trim() };
             }
@@ -628,7 +651,7 @@ export class ApiManager {
         }
     }
 
-    async _callTavernGenerateRawFallback(cleanMessages, maxTokens, options = {}) {
+    async _callTavernGenerateRawFallback(cleanMessages, maxTokens, options = {}, phoneSignal = null) {
         try {
             const context = (typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function')
                 ? SillyTavern.getContext()
@@ -660,6 +683,7 @@ export class ApiManager {
                 stop: [],
                 stop_sequence: []
             };
+            this._attachPhoneSignalToPayload(generateParams, phoneSignal);
 
             const result = await context.generateRaw(generateParams);
             let summary = '';
@@ -691,7 +715,7 @@ export class ApiManager {
         }
     }
 
-    async _callIndependentAPI(messages, options = {}, apiConfig = {}) {
+    async _callIndependentAPI(messages, options = {}, apiConfig = {}, phoneSignal = null) {
         const model = apiConfig.model || 'gpt-3.5-turbo';
         const provider = apiConfig.provider || 'openai';
         const modelLower = String(model || '').toLowerCase();
@@ -784,7 +808,7 @@ export class ApiManager {
             const endpoint = '/api/backends/chat-completions/generate';
             const send = async (forceRefresh = false) => fetch(endpoint, {
                 method: 'POST',
-                headers: { ...(await this._getJsonRequestHeaders({ forceRefresh })), 'X-ST-Phone-Internal-API': '1' },
+                headers: await this._getJsonRequestHeaders({ forceRefresh }),
                 body: JSON.stringify(payload),
                 credentials: 'include',
                 signal: options.signal
@@ -843,6 +867,7 @@ export class ApiManager {
                     mode: 'chat',
                     instruction_mode: 'chat'
                 };
+                this._attachPhoneSignalToPayload(proxyPayload, phoneSignal);
 
                 // 与记忆插件保持一致：同时提供 proxy_password 和 Authorization，
                 // 兼容部分 OP/中转后端只读取 custom_include_headers 的情况。
@@ -886,6 +911,7 @@ export class ApiManager {
                             mode: 'chat',
                             instruction_mode: 'chat'
                         };
+                        this._attachPhoneSignalToPayload(customPayload, phoneSignal);
                         if (authHeader) {
                             customPayload.custom_include_headers.Authorization = authHeader;
                         }
@@ -926,6 +952,7 @@ export class ApiManager {
                         max_tokens: maxTokens,
                         stream: enableStream
                     };
+                    this._attachPhoneSignalToPayload(retryPayload, phoneSignal);
 
                     console.log(`🌐 [ApiManager][后端代理-降级OpenAI] 目标: ${v1Url} | 模型: ${model || '未指定'} | 流式: ${enableStream ? '开' : '关'}`);
                     const retryResponse = await fetchProxyWithAuthRetry(retryPayload, '后端代理-降级OpenAI');
@@ -964,9 +991,10 @@ export class ApiManager {
             let requestBody;
             if (isGeminiOfficial) {
                 requestBody = {
-                    contents: cleanMessages.map((m) => ({
+                    contents: cleanMessages.map((m, idx) => ({
                         role: m.role === 'user' ? 'user' : 'model',
-                        parts: this._contentToGeminiParts(m.content)
+                        parts: this._contentToGeminiParts(m.content),
+                        ...(idx === cleanMessages.length - 1 && phoneSignal ? { gaigaiPhoneSignal: phoneSignal } : {})
                     })),
                     generationConfig: {
                         temperature,
@@ -988,6 +1016,7 @@ export class ApiManager {
                     requestBody.safetySettings = buildSafetyConfig();
                 }
             }
+            this._attachPhoneSignalToPayload(requestBody, phoneSignal);
 
             if (isGeminiOfficial && !authHeader && apiKey && !directUrl.includes('key=')) {
                 directUrl += (directUrl.includes('?') ? '&' : '?') + `key=${apiKey}`;

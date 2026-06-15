@@ -34,6 +34,7 @@ export class HoneyData {
         this._flushTimer = null;
         this.globalSocialStore = new GlobalSocialStore(storage);
         this._scheduleLegacyGlobalHoneyMigration();
+        this._clearLegacyGlobalFollowedHostLinks();
         this._bootstrapHoneyGlobalSocialData();
     }
 
@@ -503,6 +504,24 @@ export class HoneyData {
             }
         } catch (e) {
             console.warn('⚠️ [蜜语] 本地好友迁移到全局主库失败:', e);
+        }
+    }
+
+    _clearLegacyGlobalFollowedHostLinks() {
+        try {
+            let removed = 0;
+            removed += this.globalSocialStore?.removeAppContactsByPredicate?.('honey', (entry) => {
+                const scope = String(entry?.extra?.honeyScope || '').trim().toLowerCase();
+                return scope === 'followed_host';
+            }) || 0;
+            removed += this.globalSocialStore?.removeAppContactsByPredicate?.('wechat', (entry) => {
+                return this._inferHoneyHostSocialPerson(entry, 'wechat');
+            }) || 0;
+            if (removed > 0) {
+                console.log(`[HoneyData] 已清理 ${removed} 条旧版蜜语关注主播全局联动记录，改为按会话存储`);
+            }
+        } catch (e) {
+            console.warn('⚠️ [蜜语] 清理旧版全局关注主播联动失败:', e);
         }
     }
 
@@ -1864,71 +1883,6 @@ export class HoneyData {
         return safeList;
     }
 
-    _syncFollowedHostToGlobalStore(host = {}) {
-        const hostName = this._sanitizeInlineText(host?.name || host?.hostName || '', 40);
-        if (!hostName) return null;
-        const appContactId = this._getHoneyGlobalContactId({ name: hostName });
-        if (!appContactId) return null;
-        return this.globalSocialStore?.upsertContact?.({
-            app: 'honey',
-            appContactId,
-            name: hostName,
-            avatar: String(host?.avatarUrl || '').trim(),
-            relation: '蜜语主播',
-            extra: {
-                sourceApp: host?.sourceApp || 'honey',
-                sourceLabel: host?.sourceLabel || '主播',
-                honeyHostName: hostName,
-                honeySource: '关注主播',
-                honeyVisibleIntro: host?.intro || '',
-                requestType: 'host',
-                hostType: host?.figure || '主播',
-                wechatContactName: String(host?.wechatContactName || '').trim(),
-                wechatContactId: String(host?.wechatContactId || '').trim(),
-                wechatChatId: String(host?.wechatChatId || '').trim(),
-                honeyScope: 'followed_host'
-            }
-        }) || null;
-    }
-
-    _mergeFollowedHostsFromGlobalStore(localHosts = []) {
-        const merged = new Map();
-        (Array.isArray(localHosts) ? localHosts : []).forEach((host) => {
-            const key = this._normalizeHostNameKey(host?.name || '');
-            if (key) merged.set(key, host);
-        });
-
-        const globalList = this.globalSocialStore?.getContactsByApp?.('honey') || [];
-        globalList.forEach((entry) => {
-            const scope = String(entry?.extra?.honeyScope || '').trim().toLowerCase();
-            if (scope !== 'followed_host') return;
-            const hostName = this._sanitizeInlineText(entry?.extra?.honeyHostName || entry?.name || '', 40);
-            const key = this._normalizeHostNameKey(hostName);
-            if (!hostName || !key || this._isHoneyWechatContactDeleted(hostName)) return;
-            const current = merged.get(key) || {};
-            merged.set(key, {
-                ...current,
-                name: current.name || hostName,
-                avatarUrl: current.avatarUrl || String(entry?.avatar || '').trim(),
-                figure: current.figure || entry?.extra?.hostType || '主播',
-                boundVideoUrl: current.boundVideoUrl || '',
-                lastActiveAt: Number(current.lastActiveAt) || 0,
-                favorability: this._clampFavorability(current.favorability ?? current.affection, 0),
-                liveTitle: current.liveTitle || '',
-                intro: current.intro || String(entry?.extra?.honeyVisibleIntro || '').trim(),
-                fans: current.fans || '',
-                sourceApp: current.sourceApp || entry?.extra?.sourceApp || 'honey',
-                sourceLabel: current.sourceLabel || entry?.extra?.sourceLabel || '主播',
-                wechatContactName: current.wechatContactName || String(entry?.extra?.wechatContactName || '').trim(),
-                wechatContactId: current.wechatContactId || String(entry?.extra?.wechatContactId || '').trim(),
-                wechatChatId: current.wechatChatId || String(entry?.extra?.wechatChatId || '').trim(),
-                ...this._normalizeHostNaiReference(current)
-            });
-        });
-
-        return Array.from(merged.values()).filter(Boolean);
-    }
-
     _mergeWechatLinkedFollowedHostsIntoHoneyFriends(friendList = []) {
         const merged = Array.isArray(friendList) ? [...friendList] : [];
         const friendKeys = new Set(merged.map(item => this._normalizeHostNameKey(item?.name || '')).filter(Boolean));
@@ -2548,39 +2502,6 @@ export class HoneyData {
             }
         }
 
-        this.globalSocialStore?.upsertContact?.({
-            app: 'honey',
-            appContactId: this._getHoneyGlobalContactId({ name: safeHostName }),
-            name: safeHostName,
-            avatar: avatar !== '👤' ? avatar : '',
-            relation,
-            extra: {
-                sourceApp: 'honey',
-                sourceLabel: '主播',
-                honeyHostName: safeHostName,
-                honeySource: '关注主播',
-                wechatContactId: String(contact.id || ''),
-                wechatChatId: String(chat?.id || ''),
-                honeyHiddenBackground: hiddenBackground || '',
-                honeyScope: 'followed_host'
-            }
-        });
-        this.globalSocialStore?.upsertContact?.({
-            app: 'wechat',
-            appContactId: String(contact.id || ''),
-            name: contact.name || safeContactName,
-            avatar: contact.avatar || '',
-            relation: contact.relation || relation,
-            extra: {
-                sourceApp: 'honey',
-                sourceLabel: '主播',
-                honeyHostName: safeHostName,
-                honeySource: '关注主播',
-                honeyVisibleIntro: visibleIntro || '',
-                honeyHiddenBackground: hiddenBackground || ''
-            }
-        });
-
         return { host: list.find(item => this._normalizeHostNameKey(item?.name || '') === hostKey) || hostPatch, contact, chat, wechatData };
     }
 
@@ -2922,15 +2843,14 @@ export class HoneyData {
                 };
             })
             .filter(Boolean);
-        const merged = this._mergeFollowedHostsFromGlobalStore(list);
         if (needsCleanup) {
             try {
-                this._setStored('honey_followed_hosts', JSON.stringify(merged));
+                this._setStored('honey_followed_hosts', JSON.stringify(list));
                 this._scheduleFlushChatPersistence();
                 console.warn('[HoneyData] 已清理关注主播里的旧版 base64 角色参考图，请重新上传参考图以使用固定角色功能');
             } catch (e) {}
         }
-        return merged;
+        return list;
     }
 
     saveFollowedHosts(list) {
@@ -2961,7 +2881,6 @@ export class HoneyData {
                 .filter(Boolean)
             : [];
         this._setStored('honey_followed_hosts', JSON.stringify(safeList));
-        safeList.forEach(host => this._syncFollowedHostToGlobalStore(host));
         this._scheduleFlushChatPersistence();
     }
 
@@ -3051,22 +2970,6 @@ export class HoneyData {
         if (chat?.id && typeof wechatData.setHoneyHistoryInjectionForChat === 'function') {
             wechatData.setHoneyHistoryInjectionForChat(chat.id, true);
         }
-        this.globalSocialStore?.upsertContact?.({
-            app: 'honey',
-            appContactId: this._getHoneyGlobalContactId({ name: safeHostName }),
-            name: safeHostName,
-            avatar: nextAvatarUrl || '',
-            relation: '微信邀约主播',
-            extra: {
-                sourceApp: 'wechat',
-                sourceLabel: '微信邀约',
-                honeyHostName: safeHostName,
-                wechatContactName: safeContactName,
-                wechatContactId: String(contact?.id || ''),
-                wechatChatId: String(chat?.id || ''),
-                honeyScope: 'followed_host'
-            }
-        });
         return list.find(item => this._normalizeHostNameKey(item?.name || '') === key) || patch;
     }
 

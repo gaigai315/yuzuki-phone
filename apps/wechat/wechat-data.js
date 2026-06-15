@@ -37,7 +37,6 @@ export class WechatData {
         this._messagesDirty = {};   // 记录哪些聊天的消息需要保存
 
         this.data = this.loadData();
-        this._seedHoneyContactsFromGlobalStore();
     }
 
     _normalizeContactNameKey(name) {
@@ -88,106 +87,6 @@ export class WechatData {
             || sourceLabel.includes('主播')
             || relation.includes('蜜语')
             || relation.includes('主播');
-    }
-
-    _seedHoneyContactsFromGlobalStore() {
-        try {
-            const globalContacts = this.globalSocialStore?.getContactsByApp?.('wechat') || [];
-            if (!Array.isArray(globalContacts) || globalContacts.length === 0) return;
-
-            let changed = false;
-            const byId = new Map((this.data.contacts || []).map(item => [String(item?.id || ''), item]));
-            const byNameKey = new Map((this.data.contacts || []).map(item => [this._normalizeContactNameKey(item?.name || ''), item]));
-
-            globalContacts.forEach((entry) => {
-                if (!this._isHoneySyncedContact(entry)) return;
-                const safeId = String(entry?.appContactId || '').trim();
-                const safeName = String(entry?.name || '').trim();
-                if (!safeId || !safeName) return;
-                if (this._readHoneyDeletedWechatContact(safeName)) return;
-
-                let target = byId.get(safeId);
-                if (!target) {
-                    target = byNameKey.get(this._normalizeContactNameKey(safeName));
-                }
-
-                if (!target) {
-                    const contact = {
-                        id: safeId,
-                        name: safeName,
-                        avatar: String(entry?.avatar || '').trim(),
-                        remark: String(entry?.extra?.remark || '').trim(),
-                        relation: String(entry?.relation || entry?.extra?.relation || '').trim(),
-                        letter: this.getFirstLetter(safeName),
-                        sourceApp: String(entry?.extra?.sourceApp || '').trim(),
-                        sourceLabel: String(entry?.extra?.sourceLabel || '').trim(),
-                        honeyHostName: String(entry?.extra?.honeyHostName || '').trim(),
-                        honeySource: String(entry?.extra?.honeySource || '').trim(),
-                        honeyVisibleIntro: String(entry?.extra?.honeyVisibleIntro || '').trim(),
-                        honeyHiddenBackground: String(entry?.extra?.honeyHiddenBackground || '').trim()
-                    };
-                    this.data.contacts.push(contact);
-                    byId.set(contact.id, contact);
-                    byNameKey.set(this._normalizeContactNameKey(contact.name), contact);
-                    changed = true;
-                    return;
-                }
-
-                const avatar = String(entry?.avatar || '').trim();
-                const relation = String(entry?.relation || '').trim();
-                const sourceLabel = String(entry?.extra?.sourceLabel || '').trim();
-                const honeyHostName = String(entry?.extra?.honeyHostName || '').trim();
-                if (!target.avatar && avatar) {
-                    target.avatar = avatar;
-                    changed = true;
-                }
-                if (!target.relation && relation) {
-                    target.relation = relation;
-                    changed = true;
-                }
-                if (sourceLabel === '主播' && target.sourceLabel !== '主播') {
-                    target.sourceLabel = '主播';
-                    changed = true;
-                }
-                if (honeyHostName && target.honeyHostName !== honeyHostName) {
-                    target.honeyHostName = honeyHostName;
-                    changed = true;
-                }
-                if (relation.includes('主播') && !String(target.relation || '').includes('主播')) {
-                    target.relation = target.relation ? `${target.relation} / ${relation}` : relation;
-                    changed = true;
-                }
-            });
-
-            if (changed) this.saveData();
-        } catch (e) {
-            console.warn('⚠️ [微信] 蜜语全局联系人回填失败:', e);
-        }
-    }
-
-    _syncHoneyContactToGlobalStore(contact) {
-        try {
-            if (!contact || !contact.id || !contact.name) return;
-            if (!this._isHoneySyncedContact(contact)) return;
-            this.globalSocialStore?.upsertContact?.({
-                app: 'wechat',
-                appContactId: String(contact.id),
-                name: String(contact.name || ''),
-                avatar: String(contact.avatar || ''),
-                relation: String(contact.relation || ''),
-                extra: {
-                    remark: String(contact.remark || ''),
-                    sourceApp: String(contact.sourceApp || ''),
-                    sourceLabel: String(contact.sourceLabel || ''),
-                    honeyHostName: String(contact.honeyHostName || ''),
-                    honeySource: String(contact.honeySource || ''),
-                    honeyVisibleIntro: String(contact.honeyVisibleIntro || ''),
-                    honeyHiddenBackground: String(contact.honeyHiddenBackground || '')
-                }
-            });
-        } catch (e) {
-            console.warn('⚠️ [微信] 蜜语联系人同步全局主库失败:', e);
-        }
     }
 
     _normalizeBooleanValue(value, fallback = false) {
@@ -2451,12 +2350,10 @@ getWeekday(date) {
             if (contact?.honeyVisibleIntro) existed.honeyVisibleIntro = contact.honeyVisibleIntro;
             if (contact?.honeyHiddenBackground) existed.honeyHiddenBackground = contact.honeyHiddenBackground;
             if (!existed.letter && safeName) existed.letter = this.getFirstLetter(existed.name || safeName);
-            this._syncHoneyContactToGlobalStore(existed);
             this.saveData();
             return existed;
         }
         this.data.contacts.push(contact);
-        this._syncHoneyContactToGlobalStore(contact);
         this.saveData();
         return contact;
     }
@@ -2487,7 +2384,6 @@ getWeekday(date) {
                 }
             }
 
-            this._syncHoneyContactToGlobalStore(contact);
             this.saveData();
             return true;
         }
@@ -2515,7 +2411,6 @@ getWeekday(date) {
         if (contact) {
             contact.avatar = safeAvatar;
             foundContact = true;
-            this._syncHoneyContactToGlobalStore(contact);
         }
 
         // 3. 更新相关聊天（通过 contactId 或名字）
@@ -2625,7 +2520,6 @@ getWeekday(date) {
             if (contact) {
                 contact.avatar = safeAvatar;
                 foundContact = true;
-                this._syncHoneyContactToGlobalStore(contact);
             }
         }
 
@@ -2635,7 +2529,6 @@ getWeekday(date) {
         if (contactByName) {
             contactByName.avatar = safeAvatar;
             foundContact = true;
-            this._syncHoneyContactToGlobalStore(contactByName);
         }
 
         this.saveData();

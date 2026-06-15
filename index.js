@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.2.9';
+const ST_PHONE_VERSION = '1.3.0';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
@@ -41,10 +41,11 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-06-15',
+    date: '2026-06-16',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【新增】新增 {{HONEY_HISTORY}} 蜜语历史变量，蜜语直播总结会从 {{PHONE_HISTORY}} 分离出来单独注入；自定义全局提示词可把该变量放到希望注入蜜语历史的位置。'
+        '【优化】优化小手机与记忆插件的联动逻辑，微信等线上请求会把记忆权限信号稳定带到最终请求体，并允许记忆插件按勾选项注入总结、表格、提示词与向量内容。',
+        '【优化】优化蜜语关注主播与微信联动：关注主播、取消后重新关注、头像与联系人同步改为按当前会话处理，避免旧全局记录污染不同会话。'
     ]
 };
 
