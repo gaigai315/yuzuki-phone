@@ -3097,11 +3097,6 @@ export class HoneyData {
         const apiManager = window.VirtualPhone?.apiManager;
         if (!apiManager) throw new Error('API Manager 未初始化');
         const selectedTurns = turns.slice(0, 60);
-        const inputText = selectedTurns.map((turn, index) => [
-            `#${index + 1} ${turn.date}`,
-            turn.userMessage ? `用户：${turn.userMessage}` : '',
-            turn.assistantContext ? `直播记录：${turn.assistantContext}` : ''
-        ].filter(Boolean).join('\n')).join('\n\n');
         const messages = [
             {
                 role: 'system',
@@ -3130,34 +3125,58 @@ export class HoneyData {
                     '忽略无剧情推动作用的流水账（如单纯的菜单描述、普通起居、无意义的口水话弹幕）。',
                     '强制保留约定：若在主播与NPC、主播与观众（弹幕/打赏）的交互中达成了【口头承诺】、【交易约定】或设定了【具体条件】（即使发生在闲聊场景），必须完整记录约定的具体内容（如"A答应了观众完成XX挑战以换取XX"）。',
                     '强制保留冲突：详细记录关键冲突、重要决策或剧烈的情感波动的客观表现（如"A摔碎了杯子"、"B拒绝了A的提案"）。',
-                    '杜绝重复：主线剧情（核心故事）和支线剧情（日常互动/观众互动）严禁记录同一事件。当同一个剧情涉及多方，并根据规则判定为主线或支线后进行记录，另外一条线无需重复。',
+                    '杜绝重复：同一事件只记录一次。若同一个剧情同时涉及主播、NPC、观众弹幕或打赏，应整合进同一段连续叙述中。',
                     '【直播间特殊互动记录规则】',
                     '弹幕与观众互动：将“弹幕/观众”视为一个客观存在的群体或个体。若弹幕的发言或打赏直接触发了剧情、改变了角色决定或达成了交易，必须记录其客观内容。',
                     '错误示例：“观众起哄让A惩罚B”',
                     '正确示例：“多条弹幕要求A打B一巴掌，A随后执行了该动作”',
                     '【输出格式要求（最高优先级约束）】',
                     '纯文本格式：严禁使用任何 Markdown 列表符（如 -、*、#、1. 2. 3. 等），严禁使用加粗（**）。',
-                    '段落分隔：每条独立事件记录之间仅用一个换行符分隔。',
-                    '结构划分：仅允许使用【主线剧情记录】和【支线与互动剧情记录】作为纯文本标题区分。',
+                    '输出必须是一份连贯的剧情总结，按时间顺序把直播正文、打赏、评论触发的互动整合为连续剧情。',
+                    '段落分隔：可按剧情阶段自然分段，每段之间仅用一个换行符分隔。',
                     '请基于以上所有规则，对以下直播间历史上下文进行全面总结：',
-                    '必须只返回 <蜜语记录总结> 标签包裹内容。'
-                ].join('\n'),
-                isPhoneMessage: true
-            },
-            {
-                role: 'user',
-                content: [
-                    `主播：${safeHostName}`,
-                    summary.text ? `已有摘要：\n${summary.text}` : '已有摘要：暂无',
-                    '新增未总结直播记录：',
-                    inputText,
-                    '<蜜语记录总结>',
-                    '更新后的完整摘要',
-                    '</蜜语记录总结>'
+                    '必须只返回 <蜜语记录总结> 标签包裹内容。',
+                    `【主播】${safeHostName}`,
+                    summary.text ? `【已有摘要】\n${summary.text}` : '【已有摘要】暂无'
                 ].join('\n'),
                 isPhoneMessage: true
             }
         ];
+        let lastHistoryMessage = null;
+        selectedTurns.forEach((turn) => {
+            const assistantContext = String(turn.assistantContext || '').trim();
+            const userMessage = String(turn.userMessage || '').trim();
+            if (userMessage) {
+                lastHistoryMessage = {
+                    role: 'user',
+                    content: [`【日期】${turn.date}`, userMessage].filter(Boolean).join('\n'),
+                    isPhoneMessage: true
+                };
+                messages.push(lastHistoryMessage);
+            }
+            if (assistantContext) {
+                lastHistoryMessage = {
+                    role: 'assistant',
+                    content: assistantContext,
+                    isPhoneMessage: true
+                };
+                messages.push(lastHistoryMessage);
+            }
+        });
+
+        const summaryInstruction = [
+            '结束历史剧情，开始按照总结提示词总结以上直播间历史上下文。',
+            '仅输出 <蜜语记录总结> 标签包裹的总结内容。'
+        ].join('\n');
+        if (lastHistoryMessage?.role === 'user') {
+            lastHistoryMessage.content = `${lastHistoryMessage.content}\n\n${summaryInstruction}`;
+        } else {
+            messages.push({
+                role: 'user',
+                content: summaryInstruction,
+                isPhoneMessage: true
+            });
+        }
 
         const timeoutMs = 90000;
         let timeoutId = null;
@@ -3171,7 +3190,7 @@ export class HoneyData {
                     || Number.parseInt(context?.max_length, 10)
                     || Number.parseInt(context?.maxContextLength, 10)
                     || 8192,
-                preserve_roles: false,
+                preserve_roles: true,
                 appId: 'honey'
             }),
             timeoutPromise
