@@ -19,6 +19,12 @@ import {
     PHONE_TAG_FILTER_AI_DIAGNOSTIC_PROMPT,
     parsePhoneTagFilterDiagnosticJson
 } from '../../config/tag-filter.js';
+import {
+    PHONE_CONTEXT_LIMIT_KEY,
+    PHONE_CONTEXT_LIMIT_INITIAL_VALUE,
+    ensurePhoneContextLimitSetting,
+    normalizePhoneContextLimit
+} from '../../config/context-settings.js';
 
 const DEFAULT_DOUBAO_CLONE_WORKER_URL = '';
 const DEFAULT_MIMO_TTS_RELAY_URL = '';
@@ -75,6 +81,7 @@ export class SettingsApp {
         this.settings = settings;
         this.imageManager = new ImageUploadManager(storage);
         this.currentTab = 'general'; // 可选值: 'general', 'memory', 'llm', 'tts', 'image', 'lobby'
+        void ensurePhoneContextLimitSetting(this.storage);
 
         // 🔥 监听滑动返回事件 (防止实例重建导致重复绑定)
         if (!window._settingsSwipeBackBound) {
@@ -1498,7 +1505,7 @@ export class SettingsApp {
                             <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                                 <span style="font-size: 14px; color: #000;">正文上下文楼层</span>
                                 <input type="number" id="phone-context-limit" min="0" max="9999"
-                                       value="${readNonNegativeStorageNumber(this.storage, 'phone-context-limit', 20)}"
+                                       value="${readNonNegativeStorageNumber(this.storage, PHONE_CONTEXT_LIMIT_KEY, PHONE_CONTEXT_LIMIT_INITIAL_VALUE)}"
                                        style="width: 55px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
                             </div>
 
@@ -4653,11 +4660,9 @@ export class SettingsApp {
 
         // 🔥 上下文楼层限制设置
         document.getElementById('phone-context-limit')?.addEventListener('change', async (e) => {
-            const limit = Number.parseInt(e.target.value, 10);
-            // 🔥 放开上限限制，支持纯手机聊天玩法
-            const validLimit = Math.max(0, Math.min(9999, Number.isFinite(limit) ? limit : 20));
+            const validLimit = normalizePhoneContextLimit(e.target.value);
             e.target.value = validLimit;
-            await this.storage.set('phone-context-limit', validLimit);
+            await this.storage.set(PHONE_CONTEXT_LIMIT_KEY, validLimit);
         });
 
         // 🔥 单聊记录发送条数设置

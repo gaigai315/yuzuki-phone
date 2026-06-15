@@ -12,6 +12,7 @@
 import { ImageCropper } from '../settings/image-cropper.js';
 import { captureWechatChatSnapshot } from './chat-snapshot.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
+import { readPhoneContextLimit } from '../../config/context-settings.js';
 import { CatboxData } from '../games/catbox/catbox-data.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
@@ -8768,7 +8769,7 @@ renderChatRoom(chat) {
         // ========================================
         // 4️⃣ 酒馆聊天上下文（使用与记忆插件相同的方式读取）
         // ========================================
-        const contextLimit = this._readNonNegativeLimit('phone-context-limit', 10);
+        const contextLimit = readPhoneContextLimit(window.VirtualPhone?.storage || this.app?.storage);
 
         if (contextLimit > 0 && context.chat && Array.isArray(context.chat) && context.chat.length > 0) {
             const isLobbySystemNoise = (msg, rawContent = '') => {
@@ -8784,15 +8785,11 @@ renderChatRoom(chat) {
                 return false;
             };
 
-            // 使用 slice 读取最近 N 条消息（参考记忆插件）
-            const startIndex = Math.max(0, context.chat.length - contextLimit);
-            const endIndex = context.chat.length;
-            const chatSlice = context.chat.slice(startIndex, endIndex);
-
-
-            chatSlice.forEach((msg, idx) => {
-                // 跳过系统消息和记忆插件的特殊消息
-                if (msg.isGaigaiPrompt || msg.isGaigaiData || msg.isPhoneMessage) return;
+            const collectedContextMessages = [];
+            for (let idx = context.chat.length - 1; idx >= 0 && collectedContextMessages.length < contextLimit; idx--) {
+                const msg = context.chat[idx];
+                // 跳过手机/记忆插件内部消息；隐藏楼层有正文时保留，避免占用楼层后又丢正文。
+                if (!msg || msg.isGaigaiPrompt || msg.isGaigaiData || msg.isPhoneMessage) continue;
 
                 // 🔥 优先使用 msg.mes（酒馆正则处理后的内容），参考记忆插件
                 let content = msg.mes || msg.content || '';
@@ -8803,21 +8800,22 @@ renderChatRoom(chat) {
                 // 清理 base64 图片（防止请求体过大）
                 content = content.replace(/<img[^>]*src=["']data:image[^"']*["'][^>]*>/gi, '[图片]');
                 content = content.replace(/!\[[^\]]*\]\(data:image[^)]*\)/gi, '[图片]');
-                if (isLobbySystemNoise(msg, content)) return;
+                if (isLobbySystemNoise(msg, content)) continue;
 
                 content = content.trim();
 
                 if (content) {
-                    const isUser = msg.is_user;
+                    const isUser = msg.is_user || msg.role === 'user';
                     const speaker = isUser ? userName : charName;
 
-                    messages.push({
+                    collectedContextMessages.unshift({
                         role: isUser ? 'user' : 'assistant',
                         content: `${speaker}: ${content}`,
                         isPhoneMessage: true
                     });
                 }
-            });
+            }
+            messages.push(...collectedContextMessages);
         }
 
         // ========================================

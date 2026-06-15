@@ -2,6 +2,7 @@
  *  柚月小手机 (Yuzuki's Little Phone)
  *  游戏 AI 通用酒馆上下文注入
  * ======================================================== */
+import { readPhoneContextLimit } from '../../../config/context-settings.js';
 
 function getSillyTavernContext() {
     try {
@@ -61,22 +62,26 @@ function buildPersonaMessage() {
 
 function buildRecentChatMessages(context, storage, limitKey = 'phone-context-limit') {
     const messages = [];
-    const contextLimit = Math.max(0, parseInt(storage?.get?.(limitKey), 10) || 10);
+    const contextLimit = limitKey === 'phone-context-limit'
+        ? readPhoneContextLimit(storage)
+        : Math.max(0, Math.min(9999, Number.parseInt(storage?.get?.(limitKey), 10) || 0));
     if (contextLimit <= 0 || !Array.isArray(context?.chat) || context.chat.length <= 0) return messages;
 
     const userName = context?.name1 || '用户';
     const charName = context?.name2 || '角色';
-    context.chat.slice(Math.max(0, context.chat.length - contextLimit)).forEach(msg => {
-        if (msg?.isGaigaiPrompt || msg?.isGaigaiData || msg?.isPhoneMessage) return;
+    for (let idx = context.chat.length - 1; idx >= 0 && messages.length < contextLimit; idx--) {
+        const msg = context.chat[idx];
+        if (!msg || msg.isGaigaiPrompt || msg.isGaigaiData || msg.isPhoneMessage) continue;
         const content = cleanStContextText(msg.mes || msg.content || '');
-        if (!content) return;
-        const speaker = msg.is_user ? userName : charName;
-        messages.push({
-            role: msg.is_user ? 'user' : 'assistant',
+        if (!content) continue;
+        const isUser = msg.is_user || msg.role === 'user';
+        const speaker = isUser ? userName : charName;
+        messages.unshift({
+            role: isUser ? 'user' : 'assistant',
             content: `${speaker}: ${content}`,
             isPhoneMessage: true
         });
-    });
+    }
     return messages;
 }
 

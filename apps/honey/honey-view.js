@@ -3416,14 +3416,20 @@ export class HoneyView {
         });
         root.querySelector('.honey-follow-btn')?.addEventListener('click', () => {
             if (isUserLive) return;
-            const hostName = String(this.currentSceneData?.host || root.querySelector('.honey-follow-btn')?.dataset?.hostName || '')
+            const followBtn = root.querySelector('.honey-follow-btn');
+            const hostName = String(followBtn?.dataset?.hostName || this.currentSceneData?.host || '')
                 .replace(/\s*[（(]\s*(?:已关注|未关注)\s*[)）]\s*$/g, '')
                 .trim();
             if (!hostName) return;
-            const avatarUrl = String(root.querySelector('.honey-follow-btn')?.dataset?.avatarUrl || '').trim();
-            const result = this.app?.honeyData?.toggleFollowHost?.(hostName, avatarUrl);
+            const avatarUrl = String(followBtn?.dataset?.avatarUrl || '').trim();
+            const result = this.app?.honeyData?.toggleFollowHost?.(hostName, avatarUrl, {
+                scene: this.currentSceneData || this.selectedTopic || {},
+                liveTitle: this.currentSceneData?._topicTitle || this.currentSceneData?.title || this.selectedTopic?._topicTitle || this.selectedTopic?.title || '',
+                intro: this.currentSceneData?.intro || this.selectedTopic?.intro || '',
+                fans: this.currentSceneData?.fans || this.selectedTopic?.fans || ''
+            });
             const isFollowed = !!result?.followed;
-            this._setFollowButtonState(root.querySelector('.honey-follow-btn'), isFollowed);
+            this._setFollowButtonState(followBtn, isFollowed);
             this._persistCurrentScene();
             this.app.phoneShell.showNotification('蜜语', isFollowed ? `已关注 ${hostName}` : `已取消关注 ${hostName}`, isFollowed ? '✅' : 'ℹ️');
         });

@@ -13,6 +13,7 @@
 // 微博数据引擎 - 存储、AI调用、解析、队列
 // ========================================
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
+import { readPhoneContextLimit } from '../../config/context-settings.js';
 
 export class WeiboData {
     constructor(storage) {
@@ -637,8 +638,8 @@ export class WeiboData {
         const context = this._getContext();
         if (!context) return [];
 
-        const storage = window.VirtualPhone?.storage;
-        const contextLimit = storage ? (parseInt(storage.get('phone-context-limit')) || 20) : 20;
+        const storage = window.VirtualPhone?.storage || this.storage;
+        const contextLimit = readPhoneContextLimit(storage);
         const forceChatLimitRaw = parseInt(options.forceChatLimit, 10);
         const rangeStartRaw = parseInt(options.chatStartIndex, 10);
         const rangeEndRaw = parseInt(options.chatEndIndex, 10);
@@ -686,17 +687,15 @@ export class WeiboData {
         // 最近聊天记录：直接保留原始 user/assistant 消息，不再做摘要压缩
         if (context.chat?.length > 0) {
             const total = context.chat.length;
-            const defaultStart = Math.max(0, total - contextLimit);
-            const boundedStart = Number.isFinite(rangeStartRaw) ? Math.max(0, Math.min(rangeStartRaw, total)) : defaultStart;
+            const boundedStart = Number.isFinite(rangeStartRaw) ? Math.max(0, Math.min(rangeStartRaw, total)) : 0;
             const boundedEnd = Number.isFinite(rangeEndRaw) ? Math.max(boundedStart, Math.min(rangeEndRaw, total)) : total;
-            const scopedChat = context.chat.slice(boundedStart, boundedEnd);
-
             const effectiveLimit = Number.isFinite(forceChatLimitRaw) && forceChatLimitRaw > 0
                 ? forceChatLimitRaw
                 : contextLimit;
-            const recentChat = scopedChat.slice(-effectiveLimit);
-            recentChat.forEach((msg) => {
-                if (msg?.isGaigaiPrompt || msg?.isGaigaiData || msg?.isPhoneMessage) return;
+            const recentChatMessages = [];
+            for (let idx = boundedEnd - 1; idx >= boundedStart && recentChatMessages.length < effectiveLimit; idx--) {
+                const msg = context.chat[idx];
+                if (!msg || msg.isGaigaiPrompt || msg.isGaigaiData || msg.isPhoneMessage) continue;
 
                 let content = msg?.mes || msg?.content || '';
                 content = applyPhoneTagFilter(content, { storage: this.storage });
@@ -708,16 +707,17 @@ export class WeiboData {
                     .replace(/data:application\/octet-stream;base64,[A-Za-z0-9+/=\s]{120,}/gi, '[图片]')
                     .trim();
 
-                if (!content) return;
+                if (!content) continue;
 
-                const isUser = !!msg.is_user;
+                const isUser = !!msg.is_user || msg.role === 'user';
                 const speaker = isUser ? userName : (context.name2 || '角色');
-                contextMessages.push({
+                recentChatMessages.unshift({
                     role: isUser ? 'user' : 'assistant',
                     content: `${speaker}: ${content}`,
                     isPhoneMessage: true
                 });
-            });
+            }
+            contextMessages.push(...recentChatMessages);
         }
 
         // 当前账号状态（用于让 AI 在回复时感知并更新粉丝数）

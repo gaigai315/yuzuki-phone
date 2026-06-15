@@ -13,6 +13,7 @@
 // 通话APP视图层（核心文件）
 // ========================================
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
+import { readPhoneContextLimit } from '../../config/context-settings.js';
 
 export class PhoneCallView {
     constructor(app) {
@@ -1391,15 +1392,14 @@ export class PhoneCallView {
             // ========================================
             // 3️⃣ 酒馆正文上下文（最近 phone-context-limit 条）
             // ========================================
-            const contextLimit = storage ? (parseInt(storage.get('phone-context-limit')) || 10) : 10;
+            const contextLimit = readPhoneContextLimit(storage || this.app?.storage);
 
             if (context.chat && Array.isArray(context.chat) && context.chat.length > 0) {
-                const startIndex = Math.max(0, context.chat.length - contextLimit);
-                const chatSlice = context.chat.slice(startIndex);
-
-                chatSlice.forEach(msg => {
+                const collectedContextMessages = [];
+                for (let idx = context.chat.length - 1; idx >= 0 && collectedContextMessages.length < contextLimit; idx--) {
+                    const msg = context.chat[idx];
                     // 跳过系统消息和特殊消息
-                    if (msg.isGaigaiPrompt || msg.isGaigaiData || msg.isPhoneMessage) return;
+                    if (!msg || msg.isGaigaiPrompt || msg.isGaigaiData || msg.isPhoneMessage) continue;
 
                     let content = msg.mes || msg.content || '';
 
@@ -1417,15 +1417,16 @@ export class PhoneCallView {
                     content = content.trim();
 
                     if (content) {
-                        const isUser = msg.is_user;
+                        const isUser = msg.is_user || msg.role === 'user';
                         const speaker = isUser ? userName : callRoleName;
-                        messages.push({
+                        collectedContextMessages.unshift({
                             role: isUser ? 'user' : 'assistant',
                             content: `${speaker}: ${content}`,
                             isPhoneMessage: true
                         });
                     }
-                });
+                }
+                messages.push(...collectedContextMessages);
             }
 
             // ========================================

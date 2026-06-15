@@ -11,6 +11,7 @@
  * ======================================================== */
 import { ImageCropper } from '../settings/image-cropper.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
+import { readPhoneContextLimit } from '../../config/context-settings.js';
 
 // 朋友圈视图 - 高仿微信版
 export class MomentsView {
@@ -1981,24 +1982,25 @@ ${momentsPrompt}
         }
 
         const storage = window.VirtualPhone?.storage;
-        const contextLimit = storage ? (parseInt(storage.get('phone-context-limit')) || 10) : 10;
+        const contextLimit = readPhoneContextLimit(storage || this.app?.storage);
         if (Array.isArray(context.chat) && context.chat.length > 0) {
-            const startIndex = Math.max(0, context.chat.length - contextLimit);
-            const chatSlice = context.chat.slice(startIndex);
-
-            chatSlice.forEach((msg) => {
-                if (msg?.isGaigaiPrompt || msg?.isGaigaiData || msg?.isPhoneMessage) return;
+            const collectedContextMessages = [];
+            for (let idx = context.chat.length - 1; idx >= 0 && collectedContextMessages.length < contextLimit; idx--) {
+                const msg = context.chat[idx];
+                if (!msg || msg.isGaigaiPrompt || msg.isGaigaiData || msg.isPhoneMessage) continue;
                 let content = msg.mes || msg.content || '';
                 content = applyPhoneTagFilter(content, { storage: this.app?.storage || window.VirtualPhone?.storage });
                 content = String(content).replace(/<[^>]*>/g, '').replace(/\*.*?\*/g, '').trim();
-                if (!content) return;
-                const speaker = msg.is_user ? userName : charName;
-                messages.push({
-                    role: msg.is_user ? 'user' : 'assistant',
+                if (!content) continue;
+                const isUser = msg.is_user || msg.role === 'user';
+                const speaker = isUser ? userName : charName;
+                collectedContextMessages.unshift({
+                    role: isUser ? 'user' : 'assistant',
                     content: `${speaker}: ${content}`,
                     isPhoneMessage: true
                 });
-            });
+            }
+            messages.push(...collectedContextMessages);
         }
 
         return messages;
