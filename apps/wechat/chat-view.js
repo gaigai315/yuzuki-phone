@@ -1304,6 +1304,9 @@ export class ChatView {
             if (!HoneyData) return '';
             const honeyData = window.VirtualPhone?.honeyApp?.honeyData || new HoneyData(this.app.storage || window.VirtualPhone?.storage);
             const summary = honeyData.getHostHistorySummary?.(contactName);
+            if (typeof honeyData.formatHostHistorySummaryForContext === 'function') {
+                return honeyData.formatHostHistorySummaryForContext(summary);
+            }
             return String(summary?.text || '').trim();
         } catch (error) {
             console.warn('[Wechat] 读取蜜语记录总结失败:', error);

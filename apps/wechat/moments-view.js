@@ -1747,7 +1747,10 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
             if (!HoneyData) return '';
             const honeyData = window.VirtualPhone?.honeyApp?.honeyData || new HoneyData(this.app.storage || window.VirtualPhone?.storage);
             const summary = honeyData.getHostHistorySummary?.(contactName);
-            return this._trimMomentPromptText(summary?.text || '', 280);
+            const summaryText = typeof honeyData.formatHostHistorySummaryForContext === 'function'
+                ? honeyData.formatHostHistorySummaryForContext(summary)
+                : String(summary?.text || '').trim();
+            return this._trimMomentPromptText(summaryText, 360);
         } catch (error) {
             console.warn('[朋友圈] 读取蜜语好友资料失败:', error);
             return '';

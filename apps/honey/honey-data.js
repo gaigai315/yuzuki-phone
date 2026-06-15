@@ -3012,6 +3012,17 @@ export class HoneyData {
         };
     }
 
+    formatHostHistorySummaryForContext(summary = {}) {
+        const text = String(summary?.text || '').trim();
+        if (!text) return '';
+        const storyTime = summary?.storyTime && typeof summary.storyTime === 'object' ? summary.storyTime : null;
+        const date = String(storyTime?.date || '').trim();
+        const weekday = String(storyTime?.weekday || '').trim();
+        const time = String(storyTime?.time || '').trim();
+        const timeText = [date, weekday, time].filter(Boolean).join(' ');
+        return timeText ? `【总结时间】${timeText}\n${text}` : text;
+    }
+
     clearHostHistorySummary(hostName) {
         const safeHostName = this._sanitizeInlineText(hostName || '', 40);
         const key = this._hostHistoryStorageKey(safeHostName);
@@ -4072,10 +4083,11 @@ export class HoneyData {
 
                     const allTurns = [];
                     const seenTurns = new Set();
-                    if (summary.text) {
+                    const summaryContext = this.formatHostHistorySummaryForContext(summary);
+                    if (summaryContext) {
                         allTurns.push({
                             role: 'system',
-                            content: `【蜜语记录总结：${safeHost}】\n${summary.text}\n以上是该主播已总结的长期互动背景。`
+                            content: `【蜜语记录总结：${safeHost}】\n${summaryContext}\n以上是该主播已总结的长期互动背景。`
                         });
                     }
 
