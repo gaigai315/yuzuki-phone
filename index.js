@@ -8629,6 +8629,7 @@ if (window.GGP_Loaded) {
 
                             // 📱 收集手机活动记录
                             const wechatOfflineChats = [];
+                            const honeyOfflineSummaryByName = new Map();
                             const storage = window.VirtualPhone.storage;
                             const isPhoneEnabled = isPhoneFeatureEnabled();
                             const isStorageToggleOn = (key) => {
@@ -8747,6 +8748,46 @@ if (window.GGP_Loaded) {
                                                 .filter(contact => contact?.id)
                                                 .map(contact => [String(contact.id), contact])
                                         );
+                                        const normalizeHoneyOfflineName = (value) => String(value || '')
+                                            .trim()
+                                            .replace(/\s+/g, '')
+                                            .replace(/[（(][^（）()]*[）)]/g, '')
+                                            .toLowerCase();
+                                        const addHoneyOfflineSummary = (name, summaryText) => {
+                                            const safeName = String(name || '').trim();
+                                            const safeSummary = String(summaryText || '').trim();
+                                            const key = normalizeHoneyOfflineName(safeName);
+                                            if (!key || !safeSummary || honeyOfflineSummaryByName.has(key)) return;
+                                            honeyOfflineSummaryByName.set(key, { name: safeName, summary: safeSummary });
+                                        };
+                                        const isHoneySource = (item) => item?.sourceApp === 'honey'
+                                            || item?.sourceLabel === '蜜语'
+                                            || item?.sourceLabel === '主播';
+                                        const readHoneyOfflineSummary = async (name) => {
+                                            const safeName = String(name || '').trim();
+                                            if (!safeName) return '';
+                                            let honeyData = window.VirtualPhone?.honeyApp?.honeyData;
+                                            if (!honeyData?.getHostHistorySummary) {
+                                                try {
+                                                    const honeyApp = await ensureHoneyAppReady();
+                                                    honeyData = honeyApp?.honeyData;
+                                                } catch (e) {
+                                                    honeyData = null;
+                                                }
+                                            }
+                                            if (!honeyData?.getHostHistorySummary) return '';
+                                            const summary = honeyData.getHostHistorySummary(safeName);
+                                            return typeof honeyData.formatHostHistorySummaryForContext === 'function'
+                                                ? honeyData.formatHostHistorySummaryForContext(summary)
+                                                : String(summary?.text || '').trim();
+                                        };
+                                        if (includeHoneyOffline) {
+                                            for (const contact of contacts) {
+                                                if (!isHoneySource(contact)) continue;
+                                                const honeySummary = await readHoneyOfflineSummary(contact?.name || '');
+                                                if (honeySummary) addHoneyOfflineSummary(contact?.name || '', honeySummary);
+                                            }
+                                        }
                                         const normalizeCustomEmojiImageKey = (value) => {
                                             const raw = String(value || '').trim();
                                             if (!raw) return '';
@@ -8893,23 +8934,24 @@ if (window.GGP_Loaded) {
                                         };
 
                                         // 🔥 线下模式：使用线下专属的条数限制
-                                        allChats.forEach(chat => {
+                                        for (const chat of allChats) {
                                             const linkedContact = chat?.contactId
                                                 ? contactMap.get(String(chat.contactId))
                                                 : null;
-                                            const isHoneyChat = chat?.sourceApp === 'honey' ||
-                                                chat?.sourceLabel === '蜜语' ||
-                                                linkedContact?.sourceApp === 'honey' ||
-                                                linkedContact?.sourceLabel === '蜜语';
+                                            const isHoneyChat = isHoneySource(chat) || isHoneySource(linkedContact);
                                             if (!includeHoneyOffline && isHoneyChat) {
-                                                return;
+                                                continue;
+                                            }
+                                            if (includeHoneyOffline && isHoneyChat) {
+                                                const honeySummary = await readHoneyOfflineSummary(linkedContact?.name || chat?.name || '');
+                                                if (honeySummary) addHoneyOfflineSummary(linkedContact?.name || chat?.name || '', honeySummary);
                                             }
                                             const isGroup = chat.type === 'group';
                                             if (isGroup && !includeGroupOffline) {
-                                                return;
+                                                continue;
                                             }
                                             if (!isGroup && !includeSingleOffline) {
-                                                return;
+                                                continue;
                                             }
 
                                             let chatMessages = [];
@@ -9137,7 +9179,7 @@ if (window.GGP_Loaded) {
                                                     });
                                                 }
                                             }
-                                        });
+                                        }
                                     }
                                 } catch (e) {
                                     console.error('❌ 读取微信数据失败:', e);
@@ -9367,6 +9409,16 @@ if (window.GGP_Loaded) {
                                     } catch (e) {
                                         calendarReminderContent = '';
                                         console.warn('⚠️ [手机] 注入日历全局提醒失败:', e);
+                                    }
+
+                                    // 2.8️⃣ 添加蜜语直播总结（用于线下正文延续蜜语主播关系）
+                                    if (honeyOfflineSummaryByName.size > 0) {
+                                        phoneHistoryContent += `【蜜语直播总结】\n`;
+                                        phoneHistoryContent += `以下是蜜语主播直播间历史总结，会影响线下剧情中的关系背景和时间线；不要逐字复述。\n\n`;
+                                        honeyOfflineSummaryByName.forEach(item => {
+                                            phoneHistoryContent += `━━━ ${item.name} 的蜜语直播总结 ━━━\n`;
+                                            phoneHistoryContent += `${item.summary}\n\n`;
+                                        });
                                     }
 
                                     // 3️⃣ 添加微信聊天记录（按会话窗口分组显示，含日期）
