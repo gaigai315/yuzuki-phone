@@ -477,11 +477,11 @@ export class HoneyData {
 
     _resolveFollowedHostNameFromScene(scene = {}, fallbackHostName = '') {
         const candidates = [
-            scene?._topicTitle,
-            scene?.liveTitle,
-            scene?.title,
             fallbackHostName,
             scene?.host,
+            scene?.hostName,
+            scene?.nickname,
+            scene?.anchorName,
             scene?.name
         ];
         for (const candidate of candidates) {
@@ -2976,7 +2976,8 @@ export class HoneyData {
 
         const safeAvatarUrl = String(avatarUrl || '').trim();
         const list = this.getFollowedHosts();
-        const index = list.findIndex(item => String(item?.name || '').trim() === safeHostName);
+        const hostKey = this._normalizeHostNameKey(safeHostName);
+        const index = list.findIndex(item => this._normalizeHostNameKey(item?.name || item?.hostName || '') === hostKey);
 
         if (index >= 0) {
             const removedHost = list[index];
