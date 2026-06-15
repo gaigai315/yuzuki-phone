@@ -4370,13 +4370,15 @@ export class HoneyView {
                             this._showHostWechatFriendRejectDialog(hostName, decision?.message || '先不用加微信了。');
                             return;
                         }
-                        const linked = this.app?.honeyData?.ensureFollowedHostWechatChat?.(hostName, {
+                        const targetHostName = decision.hostName || hostName;
+                        const linked = this.app?.honeyData?.ensureFollowedHostWechatChat?.(targetHostName, {
                             currentScene: this.currentSceneData,
+                            contactName: decision.contactName || targetHostName,
                             decisionMessage: decision.message,
                             message: decision.message,
                             forceRecreateWechat: true
                         });
-                        this.app.phoneShell.showNotification('已添加', `${hostName} 已成为微信好友`, '✅');
+                        this.app.phoneShell.showNotification('已添加', `${decision.contactName || targetHostName} 已成为微信好友`, '✅');
                         this.render();
                         if (linked?.chat?.id) this._openWechatChatFromHoney(linked.chat.id);
                     } catch (err) {

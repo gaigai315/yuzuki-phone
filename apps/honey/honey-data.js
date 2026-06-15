@@ -560,7 +560,7 @@ export class HoneyData {
             const scopeTag = String(entry?.extra?.honeyScope || inferredScope).trim().toLowerCase();
             const targetScope = scope === 'friend' ? 'friend' : 'request';
             if (scopeTag && scopeTag !== targetScope) return;
-            if (this._isHoneyWechatContactDeleted(entry?.name || '')) return;
+            if (targetScope === 'friend' && this._isHoneyWechatContactDeleted(entry?.name || '')) return;
             const inferredHost = this._inferHoneyHostSocialPerson({
                 relation: relationText,
                 sourceLabel: entry?.extra?.sourceLabel || '',
@@ -2323,9 +2323,11 @@ export class HoneyData {
             : (hostNameOrHost?.name || hostNameOrHost?.hostName || '');
         const safeHostName = this._sanitizeInlineText(this._stripFollowStateSuffix(inputHostName || ''), 40);
         if (!safeHostName) return null;
+        const safeContactName = this._sanitizeInlineText(options?.contactName || options?.wechatContactName || safeHostName, 40) || safeHostName;
         if (options?.forceRecreateWechat === true) {
             this._clearHoneyDeletedWechatContact(safeHostName);
-        } else if (this._isHoneyWechatContactDeleted(safeHostName)) {
+            if (safeContactName !== safeHostName) this._clearHoneyDeletedWechatContact(safeContactName);
+        } else if (this._isHoneyWechatContactDeleted(safeHostName) || this._isHoneyWechatContactDeleted(safeContactName)) {
             return null;
         }
 
@@ -2340,7 +2342,7 @@ export class HoneyData {
             };
         const wechatData = this._getWechatDataBridge();
         const contacts = wechatData.getContacts();
-        const contactNameKey = this._normalizeWechatContactNameKey(safeHostName);
+        const contactNameKey = this._normalizeWechatContactNameKey(safeContactName);
         let contact = contacts.find(item => this._normalizeWechatContactNameKey(item?.name || '') === contactNameKey)
             || contacts.find(item => this._normalizeHostNameKey(this._resolveHoneyHostNameFromWechatContact(item)) === this._normalizeHostNameKey(safeHostName))
             || null;
@@ -2353,10 +2355,10 @@ export class HoneyData {
             const contactId = `contact_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
             contact = {
                 id: contactId,
-                name: safeHostName,
+                name: safeContactName,
                 avatar,
                 remark: '',
-                letter: wechatData.getFirstLetter(safeHostName),
+                letter: wechatData.getFirstLetter(safeContactName),
                 relation,
                 sourceApp: 'honey',
                 sourceLabel: '主播',
@@ -2420,6 +2422,7 @@ export class HoneyData {
             figure: host.figure || '主播',
             sourceApp: 'honey',
             sourceLabel: '主播',
+            wechatContactName: safeContactName,
             wechatContactId: String(contact.id || ''),
             wechatChatId: String(chat?.id || '')
         };
@@ -2460,7 +2463,7 @@ export class HoneyData {
         this.globalSocialStore?.upsertContact?.({
             app: 'wechat',
             appContactId: String(contact.id || ''),
-            name: contact.name || safeHostName,
+            name: contact.name || safeContactName,
             avatar: contact.avatar || '',
             relation: contact.relation || relation,
             extra: {
@@ -2531,10 +2534,48 @@ export class HoneyData {
         lines.push('输出格式只能二选一：');
         lines.push('[加微信]（接受）');
         lines.push('回复：用主播口吻给用户一句自然微信通过话术');
+        lines.push('如果当前直播间/账号包含多个具体主播，接受时必须精确写明将进入微信通讯录的具体联系人名，以及所属主播账号/直播间名：');
+        lines.push('[加微信]（接受｜联系人：具体角色名｜主播账号：当前直播间名或账号名）');
+        lines.push('多人账号禁止只把账号名当联系人；联系人必须是具体角色名，主播账号必须保留当前直播间/账号名，用于后续映射直播历史。');
         lines.push('或');
         lines.push('[加微信]（拒绝）');
         lines.push('回复：用主播口吻给用户一句自然拒绝理由');
         return lines.join('\n');
+    }
+
+    _parseFollowedHostWechatDecisionMeta(status = '', fallbackHostName = '') {
+        const safeFallbackHost = this._sanitizeInlineText(this._stripFollowStateSuffix(fallbackHostName || ''), 40);
+        const raw = String(status || '').trim();
+        const normalized = raw.replace(/[｜]/g, '|');
+        const parts = normalized.split('|').map(item => item.trim()).filter(Boolean);
+        let decisionText = parts.shift() || raw;
+        let contactName = '';
+        let hostName = '';
+
+        parts.forEach((part) => {
+            const match = part.match(/^(?:联系人|微信联系人|角色名|具体角色名|好友名|姓名|名字|contact|contactName|wechatContact|name)\s*[：:]\s*(.+)$/i);
+            if (match) {
+                contactName = this._sanitizeInlineText(match[1], 40);
+                return;
+            }
+            const hostMatch = part.match(/^(?:主播账号|账号|直播间|直播间名|所属账号|host|hostName|source|account)\s*[：:]\s*(.+)$/i);
+            if (hostMatch) {
+                hostName = this._sanitizeInlineText(hostMatch[1], 40);
+            }
+        });
+
+        const roleAccountMatch = decisionText.match(/^(接受|同意|通过|可以|yes|ok|accept)\s*[，,\s]*([^（(｜|]{1,40}?)[（(]\s*(?:主播账号|账号|直播间|频道)\s*[：:]\s*([^）)]{1,40})\s*[）)]$/i);
+        if (roleAccountMatch) {
+            decisionText = roleAccountMatch[1];
+            contactName = contactName || this._sanitizeInlineText(roleAccountMatch[2], 40);
+            hostName = hostName || this._sanitizeInlineText(roleAccountMatch[3], 40);
+        }
+
+        return {
+            statusText: this._sanitizeInlineText(decisionText || raw, 40),
+            contactName: contactName || safeFallbackHost,
+            hostName: hostName || safeFallbackHost
+        };
     }
 
     async requestFollowedHostWechatFriendDecision(hostName, options = {}) {
@@ -2572,8 +2613,9 @@ export class HoneyData {
         const filteredText = applyPhoneTagFilter(rawText, { storage: this.storage }) || rawText;
         const statusMatch = String(filteredText || '').match(/[［\[]\s*加微信\s*[］\]]\s*[（(]\s*([^）)]*)\s*[）)]/i);
         const status = String(statusMatch?.[1] || '').trim();
-        const accepted = /接受|同意|通过|可以|yes|ok|accept/i.test(status);
-        const rejected = /拒绝|不接受|不同意|不通过|no|reject/i.test(status);
+        const meta = this._parseFollowedHostWechatDecisionMeta(status, safeHostName);
+        const accepted = /接受|同意|通过|可以|yes|ok|accept/i.test(meta.statusText || status);
+        const rejected = /拒绝|不接受|不同意|不通过|no|reject/i.test(meta.statusText || status);
         const replyMatch = String(filteredText || '').match(/回复\s*[：:]\s*([\s\S]*)/);
         const message = this._sanitizeInlineText(
             (replyMatch?.[1] || String(filteredText || '').replace(statusMatch?.[0] || '', '')).trim(),
@@ -2583,8 +2625,10 @@ export class HoneyData {
             accepted: accepted && !rejected,
             rejected: rejected || (!accepted && !rejected),
             message: message || (accepted && !rejected ? '可以，加吧。' : '先不用加微信了。'),
+            contactName: meta.contactName,
+            hostName: meta.hostName,
             raw: filteredText,
-            status
+            status: meta.statusText || status
         };
     }
 
