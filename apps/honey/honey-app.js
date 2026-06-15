@@ -33,10 +33,8 @@ export class HoneyApp {
     }
 
     async render() {
-        // 等待 CSS 加载完成，防止首次打开闪屏
-        if (this.honeyView.cssPromise) {
-            await this.honeyView.cssPromise;
-        }
+        // 移动端首次打开时 CSS fetch 可能被宿主页面或网络状态拖住，不能阻塞进入页面。
+        this.honeyView.cssPromise?.catch?.(() => {});
         this.honeyView.render();
     }
 

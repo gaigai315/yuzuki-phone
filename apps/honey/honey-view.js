@@ -250,30 +250,32 @@ export class HoneyView {
     _loadCSS() {
         const cssHref = this._getHoneyAssetUrl('honey.css?v=20260606-ticker-once');
         const styleId = 'honey-css-inline';
+        const linkId = 'honey-css-link';
+        const existingLink = document.getElementById(linkId);
+        if (existingLink?.getAttribute('href') === cssHref) {
+            this.cssPromise = Promise.resolve();
+            return;
+        }
         const existing = document.getElementById(styleId);
         if (existing?.getAttribute('data-source') === cssHref) {
             this.cssPromise = Promise.resolve();
             return;
         }
 
-        this.cssPromise = fetch(cssHref, { cache: 'no-cache' })
-            .then(resp => {
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                return resp.text();
-            })
-            .then(cssText => {
-                let styleEl = document.getElementById(styleId);
-                if (!styleEl) {
-                    styleEl = document.createElement('style');
-                    styleEl.id = styleId;
-                    document.head.appendChild(styleEl);
-                }
-                styleEl.setAttribute('data-source', cssHref);
-                styleEl.textContent = cssText;
-            })
-            .catch(err => {
-                console.error('❌ 蜜语CSS动态注入失败:', err);
-            });
+        existingLink?.remove();
+        const linkEl = document.createElement('link');
+        linkEl.id = linkId;
+        linkEl.rel = 'stylesheet';
+        linkEl.href = cssHref;
+        document.head.appendChild(linkEl);
+
+        this.cssPromise = new Promise((resolve) => {
+            linkEl.addEventListener('load', resolve, { once: true });
+            linkEl.addEventListener('error', (err) => {
+                console.error('❌ 蜜语CSS加载失败:', err);
+                resolve();
+            }, { once: true });
+        });
     }
 
     render() {
