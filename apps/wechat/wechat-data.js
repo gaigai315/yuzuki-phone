@@ -47,6 +47,38 @@ export class WechatData {
             .toLowerCase();
     }
 
+    _getHoneyDeletedWechatContactKey(name = '') {
+        const key = this._normalizeContactNameKey(name || '');
+        return key ? `honey_deleted_wechat_contact_${key}` : '';
+    }
+
+    _readHoneyDeletedWechatContact(name = '') {
+        const key = this._getHoneyDeletedWechatContactKey(name);
+        if (!key) return null;
+        try {
+            const raw = this.storage?.get?.(key);
+            if (!raw) return null;
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            return (parsed && typeof parsed === 'object') ? parsed : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    _markHoneyDeletedWechatContact(contact = {}) {
+        const safeName = String(contact?.name || '').trim();
+        const key = this._getHoneyDeletedWechatContactKey(safeName);
+        if (!key) return false;
+        this.storage?.set?.(key, JSON.stringify({
+            name: safeName,
+            contactId: String(contact?.id || '').trim(),
+            sourceApp: String(contact?.sourceApp || contact?.extra?.sourceApp || '').trim(),
+            sourceLabel: String(contact?.sourceLabel || contact?.extra?.sourceLabel || '').trim(),
+            deletedAt: Date.now()
+        }));
+        return true;
+    }
+
     _isHoneySyncedContact(contactLike = {}) {
         const relation = String(contactLike?.relation || '').trim();
         const sourceApp = String(contactLike?.sourceApp || contactLike?.extra?.sourceApp || '').trim().toLowerCase();
@@ -72,6 +104,7 @@ export class WechatData {
                 const safeId = String(entry?.appContactId || '').trim();
                 const safeName = String(entry?.name || '').trim();
                 if (!safeId || !safeName) return;
+                if (this._readHoneyDeletedWechatContact(safeName)) return;
 
                 let target = byId.get(safeId);
                 if (!target) {
@@ -3715,6 +3748,7 @@ parseAIResponse(text) {
         const removedContact = this.data.contacts.find(c => c.id === contactId) || null;
         this.data.contacts = this.data.contacts.filter(c => c.id !== contactId);
         if (this._isHoneySyncedContact(removedContact)) {
+            this._markHoneyDeletedWechatContact(removedContact);
             this.globalSocialStore?.removeAppContact?.('wechat', String(contactId || '').trim());
             this._removeLinkedHoneyFriend(removedContact);
         }
@@ -3739,14 +3773,20 @@ parseAIResponse(text) {
             const honeyData = window.VirtualPhone?.honeyApp?.honeyData || null;
             if (honeyData && typeof honeyData.removeHoneyFriend === 'function') {
                 honeyData.removeHoneyFriend(safeName, { skipWechatDelete: true });
+                if (typeof honeyData.removeFollowedHost === 'function') {
+                    honeyData.removeFollowedHost(safeName);
+                }
                 return;
             }
 
             const globalHoneyContacts = this.globalSocialStore?.getContactsByApp?.('honey') || [];
-            const match = globalHoneyContacts.find(item => this._normalizeContactNameKey(item?.name || '') === this._normalizeContactNameKey(safeName));
-            if (match?.appContactId) {
-                this.globalSocialStore?.removeAppContact?.('honey', match.appContactId);
-            }
+            globalHoneyContacts
+                .filter(item => this._normalizeContactNameKey(item?.name || '') === this._normalizeContactNameKey(safeName))
+                .forEach((match) => {
+                    if (match?.appContactId) {
+                        this.globalSocialStore?.removeAppContact?.('honey', match.appContactId);
+                    }
+                });
             this._removeLegacyHoneyFriendByName(safeName);
         } catch (e) {
             console.warn('⚠️ 删除微信蜜语联系人时同步清理蜜语好友失败:', e);

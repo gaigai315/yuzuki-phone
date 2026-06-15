@@ -412,6 +412,60 @@ export class HoneyData {
         return `honey_friend_${key}`;
     }
 
+    _getHoneyDeletedWechatContactKey(name = '') {
+        const key = this._normalizeHostNameKey(name || '');
+        return key ? `honey_deleted_wechat_contact_${key}` : '';
+    }
+
+    _getHoneyDeletedWechatContact(name = '') {
+        const key = this._getHoneyDeletedWechatContactKey(name);
+        if (!key) return null;
+        const parsed = this._readJSON(key, null);
+        return (parsed && typeof parsed === 'object') ? parsed : null;
+    }
+
+    _markHoneyDeletedWechatContact(name = '', meta = {}) {
+        const safeName = this._sanitizeInlineText(name || '', 40);
+        const key = this._getHoneyDeletedWechatContactKey(safeName);
+        if (!key) return false;
+        this._setStored(key, JSON.stringify({
+            name: safeName,
+            contactId: String(meta?.contactId || '').trim(),
+            sourceApp: String(meta?.sourceApp || '').trim(),
+            sourceLabel: String(meta?.sourceLabel || '').trim(),
+            deletedAt: Date.now()
+        }));
+        return true;
+    }
+
+    _clearHoneyDeletedWechatContact(name = '') {
+        const key = this._getHoneyDeletedWechatContactKey(name);
+        if (!key) return false;
+        this._removeStored(key);
+        return true;
+    }
+
+    _isHoneyWechatContactDeleted(name = '') {
+        return !!this._getHoneyDeletedWechatContact(name);
+    }
+
+    _inferHoneyHostSocialPerson(item = {}, fallbackSource = '') {
+        const requestType = String(item?.requestType || item?.sourceType || item?.type || '').trim();
+        const sourceLabel = String(item?.sourceLabel || item?.label || '').trim();
+        const source = String(item?.source || '').trim();
+        const relation = String(item?.relation || '').trim();
+        const hidden = String(
+            item?.hiddenBackground
+            || item?.honeyHiddenBackground
+            || item?.extra?.honeyHiddenBackground
+            || ''
+        ).trim();
+        const scope = String(item?.honeyScope || item?.extra?.honeyScope || '').trim();
+        return /host|broadcaster|anchor|streamer|主播|其他直播间|微信邀约/i.test(
+            `${requestType} ${sourceLabel} ${source} ${relation} ${hidden} ${scope} ${fallbackSource || ''}`
+        );
+    }
+
     _bootstrapHoneyGlobalSocialData() {
         try {
             const localFriends = this._readJSON('honey_my_friends', []);
@@ -437,20 +491,29 @@ export class HoneyData {
             if (!person?.name) return;
             const appContactId = this._getHoneyGlobalContactId(person);
             if (!appContactId) return;
+            const isHostPerson = this._inferHoneyHostSocialPerson(person, scope === 'friend' ? '好友' : '直播间');
+            const relation = scope === 'friend'
+                ? (isHostPerson ? '蜜语主播' : '蜜语好友')
+                : (isHostPerson ? '蜜语主播候选' : '蜜语候选好友');
+            const sourceLabel = isHostPerson
+                ? '主播'
+                : (person.sourceLabel || '蜜语');
             keepIds.add(appContactId);
             this.globalSocialStore?.upsertContact?.({
                 app: 'honey',
                 appContactId,
                 name: person.name,
                 avatar: person.avatarUrl || '',
-                relation: scope === 'friend' ? '蜜语好友' : '蜜语候选好友',
+                relation,
                 extra: {
                     sourceApp: person.sourceApp || 'honey',
-                    sourceLabel: person.source || (scope === 'friend' ? '好友' : '直播间'),
+                    sourceLabel,
                     honeySource: person.source || '',
                     honeyVisibleIntro: person.message || '',
                     honeyHiddenBackground: person.hiddenBackground || '',
                     acceptedAtPhoneTime: person.acceptedAtPhoneTime || '',
+                    requestType: person.requestType || (isHostPerson ? 'host' : 'viewer'),
+                    hostType: person.hostType || '',
                     honeyScope: scope
                 }
             });
@@ -488,13 +551,26 @@ export class HoneyData {
             const scopeTag = String(entry?.extra?.honeyScope || inferredScope).trim().toLowerCase();
             const targetScope = scope === 'friend' ? 'friend' : 'request';
             if (scopeTag && scopeTag !== targetScope) return;
+            if (this._isHoneyWechatContactDeleted(entry?.name || '')) return;
+            const inferredHost = this._inferHoneyHostSocialPerson({
+                relation: relationText,
+                sourceLabel: entry?.extra?.sourceLabel || '',
+                source: entry?.extra?.honeySource || '',
+                requestType: entry?.extra?.requestType || '',
+                hostType: entry?.extra?.hostType || '',
+                hiddenBackground: entry?.extra?.honeyHiddenBackground || '',
+                honeyScope: scopeTag
+            }, scope === 'friend' ? '好友' : '直播间');
 
             const person = this._normalizeHoneySocialPerson({
                 name: entry?.name,
                 avatarUrl: entry?.avatar,
                 message: entry?.extra?.honeyVisibleIntro || '',
-                source: entry?.extra?.sourceLabel || (scope === 'friend' ? '好友' : '直播间'),
+                source: entry?.extra?.honeySource || entry?.extra?.sourceLabel || (scope === 'friend' ? '好友' : '直播间'),
                 sourceApp: entry?.extra?.sourceApp || 'honey',
+                sourceLabel: inferredHost ? '主播' : (entry?.extra?.sourceLabel || ''),
+                requestType: entry?.extra?.requestType || (inferredHost ? 'host' : ''),
+                hostType: entry?.extra?.hostType || '',
                 acceptedAtPhoneTime: entry?.extra?.acceptedAtPhoneTime || '',
                 hiddenBackground: entry?.extra?.honeyHiddenBackground || ''
             }, scope === 'friend' ? '好友' : '直播间');
@@ -514,6 +590,9 @@ export class HoneyData {
                 message: current.message || person.message,
                 source: current.source || person.source,
                 sourceApp: current.sourceApp || person.sourceApp,
+                sourceLabel: current.sourceLabel || person.sourceLabel,
+                requestType: current.requestType || person.requestType,
+                hostType: current.hostType || person.hostType,
                 acceptedAtPhoneTime: current.acceptedAtPhoneTime || person.acceptedAtPhoneTime,
                 hiddenBackground: current.hiddenBackground || person.hiddenBackground
             }, scope === 'friend' ? '好友' : '直播间'));
@@ -1865,6 +1944,7 @@ export class HoneyData {
         const requests = this.getHoneyFriendRequests();
         const request = requests.find(item => this._normalizeHostNameKey(item?.name || '') === this._normalizeHostNameKey(safeName));
         if (!request) return null;
+        this._clearHoneyDeletedWechatContact(request.name || safeName);
         const acceptedAtPhoneTime = this._getCurrentPhoneDateTimeOrSystem();
         const acceptedHiddenBackground = this._injectHoneyFriendAcceptedTime(
             request.hiddenBackground || this._buildHoneyFriendSecretFallback(request),
@@ -1940,6 +2020,10 @@ export class HoneyData {
         const targetKey = this._normalizeHostNameKey(safeName);
         const removedFriend = currentFriends.find(item => this._normalizeHostNameKey(item?.name || '') === targetKey) || null;
         if (!removedFriend) return null;
+        this._markHoneyDeletedWechatContact(removedFriend.name || safeName, {
+            sourceApp: removedFriend.sourceApp || 'honey',
+            sourceLabel: removedFriend.sourceLabel || ''
+        });
 
         const nextFriends = currentFriends.filter(item => this._normalizeHostNameKey(item?.name || '') !== targetKey);
         this.saveHoneyFriends(nextFriends);
@@ -1950,6 +2034,11 @@ export class HoneyData {
             const linkedContact = wechatData.getContacts()
                 .find(item => this._normalizeHostNameKey(item?.name || '') === targetKey);
             if (linkedContact?.id) {
+                this._markHoneyDeletedWechatContact(removedFriend.name || safeName, {
+                    contactId: linkedContact.id,
+                    sourceApp: linkedContact.sourceApp || removedFriend.sourceApp || 'honey',
+                    sourceLabel: linkedContact.sourceLabel || removedFriend.sourceLabel || ''
+                });
                 wechatData.deleteContactAndChat(linkedContact.id);
             }
         }
@@ -1988,6 +2077,7 @@ export class HoneyData {
             ? this._normalizeHoneySocialPerson(nameOrFriend, '好友')
             : this.getHoneyFriends().find(item => this._normalizeHostNameKey(item?.name || '') === this._normalizeHostNameKey(targetName));
         if (!friend) return null;
+        if (this._isHoneyWechatContactDeleted(friend.name || targetName)) return null;
 
         const wechatData = this._getWechatDataBridge();
         const normalizedKey = this._normalizeWechatContactNameKey(friend.name || '');
@@ -2104,6 +2194,7 @@ export class HoneyData {
         if (!accepted) return null;
 
         if (this._isHoneyHostFriendLike(accepted)) {
+            if (this._isHoneyWechatContactDeleted(accepted.name || nameOrFriend) && typeof nameOrFriend !== 'object') return null;
             const host = this.getFollowedHostByName(accepted.name) || {
                 name: accepted.name,
                 avatarUrl: accepted.avatarUrl || '',
@@ -2122,6 +2213,7 @@ export class HoneyData {
             });
         }
 
+        if (this._isHoneyWechatContactDeleted(accepted.name || nameOrFriend) && typeof nameOrFriend !== 'object') return null;
         return this.ensureHoneyFriendWechatChat(accepted);
     }
 
@@ -2148,6 +2240,11 @@ export class HoneyData {
             : (hostNameOrHost?.name || hostNameOrHost?.hostName || '');
         const safeHostName = this._sanitizeInlineText(this._stripFollowStateSuffix(inputHostName || ''), 40);
         if (!safeHostName) return null;
+        if (options?.forceRecreateWechat === true) {
+            this._clearHoneyDeletedWechatContact(safeHostName);
+        } else if (this._isHoneyWechatContactDeleted(safeHostName)) {
+            return null;
+        }
 
         const list = this.getFollowedHosts();
         const hostKey = this._normalizeHostNameKey(safeHostName);
@@ -2563,6 +2660,7 @@ export class HoneyData {
                 if (!item || typeof item !== 'object') return null;
                 const name = String(item.name || item.hostName || '').trim();
                 if (!name) return null;
+                if (this._isHoneyWechatContactDeleted(name)) return null;
                 if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(String(item.naiReferenceImage || item.referenceImage || item.characterReferenceImage || '').trim())) {
                     needsCleanup = true;
                 }

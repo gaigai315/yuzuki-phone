@@ -4373,7 +4373,8 @@ export class HoneyView {
                         const linked = this.app?.honeyData?.ensureFollowedHostWechatChat?.(hostName, {
                             currentScene: this.currentSceneData,
                             decisionMessage: decision.message,
-                            message: decision.message
+                            message: decision.message,
+                            forceRecreateWechat: true
                         });
                         this.app.phoneShell.showNotification('已添加', `${hostName} 已成为微信好友`, '✅');
                         this.render();
