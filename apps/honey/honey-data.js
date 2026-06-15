@@ -818,7 +818,7 @@ export class HoneyData {
 
         if (descLines.length > 0) {
             lines.push('当前聊天正文（最近片段）：');
-            descLines.forEach((line, idx) => lines.push(`${idx + 1}. ${line}`));
+            lines.push(...descLines);
         }
 
         if (comments.length > 0) {
@@ -3796,8 +3796,10 @@ export class HoneyData {
                 isPhoneMessage: true
             });
             historyTurns.forEach((turn) => {
-                messages.push({ role: 'assistant', content: turn.assistantContext, isPhoneMessage: true });
-                messages.push({ role: 'user', content: turn.userMessage, isPhoneMessage: true });
+                const assistantContext = String(turn.responseContext || turn.assistantContext || '').trim();
+                const userMessage = String(turn.userMessage || '').trim();
+                if (assistantContext) messages.push({ role: 'assistant', content: assistantContext, isPhoneMessage: true });
+                if (userMessage) messages.push({ role: 'user', content: userMessage, isPhoneMessage: true });
             });
             if (runtimeContext) {
                 messages.push({ role: 'assistant', content: runtimeContext, isPhoneMessage: true });
@@ -4054,8 +4056,10 @@ export class HoneyData {
                                 addedForDate = true;
                             }
                             seenTurns.add(hash);
-                            allTurns.push({ role: 'assistant', content: turn.assistantContext });
-                            allTurns.push({ role: 'user', content: turn.userMessage });
+                            const assistantContext = String(turn.responseContext || turn.assistantContext || '').trim();
+                            const userMessage = String(turn.userMessage || '').trim();
+                            if (assistantContext) allTurns.push({ role: 'assistant', content: assistantContext });
+                            if (userMessage) allTurns.push({ role: 'user', content: userMessage });
                         });
                     });
 
@@ -4069,8 +4073,10 @@ export class HoneyData {
             // 如果不是关注的主播，退回使用单次会话的历史
             if (!injectedHistory) {
                 historyTurns.forEach((turn) => {
-                    extraMessages.push({ role: 'assistant', content: turn.assistantContext });
-                    extraMessages.push({ role: 'user', content: turn.userMessage });
+                    const assistantContext = String(turn.responseContext || turn.assistantContext || '').trim();
+                    const userMessage = String(turn.userMessage || '').trim();
+                    if (assistantContext) extraMessages.push({ role: 'assistant', content: assistantContext });
+                    if (userMessage) extraMessages.push({ role: 'user', content: userMessage });
                 });
             }
 
