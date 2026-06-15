@@ -1421,6 +1421,19 @@ export class HoneyData {
 
         let raw = cleaned;
         let hiddenBackground = '';
+        const splitOutsideBracketColon = (value = '') => {
+            const text = String(value || '');
+            let depth = 0;
+            for (let i = 0; i < text.length; i++) {
+                const ch = text[i];
+                if (ch === '（' || ch === '(' || ch === '【' || ch === '[') depth += 1;
+                if (ch === '）' || ch === ')' || ch === '】' || ch === ']') depth = Math.max(0, depth - 1);
+                if ((ch === '：' || ch === ':') && depth === 0) {
+                    return [text.slice(0, i).trim(), text.slice(i + 1).trim()];
+                }
+            }
+            return [text.trim(), ''];
+        };
 
         const hiddenPatterns = [
             /(?:[｜|])\s*隐藏(?:背景|设定|信息|印象)?\s*[：:]\s*(.+)$/i,
@@ -1436,8 +1449,8 @@ export class HoneyData {
             return true;
         });
 
-        const mainMatch = raw.match(/^([^：:\n｜|]{1,48})\s*[：:]\s*(.+)$/);
-        let rawName = this._sanitizeInlineText(mainMatch?.[1] || raw, 48);
+        const [namePart, messagePart] = splitOutsideBracketColon(raw);
+        let rawName = this._sanitizeInlineText(namePart || raw, 48);
         let accountName = '';
         const roleAccountMatch = rawName.match(/^(.{1,24}?)[（(]\s*(?:主播账号|账号|频道)\s*[：:]\s*([^）)]{1,32})\s*[）)]$/);
         const accountRoleMatch = rawName.match(/^(.{1,32}?)[（(]\s*([^（）()]{1,24})\s*[）)]$/);
@@ -1456,7 +1469,7 @@ export class HoneyData {
         }
 
         const name = this._sanitizeInlineText(rawName, 24);
-        const message = this._sanitizeInlineText(mainMatch?.[2] || '想加你为好友', 80) || '想加你为好友';
+        const message = this._sanitizeInlineText(messagePart || '想加你为好友', 80) || '想加你为好友';
         if (!name) return null;
         const source = accountName || fallbackSource;
         if (accountName) {
@@ -1478,16 +1491,29 @@ export class HoneyData {
 
     _normalizeHoneySocialPerson(item, fallbackSource = '') {
         if (!item || typeof item !== 'object') return null;
-        const name = this._sanitizeInlineText(item.name || item.nickname || item.user || item.hostName || '', 24);
+        let rawName = this._sanitizeInlineText(item.name || item.nickname || item.user || item.hostName || '', 48);
+        let repairedSource = this._sanitizeInlineText(item.source || fallbackSource || '直播间', 24) || '直播间';
+        let repairedSourceLabel = this._sanitizeInlineText(item.sourceLabel || item.label || '', 24);
+        let repairedRequestType = item.requestType || item.sourceType || item.type || '';
+        const brokenRoleAccountMatch = rawName.match(/^(.{1,24}?)[（(]\s*(?:主播账号|账号|频道)\s*$/);
+        if (brokenRoleAccountMatch) {
+            rawName = this._sanitizeInlineText(brokenRoleAccountMatch[1], 24);
+            if (/主播|其他直播间|直播间/i.test(String(fallbackSource || ''))) {
+                repairedSource = this._sanitizeInlineText(fallbackSource, 24) || repairedSource;
+                repairedSourceLabel = repairedSourceLabel || '主播';
+                repairedRequestType = repairedRequestType || 'host';
+            }
+        }
+        const name = this._sanitizeInlineText(rawName, 24);
         if (!name) return null;
         return {
             name,
             avatarUrl: String(item.avatarUrl || item.avatar || '').trim(),
             message: this._sanitizeInlineText(item.message || item.text || item.reason || '', 80),
-            source: this._sanitizeInlineText(item.source || fallbackSource || '直播间', 24) || '直播间',
+            source: repairedSource,
             sourceApp: this._sanitizeInlineText(item.sourceApp || item.app || 'honey', 16) || 'honey',
-            sourceLabel: this._sanitizeInlineText(item.sourceLabel || item.label || '', 24),
-            requestType: /host|broadcaster|anchor|streamer|主播|其他直播间/i.test(String(item.requestType || item.sourceType || item.type || item.sourceLabel || item.source || fallbackSource || ''))
+            sourceLabel: repairedSourceLabel,
+            requestType: /host|broadcaster|anchor|streamer|主播|其他直播间/i.test(String(repairedRequestType || repairedSourceLabel || repairedSource || fallbackSource || ''))
                 ? 'host'
                 : 'viewer',
             hostType: this._sanitizeInlineText(item.hostType || item.figure || item.category || item.role || '', 24),
