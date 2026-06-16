@@ -1315,6 +1315,113 @@ export class ChatView {
         }
     }
 
+    _isHoneyHostWechatContact(contact = {}) {
+        if (!contact || typeof contact !== 'object') return false;
+        const sourceApp = String(contact?.sourceApp || contact?.extra?.sourceApp || '').trim().toLowerCase();
+        const sourceLabel = String(contact?.sourceLabel || contact?.extra?.sourceLabel || '').trim();
+        const relation = String(contact?.relation || '').trim();
+        const hostName = String(contact?.honeyHostName || contact?.extra?.honeyHostName || '').trim();
+        return sourceApp === 'honey'
+            && (sourceLabel === '主播' || relation.includes('主播') || !!hostName);
+    }
+
+    _resolveHoneyHostContactByMemberName(memberName = '', contacts = []) {
+        const rawName = String(memberName || '').trim();
+        const memberKey = this._normalizeLookupName(rawName);
+        if (!rawName || !memberKey) return null;
+
+        const direct = this.app.wechatData?.findContactByNameLoose?.(rawName, { includeChats: false });
+        if (this._isHoneyHostWechatContact(direct)) return direct;
+
+        const list = Array.isArray(contacts) ? contacts : [];
+        const getKeys = (contact) => [
+            contact?.name,
+            contact?.remark,
+            contact?.honeyHostName,
+            contact?.extra?.honeyHostName,
+            contact?.honeySource,
+            contact?.extra?.honeySource
+        ].map(value => this._normalizeLookupName(value)).filter(Boolean);
+
+        return list.find(contact => this._isHoneyHostWechatContact(contact)
+            && getKeys(contact).some(key => key === memberKey))
+            || list.find(contact => this._isHoneyHostWechatContact(contact)
+                && getKeys(contact).some(key => key.includes(memberKey) || memberKey.includes(key)))
+            || null;
+    }
+
+    async _buildGroupHoneyHostSummaryMessage(targetChat = null, groupMembersArray = []) {
+        if (!targetChat || targetChat.type !== 'group') return null;
+        const contacts = this.app.wechatData?.getContacts?.() || [];
+        const memberNames = [];
+        const memberSeen = new Set();
+        const pushMember = (value) => {
+            const name = String(value || '').trim();
+            const key = this._normalizeLookupName(name);
+            if (!name || !key || key === 'me' || key === 'system' || memberSeen.has(key)) return;
+            memberSeen.add(key);
+            memberNames.push(name);
+        };
+
+        (Array.isArray(groupMembersArray) ? groupMembersArray : []).forEach(pushMember);
+        (Array.isArray(targetChat.members) ? targetChat.members : []).forEach(pushMember);
+        this._getGroupChatParticipants(targetChat).forEach(pushMember);
+
+        const entries = [];
+        const byHostKey = new Map();
+        const bySummaryKey = new Map();
+        for (const memberName of memberNames) {
+            const contact = this._resolveHoneyHostContactByMemberName(memberName, contacts);
+            if (!contact) continue;
+
+            const hostName = String(contact?.honeyHostName || contact?.extra?.honeyHostName || contact?.honeySource || contact?.name || memberName).trim();
+            const hostKey = this._normalizeLookupName(hostName);
+            if (!hostName || !hostKey) continue;
+
+            let entry = byHostKey.get(hostKey);
+            if (!entry) {
+                const summary = await this._getHoneyHostSummaryForWechatContact(contact);
+                if (!summary) continue;
+
+                const summaryKey = this._normalizeLookupName(summary);
+                entry = summaryKey ? bySummaryKey.get(summaryKey) : null;
+                if (!entry) {
+                    entry = { hostName, summary, memberNames: [] };
+                    entries.push(entry);
+                    if (summaryKey) bySummaryKey.set(summaryKey, entry);
+                }
+                byHostKey.set(hostKey, entry);
+            }
+
+            const displayName = String(contact?.name || memberName || '').trim();
+            const memberLabel = displayName && displayName !== hostName
+                ? `${memberName} / ${displayName}`
+                : memberName;
+            if (memberLabel && !entry.memberNames.includes(memberLabel)) {
+                entry.memberNames.push(memberLabel);
+            }
+        }
+
+        if (entries.length === 0) return null;
+        const lines = [
+            '【群内蜜语主播总结】',
+            '以下微信群成员是蜜语主播；对应直播间总结会影响这些成员在当前群聊里的关系背景和发言，不要逐字复述。'
+        ];
+        entries.forEach(entry => {
+            const memberText = entry.memberNames.length > 0 ? `（群成员：${entry.memberNames.join('、')}）` : '';
+            lines.push(`━━━ ${entry.hostName}${memberText} ━━━`);
+            lines.push(entry.summary);
+            lines.push('');
+        });
+
+        return {
+            role: 'system',
+            content: lines.join('\n').trim(),
+            name: 'SYSTEM (群内蜜语主播总结)',
+            isPhoneMessage: true
+        };
+    }
+
     clearTtsCache({ keepRecent = 0 } = {}) {
         const keepCount = Math.max(0, Number.parseInt(keepRecent, 10) || 0);
         const keepKeys = new Set(keepCount > 0 ? this._wechatTtsCacheOrder.slice(-keepCount) : []);
@@ -8935,6 +9042,11 @@ renderChatRoom(chat) {
         }
 
         if (isGroupChat) {
+            const groupHoneyHostSummaryMessage = await this._buildGroupHoneyHostSummaryMessage(targetChat, groupMembersArray);
+            if (groupHoneyHostSummaryMessage) {
+                messages.push(groupHoneyHostSummaryMessage);
+            }
+
             messages.push({
                 role: 'system',
                 content: '【当前窗口隔离规则】你现在只能回复当前这个微信群窗口。系统若提供了【群成员单聊参考】，只表示这些群成员与{{user}}在私聊中已经发生过的共同经历，可作为该成员在群聊中的关系、记忆和语气参考；没有提供单聊参考的群成员就不要假装知道私聊内容。绝对禁止提及、猜测、影射、总结、回应任何非群成员私聊、未读消息或其他无关窗口内容。',
