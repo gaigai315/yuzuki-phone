@@ -2933,21 +2933,15 @@ renderChatRoom(chat) {
             `;
                 break;
 
-            // 表情包消息：优先走 ALAPI 图片，失败降级为“关键词占位卡片”
+            // 表情包消息：本地自定义表情优先，其次 ALAPI，最后关键词占位卡片
            case 'sticker':
                 const stickerKeyword = String(msg.keyword || '发呆');
-                
-                // 🌟🌟🌟 新增核心：优先检查是否匹配本地“我的表情” 🌟🌟🌟
-                const customEmojis = this.app.wechatData.getCustomEmojis();
-                const matchedCustomEmoji = customEmojis.find(e => 
-                    e.name === stickerKeyword || e.description === stickerKeyword
-                );
+                const matchedCustomEmoji = this.findCustomEmojiByKeyword(stickerKeyword);
 
                 if (matchedCustomEmoji && matchedCustomEmoji.image) {
-                    // 匹配到了用户自定义表情，直接渲染本地图片，跳过 ALAPI！
                     messageBody = `
                     <div class="message-sticker-box" style="line-height:0; display:inline-block; max-width:min(156px, 100%); max-height:156px;">
-                        <img src="${this.escapeInlineStickerAttr(matchedCustomEmoji.image)}" alt="${this._escapeHtml(matchedCustomEmoji.name)}" style="display:block; max-width:100%; max-height:156px; width:auto; height:auto; border-radius:8px; object-fit:contain;">
+                        ${this.renderCustomEmojiStickerImage(matchedCustomEmoji, { maxHeight: 156 })}
                     </div>`;
                     break;
                 }
@@ -4624,15 +4618,26 @@ renderChatRoom(chat) {
         let result = this._escapeHtml(text);
         // 0️⃣ 文本内联表情包：[表情包](关键词) / [表情包]（关键词）
         // 单独一整条的表情包消息会在数据层被识别为 `sticker` 类型，不走这里
-        // 仅走关键词 -> emoji 映射，不走任何外部图源请求
+        // 这里与单条表情包保持一致：本地自定义表情 -> ALAPI -> 关键词占位卡片
         const inlineStickerRegex = /\[表情包\]\s*[（(]\s*([^)）\n]+?)\s*[)）]/g;
         result = result.replace(inlineStickerRegex, (_, keywordRaw) => {
             const keyword = String(keywordRaw || '').trim();
             if (!keyword) return '';
 
-            const mappedEmoji = this.getSystemEmojiByStickerKeyword(keyword);
-            const finalEmoji = mappedEmoji || '🙂';
-            return `<span class="wechat-inline-sticker-emoji" style="display:inline-flex;align-items:center;vertical-align:text-bottom;">${this.renderTwemojiEmoji(finalEmoji, 18, true)}</span>`;
+            const matchedCustomEmoji = this.findCustomEmojiByKeyword(keyword);
+            if (matchedCustomEmoji?.image) {
+                return `<span class="wechat-inline-custom-sticker" style="display:inline-flex;align-items:center;vertical-align:text-bottom;line-height:0;">${this.renderCustomEmojiStickerImage(matchedCustomEmoji, { maxHeight: 56, inline: true })}</span>`;
+            }
+
+            const stickerCacheKey = this.buildStickerCacheKey(keyword);
+            return `<span class="wechat-inline-sticker"
+                data-key="${this.escapeInlineStickerAttr(stickerCacheKey)}"
+                data-keyword="${this.escapeInlineStickerAttr(keyword)}"
+                data-fallback-size="56"
+                data-image-size="56"
+                style="display:inline-flex;align-items:center;justify-content:center;vertical-align:text-bottom;line-height:1.2;background:transparent;padding:0;">
+                ${this.buildStickerKeywordFallbackMarkup(keyword, 56)}
+            </span>`;
         });
 
         // 1️⃣ 替换系统表情
@@ -4655,6 +4660,49 @@ renderChatRoom(chat) {
         result = this.renderTwemojiOutsideHtml(result, 16);
 
         return result;
+    }
+
+    normalizeCustomEmojiKeyword(value) {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[【】\[\]（）(){}<>《》「」『』"'“”‘’]/g, '')
+            .replace(/\s+/g, '');
+    }
+
+    findCustomEmojiByKeyword(keyword) {
+        const normalizedKeyword = this.normalizeCustomEmojiKeyword(keyword);
+        if (!normalizedKeyword) return null;
+
+        const customEmojis = Array.isArray(this.app?.wechatData?.getCustomEmojis?.())
+            ? this.app.wechatData.getCustomEmojis()
+            : [];
+
+        const normalizedFields = (emoji) => [
+            emoji?.name,
+            emoji?.description
+        ].map(value => this.normalizeCustomEmojiKeyword(value)).filter(Boolean);
+
+        const exactMatch = customEmojis.find(emoji =>
+            normalizedFields(emoji).some(field => field === normalizedKeyword)
+        );
+        if (exactMatch) return exactMatch;
+
+        return customEmojis.find(emoji =>
+            normalizedFields(emoji).some(field =>
+                field.length >= 2
+                && normalizedKeyword.length >= 2
+                && (field.includes(normalizedKeyword) || normalizedKeyword.includes(field))
+            )
+        ) || null;
+    }
+
+    renderCustomEmojiStickerImage(emoji, { maxHeight = 156, inline = false } = {}) {
+        const safeUrl = this.escapeInlineStickerAttr(emoji?.image || '');
+        const safeName = this._escapeHtml(String(emoji?.description || emoji?.name || '表情包'));
+        const height = Math.max(20, Number(maxHeight) || 156);
+        const borderRadius = inline ? 6 : 8;
+        return `<img src="${safeUrl}" alt="${safeName}" title="${safeName}" style="display:block;max-width:100%;max-height:${height}px;width:auto;height:auto;border-radius:${borderRadius}px;object-fit:contain;">`;
     }
 
     renderTwemojiOutsideHtml(text, size = 16) {
