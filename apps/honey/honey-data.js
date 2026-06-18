@@ -3771,35 +3771,37 @@ export class HoneyData {
         };
     }
 
-    clearGeneratedSessionData() {
-        // 先清理关注列表及其历史备份（honey_history_*）
-        const followedHosts = this.getFollowedHosts();
-        followedHosts.forEach((item) => {
-            const hostName = String(item?.name || '').trim();
-            if (!hostName) return;
-            const historyKey = this._hostHistoryStorageKey(hostName);
-            if (!historyKey) return;
-            this._removeStored(historyKey);
-        });
-        this._removeStored('honey_followed_hosts');
+    clearGeneratedSessionData(options = {}) {
+        const preserveFollowedHosts = options?.preserveFollowedHosts === true;
+        if (!preserveFollowedHosts) {
+            const followedHosts = this.getFollowedHosts();
+            followedHosts.forEach((item) => {
+                const hostName = String(item?.name || '').trim();
+                if (!hostName) return;
+                const historyKey = this._hostHistoryStorageKey(hostName);
+                if (!historyKey) return;
+                this._removeStored(historyKey);
+            });
+            this._removeStored('honey_followed_hosts');
 
-        // 兜底：清理异常残留的 honey_history_* 键（例如已丢失关注列表但历史还在）
-        const chatStore = this.storage?._getChatMetadataStore?.();
-        if (chatStore && typeof chatStore === 'object') {
-            Object.keys(chatStore)
-                .filter(key => /^(?:honey_history_|global_honey_history_)/i.test(String(key || '')))
-                .forEach((key) => this._removeStored(key));
-        }
-        const extStore = this.storage?.getExtensionSettings?.();
-        if (extStore && typeof extStore === 'object') {
-            const removedExtKeys = Object.keys(extStore)
-                .filter(key => /^(?:honey_history_|global_honey_history_)/i.test(String(key || '')))
-                .filter((key) => {
-                    delete extStore[key];
-                    return true;
-                });
-            if (removedExtKeys.length > 0) {
-                this.storage?.saveExtensionSettings?.();
+            // 兜底：清理异常残留的 honey_history_* 键（例如已丢失关注列表但历史还在）
+            const chatStore = this.storage?._getChatMetadataStore?.();
+            if (chatStore && typeof chatStore === 'object') {
+                Object.keys(chatStore)
+                    .filter(key => /^(?:honey_history_|global_honey_history_)/i.test(String(key || '')))
+                    .forEach((key) => this._removeStored(key));
+            }
+            const extStore = this.storage?.getExtensionSettings?.();
+            if (extStore && typeof extStore === 'object') {
+                const removedExtKeys = Object.keys(extStore)
+                    .filter(key => /^(?:honey_history_|global_honey_history_)/i.test(String(key || '')))
+                    .filter((key) => {
+                        delete extStore[key];
+                        return true;
+                    });
+                if (removedExtKeys.length > 0) {
+                    this.storage?.saveExtensionSettings?.();
+                }
             }
         }
 

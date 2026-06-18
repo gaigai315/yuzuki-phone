@@ -745,6 +745,10 @@ export class ChatView {
         return isEnabled(interopKey) || isEnabled(onlineOnlyKey);
     }
 
+    _notifyOnlineModeRequired() {
+        this.app?.phoneShell?.showNotification?.('离线模式', '请先在设置中开启微信互通模式或线上模式', '⚠️');
+    }
+
     _stripWechatCommentWrapper(text) {
         let out = String(text || '').replace(/\r\n/g, '\n').trim();
         if (!out) return '';
@@ -788,10 +792,15 @@ export class ChatView {
 
     _enqueuePendingChat(chatId, { shouldStartTimer = true, shouldShowStatus = true } = {}) {
         const safeChatId = String(chatId || '').trim();
-        if (!safeChatId) return;
-        this.pendingChatIds.add(safeChatId);
+        if (!safeChatId) return false;
 
-        if (!this.isOnlineMode()) return;
+        if (!this.isOnlineMode()) {
+            clearTimeout(this.batchTimer);
+            this.hideTypingStatus(safeChatId);
+            return false;
+        }
+
+        this.pendingChatIds.add(safeChatId);
 
         if (shouldStartTimer) {
             clearTimeout(this.batchTimer);
@@ -801,6 +810,8 @@ export class ChatView {
         if (shouldShowStatus) {
             this.showTypingStatus('等待回复', safeChatId);
         }
+
+        return true;
     }
 
     _dequeuePendingChat(chatId) {
@@ -2936,6 +2947,15 @@ renderChatRoom(chat) {
             // 表情包消息：本地自定义表情优先，其次 ALAPI，最后关键词占位卡片
            case 'sticker':
                 const stickerKeyword = String(msg.keyword || '发呆');
+                const directStickerUrl = this.normalizeStickerDirectImageUrl(msg.stickerUrl || stickerKeyword);
+                if (directStickerUrl) {
+                    messageBody = `
+                    <div class="message-sticker-box" style="line-height:0; display:inline-block; max-width:min(156px, 100%); max-height:156px;">
+                        ${this.renderDirectStickerImage(directStickerUrl, '表情包', { maxHeight: 156 })}
+                    </div>`;
+                    break;
+                }
+
                 const matchedCustomEmoji = this.findCustomEmojiByKeyword(stickerKeyword);
 
                 if (matchedCustomEmoji && matchedCustomEmoji.image) {
@@ -4140,6 +4160,10 @@ renderChatRoom(chat) {
             return `[图片]（${getImageDisplayName()}）`;
         }
         if (msg.type === 'image_prompt') return this._formatImagePromptTagForPrompt(msg);
+        if (msg.type === 'sticker') {
+            const stickerValue = String(msg.stickerUrl || msg.keyword || msg.content || '表情包').trim() || '表情包';
+            return `[表情包]（${stickerValue}）`;
+        }
         if (msg.type === 'call_record') {
             const isGroupCall = targetChat?.type === 'group';
             const callTypeName = msg.callType === 'video' ? '视频通话' : '语音通话';
@@ -4624,6 +4648,11 @@ renderChatRoom(chat) {
             const keyword = String(keywordRaw || '').trim();
             if (!keyword) return '';
 
+            const directStickerUrl = this.normalizeStickerDirectImageUrl(keyword);
+            if (directStickerUrl) {
+                return `<span class="wechat-inline-custom-sticker" style="display:inline-flex;align-items:center;vertical-align:text-bottom;line-height:0;">${this.renderDirectStickerImage(directStickerUrl, '表情包', { maxHeight: 56, inline: true })}</span>`;
+            }
+
             const matchedCustomEmoji = this.findCustomEmojiByKeyword(keyword);
             if (matchedCustomEmoji?.image) {
                 return `<span class="wechat-inline-custom-sticker" style="display:inline-flex;align-items:center;vertical-align:text-bottom;line-height:0;">${this.renderCustomEmojiStickerImage(matchedCustomEmoji, { maxHeight: 56, inline: true })}</span>`;
@@ -4695,6 +4724,29 @@ renderChatRoom(chat) {
                 && (field.includes(normalizedKeyword) || normalizedKeyword.includes(field))
             )
         ) || null;
+    }
+
+    normalizeStickerDirectImageUrl(rawUrl) {
+        const value = String(rawUrl || '').trim();
+        if (!value) return '';
+        const normalized = this.normalizeStickerUrl(value);
+        if (!normalized) return '';
+        try {
+            const urlObj = new URL(normalized);
+            if (!/^https?:$/i.test(urlObj.protocol)) return '';
+            if (!/\.(?:png|jpe?g|gif|webp|avif|bmp|svg)(?:$|[?#])/i.test(urlObj.pathname)) return '';
+            return urlObj.href;
+        } catch (e) {
+            return '';
+        }
+    }
+
+    renderDirectStickerImage(imageUrl, label = '表情包', { maxHeight = 156, inline = false } = {}) {
+        const safeUrl = this.escapeInlineStickerAttr(imageUrl || '');
+        const safeLabel = this._escapeHtml(String(label || '表情包'));
+        const height = Math.max(20, Number(maxHeight) || 156);
+        const borderRadius = inline ? 6 : 8;
+        return `<img src="${safeUrl}" alt="${safeLabel}" title="${safeLabel}" referrerpolicy="no-referrer" style="display:block;max-width:100%;max-height:${height}px;width:auto;height:auto;border-radius:${borderRadius}px;object-fit:contain;">`;
     }
 
     renderCustomEmojiStickerImage(emoji, { maxHeight = 156, inline = false } = {}) {
@@ -5448,6 +5500,18 @@ renderChatRoom(chat) {
                     content: artist ? `[音乐]（${songName}，${artist}）` : `[音乐]（${songName}）`
                 };
             }
+        }
+
+        const stickerMatch = String(content || '').trim().match(/^\[表情包\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/);
+        if (stickerMatch) {
+            const keyword = String(stickerMatch[1] || '').trim();
+            const stickerUrl = this.normalizeStickerDirectImageUrl(keyword);
+            return {
+                type: 'sticker',
+                keyword,
+                stickerUrl,
+                content: `[表情包]（${keyword || '表情包'}）`
+            };
         }
 
         const imageMatch = String(content || '').trim().match(/^(?:(.{1,40})[：:]\s*)?\[(用户照片|个人图片|图片|视频)\]\s*([\s\S]+?)\s*$/);
@@ -7466,10 +7530,14 @@ renderChatRoom(chat) {
                 this.smartUpdateMessages(messages, userInfo, { chatId: targetChatId });
             }
 
-            this._enqueuePendingChat(targetChatId, {
+            const didEnqueue = this._enqueuePendingChat(targetChatId, {
                 shouldStartTimer: false,
                 shouldShowStatus: false
             });
+            if (!didEnqueue) {
+                this._notifyOnlineModeRequired();
+                return;
+            }
             // 🔥 核心修复：发送后若输入框仍保持焦点（移动端连续输入），不进入倒计时
             if (document.activeElement === input) {
                 clearTimeout(this.batchTimer);
@@ -7482,18 +7550,34 @@ renderChatRoom(chat) {
         } else {
             // 输入框为空
             if (this._hasPendingChat()) {
+                if (!this.isOnlineMode()) {
+                    this._clearPendingStateForChat(targetChatId);
+                    this._notifyOnlineModeRequired();
+                    return;
+                }
+
                 // 还在6秒倒计时内：立刻触发AI（催更）
-                this.triggerAI();
+                this.triggerAI(targetChatId, { forceCurrentChat: true });
             } else {
                 // 倒计时已结束，检查是否有历史消息可以重试
                 const messages = this.app.wechatData.getMessages(this.app.currentChat.id);
                 if (messages.length > 0) {
+                    if (!this.isOnlineMode()) {
+                        this._clearPendingStateForChat(targetChatId);
+                        this._notifyOnlineModeRequired();
+                        return;
+                    }
+
                     // 有历史消息：强制触发重新请求（用于AI回复失败后重试）
-                    this._enqueuePendingChat(targetChatId, {
+                    const didEnqueue = this._enqueuePendingChat(targetChatId, {
                         shouldStartTimer: false,
                         shouldShowStatus: true
                     });
-                    this.triggerAI(targetChatId);
+                    if (!didEnqueue) {
+                        this._notifyOnlineModeRequired();
+                        return;
+                    }
+                    this.triggerAI(targetChatId, { forceCurrentChat: true });
                 } else {
                     // 完全没聊过，输入框又是空的
                     this.app.phoneShell.showNotification('提示', '请先输入内容', '⚠️');
@@ -7503,25 +7587,30 @@ renderChatRoom(chat) {
     }
 
     // 🔥 智能连发：触发AI回复
-    async triggerAI(targetChatId = null) {
+    async triggerAI(targetChatId = null, options = {}) {
         if (this._isFlushingPending) return;
         this._isFlushingPending = true;
         clearTimeout(this.batchTimer);
 
         try {
+            const preferredChatId = String(targetChatId || this.app.currentChat?.id || '').trim();
             if (!this.isOnlineMode()) {
-                this.app.phoneShell.showNotification('离线模式', '请在设置中开启在线模式', '⚠️');
+                if (preferredChatId) {
+                    this._clearPendingStateForChat(preferredChatId);
+                }
+                this._notifyOnlineModeRequired();
                 this.hideTypingStatus();  // 🔥 离线模式未发送，清除"等待回复"状态
                 return;
             }
 
-            const preferredChatId = String(targetChatId || this.app.currentChat?.id || '').trim();
+            const forceCurrentChat = options?.forceCurrentChat === true && !!preferredChatId;
             const chatIds = this._getPendingChatIdsOrdered(preferredChatId);
             if (chatIds.length === 0) return;
 
             for (const chatId of chatIds) {
                 if (!this.pendingChatIds.has(chatId)) continue;
-                if (!this._isPendingChatSendable(chatId)) continue;
+                const forceThisChat = forceCurrentChat && chatId === preferredChatId;
+                if (!forceThisChat && !this._isPendingChatSendable(chatId)) continue;
 
                 const messages = this.app.wechatData.getMessages(chatId);
                 const userInfo = this.app.wechatData.getUserInfo?.() || {};

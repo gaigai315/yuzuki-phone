@@ -5979,11 +5979,28 @@ if (window.GGP_Loaded) {
         }
 
 
-        // [表情包](描述) / [表情包]（描述）- 兼容旧格式，统一映射为 emoji 表情
+        const normalizeStickerDirectImageUrl = (rawUrl) => {
+            const value = String(rawUrl || '').trim();
+            if (!value) return '';
+            const normalized = value.startsWith('//') ? `https:${value}` : value;
+            if (!/^https?:\/\//i.test(normalized)) return '';
+            try {
+                const urlObj = new URL(normalized);
+                if (!/^https?:$/i.test(urlObj.protocol)) return '';
+                if (!/\.(?:png|jpe?g|gif|webp|avif|bmp|svg)(?:$|[?#])/i.test(urlObj.pathname)) return '';
+                return urlObj.href;
+            } catch (e) {
+                return '';
+            }
+        };
+
+        // [表情包](描述或图片URL) / [表情包]（描述或图片URL）
         const stickerMatch = /^\[表情包\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(content);
         if (stickerMatch) {
+            const stickerKeyword = stickerMatch[1].trim();
             msgObj.type = 'sticker';
-            msgObj.keyword = stickerMatch[1].trim();
+            msgObj.keyword = stickerKeyword;
+            msgObj.stickerUrl = normalizeStickerDirectImageUrl(stickerKeyword);
             return;
         }
 
@@ -6905,6 +6922,20 @@ if (window.GGP_Loaded) {
                 }
 
                 const normalizeStickerKeyword = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+                const normalizeStickerDirectImageUrl = (rawUrl) => {
+                    const value = String(rawUrl || '').trim();
+                    if (!value) return '';
+                    const normalized = value.startsWith('//') ? `https:${value}` : value;
+                    if (!/^https?:\/\//i.test(normalized)) return '';
+                    try {
+                        const urlObj = new URL(normalized);
+                        if (!/^https?:$/i.test(urlObj.protocol)) return '';
+                        if (!/\.(?:png|jpe?g|gif|webp|avif|bmp|svg)(?:$|[?#])/i.test(urlObj.pathname)) return '';
+                        return urlObj.href;
+                    } catch (e) {
+                        return '';
+                    }
+                };
                 const customEmojis = Array.isArray(wechatData.getCustomEmojis?.())
                     ? wechatData.getCustomEmojis()
                     : [];
@@ -6935,6 +6966,7 @@ if (window.GGP_Loaded) {
 
                     const stickerMatch = /^\[表情包\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(trimmedLine);
                     const stickerKeyword = stickerMatch ? String(stickerMatch[1] || '').trim() : '';
+                    const stickerUrl = normalizeStickerDirectImageUrl(stickerKeyword);
                     const normalizedStickerKeyword = normalizeStickerKeyword(stickerKeyword);
                     const matchedCustomEmoji = normalizedStickerKeyword
                         ? customEmojis.find(emoji => {
@@ -6962,7 +6994,12 @@ if (window.GGP_Loaded) {
                     // 与微信线上逻辑对齐：
                     // [表情包](描述) 先命中“我的表情”同名资源，命中则直接按自定义表情图片发送。
                     // 未命中则保持旧逻辑（sticker -> API / 无配置时关键词占位卡片）。
-                    if (matchedCustomEmoji?.image) {
+                    if (stickerUrl) {
+                        messagePayload.type = 'sticker';
+                        messagePayload.keyword = stickerKeyword;
+                        messagePayload.stickerUrl = stickerUrl;
+                        messagePayload.content = `[表情包]（${stickerKeyword}）`;
+                    } else if (matchedCustomEmoji?.image) {
                         messagePayload.type = 'image';
                         messagePayload.content = String(matchedCustomEmoji.image || '').trim();
                         messagePayload.customEmojiId = String(matchedCustomEmoji.id || '').trim();
@@ -7562,7 +7599,6 @@ if (window.GGP_Loaded) {
             // 🍯 清空蜜语实例，避免切换会话后复用未绑定当前手机壳/旧会话数据的懒加载实例
             if (window.VirtualPhone.honeyApp) {
                 try {
-                    window.VirtualPhone.honeyApp.honeyData?.clearGeneratedSessionData?.();
                     window.VirtualPhone.honeyApp.honeyData?.clearCache?.();
                     window.VirtualPhone.honeyApp.deactivate?.();
                 } catch (e) {
