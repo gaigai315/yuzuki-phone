@@ -386,6 +386,17 @@
     }
 
     #phone-panel.drawer-content #phone-panel-content .phone-body-panel {
+        cursor: default !important;
+    }
+
+    #phone-panel.drawer-content #phone-panel-content .phone-body-panel,
+    #phone-panel.drawer-content #phone-panel-content .phone-body-panel .phone-screen {
+        cursor: default !important;
+    }
+
+    #phone-panel.drawer-content #phone-panel-content .phone-body-panel .phone-statusbar,
+    #phone-panel.drawer-content #phone-panel-content .phone-body-panel .phone-statusbar *,
+    #phone-panel.drawer-content #phone-panel-content .phone-body-panel .phone-punch-hole {
         cursor: grab !important;
     }
 

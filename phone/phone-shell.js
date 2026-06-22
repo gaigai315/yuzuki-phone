@@ -496,7 +496,7 @@ export class PhoneShell {
             if (e.pointerType === 'mouse' && isHome) return;
 
             const triggerZone = e.pointerType === 'mouse'
-                ? Math.max(18, Math.min(32, phoneWidth * 0.1))
+                ? (isHome ? phoneWidth / 3 : phoneWidth / 2)
                 : (isHome ? phoneWidth / 3 : phoneWidth / 2);
 
             if (hasActiveSelection()) {

@@ -750,7 +750,6 @@ if (window.GGP_Loaded) {
 
             const edgeSize = 24;
             return (
-                x <= edgeSize ||
                 y <= edgeSize ||
                 x >= rect.width - edgeSize ||
                 y >= rect.height - edgeSize
