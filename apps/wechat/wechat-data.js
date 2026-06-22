@@ -1951,11 +1951,13 @@ export class WechatData {
         }
 
         // 🔥🔥🔥 核心清洗：同楼层流式碎片与废案清洗机制 🔥🔥🔥
+        let replayInsertAnchorIndex = -1;
         if (message.tavernMessageIndex !== undefined && message.batchId && message.fromMainChatTag) {
             const originalLen = this.data.messages[chatId].length;
-            this.data.messages[chatId] = this.data.messages[chatId].filter(m => {
+            this.data.messages[chatId] = this.data.messages[chatId].filter((m, index) => {
                 // 如果是同一层楼，且来自于正文解析，但是批次号不同，说明是 AI 重新生成的废案或者旧的流式碎片，直接抛弃！
                 if (m.tavernMessageIndex === message.tavernMessageIndex && m.fromMainChatTag && m.batchId !== message.batchId) {
+                    if (replayInsertAnchorIndex < 0) replayInsertAnchorIndex = index;
                     return false; 
                 }
                 return true;
@@ -2081,16 +2083,35 @@ export class WechatData {
             && Number.isFinite(Number(message.mainChatOrder));
         if (shouldOrderedInsert) {
             const nextOrder = Number(message.mainChatOrder);
-            let insertIndex = this.data.messages[chatId].length;
+            let insertIndex = replayInsertAnchorIndex >= 0
+                ? Math.min(replayInsertAnchorIndex, this.data.messages[chatId].length)
+                : this.data.messages[chatId].length;
+            let foundSameMainChatBatch = false;
             for (let i = 0; i < this.data.messages[chatId].length; i += 1) {
                 const existing = this.data.messages[chatId][i];
                 if (!existing?.fromMainChatTag) continue;
                 if (Number(existing.tavernMessageIndex) !== Number(message.tavernMessageIndex)) continue;
                 if (String(existing.batchId || '') !== String(message.batchId || '')) continue;
+                foundSameMainChatBatch = true;
                 const existingOrder = Number(existing.mainChatOrder);
                 if (Number.isFinite(existingOrder) && existingOrder > nextOrder) {
                     insertIndex = i;
                     break;
+                }
+                if (Number.isFinite(existingOrder) && existingOrder <= nextOrder) {
+                    insertIndex = i + 1;
+                }
+            }
+            if (!foundSameMainChatBatch && replayInsertAnchorIndex < 0) {
+                const nextFloor = Number(message.tavernMessageIndex);
+                for (let i = 0; i < this.data.messages[chatId].length; i += 1) {
+                    const existing = this.data.messages[chatId][i];
+                    if (!existing?.fromMainChatTag) continue;
+                    const existingFloor = Number(existing.tavernMessageIndex);
+                    if (Number.isFinite(existingFloor) && Number.isFinite(nextFloor) && existingFloor > nextFloor) {
+                        insertIndex = i;
+                        break;
+                    }
                 }
             }
             this.data.messages[chatId].splice(insertIndex, 0, message);
@@ -2100,10 +2121,15 @@ export class WechatData {
 
         // 🔥 同步更新聊天列表的预览
         chat = this.getChat(chatId);
-        if (chat && message.hiddenFromPreview !== true && message.isTimeMarker !== true && message.type !== 'time_marker') {
-            chat.lastMessage = this.getMessagePreview(message);
-            chat.time = message.time;
-            chat.timestamp = message.timestamp || Date.now();
+        if (chat) {
+            const latestPreviewMsg = [...(this.data.messages[chatId] || [])]
+                .reverse()
+                .find(m => m?.hiddenFromPreview !== true && m?.isTimeMarker !== true && m?.type !== 'time_marker');
+            if (latestPreviewMsg) {
+                chat.lastMessage = this.getMessagePreview(latestPreviewMsg);
+                chat.time = latestPreviewMsg.time || chat.time || '';
+                chat.timestamp = latestPreviewMsg.timestamp || chat.timestamp || Date.now();
+            }
         }
 
         // 🔥 标记需要持久化
@@ -2168,7 +2194,7 @@ getMessagePreview(message) {
             }
             return '[图片]';
        case 'image_prompt':
-            return `[${message.usePersonalReference ? '个人图片' : (message.mediaType || '图片')}]`;
+            return `[${message.useUserReference ? '用户照片' : (message.usePersonalReference ? '个人图片' : (message.mediaType || '图片'))}]`;
         case 'location':
             return `[定位] ${stripSpeechPrefix(message.content || message.locationText || '')}`.trim();
         case 'voice':

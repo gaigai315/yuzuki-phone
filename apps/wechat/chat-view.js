@@ -17,6 +17,9 @@ import { CatboxData } from '../games/catbox/catbox-data.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
+const WECHAT_STICKER_ALAPI_CACHE_KEY = 'phone_wechat_alapi_sticker_cache_v1';
+const WECHAT_STICKER_ALAPI_CACHE_MAX = 240;
+const WECHAT_STICKER_ALAPI_CACHE_TTL = 90 * 24 * 60 * 60 * 1000;
 // 聊天界面视图
 export class ChatView {
     constructor(wechatApp) {
@@ -3638,7 +3641,8 @@ renderChatRoom(chat) {
             const result = await imageManager.generate({
                 app: 'wechat',
                 prompt: generationPrompt,
-                novelAIReferences
+                novelAIReferences,
+                referenceImages: novelAIReferences
             });
             const rawImageUrl = String(result?.imageUrl || result?.imageData || '').trim();
             const imageUrl = await this._persistWechatGeneratedImage(rawImageUrl, {
@@ -3830,11 +3834,19 @@ renderChatRoom(chat) {
             || /^\[\s*个人图片\s*\]/.test(contentText);
         if (!isPersonalImage || mediaType === '视频') return null;
         if (mediaType === '图片' && !explicitPersonalReference && !/^\[\s*个人图片\s*\]/.test(contentText)) return null;
-        const senderName = String(message.from || '').trim();
+        const senderName = String(message.from || message.sender || message.contactName || '').trim();
         if (!senderName || senderName === 'me') return null;
         const contacts = this.app?.wechatData?.getContacts?.() || [];
+        const normalize = (value) => this._normalizeLookupName(value);
+        const senderKey = normalize(senderName);
         return contacts.find(contact => this.app.wechatData._isSameLookupName?.(contact.name, senderName))
             || contacts.find(contact => String(contact?.name || '').trim() === senderName)
+            || contacts.find(contact => {
+                const contactKey = normalize(contact?.name);
+                return contactKey
+                    && senderKey
+                    && (contactKey.includes(senderKey) || senderKey.includes(contactKey));
+            })
             || null;
     }
 
@@ -3854,7 +3866,7 @@ renderChatRoom(chat) {
         }
         const contact = this._resolveWechatPersonalReferenceContact(message);
         const contactTags = String(contact?.naiPromptTags || contact?.imageTags || '')
-            .split(',')
+            .split(/[,，\n]+/)
             .map(tag => tag.trim())
             .filter(Boolean)
             .join(', ');
@@ -4841,6 +4853,89 @@ renderChatRoom(chat) {
         return `sticker:${tokenFlag}:${encodeURIComponent(normalizedKeyword)}`;
     }
 
+    _getStickerPersistentStorage() {
+        return window.VirtualPhone?.storage || this.app?.storage || null;
+    }
+
+    _readPersistentStickerCache() {
+        const storage = this._getStickerPersistentStorage();
+        if (!storage?.get) return {};
+        try {
+            const raw = storage.get(WECHAT_STICKER_ALAPI_CACHE_KEY, {});
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+            return parsed;
+        } catch (e) {
+            console.warn('[Wechat] 读取 ALAPI 表情缓存失败:', e);
+            return {};
+        }
+    }
+
+    _normalizePersistentStickerCacheEntry(entry) {
+        const normalizeCachedUrl = (url) => {
+            const rawUrl = String(url || '').trim();
+            if (/^\/backgrounds\/phone_[^?#]+/i.test(rawUrl)) return rawUrl;
+            return this.normalizeStickerUrl(rawUrl) || '';
+        };
+        if (typeof entry === 'string') {
+            return {
+                url: normalizeCachedUrl(entry),
+                savedAt: 0,
+                failed: false
+            };
+        }
+        if (!entry || typeof entry !== 'object') return null;
+        return {
+            url: normalizeCachedUrl(entry.url),
+            keyword: String(entry.keyword || '').trim(),
+            savedAt: Number(entry.savedAt) || 0,
+            failed: entry.failed === true
+        };
+    }
+
+    _getPersistentStickerCacheEntry(cacheKey) {
+        const key = String(cacheKey || '').trim();
+        if (!key) return null;
+        const cache = this._readPersistentStickerCache();
+        const entry = this._normalizePersistentStickerCacheEntry(cache[key]);
+        if (!entry) return null;
+
+        const now = Date.now();
+        if (entry.savedAt > 0 && now - entry.savedAt > WECHAT_STICKER_ALAPI_CACHE_TTL) {
+            delete cache[key];
+            this._writePersistentStickerCache(cache);
+            return null;
+        }
+        if (entry.failed) return { ...entry, url: '' };
+        if (!entry.url) return null;
+        return entry;
+    }
+
+    _writePersistentStickerCache(cache) {
+        const storage = this._getStickerPersistentStorage();
+        if (!storage?.set || !cache || typeof cache !== 'object') return;
+        const entries = Object.entries(cache)
+            .map(([key, value]) => [key, this._normalizePersistentStickerCacheEntry(value)])
+            .filter(([key, value]) => key && value && (value.url || value.failed))
+            .sort((a, b) => (Number(b[1].savedAt) || 0) - (Number(a[1].savedAt) || 0))
+            .slice(0, WECHAT_STICKER_ALAPI_CACHE_MAX);
+        const nextCache = Object.fromEntries(entries);
+        storage.set(WECHAT_STICKER_ALAPI_CACHE_KEY, nextCache);
+    }
+
+    _setPersistentStickerCacheEntry(cacheKey, entry) {
+        const key = String(cacheKey || '').trim();
+        if (!key) return;
+        const cache = this._readPersistentStickerCache();
+        cache[key] = {
+            keyword: String(entry?.keyword || '').trim(),
+            url: String(entry?.url || '').trim(),
+            failed: entry?.failed === true,
+            savedAt: Number(entry?.savedAt) || Date.now()
+        };
+        this._writePersistentStickerCache(cache);
+    }
+
     getStickerAlapiToken() {
         const storage = window.VirtualPhone?.storage;
         if (!storage || typeof storage.get !== 'function') return '';
@@ -4949,6 +5044,46 @@ renderChatRoom(chat) {
         }
     }
 
+    async _loadRemoteStickerBlob(imageUrl) {
+        const safeUrl = String(imageUrl || '').trim();
+        if (!safeUrl || !/^https?:\/\//i.test(safeUrl)) return null;
+        const response = await fetch(safeUrl, {
+            method: 'GET',
+            cache: 'no-store',
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer'
+        });
+        if (!response.ok) throw new Error(`读取 ALAPI 表情失败（HTTP ${response.status}）`);
+
+        const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+        const arrayBuffer = await response.arrayBuffer();
+        if (!arrayBuffer || arrayBuffer.byteLength <= 0) throw new Error('ALAPI 表情图片为空');
+
+        const bytes = new Uint8Array(arrayBuffer);
+        const mime = /^image\//i.test(contentType)
+            ? contentType
+            : this._detectGeneratedWechatImageMime(bytes);
+        if (!mime) throw new Error('ALAPI 表情响应不是有效图片');
+        return new Blob([arrayBuffer], { type: mime });
+    }
+
+    async _persistAlapiStickerImage(remoteUrl, cacheKey, keyword) {
+        const safeUrl = String(remoteUrl || '').trim();
+        if (!safeUrl) return '';
+        if (/^\/backgrounds\/phone_[^?#]+/i.test(safeUrl)) return safeUrl;
+        if (!/^https?:\/\//i.test(safeUrl)) return '';
+
+        const imageManager = window.VirtualPhone?.imageManager;
+        if (!imageManager?.uploadBlob) return '';
+
+        const blob = await this._loadRemoteStickerBlob(safeUrl);
+        if (!blob) return '';
+        const seed = `${this._simpleImageHash(`${cacheKey}|${keyword}|${safeUrl}`).toString(36)}`;
+        const uploadedUrl = await imageManager.uploadBlob(blob, `wechat_sticker_${seed}`);
+        const normalized = String(uploadedUrl || '').trim();
+        return /^\/backgrounds\/phone_[^?#]+/i.test(normalized) ? normalized : '';
+    }
+
     getInlineStickerCacheStore() {
         if (!window.VirtualPhone) window.VirtualPhone = {};
         if (!window.VirtualPhone._wechatInlineStickerCache || typeof window.VirtualPhone._wechatInlineStickerCache !== 'object') {
@@ -4995,6 +5130,17 @@ renderChatRoom(chat) {
                 const cachedUrl = cache[key];
                 if (cachedUrl) {
                     this.applyInlineStickerNode(node, cachedUrl, keyword);
+                } else {
+                    this.applyInlineStickerFallback(node, keyword);
+                }
+                return;
+            }
+
+            const persistentEntry = this._getPersistentStickerCacheEntry(key);
+            if (persistentEntry) {
+                cache[key] = persistentEntry.url || null;
+                if (persistentEntry.url) {
+                    this.applyInlineStickerNode(node, persistentEntry.url, keyword);
                 } else {
                     this.applyInlineStickerFallback(node, keyword);
                 }
@@ -5087,7 +5233,24 @@ renderChatRoom(chat) {
         const apiUrl = this.buildAlapiStickerApiUrl(keyword, token);
         const resolvedUrl = await this.resolveStickerUrlFromAlapi(apiUrl);
         const normalizedUrl = this.normalizeStickerUrl(resolvedUrl);
-        cache[cacheKey] = normalizedUrl || null;
+        let finalUrl = normalizedUrl || null;
+        if (normalizedUrl) {
+            try {
+                finalUrl = await this._persistAlapiStickerImage(normalizedUrl, cacheKey, keyword) || normalizedUrl;
+            } catch (e) {
+                console.warn('[Wechat] ALAPI 表情保存到本地失败，临时使用远程地址:', e);
+                finalUrl = normalizedUrl;
+            }
+        }
+
+        cache[cacheKey] = finalUrl || null;
+        if (finalUrl && /^\/backgrounds\/phone_[^?#]+/i.test(finalUrl)) {
+            this._setPersistentStickerCacheEntry(cacheKey, {
+                keyword,
+                url: finalUrl,
+                failed: false
+            });
+        }
         this.applyInlineStickerByCacheKey(cacheKey, cache[cacheKey], keyword);
     }
 

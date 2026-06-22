@@ -201,6 +201,14 @@ export class PhoneShell {
             if (!node || typeof node.closest !== 'function') return null;
             return node.closest('input[type="range"], [role="slider"], .phone-gesture-control, .games-2048-board, .honey-live-visibility-modal, .mofo-app, #wechat-werewolf-preview-modal');
         };
+        const resolveInteractiveHost = (node) => {
+            if (!node || typeof node.closest !== 'function') return null;
+            return node.closest('button, a, select, option, label, [role="button"], [data-no-swipe-back]');
+        };
+        const hasActiveSelection = () => {
+            const selection = window.getSelection?.();
+            return !!selection && !selection.isCollapsed && String(selection).length > 0;
+        };
 
         // 🔥 核心修复 1：移除屏幕宽度限制，全面接管虚拟手机的触摸滑动！
         phoneBody.addEventListener('touchmove', (e) => {
@@ -445,7 +453,7 @@ export class PhoneShell {
             }
 
             const pointerEditableHost = resolveEditableHost(e.target);
-            if (isTextEditableElement(pointerEditableHost) || resolveGestureControlHost(e.target)) {
+            if (isTextEditableElement(pointerEditableHost) || resolveGestureControlHost(e.target) || resolveInteractiveHost(e.target)) {
                 isPointerDown = false;
                 return;
             }
@@ -487,9 +495,20 @@ export class PhoneShell {
             const isHome = this.isAtHomeScreen();
             if (e.pointerType === 'mouse' && isHome) return;
 
-            const triggerZone = isHome ? phoneWidth / 3 : phoneWidth / 2;
+            const triggerZone = e.pointerType === 'mouse'
+                ? Math.max(18, Math.min(32, phoneWidth * 0.1))
+                : (isHome ? phoneWidth / 3 : phoneWidth / 2);
 
-            if (relativeStartX < triggerZone && deltaX > 10 && deltaX > deltaY) {
+            if (hasActiveSelection()) {
+                isPointerDown = false;
+                this.isSwiping = false;
+                this.swipeAction = null;
+                pointerSlideTarget = null;
+                activeSwipePointerId = null;
+                return;
+            }
+
+            if (relativeStartX < triggerZone && deltaX > 18 && deltaX > deltaY) {
                 this.isSwiping = true;
                 this.swipeAction = isHome ? 'close' : 'back';
                 e.preventDefault();

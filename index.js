@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.3.0';
+const ST_PHONE_VERSION = '1.3.1';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
@@ -43,11 +43,12 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-06-16',
+    date: '2026-06-22',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【优化】优化小手机与记忆插件的联动逻辑，微信等线上请求会把记忆权限信号稳定带到最终请求体，并允许记忆插件按勾选项注入总结、表格、提示词与向量内容。',
-        '【优化】优化蜜语关注主播与微信联动：关注主播、取消后重新关注、头像与联系人同步改为按当前会话处理，避免旧全局记录污染不同会话。'
+        '【优化】优化 PC 端小手机手势交互，降低误触返回、拖拽与文本选择冲突。',
+        '【优化】优化微信生图逻辑，修复群聊个人/用户照片 tag 与 ComfyUI 参考图传递不完整的问题。',
+        '【修复】修复微信线下转线上消息在编辑旧正文后被重放到末尾，导致聊天顺序错乱的问题。'
     ]
 };
 
@@ -2629,6 +2630,7 @@ if (window.GGP_Loaded) {
         const qrMenuItemId = 'st-phone-inline-reply-action-item';
         const qrExtensionGroupName = '手机插件';
         const qrExtensionButtonName = 'fa-solid fa-mobile-screen-button';
+        let qrAssistantKnown = false;
 
         const isQrAssistantAvailable = () => !!(window.quickReplyMenu || Array.isArray(window.qrAssistantExtensionApi) || document.body?.classList?.contains('qra-enabled'));
 
@@ -2637,18 +2639,30 @@ if (window.GGP_Loaded) {
             if (!Array.isArray(window.qrAssistantExtensionApi)) {
                 window.qrAssistantExtensionApi = [];
             }
+            let changed = false;
             const existing = window.qrAssistantExtensionApi.find(item => item?.dom_id === qrScriptContainerId);
             if (existing) {
-                existing.group_name = qrExtensionGroupName;
-                existing.button_name = qrExtensionButtonName;
+                if (existing.group_name !== qrExtensionGroupName) {
+                    existing.group_name = qrExtensionGroupName;
+                    changed = true;
+                }
+                if (existing.button_name !== qrExtensionButtonName) {
+                    existing.button_name = qrExtensionButtonName;
+                    changed = true;
+                }
             } else {
                 window.qrAssistantExtensionApi.push({
                     dom_id: qrScriptContainerId,
                     group_name: qrExtensionGroupName,
                     button_name: qrExtensionButtonName
                 });
+                changed = true;
             }
-            applyQrWhitelist();
+            if (!qrAssistantKnown) {
+                qrAssistantKnown = true;
+                changed = true;
+            }
+            if (changed) applyQrWhitelist();
             return true;
         };
 
@@ -3168,7 +3182,6 @@ if (window.GGP_Loaded) {
             } else {
                 document.getElementById(qrMenuItemId)?.remove();
                 document.getElementById(qrWhitelistItemId)?.remove();
-                applyQrWhitelist();
             }
 
             // 如果开关关闭，移除按钮
@@ -3191,6 +3204,7 @@ if (window.GGP_Loaded) {
                     existingBtn.parentElement;
 
                 if (currentWrapper) {
+                    let shouldRefreshQr = false;
                     currentWrapper.id = qrScriptContainerId;
                     currentWrapper.classList.add('st-phone-inline-reply-wrapper');
                     // 小铅笔同款：保持在 qr--buttons 容器中，继承酒馆/主题的按钮样式
@@ -3201,6 +3215,7 @@ if (window.GGP_Loaded) {
                     currentWrapper.classList.toggle('st-phone-inline-reply-qr-managed', shouldHideInlineReplyForQr);
                     existingBtn.classList.toggle('st-phone-inline-reply-qr-managed', shouldHideInlineReplyForQr);
                     if (!currentWrapper.dataset.stPhoneQrProxyBound) {
+                        shouldRefreshQr = true;
                         currentWrapper.dataset.stPhoneQrProxyBound = 'true';
                         currentWrapper.addEventListener('click', (event) => {
                             if (event.target?.closest?.(`#${btnId}`)) return;
@@ -3215,6 +3230,7 @@ if (window.GGP_Loaded) {
                     }
 
                     if (host && currentWrapper.parentElement !== host) {
+                        shouldRefreshQr = true;
                         const rocketButton = document.getElementById('quick-reply-rocket-button');
                         if (rocketButton && rocketButton.parentElement === host) {
                             rocketButton.insertAdjacentElement('afterend', currentWrapper);
@@ -3222,7 +3238,7 @@ if (window.GGP_Loaded) {
                             host.prepend(currentWrapper);
                         }
                     }
-                    if (hasQrAssistantApi) {
+                    if (hasQrAssistantApi && shouldRefreshQr) {
                         applyQrWhitelist();
                     }
                 }
@@ -6412,6 +6428,7 @@ if (window.GGP_Loaded) {
                     mediaType: msg.mediaType,
                     imagePrompt: msg.imagePrompt,
                     usePersonalReference: msg.usePersonalReference,
+                    useUserReference: msg.useUserReference,
                     keyword: msg.keyword,
                     customEmojiId: msg.customEmojiId,
                     customEmojiName: msg.customEmojiName,
@@ -8000,6 +8017,14 @@ if (window.GGP_Loaded) {
                     // 🔥 核心修复：直接调用 toggleDrawer 函数，不再使用无效的 .click() 模拟
                     if (drawerIcon && drawerPanel) {
                         if (!drawerPanel.classList.contains('phone-panel-open') && !checkBetaLock()) return;
+                        try {
+                            window.getSelection?.()?.removeAllRanges?.();
+                        } catch (selectionError) {
+                            console.warn('[VirtualPhone] 清理三击唤醒选区失败:', selectionError);
+                        }
+                        if (document.activeElement?.blur && !drawerPanel.contains(document.activeElement)) {
+                            document.activeElement.blur();
+                        }
                         toggleDrawer(drawerIcon, drawerPanel);
                     }
                 }
@@ -9324,8 +9349,11 @@ if (window.GGP_Loaded) {
                                                         return;
                                                     } else if (msg.type !== 'text') {
                                                         const paymentStatus = String(msg.status || '').trim();
+                                                        const imagePromptType = msg.useUserReference
+                                                            ? '用户照片'
+                                                            : (msg.usePersonalReference ? '个人图片' : (msg.mediaType || '图片'));
                                                         const typeMap = {
-                                                            'image_prompt': `[图片]（${String(msg.imagePrompt || msg.content || '待生成图片').trim()}）`,
+                                                            'image_prompt': `[${imagePromptType}]（${String(msg.imagePrompt || msg.content || '待生成图片').trim()}）`,
                                                             'sticker': `[表情包](${String(msg.keyword || msg.content || '表情').trim() || '表情'})`,
                                                             'voice': `[语音 ${msg.duration || '3秒'}]`,
                                                             'location': `[定位]（${String(msg.locationText || msg.locationAddress || msg.content || '未知位置').trim() || '未知位置'}）`,
