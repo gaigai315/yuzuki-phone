@@ -3098,6 +3098,34 @@ export class ImageGenerationManager {
         return ['low', 'medium', 'high'].includes(value) ? value : '';
     }
 
+    _shouldPreferOpenAIBase64(config) {
+        const site = String(config?.openaiSite || '').trim().toLowerCase();
+        return site === 'public' || site === 'custom';
+    }
+
+    _withOpenAIBase64OutputHints(payload) {
+        return {
+            ...payload,
+            response_format: 'b64_json',
+            return_base64: true,
+            extra_body: {
+                ...(payload?.extra_body || {}),
+                response_format: 'b64_json'
+            }
+        };
+    }
+
+    _isOpenAIBase64HintRejected(status, payload, text = '') {
+        const detail = [
+            payload?.error?.message,
+            payload?.message,
+            payload?.error,
+            text
+        ].map(item => String(item || '')).join('\n');
+        return Number(status) >= 400 && Number(status) < 500
+            && /response_format|return_base64|extra_body|unknown parameter|unsupported parameter|unrecognized|invalid/i.test(detail);
+    }
+
     _extractOpenAIChatImage(payload) {
         const direct = this._extractOpenAIImage(payload);
         if (direct) return direct;
@@ -3625,33 +3653,45 @@ export class ImageGenerationManager {
             payload.prompt = `${payload.prompt}\n\nAvoid: ${negativePrompt}`;
         }
 
-        let response = null;
         let result = null;
-        try {
-            response = await fetch(endpoint, {
-                method: 'POST',
-                headers: this._buildOpenAIHeaders(config, {
-                    'Content-Type': 'application/json'
-                }),
-                body: JSON.stringify(payload),
-                signal: options.signal
-            });
-        } catch (err) {
-            const message = String(err?.message || err || '').trim();
-            if (/failed to fetch|networkerror|load failed/i.test(message)) {
-                const siteLabel = config.openaiSite === 'public'
-                    ? 'GPT 公益站'
-                    : (config.openaiSite === 'custom' ? 'GPT 自定义站点' : 'OpenAI 官方站点');
-                const relayHint = config.openaiSite === 'public'
-                    ? '请运行本地 imgrelay，并把 GPT 生图的本地中转 URL 填为 http://127.0.0.1:8787。'
-                    : '请让站点开启 CORS，或换支持浏览器跨域的中转站。';
-                throw new Error(`${siteLabel} 请求被浏览器拦截或网络失败。若控制台提示 CORS，说明该站点没有给当前页面返回 Access-Control-Allow-Origin。${relayHint}`);
+        const requestPayloads = this._shouldPreferOpenAIBase64(config)
+            ? [this._withOpenAIBase64OutputHints(payload), payload]
+            : [payload];
+        for (let i = 0; i < requestPayloads.length; i++) {
+            const requestPayload = requestPayloads[i];
+            let response = null;
+            try {
+                response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: this._buildOpenAIHeaders(config, {
+                        'Content-Type': 'application/json'
+                    }),
+                    body: JSON.stringify(requestPayload),
+                    signal: options.signal
+                });
+            } catch (err) {
+                const message = String(err?.message || err || '').trim();
+                if (/failed to fetch|networkerror|load failed/i.test(message)) {
+                    const siteLabel = config.openaiSite === 'public'
+                        ? 'GPT 公益站'
+                        : (config.openaiSite === 'custom' ? 'GPT 自定义站点' : 'OpenAI 官方站点');
+                    const relayHint = config.openaiSite === 'public'
+                        ? '请运行本地 imgrelay，并把 GPT 生图的本地中转 URL 填为 http://127.0.0.1:8787。'
+                        : '请让站点开启 CORS，或换支持浏览器跨域的中转站。';
+                    throw new Error(`${siteLabel} 请求被浏览器拦截或网络失败。若控制台提示 CORS，说明该站点没有给当前页面返回 Access-Control-Allow-Origin。${relayHint}`);
+                }
+                throw err;
             }
-            throw err;
-        }
-        const text = await response.text();
-        try { result = text ? JSON.parse(text) : null; } catch (e) { result = null; }
-        if (!response.ok) {
+            const text = await response.text();
+            try { result = text ? JSON.parse(text) : null; } catch (e) { result = null; }
+            if (response.ok) {
+                break;
+            }
+            if (i === 0 && requestPayloads.length > 1 && this._isOpenAIBase64HintRejected(response.status, result, text)) {
+                console.warn('[GPT Image] 当前站点不接受 Base64 返回参数，已降级为标准 URL 请求。');
+                result = null;
+                continue;
+            }
             const msg = this._buildOpenAIErrorMessage(response.status, result, text);
             throw new Error(`GPT 生图请求失败 (${response.status})${msg ? `: ${String(msg).slice(0, 180)}` : ''}`);
         }

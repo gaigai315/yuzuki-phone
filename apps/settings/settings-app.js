@@ -6203,10 +6203,15 @@ export class SettingsApp {
                     ignoreEnabled: true
                 });
                 if (!result?.imageUrl && !result?.imageData) throw new Error('GPT 生图未返回图片');
+                const imagePayload = String(result?.imageData || result?.imageUrl || '').trim();
+                const payloadType = imagePayload.startsWith('data:image/')
+                    ? 'Base64，可直接保存'
+                    : (imagePayload ? 'URL，实际使用时仍需读取远端图片' : '');
                 const detail = [
                     result.width && result.height ? `${result.width}x${result.height}` : '',
                     result.quality ? `quality ${result.quality}` : '',
-                    result.model || ''
+                    result.model || '',
+                    payloadType
                 ].filter(Boolean).join(' · ');
                 setResult(`GPT 生图连接成功，已收到图片数据${detail ? `：${detail}` : '。'}`, '#0f9f6e');
                 this.phoneShell?.showNotification?.('生图测试', detail ? `GPT 连接成功 ${detail}` : 'GPT 连接成功', '✓');
