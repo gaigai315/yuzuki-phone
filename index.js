@@ -902,13 +902,27 @@ if (window.GGP_Loaded) {
     }
 
     function bindPhonePanelViewportGuards() {
-        const onViewportResize = () => schedulePhonePanelViewportUpdate({ delay: 40, settleDelay: 160 });
-        const onViewportScroll = () => schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 140 });
-        const onFocusIn = () => {
+        const shouldUpdatePhoneViewport = (target = document.activeElement) => {
+            const panel = document.getElementById('phone-panel');
+            if (!panel) return false;
+            if (panel.classList?.contains('phone-panel-open')) return true;
+            return !!(target && typeof panel.contains === 'function' && panel.contains(target));
+        };
+        const onViewportResize = () => {
+            if (!shouldUpdatePhoneViewport()) return;
+            schedulePhonePanelViewportUpdate({ delay: 40, settleDelay: 160 });
+        };
+        const onViewportScroll = () => {
+            if (!shouldUpdatePhoneViewport()) return;
+            schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 140 });
+        };
+        const onFocusIn = (event) => {
+            if (!shouldUpdatePhoneViewport(event.target)) return;
             _phoneKeyboardLikelyOpenUntil = Date.now() + 700;
             schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
         };
-        const onFocusOut = () => {
+        const onFocusOut = (event) => {
+            if (!shouldUpdatePhoneViewport(event.target)) return;
             _phoneKeyboardLikelyOpenUntil = Date.now() + 180;
             schedulePhonePanelViewportUpdate({ immediate: true, delay: 80, settleDelay: 260 });
         };
