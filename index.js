@@ -9253,6 +9253,9 @@ if (window.GGP_Loaded) {
                                                     } else if (msg.type === 'poker_card') {
                                                         const poker = msg.pokerData || {};
                                                         content = poker.content || poker.desc || msg.content || '[德州扑克分享]';
+                                                    } else if (msg.type === 'werewolf_card') {
+                                                        const werewolf = msg.werewolfData || {};
+                                                        content = werewolf.content || werewolf.desc || msg.content || '[狼人杀复盘分享]';
                                                     } else if (msg.type === 'call_record') {
                                                         const callTypeName = msg.callType === 'video' ? '视频' : '语音';
                                                         const callStatusText = msg.status === 'answered'
