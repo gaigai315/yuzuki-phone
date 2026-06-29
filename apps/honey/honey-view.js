@@ -1786,6 +1786,7 @@ export class HoneyView {
                     generatedImg.alt = '';
                     naiPlaceholder.prepend(generatedImg);
                 }
+                this._bindHoneyGeneratedImageError(generatedImg);
                 generatedImg.src = generatedImageUrl;
             } else if (generatedImg) {
                 generatedImg.remove();
@@ -3247,6 +3248,7 @@ export class HoneyView {
         const scope = root || document.querySelector('.phone-view-current .honey-page-live') || document.querySelector('.honey-page-live');
         if (!scope) return;
         scope.querySelectorAll('.honey-nai-generated-image').forEach(img => {
+            this._bindHoneyGeneratedImageError(img);
             if (img.dataset.honeyImageViewerBound === '1') return;
             img.dataset.honeyImageViewerBound = '1';
             const openViewer = (target) => {
@@ -3279,6 +3281,43 @@ export class HoneyView {
                     openViewer(e.currentTarget);
                 }
             });
+        });
+    }
+
+    _bindHoneyGeneratedImageError(img) {
+        if (!img || img.dataset.honeyImageErrorBound === '1') return;
+        img.dataset.honeyImageErrorBound = '1';
+        img.addEventListener('error', () => {
+            const placeholder = img.closest?.('.honey-nai-placeholder');
+            const scene = this.currentSceneData || {};
+            const liveVideoUrl = this._buildLiveVideoUrl(scene);
+            img.remove();
+            if (!placeholder) return;
+            placeholder.classList.remove('has-generated-image');
+            placeholder.style.background = liveVideoUrl ? '#000' : '';
+            let glassEl = placeholder.querySelector('.honey-nai-glass');
+            if (!glassEl) {
+                glassEl = document.createElement('div');
+                glassEl.className = 'honey-nai-glass';
+                placeholder.appendChild(glassEl);
+            }
+            glassEl.setAttribute(
+                'style',
+                liveVideoUrl ? 'backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(0,0,0,0.1);' : ''
+            );
+            if (liveVideoUrl && !placeholder.querySelector('#honey-live-video-el')) {
+                const liveVideo = document.createElement('video');
+                liveVideo.id = 'honey-live-video-el';
+                liveVideo.className = 'honey-live-video';
+                liveVideo.loop = true;
+                liveVideo.muted = true;
+                liveVideo.playsInline = true;
+                liveVideo.setAttribute('webkit-playsinline', '');
+                liveVideo.preload = 'metadata';
+                liveVideo.src = liveVideoUrl;
+                placeholder.prepend(liveVideo);
+                this._playLiveVideoIfCurrent(liveVideo, placeholder.closest?.('.honey-page-live'));
+            }
         });
     }
 

@@ -3416,8 +3416,12 @@ export class SettingsApp {
                         <button id="phone-image-comfyui-workflow-clear" class="setting-btn" style="height: 30px; padding: 0 8px; font-size: 12px; background: #fff; color: #555; border: 1px solid #d8d8d8; border-radius: 8px; cursor: pointer;">内置</button>
                     </div>
                     <input type="file" id="phone-image-comfyui-workflow-import-file" accept=".json,application/json,text/json" style="display: none;">
+                    <button type="button" id="phone-image-comfyui-workflow-edit" class="setting-btn" style="width: 100%; min-height: 34px; margin-top: 8px; padding: 0 10px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fbfbfb; color: #333; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <span>编辑工作流 JSON</span>
+                        <span id="phone-image-comfyui-workflow-summary" style="min-width: 0; flex: 1; text-align: right; color: #777; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${comfyuiWorkflow ? `${this._escapeHtml(String(comfyuiWorkflow.length))} 字符` : '未填写'}</span>
+                    </button>
                     <textarea id="phone-image-comfyui-workflow" rows="8"
-                              style="width: 100%; min-height: 150px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; line-height: 1.45; background: #fafafa; box-sizing: border-box; margin-top: 6px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;">${this._escapeHtml(comfyuiWorkflow)}</textarea>
+                              style="display:none;">${this._escapeHtml(comfyuiWorkflow)}</textarea>
                 </div>
 
                 <textarea id="phone-image-comfyui-node-mapping" style="display:none;">${this._escapeHtml(comfyuiNodeMapping)}</textarea>
@@ -4831,6 +4835,8 @@ export class SettingsApp {
         const imageComfyUIWorkflowImportFile = document.getElementById('phone-image-comfyui-workflow-import-file');
         const imageComfyUIWorkflowClearBtn = document.getElementById('phone-image-comfyui-workflow-clear');
         const imageComfyUIWorkflowHelpBtn = document.getElementById('phone-image-comfyui-workflow-help');
+        const imageComfyUIWorkflowEditBtn = document.getElementById('phone-image-comfyui-workflow-edit');
+        const imageComfyUIWorkflowSummary = document.getElementById('phone-image-comfyui-workflow-summary');
         const imagePromptAppSelect = document.getElementById('phone-image-prompt-app-select');
         const imagePromptPresetSelect = document.getElementById('phone-image-prompt-preset-select');
         const imagePromptPresetName = document.getElementById('phone-image-prompt-preset-name');
@@ -5105,6 +5111,10 @@ export class SettingsApp {
                 input.appendChild(opt);
             }
             input.value = value;
+            if (id === 'phone-image-comfyui-workflow' && imageComfyUIWorkflowSummary) {
+                const len = String(value || '').trim().length;
+                imageComfyUIWorkflowSummary.textContent = len ? `${len} 字符` : '未填写';
+            }
         };
         const applyComfyUIWorkflowSettings = async (workflow) => {
             if (!workflow) return;
@@ -5142,6 +5152,20 @@ export class SettingsApp {
             || this.storage.get('phone-image-comfyui-active-workflow')
             || ''
         ).trim();
+        const updateActiveComfyUIWorkflowDraft = async (patch = {}) => {
+            const activeId = getComfyUIActiveWorkflowId();
+            if (!activeId) return false;
+            const workflows = this._getComfyUIWorkflows();
+            const index = workflows.findIndex(item => item.id === activeId);
+            if (index < 0) return false;
+            workflows[index] = {
+                ...workflows[index],
+                ...patch,
+                updatedAt: new Date().toISOString()
+            };
+            await this._saveComfyUIWorkflows(workflows);
+            return true;
+        };
         const saveImagePromptDraft = async (app, form = getImagePromptForm()) => {
             const appKey = this._normalizeImagePresetScope(app);
             await this.storage.set(`phone-image-${appKey}-fixed-prompt`, String(form.fixedPrompt || '').trim());
@@ -5823,7 +5847,7 @@ export class SettingsApp {
                 clip: String(workflow?.comfyuiClip || '').trim()
             })).filter(workflow => workflow.name)
         });
-        const showImagePromptPresetTextModal = ({ title, desc, value = '', mode = 'export', onConfirm = null }) => {
+        const showImagePromptPresetTextModal = ({ title, desc, value = '', mode = 'export', confirmText = '', onConfirm = null }) => {
             document.getElementById('phone-image-preset-share-modal')?.remove();
             const overlay = document.createElement('div');
             overlay.id = 'phone-image-preset-share-modal';
@@ -5837,7 +5861,7 @@ export class SettingsApp {
                     <textarea id="phone-image-preset-share-text" spellcheck="false" style="height:240px; min-height:160px; max-height:48vh; width:100%; resize:vertical; border:none; outline:none; padding:10px 12px; box-sizing:border-box; font-size:11px; line-height:1.45; font-family:Consolas, Monaco, monospace; color:#111; background:#fbfbfb; touch-action:pan-y; overscroll-behavior:contain;">${this._escapeHtml(value)}</textarea>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px; border-top:1px solid #eee; background:#fff;">
                         <button type="button" id="phone-image-preset-share-cancel" style="height:32px; border:1px solid #ddd; border-radius:8px; background:#fff; color:#333; font-size:12px; cursor:pointer;">取消</button>
-                        <button type="button" id="phone-image-preset-share-confirm" style="height:32px; border:none; border-radius:8px; background:${mode === 'import' ? '#f59e0b' : '#2563eb'}; color:#fff; font-size:12px; font-weight:700; cursor:pointer;">${mode === 'import' ? '导入' : '复制'}</button>
+                        <button type="button" id="phone-image-preset-share-confirm" style="height:32px; border:none; border-radius:8px; background:${mode === 'import' ? '#f59e0b' : '#2563eb'}; color:#fff; font-size:12px; font-weight:700; cursor:pointer;">${this._escapeHtml(confirmText || (mode === 'import' ? '导入' : '复制'))}</button>
                     </div>
                 </div>
             `;
@@ -6908,6 +6932,32 @@ export class SettingsApp {
             }
             imageComfyUIWorkflowImportFile.value = '';
             imageComfyUIWorkflowImportFile.click();
+        });
+
+        imageComfyUIWorkflowEditBtn?.addEventListener('click', () => {
+            const workflowInput = document.getElementById('phone-image-comfyui-workflow');
+            const currentValue = String(workflowInput?.value || '').trim();
+            showImagePromptPresetTextModal({
+                title: '编辑 ComfyUI 工作流 JSON',
+                desc: '可粘贴 API Format、普通 UI 工作流，或本项目导出的工作流包。保存前会校验 JSON。',
+                value: currentValue,
+                mode: 'edit',
+                confirmText: '保存',
+                onConfirm: async (text) => {
+                    const nextValue = String(text || '').trim();
+                    if (nextValue) {
+                        try {
+                            JSON.parse(nextValue);
+                        } catch (err) {
+                            throw new Error(`工作流 JSON 解析失败：${err?.message || err}`);
+                        }
+                    }
+                    setComfyUIFieldValue('phone-image-comfyui-workflow', nextValue);
+                    await this.storage.set('phone-image-comfyui-workflow', nextValue);
+                    await updateActiveComfyUIWorkflowDraft({ workflow: nextValue });
+                    this.phoneShell?.showNotification?.('ComfyUI 工作流', 'JSON 已保存', '✅');
+                }
+            });
         });
 
         imageComfyUIWorkflowImportFile?.addEventListener('change', async () => {

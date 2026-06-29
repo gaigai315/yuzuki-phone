@@ -262,6 +262,7 @@ export class PhoneShell {
                 '.wechat-call-transcript-overlay', '.wechat-call-transcript-panel', '.wechat-call-transcript-body',
                 '.phone-image-viewer-overlay', '.phone-image-viewer-stage',
                 '#st-phone-update-modal', '.st-phone-update-dialog', '.st-phone-update-content', '.st-phone-update-list',
+                '#phone-image-preset-share-modal', '#phone-image-preset-share-modal > div', '#phone-image-preset-share-text',
                 '#phone-image-preset-export-chooser', '.phone-image-preset-export-dialog', '.phone-image-preset-export-list',
                 '.phone-call-history-list', '.phone-call-main', '.phone-call-contacts', '.phone-call-contact-list',
                 '.phone-call-transcript', '#phone-call-transcript-messages',
