@@ -130,7 +130,7 @@ export class MomentsView {
         const promptText = statePrompt.prompt || parsed.promptText || String(rawImage || '').trim();
         const descriptionText = state?.description || statePrompt.description || parsed.descriptionText || promptText;
         const safePrompt = this._escapeHtml(descriptionText || '图片描述');
-        const safeTags = this._escapeHtml(this._hasCjkText(promptText) ? '缺少英文Tag' : promptText);
+        const safeTags = this._escapeHtml(promptText);
         if (parsed.isDirectImage) {
             return `
                 <div class="moment-image-generated-box">
@@ -812,18 +812,6 @@ export class MomentsView {
         if (!momentId || !Number.isInteger(index) || index < 0 || !promptText) return;
         const moment = this._getMomentById(momentId);
         if (!moment) return;
-        if (this._hasCjkText(promptText)) {
-            this._setMomentImageState(moment, index, {
-                status: 'failed',
-                error: '缺少英文生图Tag：第二个括号必须只写英文逗号分隔 tags',
-                prompt: promptText,
-                description: descriptionText || promptText
-            });
-            await this.app.wechatData.saveData();
-            this._refreshMomentImageUI(momentId);
-            this.app.phoneShell.showNotification('生图格式错误', '缺少英文生图Tag，请使用 [图片]（中文描述）（English tags）', '⚠️');
-            return;
-        }
         const currentState = this._getMomentImageState(moment, index);
         if (currentState?.status === 'loading') return;
 

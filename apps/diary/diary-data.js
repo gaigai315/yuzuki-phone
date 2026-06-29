@@ -622,13 +622,6 @@ export class DiaryData {
         if (!imageManager || typeof imageManager.generate !== 'function') {
             throw new Error('生图管理器未初始化');
         }
-        if (this._hasCjkText(photo.prompt)) {
-            this.updateEntryPhoto(entryId, photoId, {
-                status: 'failed',
-                error: '缺少英文生图Tag：第二个括号必须只写英文逗号分隔 tags'
-            });
-            throw new Error('缺少英文生图Tag，请使用 [图片]（中文照片说明）（English tags）');
-        }
         if (this.storage && imageManager.storage !== this.storage) {
             imageManager.storage = this.storage;
         }

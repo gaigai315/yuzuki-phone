@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.3.1';
+const ST_PHONE_VERSION = '1.3.2';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
@@ -43,12 +43,10 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-06-22',
+    date: '2026-06-29',
     items: [
         '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【优化】优化 PC 端小手机手势交互，降低误触返回、拖拽与文本选择冲突。',
-        '【优化】优化微信生图逻辑，修复群聊个人/用户照片 tag 与 ComfyUI 参考图传递不完整的问题。',
-        '【修复】修复微信线下转线上消息在编辑旧正文后被重放到末尾，导致聊天顺序错乱的问题。'
+        '【优化】生图第二个括号现在可直接使用中文或英文 tag；如需中文 tag，可自行修改对应提示词让 AI 返回中文 tag。'
     ]
 };
 

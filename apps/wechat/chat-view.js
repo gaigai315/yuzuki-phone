@@ -3594,20 +3594,6 @@ renderChatRoom(chat) {
         }
         const parsedCurrentPrompt = this._parseImagePromptText(String(message.content || rawPromptText || ''));
         const descriptionText = String(message.imageDescription || parsedRawPrompt.description || parsedCurrentPrompt.description || promptText).trim();
-        const allowChinesePrompt = this._isWechatImageProviderOpenAI();
-        if (this._hasCjkText(promptText) && !allowChinesePrompt) {
-            this._imagePromptGenerationLocks.delete(generationLockKey);
-            this.app.phoneShell?.showNotification('生图格式错误', '缺少英文生图Tag，请使用 [图片]（中文描述）（English tags）', '⚠️');
-            this.app.wechatData.updateMessageById(chatId, safeMessageId, {
-                imagePrompt: promptText,
-                imageDescription: descriptionText,
-                imageGenStatus: 'failed',
-                imageGenError: '缺少英文生图Tag：第二个括号必须只写英文逗号分隔 tags'
-            });
-            this._refreshVisibleChatMessages(chatId);
-            return;
-        }
-
         const imageManager = window.VirtualPhone?.imageGenerationManager;
         if (!imageManager || typeof imageManager.generate !== 'function') {
             this._imagePromptGenerationLocks.delete(generationLockKey);
@@ -3901,9 +3887,7 @@ renderChatRoom(chat) {
         const promptText = this._escapeHtml(promptRaw);
         const descriptionRaw = displayPrompt.description || promptRaw;
         const descriptionText = this._escapeHtml(descriptionRaw);
-        const promptLabel = this._hasCjkText(promptRaw) && !this._isWechatImageProviderOpenAI()
-            ? '缺少英文Tag'
-            : promptRaw;
+        const promptLabel = promptRaw;
         const promptLabelHtml = this._escapeHtml(promptLabel);
         const cardId = this.escapeInlineStickerAttr(String(msg?.id || `imgprompt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`));
         const generatedImageUrl = String(msg?.generatedImageUrl || '').trim();

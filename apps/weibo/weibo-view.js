@@ -449,7 +449,7 @@ export class WeiboView {
                             }
                             const descriptionText = parsedMedia.descriptionText || String(imageState?.description || '').trim() || promptText;
                             const safePromptText = this._escapeHtml(descriptionText);
-                            const safeTagText = this._escapeHtml(this._hasCjkText(promptText) ? '缺少英文Tag' : promptText);
+                            const safeTagText = this._escapeHtml(promptText);
                             const generationStatus = isDirectImage
                                 ? 'done'
                                 : (String(imageState?.status || '').trim() || 'idle');
@@ -2539,22 +2539,6 @@ export class WeiboView {
         const slotPromptText = String(parsedMedia.promptText || promptText || '').trim();
         if (!slotPromptText) return;
         const displayDescription = String(descriptionText || parsedMedia.descriptionText || slotPromptText || '').trim();
-        if (this._hasCjkText(slotPromptText)) {
-            this._setWeiboPostImageState(post, index, {
-                status: 'failed',
-                error: '缺少英文生图Tag：第二个括号必须只写英文逗号分隔 tags',
-                prompt: slotPromptText,
-                description: displayDescription,
-                mediaType: safeMediaType,
-                imageModel: '',
-                imageProvider: ''
-            });
-            this._persistPostMediaTarget(posts, source, post);
-            this._refreshPostMediaUI(postId);
-            this.app.phoneShell.showNotification('生图格式错误', '缺少英文生图Tag，请使用 [图片]（中文描述）（English tags）', '⚠️');
-            return;
-        }
-
         if (!imageManager || typeof imageManager.generate !== 'function') {
             this._setWeiboPostImageState(post, index, {
                 status: 'failed',
