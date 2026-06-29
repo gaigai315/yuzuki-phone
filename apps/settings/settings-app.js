@@ -5750,7 +5750,7 @@ export class SettingsApp {
                 updatedAt: Date.now()
             };
         };
-        const parseComfyUIWorkflowImportText = (rawText = '') => {
+        const parseComfyUIWorkflowImportText = (rawText = '', fallbackBaseName = '') => {
             const text = String(rawText || '').trim();
             if (!text) return [];
             let payload = null;
@@ -5764,8 +5764,12 @@ export class SettingsApp {
                 : (Array.isArray(payload?.workflows)
                     ? payload.workflows
                     : (Array.isArray(payload?.items) ? payload.items : [payload]));
+            const baseName = String(fallbackBaseName || '').trim();
             const workflows = candidates
-                .map((item, index) => normalizeImportedComfyUIWorkflow(item, `导入工作流 ${index + 1}`))
+                .map((item, index) => normalizeImportedComfyUIWorkflow(
+                    item,
+                    baseName ? (index === 0 ? baseName : `${baseName} ${index + 1}`) : `导入工作流 ${index + 1}`
+                ))
                 .filter(Boolean);
             return workflows;
         };
@@ -6873,6 +6877,10 @@ export class SettingsApp {
             fillComfyUIWorkflowSelect(nextWorkflows, '');
             if (imageComfyUIWorkflowSelect) imageComfyUIWorkflowSelect.value = '';
             if (imageComfyUIWorkflowName) imageComfyUIWorkflowName.value = '';
+            setComfyUIFieldValue('phone-image-comfyui-workflow', '');
+            setComfyUIFieldValue('phone-image-comfyui-node-mapping', '');
+            await this.storage.set('phone-image-comfyui-workflow', '');
+            await this.storage.set('phone-image-comfyui-node-mapping', '');
             this.phoneShell?.showNotification?.('已删除 ComfyUI 工作流', target.name, '🗑️');
         });
 
@@ -6904,8 +6912,10 @@ export class SettingsApp {
 
         imageComfyUIWorkflowImportFile?.addEventListener('change', async () => {
             try {
-                const rawText = await readJsonImportFile(imageComfyUIWorkflowImportFile.files?.[0]);
-                const imported = parseComfyUIWorkflowImportText(rawText);
+                const file = imageComfyUIWorkflowImportFile.files?.[0];
+                const rawText = await readJsonImportFile(file);
+                const fileBaseName = String(file?.name || '').replace(/\.json$/i, '').trim();
+                const imported = parseComfyUIWorkflowImportText(rawText, fileBaseName);
                 if (!imported.length) throw new Error('没有识别到可导入的 ComfyUI 工作流');
                 const existing = this._getComfyUIWorkflows();
                 const usedNames = new Set(existing.map(workflow => String(workflow.name || '').trim()).filter(Boolean));
@@ -7062,9 +7072,13 @@ export class SettingsApp {
                     result.width && result.height ? `${result.width}x${result.height}` : '',
                     result.steps ? `${result.steps} steps` : '',
                     result.sampler || '',
-                    result.scheduler || ''
+                    result.scheduler || '',
+                    result.promptId ? `promptId ${result.promptId}` : ''
                 ].filter(Boolean).join(' · ');
-                setResult(`ComfyUI 连接成功，已收到图片数据${detail ? `：${detail}` : '。'}`, '#0f9f6e');
+                const debugHint = this.storage.get('phone-image-debug-payload') === true || this.storage.get('phone-image-debug-payload') === 'true'
+                    ? '；调试信息见控制台 window.__lastComfyUIRequest'
+                    : '';
+                setResult(`ComfyUI 连接成功，已收到图片数据${detail ? `：${detail}` : ''}${debugHint}。`, '#0f9f6e');
                 this.phoneShell?.showNotification?.('生图测试', detail ? `ComfyUI 连接成功 ${detail}` : 'ComfyUI 连接成功', '✓');
             } catch (err) {
                 const message = err?.message || String(err || '测试失败');

@@ -934,6 +934,109 @@ export class ImageGenerationManager {
         }
     }
 
+    _redactComfyUIDebugWorkflow(workflow) {
+        try {
+            const clone = JSON.parse(JSON.stringify(workflow || {}));
+            Object.values(clone || {}).forEach((node) => {
+                Object.entries(node?.inputs || {}).forEach(([key, value]) => {
+                    if (typeof value !== 'string') return;
+                    if (/^data:image\//i.test(value) || /^[A-Za-z0-9+/=\s]{500,}$/.test(value)) {
+                        node.inputs[key] = `[BASE64_IMAGE:${value.length}]`;
+                    }
+                });
+            });
+            return clone;
+        } catch (e) {
+            return workflow;
+        }
+    }
+
+    _debugComfyUIRequest({ endpoint, built, workflow, config, options, referenceImages = [], uploadedReferenceImage = null, promptId = '' }) {
+        if (!config?.debugPayload) return;
+        const explicitMapping = this._parseComfyUINodeMapping(config.comfyuiNodeMapping);
+        const guessedMapping = this._guessComfyUINodeMapping(workflow);
+        const debugInfo = {
+            endpoint,
+            provider: 'comfyui',
+            app: String(options?.app || '').trim(),
+            model: config.comfyuiModel,
+            sampler: config.comfyuiSampler,
+            scheduler: config.comfyuiScheduler,
+            width: built.width,
+            height: built.height,
+            steps: built.steps,
+            scale: built.scale,
+            cfgRescale: built.cfgRescale,
+            seed: built.seed,
+            originalPrompt: String(options?.rawPrompt || options?.prompt || '').trim(),
+            positivePrompt: built.positivePrompt || '',
+            negativePrompt: built.negativePrompt || '',
+            referenceCount: referenceImages.length,
+            uploadedReferenceImage,
+            promptId,
+            guessedMapping,
+            explicitMapping,
+            workflow: this._redactComfyUIDebugWorkflow(workflow)
+        };
+        try {
+            if (typeof window !== 'undefined') {
+                window.__lastComfyUIRequest = debugInfo;
+            }
+        } catch (e) {}
+        try {
+            const plainText = [
+                '[ComfyUI Debug] 本次生图参数',
+                `App: ${debugInfo.app || '-'}`,
+                `模型: ${debugInfo.model || '(工作流固定/未指定)'}`,
+                `尺寸: ${debugInfo.width}x${debugInfo.height}`,
+                `Steps: ${debugInfo.steps}`,
+                `Sampler: ${debugInfo.sampler}`,
+                `Scheduler: ${debugInfo.scheduler}`,
+                `Scale: ${debugInfo.scale}`,
+                `CFG Rescale: ${debugInfo.cfgRescale}`,
+                `Seed: ${debugInfo.seed}`,
+                `参考图: ${debugInfo.referenceCount} 张`,
+                `Prompt ID: ${debugInfo.promptId || '(提交前)'}`,
+                '',
+                'AI 画面 tag（原样）:',
+                debugInfo.originalPrompt || '(空)',
+                '',
+                '最终写入 ComfyUI 的正面提示词:',
+                debugInfo.positivePrompt || '(空)',
+                '',
+                '最终写入 ComfyUI 的负面提示词:',
+                debugInfo.negativePrompt || '(空)',
+                '',
+                '调试 workflow 已保存到 window.__lastComfyUIRequest（图片 base64 已脱敏）',
+                '复制完整调试信息: copy(JSON.stringify(window.__lastComfyUIRequest, null, 2))'
+            ].join('\n');
+            console.log(plainText);
+            console.groupCollapsed('[ComfyUI Debug] /prompt payload');
+            console.info('summary', {
+                endpoint: debugInfo.endpoint,
+                app: debugInfo.app,
+                model: debugInfo.model,
+                size: `${debugInfo.width}x${debugInfo.height}`,
+                steps: debugInfo.steps,
+                sampler: debugInfo.sampler,
+                scheduler: debugInfo.scheduler,
+                scale: debugInfo.scale,
+                cfgRescale: debugInfo.cfgRescale,
+                seed: debugInfo.seed,
+                referenceCount: debugInfo.referenceCount,
+                promptId: debugInfo.promptId
+            });
+            console.info('AI 画面 tag（原样）', debugInfo.originalPrompt);
+            console.info('positive prompt', debugInfo.positivePrompt);
+            console.info('negative prompt', debugInfo.negativePrompt);
+            console.info('guessed mapping', debugInfo.guessedMapping);
+            console.info('explicit mapping', debugInfo.explicitMapping);
+            console.info('workflow', debugInfo.workflow);
+            console.info('copy helper', 'copy(JSON.stringify(window.__lastComfyUIRequest, null, 2))');
+            console.groupEnd();
+        } catch (e) {}
+    }
+
     _resolveNovelAIEndpoint(config) {
         if (config.site === 'public') {
             if (!config.publicUrl) throw new Error('缺少公益站 Base URL');
@@ -3478,6 +3581,16 @@ export class ImageGenerationManager {
             throw new Error('当前 ComfyUI 工作流需要参考图，但本次没有可用的微信联系人参考图');
         }
 
+        const endpoint = `${baseUrl}/prompt`;
+        this._debugComfyUIRequest({
+            endpoint,
+            built,
+            workflow: built.workflow,
+            config,
+            options,
+            referenceImages,
+            uploadedReferenceImage
+        });
         const response = await fetch(`${baseUrl}/prompt`, {
             method: 'POST',
             headers: {
@@ -3503,6 +3616,16 @@ export class ImageGenerationManager {
         }
         const promptId = String(payload?.prompt_id || '').trim();
         if (!promptId) throw new Error('ComfyUI 未返回 prompt_id');
+        this._debugComfyUIRequest({
+            endpoint,
+            built,
+            workflow: built.workflow,
+            config,
+            options,
+            referenceImages,
+            uploadedReferenceImage,
+            promptId
+        });
 
         const imageRef = await this._waitForComfyUIHistory(baseUrl, promptId, options.signal);
         const imageData = await this._readComfyUIImage(baseUrl, imageRef, options.signal);
@@ -3524,6 +3647,9 @@ export class ImageGenerationManager {
             scale: built.scale,
             seed: built.seed,
             promptId,
+            positivePrompt: built.positivePrompt,
+            negativePrompt: built.negativePrompt,
+            nodeMapping: this._guessComfyUINodeMapping(built.workflow),
             imageData,
             imageUrl: imageData
         };
