@@ -271,6 +271,16 @@ export class ImageGenerationManager {
         return `phone-ref-${(hash >>> 0).toString(16)}-${text.length}`;
     }
 
+    _buildComfyUIWorkflowFingerprint(workflowText = '') {
+        const text = String(workflowText || '');
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i++) {
+            hash ^= text.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return `${(hash >>> 0).toString(16)}-${text.length}`;
+    }
+
     _normalizeNovelAIReferences(options = {}) {
         const rawList = Array.isArray(options.novelAIReferences)
             ? options.novelAIReferences
@@ -642,9 +652,7 @@ export class ImageGenerationManager {
     }
 
     _getComfyUIWorkflowForApp(app = '') {
-        const scope = this._normalizeImagePresetScope(app);
-        if (!scope) return null;
-        const activeId = String(this._get(`phone-image-${scope}-comfyui-active-workflow`, '') || this._get('phone-image-comfyui-active-workflow', '') || '').trim();
+        const activeId = String(this._get('phone-image-comfyui-active-workflow', '') || '').trim();
         if (!activeId) return null;
         let workflows = [];
         try {
@@ -654,7 +662,15 @@ export class ImageGenerationManager {
             workflows = [];
         }
         if (!Array.isArray(workflows)) return null;
-        return workflows.find(workflow => String(workflow?.id || '').trim() === activeId) || null;
+        const workflow = workflows.find(item => String(item?.id || '').trim() === activeId) || null;
+        if (!workflow) return null;
+        const workflowText = String(workflow.workflow || '').trim();
+        return {
+            ...workflow,
+            id: String(workflow.id || '').trim(),
+            name: String(workflow.name || '').trim(),
+            fingerprint: this._buildComfyUIWorkflowFingerprint(workflowText)
+        };
     }
 
     resolveProvider(overrides = {}) {
@@ -721,6 +737,9 @@ export class ImageGenerationManager {
             comfyuiUrl: this._getComfyUIEndpointUrl(overrides),
             comfyuiLocalUrl: this._normalizeComfyUIBaseUrl(overrides.comfyuiUrl || this._get('phone-image-comfyui-url', 'http://127.0.0.1:8188')),
             comfyuiRemoteUrl: this._normalizeComfyUIBaseUrl(overrides.comfyuiRemoteUrl || this._get('phone-image-comfyui-remote-url', '')),
+            comfyuiWorkflowId: String(overrides.comfyuiWorkflowId ?? comfyuiAppWorkflow?.id ?? '').trim(),
+            comfyuiWorkflowName: String(overrides.comfyuiWorkflowName ?? comfyuiAppWorkflow?.name ?? '').trim(),
+            comfyuiWorkflowFingerprint: String(overrides.comfyuiWorkflowFingerprint ?? comfyuiAppWorkflow?.fingerprint ?? '').trim(),
             comfyuiWorkflow: String(overrides.comfyuiWorkflow ?? comfyuiAppWorkflow?.workflow ?? this._get('phone-image-comfyui-workflow', '')).trim(),
             comfyuiNodeMapping: String(overrides.comfyuiNodeMapping ?? comfyuiAppWorkflow?.nodeMapping ?? this._get('phone-image-comfyui-node-mapping', '')).trim(),
             comfyuiModel: String(overrides.comfyuiModel || comfyuiAppWorkflow?.comfyuiModel || comfyuiAppWorkflow?.model || this._get('phone-image-comfyui-model', '')).trim(),
@@ -953,8 +972,6 @@ export class ImageGenerationManager {
 
     _debugComfyUIRequest({ endpoint, built, workflow, config, options, referenceImages = [], uploadedReferenceImage = null, promptId = '' }) {
         if (!config?.debugPayload) return;
-        const explicitMapping = this._parseComfyUINodeMapping(config.comfyuiNodeMapping);
-        const guessedMapping = this._guessComfyUINodeMapping(workflow);
         const debugInfo = {
             endpoint,
             provider: 'comfyui',
@@ -974,8 +991,9 @@ export class ImageGenerationManager {
             referenceCount: referenceImages.length,
             uploadedReferenceImage,
             promptId,
-            guessedMapping,
-            explicitMapping,
+            workflowId: config.comfyuiWorkflowId,
+            workflowName: config.comfyuiWorkflowName,
+            workflowFingerprint: config.comfyuiWorkflowFingerprint || this._buildComfyUIWorkflowFingerprint(config.comfyuiWorkflow),
             workflow: this._redactComfyUIDebugWorkflow(workflow)
         };
         try {
@@ -987,6 +1005,8 @@ export class ImageGenerationManager {
             const plainText = [
                 '[ComfyUI Debug] 本次生图参数',
                 `App: ${debugInfo.app || '-'}`,
+                `工作流: ${debugInfo.workflowName || '(未命名/直接填写)'} ${debugInfo.workflowId ? `(${debugInfo.workflowId})` : ''}`.trim(),
+                `工作流指纹: ${debugInfo.workflowFingerprint || '-'}`,
                 `模型: ${debugInfo.model || '(工作流固定/未指定)'}`,
                 `尺寸: ${debugInfo.width}x${debugInfo.height}`,
                 `Steps: ${debugInfo.steps}`,
@@ -1015,6 +1035,9 @@ export class ImageGenerationManager {
             console.info('summary', {
                 endpoint: debugInfo.endpoint,
                 app: debugInfo.app,
+                workflowId: debugInfo.workflowId,
+                workflowName: debugInfo.workflowName,
+                workflowFingerprint: debugInfo.workflowFingerprint,
                 model: debugInfo.model,
                 size: `${debugInfo.width}x${debugInfo.height}`,
                 steps: debugInfo.steps,
@@ -1029,8 +1052,6 @@ export class ImageGenerationManager {
             console.info('AI 画面 tag（原样）', debugInfo.originalPrompt);
             console.info('positive prompt', debugInfo.positivePrompt);
             console.info('negative prompt', debugInfo.negativePrompt);
-            console.info('guessed mapping', debugInfo.guessedMapping);
-            console.info('explicit mapping', debugInfo.explicitMapping);
             console.info('workflow', debugInfo.workflow);
             console.info('copy helper', 'copy(JSON.stringify(window.__lastComfyUIRequest, null, 2))');
             console.groupEnd();
@@ -2482,229 +2503,6 @@ export class ImageGenerationManager {
         }
     }
 
-    _normalizeComfyUINodeBinding(binding, fallbackInput = '') {
-        if (!binding) return null;
-        if (typeof binding === 'string') {
-            const text = binding.trim();
-            if (!text) return null;
-            const match = /^([^.\s]+)(?:\.(.+))?$/.exec(text);
-            return {
-                nodeId: match ? match[1] : text,
-                input: match && match[2] ? match[2] : fallbackInput,
-                mode: 'replace',
-                skipEmpty: true
-            };
-        }
-        if (typeof binding !== 'object' || Array.isArray(binding)) return null;
-        const nodeId = String(binding.nodeId ?? binding.node ?? binding.id ?? '').trim();
-        const inputValue = binding.input ?? binding.field ?? binding.name ?? fallbackInput ?? '';
-        const input = String(inputValue).trim();
-        if (!nodeId || !input) return null;
-        return {
-            nodeId,
-            input,
-            mode: String(binding.mode || 'replace').trim().toLowerCase() || 'replace',
-            optional: binding.optional !== false,
-            skipEmpty: binding.skipEmpty !== false
-        };
-    }
-
-    _setComfyUINodeInput(workflow, binding, value) {
-        const normalized = this._normalizeComfyUINodeBinding(binding);
-        if (!normalized) return false;
-        const node = workflow?.[normalized.nodeId];
-        if (!node || typeof node !== 'object') {
-            if (normalized.optional === false) throw new Error(`ComfyUI 节点映射找不到节点：${normalized.nodeId}`);
-            return false;
-        }
-        if (!node.inputs || typeof node.inputs !== 'object') node.inputs = {};
-        if ((value === null || value === undefined || value === '') && normalized.skipEmpty !== false) {
-            return false;
-        }
-        if (this._isUnsafeComfyUITextBinding(node, normalized.input, value)) {
-            console.warn('[ComfyUI] 已跳过错误的文本映射，不能把提示词写入采样器 conditioning 输入:', {
-                nodeId: normalized.nodeId,
-                classType: node.class_type,
-                input: normalized.input
-            });
-            return false;
-        }
-        const current = node.inputs[normalized.input];
-        const mode = normalized.mode;
-        if ((mode === 'append' || mode === 'prepend') && typeof current === 'string') {
-            const nextValue = value === null || value === undefined ? '' : String(value);
-            node.inputs[normalized.input] = mode === 'append'
-                ? [current, nextValue].filter(Boolean).join(current && nextValue ? ', ' : '')
-                : [nextValue, current].filter(Boolean).join(nextValue && current ? ', ' : '');
-        } else {
-            node.inputs[normalized.input] = value;
-        }
-        return true;
-    }
-
-    _isUnsafeComfyUITextBinding(node, inputName, value) {
-        if (typeof value !== 'string') return false;
-        const classType = String(node?.class_type || '');
-        const input = String(inputName || '').trim().toLowerCase();
-        return /ksampler|samplercustom|basicguider|cfgguider/i.test(classType)
-            && /^(positive|negative|conditioning|positive_cond|negative_cond)$/.test(input);
-    }
-
-    _applyComfyUINodeMappings(workflow, mappingText, values) {
-        const explicitMapping = this._parseComfyUINodeMapping(mappingText);
-        const guessedMapping = this._guessComfyUINodeMapping(workflow);
-        const mapping = explicitMapping && Object.keys(explicitMapping).length > 0
-            ? { ...guessedMapping, ...explicitMapping }
-            : guessedMapping;
-        if (!mapping || Object.keys(mapping).length === 0) return workflow;
-
-        const mappedValues = { ...values };
-        const hasFixedPromptBinding = Object.prototype.hasOwnProperty.call(mapping, 'fixedPrompt')
-            || Object.prototype.hasOwnProperty.call(mapping, 'fixed_prompt');
-        if (hasFixedPromptBinding && Object.prototype.hasOwnProperty.call(mapping, 'prompt')) {
-            mappedValues.positivePrompt = this._joinPrompt([values.promptText, values.fixedPromptEnd]);
-        }
-
-        const aliases = {
-            prompt: 'positivePrompt',
-            positive: 'positivePrompt',
-            positive_prompt: 'positivePrompt',
-            prompt_text: 'positivePrompt',
-            text: 'positivePrompt',
-            clip_l: 'positivePrompt',
-            text_l: 'positivePrompt',
-            text_g: 'positivePrompt',
-            t5xxl: 'positivePrompt',
-            fixed_prompt: 'fixedPrompt',
-            fixed_prompt_end: 'fixedPromptEnd',
-            negative: 'negativePrompt',
-            negative_prompt: 'negativePrompt',
-            cfg: 'scale',
-            cfg_scale: 'scale',
-            cfg_rescale: 'cfgRescale',
-            rescale_cfg: 'cfgRescale',
-            guidance_rescale: 'cfgRescale',
-            sampler_name: 'sampler',
-            width: 'width',
-            height: 'height',
-            steps: 'steps',
-            seed: 'seed',
-            scheduler: 'scheduler',
-            model: 'model',
-            modelName: 'model',
-            vae: 'vae',
-            clip: 'clip',
-            reference_image: 'referenceImage',
-            reference_image_filename: 'referenceImage'
-        };
-        const fallbackInputs = {
-            positivePrompt: 'text',
-            fixedPrompt: 'value',
-            fixedPromptEnd: 'value',
-            negativePrompt: 'text',
-            width: 'width',
-            height: 'height',
-            steps: 'steps',
-            scale: 'cfg',
-            cfgRescale: 'cfg_rescale',
-            seed: 'seed',
-            sampler: 'sampler_name',
-            scheduler: 'scheduler',
-            model: 'ckpt_name',
-            vae: 'vae_name',
-            clip: 'clip_name',
-            referenceImage: 'image'
-        };
-
-        Object.entries(mapping).forEach(([rawKey, rawBinding]) => {
-            const valueKey = aliases[rawKey] || rawKey;
-            if (!Object.prototype.hasOwnProperty.call(mappedValues, valueKey)) return;
-            const value = mappedValues[valueKey];
-            const bindings = Array.isArray(rawBinding) ? rawBinding : [rawBinding];
-            bindings.forEach(binding => {
-                const normalized = this._normalizeComfyUINodeBinding(binding, fallbackInputs[valueKey] || '');
-                if (normalized) this._setComfyUINodeInput(workflow, normalized, value);
-            });
-        });
-
-        return workflow;
-    }
-
-    _guessComfyUINodeMapping(workflow = {}) {
-        const entries = Object.entries(workflow || {});
-        const hasInput = (node, input) => node?.inputs && Object.prototype.hasOwnProperty.call(node.inputs, input);
-        const promptInputNames = ['text', 'value', 'clip_l', 'text_l', 'text_g', 't5xxl', 'prompt', 'positive'];
-        const isPromptTextNode = (node) => {
-            const classType = String(node?.class_type || '');
-            return !/ksampler|samplercustom|basicguider|cfgguider/i.test(classType);
-        };
-        const getPromptInputs = (node) => promptInputNames.filter(input => hasInput(node, input));
-        const titleOf = (node) => String(node?._meta?.title || '').trim();
-        const textOf = ([id, node]) => `${node?.class_type || ''} ${titleOf(node)} ${JSON.stringify(node?.inputs || {})}`.toLowerCase();
-        const mapping = {};
-
-        const stringCandidates = entries
-            .filter(([, node]) => /string|text|primitive/i.test(String(node?.class_type || '')) && hasInput(node, 'value'))
-            .map(([id, node]) => ({ id, node, text: textOf([id, node]) }));
-        const encoderCandidates = entries
-            .filter(([, node]) => isPromptTextNode(node) && getPromptInputs(node).length > 0)
-            .map(([id, node]) => ({ id, node, text: textOf([id, node]), inputs: getPromptInputs(node) }));
-        const scorePromptCandidate = (item) => {
-            let score = 0;
-            if (/prompt|提示词/.test(item.text)) score += 20;
-            if (/clip text encode|cliptextencode|conditioning|encode/i.test(item.text)) score += 18;
-            if (item.inputs?.some(input => /^(clip_l|text_l|text_g|t5xxl)$/.test(input))) score += 16;
-            if (/main|primary|主提示词/.test(item.text)) score += 8;
-            if (/custom|upscale|sd upscale|prefix|额外|additional|negative|负面/.test(item.text)) score -= 30;
-            return score;
-        };
-        const promptCandidate = [...stringCandidates]
-            .sort((a, b) => scorePromptCandidate(b) - scorePromptCandidate(a))
-            .find(item => scorePromptCandidate(item) > 0);
-        if (promptCandidate?.id) {
-            mapping.prompt = `${promptCandidate.id}.value`;
-        } else {
-            const encoderPrompt = [...encoderCandidates]
-                .sort((a, b) => scorePromptCandidate(b) - scorePromptCandidate(a))
-                .find(item => scorePromptCandidate(item) > 0)
-                || encoderCandidates.find(item => /cliptextencode|encode/i.test(String(item.node?.class_type || '')));
-            if (encoderPrompt?.id) {
-                const bindings = encoderPrompt.inputs
-                    .filter(input => !/negative|负面/i.test(`${input} ${encoderPrompt.text}`))
-                    .map(input => `${encoderPrompt.id}.${input}`);
-                if (bindings.length > 0) mapping.prompt = bindings.length === 1 ? bindings[0] : bindings;
-            }
-        }
-
-        const fixedCandidate = stringCandidates.find(item => /prefix|额外|additional/.test(item.text));
-        if (fixedCandidate?.id) mapping.fixedPrompt = `${fixedCandidate.id}.value`;
-
-        const negativeCandidate = entries.find(entry => isPromptTextNode(entry[1]) && /negative|负面/.test(textOf(entry)) && getPromptInputs(entry[1]).length > 0);
-        if (negativeCandidate) {
-            const inputs = getPromptInputs(negativeCandidate[1]);
-            const bindings = inputs.map(input => `${negativeCandidate[0]}.${input}`);
-            mapping.negative_prompt = bindings.length === 1 ? bindings[0] : bindings;
-        }
-
-        const latentCandidate = entries.find(([, node]) => /emptylatentimage/i.test(String(node?.class_type || '')) && hasInput(node, 'width') && hasInput(node, 'height'));
-        if (latentCandidate) {
-            mapping.width = `${latentCandidate[0]}.width`;
-            mapping.height = `${latentCandidate[0]}.height`;
-        }
-
-        const seedCandidate = entries.find(([id, node]) => /seed/i.test(`${node?.class_type || ''} ${titleOf(node)}`) && hasInput(node, 'seed') && !/ksampler/i.test(String(node?.class_type || '')))
-            || entries.find(([id, node]) => /(seed|ksampler)/i.test(`${node?.class_type || ''} ${titleOf(node)}`) && (hasInput(node, 'seed') || hasInput(node, 'noise_seed')));
-        if (seedCandidate) mapping.seed = `${seedCandidate[0]}.${hasInput(seedCandidate[1], 'seed') ? 'seed' : 'noise_seed'}`;
-
-        const cfgRescaleCandidate = entries.find(([, node]) => ['cfg_rescale', 'rescale_cfg', 'guidance_rescale'].some(input => hasInput(node, input)));
-        if (cfgRescaleCandidate) {
-            const inputName = ['cfg_rescale', 'rescale_cfg', 'guidance_rescale'].find(input => hasInput(cfgRescaleCandidate[1], input));
-            if (inputName) mapping.cfg_rescale = `${cfgRescaleCandidate[0]}.${inputName}`;
-        }
-
-        return mapping;
-    }
-
     _buildComfyUIWorkflow(options, config, referenceImage = null) {
         const prompt = String(options.prompt || '').trim();
         if (!prompt) throw new Error('缺少生图提示词');
@@ -2784,25 +2582,6 @@ export class ImageGenerationManager {
             || JSON.stringify(workflowTemplate).includes('%comfyuicankaoImage%')
             || JSON.stringify(workflowTemplate).includes('%comfyuicankaotupian%');
         const workflow = this._replaceComfyUIPlaceholders(workflowTemplate, replacements);
-        this._applyComfyUINodeMappings(workflow, config.comfyuiNodeMapping, {
-            promptText: prompt,
-            positivePrompt,
-            fixedPrompt: String(config.fixedPrompt || '').trim(),
-            fixedPromptEnd: String(config.fixedPromptEnd || '').trim(),
-            negativePrompt,
-            width,
-            height,
-            steps,
-            scale,
-            cfgRescale,
-            seed,
-            sampler: config.comfyuiSampler,
-            scheduler: config.comfyuiScheduler,
-            model: config.comfyuiModel,
-            vae: config.comfyuiVae,
-            clip: config.comfyuiClip,
-            referenceImage: referenceImage?.filename || ''
-        });
         return { workflow, positivePrompt, negativePrompt, width, height, steps, scale, cfgRescale, seed, requiresModel, requiresReferenceImage };
     }
 
@@ -3649,7 +3428,7 @@ export class ImageGenerationManager {
             promptId,
             positivePrompt: built.positivePrompt,
             negativePrompt: built.negativePrompt,
-            nodeMapping: this._guessComfyUINodeMapping(built.workflow),
+            nodeMapping: null,
             imageData,
             imageUrl: imageData
         };

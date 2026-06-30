@@ -979,7 +979,7 @@ if (window.GGP_Loaded) {
             import('./config/time-manager.js'),    // 👈 取消懒加载
             import('./config/prompt-manager.js'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
-            import('./config/image-generation-manager.js?v=20260527-nai-ref-values'),
+            import('./config/image-generation-manager.js?v=20260701-comfyui-workflow-source'),
             import('./config/worldbook-manager.js')
         ]);
 

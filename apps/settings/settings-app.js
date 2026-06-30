@@ -2801,11 +2801,7 @@ export class SettingsApp {
             return `<option value="${safeId}" ${preset.id === activeOpenaiImagePresetId ? 'selected' : ''}>${safeName}</option>`;
         }).join('');
         const comfyuiWorkflows = this._getComfyUIWorkflows();
-        const activeComfyUIWorkflowId = String(
-            this.storage.get(`phone-image-${activeImagePresetScope}-comfyui-active-workflow`)
-            || this.storage.get('phone-image-comfyui-active-workflow')
-            || ''
-        ).trim();
+        const activeComfyUIWorkflowId = String(this.storage.get('phone-image-comfyui-active-workflow') || '').trim();
         const activeComfyUIWorkflow = comfyuiWorkflows.find(workflow => workflow.id === activeComfyUIWorkflowId) || null;
         const activeComfyUIWorkflowName = this._escapeHtml(activeComfyUIWorkflow?.name || '');
         const comfyuiWorkflowOptions = comfyuiWorkflows.map((workflow) => {
@@ -5147,11 +5143,7 @@ export class SettingsApp {
         const getActiveImagePromptApp = () => this._normalizeImagePromptApp(currentImagePromptApp || imagePromptAppSelect?.value || this.storage.get('phone-image-active-prompt-app') || 'honey');
         let currentComfyUIApp = this._normalizeImagePromptApp(this.storage.get('phone-image-active-comfyui-app') || imageComfyUIAppSelect?.value || getActiveImagePromptApp());
         const getComfyUIPresetScope = () => this._normalizeImagePresetScope(currentComfyUIApp || imageComfyUIAppSelect?.value || getActiveImagePromptApp());
-        const getComfyUIActiveWorkflowId = () => String(
-            this.storage.get(`phone-image-${getComfyUIPresetScope()}-comfyui-active-workflow`)
-            || this.storage.get('phone-image-comfyui-active-workflow')
-            || ''
-        ).trim();
+        const getComfyUIActiveWorkflowId = () => String(this.storage.get('phone-image-comfyui-active-workflow') || '').trim();
         const updateActiveComfyUIWorkflowDraft = async (patch = {}) => {
             const activeId = getComfyUIActiveWorkflowId();
             if (!activeId) return false;
@@ -5669,76 +5661,6 @@ export class SettingsApp {
 
             return graph;
         };
-        const guessComfyUINodeMapping = (apiPrompt = {}, originalWorkflow = null) => {
-            const entries = Object.entries(apiPrompt || {});
-            const nodeTitle = (id, node) => String(node?._meta?.title || '').trim();
-            const nodeText = (id, node) => `${node?.class_type || ''} ${nodeTitle(id, node)} ${JSON.stringify(node?.inputs || {})}`.toLowerCase();
-            const hasInput = (node, input) => node?.inputs && Object.prototype.hasOwnProperty.call(node.inputs, input);
-            const promptInputNames = ['text', 'value', 'clip_l', 'text_l', 'text_g', 't5xxl', 'prompt', 'positive'];
-            const isPromptTextNode = (node) => {
-                const classType = String(node?.class_type || '');
-                return !/ksampler|samplercustom|basicguider|cfgguider/i.test(classType);
-            };
-            const getPromptInputs = (node) => promptInputNames.filter(input => hasInput(node, input));
-            const mapping = {};
-
-            const stringCandidates = entries
-                .filter(([, node]) => /string|text|primitive/i.test(String(node?.class_type || '')) && hasInput(node, 'value'))
-                .map(([id, node]) => ({ id, node, text: nodeText(id, node), value: String(node.inputs.value || '') }));
-            const encoderCandidates = entries
-                .filter(([, node]) => isPromptTextNode(node) && getPromptInputs(node).length > 0)
-                .map(([id, node]) => ({ id, node, text: nodeText(id, node), inputs: getPromptInputs(node) }));
-            const scorePromptCandidate = (item) => {
-                let score = 0;
-                if (/prompt|提示词/.test(item.text)) score += 20;
-                if (/clip text encode|cliptextencode|conditioning|encode/i.test(item.text)) score += 18;
-                if (item.inputs?.some(input => /^(clip_l|text_l|text_g|t5xxl)$/.test(input))) score += 16;
-                if (/main|primary|主提示词/.test(item.text)) score += 8;
-                if (/custom|upscale|sd upscale|prefix|额外|additional|negative|负面/.test(item.text)) score -= 30;
-                return score;
-            };
-            const promptCandidate = [...stringCandidates]
-                .sort((a, b) => scorePromptCandidate(b) - scorePromptCandidate(a))
-                .find(item => scorePromptCandidate(item) > 0);
-            if (typeof promptCandidate === 'string') {
-                mapping.prompt = `${promptCandidate}.text`;
-            } else if (promptCandidate?.id) {
-                mapping.prompt = `${promptCandidate.id}.value`;
-            } else {
-                const encoderPrompt = [...encoderCandidates]
-                    .sort((a, b) => scorePromptCandidate(b) - scorePromptCandidate(a))
-                    .find(item => scorePromptCandidate(item) > 0)
-                    || encoderCandidates.find(item => /cliptextencode|encode/i.test(String(item.node?.class_type || '')));
-                if (encoderPrompt?.id) {
-                    const bindings = encoderPrompt.inputs
-                        .filter(input => !/negative|负面/i.test(`${input} ${encoderPrompt.text}`))
-                        .map(input => `${encoderPrompt.id}.${input}`);
-                    if (bindings.length > 0) mapping.prompt = bindings.length === 1 ? bindings[0] : bindings;
-                }
-            }
-            const fixedCandidate = stringCandidates.find(item => /prefix|额外|additional/.test(item.text));
-            if (fixedCandidate?.id) mapping.fixedPrompt = `${fixedCandidate.id}.value`;
-            const negativeCandidate = entries.find(([id, node]) => isPromptTextNode(node) && /negative|负面/.test(nodeText(id, node)) && getPromptInputs(node).length > 0);
-            if (negativeCandidate) {
-                const inputs = getPromptInputs(negativeCandidate[1]);
-                const bindings = inputs.map(input => `${negativeCandidate[0]}.${input}`);
-                mapping.negative_prompt = bindings.length === 1 ? bindings[0] : bindings;
-            }
-            const latentCandidate = entries.find(([, node]) => /emptylatentimage/i.test(String(node?.class_type || '')) && hasInput(node, 'width') && hasInput(node, 'height'));
-            if (latentCandidate) {
-                mapping.width = `${latentCandidate[0]}.width`;
-                mapping.height = `${latentCandidate[0]}.height`;
-            }
-            const seedCandidate = entries.find(([id, node]) => /seed/i.test(`${node?.class_type || ''} ${nodeTitle(id, node)}`) && hasInput(node, 'seed') && !/ksampler/i.test(String(node?.class_type || '')))
-                || entries.find(([id, node]) => /(seed|ksampler)/i.test(`${node?.class_type || ''} ${nodeTitle(id, node)}`) && (hasInput(node, 'seed') || hasInput(node, 'noise_seed')));
-            if (seedCandidate) mapping.seed = `${seedCandidate[0]}.${hasInput(seedCandidate[1], 'seed') ? 'seed' : 'noise_seed'}`;
-            const cfgRescaleCandidate = entries.find(([, node]) => ['cfg_rescale', 'rescale_cfg', 'guidance_rescale'].some(input => hasInput(node, input)));
-            if (cfgRescaleCandidate) {
-                const inputName = ['cfg_rescale', 'rescale_cfg', 'guidance_rescale'].find(input => hasInput(cfgRescaleCandidate[1], input));
-                if (inputName) mapping.cfg_rescale = `${cfgRescaleCandidate[0]}.${inputName}`;
-            }
-            return mapping;
-        };
         const normalizeImportedComfyUIWorkflow = (item, fallbackName = '') => {
             const rawWorkflow = item?.workflow ?? item?.prompt ?? item;
             let workflowPayload = rawWorkflow;
@@ -5760,12 +5682,11 @@ export class SettingsApp {
             const importedMapping = typeof item?.nodeMapping === 'string'
                 ? String(item.nodeMapping || '').trim()
                 : (item?.nodeMapping && typeof item.nodeMapping === 'object' ? JSON.stringify(item.nodeMapping, null, 2) : '');
-            const guessedMapping = importedMapping || (isUiWorkflow ? JSON.stringify(guessComfyUINodeMapping(prompt, workflowPayload), null, 2) : '');
             return {
                 id: createImagePromptPresetId(),
                 name: String(item?.name || item?.title || fallbackName || '导入工作流').trim() || '导入工作流',
                 workflow: JSON.stringify(prompt, null, 2),
-                nodeMapping: guessedMapping,
+                nodeMapping: importedMapping,
                 comfyuiModel: String(item?.comfyuiModel || item?.model || '').trim(),
                 comfyuiSampler: String(item?.comfyuiSampler || item?.sampler || 'euler').trim() || 'euler',
                 comfyuiScheduler: String(item?.comfyuiScheduler || item?.scheduler || 'normal').trim() || 'normal',
@@ -5914,9 +5835,8 @@ export class SettingsApp {
         };
         const refreshComfyUIAppPanel = async (appKey, options = {}) => {
             currentComfyUIApp = this._normalizeImagePromptApp(appKey);
-            const scope = getComfyUIPresetScope();
             const workflows = this._getComfyUIWorkflows();
-            let activeId = String(this.storage.get(`phone-image-${scope}-comfyui-active-workflow`) || this.storage.get('phone-image-comfyui-active-workflow') || '').trim();
+            let activeId = getComfyUIActiveWorkflowId();
             const activeWorkflow = workflows.find(item => item.id === activeId);
             if (!activeWorkflow) activeId = '';
             fillComfyUIWorkflowSelect(workflows, activeId);
@@ -6815,8 +6735,6 @@ export class SettingsApp {
 
         imageComfyUIWorkflowSelect?.addEventListener('change', async (e) => {
             const workflowId = String(e.target.value || '').trim();
-            const scope = getComfyUIPresetScope();
-            await this.storage.set(`phone-image-${scope}-comfyui-active-workflow`, workflowId);
             await this.storage.set('phone-image-comfyui-active-workflow', workflowId);
             const workflows = this._getComfyUIWorkflows();
             const workflow = workflows.find(item => item.id === workflowId);
@@ -6851,8 +6769,7 @@ export class SettingsApp {
 
                 const now = Date.now();
                 const workflows = this._getComfyUIWorkflows();
-                const scope = getComfyUIPresetScope();
-                let activeId = String(imageComfyUIWorkflowSelect?.value || this.storage.get(`phone-image-${scope}-comfyui-active-workflow`) || this.storage.get('phone-image-comfyui-active-workflow') || '').trim();
+                let activeId = String(imageComfyUIWorkflowSelect?.value || getComfyUIActiveWorkflowId()).trim();
                 let target = workflows.find(workflow => workflow.id === activeId);
                 if (!target) {
                     activeId = createImagePromptPresetId();
@@ -6861,7 +6778,6 @@ export class SettingsApp {
                 }
                 Object.assign(target, settings, { name, updatedAt: now });
                 await this._saveComfyUIWorkflows(workflows);
-                await this.storage.set(`phone-image-${scope}-comfyui-active-workflow`, activeId);
                 await this.storage.set('phone-image-comfyui-active-workflow', activeId);
                 fillComfyUIWorkflowSelect(workflows, activeId);
                 if (imageComfyUIWorkflowSelect) imageComfyUIWorkflowSelect.value = activeId;
@@ -6877,14 +6793,12 @@ export class SettingsApp {
                 imageComfyUIWorkflowName.value = '';
                 imageComfyUIWorkflowName.focus();
             }
-            await this.storage.set(`phone-image-${getComfyUIPresetScope()}-comfyui-active-workflow`, '');
             await this.storage.set('phone-image-comfyui-active-workflow', '');
             this.phoneShell?.showNotification?.('新建 ComfyUI 工作流', '填写名称后点击保存', '✏️');
         });
 
         imageComfyUIWorkflowDeleteBtn?.addEventListener('click', async () => {
-            const scope = getComfyUIPresetScope();
-            const activeId = String(imageComfyUIWorkflowSelect?.value || this.storage.get(`phone-image-${scope}-comfyui-active-workflow`) || this.storage.get('phone-image-comfyui-active-workflow') || '').trim();
+            const activeId = String(imageComfyUIWorkflowSelect?.value || getComfyUIActiveWorkflowId()).trim();
             if (!activeId) {
                 this.phoneShell?.showNotification?.('删除失败', '请先选择要删除的 ComfyUI 工作流', '⚠️');
                 return;
@@ -6896,7 +6810,6 @@ export class SettingsApp {
 
             const nextWorkflows = workflows.filter(workflow => workflow.id !== activeId);
             await this._saveComfyUIWorkflows(nextWorkflows);
-            await this.storage.set(`phone-image-${scope}-comfyui-active-workflow`, '');
             await this.storage.set('phone-image-comfyui-active-workflow', '');
             fillComfyUIWorkflowSelect(nextWorkflows, '');
             if (imageComfyUIWorkflowSelect) imageComfyUIWorkflowSelect.value = '';
@@ -6979,7 +6892,6 @@ export class SettingsApp {
                     nextWorkflows.push(workflow);
                 });
                 await this._saveComfyUIWorkflows(nextWorkflows);
-                await this.storage.set(`phone-image-${getComfyUIPresetScope()}-comfyui-active-workflow`, firstImportedId);
                 await this.storage.set('phone-image-comfyui-active-workflow', firstImportedId);
                 fillComfyUIWorkflowSelect(nextWorkflows, firstImportedId);
                 if (imageComfyUIWorkflowSelect) imageComfyUIWorkflowSelect.value = firstImportedId;
@@ -7001,7 +6913,6 @@ export class SettingsApp {
             setComfyUIFieldValue('phone-image-comfyui-node-mapping', '');
             if (imageComfyUIWorkflowSelect) imageComfyUIWorkflowSelect.value = '';
             if (imageComfyUIWorkflowName) imageComfyUIWorkflowName.value = '';
-            await this.storage.set(`phone-image-${getComfyUIPresetScope()}-comfyui-active-workflow`, '');
             await this.storage.set('phone-image-comfyui-active-workflow', '');
             await this.storage.set('phone-image-comfyui-node-mapping', '');
             await saveComfyUISettings();
