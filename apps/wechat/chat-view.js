@@ -28,6 +28,10 @@ export class ChatView {
         this.showEmoji = false;
         this.showMore = false;
         this.showQuickReplies = false;
+        this.activeQuickReplyKey = '';
+        this.quickReplyTimeText = '';
+        this._quickTimeScrollTimers = new Map();
+        this._suppressEmptySendUntil = 0;
         this.showToolbar = false; // 工具栏默认折叠
         this.emojiTab = 'default';
         this.isSending = false;  // 🔥 发送状态
@@ -167,6 +171,47 @@ export class ChatView {
             .replace(/\s+/g, '')
             .replace(/[（(][^（）()]*[）)]/g, '')
             .toLowerCase();
+    }
+
+    _isCurrentWechatUserName(name = '') {
+        const rawName = String(name || '').trim();
+        const key = this._normalizeLookupName(rawName);
+        if (!key) return false;
+        if (['me', '我', '用户', '玩家', 'user', '{{user}}'].includes(key)) return true;
+
+        const aliases = [];
+        const pushAlias = (value) => {
+            const alias = String(value || '').trim();
+            if (alias) aliases.push(alias);
+        };
+
+        try {
+            pushAlias(this.app.wechatData?.getUserInfo?.()?.name);
+        } catch (e) { }
+
+        try {
+            pushAlias(this._safeGetContext?.()?.name1);
+        } catch (e) { }
+
+        return aliases.some(alias => this._normalizeLookupName(alias) === key);
+    }
+
+    _isOfflineUserReplyCleanEnabled() {
+        const raw = window.VirtualPhone?.storage?.get?.('phone-wechat-offline-clean-user-reply-enabled');
+        return raw !== false && raw !== 'false';
+    }
+
+    _normalizeGeneratedUserReply(message = null, contextLabel = '微信') {
+        if (!message || !this._isCurrentWechatUserName(message.sender)) return message;
+        if (this._isOfflineUserReplyCleanEnabled()) {
+            console.warn('⚠️ [微信] 已按用户发言清洗开关丢弃AI生成的用户发言:', {
+                context: contextLabel,
+                sender: message.sender,
+                content: message.content || message.specialMessage?.content || ''
+            });
+            return null;
+        }
+        return { ...message, sender: 'me' };
     }
 
     _getContactForChat(chat = null) {
@@ -748,6 +793,27 @@ export class ChatView {
         return isEnabled(interopKey) || isEnabled(onlineOnlyKey);
     }
 
+    _shouldUseRealTimeForOnlineChat(options = {}) {
+        if (options?.realTimeMode === true || options?.proactive === true) return true;
+        const storage = window.VirtualPhone?.storage;
+        if (!storage) return false;
+        const context = this._safeGetContext?.();
+        const onlineOnlyKey = this.app?.wechatData?.getOnlineOnlyModeStorageKey?.(context) || 'wechat_online_only_mode';
+        const val = storage.get(onlineOnlyKey);
+        return val === true || val === 'true' || val === 1;
+    }
+
+    _buildWechatRealTimeFields(timestamp = Date.now()) {
+        const info = this._formatRealDateTime(timestamp);
+        return {
+            time: info.time,
+            date: info.date,
+            weekday: this._getWechatWeekdayFromTimestamp(info.timestamp, ''),
+            timestamp: info.timestamp,
+            realTimestamp: info.timestamp
+        };
+    }
+
     _notifyOnlineModeRequired() {
         this.app?.phoneShell?.showNotification?.('离线模式', '请先在设置中开启微信互通模式或线上模式', '⚠️');
     }
@@ -911,14 +977,7 @@ export class ChatView {
     }
 
     _closeActionPanelsAfterImmediateSend() {
-        const shouldRender = this.showEmoji || this.showMore || this.showQuickReplies || this.customEmojiSelectionMode;
-        this.showEmoji = false;
-        this.showMore = false;
-        this.showQuickReplies = false;
-        this._setCustomEmojiSelectionMode(false);
-        if (shouldRender) {
-            this.app.render();
-        }
+        this._collapseTransientInputPanels({ render: true });
     }
 
     _renderChatSendButtonIcon(mode = 'send') {
@@ -976,7 +1035,27 @@ export class ChatView {
         this.showEmoji = false;
         this.showMore = false;
         this.showQuickReplies = false;
+        this.activeQuickReplyKey = '';
+        this.quickReplyTimeText = '';
         this._setCustomEmojiSelectionMode(false);
+    }
+
+    _collapseTransientInputPanels(options = {}) {
+        const shouldRender = this.showEmoji || this.showMore || this.showQuickReplies || this.customEmojiSelectionMode;
+        this.hideImageSourceSheet?.();
+        this.resetTransientInputPanels();
+        if (!shouldRender) return;
+
+        if (options?.render !== false) {
+            this.app.render();
+            return;
+        }
+
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        currentView.querySelectorAll('.quick-reply-panel, .emoji-panel, .more-panel').forEach(panel => panel.remove());
+        const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
+        if (input) input.placeholder = '输入消息...';
+        this._syncChatSendButton(input);
     }
 
     _setCustomEmojiSelectionMode(enabled = false) {
@@ -1551,6 +1630,7 @@ export class ChatView {
     _resolveAllowedGroupSpeaker(name, participants = []) {
         const rawName = String(name || '').trim();
         if (!rawName) return '';
+        if (this._isCurrentWechatUserName(rawName)) return rawName;
         const allowed = Array.isArray(participants)
             ? participants.map(item => String(item || '').trim()).filter(Boolean)
             : [];
@@ -1896,9 +1976,10 @@ export class ChatView {
         };
     }
 
-    _handleManualTimeAdvance(input, text, targetChatId) {
+    _handleManualTimeAdvance(input, text, targetChatId, options = {}) {
         const parsedTime = this._parseManualTimeAdvanceCommand(text);
         if (!parsedTime || !targetChatId) return false;
+        const preserveDraft = options?.preserveDraft === true;
 
         const timeManager = window.VirtualPhone?.timeManager;
         if (typeof timeManager?.setTime === 'function') {
@@ -1919,12 +2000,16 @@ export class ChatView {
             hiddenFromPreview: true
         });
 
-        input.value = '';
-        this.inputText = '';
-        this.activeQuote = null;
+        if (!preserveDraft) {
+            input.value = '';
+            this.inputText = '';
+            this.activeQuote = null;
+        }
 
-        const quoteBar = document.querySelector('.active-quote-bar');
-        if (quoteBar) quoteBar.remove();
+        if (!preserveDraft) {
+            const quoteBar = document.querySelector('.active-quote-bar');
+            if (quoteBar) quoteBar.remove();
+        }
 
         const messages = this.app.wechatData.getMessages(targetChatId);
         const userInfo = this.app.wechatData.getUserInfo();
@@ -2006,7 +2091,7 @@ export class ChatView {
         if (!messageObj || typeof messageObj !== 'object') return;
 
         const contentText = String(messageObj.content || fallbackContent || '').trim();
-        if (options?.realTimeMode === true) {
+        if (this._shouldUseRealTimeForOnlineChat(options)) {
             let baseTimestamp = Number(this._aiReplyTimestampCursor || options?.baseTimestamp || Date.now());
             if (!Number.isFinite(baseTimestamp) || baseTimestamp <= 0) baseTimestamp = Date.now();
 
@@ -2131,6 +2216,23 @@ export class ChatView {
         this._aiReplyTimeCursor = timeManager.getCurrentStoryTime();
         this._aiReplyTimestampCursor = Number(messageObj.timestamp || nextTime?.timestamp || 0) || null;
     }
+
+    _getMessageTimelineFields(messageObj = {}) {
+        return {
+            time: messageObj.time,
+            date: messageObj.date,
+            weekday: messageObj.weekday,
+            timestamp: messageObj.timestamp,
+            realTimestamp: messageObj.realTimestamp
+        };
+    }
+
+    _attachMessageTimelineFields(target = {}, source = {}) {
+        return {
+            ...target,
+            ...this._getMessageTimelineFields(source)
+        };
+    }
 renderChatRoom(chat) {
         const messages = this.app.wechatData.getMessages(chat.id);
         const userInfo = this.app.wechatData.getUserInfo();
@@ -2177,7 +2279,7 @@ renderChatRoom(chat) {
                         <div class="chat-input-wrapper" style="flex: 1; margin: 0;">
                             <input type="text" class="chat-input" id="chat-input"
                                    style="background: rgba(255, 255, 255, 0.42) !important; border: 0.5px solid rgba(255, 255, 255, 0.58) !important; color: #111111 !important; backdrop-filter: blur(8px) saturate(130%) !important; -webkit-backdrop-filter: blur(8px) saturate(130%) !important;"
-                                   placeholder="输入消息..." value="${this.inputText}">
+                                   placeholder="${this._escapeHtml(this._getQuickReplyInputPlaceholder())}" value="${this._escapeHtml(this.inputText)}">
                         </div>
                         <div style="display: flex; align-items: center; gap: 0px;">
                             <button class="input-btn" id="emoji-btn" title="表情">
@@ -4574,8 +4676,8 @@ renderChatRoom(chat) {
     `;
     }
 
-    renderQuickReplyPanel() {
-        const items = [
+    _getQuickReplyItems() {
+        return [
             { key: 'image', icon: 'fa-solid fa-image', label: '图片', template: '[图片]（描述）' },
             { key: 'video', icon: 'fa-solid fa-video', label: '视频', template: '[视频]（描述）' },
             { key: 'sticker', icon: 'fa-regular fa-face-smile', label: '表情包', template: '[表情包]（描述）' },
@@ -4583,12 +4685,384 @@ renderChatRoom(chat) {
             { key: 'location', icon: 'fa-solid fa-location-dot', label: '定位', template: '[定位]（描述）' },
             { key: 'time', icon: 'fa-regular fa-clock', label: '时间推进', template: '[时间推进：年月日HH:MM]' }
         ];
+    }
+
+    _getQuickReplyConfig(key = '') {
+        return this._getQuickReplyItems().find(item => item.key === key) || null;
+    }
+
+    _getQuickReplyInputPlaceholder() {
+        const config = this._getQuickReplyConfig(this.activeQuickReplyKey);
+        if (!this.showQuickReplies || !config) return '输入消息...';
+        if (config.key === 'image') return '描述想发送的图片内容...';
+        if (config.key === 'video') return '描述想发送的视频内容...';
+        if (config.key === 'sticker') return '输入表情包关键词或描述...';
+        if (config.key === 'voice-strip') return '输入要转成语音的文字...';
+        if (config.key === 'location') return '输入定位名称或地址...';
+        if (config.key === 'time') return '输入目标时间...';
+        return '输入消息...';
+    }
+
+    _getQuickReplyDefaultTimeText() {
+        const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || {};
+        const date = String(storyTime.date || '').trim();
+        const weekday = String(storyTime.weekday || '').trim();
+        const time = String(storyTime.time || '').trim();
+        if (date || time) return [date, weekday, time].filter(Boolean).join(' ');
+
+        const now = new Date();
+        const pad = value => String(value).padStart(2, '0');
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        return `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${weekdays[now.getDay()]} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    }
+
+    _makeDateFromQuickReplyParts(parts = {}) {
+        const date = new Date(0);
+        date.setFullYear(Number(parts.year) || 2000, Math.max(0, (Number(parts.month) || 1) - 1), Number(parts.day) || 1);
+        date.setHours(Number(parts.hour) || 0, Number(parts.minute) || 0, 0, 0);
+        return date;
+    }
+
+    _getQuickReplyWeekday(parts = {}) {
+        const dateText = `${Number(parts.year) || 2000}年${Number(parts.month) || 1}月${Number(parts.day) || 1}日`;
+        const calculated = window.VirtualPhone?.timeManager?.calculateWeekday?.(dateText);
+        if (calculated) return calculated;
+        const date = this._makeDateFromQuickReplyParts(parts);
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        return weekdays[date.getDay()] || '';
+    }
+
+    _shiftQuickReplyWeekday(weekday = '', offsetDays = 0) {
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        const normalized = String(weekday || '').replace('星期天', '星期日').trim();
+        const index = weekdays.indexOf(normalized);
+        if (index < 0) return '';
+        const nextIndex = ((index + Number(offsetDays || 0)) % 7 + 7) % 7;
+        return weekdays[nextIndex] || '';
+    }
+
+    _parseQuickReplyTimeParts(text = '') {
+        const fallback = this._getQuickReplyDefaultTimeText();
+        const source = String(text || fallback || '').trim();
+        const match = source.match(/(\d{1,6})年\s*(\d{1,2})月\s*(\d{1,2})日(?:\s*(星期[一二三四五六日天]))?\s*(\d{1,2})[:：](\d{1,2})/);
+        const raw = match ? match : String(fallback || '').match(/(\d{1,6})年\s*(\d{1,2})月\s*(\d{1,2})日(?:\s*(星期[一二三四五六日天]))?\s*(\d{1,2})[:：](\d{1,2})/);
+        if (!raw) {
+            const now = new Date();
+            return {
+                year: now.getFullYear(),
+                month: now.getMonth() + 1,
+                day: now.getDate(),
+                weekday: this._getQuickReplyWeekday({ year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() }),
+                hour: now.getHours(),
+                minute: now.getMinutes()
+            };
+        }
+        const parts = {
+            year: Number.parseInt(raw[1], 10) || 2000,
+            month: Number.parseInt(raw[2], 10) || 1,
+            day: Number.parseInt(raw[3], 10) || 1,
+            weekday: String(raw[4] || '').replace('星期天', '星期日'),
+            hour: Math.max(0, Math.min(23, Number.parseInt(raw[5], 10) || 0)),
+            minute: Math.max(0, Math.min(59, Number.parseInt(raw[6], 10) || 0))
+        };
+        if (!parts.weekday) parts.weekday = this._getQuickReplyWeekday(parts);
+        return parts;
+    }
+
+    _formatQuickReplyTimeParts(parts = {}) {
+        const pad = value => String(Math.max(0, Number(value) || 0)).padStart(2, '0');
+        const fullParts = {
+            year: Number(parts.year) || 2000,
+            month: Number(parts.month) || 1,
+            day: Number(parts.day) || 1,
+            weekday: parts.weekday || this._getQuickReplyWeekday(parts),
+            hour: Math.max(0, Math.min(23, Number(parts.hour) || 0)),
+            minute: Math.max(0, Math.min(59, Number(parts.minute) || 0))
+        };
+        return `${fullParts.year}年${pad(fullParts.month)}月${pad(fullParts.day)}日 ${fullParts.weekday} ${pad(fullParts.hour)}:${pad(fullParts.minute)}`;
+    }
+
+    _offsetQuickReplyDateParts(parts = {}, offsetDays = 0) {
+        const date = this._makeDateFromQuickReplyParts(parts);
+        date.setDate(date.getDate() + Number(offsetDays || 0));
+        const next = {
+            year: date.getFullYear(),
+            month: date.getMonth() + 1,
+            day: date.getDate(),
+            hour: Number(parts.hour) || 0,
+            minute: Number(parts.minute) || 0
+        };
+        next.weekday = this._shiftQuickReplyWeekday(parts.weekday, offsetDays) || this._getQuickReplyWeekday(next);
+        return next;
+    }
+
+    _extractQuickReplyPayload(text = '', key = '') {
+        const raw = String(text || '').trim();
+        if (!raw) return '';
+        const map = {
+            image: '图片',
+            video: '视频',
+            sticker: '表情包',
+            'voice-strip': '语音条',
+            location: '定位'
+        };
+        const label = map[key];
+        if (label) {
+            const match = new RegExp(`^\\[${label}\\]\\s*[（(]\\s*([\\s\\S]*?)\\s*[）)]$`).exec(raw);
+            if (match) return String(match[1] || '').trim();
+        }
+        const timeMatch = /^\[\s*时间推进\s*[：:]\s*([^\]]+?)\s*\]$/.exec(raw);
+        if (key === 'time' && timeMatch) return String(timeMatch[1] || '').trim();
+        return raw;
+    }
+
+    _buildQuickReplySendText(text = '', key = this.activeQuickReplyKey) {
+        const payload = this._extractQuickReplyPayload(text, key);
+        if (!payload) return '';
+        switch (key) {
+            case 'image':
+                return `[图片]（${payload}）`;
+            case 'video':
+                return `[视频]（${payload}）`;
+            case 'sticker':
+                return `[表情包]（${payload}）`;
+            case 'voice-strip':
+                return `[语音条]（${payload}）`;
+            case 'location':
+                return `[定位]（${payload}）`;
+            case 'time':
+                return `[时间推进：${payload}]`;
+            default:
+                return payload;
+        }
+    }
+
+    _resolveQuickReplySendText(text = '') {
+        const key = String(this.activeQuickReplyKey || '').trim();
+        if (!this.showQuickReplies || !this._getQuickReplyConfig(key)) return String(text || '').trim();
+        return this._buildQuickReplySendText(text, key);
+    }
+
+    _activateQuickReply(key = '') {
+        const config = this._getQuickReplyConfig(key);
+        if (!config) return;
+        const currentInput = this.getCurrentWechatView?.().querySelector('#chat-input') || document.getElementById('chat-input');
+        const source = String(currentInput?.value ?? this.inputText ?? '');
+        this.activeQuickReplyKey = config.key;
+        this.showQuickReplies = true;
+        this.showEmoji = false;
+        this.showMore = false;
+        this._setCustomEmojiSelectionMode(false);
+        if (config.key === 'time') {
+            if (!String(this.quickReplyTimeText || '').trim()) {
+                this.quickReplyTimeText = this._getQuickReplyDefaultTimeText();
+            }
+            this.app.render();
+            setTimeout(() => this._scrollQuickReplyTimeSelectionIntoView(), 0);
+            return;
+        }
+        this.inputText = this._extractQuickReplyPayload(source, config.key);
+        this.app.render();
+        setTimeout(() => {
+            const input = this.getCurrentWechatView?.().querySelector('#chat-input') || document.getElementById('chat-input');
+            if (!input) return;
+            input.focus();
+            const end = input.value.length;
+            if (typeof input.setSelectionRange === 'function') input.setSelectionRange(end, end);
+            this._syncChatSendButton(input);
+        }, 0);
+    }
+
+    _sendActiveQuickReply() {
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
+        if (!input) return;
+        if (this.activeQuickReplyKey === 'time') {
+            const targetChatId = String(this.app?.currentChat?.id || '').trim();
+            const timeText = String(this.quickReplyTimeText || this._getQuickReplyDefaultTimeText()).trim();
+            if (!targetChatId || !timeText) return;
+            const markerText = this._buildQuickReplySendText(timeText, 'time');
+            if (this._handleManualTimeAdvance(input, markerText, targetChatId, { preserveDraft: true })) {
+                this._suppressEmptySendUntil = Date.now() + 650;
+                this.showQuickReplies = false;
+                this.activeQuickReplyKey = '';
+                this.quickReplyTimeText = '';
+                this.app.render();
+            }
+            return;
+        }
+        if (!String(input.value || '').trim()) {
+            this.app.phoneShell?.showNotification?.('提示', '请先输入内容', '⚠️');
+            return;
+        }
+        this.handleSendClick(input);
+    }
+
+    _setQuickReplyInputText(value = '') {
+        const next = String(value || '').trim();
+        this.inputText = next;
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
+        if (input) input.value = next;
+        currentView.querySelectorAll('.quick-reply-live-text').forEach(el => {
+            el.textContent = next || this._getQuickReplyInputPlaceholder();
+        });
+        this._syncChatSendButton(input);
+    }
+
+    _setQuickReplyTimeText(value = '') {
+        const next = String(value || '').trim();
+        this.quickReplyTimeText = next;
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        currentView.querySelectorAll('.quick-reply-live-text').forEach(el => {
+            el.textContent = next || this._getQuickReplyDefaultTimeText();
+        });
+    }
+
+    _handleQuickReplyTimeOption(optionEl) {
+        if (!optionEl) return;
+        const part = String(optionEl.dataset.timePart || '').trim();
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
+        const parts = this._parseQuickReplyTimeParts(this.quickReplyTimeText || this._getQuickReplyDefaultTimeText());
+        if (part === 'date') {
+            parts.year = Number.parseInt(optionEl.dataset.year || parts.year, 10) || parts.year;
+            parts.month = Number.parseInt(optionEl.dataset.month || parts.month, 10) || parts.month;
+            parts.day = Number.parseInt(optionEl.dataset.day || parts.day, 10) || parts.day;
+            parts.weekday = String(optionEl.dataset.weekday || '') || this._getQuickReplyWeekday(parts);
+        } else if (part === 'hour') {
+            parts.hour = Math.max(0, Math.min(23, Number.parseInt(optionEl.dataset.value || parts.hour, 10) || 0));
+        } else if (part === 'minute') {
+            parts.minute = Math.max(0, Math.min(59, Number.parseInt(optionEl.dataset.value || parts.minute, 10) || 0));
+        }
+        this._setQuickReplyTimeText(this._formatQuickReplyTimeParts(parts));
+        this.app.render();
+    }
+
+    _getCenteredQuickTimeOption(columnEl) {
+        if (!columnEl) return null;
+        const options = Array.from(columnEl.querySelectorAll('.quick-time-option'));
+        if (options.length === 0) return null;
+        const columnRect = columnEl.getBoundingClientRect();
+        const centerY = columnRect.top + columnRect.height / 2;
+        let best = null;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        options.forEach(option => {
+            const rect = option.getBoundingClientRect();
+            const optionCenter = rect.top + rect.height / 2;
+            const distance = Math.abs(optionCenter - centerY);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = option;
+            }
+        });
+        return best;
+    }
+
+    _handleQuickReplyTimeColumnScroll(columnEl) {
+        if (!columnEl) return;
+        const key = String(columnEl.dataset.timeColumn || Math.random());
+        if (this._quickTimeScrollTimers.has(key)) {
+            clearTimeout(this._quickTimeScrollTimers.get(key));
+        }
+        const timer = setTimeout(() => {
+            this._quickTimeScrollTimers.delete(key);
+            const centered = this._getCenteredQuickTimeOption(columnEl);
+            if (centered) this._handleQuickReplyTimeOption(centered);
+        }, 140);
+        this._quickTimeScrollTimers.set(key, timer);
+    }
+
+    _scrollQuickReplyTimeSelectionIntoView() {
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        currentView.querySelectorAll('.quick-time-column').forEach(column => {
+            const selected = column.querySelector('.quick-time-option[style*="font-weight:700"]');
+            if (!selected) return;
+            const top = selected.offsetTop - Math.max(0, (column.clientHeight - selected.clientHeight) / 2);
+            column.scrollTop = Math.max(0, top);
+        });
+    }
+
+    renderQuickReplyPanel() {
+        const items = this._getQuickReplyItems();
+        const activeKey = this.activeQuickReplyKey || 'image';
+        const active = this._getQuickReplyConfig(activeKey) || items[0];
+        const isTime = active.key === 'time';
+        const inputText = active.key === 'time'
+            ? (String(this.quickReplyTimeText || '').trim() || this._getQuickReplyDefaultTimeText())
+            : this._extractQuickReplyPayload(this.inputText, active.key);
+        const safeInputText = this._escapeHtml(inputText);
+        const quickPreview = (() => {
+            if (active.key === 'video') {
+                return `<div style="width:58px;height:58px;border-radius:10px;overflow:hidden;background:linear-gradient(160deg,#f3b37b,#7895c9);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.4);"><span style="width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-play" style="font-size:10px;margin-left:2px;"></i></span></div>`;
+            }
+            if (active.key === 'sticker') {
+                return `<div style="width:58px;height:58px;border-radius:14px;background:linear-gradient(145deg,#fff7d6,#e9f3ff);display:flex;align-items:center;justify-content:center;color:#ff9f0a;font-size:25px;border:0.5px solid rgba(0,0,0,0.06);"><i class="fa-regular fa-face-laugh-beam"></i></div>`;
+            }
+            if (active.key === 'voice-strip') {
+                return `<div style="height:34px;border-radius:17px;background:linear-gradient(90deg,#eef5ff,#f8fbff);display:flex;align-items:center;gap:7px;padding:0 9px;color:#2f80ff;border:0.5px solid rgba(47,128,255,0.08);"><span style="width:24px;height:24px;border-radius:50%;background:#e3f0ff;display:flex;align-items:center;justify-content:center;font-size:12px;"><i class="fa-solid fa-microphone"></i></span><span style="flex:1;height:20px;background:repeating-linear-gradient(90deg,#2f80ff 0 2px,transparent 2px 7px);opacity:.75;border-radius:10px;clip-path:polygon(0 40%,4% 25%,8% 60%,12% 20%,16% 70%,20% 35%,24% 55%,28% 15%,32% 78%,36% 32%,40% 48%,44% 28%,48% 68%,52% 40%,56% 55%,60% 18%,64% 76%,68% 38%,72% 58%,76% 26%,80% 66%,84% 36%,88% 52%,92% 30%,96% 58%,100% 42%);"></span><span style="font-size:10px;color:#8b96a8;">00:00</span></div>`;
+            }
+            if (active.key === 'location') {
+                return `<div style="width:58px;height:58px;border-radius:11px;background:linear-gradient(145deg,#eef6ff,#f8fbff);display:flex;align-items:center;justify-content:center;color:#1f7aff;border:0.5px solid rgba(0,0,0,0.06);"><i class="fa-solid fa-location-dot" style="font-size:25px;"></i></div>`;
+            }
+            return `<div style="width:58px;height:58px;border-radius:10px;background:linear-gradient(145deg,#eef6ff,#f8fbff);position:relative;overflow:hidden;border:0.5px solid rgba(0,0,0,0.06);"><div style="position:absolute;left:0;right:0;bottom:0;height:36px;background:linear-gradient(135deg,#9ecbff,#d6eaff);clip-path:polygon(0 100%,32% 36%,54% 66%,76% 30%,100% 72%,100% 100%);"></div><div style="position:absolute;right:12px;top:12px;width:16px;height:16px;border-radius:50%;background:#b7d9ff;"></div></div>`;
+        })();
+        const timeParts = this._parseQuickReplyTimeParts(inputText);
+        const selectedDateKey = `${timeParts.year}-${timeParts.month}-${timeParts.day}`;
+        const selectedStyle = 'background:rgba(31,122,255,0.1);color:#1f7aff;font-weight:700;';
+        const normalStyle = 'background:transparent;color:#aeb4bd;font-weight:500;';
+        const dateOptionsHtml = Array.from({ length: 15 }, (_, index) => {
+            const offset = index - 7;
+            const parts = this._offsetQuickReplyDateParts(timeParts, offset);
+            const key = `${parts.year}-${parts.month}-${parts.day}`;
+            const isSelected = key === selectedDateKey;
+            const label = `${parts.month}月${parts.day}日 ${parts.weekday || ''}`;
+            return `<button type="button" class="quick-time-option" data-time-part="date" data-year="${parts.year}" data-month="${parts.month}" data-day="${parts.day}" data-weekday="${this._escapeHtml(parts.weekday || '')}" style="height:24px;border:none;border-radius:7px;${isSelected ? selectedStyle : normalStyle}font-size:12px;white-space:nowrap;">${this._escapeHtml(label)}</button>`;
+        }).join('');
+        const hourOptionsHtml = Array.from({ length: 24 }, (_, hour) => {
+            const isSelected = hour === timeParts.hour;
+            return `<button type="button" class="quick-time-option" data-time-part="hour" data-value="${hour}" style="height:24px;border:none;border-radius:7px;${isSelected ? selectedStyle : normalStyle}font-size:12px;">${String(hour).padStart(2, '0')}</button>`;
+        }).join('');
+        const minuteOptionsHtml = Array.from({ length: 60 }, (_, minute) => {
+            const isSelected = minute === timeParts.minute;
+            return `<button type="button" class="quick-time-option" data-time-part="minute" data-value="${minute}" style="height:24px;border:none;border-radius:7px;${isSelected ? selectedStyle : normalStyle}font-size:12px;">${String(minute).padStart(2, '0')}</button>`;
+        }).join('');
+
+        const timePanel = `
+            <div style="text-align:center;padding:10px 10px 9px;">
+                <div style="font-size:15px;font-weight:700;color:#111;line-height:1.25;">时间推进</div>
+                <div style="font-size:10px;color:#9ca3af;margin-top:1px;">选择目标时间</div>
+                <div class="quick-reply-live-text" style="margin:6px auto 8px;max-width:238px;height:32px;border-radius:8px;background:rgba(245,249,255,0.92);border:0.5px solid rgba(47,128,255,0.18);display:flex;align-items:center;justify-content:center;color:#1f7aff;font-size:14px;font-weight:600;">${safeInputText || this._escapeHtml(this._getQuickReplyDefaultTimeText())}</div>
+                <div style="margin:0 auto 8px;max-width:282px;height:76px;border-radius:13px;background:rgba(255,255,255,0.72);border:0.5px solid rgba(0,0,0,0.07);display:grid;grid-template-columns:1.15fr 0.72fr 0.72fr;align-items:stretch;color:#aeb4bd;font-size:11px;overflow:hidden;position:relative;">
+                    <div class="quick-time-column" data-time-column="date" style="display:flex;flex-direction:column;gap:3px;overflow-y:auto;padding:27px 5px;scrollbar-width:none;">${dateOptionsHtml}</div>
+                    <div class="quick-time-column" data-time-column="hour" style="display:flex;flex-direction:column;gap:3px;overflow-y:auto;padding:27px 5px;border-left:0.5px solid #e5eaf2;border-right:0.5px solid #e5eaf2;scrollbar-width:none;">${hourOptionsHtml}</div>
+                    <div class="quick-time-column" data-time-column="minute" style="display:flex;flex-direction:column;gap:3px;overflow-y:auto;padding:27px 5px;scrollbar-width:none;">${minuteOptionsHtml}</div>
+                </div>
+                <div style="display:flex;justify-content:center;gap:10px;padding-top:1px;">
+                    <button type="button" class="quick-reply-cancel" style="width:72px;height:28px;border:none;border-radius:9px;background:rgba(245,245,247,0.96);color:#111;font-size:12px;font-weight:600;">取消</button>
+                    <button type="button" class="quick-reply-send" style="width:82px;height:28px;border:none;border-radius:9px;background:#1f7aff;color:#fff;font-size:12px;font-weight:600;">确定</button>
+                </div>
+            </div>
+        `;
+
+        const mediaPanel = `
+            <div style="padding:10px 10px 11px;">
+                <div style="font-size:15px;font-weight:700;color:#111;margin:0 0 6px 0;">发送${this._escapeHtml(active.label)}</div>
+                <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:stretch;">
+                    <div class="quick-reply-live-text" style="min-height:58px;max-height:58px;overflow:hidden;border-radius:10px;background:rgba(255,255,255,0.7);border:0.5px solid rgba(0,0,0,0.1);box-shadow:0 1px 4px rgba(0,0,0,0.04);padding:9px;color:#9ca3af;font-size:12px;line-height:1.4;">${safeInputText || this._escapeHtml(this._getQuickReplyInputPlaceholder())}</div>
+                    <div style="display:flex;align-items:center;justify-content:center;">${quickPreview}</div>
+                </div>
+            </div>
+        `;
 
         return `
-        <div class="quick-reply-panel more-panel" style="padding:10px 10px 12px;">
-            <div style="display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:6px;">
+        <div class="quick-reply-panel" style="padding:6px 10px 7px;background:transparent;display:flex;flex-direction:column;gap:9px;">
+            <div class="quick-reply-editor-card" style="background:rgba(255,255,255,0.94);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border:0.5px solid rgba(255,255,255,0.76);border-radius:18px;box-shadow:0 7px 20px rgba(0,0,0,0.09);overflow:hidden;">
+                ${isTime ? timePanel : mediaPanel}
+            </div>
+            <div class="quick-reply-shortcut-card" style="display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:6px; padding:7px 4px 3px; background:rgba(255,255,255,0.86);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);border:0.5px solid rgba(255,255,255,0.72);border-radius:15px;box-shadow:0 4px 14px rgba(0,0,0,0.06);">
                 ${items.map(item => `
-                    <button class="quick-reply-item" data-template="${this._escapeHtml(item.template)}" title="${item.template}" style="
+                    <button class="quick-reply-item" data-quick-key="${this._escapeHtml(item.key)}" title="${item.template}" style="
                         min-width:0;
                         border:none;
                         background:transparent;
@@ -4596,14 +5070,14 @@ renderChatRoom(chat) {
                         display:flex;
                         flex-direction:column;
                         align-items:center;
-                        gap:5px;
-                        color:#555;
+                        gap:3px;
+                        color:${item.key === active.key ? '#1f7aff' : '#555'};
                         cursor:pointer;
                     ">
-                        <span style="width:38px; height:38px; border-radius:11px; background:rgba(255,255,255,0.9); box-shadow:0 1px 5px rgba(0,0,0,0.08); display:flex; align-items:center; justify-content:center;">
-                            <i class="${item.icon}" style="font-size:15px;"></i>
+                        <span style="width:32px; height:32px; border-radius:10px; background:${item.key === active.key ? 'rgba(31,122,255,0.1)' : 'rgba(255,255,255,0.9)'}; border:${item.key === active.key ? '0.5px solid rgba(31,122,255,0.65)' : '0.5px solid rgba(255,255,255,0.7)'}; box-shadow:0 1px 5px rgba(0,0,0,0.08); display:flex; align-items:center; justify-content:center;">
+                            <i class="${item.icon}" style="font-size:13px;"></i>
                         </span>
-                        <span style="font-size:10px; line-height:1.1; color:#666; white-space:nowrap;">${item.label}</span>
+                        <span style="font-size:9px; line-height:1.05; color:${item.key === active.key ? '#1f7aff' : '#666'}; white-space:nowrap;">${item.label}</span>
                     </button>
                 `).join('')}
             </div>
@@ -6748,11 +7222,15 @@ renderChatRoom(chat) {
         try {
             const finalUrl = await window.VirtualPhone?.imageManager?.uploadDataUrl?.(dataUrl, filenamePrefix);
             if (!finalUrl) throw new Error('图片上传管理器未初始化');
+            const timeFields = this._shouldUseRealTimeForOnlineChat()
+                ? this._buildWechatRealTimeFields()
+                : {};
             this.app.wechatData.addMessage(targetChatId, {
                 from: 'me',
                 type: 'image',
                 content: finalUrl,
-                avatar: this.app.wechatData.getUserInfo().avatar
+                avatar: this.app.wechatData.getUserInfo().avatar,
+                ...timeFields
             });
 
             this.resetTransientInputPanels();
@@ -6900,6 +7378,12 @@ renderChatRoom(chat) {
         // 📱 输入中：有字就打断等待；删空时若仍在 focus，保持安静等待 blur 再决定
         input?.addEventListener('input', (e) => {
             this.inputText = e.target.value;
+            if (this.activeQuickReplyKey !== 'time') {
+                currentView.querySelectorAll('.quick-reply-live-text').forEach(el => {
+                    const text = String(e.target.value || '').trim();
+                    el.textContent = text || this._getQuickReplyInputPlaceholder();
+                });
+            }
             this._syncChatSendButton(e.target);
             const text = e.target.value.trim();
 
@@ -6921,6 +7405,7 @@ renderChatRoom(chat) {
         const executeSend = (e) => {
             if (e) e.preventDefault();
             if (isHandlingSend) return;
+            if (Date.now() < Number(this._suppressEmptySendUntil || 0)) return;
             isHandlingSend = true;
             const currentInput = query('#chat-input') || input;
             const currentSendBtn = query('#send-btn') || sendBtn;
@@ -6978,6 +7463,12 @@ renderChatRoom(chat) {
         // 快捷回复按钮
         query('#quick-reply-btn')?.addEventListener('click', () => {
             this.showQuickReplies = !this.showQuickReplies;
+            if (this.showQuickReplies && !this.activeQuickReplyKey) {
+                this.activeQuickReplyKey = 'image';
+            } else if (!this.showQuickReplies) {
+                this.activeQuickReplyKey = '';
+                this.quickReplyTimeText = '';
+            }
             if (this.showEmoji) this._setCustomEmojiSelectionMode(false);
             this.showEmoji = false;
             this.showMore = false;
@@ -6996,11 +7487,62 @@ renderChatRoom(chat) {
         });
 
         queryAll('.quick-reply-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const template = item.dataset.template || '';
-                this._insertTextIntoChatInput(template);
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const key = item.dataset.quickKey || '';
+                this._activateQuickReply(key);
             });
         });
+
+        const quickReplySendBtn = query('.quick-reply-send');
+        quickReplySendBtn?.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, { passive: false });
+        quickReplySendBtn?.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        quickReplySendBtn?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._sendActiveQuickReply();
+        });
+
+        const quickReplyCancelBtn = query('.quick-reply-cancel');
+        quickReplyCancelBtn?.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, { passive: false });
+        quickReplyCancelBtn?.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        quickReplyCancelBtn?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.showQuickReplies = false;
+            this.activeQuickReplyKey = '';
+            this.quickReplyTimeText = '';
+            this.app.render();
+        });
+
+        queryAll('.quick-time-option').forEach(option => {
+            option.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this._handleQuickReplyTimeOption(option);
+            });
+        });
+        if (this.showQuickReplies && this.activeQuickReplyKey === 'time') {
+            queryAll('.quick-time-column').forEach(column => {
+                column.addEventListener('scroll', () => {
+                    this._handleQuickReplyTimeColumnScroll(column);
+                }, { passive: true });
+            });
+            setTimeout(() => this._scrollQuickReplyTimeSelectionIntoView(), 0);
+        }
 
         // 选择表情
         queryAll('.emoji-item').forEach(item => {
@@ -7036,15 +7578,16 @@ renderChatRoom(chat) {
             if (this._isMessageSelectionActiveForCurrentChat()) return;
             // 只有点击空白区域才收起（不是点击消息气泡）
             if (this.showMore || this.showEmoji || this.showQuickReplies) {
-                if (this.showEmoji) {
-                    this._setCustomEmojiSelectionMode(false);
-                }
-                this.hideImageSourceSheet();
-                this.showMore = false;
-                this.showEmoji = false;
-                this.showQuickReplies = false;
-                this.app.render();
+                this._collapseTransientInputPanels({ render: true });
             }
+        });
+
+        currentView.addEventListener('click', (e) => {
+            if (!(this.showMore || this.showEmoji || this.showQuickReplies)) return;
+            const target = e.target;
+            if (target?.closest?.('.chat-input-area')) return;
+            if (target?.closest?.('.wechat-time-marker-menu')) return;
+            this._collapseTransientInputPanels({ render: true });
         });
 
         // 🔥 新增：相册上传处理
@@ -7164,7 +7707,8 @@ renderChatRoom(chat) {
                             customEmojiId: emoji.id,
                             customEmojiName: String(emoji.name || '').trim(),
                             customEmojiDescription: String(emoji.description || emoji.name || '').trim(),
-                            avatar: this.app.wechatData.getUserInfo().avatar
+                            avatar: this.app.wechatData.getUserInfo().avatar,
+                            ...(this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : {})
                         });
 
                         this._closeActionPanelsAfterImmediateSend();
@@ -7620,6 +8164,9 @@ renderChatRoom(chat) {
     handleSendClick(input) {
         // 🔥 终极全局防抖：抵抗 DOM 重绘带来的闭合变量失效与幽灵点击中止
         const now = Date.now();
+        if (now < Number(this._suppressEmptySendUntil || 0)) {
+            return;
+        }
         if (this._lastSendClickTime && now - this._lastSendClickTime < 600) {
             return;
         }
@@ -7637,9 +8184,17 @@ renderChatRoom(chat) {
             return;
         }
 
-        const text = input.value.trim();
+        const rawText = String(input.value || '').trim();
+        const activeQuickKey = String(this.activeQuickReplyKey || '').trim();
+        if (this.showQuickReplies && activeQuickKey && this._getQuickReplyConfig(activeQuickKey) && !rawText) {
+            this.app.phoneShell.showNotification('提示', activeQuickKey === 'time' ? '请先输入目标时间' : '请先输入内容', '⚠️');
+            return;
+        }
+        const text = this._resolveQuickReplySendText(rawText);
 
         if (this._handleManualTimeAdvance(input, text, targetChatId)) {
+            this.resetTransientInputPanels();
+            this.app.render();
             return;
         }
 
@@ -7656,12 +8211,17 @@ renderChatRoom(chat) {
             }
 
             // 有文字：发送到屏幕，清空输入框，开始6秒倒计时
+            const timeFields = this._shouldUseRealTimeForOnlineChat()
+                ? this._buildWechatRealTimeFields()
+                : {};
             this.app.wechatData.addMessage(this.app.currentChat.id, {
                 from: 'me', content: text, type: 'text', avatar: this.app.wechatData.getUserInfo().avatar,
-                quote: this.activeQuote  // 🔥 携带引用信息
+                quote: this.activeQuote,  // 🔥 携带引用信息
+                ...timeFields
             });
             input.value = '';
             this.inputText = '';
+            this._collapseTransientInputPanels({ render: false });
             this._syncChatSendButton(input);
             this.activeQuote = null;  // 🔥 发送后清空引用
 
@@ -8031,6 +8591,9 @@ renderChatRoom(chat) {
                         const rawSender = String(message?.sender || '').trim();
                         const content = String(message?.content || message?.specialMessage?.content || '').trim();
                         if (!content && !message?.specialMessage) return null;
+                        if (this._isCurrentWechatUserName(rawSender)) {
+                            return this._normalizeGeneratedUserReply({ ...message, content }, expectedSender);
+                        }
                         if (!isAllowedSingleChatSender(rawSender, expectedSender)) {
                             console.warn('⚠️ [微信单聊] 已丢弃共同群聊里的非当前好友发言:', {
                                 currentChat: expectedSender,
@@ -8045,6 +8608,9 @@ renderChatRoom(chat) {
             };
             const normalizeInlineSingleReply = (message) => {
                 if (!message || isGroupChat) return message;
+                if (this._isCurrentWechatUserName(message.sender)) {
+                    return { ...message, sender: 'me', content: String(message.content || '').trim() };
+                }
                 const expectedSender = String(savedChatName || context.name2 || '').trim();
                 if (!expectedSender) return message;
 
@@ -8058,6 +8624,9 @@ renderChatRoom(chat) {
                 const rawSender = stripWechatSenderTimePrefix(message.sender);
                 const content = String(message.content || message.specialMessage?.content || '').trim();
                 if (!content && !message.specialMessage) return null;
+                if (this._isCurrentWechatUserName(rawSender)) {
+                    return this._normalizeGeneratedUserReply({ ...message, content }, expectedSender || '当前单聊');
+                }
                 if (!expectedSender) return { ...message, content };
                 if (!isAllowedSingleChatSender(rawSender, expectedSender)) {
                     console.warn('⚠️ [微信单聊] 已丢弃非当前好友发言:', {
@@ -8346,13 +8915,17 @@ renderChatRoom(chat) {
             } else {
                 parsedMessages = this._filterGroupMessagesByParticipants(parsedMessages, currentGroupParticipants, savedChatName, {
                     keepAllWhenAllDropped: keepLobbyGroupRepliesOnMismatch
-                });
+                })
+                    .map(message => this._normalizeGeneratedUserReply(message, savedChatName || '当前群聊'))
+                    .filter(Boolean);
             }
             parsedMessages = parsedMessages
                 .map(stripOfflineTransferTagFromMessage)
                 .filter(item => String(item?.content || item?.specialMessage?.content || '').trim() || item?.specialMessage);
             Object.keys(backgroundMessages).forEach(chatName => {
                 backgroundMessages[chatName] = (backgroundMessages[chatName] || [])
+                    .map(message => this._normalizeGeneratedUserReply(message, chatName))
+                    .filter(Boolean)
                     .map(stripOfflineTransferTagFromMessage)
                     .filter(item => String(item?.content || item?.specialMessage?.content || '').trim() || item?.specialMessage);
             });
@@ -8469,8 +9042,11 @@ renderChatRoom(chat) {
                     const cleanContent = this.cleanAbnormalSpaces(m.content);
                     const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent, { preserveVoiceTag: true });
                     const special = m.specialMessage || this.parseSpecialMessage(cleanContent);
+                    const isGeneratedUserSender = this._isCurrentWechatUserName(m.sender);
                     // 🔥 核心修复2：如果是群聊，绝不能拿群聊头像(bgChat.avatar)给个人用
-                    senderAvatar = this.app.wechatData.getContactByName(m.sender)?.avatar || (isBgGroupChat ? '' : bgChat.avatar) || '👤';
+                    senderAvatar = isGeneratedUserSender
+                        ? (this.app.wechatData.getUserInfo?.()?.avatar || '')
+                        : (this.app.wechatData.getContactByName(m.sender)?.avatar || (isBgGroupChat ? '' : bgChat.avatar) || '👤');
                     if (special?.type === 'incoming_call') {
                         const { queuedLines, consumedCount } = this._collectIncomingCallFollowUps(msgs, bgIndex);
                         bgIndex += consumedCount;
@@ -8491,13 +9067,17 @@ renderChatRoom(chat) {
                     });
 
                     const specialSender = String(special?.sender || '').trim();
-                    const senderNameForCatbox = specialSender || m.sender;
+                    const resolvedSpecialSender = this._isCurrentWechatUserName(specialSender) ? 'me' : specialSender;
+                    const senderNameForCatbox = resolvedSpecialSender || m.sender;
                     const senderAvatarForCatbox = senderAvatar;
                     let msgData = special
-                        ? { from: specialSender || m.sender, ...special, time: m.time, avatar: senderAvatar, replyBatchId: responseBatchId }
-                        : { from: m.sender, content: normalizedTextContent, type: 'text', time: m.time, quote: m.quote, avatar: senderAvatar, replyBatchId: responseBatchId };
+                        ? this._attachMessageTimelineFields({ from: resolvedSpecialSender || m.sender, ...special, avatar: senderAvatar, replyBatchId: responseBatchId }, m)
+                        : this._attachMessageTimelineFields({ from: m.sender, content: normalizedTextContent, type: 'text', quote: m.quote, avatar: senderAvatar, replyBatchId: responseBatchId }, m);
                     if (special?.type === 'catbox_item_use') {
-                        msgData = this._buildCatboxCareCardMessage(bgChat.id, special, senderNameForCatbox, senderAvatarForCatbox, m.time, responseBatchId);
+                        msgData = this._attachMessageTimelineFields(
+                            this._buildCatboxCareCardMessage(bgChat.id, special, senderNameForCatbox, senderAvatarForCatbox, m.time, responseBatchId),
+                            m
+                        );
                     }
                     if (special?.type === 'payment_action') {
                         this._applyWechatPaymentAction(bgChat.id, special, m.sender);
@@ -8590,6 +9170,7 @@ renderChatRoom(chat) {
                 const cleanContent = this.cleanAbnormalSpaces(msg.content);
                 const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent, { preserveVoiceTag: true });
                 const special = msg.specialMessage || this.parseSpecialMessage(cleanContent);
+                const isGeneratedUserSender = this._isCurrentWechatUserName(msg.sender);
                 if (special?.type === 'incoming_call') {
                     const { queuedLines, consumedCount } = this._collectIncomingCallFollowUps(parsedMessages, msgIndex);
                     msgIndex += consumedCount;
@@ -8628,14 +9209,20 @@ renderChatRoom(chat) {
                 });
 
                 const specialSender = String(special?.sender || '').trim();
-                const senderNameForCatbox = specialSender || msg.sender;
-                const senderAvatarForCatbox = senderContact?.avatar || (isGroupChat ? '' : savedChatAvatar) || '👤';
+                const resolvedSpecialSender = this._isCurrentWechatUserName(specialSender) ? 'me' : specialSender;
+                const senderNameForCatbox = resolvedSpecialSender || msg.sender;
+                const senderAvatarForCatbox = isGeneratedUserSender
+                    ? (this.app.wechatData.getUserInfo?.()?.avatar || '')
+                    : (senderContact?.avatar || (isGroupChat ? '' : savedChatAvatar) || '👤');
                 let msgData = special
                     // 🔥 核心修复3：如果是群聊，禁止 fallback 到 savedChatAvatar
-                    ? { from: specialSender || msg.sender, ...special, time: msg.time, avatar: senderAvatarForCatbox, replyBatchId: responseBatchId }
-                    : { from: msg.sender, content: normalizedTextContent, time: msg.time, type: 'text', avatar: senderAvatarForCatbox, quote: msg.quote, replyBatchId: responseBatchId };
+                    ? this._attachMessageTimelineFields({ from: resolvedSpecialSender || msg.sender, ...special, avatar: senderAvatarForCatbox, replyBatchId: responseBatchId }, msg)
+                    : this._attachMessageTimelineFields({ from: msg.sender, content: normalizedTextContent, type: 'text', avatar: senderAvatarForCatbox, quote: msg.quote, replyBatchId: responseBatchId }, msg);
                 if (special?.type === 'catbox_item_use') {
-                    msgData = this._buildCatboxCareCardMessage(savedChatId, special, senderNameForCatbox, senderAvatarForCatbox, msg.time, responseBatchId);
+                    msgData = this._attachMessageTimelineFields(
+                        this._buildCatboxCareCardMessage(savedChatId, special, senderNameForCatbox, senderAvatarForCatbox, msg.time, responseBatchId),
+                        msg
+                    );
                 }
                 if (special?.type === 'payment_action') {
                     this._applyWechatPaymentAction(savedChatId, special, msg.sender);
@@ -9455,7 +10042,7 @@ renderChatRoom(chat) {
 
         const timeManager = window.VirtualPhone?.timeManager;
         const realTimeInfo = this._formatRealDateTime(proactiveMeta.now || Date.now());
-        const currentTime = isProactive
+        const currentTime = this._shouldUseRealTimeForOnlineChat(options)
             ? realTimeInfo.time
             : (timeManager?.getCurrentStoryTime?.()?.time || '21:30');
 
@@ -9951,7 +10538,8 @@ renderChatRoom(chat) {
             type: 'honey_invite',
             content: '[蜜语]（等待回应）',
             honeyInviteStatus: '等待回应',
-            avatar: userInfo.avatar
+            avatar: userInfo.avatar,
+            ...(this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : {})
         });
         this.app.render();
 
@@ -10037,7 +10625,8 @@ renderChatRoom(chat) {
                 type: 'transfer',
                 content: `[转账] ¥${amount} ${desc}`,
                 amount: amount,
-                desc: desc
+                desc: desc,
+                ...(this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : {})
             });
 
             this.app.phoneShell.showNotification('转账成功', `已向${this.app.currentChat.name}转账¥${amount}`, '✅');
@@ -11776,9 +12365,11 @@ renderChatRoom(chat) {
     showVideoCallInterface(contact, aiFirstMessage) {
         // 🔥 记录通话开始的剧情时间
         const timeManager = window.VirtualPhone?.timeManager;
-        const callStartTime = timeManager
+        const callStartTime = this._shouldUseRealTimeForOnlineChat()
+            ? this._buildWechatRealTimeFields()
+            : (timeManager
             ? timeManager.getCurrentStoryTime()
-            : { time: '21:30', date: '2044年10月28日' };
+            : { time: '21:30', date: '2044年10月28日' });
         const callStartEpoch = Date.now();
         const isGroupCall = contact?.type === 'group';
         const groupParticipants = this._getGroupChatParticipants(contact);
@@ -12519,6 +13110,7 @@ ${groupParticipants.join('、') || '暂无成员'}
     _resolveCallEndStoryTime(callStartTime = null, elapsedSeconds = 0, { forceAdvanceMinute = false } = {}) {
         const timeManager = window.VirtualPhone?.timeManager;
         const safeElapsed = Math.max(0, Number(elapsedSeconds) || 0);
+        const useRealTime = this._shouldUseRealTimeForOnlineChat();
 
         const fallbackNow = () => {
             const now = new Date();
@@ -12530,6 +13122,12 @@ ${groupParticipants.join('、') || '暂无成员'}
                 timestamp: now.getTime()
             };
         };
+
+        if (useRealTime) {
+            const baseTimestamp = Number(callStartTime?.timestamp || Date.now());
+            const endTimestamp = (Number.isFinite(baseTimestamp) && baseTimestamp > 0 ? baseTimestamp : Date.now()) + safeElapsed * 1000;
+            return this._buildWechatRealTimeFields(endTimestamp);
+        }
 
         const baseTime = (callStartTime && callStartTime.time && callStartTime.date)
             ? callStartTime
@@ -12560,7 +13158,7 @@ ${groupParticipants.join('、') || '暂无成员'}
         const shouldAdvance = String(status || '').trim() === 'answered';
         const storyTime = shouldAdvance
             ? this._resolveCallEndStoryTime(callStartTime, elapsedSeconds, { forceAdvanceMinute: true })
-            : (window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || null);
+            : (this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : (window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || null));
         const currentTime = storyTime?.time || this._getCurrentStoryTimeText();
 
         this.app.wechatData.addMessage(this.app.currentChat.id, {
@@ -13111,9 +13709,11 @@ ${recentCallHistory.map(h => `${h.from === 'me' ? userName : contactName}: ${h.t
     showVoiceCallInterface(contact, aiGreeting = '') {
         // 🔥 记录通话开始的剧情时间
         const timeManager = window.VirtualPhone?.timeManager;
-        const callStartTime = timeManager
+        const callStartTime = this._shouldUseRealTimeForOnlineChat()
+            ? this._buildWechatRealTimeFields()
+            : (timeManager
             ? timeManager.getCurrentStoryTime()
-            : { time: '21:30', date: '2044年10月28日' };
+            : { time: '21:30', date: '2044年10月28日' });
         const callStartEpoch = Date.now();
         const isGroupCall = contact?.type === 'group';
         const groupParticipants = this._getGroupChatParticipants(contact);
@@ -13804,7 +14404,8 @@ ${recentCallHistory.map(h => `${h.from === 'me' ? userName : contactName}: ${h.t
                 content: `[红包] ¥${parseFloat(amount).toFixed(2)} ${wish}`,
                 amount: parseFloat(amount).toFixed(2),
                 wish: wish,
-                status: 'sent'
+                status: 'sent',
+                ...(this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : {})
             });
 
             this.app.render();

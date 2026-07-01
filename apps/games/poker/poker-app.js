@@ -148,6 +148,45 @@ export class PokerApp {
         };
     }
 
+    _isWechatOnlineOnlyModeEnabled() {
+        try {
+            const context = typeof SillyTavern !== 'undefined' && SillyTavern.getContext
+                ? SillyTavern.getContext()
+                : null;
+            const wechatData = this.getWechatData?.();
+            const key = wechatData?.getOnlineOnlyModeStorageKey?.(context) || 'wechat_online_only_mode';
+            const raw = this.storage?.get?.(key);
+            return raw === true || raw === 'true' || raw === 1 || raw === '1';
+        } catch (error) {
+            return false;
+        }
+    }
+
+    _buildWechatRealTimeFields(timestamp = Date.now()) {
+        const dateObj = new Date(Number(timestamp || Date.now()));
+        const pad = (value) => String(value).padStart(2, '0');
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        return {
+            time: `${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`,
+            date: `${dateObj.getFullYear()}年${pad(dateObj.getMonth() + 1)}月${pad(dateObj.getDate())}日`,
+            weekday: weekdays[dateObj.getDay()] || '',
+            timestamp: dateObj.getTime(),
+            realTimestamp: dateObj.getTime()
+        };
+    }
+
+    _getWechatShareTimeFields(storyTime = null) {
+        if (this._isWechatOnlineOnlyModeEnabled()) {
+            return this._buildWechatRealTimeFields();
+        }
+        return {
+            time: storyTime?.time || undefined,
+            date: storyTime?.date || undefined,
+            weekday: storyTime?.weekday || undefined,
+            timestamp: storyTime?.timestamp || undefined
+        };
+    }
+
     _getPokerStoryShareTime() {
         try {
             const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.();
@@ -194,18 +233,21 @@ export class PokerApp {
 
         const userInfo = wechatData.getUserInfo?.() || {};
         const pokerData = this.buildPokerShareCardData(shareText);
+        const shareTime = this._getWechatShareTimeFields();
         wechatData.addMessage(chat.id, {
             from: 'me',
             content: '[德州扑克分享]',
             type: 'poker_card',
             pokerData,
-            avatar: userInfo.avatar || ''
+            avatar: userInfo.avatar || '',
+            ...shareTime
         });
 
         if (chat) {
             chat.unread = (chat.unread || 0) + 1;
             chat.lastMessage = '[德州扑克分享]';
-            chat.timestamp = Date.now();
+            chat.time = shareTime.time || chat.time || '';
+            chat.timestamp = shareTime.timestamp || Date.now();
         }
         wechatData.saveData?.();
         this._syncWechatHomeBadge(wechatData);

@@ -318,24 +318,22 @@ export class GamesApp extends PokerApp {
         const userInfo = wechatData.getUserInfo?.() || {};
         const storyTime = this._getWerewolfStoryShareTimeParts();
         const werewolfData = this.buildWerewolfShareCardData(shareText);
+        const shareTime = this._getWechatShareTimeFields(storyTime);
         wechatData.addMessage(chat.id, {
             from: 'me',
             content: '[狼人杀复盘分享]',
             type: 'werewolf_card',
             werewolfData,
             avatar: userInfo.avatar || '',
-            time: storyTime.time || undefined,
-            date: storyTime.date || undefined,
-            weekday: storyTime.weekday || undefined,
-            timestamp: storyTime.timestamp || undefined
+            ...shareTime
         });
 
         if (chat) {
             chat.unread = (chat.unread || 0) + 1;
             chat.lastMessage = '[狼人杀复盘分享]';
-            chat.time = storyTime.time || chat.time;
-            if (storyTime.timestamp) {
-                chat.timestamp = storyTime.timestamp;
+            chat.time = shareTime.time || chat.time;
+            if (shareTime.timestamp) {
+                chat.timestamp = shareTime.timestamp;
             }
         }
         wechatData.saveData?.();
@@ -1682,6 +1680,7 @@ export class GamesApp extends PokerApp {
         const state = this.catboxData.getState();
         const messageId = `catbox_invite_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         this.catboxData.updateCoAdoptInviteMessage?.(chat.id, messageId);
+        const inviteTime = this._getWechatShareTimeFields();
         wechatData.addMessage(chat.id, {
             id: messageId,
             from: 'me',
@@ -1690,10 +1689,12 @@ export class GamesApp extends PokerApp {
             catboxPetName: state.catName,
             catboxInviteStatus: 'pending',
             catboxInviteChatId: chat.id,
-            avatar: userInfo.avatar || ''
+            avatar: userInfo.avatar || '',
+            ...inviteTime
         });
         chat.lastMessage = '[猫盒共养邀请]';
-        chat.timestamp = Date.now();
+        chat.time = inviteTime.time || chat.time || '';
+        chat.timestamp = inviteTime.timestamp || Date.now();
         wechatData.saveData?.();
         this._syncWechatHomeBadge?.(wechatData);
         this.phoneShell?.showNotification?.('猫盒', `已邀请${chat.name}共同收养`, '🐱');

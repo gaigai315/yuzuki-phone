@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.3.2';
+const ST_PHONE_VERSION = '1.3.3';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
@@ -43,10 +43,13 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-06-29',
+    date: '2026-07-01',
     items: [
-        '【必做】更新后请在设置中执行一次【一键恢复默认提示词】，以同步最新全局提示词。',
-        '【优化】生图第二个括号现在可直接使用中文或英文 tag；如需中文 tag，可自行修改对应提示词让 AI 返回中文 tag。'
+        '【修复】修复微信世界书勾选状态偶发丢失的问题。',
+        '【修复】修复同一微信标签内多段消息按块内序号交错显示的问题。',
+        '【修复】修复微信纯线上模式与互通模式时间源混用导致时间跳动的问题，包含游戏分享卡片与蜜语邀约。',
+        '【修复】修复关闭用户发言清洗后，微信单聊/群聊中AI生成的用户发言仍可能被拦截或不显示的问题。',
+        '【优化】优化微信快捷回复面板样式与折叠交互，修复时间推进确认后误提示请输入内容的问题。'
     ]
 };
 
@@ -4889,6 +4892,19 @@ if (window.GGP_Loaded) {
         }
     }
 
+    function buildWechatRealTimeFields(timestamp = Date.now()) {
+        const dateObj = new Date(Number(timestamp || Date.now()));
+        const pad = (value) => String(value).padStart(2, '0');
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        return {
+            time: `${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`,
+            date: `${dateObj.getFullYear()}年${pad(dateObj.getMonth() + 1)}月${pad(dateObj.getDate())}日`,
+            weekday: weekdays[dateObj.getDay()],
+            timestamp: dateObj.getTime(),
+            realTimestamp: dateObj.getTime()
+        };
+    }
+
     function isLobbyModeContext(ctx = null) {
         try {
             const context = ctx || getContext();
@@ -5607,6 +5623,7 @@ if (window.GGP_Loaded) {
     function normalizeWechatGroupSpeakerName(name, members = []) {
         const rawName = String(name || '').trim();
         if (!rawName) return '';
+        if (isWechatSenderCurrentUser(rawName)) return rawName;
         const memberList = Array.isArray(members) ? members.map(item => String(item || '').trim()).filter(Boolean) : [];
         if (memberList.includes(rawName)) return rawName;
 
@@ -5658,6 +5675,7 @@ if (window.GGP_Loaded) {
         while ((match = WECHAT_TAG_REGEX_NEW.exec(normalizedText)) !== null) {
             const isOfflineCommentTag = /<!--/.test(match[0]);
             let content = extractWechatTagPayload(match[0]) || stripWechatCommentWrapper(match[1]);
+            let tagMessageOrder = 0;
 
             if (!content) {
                 continue;
@@ -5740,6 +5758,11 @@ if (window.GGP_Loaded) {
                         }
                     }
 
+                    const orderedMessages = messagesToSave.map(msg => ({
+                        ...msg,
+                        sourceOrder: tagMessageOrder++
+                    }));
+
                     results.push({
                         type: 'wechat_message',
                         contact: currentContact,
@@ -5751,7 +5774,7 @@ if (window.GGP_Loaded) {
                             (!currentDate || normalizeWechatDateText(currentDate) === normalizeWechatDateText(textStoryTime?.date)) ? textStoryTime?.weekday : ''
                         ),
                         recipient: currentRecipient || '',
-                        messages: [...messagesToSave],
+                        messages: orderedMessages,
                         members: currentChatType === 'group' ? allowedGroupMembers : [],
                         status: 'online',
                         notification: `${currentContact}: ${messagesToSave[0].content.substring(0, 20)}...`
@@ -6430,6 +6453,7 @@ if (window.GGP_Loaded) {
                 }
 
                 // 🔥 存储消息到数据层（带上 batchId 和历史标记）
+                const sourceOrder = Number.isFinite(Number(msg.sourceOrder)) ? Number(msg.sourceOrder) : index;
                 const added = wechatData.addMessage(chat.id, {
                     from: messageSender,
                     content: cleanContent,
@@ -6451,7 +6475,7 @@ if (window.GGP_Loaded) {
                     batchId: data.batchId,                 // 🔥 传入批次ID
                     isHistoryReplay: data.isHistoryReplay, // 🔥 传入历史回放标记
                     fromMainChatTag: true,                 // 🔥 标记来自正文解析，用于流式碎片清洗
-                    mainChatOrder: ((Number.isFinite(data.sourceIndex) ? data.sourceIndex : 0) * 100000) + index,
+                    mainChatOrder: ((Number.isFinite(data.sourceIndex) ? data.sourceIndex : 0) * 100000) + sourceOrder,
                     amount: msg.amount,
                     desc: msg.desc,
                     wish: msg.wish,
@@ -6909,6 +6933,7 @@ if (window.GGP_Loaded) {
                 const lines = content.split('\n');
                 let addedCount = 0;
                 const tmForReply = window.VirtualPhone?.timeManager || (await loadTimeManager());
+                const useRealTimeForReply = isWechatOnlineOnlyModeEnabled();
                 const parseStoryTs = (timeData) => {
                     if (!timeData?.time || !timeData?.date) return Number.NEGATIVE_INFINITY;
                     try {
@@ -6933,7 +6958,9 @@ if (window.GGP_Loaded) {
                     return Number.NEGATIVE_INFINITY;
                 };
 
-                let timelineCursor = tmForReply?.getCurrentStoryTime?.() || null;
+                let timelineCursor = useRealTimeForReply
+                    ? buildWechatRealTimeFields()
+                    : (tmForReply?.getCurrentStoryTime?.() || null);
                 const existingMessages = wechatData.getMessages(chat.id);
                 const lastExistingMessage = Array.isArray(existingMessages) && existingMessages.length > 0
                     ? existingMessages[existingMessages.length - 1]
@@ -6945,7 +6972,7 @@ if (window.GGP_Loaded) {
                         weekday: lastExistingMessage.weekday || ''
                     }
                     : null;
-                if (lastExistingTime && (!timelineCursor || parseStoryTs(lastExistingTime) > parseStoryTs(timelineCursor))) {
+                if (!useRealTimeForReply && lastExistingTime && (!timelineCursor || parseStoryTs(lastExistingTime) > parseStoryTs(timelineCursor))) {
                     timelineCursor = lastExistingTime;
                 }
 
@@ -6973,7 +7000,12 @@ if (window.GGP_Loaded) {
                     if (!trimmedLine) return;
 
                     let messageTime = timelineCursor || null;
-                    if (tmForReply?.addMinutesToStoryTime && timelineCursor?.time && timelineCursor?.date) {
+                    if (useRealTimeForReply) {
+                        const baseTimestamp = Number(timelineCursor?.timestamp || Date.now());
+                        const nextTimestamp = (Number.isFinite(baseTimestamp) && baseTimestamp > 0 ? baseTimestamp : Date.now()) + Math.max(1, lineIndex + 1) * 1000;
+                        messageTime = buildWechatRealTimeFields(nextTimestamp);
+                        timelineCursor = messageTime;
+                    } else if (tmForReply?.addMinutesToStoryTime && timelineCursor?.time && timelineCursor?.date) {
                         let minutesToAdd = 1;
                         if (typeof tmForReply.getWechatMessageMinutesToAdd === 'function') {
                             minutesToAdd = tmForReply.getWechatMessageMinutesToAdd(trimmedLine, { inBatch: true });
@@ -7012,6 +7044,8 @@ if (window.GGP_Loaded) {
                         time: messageTime?.time,
                         date: messageTime?.date,
                         weekday: messageTime?.weekday,
+                        timestamp: messageTime?.timestamp,
+                        realTimestamp: messageTime?.realTimestamp,
                         avatar: wechatData.getUserInfo().avatar || '',
                         tavernMessageIndex: tavernIndex, // 🔥 传入楼层索引
                         batchId: batchId,                // 🔥 传入批次ID

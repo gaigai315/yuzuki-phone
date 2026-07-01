@@ -490,6 +490,10 @@ export class WorldbookManager {
         return `phone_worldbook_selection_${appKey}_char_${this._getCharacterScopeKey()}`;
     }
 
+    getAppSelectionKey(appKey) {
+        return `phone_worldbook_selection_${appKey}`;
+    }
+
     getGlobalSelectionKey(appKey) {
         return `chat_worldbook_selection_${appKey}`;
     }
@@ -504,6 +508,10 @@ export class WorldbookManager {
 
     getEnabledKey(appKey) {
         return `phone_worldbook_enabled_${appKey}_char_${this._getCharacterScopeKey()}`;
+    }
+
+    getAppEnabledKey(appKey) {
+        return `phone_worldbook_enabled_${appKey}`;
     }
 
     getGlobalEnabledKey(appKey) {
@@ -538,6 +546,11 @@ export class WorldbookManager {
             return parseBooleanSetting(globalRaw, fallback);
         }
 
+        const appRaw = this.storage?.get?.(this.getAppEnabledKey(appKey), undefined);
+        if (appRaw !== undefined && appRaw !== null) {
+            return parseBooleanSetting(appRaw, fallback);
+        }
+
         const legacyKey = this.getLegacyEnabledKey(appKey);
         if (legacyKey) {
             const legacyRaw = this.storage?.get?.(legacyKey, undefined);
@@ -547,7 +560,15 @@ export class WorldbookManager {
     }
 
     async setEnabled(appKey, enabled) {
-        await this.storage?.set?.(this.getEnabledKey(appKey), !!enabled);
+        const keys = uniqueStrings([
+            this.getEnabledKey(appKey),
+            this.getPreviousChatScopedEnabledKey(appKey),
+            this.getGlobalEnabledKey(appKey),
+            this.getAppEnabledKey(appKey)
+        ]);
+        for (const key of keys) {
+            await this.storage?.set?.(key, !!enabled);
+        }
         return !!enabled;
     }
 
@@ -562,6 +583,9 @@ export class WorldbookManager {
         }
         if (raw === undefined || raw === null) {
             raw = this.storage?.get?.(this.getGlobalSelectionKey(appKey), undefined);
+        }
+        if (raw === undefined || raw === null) {
+            raw = this.storage?.get?.(this.getAppSelectionKey(appKey), undefined);
         }
         if (raw === undefined || raw === null) {
             raw = this.storage?.get?.(this.getLegacySelectionKey(appKey), null);
@@ -595,10 +619,19 @@ export class WorldbookManager {
 
     async setSelection(appKey, ids = []) {
         const unique = uniqueStrings(ids);
-        await this.storage?.set?.(this.getSelectionKey(appKey), {
+        const selection = {
             initialized: true,
             ids: unique
-        });
+        };
+        const keys = uniqueStrings([
+            this.getSelectionKey(appKey),
+            this.getPreviousChatScopedSelectionKey(appKey),
+            this.getGlobalSelectionKey(appKey),
+            this.getAppSelectionKey(appKey)
+        ]);
+        for (const key of keys) {
+            await this.storage?.set?.(key, selection);
+        }
         return unique;
     }
 
