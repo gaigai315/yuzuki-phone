@@ -9781,26 +9781,21 @@ if (window.GGP_Loaded) {
                                             .filter(chat => chat?.chatType === 'group' && Array.isArray(chat.members) && chat.members.length > 0)
                                             .forEach(groupChat => {
                                                 const usedSingleIds = new Set();
+                                                const relatedNames = [];
                                                 groupChat.members.forEach(member => {
                                                     const singleChat = singleHistoryByName.get(normalizeWechatHistoryName(member));
                                                     if (!singleChat || usedSingleIds.has(singleChat.chatId)) return;
                                                     usedSingleIds.add(singleChat.chatId);
-                                                    relatedLines.push(`━━━ ${groupChat.chatName} 群成员单聊参考：${singleChat.chatName} ━━━`);
-                                                    let lastDate = '';
-                                                    singleChat.messages.forEach(msg => {
-                                                        if (msg.date && msg.date !== lastDate) {
-                                                            relatedLines.push(`--- ${msg.date} ---`);
-                                                            lastDate = msg.date;
-                                                        }
-                                                        relatedLines.push(`[${msg.time}] ${msg.speaker}: ${msg.content}`);
-                                                    });
-                                                    relatedLines.push('');
+                                                    relatedNames.push(singleChat.chatName);
                                                 });
+                                                if (relatedNames.length > 0) {
+                                                    relatedLines.push(`- ${groupChat.chatName}：可参考同名群成员单聊窗口 ${relatedNames.join('、')}`);
+                                                }
                                             });
 
                                         if (relatedLines.length > 0) {
-                                            phoneHistoryContent += `【补充上下文：群成员单聊参考】\n`;
-                                            phoneHistoryContent += `以下内容只供对应群聊中同名群成员延续与{{user}}的私聊记忆；没有列出的群成员，不要假装知道私聊内容；不得参考非群成员私聊。\n`;
+                                            phoneHistoryContent += `【群成员单聊参考索引】\n`;
+                                            phoneHistoryContent += `上方【手机微信已有消息】已完整列出各窗口记录；以下只说明群聊可参考哪些同名成员单聊窗口，不要重复读取或复述同一段聊天。\n`;
                                             phoneHistoryContent += `${relatedLines.join('\n')}\n`;
                                         }
                                     }
