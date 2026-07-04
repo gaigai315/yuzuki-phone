@@ -794,13 +794,22 @@ export class ChatView {
     }
 
     _shouldUseRealTimeForOnlineChat(options = {}) {
-        if (options?.realTimeMode === true || options?.proactive === true) return true;
+        if (options?.realTimeMode === false) return false;
+        if (options?.realTimeMode === true) return true;
         const storage = window.VirtualPhone?.storage;
         if (!storage) return false;
         const context = this._safeGetContext?.();
         const onlineOnlyKey = this.app?.wechatData?.getOnlineOnlyModeStorageKey?.(context) || 'wechat_online_only_mode';
-        const val = storage.get(onlineOnlyKey);
-        return val === true || val === 'true' || val === 1;
+        const onlineOnlyVal = storage.get(onlineOnlyKey);
+        const onlineOnlyEnabled = onlineOnlyVal === true || onlineOnlyVal === 'true' || onlineOnlyVal === 1;
+        if (!onlineOnlyEnabled) return false;
+
+        const isLobby = this._isLobbyMode?.(context);
+        const timeKey = isLobby
+            ? 'phone_lobby_wechat_online_only_real_time_enabled'
+            : 'wechat_online_only_real_time_enabled';
+        const val = storage.get(timeKey);
+        return val === undefined || val === null || val === '' || val === true || val === 'true' || val === 1;
     }
 
     _buildWechatRealTimeFields(timestamp = Date.now()) {
@@ -4919,11 +4928,40 @@ renderChatRoom(chat) {
         });
     }
 
+    _refreshQuickReplyTimePanel(parts = null) {
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        const nextParts = parts || this._parseQuickReplyTimeParts(this.quickReplyTimeText || this._getQuickReplyDefaultTimeText());
+        const selectedDateKey = `${nextParts.year}-${nextParts.month}-${nextParts.day}`;
+
+        currentView.querySelectorAll('.quick-time-option').forEach(option => {
+            const part = String(option.dataset.timePart || '').trim();
+            let isSelected = false;
+            if (part === 'date') {
+                const optionDateKey = `${option.dataset.year}-${option.dataset.month}-${option.dataset.day}`;
+                isSelected = optionDateKey === selectedDateKey;
+            } else if (part === 'hour') {
+                isSelected = Number.parseInt(option.dataset.value || '-1', 10) === nextParts.hour;
+            } else if (part === 'minute') {
+                isSelected = Number.parseInt(option.dataset.value || '-1', 10) === nextParts.minute;
+            }
+
+            option.style.background = isSelected ? 'rgba(31,122,255,0.1)' : 'transparent';
+            option.style.color = isSelected ? '#1f7aff' : '#aeb4bd';
+            option.style.fontWeight = isSelected ? '700' : '500';
+            option.dataset.selected = isSelected ? 'true' : 'false';
+            option.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        });
+    }
+
+    _clearQuickReplyTimeScrollTimers() {
+        if (!this._quickTimeScrollTimers) return;
+        this._quickTimeScrollTimers.forEach(timer => clearTimeout(timer));
+        this._quickTimeScrollTimers.clear();
+    }
+
     _handleQuickReplyTimeOption(optionEl) {
         if (!optionEl) return;
         const part = String(optionEl.dataset.timePart || '').trim();
-        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
-        const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
         const parts = this._parseQuickReplyTimeParts(this.quickReplyTimeText || this._getQuickReplyDefaultTimeText());
         if (part === 'date') {
             parts.year = Number.parseInt(optionEl.dataset.year || parts.year, 10) || parts.year;
@@ -4936,7 +4974,7 @@ renderChatRoom(chat) {
             parts.minute = Math.max(0, Math.min(59, Number.parseInt(optionEl.dataset.value || parts.minute, 10) || 0));
         }
         this._setQuickReplyTimeText(this._formatQuickReplyTimeParts(parts));
-        this.app.render();
+        this._refreshQuickReplyTimePanel(parts);
     }
 
     _getCenteredQuickTimeOption(columnEl) {
@@ -4976,7 +5014,7 @@ renderChatRoom(chat) {
     _scrollQuickReplyTimeSelectionIntoView() {
         const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
         currentView.querySelectorAll('.quick-time-column').forEach(column => {
-            const selected = column.querySelector('.quick-time-option[style*="font-weight:700"]');
+            const selected = column.querySelector('.quick-time-option[data-selected="true"], .quick-time-option[aria-selected="true"], .quick-time-option[style*="font-weight:700"]');
             if (!selected) return;
             const top = selected.offsetTop - Math.max(0, (column.clientHeight - selected.clientHeight) / 2);
             column.scrollTop = Math.max(0, top);
@@ -5017,15 +5055,15 @@ renderChatRoom(chat) {
             const key = `${parts.year}-${parts.month}-${parts.day}`;
             const isSelected = key === selectedDateKey;
             const label = `${parts.month}月${parts.day}日 ${parts.weekday || ''}`;
-            return `<button type="button" class="quick-time-option" data-time-part="date" data-year="${parts.year}" data-month="${parts.month}" data-day="${parts.day}" data-weekday="${this._escapeHtml(parts.weekday || '')}" style="height:24px;border:none;border-radius:7px;${isSelected ? selectedStyle : normalStyle}font-size:12px;white-space:nowrap;">${this._escapeHtml(label)}</button>`;
+            return `<button type="button" class="quick-time-option" data-time-part="date" data-year="${parts.year}" data-month="${parts.month}" data-day="${parts.day}" data-weekday="${this._escapeHtml(parts.weekday || '')}" data-selected="${isSelected ? 'true' : 'false'}" aria-selected="${isSelected ? 'true' : 'false'}" style="height:24px;border:none;border-radius:7px;${isSelected ? selectedStyle : normalStyle}font-size:12px;white-space:nowrap;">${this._escapeHtml(label)}</button>`;
         }).join('');
         const hourOptionsHtml = Array.from({ length: 24 }, (_, hour) => {
             const isSelected = hour === timeParts.hour;
-            return `<button type="button" class="quick-time-option" data-time-part="hour" data-value="${hour}" style="height:24px;border:none;border-radius:7px;${isSelected ? selectedStyle : normalStyle}font-size:12px;">${String(hour).padStart(2, '0')}</button>`;
+            return `<button type="button" class="quick-time-option" data-time-part="hour" data-value="${hour}" data-selected="${isSelected ? 'true' : 'false'}" aria-selected="${isSelected ? 'true' : 'false'}" style="height:24px;border:none;border-radius:7px;${isSelected ? selectedStyle : normalStyle}font-size:12px;">${String(hour).padStart(2, '0')}</button>`;
         }).join('');
         const minuteOptionsHtml = Array.from({ length: 60 }, (_, minute) => {
             const isSelected = minute === timeParts.minute;
-            return `<button type="button" class="quick-time-option" data-time-part="minute" data-value="${minute}" style="height:24px;border:none;border-radius:7px;${isSelected ? selectedStyle : normalStyle}font-size:12px;">${String(minute).padStart(2, '0')}</button>`;
+            return `<button type="button" class="quick-time-option" data-time-part="minute" data-value="${minute}" data-selected="${isSelected ? 'true' : 'false'}" aria-selected="${isSelected ? 'true' : 'false'}" style="height:24px;border:none;border-radius:7px;${isSelected ? selectedStyle : normalStyle}font-size:12px;">${String(minute).padStart(2, '0')}</button>`;
         }).join('');
 
         const timePanel = `
@@ -5034,9 +5072,9 @@ renderChatRoom(chat) {
                 <div style="font-size:10px;color:#9ca3af;margin-top:1px;">选择目标时间</div>
                 <div class="quick-reply-live-text" style="margin:6px auto 8px;max-width:238px;height:32px;border-radius:8px;background:rgba(245,249,255,0.92);border:0.5px solid rgba(47,128,255,0.18);display:flex;align-items:center;justify-content:center;color:#1f7aff;font-size:14px;font-weight:600;">${safeInputText || this._escapeHtml(this._getQuickReplyDefaultTimeText())}</div>
                 <div style="margin:0 auto 8px;max-width:282px;height:76px;border-radius:13px;background:rgba(255,255,255,0.72);border:0.5px solid rgba(0,0,0,0.07);display:grid;grid-template-columns:1.15fr 0.72fr 0.72fr;align-items:stretch;color:#aeb4bd;font-size:11px;overflow:hidden;position:relative;">
-                    <div class="quick-time-column" data-time-column="date" style="display:flex;flex-direction:column;gap:3px;overflow-y:auto;padding:27px 5px;scrollbar-width:none;">${dateOptionsHtml}</div>
-                    <div class="quick-time-column" data-time-column="hour" style="display:flex;flex-direction:column;gap:3px;overflow-y:auto;padding:27px 5px;border-left:0.5px solid #e5eaf2;border-right:0.5px solid #e5eaf2;scrollbar-width:none;">${hourOptionsHtml}</div>
-                    <div class="quick-time-column" data-time-column="minute" style="display:flex;flex-direction:column;gap:3px;overflow-y:auto;padding:27px 5px;scrollbar-width:none;">${minuteOptionsHtml}</div>
+                    <div class="quick-time-column" data-time-column="date" style="display:flex;flex-direction:column;gap:3px;overflow-y:auto;padding:27px 5px;scrollbar-width:none;touch-action:pan-y;overscroll-behavior:contain;">${dateOptionsHtml}</div>
+                    <div class="quick-time-column" data-time-column="hour" style="display:flex;flex-direction:column;gap:3px;overflow-y:auto;padding:27px 5px;border-left:0.5px solid #e5eaf2;border-right:0.5px solid #e5eaf2;scrollbar-width:none;touch-action:pan-y;overscroll-behavior:contain;">${hourOptionsHtml}</div>
+                    <div class="quick-time-column" data-time-column="minute" style="display:flex;flex-direction:column;gap:3px;overflow-y:auto;padding:27px 5px;scrollbar-width:none;touch-action:pan-y;overscroll-behavior:contain;">${minuteOptionsHtml}</div>
                 </div>
                 <div style="display:flex;justify-content:center;gap:10px;padding-top:1px;">
                     <button type="button" class="quick-reply-cancel" style="width:72px;height:28px;border:none;border-radius:9px;background:rgba(245,245,247,0.96);color:#111;font-size:12px;font-weight:600;">取消</button>
@@ -5056,7 +5094,7 @@ renderChatRoom(chat) {
         `;
 
         return `
-        <div class="quick-reply-panel" style="padding:6px 10px 7px;background:transparent;display:flex;flex-direction:column;gap:9px;">
+        <div class="quick-reply-panel" style="padding:6px 10px 7px;background:transparent;display:flex;flex-direction:column;gap:9px;touch-action:pan-y;overscroll-behavior:contain;">
             <div class="quick-reply-editor-card" style="background:rgba(255,255,255,0.94);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border:0.5px solid rgba(255,255,255,0.76);border-radius:18px;box-shadow:0 7px 20px rgba(0,0,0,0.09);overflow:hidden;">
                 ${isTime ? timePanel : mediaPanel}
             </div>
@@ -7496,37 +7534,49 @@ renderChatRoom(chat) {
         });
 
         const quickReplySendBtn = query('.quick-reply-send');
+        const runQuickReplySend = (e) => {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+            const now = Date.now();
+            if (now - Number(quickReplySendBtn?.dataset.lastActionAt || 0) < 450) return;
+            if (quickReplySendBtn) quickReplySendBtn.dataset.lastActionAt = String(now);
+            this._clearQuickReplyTimeScrollTimers();
+            this._sendActiveQuickReply();
+        };
         quickReplySendBtn?.addEventListener('touchstart', (e) => {
             e.preventDefault();
             e.stopPropagation();
         }, { passive: false });
+        quickReplySendBtn?.addEventListener('touchend', runQuickReplySend);
         quickReplySendBtn?.addEventListener('mousedown', (e) => {
             e.preventDefault();
             e.stopPropagation();
         });
-        quickReplySendBtn?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this._sendActiveQuickReply();
-        });
+        quickReplySendBtn?.addEventListener('click', runQuickReplySend);
 
         const quickReplyCancelBtn = query('.quick-reply-cancel');
-        quickReplyCancelBtn?.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        }, { passive: false });
-        quickReplyCancelBtn?.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-        quickReplyCancelBtn?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+        const runQuickReplyCancel = (e) => {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+            const now = Date.now();
+            if (now - Number(quickReplyCancelBtn?.dataset.lastActionAt || 0) < 450) return;
+            if (quickReplyCancelBtn) quickReplyCancelBtn.dataset.lastActionAt = String(now);
+            this._clearQuickReplyTimeScrollTimers();
             this.showQuickReplies = false;
             this.activeQuickReplyKey = '';
             this.quickReplyTimeText = '';
             this.app.render();
+        };
+        quickReplyCancelBtn?.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, { passive: false });
+        quickReplyCancelBtn?.addEventListener('touchend', runQuickReplyCancel);
+        quickReplyCancelBtn?.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
         });
+        quickReplyCancelBtn?.addEventListener('click', runQuickReplyCancel);
 
         queryAll('.quick-time-option').forEach(option => {
             option.addEventListener('click', (e) => {
@@ -9062,7 +9112,6 @@ renderChatRoom(chat) {
                     this._applyAiReplyTimeline(m, normalizedTextContent, {
                         isFirstInReplyBatch: bgIndex === 0,
                         extraGapMinutes: bgShortGapMap.get(bgIndex) || 0,
-                        realTimeMode: isProactive,
                         baseTimestamp: options?.proactiveMeta?.now || Date.now()
                     });
 
@@ -9204,7 +9253,6 @@ renderChatRoom(chat) {
                 this._applyAiReplyTimeline(msg, normalizedTextContent, {
                     isFirstInReplyBatch: msgIndex === 0,
                     extraGapMinutes: inlineShortGapMap.get(msgIndex) || 0,
-                    realTimeMode: isProactive,
                     baseTimestamp: options?.proactiveMeta?.now || Date.now()
                 });
 
@@ -10042,9 +10090,14 @@ renderChatRoom(chat) {
 
         const timeManager = window.VirtualPhone?.timeManager;
         const realTimeInfo = this._formatRealDateTime(proactiveMeta.now || Date.now());
-        const currentTime = this._shouldUseRealTimeForOnlineChat(options)
+        const useRealTimeForOnlineChat = this._shouldUseRealTimeForOnlineChat(options);
+        const storyTimeInfo = timeManager?.getCurrentStoryTime?.();
+        const currentTime = useRealTimeForOnlineChat
             ? realTimeInfo.time
-            : (timeManager?.getCurrentStoryTime?.()?.time || '21:30');
+            : (storyTimeInfo?.time || '21:30');
+        const currentDateTimeText = useRealTimeForOnlineChat
+            ? `${realTimeInfo.date} ${realTimeInfo.time}`
+            : `${storyTimeInfo?.date || ''} ${storyTimeInfo?.time || currentTime}`.trim();
 
         const appendWechatChatTranscript = async (chat, messagesForChat) => {
             let text = `━━━ ${chat.name} 的聊天记录 ━━━\n`;
@@ -10292,7 +10345,7 @@ renderChatRoom(chat) {
         else if (isGroupChat) currentModeName = '微信群聊';
 
         let finalUserContent = isProactive
-            ? `现在你处于微信线上主动触发模式。现实时间到点后，微信好友或微信群需要主动联系${userName}。请根据以上所有信息、微信单聊规则和微信群聊规则，主动生成新的线上微信消息。`
+            ? `现在你处于微信线上主动触发模式。线上主动触发时，微信好友或微信群需要主动联系${userName}。请根据以上所有信息、微信单聊规则和微信群聊规则，主动生成新的线上微信消息。`
             : `现在你处于${currentModeName}的模式，请根据以上所有信息，遵守回复格式，自然承接用户的消息进行回复。`;
         if (!callMode) {
             if (isGroupChat) {
@@ -10309,14 +10362,18 @@ renderChatRoom(chat) {
             if (isProactive) {
                 const elapsedMinutes = Math.max(0, Number.parseInt(proactiveMeta.elapsedMinutes, 10) || 0);
                 const intervalMinutes = Math.max(1, Number.parseInt(proactiveMeta.intervalMinutes, 10) || 1);
-                finalUserContent += `\n- 【现实时间】当前现实时间为 ${realTimeInfo.date} ${realTimeInfo.time}；距离上次线上主动触发约 ${elapsedMinutes} 分钟，用户设置的触发间隔为 ${intervalMinutes} 分钟。`;
-                finalUserContent += '\n- 本轮不是用户刚刚发消息，而是线上模式按现实时间自动触发；你必须让合适的微信好友或微信群主动联系用户。';
+                finalUserContent += useRealTimeForOnlineChat
+                    ? `\n- 【现实时间】当前现实时间为 ${currentDateTimeText}；距离上次线上主动触发约 ${elapsedMinutes} 分钟，用户设置的触发间隔为 ${intervalMinutes} 分钟。`
+                    : `\n- 【剧情时间】当前剧情时间为 ${currentDateTimeText || currentTime}；现实距离上次线上主动触发约 ${elapsedMinutes} 分钟，用户设置的触发间隔为 ${intervalMinutes} 分钟。`;
+                finalUserContent += '\n- 本轮不是用户刚刚发消息，而是线上模式定时主动触发；你必须让合适的微信好友或微信群主动联系用户。';
                 finalUserContent += '\n- 必须只输出一个 <wechat>...</wechat> 标签，禁止返回空，禁止解释，禁止输出标签外文字。';
                 finalUserContent += '\n- 必须同时审视【手机微信已有消息】里的单聊窗口和群聊窗口；可以选择一个最合理的单聊、一个最合理的群聊，或在同一个 <wechat> 中输出多个合理窗口。';
                 finalUserContent += '\n- 窗口名必须来自已有微信聊天记录窗口，且格式沿用现有微信线上单聊/群聊规则。';
                 finalUserContent += `\n- 所有新增消息都必须是发给手机主人“${userName}”的线上微信消息；禁止替${userName}发言。`;
                 finalUserContent += '\n- 单聊窗口继续遵守微信单聊模式；群聊窗口继续遵守微信群聊模式，群内发送者必须来自该群成员白名单。';
-                finalUserContent += '\n- 消息时间必须按当前现实时间或当前窗口最后一条已存在消息之后自然推进。';
+                finalUserContent += useRealTimeForOnlineChat
+                    ? '\n- 消息时间必须按当前现实时间或当前窗口最后一条已存在消息之后自然推进。'
+                    : '\n- 消息时间必须按当前剧情时间或当前窗口最后一条已存在消息之后自然推进。';
             } else if (!isGroupChat) {
                 finalUserContent += `\n- 【方向锁定】当前微信单聊窗口是“${targetChat?.name || charName}”；手机主人/用户本人是“${userName}”。你只能扮演“${targetChat?.name || charName}”给“${userName}”发新增微信消息。`;
                 finalUserContent += `\n- 即使角色卡主角、酒馆 assistant 或正文叙事视角不是“${targetChat?.name || charName}”，当前微信单聊也必须以“${targetChat?.name || charName}”的身份和口吻回复；角色卡和正文只作为背景参考。`;
@@ -10352,6 +10409,12 @@ renderChatRoom(chat) {
     _buildOnlineProactiveRules({ userName = '用户', targetChat = null, customEmojiList = '', proactiveMeta = {} } = {}) {
         const promptManager = window.VirtualPhone?.promptManager;
         const realTimeInfo = this._formatRealDateTime(proactiveMeta.now || Date.now());
+        const timeManager = window.VirtualPhone?.timeManager;
+        const useRealTimeForOnlineChat = this._shouldUseRealTimeForOnlineChat();
+        const storyTimeInfo = timeManager?.getCurrentStoryTime?.();
+        const currentDateTimeText = useRealTimeForOnlineChat
+            ? `${realTimeInfo.date} ${realTimeInfo.time}`
+            : `${storyTimeInfo?.date || ''} ${storyTimeInfo?.time || ''}`.trim();
         const chats = this.app.wechatData.getChatList();
         const contacts = this.app.wechatData.getContacts?.() || [];
         const wechatContactsList = this._formatWechatContactListForPrompt(contacts);
@@ -10402,9 +10465,11 @@ renderChatRoom(chat) {
 
         return [
             '【微信线上主动触发】',
-            `当前现实时间：${realTimeInfo.date} ${realTimeInfo.time}`,
+            useRealTimeForOnlineChat
+                ? `当前现实时间：${currentDateTimeText}`
+                : `当前剧情时间：${currentDateTimeText || '未知'}`,
             `距离上次线上主动触发约 ${elapsedMinutes} 分钟；用户设置的自动触发间隔为 ${intervalMinutes} 分钟。`,
-            '这是线上模式按现实时间自动触发，不是用户主动发消息。你必须复用下方微信线上单聊和微信群聊规则，输出标准 <wechat> 标签，让合适的好友或群聊主动联系用户。',
+            '这是线上模式定时主动触发，不是用户主动发消息。你必须复用下方微信线上单聊和微信群聊规则，输出标准 <wechat> 标签，让合适的好友或群聊主动联系用户。',
             '',
             singlePrompt ? `【复用：微信线上单聊提示词】\n${singlePrompt}` : '',
             groupPrompt ? `【复用：微信群聊提示词】\n${groupPrompt}` : ''

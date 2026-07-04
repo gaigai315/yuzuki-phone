@@ -46,6 +46,8 @@ const WECHAT_ONLINE_PROACTIVE_ENABLED_KEY = 'wechat_online_proactive_enabled';
 const WECHAT_ONLINE_PROACTIVE_INTERVAL_KEY = 'wechat_online_proactive_interval_minutes';
 const LOBBY_WECHAT_ONLINE_PROACTIVE_ENABLED_KEY = 'phone_lobby_wechat_online_proactive_enabled';
 const LOBBY_WECHAT_ONLINE_PROACTIVE_INTERVAL_KEY = 'phone_lobby_wechat_online_proactive_interval_minutes';
+const WECHAT_ONLINE_ONLY_REAL_TIME_ENABLED_KEY = 'wechat_online_only_real_time_enabled';
+const LOBBY_WECHAT_ONLINE_ONLY_REAL_TIME_ENABLED_KEY = 'phone_lobby_wechat_online_only_real_time_enabled';
 const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 
 function normalizePhoneShellScalePercent(value) {
@@ -222,8 +224,18 @@ export class SettingsApp {
         return this._isLobbyMode(context) ? LOBBY_WECHAT_ONLINE_PROACTIVE_INTERVAL_KEY : WECHAT_ONLINE_PROACTIVE_INTERVAL_KEY;
     }
 
+    _getWechatOnlineOnlyRealTimeStorageKey(context = null) {
+        return this._isLobbyMode(context) ? LOBBY_WECHAT_ONLINE_ONLY_REAL_TIME_ENABLED_KEY : WECHAT_ONLINE_ONLY_REAL_TIME_ENABLED_KEY;
+    }
+
     _isStorageTruthy(key) {
         const raw = this.storage?.get?.(key);
+        return raw === true || raw === 'true' || raw === 1;
+    }
+
+    _isStorageEnabledByDefault(key) {
+        const raw = this.storage?.get?.(key);
+        if (raw === undefined || raw === null || raw === '') return true;
         return raw === true || raw === 'true' || raw === 1;
     }
 
@@ -644,9 +656,11 @@ export class SettingsApp {
         const wechatOnlineOnlyModeKey = this._getWechatOnlineOnlyModeStorageKey(context);
         const wechatOnlineProactiveEnabledKey = this._getWechatOnlineProactiveEnabledStorageKey(context);
         const wechatOnlineProactiveIntervalKey = this._getWechatOnlineProactiveIntervalStorageKey(context);
+        const wechatOnlineOnlyRealTimeKey = this._getWechatOnlineOnlyRealTimeStorageKey(context);
         const isWechatInteropMode = this._isStorageTruthy(wechatInteropModeKey);
         const isWechatOnlineOnlyMode = this._isStorageTruthy(wechatOnlineOnlyModeKey) && !isWechatInteropMode;
         const isWechatOnlineProactiveEnabled = this._isStorageTruthy(wechatOnlineProactiveEnabledKey);
+        const isWechatOnlineOnlyRealTimeEnabled = this._isStorageEnabledByDefault(wechatOnlineOnlyRealTimeKey);
         const wechatOnlineProactiveInterval = readNonNegativeStorageNumber(this.storage, wechatOnlineProactiveIntervalKey, 10, 9999) || 10;
         const currentTtsProvider = this._getCurrentMainTtsProvider();
         const currentTtsDefaults = this._getTtsProviderDefaults(currentTtsProvider);
@@ -1437,8 +1451,19 @@ export class SettingsApp {
 
                             <div class="setting-item setting-toggle" style="margin-top: 10px;">
                                 <div>
+                                    <div class="setting-label">线上时间按现实时间</div>
+                                    <div class="setting-desc">仅影响纯线上模式；关闭后手机线上聊天使用当前剧情时间，但不写入正文</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="setting-wechat-online-real-time-enabled" ${isWechatOnlineOnlyRealTimeEnabled ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item setting-toggle" style="margin-top: 10px;">
+                                <div>
                                     <div class="setting-label">线上主动触发</div>
-                                    <div class="setting-desc">线上模式开启后，按现实时间自动请求微信好友或群聊主动发消息</div>
+                                    <div class="setting-desc">线上模式开启后，按真实经过间隔自动请求微信好友或群聊主动发消息</div>
                                 </div>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="setting-wechat-online-proactive-enabled" ${isWechatOnlineProactiveEnabled ? 'checked' : ''}>
@@ -4573,6 +4598,15 @@ export class SettingsApp {
             }
             const key = this._getWechatOnlineProactiveEnabledStorageKey(context);
             await this.storage.set(key, !!e.target.checked);
+        });
+
+        document.getElementById('setting-wechat-online-real-time-enabled')?.addEventListener('change', async (e) => {
+            const context = this.storage.getContext();
+            const key = this._getWechatOnlineOnlyRealTimeStorageKey(context);
+            const enabled = !!e.target.checked;
+            await this.storage.set(key, enabled);
+            window.VirtualPhone?.timeManager?.clearCache?.();
+            this.phoneShell?.showNotification?.('线上时间', enabled ? '纯线上模式将使用现实时间' : '纯线上模式将使用剧情时间', enabled ? '🕒' : '📖');
         });
 
         document.getElementById('setting-wechat-message-sound-enabled')?.addEventListener('change', async (e) => {

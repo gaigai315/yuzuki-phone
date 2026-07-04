@@ -162,6 +162,26 @@ export class PokerApp {
         }
     }
 
+    _isWechatOnlineOnlyRealTimeEnabled() {
+        try {
+            const context = typeof SillyTavern !== 'undefined' && SillyTavern.getContext
+                ? SillyTavern.getContext()
+                : null;
+            const isLobby = (() => {
+                const charName = String(context?.name2 || '').trim();
+                if (/^SillyTavern System$/i.test(charName)) return true;
+                const chatId = String(context?.chatMetadata?.file_name || context?.chatId || '').trim();
+                if (chatId) return false;
+                if (charName) return false;
+                return true;
+            })();
+            const raw = this.storage?.get?.(isLobby ? 'phone_lobby_wechat_online_only_real_time_enabled' : 'wechat_online_only_real_time_enabled');
+            return raw === undefined || raw === null || raw === '' || raw === true || raw === 'true' || raw === 1 || raw === '1';
+        } catch (error) {
+            return true;
+        }
+    }
+
     _buildWechatRealTimeFields(timestamp = Date.now()) {
         const dateObj = new Date(Number(timestamp || Date.now()));
         const pad = (value) => String(value).padStart(2, '0');
@@ -176,7 +196,7 @@ export class PokerApp {
     }
 
     _getWechatShareTimeFields(storyTime = null) {
-        if (this._isWechatOnlineOnlyModeEnabled()) {
+        if (this._isWechatOnlineOnlyModeEnabled() && this._isWechatOnlineOnlyRealTimeEnabled()) {
             return this._buildWechatRealTimeFields();
         }
         return {

@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.3.3';
+const ST_PHONE_VERSION = '1.3.4';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
@@ -43,13 +43,10 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-01',
+    date: '2026-07-04',
     items: [
-        '【修复】修复微信世界书勾选状态偶发丢失的问题。',
-        '【修复】修复同一微信标签内多段消息按块内序号交错显示的问题。',
-        '【修复】修复微信纯线上模式与互通模式时间源混用导致时间跳动的问题，包含游戏分享卡片与蜜语邀约。',
-        '【修复】修复关闭用户发言清洗后，微信单聊/群聊中AI生成的用户发言仍可能被拦截或不显示的问题。',
-        '【优化】优化微信快捷回复面板样式与折叠交互，修复时间推进确认后误提示请输入内容的问题。'
+        '【新增】微信纯线上模式新增“线上时间按现实时间”开关，关闭后线上聊天与主动触发将跟随当前剧情时间。',
+        '【修复】修复微信快捷回复中“时间推进”在移动端确认按钮点不动、电脑端偶发需要多次点击的问题。'
     ]
 };
 
@@ -4892,6 +4889,17 @@ if (window.GGP_Loaded) {
         }
     }
 
+    function isWechatOnlineOnlyRealTimeEnabled() {
+        try {
+            const ctx = getContext();
+            const isLobby = isLobbyModeContext(ctx);
+            const raw = storage?.get?.(isLobby ? 'phone_lobby_wechat_online_only_real_time_enabled' : 'wechat_online_only_real_time_enabled');
+            return raw === undefined || raw === null || raw === '' || raw === true || raw === 'true' || raw === 1;
+        } catch (e) {
+            return true;
+        }
+    }
+
     function buildWechatRealTimeFields(timestamp = Date.now()) {
         const dateObj = new Date(Number(timestamp || Date.now()));
         const pad = (value) => String(value).padStart(2, '0');
@@ -5076,9 +5084,24 @@ if (window.GGP_Loaded) {
 
         const pendingBase = pendingAt || now;
         const elapsedMinutes = Math.max(0, Math.round((now - (lastAt || (now - intervalMs))) / 60000));
+        const useRealTimeForOnlineOnly = isWechatOnlineOnlyRealTimeEnabled();
+        let currentOnlineTimeLine = `当前现实时间：${new Date(now).toLocaleString('zh-CN', { hour12: false })}`;
+        if (!useRealTimeForOnlineOnly) {
+            try {
+                const tm = timeManager || await loadTimeManager();
+                const storyTime = tm?.getCurrentStoryTime?.();
+                const storyDate = String(storyTime?.date || '').trim();
+                const storyClock = String(storyTime?.time || '').trim();
+                if (storyDate || storyClock) {
+                    currentOnlineTimeLine = `当前剧情时间：${[storyDate, storyClock].filter(Boolean).join(' ')}`;
+                }
+            } catch (e) {
+                console.warn('[Wechat][OnlineProactive] 获取剧情时间失败，主动触发提示使用现实时间:', e);
+            }
+        }
         const prompt = [
-            '线上模式现实时间自动触发。',
-            `当前现实时间：${new Date(now).toLocaleString('zh-CN', { hour12: false })}`,
+            '线上模式定时主动触发。',
+            currentOnlineTimeLine,
             `距离上次主动触发约 ${elapsedMinutes} 分钟。`,
             pendingAt ? `本次曾因 API 忙碌顺延，原到点时间：${new Date(pendingBase).toLocaleString('zh-CN', { hour12: false })}` : '',
             '请按现有微信线上单聊和微信群聊规则，让合适的微信好友或群聊主动联系用户。'
