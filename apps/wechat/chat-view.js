@@ -75,6 +75,19 @@ export class ChatView {
         return Math.max(0, Math.min(maxValue, parsed));
     }
 
+    _stripWechatTagsFromTavernContext(text = '') {
+        let out = String(text || '');
+        if (!out) return out;
+
+        // 线上微信请求会单独注入结构化的小手机聊天记录；这里剥掉酒馆正文里的原始
+        // <wechat> 标签，避免同一条手机消息从正文标签和手机存档各进入一次上下文。
+        const tagBoundary = '(?:<|&lt;)\\s*wechat\\b(?:(?!>|&gt;)[\\s\\S])*?(?:>|&gt;)';
+        const closeBoundary = '(?:<|&lt;)\\s*\\/\\s*wechat\\s*(?:>|&gt;)';
+        out = out.replace(new RegExp(`${tagBoundary}[\\s\\S]*?${closeBoundary}`, 'gi'), '');
+
+        return out.replace(/\n{3,}/g, '\n\n').trim();
+    }
+
     _formatRealDateTime(timestamp = Date.now()) {
         const dateObj = new Date(Number(timestamp || Date.now()));
         const pad = (value) => String(value).padStart(2, '0');
@@ -3065,7 +3078,7 @@ renderChatRoom(chat) {
                 if (directStickerUrl) {
                     messageBody = `
                     <div class="message-sticker-box" style="line-height:0; display:inline-block; max-width:min(156px, 100%); max-height:156px;">
-                        ${this.renderDirectStickerImage(directStickerUrl, '表情包', { maxHeight: 156 })}
+                        ${this.renderDirectStickerImage(directStickerUrl, stickerKeyword || '表情包', { maxHeight: 156 })}
                     </div>`;
                     break;
                 }
@@ -5151,6 +5164,15 @@ renderChatRoom(chat) {
         // 0️⃣ 文本内联表情包：[表情包](关键词) / [表情包]（关键词）
         // 单独一整条的表情包消息会在数据层被识别为 `sticker` 类型，不走这里
         // 这里与单条表情包保持一致：本地自定义表情 -> ALAPI -> 关键词占位卡片
+        const inlineNamedStickerRegex = /\[([^\]\r\n]{1,40})\]\s*[（(]\s*((?:https?:)?\/\/[^)）\s]+)\s*[)）]/gi;
+        result = result.replace(inlineNamedStickerRegex, (full, labelRaw, urlRaw) => {
+            const label = String(labelRaw || '').trim();
+            if (this.isReservedStickerLabel(label)) return full;
+            const directStickerUrl = this.normalizeStickerDirectImageUrl(urlRaw);
+            if (!directStickerUrl) return full;
+            return `<span class="wechat-inline-custom-sticker" style="display:inline-flex;align-items:center;vertical-align:text-bottom;line-height:0;">${this.renderDirectStickerImage(directStickerUrl, label || '表情包', { maxHeight: 56, inline: true })}</span>`;
+        });
+
         const inlineStickerRegex = /\[表情包\]\s*[（(]\s*([^)）\n]+?)\s*[)）]/g;
         result = result.replace(inlineStickerRegex, (_, keywordRaw) => {
             const keyword = String(keywordRaw || '').trim();
@@ -5247,6 +5269,34 @@ renderChatRoom(chat) {
         } catch (e) {
             return '';
         }
+    }
+
+    isReservedStickerLabel(label) {
+        const key = this.normalizeCustomEmojiKeyword(label);
+        return [
+            '表情包',
+            '用户照片',
+            '个人图片',
+            '图片',
+            '视频',
+            '红包',
+            '转账',
+            '定位',
+            '语音',
+            '语音条',
+            '音乐',
+            '蜜语'
+        ].some(item => this.normalizeCustomEmojiKeyword(item) === key);
+    }
+
+    parseDirectNamedStickerToken(content = '') {
+        const match = String(content || '').trim().match(/^\[([^\]\r\n]{1,40})\]\s*[（(]\s*((?:https?:)?\/\/[^)）\s]+)\s*[)）]\s*$/i);
+        if (!match) return null;
+        const label = String(match[1] || '').trim();
+        if (!label || this.isReservedStickerLabel(label)) return null;
+        const url = this.normalizeStickerDirectImageUrl(match[2]);
+        if (!url) return null;
+        return { label, url };
     }
 
     renderDirectStickerImage(imageUrl, label = '表情包', { maxHeight = 156, inline = false } = {}) {
@@ -6170,6 +6220,15 @@ renderChatRoom(chat) {
                 keyword,
                 stickerUrl,
                 content: `[表情包]（${keyword || '表情包'}）`
+            };
+        }
+        const namedSticker = this.parseDirectNamedStickerToken(content);
+        if (namedSticker) {
+            return {
+                type: 'sticker',
+                keyword: namedSticker.label,
+                stickerUrl: namedSticker.url,
+                content: `[${namedSticker.label}]（${namedSticker.url}）`
             };
         }
 
@@ -9822,6 +9881,7 @@ renderChatRoom(chat) {
 
                 // 标签清洗：记忆插件可用时走记忆插件；否则按手机本地开关回退
                 content = applyPhoneTagFilter(content, { storage: this.app?.storage || window.VirtualPhone?.storage });
+                content = this._stripWechatTagsFromTavernContext(content);
 
                 // 清理 base64 图片（防止请求体过大）
                 content = content.replace(/<img[^>]*src=["']data:image[^"']*["'][^>]*>/gi, '[图片]');

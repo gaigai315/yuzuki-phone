@@ -15,7 +15,7 @@
 // ========================================
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.3.4';
+const ST_PHONE_VERSION = '1.3.5';
 const ST_PHONE_CSS_REVISION = '20260601-open-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
@@ -43,10 +43,11 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-04',
+    date: '2026-07-05',
     items: [
-        '【新增】微信纯线上模式新增“线上时间按现实时间”开关，关闭后线上聊天与主动触发将跟随当前剧情时间。',
-        '【修复】修复微信快捷回复中“时间推进”在移动端确认按钮点不动、电脑端偶发需要多次点击的问题。'
+        '【修复】修复微信群聊线上请求中群成员单聊记录可能从酒馆原始微信标签和小手机存档重复注入的问题。',
+        '【修复】修复微信群聊回复省略 type:group 时可能被误按单聊会话落库的问题。',
+        '【修复】支持将 [表情名](图片URL) 格式识别为微信表情包图片，修复 URL 表情包被当作普通文本显示的问题。'
     ]
 };
 
@@ -6066,6 +6067,25 @@ if (window.GGP_Loaded) {
                 return '';
             }
         };
+        const normalizeStickerLabel = (value) => String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[【】\[\]（）(){}<>《》「」『』"'“”‘’]/g, '')
+            .replace(/\s+/g, '');
+        const reservedStickerLabels = new Set([
+            '表情包',
+            '用户照片',
+            '个人图片',
+            '图片',
+            '视频',
+            '红包',
+            '转账',
+            '定位',
+            '语音',
+            '语音条',
+            '音乐',
+            '蜜语'
+        ].map(normalizeStickerLabel));
 
         // [表情包](描述或图片URL) / [表情包]（描述或图片URL）
         const stickerMatch = /^\[表情包\]\s*[（(]\s*([^)）]+?)\s*[)）]\s*$/.exec(content);
@@ -6075,6 +6095,17 @@ if (window.GGP_Loaded) {
             msgObj.keyword = stickerKeyword;
             msgObj.stickerUrl = normalizeStickerDirectImageUrl(stickerKeyword);
             return;
+        }
+        const namedStickerMatch = /^\[([^\]\r\n]{1,40})\]\s*[（(]\s*((?:https?:)?\/\/[^)）\s]+)\s*[)）]\s*$/i.exec(String(content || '').trim());
+        if (namedStickerMatch) {
+            const stickerLabel = String(namedStickerMatch[1] || '').trim();
+            const stickerUrl = normalizeStickerDirectImageUrl(namedStickerMatch[2]);
+            if (stickerLabel && stickerUrl && !reservedStickerLabels.has(normalizeStickerLabel(stickerLabel))) {
+                msgObj.type = 'sticker';
+                msgObj.keyword = stickerLabel;
+                msgObj.stickerUrl = stickerUrl;
+                return;
+            }
         }
 
         // [红包] (支持多种格式)
@@ -6223,11 +6254,11 @@ if (window.GGP_Loaded) {
             const rawContactName = String(data.contact || '').trim();
             const resolvedContactName = stripWechatBlockedMarker(rawContactName);
             const contactLookupKey = normalizeWechatName(resolvedContactName);
-            const explicitGroupType = data.chatType === 'group' && data.chatTypeSource === 'explicit';
+            const parsedAsGroupType = data.chatType === 'group';
             const hasExistingGroupByName = wechatData.getChatList().some(c =>
                 c?.type === 'group' && normalizeWechatName(c?.name) === contactLookupKey
             );
-            const effectiveIsGroupChat = explicitGroupType || hasExistingGroupByName;
+            const effectiveIsGroupChat = parsedAsGroupType || hasExistingGroupByName;
             const isBlockedContact = (contact) => !!contact?.blocked;
 
             // 🔥🔥🔥 群聊处理：群聊不需要添加到联系人，直接找/创建群聊天 🔥🔥🔥
@@ -6269,8 +6300,11 @@ if (window.GGP_Loaded) {
             // 2. 如果按名字+类型找不到，再按名字查找（兼容旧数据）
             if (!chat) {
                 const sameNameChats = wechatData.getChatList().filter(c => normalizeWechatName(c.name) === contactLookupKey);
-                if (sameNameChats.length === 1) {
-                    chat = sameNameChats[0];
+                const compatibleSameNameChats = sameNameChats.filter(c =>
+                    effectiveIsGroupChat ? c.type === 'group' : c.type !== 'group'
+                );
+                if (compatibleSameNameChats.length === 1) {
+                    chat = compatibleSameNameChats[0];
                 }
             }
 
@@ -6297,10 +6331,16 @@ if (window.GGP_Loaded) {
                 wechatData._messagesLoaded[newChatId] = true;
                 
             } else if (chat) {
-                // 🔥 仅在显式 type:group 时允许从 single 升级，防止解析误判污染会话类型
-                if (explicitGroupType && chat.type !== 'group') {
+                // 群聊模式提示词允许省略 type:group；解析器已根据群名/多人发言判定后，这里同步会话类型。
+                if (effectiveIsGroupChat && chat.type !== 'group') {
                     chat.type = 'group';
                     chat.members = data.members || [];
+                } else if (effectiveIsGroupChat && Array.isArray(data.members) && data.members.length > 0) {
+                    const mergedMembers = Array.from(new Set([
+                        ...(Array.isArray(chat.members) ? chat.members : []),
+                        ...data.members
+                    ].map(item => String(item || '').trim()).filter(Boolean)));
+                    chat.members = mergedMembers;
                 }
             }
 

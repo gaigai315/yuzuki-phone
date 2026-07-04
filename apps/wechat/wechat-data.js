@@ -1970,6 +1970,39 @@ export class WechatData {
         // 🔥 动态拦截表情包与语音（线上模式）
         if ((message.type === 'text' || !message.type) && message.content) {
             const contentStr = message.content.trim();
+            const normalizeStickerDirectImageUrl = (rawUrl) => {
+                const value = String(rawUrl || '').trim();
+                if (!value) return '';
+                const normalized = value.startsWith('//') ? `https:${value}` : value;
+                if (!/^https?:\/\//i.test(normalized)) return '';
+                try {
+                    const urlObj = new URL(normalized);
+                    if (!/^https?:$/i.test(urlObj.protocol)) return '';
+                    if (!/\.(?:png|jpe?g|gif|webp|avif|bmp|svg)(?:$|[?#])/i.test(urlObj.pathname)) return '';
+                    return urlObj.href;
+                } catch (e) {
+                    return '';
+                }
+            };
+            const normalizeStickerLabel = (value) => String(value || '')
+                .trim()
+                .toLowerCase()
+                .replace(/[【】\[\]（）(){}<>《》「」『』"'“”‘’]/g, '')
+                .replace(/\s+/g, '');
+            const reservedStickerLabels = new Set([
+                '表情包',
+                '用户照片',
+                '个人图片',
+                '图片',
+                '视频',
+                '红包',
+                '转账',
+                '定位',
+                '语音',
+                '语音条',
+                '音乐',
+                '蜜语'
+            ].map(normalizeStickerLabel));
             const imageMatch = /^\[(用户照片|个人图片|图片|视频)\]\s*([\s\S]+?)\s*$/.exec(contentStr);
             if (imageMatch) {
                 const parsedImagePrompt = this._parseImagePromptText(imageMatch[2]);
@@ -1991,6 +2024,17 @@ export class WechatData {
             if (stickerMatch) {
                 message.type = 'sticker';
                 message.keyword = stickerMatch[1].trim();
+                message.stickerUrl = normalizeStickerDirectImageUrl(message.keyword);
+            }
+            const namedStickerMatch = /^\[([^\]\r\n]{1,40})\]\s*[（(]\s*((?:https?:)?\/\/[^)）\s]+)\s*[)）]\s*$/i.exec(contentStr);
+            if (namedStickerMatch) {
+                const stickerLabel = String(namedStickerMatch[1] || '').trim();
+                const stickerUrl = normalizeStickerDirectImageUrl(namedStickerMatch[2]);
+                if (stickerLabel && stickerUrl && !reservedStickerLabels.has(normalizeStickerLabel(stickerLabel))) {
+                    message.type = 'sticker';
+                    message.keyword = stickerLabel;
+                    message.stickerUrl = stickerUrl;
+                }
             }
             const newVoiceMatch = /^(?:\[\s*(?:语音条|语音)\s*\]|【\s*(?:语音条|语音)\s*】)\s*[:：]?\s*(.+)$/i.exec(contentStr);
             if (newVoiceMatch) {
