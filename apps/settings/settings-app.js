@@ -3670,7 +3670,7 @@ export class SettingsApp {
         const wechatOfflineUserCleanRaw = this.storage.get('phone-wechat-offline-clean-user-reply-enabled');
         const isWechatOfflineUserCleanEnabled = wechatOfflineUserCleanRaw !== false && wechatOfflineUserCleanRaw !== 'false';
         const userMessageListenerInfo = '关闭后，酒馆正文生成时不做用户消息自动监听；明确的 <回复联系人> 标签仍会同步微信线上。如果你使用数据库插件，建议优先关闭；否则默认开启。';
-        const wechatOfflineUserCleanInfo = '如果你在酒馆聊天中会自己抢话扮演玩家，请关闭；如果你不抢话、主要让 AI 推进玩家发言，请启用。';
+        const wechatOfflineUserCleanInfo = '开启：清洗 AI 伪造的玩家发言，适合不让 AI 抢话的玩家。关闭：不清洗这类内容，适合允许 AI 代替玩家抢话的玩法。';
         const appDefs = [
             { id: 'wechat', name: '微信', desc: '聊天与社交场景' },
             { id: 'weibo', name: '微博', desc: '动态与评论场景' },
