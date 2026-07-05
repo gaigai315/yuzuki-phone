@@ -47,7 +47,8 @@ const ST_PHONE_CURRENT_UPDATE = {
     items: [
         '【修复】修复微信群聊线上请求中群成员单聊记录可能从酒馆原始微信标签和小手机存档重复注入的问题。',
         '【修复】修复微信群聊回复省略 type:group 时可能被误按单聊会话落库的问题。',
-        '【修复】支持将 [表情名](图片URL) 格式识别为微信表情包图片，修复 URL 表情包被当作普通文本显示的问题。'
+        '【修复】支持将 [表情名](图片URL) 格式识别为微信表情包图片，修复 URL 表情包被当作普通文本显示的问题。',
+        '【优化】优化微信线上模式设置逻辑：互通模式下强制关闭线上时间开关，且线上时间与线上主动触发仅在纯线上模式开启后显示和生效。'
     ]
 };
 
@@ -4882,9 +4883,10 @@ if (window.GGP_Loaded) {
         try {
             const ctx = getContext();
             const isLobby = isLobbyModeContext(ctx);
+            const interopRaw = storage?.get?.(isLobby ? 'phone_lobby_wechat_online_mode' : 'wechat_online_mode');
             const raw = storage?.get?.(isLobby ? 'phone_lobby_wechat_online_only_mode' : 'wechat_online_only_mode');
             const isOn = (raw) => raw === true || raw === 'true' || raw === 1;
-            return isOn(raw);
+            return isOn(raw) && !isOn(interopRaw);
         } catch (e) {
             return false;
         }
@@ -4892,6 +4894,7 @@ if (window.GGP_Loaded) {
 
     function isWechatOnlineOnlyRealTimeEnabled() {
         try {
+            if (!isWechatOnlineOnlyModeEnabled()) return false;
             const ctx = getContext();
             const isLobby = isLobbyModeContext(ctx);
             const raw = storage?.get?.(isLobby ? 'phone_lobby_wechat_online_only_real_time_enabled' : 'wechat_online_only_real_time_enabled');

@@ -659,8 +659,8 @@ export class SettingsApp {
         const wechatOnlineOnlyRealTimeKey = this._getWechatOnlineOnlyRealTimeStorageKey(context);
         const isWechatInteropMode = this._isStorageTruthy(wechatInteropModeKey);
         const isWechatOnlineOnlyMode = this._isStorageTruthy(wechatOnlineOnlyModeKey) && !isWechatInteropMode;
-        const isWechatOnlineProactiveEnabled = this._isStorageTruthy(wechatOnlineProactiveEnabledKey);
-        const isWechatOnlineOnlyRealTimeEnabled = this._isStorageEnabledByDefault(wechatOnlineOnlyRealTimeKey);
+        const isWechatOnlineProactiveEnabled = isWechatOnlineOnlyMode && this._isStorageTruthy(wechatOnlineProactiveEnabledKey);
+        const isWechatOnlineOnlyRealTimeEnabled = isWechatOnlineOnlyMode && this._isStorageEnabledByDefault(wechatOnlineOnlyRealTimeKey);
         const wechatOnlineProactiveInterval = readNonNegativeStorageNumber(this.storage, wechatOnlineProactiveIntervalKey, 10, 9999) || 10;
         const currentTtsProvider = this._getCurrentMainTtsProvider();
         const currentTtsDefaults = this._getTtsProviderDefaults(currentTtsProvider);
@@ -709,6 +709,45 @@ export class SettingsApp {
             if (value === undefined || value === null) return fallback;
             return value === true || value === 'true';
         };
+        const wechatOnlineControlsHtml = isWechatOnlineOnlyMode ? `
+                            <div class="setting-item setting-toggle" style="margin-top: 8px; margin-left: 12px; padding-left: 10px; border-left: 2px solid rgba(7,193,96,0.18);">
+                                <div>
+                                    <div class="setting-label">线上时间按现实时间</div>
+                                    <div class="setting-desc">仅影响纯线上模式；关闭后手机线上聊天使用当前剧情时间，但不写入正文</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="setting-wechat-online-real-time-enabled" ${isWechatOnlineOnlyRealTimeEnabled ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item setting-toggle" style="margin-top: 8px; margin-left: 12px; padding-left: 10px; border-left: 2px solid rgba(7,193,96,0.18);">
+                                <div>
+                                    <div class="setting-label">线上主动触发</div>
+                                    <div class="setting-desc">线上模式开启后，按真实经过间隔自动请求微信好友或群聊主动发消息</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="setting-wechat-online-proactive-enabled" ${isWechatOnlineProactiveEnabled ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; margin-left: 12px; padding-left: 10px; border-left: 2px solid rgba(7,193,96,0.18);">
+                                <div>
+                                    <div class="setting-label">主动触发间隔（分钟）</div>
+                                    <div class="setting-desc">API 忙时会顺延，空闲后再触发</div>
+                                </div>
+                                <input type="number" id="setting-wechat-online-proactive-interval" min="1" max="9999"
+                                       value="${wechatOnlineProactiveInterval}"
+                                       style="width: 68px; height: 32px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
+                            </div>
+
+                            <div class="setting-item setting-button" style="margin-top: 8px; margin-left: 12px; padding-left: 10px; border-left: 2px solid rgba(7,193,96,0.18);">
+                                <button id="setting-wechat-online-proactive-test" class="setting-btn" style="width: 100%; padding: 8px 12px; font-size: 12px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border: 1px solid rgba(7,193,96,0.25); color: #0b8f52; border-radius: 8px;">
+                                    <i class="fa-solid fa-paper-plane"></i> 立即测试线上主动触发
+                                </button>
+                            </div>
+        ` : '';
         const hasStoredValue = (key) => {
             const value = this.storage.get(key, undefined);
             return value !== undefined && value !== null;
@@ -1449,27 +1488,7 @@ export class SettingsApp {
                                 </label>
                             </div>
 
-                            <div class="setting-item setting-toggle" style="margin-top: 10px;">
-                                <div>
-                                    <div class="setting-label">线上时间按现实时间</div>
-                                    <div class="setting-desc">仅影响纯线上模式；关闭后手机线上聊天使用当前剧情时间，但不写入正文</div>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="setting-wechat-online-real-time-enabled" ${isWechatOnlineOnlyRealTimeEnabled ? 'checked' : ''}>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="setting-item setting-toggle" style="margin-top: 10px;">
-                                <div>
-                                    <div class="setting-label">线上主动触发</div>
-                                    <div class="setting-desc">线上模式开启后，按真实经过间隔自动请求微信好友或群聊主动发消息</div>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="setting-wechat-online-proactive-enabled" ${isWechatOnlineProactiveEnabled ? 'checked' : ''}>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
+                            ${wechatOnlineControlsHtml}
 
                             <div class="setting-item setting-toggle" style="margin-top: 10px;">
                                 <div>
@@ -1480,22 +1499,6 @@ export class SettingsApp {
                                     <input type="checkbox" id="setting-wechat-message-sound-enabled" ${isWechatMessageSoundEnabled ? 'checked' : ''}>
                                     <span class="toggle-slider"></span>
                                 </label>
-                            </div>
-
-                            <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px;">
-                                <div>
-                                    <div class="setting-label">主动触发间隔（分钟）</div>
-                                    <div class="setting-desc">API 忙时会顺延，空闲后再触发</div>
-                                </div>
-                                <input type="number" id="setting-wechat-online-proactive-interval" min="1" max="9999"
-                                       value="${wechatOnlineProactiveInterval}"
-                                       style="width: 68px; height: 32px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; font-size: 14px; background: #fafafa;">
-                            </div>
-
-                            <div class="setting-item setting-button" style="margin-top: 10px;">
-                                <button id="setting-wechat-online-proactive-test" class="setting-btn" style="width: 100%; padding: 8px 12px; font-size: 12px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border: 1px solid rgba(7,193,96,0.25); color: #0b8f52; border-radius: 8px;">
-                                    <i class="fa-solid fa-paper-plane"></i> 立即测试线上主动触发
-                                </button>
                             </div>
 
                              <div class="setting-item setting-toggle" style="margin-top: 10px;">
@@ -3676,36 +3679,38 @@ export class SettingsApp {
         const allPerms = this._getMemoryPermissionMap();
 
         return `
+            <div class="setting-section" style="margin: 12px 0 8px; padding: 10px 12px;">
+                <div class="setting-item setting-toggle">
+                    <div>
+                        <div class="setting-label">用户消息监听</div>
+                        <div class="setting-desc">关闭后，酒馆正文生成时不做用户消息自动监听；明确的 &lt;回复联系人&gt; 标签仍会同步微信线上。</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="phone-user-message-listener-enabled" ${isUserMessageListenerEnabled ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item setting-toggle" style="margin-top: 10px;">
+                    <div>
+                        <div class="setting-label">微信线下用户发言清洗</div>
+                        <div class="setting-desc">开启后，线下转线上解析会清洗 AI 伪造的用户发言（如“用户: ...”）；关闭后保留并写入“我”的消息，适配 RP 扮演用户场景。</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="phone-wechat-offline-clean-user-reply-enabled" ${isWechatOfflineUserCleanEnabled ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
             <details data-settings-fold-key="phone-settings-memory-permission-open" ${isMemoryPermissionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                 <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                    <span>记忆表格联动</span>
+                    <span>联动设置（柚月の记忆）</span>
                     ${SETTINGS_FOLD_ARROW_HTML}
                 </summary>
                 <div style="padding: 10px 10px 4px;">
                     <div class="setting-info">
-                        控制手机各 App 对记忆插件的 API 权限通行证 (Signal) 下发。线下被动注入由记忆插件自身策略决定，不在此处配置。
-                    </div>
-
-                    <div class="setting-item setting-toggle">
-                        <div>
-                            <div class="setting-label">用户消息监听</div>
-                            <div class="setting-desc">关闭后，酒馆正文生成时不做用户消息自动监听；明确的 &lt;回复联系人&gt; 标签仍会同步微信线上。</div>
-                        </div>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="phone-user-message-listener-enabled" ${isUserMessageListenerEnabled ? 'checked' : ''}>
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-
-                    <div class="setting-item setting-toggle" style="margin-top: 10px;">
-                        <div>
-                            <div class="setting-label">微信线下用户发言清洗</div>
-                            <div class="setting-desc">开启后，线下转线上解析会清洗 AI 伪造的用户发言（如“用户: ...”）；关闭后保留并写入“我”的消息，适配 RP 扮演用户场景。</div>
-                        </div>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="phone-wechat-offline-clean-user-reply-enabled" ${isWechatOfflineUserCleanEnabled ? 'checked' : ''}>
-                            <span class="toggle-slider"></span>
-                        </label>
+                        控制柚月の记忆插件在小手机上聊天时注入内容开关。
                     </div>
 
                     ${appDefs.map(def => {
@@ -4538,20 +4543,25 @@ export class SettingsApp {
             const interopModeKey = this._getWechatInteropModeStorageKey(context);
             const onlineOnlyModeKey = this._getWechatOnlineOnlyModeStorageKey(context);
             const proactiveEnabledKey = this._getWechatOnlineProactiveEnabledStorageKey(context);
+            const onlineOnlyRealTimeKey = this._getWechatOnlineOnlyRealTimeStorageKey(context);
             const enabled = !!e.target.checked;
             await this.storage.set(interopModeKey, enabled);
             if (enabled) {
                 await this.storage.set(onlineOnlyModeKey, false);
                 await this.storage.set(proactiveEnabledKey, false);
+                await this.storage.set(onlineOnlyRealTimeKey, false);
                 await window.VirtualPhone?.resetWechatOnlineProactiveSessionTimer?.('switch_to_interop');
                 const onlineOnlyToggle = document.getElementById('setting-wechat-online-only-mode');
                 if (onlineOnlyToggle) onlineOnlyToggle.checked = false;
                 const proactiveToggle = document.getElementById('setting-wechat-online-proactive-enabled');
                 if (proactiveToggle) proactiveToggle.checked = false;
+                const realTimeToggle = document.getElementById('setting-wechat-online-real-time-enabled');
+                if (realTimeToggle) realTimeToggle.checked = false;
                 WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS.forEach((key) => {
                     const toggle = document.getElementById(key);
                     if (toggle) toggle.disabled = false;
                 });
+                this.render();
             }
         });
 
@@ -4561,6 +4571,7 @@ export class SettingsApp {
             const interopModeKey = this._getWechatInteropModeStorageKey(context);
             const onlineOnlyModeKey = this._getWechatOnlineOnlyModeStorageKey(context);
             const proactiveEnabledKey = this._getWechatOnlineProactiveEnabledStorageKey(context);
+            const onlineOnlyRealTimeKey = this._getWechatOnlineOnlyRealTimeStorageKey(context);
             const enabled = !!e.target.checked;
             await this.storage.set(onlineOnlyModeKey, enabled);
             if (enabled) {
@@ -4579,21 +4590,26 @@ export class SettingsApp {
                 });
             } else {
                 await this.storage.set(proactiveEnabledKey, false);
+                await this.storage.set(onlineOnlyRealTimeKey, false);
                 await window.VirtualPhone?.resetWechatOnlineProactiveSessionTimer?.('online_off');
                 const proactiveToggle = document.getElementById('setting-wechat-online-proactive-enabled');
                 if (proactiveToggle) proactiveToggle.checked = false;
+                const realTimeToggle = document.getElementById('setting-wechat-online-real-time-enabled');
+                if (realTimeToggle) realTimeToggle.checked = false;
                 WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS.forEach((key) => {
                     const toggle = document.getElementById(key);
                     if (toggle) toggle.disabled = false;
                 });
             }
+            this.render();
         });
 
         document.getElementById('setting-wechat-online-proactive-enabled')?.addEventListener('change', async (e) => {
             const context = this.storage.getContext();
-            if (!this._isStorageTruthy(this._getWechatOnlineOnlyModeStorageKey(context))) {
+            if (!this._isStorageTruthy(this._getWechatOnlineOnlyModeStorageKey(context)) || this._isStorageTruthy(this._getWechatInteropModeStorageKey(context))) {
                 e.target.checked = false;
                 this.phoneShell?.showNotification?.('线上主动触发', '请先开启线上模式', '⚠️');
+                this.render();
                 return;
             }
             const key = this._getWechatOnlineProactiveEnabledStorageKey(context);
@@ -4602,6 +4618,14 @@ export class SettingsApp {
 
         document.getElementById('setting-wechat-online-real-time-enabled')?.addEventListener('change', async (e) => {
             const context = this.storage.getContext();
+            if (!this._isStorageTruthy(this._getWechatOnlineOnlyModeStorageKey(context)) || this._isStorageTruthy(this._getWechatInteropModeStorageKey(context))) {
+                e.target.checked = false;
+                const key = this._getWechatOnlineOnlyRealTimeStorageKey(context);
+                await this.storage.set(key, false);
+                this.phoneShell?.showNotification?.('线上时间', '请先开启线上模式', '⚠️');
+                this.render();
+                return;
+            }
             const key = this._getWechatOnlineOnlyRealTimeStorageKey(context);
             const enabled = !!e.target.checked;
             await this.storage.set(key, enabled);

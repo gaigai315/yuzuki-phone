@@ -812,7 +812,11 @@ export class ChatView {
         const storage = window.VirtualPhone?.storage;
         if (!storage) return false;
         const context = this._safeGetContext?.();
+        const interopKey = this.app?.wechatData?.getOnlineModeStorageKey?.(context) || 'wechat_online_mode';
         const onlineOnlyKey = this.app?.wechatData?.getOnlineOnlyModeStorageKey?.(context) || 'wechat_online_only_mode';
+        const interopVal = storage.get(interopKey);
+        const interopEnabled = interopVal === true || interopVal === 'true' || interopVal === 1;
+        if (interopEnabled) return false;
         const onlineOnlyVal = storage.get(onlineOnlyKey);
         const onlineOnlyEnabled = onlineOnlyVal === true || onlineOnlyVal === 'true' || onlineOnlyVal === 1;
         if (!onlineOnlyEnabled) return false;

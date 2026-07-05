@@ -154,9 +154,12 @@ export class PokerApp {
                 ? SillyTavern.getContext()
                 : null;
             const wechatData = this.getWechatData?.();
+            const interopKey = wechatData?.getOnlineModeStorageKey?.(context) || 'wechat_online_mode';
             const key = wechatData?.getOnlineOnlyModeStorageKey?.(context) || 'wechat_online_only_mode';
+            const interopRaw = this.storage?.get?.(interopKey);
             const raw = this.storage?.get?.(key);
-            return raw === true || raw === 'true' || raw === 1 || raw === '1';
+            const isOn = (value) => value === true || value === 'true' || value === 1 || value === '1';
+            return isOn(raw) && !isOn(interopRaw);
         } catch (error) {
             return false;
         }
@@ -164,6 +167,7 @@ export class PokerApp {
 
     _isWechatOnlineOnlyRealTimeEnabled() {
         try {
+            if (!this._isWechatOnlineOnlyModeEnabled()) return false;
             const context = typeof SillyTavern !== 'undefined' && SillyTavern.getContext
                 ? SillyTavern.getContext()
                 : null;
