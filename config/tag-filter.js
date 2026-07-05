@@ -62,11 +62,27 @@ function _pickStorage(storage) {
 }
 
 export function hasGaigaiTagFilter() {
-    if (typeof window === 'undefined') return false;
-    return !!(
-        typeof window.Gaigai?.cleanMemoryTags === 'function' &&
+    return getMemoryTagFilterInfo().available;
+}
+
+export function getMemoryTagFilterInfo() {
+    if (typeof window === 'undefined') {
+        return { available: false, hasGaigai: false, hasYuzukiMemory: false, name: '' };
+    }
+    const hasGaigai = !!(
+        typeof window.Gaigai?.cleanMemoryTags === 'function' ||
         typeof window.Gaigai?.tools?.filterContentByTags === 'function'
     );
+    const hasYuzukiMemory = typeof window.YuzukiMemory?.TaskRunner?.filterContentByTags === 'function';
+    const names = [];
+    if (hasYuzukiMemory) names.push('柚月の记忆');
+    if (hasGaigai) names.push('旧版记忆插件');
+    return {
+        available: hasGaigai || hasYuzukiMemory,
+        hasGaigai,
+        hasYuzukiMemory,
+        name: names.join(' / ') || ''
+    };
 }
 
 export function readPhoneTagFilterConfig(storage = null) {
@@ -223,6 +239,18 @@ function applyGaigaiTagFilter(text) {
     return String(out || '').trim();
 }
 
+function applyYuzukiMemoryTagFilter(text) {
+    let out = String(text || '');
+    if (!out) return out;
+
+    const taskRunner = (typeof window !== 'undefined') ? window.YuzukiMemory?.TaskRunner : null;
+    if (typeof taskRunner?.filterContentByTags === 'function') {
+        out = taskRunner.filterContentByTags(out);
+    }
+
+    return String(out || '').trim();
+}
+
 export function applyPhoneTagFilter(text, options = {}) {
     if (text === null || text === undefined) return text;
     let out = String(text);
@@ -234,8 +262,14 @@ export function applyPhoneTagFilter(text, options = {}) {
     // 1. 有记忆插件时，先跑记忆插件过滤
     // 2. 小手机本地黑白名单开启时，再继续跑手机本地过滤
     // 3. 没有记忆插件时，仅跑小手机本地过滤
-    if (hasGaigaiTagFilter()) {
-        out = applyGaigaiTagFilter(out);
+    const memoryFilter = getMemoryTagFilterInfo();
+    if (memoryFilter.available) {
+        if (memoryFilter.hasGaigai) {
+            out = applyGaigaiTagFilter(out);
+        }
+        if (memoryFilter.hasYuzukiMemory) {
+            out = applyYuzukiMemoryTagFilter(out);
+        }
         if (!config.enabled) {
             return out;
         }

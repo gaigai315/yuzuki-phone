@@ -13,7 +13,7 @@
 import { ImageUploadManager } from './image-upload.js';
 import { ImageCropper } from './image-cropper.js';
 import {
-    hasGaigaiTagFilter,
+    getMemoryTagFilterInfo,
     readPhoneTagFilterConfig,
     savePhoneTagFilterConfig,
     PHONE_TAG_FILTER_AI_DIAGNOSTIC_PROMPT,
@@ -3669,6 +3669,8 @@ export class SettingsApp {
         const isUserMessageListenerEnabled = userMessageListenerRaw !== false && userMessageListenerRaw !== 'false';
         const wechatOfflineUserCleanRaw = this.storage.get('phone-wechat-offline-clean-user-reply-enabled');
         const isWechatOfflineUserCleanEnabled = wechatOfflineUserCleanRaw !== false && wechatOfflineUserCleanRaw !== 'false';
+        const userMessageListenerInfo = '关闭后，酒馆正文生成时不做用户消息自动监听；明确的 <回复联系人> 标签仍会同步微信线上。如果你使用数据库插件，建议优先关闭；否则默认开启。';
+        const wechatOfflineUserCleanInfo = '如果你在酒馆聊天中会自己抢话扮演玩家，请关闭；如果你不抢话、主要让 AI 推进玩家发言，请启用。';
         const appDefs = [
             { id: 'wechat', name: '微信', desc: '聊天与社交场景' },
             { id: 'weibo', name: '微博', desc: '动态与评论场景' },
@@ -3682,8 +3684,12 @@ export class SettingsApp {
             <div class="setting-section" style="margin: 12px 0 8px; padding: 10px 12px;">
                 <div class="setting-item setting-toggle">
                     <div>
-                        <div class="setting-label">用户消息监听</div>
-                        <div class="setting-desc">关闭后，酒馆正文生成时不做用户消息自动监听；明确的 &lt;回复联系人&gt; 标签仍会同步微信线上。</div>
+                        <div class="setting-label" style="display:inline-flex; align-items:center; gap:6px;">
+                            <span>用户消息监听</span>
+                            <button type="button" class="phone-version-info-btn phone-memory-toggle-info" data-info-title="用户消息监听" data-info-message="${this._escapeHtml(userMessageListenerInfo)}" aria-label="查看用户消息监听说明" title="查看说明">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                            </button>
+                        </div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="phone-user-message-listener-enabled" ${isUserMessageListenerEnabled ? 'checked' : ''}>
@@ -3693,8 +3699,12 @@ export class SettingsApp {
 
                 <div class="setting-item setting-toggle" style="margin-top: 10px;">
                     <div>
-                        <div class="setting-label">微信线下用户发言清洗</div>
-                        <div class="setting-desc">开启后，线下转线上解析会清洗 AI 伪造的用户发言（如“用户: ...”）；关闭后保留并写入“我”的消息，适配 RP 扮演用户场景。</div>
+                        <div class="setting-label" style="display:inline-flex; align-items:center; gap:6px;">
+                            <span>微信线下用户发言清洗</span>
+                            <button type="button" class="phone-version-info-btn phone-memory-toggle-info" data-info-title="微信线下用户发言清洗" data-info-message="${this._escapeHtml(wechatOfflineUserCleanInfo)}" aria-label="查看微信线下用户发言清洗说明" title="查看说明">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                            </button>
+                        </div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="phone-wechat-offline-clean-user-reply-enabled" ${isWechatOfflineUserCleanEnabled ? 'checked' : ''}>
@@ -3751,6 +3761,19 @@ export class SettingsApp {
 
     bindMemoryPermissionEvents() {
         const document = this._createSettingsScopedDocument();
+        document.querySelectorAll('.phone-memory-toggle-info').forEach((infoBtn) => {
+            infoBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                await this._showPhoneConfirm({
+                    title: infoBtn.dataset.infoTitle || '说明',
+                    message: infoBtn.dataset.infoMessage || '',
+                    confirmText: '知道了',
+                    cancelText: '',
+                    host: e.currentTarget?.closest?.('.settings-app') || null
+                });
+            });
+        });
         document.getElementById('phone-user-message-listener-enabled')?.addEventListener('change', async (e) => {
             await this.storage.set('phone-user-message-listener-enabled', !!e.target.checked);
         });
@@ -3813,6 +3836,7 @@ export class SettingsApp {
         host: preferredHost = null
     } = {}) {
         return new Promise((resolve) => {
+            const hasCancel = String(cancelText || '').trim() !== '';
             const host = preferredHost
                 || document.querySelector('.phone-view-current .settings-app')
                 || document.querySelector('.settings-app')
@@ -3844,8 +3868,8 @@ export class SettingsApp {
                         <div style="font-size:15px; font-weight:700; line-height:1.35;">${this._escapeHtml(title)}</div>
                         <div style="font-size:12px; color:#555; line-height:1.55; margin-top:8px;">${this._escapeHtml(message)}</div>
                     </div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; border-top:1px solid rgba(0,0,0,0.08);">
-                        <button type="button" data-action="cancel" style="height:42px; border:none; border-right:1px solid rgba(0,0,0,0.08); background:transparent; color:#333; font-size:14px; cursor:pointer;">${this._escapeHtml(cancelText)}</button>
+                    <div style="display:grid; grid-template-columns:${hasCancel ? '1fr 1fr' : '1fr'}; border-top:1px solid rgba(0,0,0,0.08);">
+                        ${hasCancel ? `<button type="button" data-action="cancel" style="height:42px; border:none; border-right:1px solid rgba(0,0,0,0.08); background:transparent; color:#333; font-size:14px; cursor:pointer;">${this._escapeHtml(cancelText)}</button>` : ''}
                         <button type="button" data-action="confirm" style="height:42px; border:none; background:transparent; color:${danger ? '#d93025' : '#007aff'}; font-size:14px; font-weight:700; cursor:pointer;">${this._escapeHtml(confirmText)}</button>
                     </div>
                 </div>
@@ -3858,7 +3882,7 @@ export class SettingsApp {
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) close(false);
             });
-            overlay.querySelector('[data-action="cancel"]')?.addEventListener('click', () => close(false));
+            if (hasCancel) overlay.querySelector('[data-action="cancel"]')?.addEventListener('click', () => close(false));
             overlay.querySelector('[data-action="confirm"]')?.addEventListener('click', () => close(true));
             host.appendChild(overlay);
         });
@@ -3885,13 +3909,14 @@ export class SettingsApp {
 
     renderTagFilterSection() {
         const cfg = readPhoneTagFilterConfig(this.storage);
-        const hasMemoryFilter = hasGaigaiTagFilter();
+        const memoryFilterInfo = getMemoryTagFilterInfo();
+        const hasMemoryFilter = memoryFilterInfo.available;
         const isTagFilterOpen = this.storage.get('phone-settings-memory-tag-filter-open') === true;
 
         const blacklist = this._escapeHtml(cfg.blacklist);
         const whitelist = this._escapeHtml(cfg.whitelist);
         const memoryStatusText = hasMemoryFilter
-            ? '✅ 已检测到记忆插件过滤器（优先使用记忆插件规则）'
+            ? `✅ 已检测到${memoryFilterInfo.name || '记忆插件'}标签过滤器（优先使用记忆插件规则）`
             : '⚠️ 未检测到记忆插件过滤器（可启用下方本地过滤）';
 
         return `
