@@ -569,6 +569,13 @@ export class HomeScreen {
                 this.applyCardLayoutCustomCss();
             });
         }
+
+        if (!this._timeUpdateEventBound) {
+            this._timeUpdateEventBound = true;
+            window.addEventListener('phone:timeUpdated', () => {
+                this.updateTimeDisplay();
+            });
+        }
     }
     
     openApp(appId) {
@@ -631,6 +638,30 @@ export class HomeScreen {
             date: dateText,
             weekday: '',
         };
+    }
+
+    updateTimeDisplay() {
+        const root = this.phoneShell?.screen?.querySelector('.home-screen');
+        if (!root) return false;
+
+        const currentTime = this.getCurrentTime() || '';
+        const currentDate = this.getCurrentDate() || '';
+        const cardDate = this.getCurrentDateParts();
+
+        root.querySelectorAll('.time-large, .yzp-home-time-large').forEach(el => {
+            el.textContent = currentTime;
+        });
+        root.querySelectorAll('.home-time > .date, .yzp-home-time > .yzp-home-date').forEach(el => {
+            el.textContent = currentDate;
+        });
+        root.querySelectorAll('.home-time-date .date, .yzp-home-time-date .yzp-home-date').forEach(el => {
+            el.textContent = cardDate.date;
+        });
+        root.querySelectorAll('.home-time-weekday, .yzp-home-time-weekday').forEach(el => {
+            el.textContent = cardDate.weekday;
+        });
+
+        return true;
     }
 
 }

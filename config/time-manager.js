@@ -728,6 +728,17 @@ setTime(time, date, weekday = null, options = {}) {
 
         this.storage.set('story-current-time', JSON.stringify(timeData), true);
 
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('phone:timeUpdated', {
+                detail: {
+                    time: finalTime,
+                    date: finalDate,
+                    weekday: finalWeekday,
+                    source: timeData.source
+                }
+            }));
+        }
+
         return true;
     } catch (e) {
         console.error('❌ [TimeManager] 设置时间失败:', e);

@@ -84,10 +84,19 @@ export class PhoneShell {
 
         this.bindPanelEvents();
         this.bindSwipeGesture();
+        this.bindTimeUpdateEvent();
         this.startClock();
         this.initBattery();  // 🔋 初始化电池
 
         return this.container;
+    }
+
+    bindTimeUpdateEvent() {
+        if (this._timeUpdateEventBound) return;
+        this._timeUpdateEventBound = true;
+        window.addEventListener('phone:timeUpdated', () => {
+            this.updateStatusBarTime();
+        });
     }
 
     // 🔋 初始化电池API
