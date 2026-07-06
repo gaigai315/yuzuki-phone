@@ -8517,6 +8517,16 @@ renderChatRoom(chat) {
         const responseBatchId = `${isProactive ? 'wechat_proactive' : 'wechat_ai'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         this._resetAiReplyTimeCursor();
         this._aiReplyRequestStartedAt = Date.now();
+        const useRealTimeTimeline = this._shouldUseRealTimeForOnlineChat(options);
+        let proactiveStoryGapMinutes = 0;
+        if (isProactive && !useRealTimeTimeline) {
+            proactiveStoryGapMinutes = Math.max(0, Number.parseInt(options?.proactiveMeta?.elapsedMinutes, 10) || 0);
+        }
+        const consumeProactiveStoryGapMinutes = () => {
+            const gap = proactiveStoryGapMinutes;
+            proactiveStoryGapMinutes = 0;
+            return gap;
+        };
 
         // 🔥 设置发送状态
         this.isSending = true;
@@ -9174,7 +9184,7 @@ renderChatRoom(chat) {
 
                     this._applyAiReplyTimeline(m, normalizedTextContent, {
                         isFirstInReplyBatch: bgIndex === 0,
-                        extraGapMinutes: bgShortGapMap.get(bgIndex) || 0,
+                        extraGapMinutes: (bgShortGapMap.get(bgIndex) || 0) + consumeProactiveStoryGapMinutes(),
                         baseTimestamp: options?.proactiveMeta?.now || Date.now()
                     });
 
@@ -9315,7 +9325,7 @@ renderChatRoom(chat) {
 
                 this._applyAiReplyTimeline(msg, normalizedTextContent, {
                     isFirstInReplyBatch: msgIndex === 0,
-                    extraGapMinutes: inlineShortGapMap.get(msgIndex) || 0,
+                    extraGapMinutes: (inlineShortGapMap.get(msgIndex) || 0) + consumeProactiveStoryGapMinutes(),
                     baseTimestamp: options?.proactiveMeta?.now || Date.now()
                 });
 
