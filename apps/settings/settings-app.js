@@ -12,13 +12,7 @@
 // 设置APP
 import { ImageUploadManager } from './image-upload.js';
 import { ImageCropper } from './image-cropper.js';
-import {
-    getMemoryTagFilterInfo,
-    readPhoneTagFilterConfig,
-    savePhoneTagFilterConfig,
-    PHONE_TAG_FILTER_AI_DIAGNOSTIC_PROMPT,
-    parsePhoneTagFilterDiagnosticJson
-} from '../../config/tag-filter.js';
+import * as PhoneTagFilter from '../../config/tag-filter.js';
 import {
     PHONE_CONTEXT_LIMIT_KEY,
     PHONE_CONTEXT_LIMIT_INITIAL_VALUE,
@@ -36,6 +30,20 @@ const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const CARD_LAYOUT_CUSTOM_CSS_KEY = 'phone-card-layout-custom-css';
 const SETTINGS_IMAGE_MAX_FILE_SIZE = 20 * 1024 * 1024;
+
+const getMemoryTagFilterInfo = typeof PhoneTagFilter.getMemoryTagFilterInfo === 'function'
+    ? PhoneTagFilter.getMemoryTagFilterInfo
+    : () => ({ available: false, hasGaigai: false, hasYuzukiMemory: false, name: '' });
+const readPhoneTagFilterConfig = typeof PhoneTagFilter.readPhoneTagFilterConfig === 'function'
+    ? PhoneTagFilter.readPhoneTagFilterConfig
+    : () => ({ enabled: false, blacklist: '', whitelist: '' });
+const savePhoneTagFilterConfig = typeof PhoneTagFilter.savePhoneTagFilterConfig === 'function'
+    ? PhoneTagFilter.savePhoneTagFilterConfig
+    : async () => ({ enabled: false, blacklist: '', whitelist: '' });
+const PHONE_TAG_FILTER_AI_DIAGNOSTIC_PROMPT = PhoneTagFilter.PHONE_TAG_FILTER_AI_DIAGNOSTIC_PROMPT || '';
+const parsePhoneTagFilterDiagnosticJson = typeof PhoneTagFilter.parsePhoneTagFilterDiagnosticJson === 'function'
+    ? PhoneTagFilter.parsePhoneTagFilterDiagnosticJson
+    : () => ({ reasoning: '', blacklist: [], whitelist: [] });
 
 const WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS = [
     'offline-wechat-prompt-enabled',
