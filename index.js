@@ -16,7 +16,7 @@
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.3.5';
-const ST_PHONE_CSS_REVISION = '20260601-open-fix';
+const ST_PHONE_CSS_REVISION = '20260708-glass-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
 const ST_PHONE_HONEY_CSS_URL = new URL('./apps/honey/honey.css?v=20260606-ticker-once', import.meta.url).href;
@@ -43,12 +43,9 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-05',
+    date: '2026-07-08',
     items: [
-        '【修复】修复微信群聊线上请求中群成员单聊记录可能从酒馆原始微信标签和小手机存档重复注入的问题。',
-        '【修复】修复微信群聊回复省略 type:group 时可能被误按单聊会话落库的问题。',
-        '【修复】支持将 [表情名](图片URL) 格式识别为微信表情包图片，修复 URL 表情包被当作普通文本显示的问题。',
-        '【优化】优化微信线上模式设置逻辑：互通模式下强制关闭线上时间开关，且线上时间与线上主动触发仅在纯线上模式开启后显示和生效。'
+        '【优化】优化手机 App 内部分 CSS 渲染与界面显示。'
     ]
 };
 

@@ -1304,11 +1304,13 @@
     height: auto;
     min-height: 0;
     border-radius: clamp(15px, 4.8vw, 20px);
-    background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0.38));
-    border: 1px solid rgba(255, 255, 255, 0.62);
+    background: rgba(255, 255, 255, 0.34);
+    border: 1px solid rgba(255, 255, 255, 0.58);
     box-shadow:
-        inset 0 1px 0 rgba(255,255,255,0.72),
-        0 6px 18px rgba(24, 36, 54, 0.12);
+        0 8px 24px rgba(24, 36, 54, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.58);
+    backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
     pointer-events: none;
     z-index: 0;
 }
@@ -1502,12 +1504,9 @@
     align-self: stretch;
     margin-top: calc(clamp(8px, 1.8vh, 12px) * -1);
     border-radius: clamp(16px, 5vw, 22px) !important;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.32));
-    border: 1px solid rgba(255, 255, 255, 0.62);
-    box-shadow:
-        0 -8px 18px rgba(24, 36, 54, 0.08),
-        0 10px 22px rgba(24, 36, 54, 0.10),
-        inset 0 1px 0 rgba(255,255,255,0.78);
+    background: transparent;
+    border: 0;
+    box-shadow: none;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1783,13 +1782,13 @@
     justify-content: center;
     cursor: pointer;
     align-self: center;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.46));
-    border: 1px solid rgba(255, 255, 255, 0.66);
+    background: rgba(255, 255, 255, 0.34);
+    border: 1px solid rgba(255, 255, 255, 0.58);
     box-shadow:
-        0 8px 24px rgba(24, 36, 54, 0.14),
-        inset 0 1px 0 rgba(255, 255, 255, 0.76);
-    backdrop-filter: blur(24px) saturate(170%);
-    -webkit-backdrop-filter: blur(24px) saturate(170%);
+        0 8px 24px rgba(24, 36, 54, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.58);
+    backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
     top: clamp(70px, 8.7vh, 80px);
     transform: none;
     width: clamp(96px, 80%, 124px) !important;
@@ -2151,33 +2150,6 @@
     border-radius: clamp(18px, 6vw, 24px) !important;
 }
 
-#phone-panel-content .phone-screen .home-dashboard .app-icon.home-settings-card {
-    width: clamp(96px, 80%, 124px) !important;
-}
-
-#phone-panel-content .phone-screen .home-dashboard .app-icon.home-settings-card,
-#phone-panel-content .phone-screen .home-layout-cards .home-settings-card {
-    background: rgba(255, 255, 255, 0.34) !important;
-    border: 1px solid rgba(255, 255, 255, 0.58) !important;
-    box-shadow:
-        0 8px 24px rgba(24, 36, 54, 0.08),
-        inset 0 1px 0 rgba(255, 255, 255, 0.58) !important;
-    backdrop-filter: blur(26px) saturate(180%) !important;
-    -webkit-backdrop-filter: blur(26px) saturate(180%) !important;
-}
-
-#phone-panel-content .phone-screen .home-layout-cards .home-music-card::before {
-    inset: 0 !important;
-    height: auto !important;
-    background: rgba(255, 255, 255, 0.34) !important;
-    border: 1px solid rgba(255, 255, 255, 0.58) !important;
-    box-shadow:
-        0 8px 24px rgba(24, 36, 54, 0.08),
-        inset 0 1px 0 rgba(255, 255, 255, 0.58) !important;
-    backdrop-filter: blur(26px) saturate(180%) !important;
-    -webkit-backdrop-filter: blur(26px) saturate(180%) !important;
-}
-
 #phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-time-card,
 #phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-app-cluster,
 #phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-social-card,
@@ -2209,6 +2181,8 @@
 }
 
 #phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-music-card::before {
+    background: transparent !important;
+    background-color: transparent !important;
     border: none !important;
     box-shadow: none !important;
     backdrop-filter: none !important;
@@ -2396,6 +2370,56 @@
     }
 }
 
+@media (pointer: fine) {
+    #phone-panel-content .phone-screen .home-layout-cards .home-app-squircle {
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
+        border-radius: 14px !important;
+    }
+
+    #phone-panel-content .phone-screen .home-layout-cards .home-social-icon {
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
+        border-radius: 14px !important;
+    }
+
+    #phone-panel-content .phone-screen .home-layout-cards .home-settings-icon {
+        width: 50px;
+        height: 50px;
+        font-size: 27px;
+        border-radius: 15px !important;
+    }
+
+    #phone-panel-content .phone-screen .home-layout-cards .home-vinyl-cover {
+        width: 42%;
+        height: 42%;
+        font-size: 17px;
+    }
+
+    #phone-panel-content .phone-screen .home-layout-cards .home-music-controls {
+        max-width: 116px;
+    }
+
+    #phone-panel-content .phone-screen .home-layout-cards .home-music-controls .home-music-control {
+        width: 24px;
+        height: 24px;
+    }
+
+    #phone-panel-content .phone-screen .home-layout-cards .home-music-controls .home-music-control.home-music-control-pause {
+        width: 31px;
+        height: 31px;
+    }
+
+    #phone-panel-content .phone-screen .home-layout-cards .dock-app {
+        width: 50px;
+        height: 50px;
+        font-size: 28px;
+        border-radius: 15px !important;
+    }
+}
+
 /* ========================================
    🔴 APP角标（精简版）
    ======================================== */
@@ -2497,6 +2521,13 @@
     gap: clamp(6px, 1.5vw, 10px);
     padding: clamp(7px, 1.6vh, 10px) clamp(10px, 2.6vw, 15px);
     border-radius: clamp(16px, 4.5vw, 22px) !important;
+    background: rgba(255, 255, 255, 0.34);
+    border: 1px solid rgba(255, 255, 255, 0.58);
+    box-shadow:
+        0 8px 24px rgba(24, 36, 54, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.58);
+    backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
 }
 
 @media (min-width: 501px) {
@@ -2524,37 +2555,6 @@
 
 #phone-panel-content .phone-screen .dock-app.custom-icon::before {
     display: none !important;
-}
-
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-time-card,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-app-cluster,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-social-card,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-music-card,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-settings-card,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .dock {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-}
-
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-time-card::before,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-app-cluster::before,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-social-card::before,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-settings-card::before,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .dock::before,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-time-card::after,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-app-cluster::after,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-social-card::after,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-settings-card::after,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .dock::after,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-music-card::before,
-#phone-panel-content .phone-screen .home-layout-cards.home-card-custom-css-active .home-music-card::after {
-    border: none !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
 }
 
 /* ========================================
@@ -3962,6 +3962,12 @@ input:checked + .toggle-slider:before {
     .message-text,
     .message-time,
     .chat-time,
+    .phone-call-settings-title,
+    .phone-call-settings-back,
+    .phone-call-settings-label,
+    .phone-prompt-fold-title,
+    .phone-prompt-fold-arrow,
+    .phone-call-prompt-textarea,
     .phone-call-transcript-info-text,
     .album-title,
     .album-subtitle,
@@ -3980,6 +3986,15 @@ input:checked + .toggle-slider:before {
     .yzp-calendar-detail-body
 ) {
     color: var(--phone-global-text) !important;
+    text-shadow: none !important;
+}
+
+#phone-panel-content .phone-screen:not(:has(.honey-app)):not(:has(.games-app)):not(:has(.music-app)) :is(
+    .phone-call-settings-section-title,
+    .phone-prompt-fold-desc,
+    .phone-call-settings-hint
+) {
+    color: color-mix(in srgb, var(--phone-global-text) 62%, transparent) !important;
     text-shadow: none !important;
 }
 
@@ -4587,6 +4602,80 @@ input:checked + .toggle-slider:before {
     background: var(--phone-chat-bg, #f5f5f5);
     touch-action: pan-y;
     overflow: hidden;
+}
+
+.phone-call-main.phone-call-wallpaper-shell,
+.phone-call-contacts.phone-call-wallpaper-shell,
+.phone-call-settings.phone-call-wallpaper-shell {
+    background-color: var(--phone-chat-bg, #f5f5f5);
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center;
+}
+
+.phone-call-wallpaper-shell .phone-call-main-header,
+.phone-call-wallpaper-shell .phone-call-settings-header {
+    background:
+        linear-gradient(160deg, rgba(255, 255, 255, 0.68) 0%, rgba(255, 255, 255, 0.46) 58%, rgba(255, 255, 255, 0.38) 100%),
+        linear-gradient(120deg, rgba(225, 233, 244, 0.34) 0%, rgba(243, 238, 230, 0.26) 52%, rgba(224, 235, 245, 0.3) 100%);
+    backdrop-filter: blur(28px) saturate(170%);
+    -webkit-backdrop-filter: blur(28px) saturate(170%);
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.62);
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+}
+
+.phone-call-wallpaper-shell .phone-call-history-list,
+.phone-call-wallpaper-shell .phone-call-contact-list,
+.phone-call-wallpaper-shell .phone-call-settings-body {
+    background: transparent;
+}
+
+.phone-call-wallpaper-shell .phone-call-history-item,
+.phone-call-wallpaper-shell .phone-call-contact-item {
+    background: rgba(255, 255, 255, 0.24);
+    backdrop-filter: blur(10px) saturate(130%);
+    -webkit-backdrop-filter: blur(10px) saturate(130%);
+    border-bottom-color: rgba(255, 255, 255, 0.34);
+}
+
+.phone-call-wallpaper-shell .phone-call-history-clickable:active,
+.phone-call-wallpaper-shell .phone-call-contact-item:active {
+    background: rgba(255, 255, 255, 0.42);
+}
+
+.phone-call-wallpaper-shell .phone-call-contact-add {
+    background: rgba(255, 255, 255, 0.28);
+    backdrop-filter: blur(16px) saturate(145%);
+    -webkit-backdrop-filter: blur(16px) saturate(145%);
+    border-bottom-color: rgba(255, 255, 255, 0.34);
+}
+
+.phone-call-wallpaper-shell .phone-prompt-fold,
+.phone-call-wallpaper-shell .phone-call-settings-row {
+    background: rgba(255, 255, 255, 0.24);
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    backdrop-filter: blur(12px) saturate(135%);
+    -webkit-backdrop-filter: blur(12px) saturate(135%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+}
+
+.phone-call-wallpaper-shell .phone-prompt-fold-header {
+    background: transparent;
+}
+
+.phone-call-wallpaper-shell .phone-prompt-fold-content {
+    background: rgba(255, 255, 255, 0.12);
+    border-top-color: rgba(255, 255, 255, 0.28);
+}
+
+.phone-call-wallpaper-shell .phone-call-prompt-textarea {
+    background: rgba(255, 255, 255, 0.56);
+    border-color: rgba(255, 255, 255, 0.42);
+}
+
+.phone-call-wallpaper-shell .phone-call-empty {
+    color: rgba(45, 52, 62, 0.58);
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6);
 }
 
 .phone-call-contact-add {

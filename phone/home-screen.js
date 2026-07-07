@@ -148,6 +148,7 @@ export class HomeScreen {
                     bottom: 11.5% !important;
                 }
             }
+
         `;
         (host || this.phoneShell?.screen || document.head).appendChild(style);
     }
@@ -278,7 +279,7 @@ export class HomeScreen {
         const app = this.getAppById('music');
         if (!app) return '';
         return `
-            <section class="app-icon yzp-home-app-action home-widget-card yzp-home-widget-card home-music-card yzp-home-music-card" data-app="${app.id}" style="--app-color:${app.color};">
+            <section class="yzp-home-app-action home-widget-card yzp-home-widget-card home-music-card yzp-home-music-card" data-app="${app.id}">
                 <div class="home-vinyl-player yzp-home-vinyl-player" aria-hidden="true">
                     <div class="home-vinyl-record yzp-home-vinyl-record">
                         <div class="home-vinyl-grooves yzp-home-vinyl-grooves"></div>
@@ -447,7 +448,7 @@ export class HomeScreen {
         const app = this.getAppById('settings');
         if (!app) return '';
         return `
-            <section class="app-icon yzp-home-app-action home-settings-card yzp-home-settings-card" data-app="${app.id}" style="--app-color:${app.color};">
+            <section class="yzp-home-app-action home-settings-card yzp-home-settings-card" data-app="${app.id}">
                 <div class="home-settings-left yzp-home-settings-left">
                     ${this.renderAppGlyph(app, 'home-settings-icon yzp-home-settings-icon')}
                     <div class="home-settings-title yzp-home-settings-title">${this._escapeHtml(this._getAppDisplayName(app))}</div>

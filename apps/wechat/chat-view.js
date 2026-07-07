@@ -11089,6 +11089,37 @@ renderChatRoom(chat) {
         this.syncHeaderStatusDot(targetChatId);
     }
 
+    _getChatSettingsShellBackgroundConfig() {
+        const userInfo = this.app.wechatData.getUserInfo?.() || {};
+        const defaultChatBg = this.app._getWechatAssetUrl?.('backgrounds/bg1.png') || '';
+        const rawBg = String(
+            this.app.currentChat?.background
+            || userInfo.globalChatBackground
+            || userInfo.chatListBackground
+            || defaultChatBg
+            || ''
+        ).trim();
+
+        if (!rawBg) {
+            return {
+                appClass: 'wechat-app',
+                appStyle: '',
+                contentBgStyle: 'background: #ededed;'
+            };
+        }
+
+        const isImageBg = rawBg.startsWith('data:') || rawBg.startsWith('/') || rawBg.startsWith('http');
+        const appStyle = isImageBg
+            ? `background-image: url('${rawBg}'); background-size: cover; background-position: center;`
+            : `background: ${rawBg};`;
+
+        return {
+            appClass: 'wechat-app wechat-main-shell wechat-chatlist-bg-enabled',
+            appStyle,
+            contentBgStyle: 'background: transparent;'
+        };
+    }
+
     _clearPendingStateForChat(chatId = null) {
         const safeChatId = String(chatId || '').trim();
         if (!safeChatId) return;
@@ -11109,8 +11140,9 @@ renderChatRoom(chat) {
         const honeyInjectEnabled = !isGroupChat && this.app.wechatData.isHoneyHistoryInjectionEnabledForChat?.(currentChat.id);
         const profileContextEnabled = isGroupChat || this.app.wechatData.isProfileContextInjectionEnabledForChat?.(currentChat.id) !== false;
         const isBlocked = this._isBlockedSingleChat(currentChat);
+        const shellBg = this._getChatSettingsShellBackgroundConfig();
         const html = `
-            <div class="wechat-app">
+            <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-menu">
@@ -11121,7 +11153,7 @@ renderChatRoom(chat) {
                     <div class="wechat-header-right"></div>
                 </div>
                 
-                <div class="wechat-content" style="background: #ededed;">
+                <div class="wechat-content" style="${shellBg.contentBgStyle}">
                     <!-- 聊天背景 -->
                     <div style="background: #fff; padding: 15px 20px; margin-bottom: 10px; cursor: pointer;" id="set-bg-btn">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -11262,9 +11294,11 @@ renderChatRoom(chat) {
         }).join('');
         const userInfo = this.app.wechatData.getUserInfo?.() || {};
         const listBgActive = String(userInfo.chatListBackground || '').trim();
+        const shellBg = this._getChatSettingsShellBackgroundConfig();
+        const pickerContentStyle = `${shellBg.contentBgStyle} padding: 20px;`;
 
         const html = `
-            <div class="wechat-app">
+            <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-bg">
@@ -11275,7 +11309,7 @@ renderChatRoom(chat) {
                     <div class="wechat-header-right"></div>
                 </div>
                 
-                <div class="wechat-content" style="background: #ededed; padding: 20px;">
+                <div class="wechat-content" style="${pickerContentStyle}">
                     <!-- 上传自定义背景 -->
                     <div style="background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 15px; text-align: center;">
                         <div style="font-size: 14px; color: #999; margin-bottom: 12px;">上传自定义背景</div>

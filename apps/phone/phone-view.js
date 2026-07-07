@@ -120,9 +120,10 @@ export class PhoneCallView {
 
         // TTS开关
         const autoTTS = this.app.storage.get('phone-call-auto-tts') || false;
+        const shellBg = this._getSystemWallpaperShellBackgroundConfig();
 
         const html = `
-            <div class="phone-call-main">
+            <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
                 <div class="phone-call-main-header">
                     <div class="phone-call-main-title">通话</div>
                     <div style="display: flex; align-items: center; gap: 8px; margin-left: auto;">
@@ -322,9 +323,10 @@ export class PhoneCallView {
                 </div>
             `).join('')
             : '<div class="phone-call-empty">暂无联系人，请先添加姓名</div>';
+        const shellBg = this._getSystemWallpaperShellBackgroundConfig('phone-call-contacts');
 
         const html = `
-            <div class="phone-call-contacts">
+            <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
                 <div class="phone-call-main-header">
                     <button class="phone-call-settings-btn" id="phone-call-contacts-back">
                         <i class="fa-solid fa-chevron-left"></i>
@@ -647,9 +649,10 @@ export class PhoneCallView {
 
         const pm = this._getPromptManager();
         const callPrompt = pm?.getPromptForFeature('phone', 'call') || '';
+        const shellBg = this._getSystemWallpaperShellBackgroundConfig('phone-call-settings');
 
         const html = `
-            <div class="phone-call-settings">
+            <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
                 <div class="phone-call-settings-header">
                     <button class="phone-call-settings-back" id="phone-call-settings-back">
                         <i class="fa-solid fa-chevron-left"></i>
@@ -671,7 +674,7 @@ export class PhoneCallView {
                             <div class="phone-prompt-fold-content">
                                 ${pm?.renderPromptPresetControls?.('phone', 'call') || ''}
                                 <textarea class="phone-call-prompt-textarea" id="phone-call-call-prompt" placeholder="通话中回复规则...">${this._escapeHtml(callPrompt)}</textarea>
-                                <div style="margin-top:6px; font-size:11px; color:var(--phone-secondary-text, #999); line-height:1.5;">
+                                <div class="phone-call-settings-hint" style="margin-top:6px; font-size:11px; line-height:1.5;">
                                     可用变量：<code>{{user}}</code>、<code>{{callerName}}</code>（同义：<code>{{caller}}</code> / <code>{{char}}</code>）
                                 </div>
                                 <div class="phone-call-prompt-btns">
@@ -1901,6 +1904,34 @@ export class PhoneCallView {
         }
 
         this.app.phoneShell.setContent(html, viewId);
+    }
+
+    _getSystemWallpaperShellBackgroundConfig(baseClass = 'phone-call-main') {
+        let wallpaper = '';
+        try {
+            wallpaper = String(window.VirtualPhone?.imageManager?.getWallpaper?.() || '').trim();
+        } catch (e) {
+            wallpaper = '';
+        }
+        if (!wallpaper) {
+            try {
+                wallpaper = String(this.app?.storage?.get?.('phone-wallpaper') || '').trim();
+            } catch (e) {
+                wallpaper = '';
+            }
+        }
+
+        if (!wallpaper) {
+            return {
+                appClass: baseClass,
+                appStyle: ''
+            };
+        }
+
+        return {
+            appClass: `${baseClass} phone-call-wallpaper-shell`,
+            appStyle: `background-image: url('${this._escapeAttr(wallpaper)}'); background-size: cover; background-position: center;`
+        };
     }
 
     _addCallRecord(callerName, status, duration, transcript, timeInfo) {
