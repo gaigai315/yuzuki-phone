@@ -10376,7 +10376,7 @@ renderChatRoom(chat) {
             if (prompt) {
                 messages.push({
                     role: 'user',
-                    content: `当前时间: ${currentTime}\n\n${prompt}`,
+                    content: prompt,
                     isPhoneMessage: true
                 });
             }
@@ -11118,6 +11118,27 @@ renderChatRoom(chat) {
             appStyle,
             contentBgStyle: 'background: transparent;'
         };
+    }
+
+    _getWechatCallBackgroundStyle(chat = null, fallback = 'linear-gradient(135deg, #a8edea 0%, #fed6e3 50%, #d299c2 100%)') {
+        const userInfo = this.app.wechatData.getUserInfo?.() || {};
+        const defaultChatBg = this.app._getWechatAssetUrl?.('backgrounds/bg1.png') || '';
+        const rawBg = String(
+            chat?.background
+            || this.app.currentChat?.background
+            || userInfo.globalChatBackground
+            || userInfo.chatListBackground
+            || defaultChatBg
+            || ''
+        ).trim();
+
+        if (!rawBg) return `background: ${fallback};`;
+
+        const safeBg = rawBg.replace(/'/g, "\\'");
+        const isImageBg = safeBg.startsWith('data:') || safeBg.startsWith('/') || safeBg.startsWith('http');
+        return isImageBg
+            ? `background-image: url('${safeBg}'); background-size: cover; background-position: center;`
+            : `background: ${safeBg};`;
     }
 
     _clearPendingStateForChat(chatId = null) {
@@ -12371,13 +12392,14 @@ renderChatRoom(chat) {
         const contact = this.app.currentChat;
         const isGroupCall = contact?.type === 'group';
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
+        const callBgStyle = this._getWechatCallBackgroundStyle(contact);
 
         // ========================================
         // 阶段1：呼叫界面 - 白色玻璃风格
         // ========================================
         const callingHtml = `
         <div class="call-fullscreen">
-        <div class="wechat-app" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 50%, #d299c2 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+        <div class="wechat-app" style="${callBgStyle} height: 100%; display: flex; flex-direction: column; overflow: hidden;">
             <div class="wechat-header" style="background: rgba(255,255,255,0.3); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.3);">
                 <div class="wechat-header-left">
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
@@ -12547,10 +12569,11 @@ renderChatRoom(chat) {
         const isGroupCall = contact?.type === 'group';
         const groupParticipants = this._getGroupChatParticipants(contact);
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
+        const callBgStyle = this._getWechatCallBackgroundStyle(contact, 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)');
 
         const html = `
         <div class="call-fullscreen">
-        <div class="wechat-app" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+        <div class="wechat-app" style="${callBgStyle} height: 100%; display: flex; flex-direction: column; overflow: hidden;">
             <div class="wechat-header" style="background: rgba(255,255,255,0.25); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.2);">
                 <div class="wechat-header-left">
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
@@ -12654,7 +12677,7 @@ renderChatRoom(chat) {
                             border: 1px solid rgba(255,255,255,0.22);
                             border-radius: 18px;
                             background: rgba(255,255,255,0.12);
-                            color: #fff;
+                            color: var(--phone-global-text, #000000);
                             font-size: 13px;
                             outline: none;
                             -webkit-user-select: text;
@@ -12693,17 +12716,18 @@ renderChatRoom(chat) {
             }
             #video-chat-input {
                 background: rgba(255,255,255,0.12) !important;
-                color: #ffffff !important;
-                -webkit-text-fill-color: #ffffff !important;
-                caret-color: #ffffff !important;
+                color: var(--phone-global-text, #000000) !important;
+                -webkit-text-fill-color: var(--phone-global-text, #000000) !important;
+                caret-color: var(--phone-global-text, #000000) !important;
                 border: 1px solid rgba(255,255,255,0.22) !important;
                 box-shadow: inset 0 0 0 1000px rgba(255,255,255,0.12) !important;
                 filter: none !important;
                 opacity: 1 !important;
             }
             #video-chat-input::placeholder {
-                color: rgba(255,255,255,0.62) !important;
-                -webkit-text-fill-color: rgba(255,255,255,0.62) !important;
+                color: var(--phone-global-text, #000000) !important;
+                -webkit-text-fill-color: var(--phone-global-text, #000000) !important;
+                opacity: 0.5 !important;
             }
         </style>
     `;
@@ -12739,9 +12763,9 @@ renderChatRoom(chat) {
             const input = getVideoInput();
             if (!input?.style?.setProperty) return;
             input.style.setProperty('background', 'rgba(255,255,255,0.12)', 'important');
-            input.style.setProperty('color', '#ffffff', 'important');
-            input.style.setProperty('-webkit-text-fill-color', '#ffffff', 'important');
-            input.style.setProperty('caret-color', '#ffffff', 'important');
+            input.style.setProperty('color', 'var(--phone-global-text, #000000)', 'important');
+            input.style.setProperty('-webkit-text-fill-color', 'var(--phone-global-text, #000000)', 'important');
+            input.style.setProperty('caret-color', 'var(--phone-global-text, #000000)', 'important');
             input.style.setProperty('border', '1px solid rgba(255,255,255,0.22)', 'important');
             input.style.setProperty('box-shadow', 'inset 0 0 0 1000px rgba(255,255,255,0.12)', 'important');
             input.style.setProperty('filter', 'none', 'important');
@@ -13353,9 +13377,10 @@ ${groupParticipants.join('、') || '暂无成员'}
         const contactName = safeContact.name || '对方';
         const isGroupCall = safeContact?.type === 'group';
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(safeContact) : '';
+        const callBgStyle = this._getWechatCallBackgroundStyle(safeContact);
         const incomingHtml = `
         <div class="call-fullscreen">
-        <div class="wechat-app" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 50%, #d299c2 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+        <div class="wechat-app" style="${callBgStyle} height: 100%; display: flex; flex-direction: column; overflow: hidden;">
             <div class="wechat-header" style="background: rgba(255,255,255,0.3); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.3);">
                 <div class="wechat-header-left">
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
@@ -13486,9 +13511,10 @@ ${groupParticipants.join('、') || '暂无成员'}
         const contactName = safeContact.name || '对方';
         const isGroupCall = safeContact?.type === 'group';
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(safeContact) : '';
+        const callBgStyle = this._getWechatCallBackgroundStyle(safeContact);
         const incomingHtml = `
         <div class="call-fullscreen">
-        <div class="wechat-app" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 50%, #d299c2 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+        <div class="wechat-app" style="${callBgStyle} height: 100%; display: flex; flex-direction: column; overflow: hidden;">
             <div class="wechat-header" style="background: rgba(255,255,255,0.3); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.3);">
                 <div class="wechat-header-left">
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
@@ -13628,11 +13654,12 @@ ${groupParticipants.join('、') || '暂无成员'}
         const contact = this.app.currentChat;
         const isGroupCall = contact?.type === 'group';
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
+        const callBgStyle = this._getWechatCallBackgroundStyle(contact);
 
         // 呼叫界面 - 白色玻璃风格
         const callingHtml = `
         <div class="call-fullscreen">
-        <div class="wechat-app" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 50%, #d299c2 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+        <div class="wechat-app" style="${callBgStyle} height: 100%; display: flex; flex-direction: column; overflow: hidden;">
             <div class="wechat-header" style="background: rgba(255,255,255,0.3); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.3);">
                 <div class="wechat-header-left">
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
@@ -13817,24 +13844,12 @@ ${groupParticipants.join('、') || '暂无成员'}
                 : this._readNonNegativeLimit('wechat-single-call-history-limit', 30);
             const recentCallHistory = callHistoryLimit > 0 ? chatHistory.slice(-callHistoryLimit) : [];
 
-            // 🔥 精简的通话提示词 - 只包含必要信息
-            const prompt = isGroupCall
-                ? `【微信群${callTypeName}通话中】
-当前群聊：${contactName}
-可发言成员：${groupParticipants.join('、') || '暂无成员'}
-${userName}说：${message}
-
-最近通话记录：
-${recentCallHistory.map(h => `${h.from === 'me' ? userName : h.from}: ${h.text}`).join('\n')}
-
-请以群成员的身份继续通话。回复时必须使用“发送者: 内容”格式，且发送者必须来自可发言成员名单。`
-                : `【${callTypeName}通话中】
-${userName}说：${message}
-
+            const callTranscript = recentCallHistory
+                .map(h => `${h.from === 'me' ? userName : (isGroupCall ? h.from : contactName)}: ${h.text}`)
+                .join('\n') || '暂无通话记录';
+            const prompt = `【手机通话中】
 通话记录：
-${recentCallHistory.map(h => `${h.from === 'me' ? userName : contactName}: ${h.text}`).join('\n')}
-
-请以${contactName}的身份回复。`;
+${callTranscript}`;
 
             // 🔥 传递 callType 作为 callMode
             const aiResponse = await this.sendToAIHidden(prompt, context, callType);
@@ -13891,10 +13906,11 @@ ${recentCallHistory.map(h => `${h.from === 'me' ? userName : contactName}: ${h.t
         const isGroupCall = contact?.type === 'group';
         const groupParticipants = this._getGroupChatParticipants(contact);
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
+        const callBgStyle = this._getWechatCallBackgroundStyle(contact);
 
         const html = `
         <div class="call-fullscreen">
-        <div class="wechat-app" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 50%, #d299c2 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+        <div class="wechat-app" style="${callBgStyle} height: 100%; display: flex; flex-direction: column; overflow: hidden;">
             <div class="wechat-header" style="background: rgba(255,255,255,0.4); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.3); flex-shrink: 0;">
                 <div class="wechat-header-left">
                     <!-- 隐藏的返回按钮，用于接管并拦截右滑手势，防止路由迷失直接退回桌面 -->
@@ -13962,7 +13978,7 @@ ${recentCallHistory.map(h => `${h.from === 'me' ? userName : contactName}: ${h.t
                             border: 1px solid rgba(255,255,255,0.22);
                             border-radius: 18px;
                             background: rgba(255,255,255,0.12);
-                            color: #fff;
+                            color: var(--phone-global-text, #000000);
                             font-size: 13px;
                             outline: none;
                             -webkit-user-select: text;
@@ -14022,17 +14038,18 @@ ${recentCallHistory.map(h => `${h.from === 'me' ? userName : contactName}: ${h.t
             }
             #voice-chat-input {
                 background: rgba(255,255,255,0.12) !important;
-                color: #ffffff !important;
-                -webkit-text-fill-color: #ffffff !important;
-                caret-color: #ffffff !important;
+                color: var(--phone-global-text, #000000) !important;
+                -webkit-text-fill-color: var(--phone-global-text, #000000) !important;
+                caret-color: var(--phone-global-text, #000000) !important;
                 border: 1px solid rgba(255,255,255,0.22) !important;
                 box-shadow: inset 0 0 0 1000px rgba(255,255,255,0.12) !important;
                 filter: none !important;
                 opacity: 1 !important;
             }
             #voice-chat-input::placeholder {
-                color: rgba(255,255,255,0.62) !important;
-                -webkit-text-fill-color: rgba(255,255,255,0.62) !important;
+                color: var(--phone-global-text, #000000) !important;
+                -webkit-text-fill-color: var(--phone-global-text, #000000) !important;
+                opacity: 0.5 !important;
             }
         </style>
     `;
@@ -14069,9 +14086,9 @@ ${recentCallHistory.map(h => `${h.from === 'me' ? userName : contactName}: ${h.t
             if (!input?.style?.setProperty) return;
             input.style.setProperty('background', 'rgba(255,255,255,0.12)', 'important');
             input.style.setProperty('background-color', 'rgba(255,255,255,0.12)', 'important');
-            input.style.setProperty('color', '#ffffff', 'important');
-            input.style.setProperty('-webkit-text-fill-color', '#ffffff', 'important');
-            input.style.setProperty('caret-color', '#ffffff', 'important');
+            input.style.setProperty('color', 'var(--phone-global-text, #000000)', 'important');
+            input.style.setProperty('-webkit-text-fill-color', 'var(--phone-global-text, #000000)', 'important');
+            input.style.setProperty('caret-color', 'var(--phone-global-text, #000000)', 'important');
             input.style.setProperty('border', '1px solid rgba(255,255,255,0.22)', 'important');
             input.style.setProperty('box-shadow', 'inset 0 0 0 1000px rgba(255,255,255,0.12)', 'important');
             input.style.setProperty('outline', 'none', 'important');

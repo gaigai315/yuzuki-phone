@@ -3241,8 +3241,12 @@ export class WeiboView {
             const text = document.getElementById('weibo-recommend-prompt')?.value;
             if (text !== undefined) {
                 const promptManager = window.VirtualPhone?.promptManager;
-                promptManager?.updateActivePromptUserPreset?.('weibo', 'recommend', text) ?? promptManager?.updatePrompt('weibo', 'recommend', text);
-                this.app.phoneShell.showNotification('保存成功', '推荐提示词已更新', '✅');
+                try {
+                    promptManager?.updateActivePromptUserPreset?.('weibo', 'recommend', text) ?? promptManager?.updatePrompt('weibo', 'recommend', text);
+                    this.app.phoneShell.showNotification('保存成功', '推荐提示词已更新', '✅');
+                } catch (e) {
+                    this.app.phoneShell.showNotification('不能保存默认', e?.message || '请先新增预设再保存', '⚠️');
+                }
             }
         });
 
@@ -3262,8 +3266,12 @@ export class WeiboView {
             const text = document.getElementById('weibo-hotsearch-prompt')?.value;
             if (text !== undefined) {
                 const promptManager = window.VirtualPhone?.promptManager;
-                promptManager?.updateActivePromptUserPreset?.('weibo', 'hotSearch', text) ?? promptManager?.updatePrompt('weibo', 'hotSearch', text);
-                this.app.phoneShell.showNotification('保存成功', '热搜提示词已更新', '✅');
+                try {
+                    promptManager?.updateActivePromptUserPreset?.('weibo', 'hotSearch', text) ?? promptManager?.updatePrompt('weibo', 'hotSearch', text);
+                    this.app.phoneShell.showNotification('保存成功', '热搜提示词已更新', '✅');
+                } catch (e) {
+                    this.app.phoneShell.showNotification('不能保存默认', e?.message || '请先新增预设再保存', '⚠️');
+                }
             }
         });
 
@@ -3366,8 +3374,12 @@ export class WeiboView {
             const text = document.getElementById('weibo-hot-prompt')?.value;
             if (text !== undefined) {
                 const promptManager = window.VirtualPhone?.promptManager;
-                promptManager?.updateActivePromptUserPreset?.('weibo', 'hotSearch', text) ?? promptManager?.updatePrompt('weibo', 'hotSearch', text);
-                this.app.phoneShell.showNotification('保存成功', '热搜提示词已更新', '✅');
+                try {
+                    promptManager?.updateActivePromptUserPreset?.('weibo', 'hotSearch', text) ?? promptManager?.updatePrompt('weibo', 'hotSearch', text);
+                    this.app.phoneShell.showNotification('保存成功', '热搜提示词已更新', '✅');
+                } catch (e) {
+                    this.app.phoneShell.showNotification('不能保存默认', e?.message || '请先新增预设再保存', '⚠️');
+                }
             }
         });
     }

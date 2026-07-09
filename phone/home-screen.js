@@ -585,46 +585,78 @@ export class HomeScreen {
         }));
     }
 
-    getCurrentTime() {
+    _isLobbyMode(context = null) {
+        const ctx = context || window.VirtualPhone?.storage?.getContext?.() || window.SillyTavern?.getContext?.() || {};
+        const charName = String(ctx?.name2 || '').trim();
+        if (/^SillyTavern System$/i.test(charName)) return true;
+        const chatId = String(ctx?.chatMetadata?.file_name || ctx?.chatId || '').trim();
+        if (chatId) return false;
+        return !charName;
+    }
+
+    _isStorageTruthy(key) {
+        const raw = window.VirtualPhone?.storage?.get?.(key);
+        return raw === true || raw === 'true' || raw === 1;
+    }
+
+    _isStorageEnabledByDefault(key) {
+        const raw = window.VirtualPhone?.storage?.get?.(key);
+        if (raw === undefined || raw === null || raw === '') return true;
+        return raw === true || raw === 'true' || raw === 1;
+    }
+
+    _shouldUseRealTimeForPhoneDisplay() {
+        const context = window.VirtualPhone?.storage?.getContext?.() || window.SillyTavern?.getContext?.() || {};
+        const isLobby = this._isLobbyMode(context);
+        const onlineOnlyKey = isLobby ? 'phone_lobby_wechat_online_only_mode' : 'wechat_online_only_mode';
+        const interopKey = isLobby ? 'phone_lobby_wechat_online_mode' : 'wechat_online_mode';
+        const realTimeKey = isLobby ? 'phone_lobby_wechat_online_only_real_time_enabled' : 'wechat_online_only_real_time_enabled';
+        return this._isStorageTruthy(onlineOnlyKey)
+            && !this._isStorageTruthy(interopKey)
+            && this._isStorageEnabledByDefault(realTimeKey);
+    }
+
+    _getCurrentPhoneTimeInfo() {
         const timeManager = window.VirtualPhone?.timeManager;
-        
         if (timeManager) {
-            const storyTime = timeManager.getCurrentStoryTime();
-            return storyTime?.time;
+            if (this._shouldUseRealTimeForPhoneDisplay() && typeof timeManager.getRealTime === 'function') {
+                return timeManager.getRealTime();
+            }
+            return timeManager.getCurrentStoryTime();
         }
-        
-        // 降级方案
+
         const now = new Date();
-        return now.toLocaleTimeString('zh-CN', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: false
-        });
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        return {
+            time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }),
+            date: `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, '0')}月${String(now.getDate()).padStart(2, '0')}日`,
+            weekday: weekdays[now.getDay()],
+            isReal: true
+        };
+    }
+
+    getCurrentTime() {
+        return this._getCurrentPhoneTimeInfo()?.time || '';
     }
     
     getCurrentDate() {
-    const timeManager = window.VirtualPhone?.timeManager;
-    
-    if (timeManager) {
-        const storyTime = timeManager.getCurrentStoryTime();
-        const dateParts = storyTime?.date?.match(/(\d+)年(\d+)月(\d+)日/);
+        const currentTime = this._getCurrentPhoneTimeInfo();
+        const dateParts = currentTime?.date?.match(/(\d+)年(\d+)月(\d+)日/);
         if (dateParts) {
             const year = parseInt(dateParts[1]);
             const month = parseInt(dateParts[2]);
             const day = parseInt(dateParts[3]);
-            return `${year}年${month}月${day}日 ${storyTime.weekday}`;
+            return `${year}年${month}月${day}日 ${currentTime.weekday || ''}`.trim();
         }
-    }
     
-    // 降级方案
-    const now = new Date();
-    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const day = now.getDate();
-    const weekday = weekdays[now.getDay()];
-    return `${year}年${month}月${day}日 ${weekday}`;
-}
+        const now = new Date();
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        const day = now.getDate();
+        const weekday = weekdays[now.getDay()];
+        return `${year}年${month}月${day}日 ${weekday}`;
+    }
 
     getCurrentDateParts() {
         const dateText = this.getCurrentDate() || '';

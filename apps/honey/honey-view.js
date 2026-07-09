@@ -4771,10 +4771,24 @@ export class HoneyView {
             const overrideContent = overrideTextarea?.value ?? '';
             const content = textarea?.value ?? '';
             const userLiveContent = userLiveTextarea?.value ?? '';
-            promptManager?.updateActivePromptUserPreset?.('honey', 'override', overrideContent) ?? promptManager?.updatePrompt?.('honey', 'override', overrideContent);
-            promptManager?.updateActivePromptUserPreset?.('honey', 'live', content) ?? promptManager?.updatePrompt?.('honey', 'live', content);
-            promptManager?.updateActivePromptUserPreset?.('honey', 'userLive', userLiveContent) ?? promptManager?.updatePrompt?.('honey', 'userLive', userLiveContent);
-            this.app.phoneShell.showNotification('保存成功', '蜜语提示词已更新', '✅');
+            const saveOne = (feature, value) => {
+                try {
+                    promptManager?.updateActivePromptUserPreset?.('honey', feature, value) ?? promptManager?.updatePrompt?.('honey', feature, value);
+                    return null;
+                } catch (e) {
+                    return e;
+                }
+            };
+            const errors = [
+                saveOne('override', overrideContent),
+                saveOne('live', content),
+                saveOne('userLive', userLiveContent)
+            ].filter(Boolean);
+            if (errors.length === 0) {
+                this.app.phoneShell.showNotification('保存成功', '蜜语提示词已更新', '✅');
+            } else {
+                this.app.phoneShell.showNotification('不能保存默认', errors[0]?.message || '请先新增预设再保存', '⚠️');
+            }
         });
 
         root.querySelector('#honey-reset-prompt')?.addEventListener('click', () => {

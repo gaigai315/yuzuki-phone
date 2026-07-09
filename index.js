@@ -45,6 +45,7 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-07-08',
     items: [
+        '【提示词】默认提示词改成自动更新。需修改提示词，请新增提示词方案预设。',
         '【优化】优化手机 App 内部分 CSS 渲染与界面显示。'
     ]
 };

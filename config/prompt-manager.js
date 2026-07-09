@@ -30,155 +30,113 @@ export class PromptManager {
     loadPrompts() {
         const saved = this.storage.get('phone-prompts', null);
         const defaults = this.getDefaultPrompts();
+        const promptTree = this._clonePromptTree(defaults);
 
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
-                const activePresets = this._loadActivePromptPresets();
-                const presetStore = this._loadPromptUserPresets();
-
-                // 深度合并默认配置，确保新增的字段不会丢失
-                for (const app in defaults) {
-                    if (!parsed[app]) {
-                        parsed[app] = defaults[app];
-                    } else if (typeof defaults[app] === 'object' && defaults[app] !== null) {
-                        // 深度合并：检查子级属性
-                        for (const feature in defaults[app]) {
-                            if (parsed[app][feature] === undefined) {
-                                parsed[app][feature] = defaults[app][feature];
-                            }
-                        }
-                    }
-                }
-
-                // 微博互动类提示词目前没有可编辑入口，运行时始终以代码默认值为准
-                if (!parsed.weibo) parsed.weibo = {};
-                if (JSON.stringify(parsed.weibo.interaction) !== JSON.stringify(defaults.weibo.interaction)) {
-                    parsed.weibo.interaction = { ...defaults.weibo.interaction };
-                }
-                if (JSON.stringify(parsed.weibo.commentInteraction) !== JSON.stringify(defaults.weibo.commentInteraction)) {
-                    parsed.weibo.commentInteraction = { ...defaults.weibo.commentInteraction };
-                }
-                if (parsed.wechat?.groupChat?.content && !String(parsed.wechat.groupChat.content).includes('非群成员发微信')) {
-                    parsed.wechat.groupChat.content = defaults.wechat.groupChat.content;
-                }
-                if (parsed.wechat?.offline?.content && !String(parsed.wechat.offline.content).includes('好友名后带“（已拉黑）”')) {
-                    parsed.wechat.offline.content = this._appendWechatOfflineBlockedRule(parsed.wechat.offline.content);
-                }
-                if (parsed.wechat?.online?.content && !String(parsed.wechat.online.content).includes('[音乐]（音乐名称')) {
-                    parsed.wechat.online.content = this._appendWechatOnlineMusicInviteRule(parsed.wechat.online.content);
-                }
-                if (parsed.wechat?.online?.content && !String(parsed.wechat.online.content).includes('好友名后带“（已拉黑）”')) {
-                    parsed.wechat.online.content = this._appendWechatOnlineBlockedRule(parsed.wechat.online.content);
-                }
-                if (parsed.wechat?.online?.content && !String(parsed.wechat.online.content).includes('[内心]（未说出口的一句话内容）')) {
-                    parsed.wechat.online.content = this._appendWechatOnlineInnerThoughtRule(parsed.wechat.online.content);
-                }
-                if (parsed.wechat?.online?.content && !String(parsed.wechat.online.content).includes('[用户照片]')) {
-                    parsed.wechat.online.content = defaults.wechat.online.content;
-                }
-                if (parsed.wechat?.groupChat?.content && !String(parsed.wechat.groupChat.content).includes('好友名后带“（已拉黑）”')) {
-                    parsed.wechat.groupChat.content = this._appendWechatGroupBlockedRule(parsed.wechat.groupChat.content);
-                }
-                if (parsed.wechat?.groupChat?.content && !String(parsed.wechat.groupChat.content).includes('[用户照片]')) {
-                    parsed.wechat.groupChat.content = defaults.wechat.groupChat.content;
-                }
-                if (parsed.wechat?.offline?.content && !String(parsed.wechat.offline.content).includes('[用户照片]')) {
-                    parsed.wechat.offline.content = defaults.wechat.offline.content;
-                }
-                if (parsed.wechat?.moments?.content && !String(parsed.wechat.moments.content).includes('[用户照片]')) {
-                    parsed.wechat.moments.content = defaults.wechat.moments.content;
-                }
-                const obsoleteMomentsLine = '本提示词只负责约束朋友圈动态的风格、互动和输出质量；角色卡、用户信息、世界书和最近剧情会由系统自动注入，不要在这里重复填写这些背景变量。';
-                if (parsed.wechat?.moments?.content && String(parsed.wechat.moments.content).includes(obsoleteMomentsLine)) {
-                    parsed.wechat.moments.content = String(parsed.wechat.moments.content)
-                        .replace(obsoleteMomentsLine, '')
-                        .replace(/\n{3,}/g, '\n\n')
-                        .trim();
-                }
-                const diaryPromptContent = String(parsed.diary?.generate?.content || '');
-                const isOldDefaultDiaryPrompt = diaryPromptContent.includes('【日记生成任务】')
-                    && diaryPromptContent.includes('请根据以下聊天记录，以第一人称写一篇私人日记。')
-                    && diaryPromptContent.includes('要求：');
-                const isPreviousBuiltInDiaryPrompt = diaryPromptContent.includes('【日记生成任务：沉浸式内心独白】')
-                    && (!diaryPromptContent.includes('日记开头或触动瞬间附近可以插入1-3张')
-                        || diaryPromptContent.includes('[图片]（English NAI tags）'));
-                if (parsed.diary?.generate && (isOldDefaultDiaryPrompt || isPreviousBuiltInDiaryPrompt)) {
-                    parsed.diary.generate.content = defaults.diary.generate.content;
-                }
-                if (parsed.diary?.generate?.content && !String(parsed.diary.generate.content).includes('[用户照片]')) {
-                    parsed.diary.generate.content = defaults.diary.generate.content;
-                }
-                if (parsed.weibo?.generate?.content && !String(parsed.weibo.generate.content).includes('[用户照片]')) {
-                    parsed.weibo.generate.content = defaults.weibo.generate.content;
-                }
-                if (parsed.weibo?.hotSearch?.content && !String(parsed.weibo.hotSearch.content).includes('[用户照片]')) {
-                    parsed.weibo.hotSearch.content = defaults.weibo.hotSearch.content;
-                }
-                Object.keys(defaults).forEach(app => {
-                    const appConfig = defaults[app];
-                    if (!appConfig || typeof appConfig !== 'object') return;
-                    Object.keys(appConfig).forEach(feature => {
-                        const defaultPrompt = appConfig[feature];
-                        if (!defaultPrompt || typeof defaultPrompt.content !== 'string') return;
-
-                        const activeId = String(activePresets?.[app]?.[feature] || '').trim();
-                        if (!activeId) return;
-
-                        const builtInPreset = this._getBuiltInPromptPresetsFromDefaults(defaults, app, feature)
-                            .find(preset => String(preset?.id || '') === activeId);
-                        if (builtInPreset) {
-                            if (!parsed[app]) parsed[app] = {};
-                            if (!parsed[app][feature]) parsed[app][feature] = { ...defaultPrompt };
-                            parsed[app][feature].content = String(builtInPreset.content || '');
-                            return;
-                        }
-
-                        const presets = Array.isArray(presetStore?.[app]?.[feature]) ? presetStore[app][feature] : [];
-                        const activePreset = presets.find(preset => String(preset?.id || '') === activeId);
-                        if (!activePreset) return;
-
-                        if (!parsed[app]) parsed[app] = {};
-                        if (!parsed[app][feature]) parsed[app][feature] = { ...defaultPrompt };
-                        parsed[app][feature].content = String(activePreset.content || '');
-                    });
-                });
-
-                this._ensureDefaultBuiltInPromptPresets(defaults, activePresets, parsed);
-
-                return parsed;
+                this._copySavedPromptSettings(promptTree, parsed);
             } catch (e) {
                 console.error('❌ 提示词加载失败，使用默认配置');
-                this.storage.set('phone-prompts', JSON.stringify(defaults));
-                return defaults; // 🔥 核心修复：必须返回默认值，否则会导致后续读取 undefined 引起连环崩溃！
             }
         }
 
-        // 🔥 首次使用：保存默认配置
-        this.storage.set('phone-prompts', JSON.stringify(defaults), true);
-        this._ensureDefaultBuiltInPromptPresets(defaults, this._loadActivePromptPresets(), defaults);
-        return defaults;
+        this._applyActivePromptContents(promptTree, defaults);
+        return promptTree;
     }
 
-    _ensureDefaultBuiltInPromptPresets(defaults, activePresets = null, promptTree = null) {
-        const active = activePresets && typeof activePresets === 'object'
-            ? JSON.parse(JSON.stringify(activePresets))
-            : this._loadActivePromptPresets();
-        let changed = false;
-        [
-            { app: 'wechat', feature: 'offline' },
-            { app: 'honey', feature: 'live' }
-        ].forEach(({ app, feature }) => {
-            const builtIns = this._getBuiltInPromptPresetsFromDefaults(defaults, app, feature);
-            if (!builtIns[0]?.id || String(active?.[app]?.[feature] || '').trim()) return;
-            if (!active[app]) active[app] = {};
-            active[app][feature] = builtIns[0].id;
-            if (promptTree?.[app]?.[feature]) {
-                promptTree[app][feature].content = builtIns[0].content;
+    _clonePromptTree(source) {
+        try {
+            return JSON.parse(JSON.stringify(source || {}));
+        } catch (e) {
+            return {};
+        }
+    }
+
+    _isPromptConfig(value) {
+        return !!(value && typeof value === 'object' && typeof value.content === 'string');
+    }
+
+    _copySavedPromptSettings(target, saved) {
+        if (!target || !saved || typeof target !== 'object' || typeof saved !== 'object') return;
+        const blockedKeys = new Set(['content', 'name', 'description', 'order']);
+        Object.keys(target).forEach((key) => {
+            const targetValue = target[key];
+            const savedValue = saved[key];
+            if (!savedValue || typeof savedValue !== 'object') return;
+
+            if (this._isPromptConfig(targetValue)) {
+                Object.keys(savedValue).forEach((prop) => {
+                    if (blockedKeys.has(prop)) return;
+                    const value = savedValue[prop];
+                    if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+                        targetValue[prop] = value;
+                    }
+                });
+                return;
             }
-            changed = true;
+
+            this._copySavedPromptSettings(targetValue, savedValue);
         });
-        if (changed) this._saveActivePromptPresets(active);
+    }
+
+    _forEachPromptConfig(tree, callback) {
+        if (!tree || typeof tree !== 'object') return;
+        Object.keys(tree).forEach((app) => {
+            const appConfig = tree[app];
+            if (this._isPromptConfig(appConfig)) {
+                callback(app, '', appConfig);
+                return;
+            }
+            if (!appConfig || typeof appConfig !== 'object') return;
+            Object.keys(appConfig).forEach((feature) => {
+                const promptConfig = appConfig[feature];
+                if (this._isPromptConfig(promptConfig)) callback(app, feature, promptConfig);
+            });
+        });
+    }
+
+    _getPromptNode(tree, app, feature = '') {
+        if (!tree || !app) return null;
+        if (!feature && this._isPromptConfig(tree[app])) return tree[app];
+        return tree?.[app]?.[feature] || null;
+    }
+
+    _applyActivePromptContents(promptTree, defaults) {
+        const activePresets = this._loadActivePromptPresets();
+        const presetStore = this._loadPromptUserPresets();
+
+        this._forEachPromptConfig(defaults, (app, feature, defaultPrompt) => {
+            const target = this._getPromptNode(promptTree, app, feature);
+            if (!target) return;
+
+            const activeId = String(activePresets?.[app]?.[feature] || '').trim();
+            const builtIns = this._getBuiltInPromptPresetsFromDefaults(defaults, app, feature);
+            const builtInPreset = activeId
+                ? builtIns.find(preset => String(preset?.id || '') === activeId)
+                : builtIns[0];
+
+            if (builtInPreset) {
+                target.content = String(builtInPreset.content || '');
+                return;
+            }
+
+            const presets = Array.isArray(presetStore?.[app]?.[feature]) ? presetStore[app][feature] : [];
+            const activePreset = activeId ? presets.find(preset => String(preset?.id || '') === activeId) : null;
+            target.content = activePreset
+                ? String(activePreset.content || '')
+                : String((builtIns[0]?.content ?? defaultPrompt.content) || '');
+        });
+    }
+
+    _setPromptContentInMemory(app, feature, content) {
+        this.ensureLoaded();
+        const target = this._getPromptNode(this.prompts, app, feature);
+        if (target) target.content = String(content || '');
+    }
+
+    _getDefaultBuiltInPresetId(app, feature) {
+        return `builtin:${String(app || '').trim()}:${String(feature || '').trim()}:default`;
     }
 
     _appendWechatOnlineMusicInviteRule(content = '') {
@@ -1164,15 +1122,28 @@ from:林晓雨: 在呢
                     name: '📞 通话中',
                     description: '电话通话中的回复规则',
                     content: `【电话通话回复规则】
-你正在与{{user}}进行电话通话。
-你必须严格根据角色设定，扮演“{{callerName}}”与{{user}}通话。
-严禁切换成其他角色身份回复。
-请根据剧情，演绎符合角色性格和语气的口语化回复，像真实的电话对话。
-如果是{{user}}主动拨打电话，必须先判断角色当前是否方便接听；接通后要自然承接“{{user}}主动打来”的社交语境。
-当系统提示“电话已接通”或当前通话刚接通时，{{callerName}}必须先开口讲话，不能沉默、不能只接听无反应；开场可以是“喂？”、“怎么了？”、“你打给我干嘛？”等符合关系和情绪的自然短句。
-严禁输出非对话的文字，严禁输出旁白或动作描写。
-必须使用<Call>标签，并标注通话人姓名，每句话之间换行即可。
-通话社交反应规则：如果{{user}}接通后长时间不说话、十几秒内就挂断、或上一条通话记录没有有效对话，必须像真人一样自然反应：追问是不是手滑/信号不好/不高兴了，也可根据关系表现担心、生气、委屈或试探。
+{{callerName}}当前正在与 {{user}} 进行实时电话通话。请严格遵循以下规则：
+
+1. 核心扮演：
+- 必须严格锁定为“{{callerName}}”身份，绝不可切换角色。
+- 请根据剧情及通话内容，演绎符合角色性格和语气的口语化回复，像真实的电话对话，生动体现角色的性格与当前情绪。
+
+2. 通话交互逻辑：
+- [承接来电语境]：当 {{user}} 主动来电，需根据你当前所在剧情判断是否方便接听，并在台词中自然体现“对方主动找你”的社交语境。
+- [必须先开口]：只要{{callerName}}决定接起通话，你必须根据人设或剧情背景参考率先开口（如：“怎么啦？”“干嘛？”），绝不能沉默或只接听无反应。
+
+3. 异常社交反应：
+- 如果 {{user}} 出现：接通后不说话、十几秒内秒挂断、或上一条无有效对话。
+- 你必须做出真实的真人反应：根据双方关系，追问是否手滑/信号差，或表现出担忧、生气、委屈、试探等情绪。
+- 若当前对方不接电话，请直接按照拒接电话格式回复：
+<Call>
+[拒绝电话]：以{{callerName}}的心理活动（他觉得很生气，暂时不想理你）/剧情分析（当前角色睡觉无法接听），写理由....
+</Call>
+
+4. 格式与输出红线：
+- 只输出纯用<Call>标签包裹的对话，绝对禁止出现任何旁白、动作描写、心理活动或非对话文字。
+- 只要你确定接受通话,必须使用<Call>标签并标注说话人，每句话之间换行排版。格式示例：
+
 <Call>
 ---{{callerName}}---
 你好
@@ -1876,12 +1847,24 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
     // 更新提示词内容
     updatePrompt(app, feature, content) {
         this.ensureLoaded();
-        if (app === 'core') {
-            this.prompts.core.content = content;
-        } else if (this.prompts[app]?.[feature]) {
-            this.prompts[app][feature].content = content;
+        const activeId = this.getActivePromptPresetId(app, feature);
+        if (!activeId || this._isBuiltInPromptPresetId(activeId)) {
+            throw new Error('内置默认提示词不能直接覆盖；请先点击“新增预设”另存为自定义版本。');
         }
-        this.savePrompts();
+
+        const data = this._loadPromptUserPresets();
+        const list = Array.isArray(data?.[app]?.[feature]) ? data[app][feature] : [];
+        const preset = list.find(item => String(item?.id || '') === activeId);
+        if (!preset) {
+            this._setActivePromptPresetId(app, feature, '');
+            throw new Error('当前自定义预设不存在，请重新新增预设后再保存。');
+        }
+
+        preset.content = String(content || '');
+        preset.updatedAt = Date.now();
+        this._savePromptUserPresets(data);
+        this._setPromptContentInMemory(app, feature, preset.content);
+        return preset;
     }
 
     _escapeHtml(text) {
@@ -1953,7 +1936,16 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
             ];
         }
 
-        return [];
+        const defaultPrompt = feature ? defaults?.[app]?.[feature] : defaults?.[app];
+        if (!this._isPromptConfig(defaultPrompt)) return [];
+        return [
+            {
+                id: this._getDefaultBuiltInPresetId(app, feature),
+                name: this._getPlainDefaultPromptName(app, feature),
+                content: String(defaultPrompt.content || ''),
+                builtIn: true
+            }
+        ];
     }
 
     getBuiltInPromptPresets(app, feature) {
@@ -2008,6 +2000,57 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
         this._saveActivePromptPresets(active);
     }
 
+    _promptContentsEqual(left, right) {
+        return String(left || '').replace(/\r\n/g, '\n') === String(right || '').replace(/\r\n/g, '\n');
+    }
+
+    _ensureImportedPromptUserPreset(data, app, feature, name, content, sourceId = '') {
+        const safeContent = String(content || '');
+        if (!data[app]) data[app] = {};
+        if (!Array.isArray(data[app][feature])) data[app][feature] = [];
+
+        const existing = data[app][feature].find(item => item && !this._isBuiltInPromptPresetId(item.id) && this._promptContentsEqual(item.content, safeContent));
+        if (existing) return existing;
+
+        const now = Date.now();
+        const safeSourceId = String(sourceId || '').trim();
+        const canReuseSourceId = safeSourceId
+            && !this._isBuiltInPromptPresetId(safeSourceId)
+            && !data[app][feature].some(item => String(item?.id || '') === safeSourceId);
+        const preset = {
+            id: canReuseSourceId ? safeSourceId : `import_${now.toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+            name: name || '导入配置',
+            content: safeContent,
+            createdAt: now,
+            updatedAt: now
+        };
+        data[app][feature].push(preset);
+        return preset;
+    }
+
+    _mergeImportedPromptUserPresets(target, importedStore) {
+        if (!importedStore || typeof importedStore !== 'object') return;
+        Object.keys(importedStore).forEach((app) => {
+            const appStore = importedStore[app];
+            if (!appStore || typeof appStore !== 'object') return;
+            Object.keys(appStore).forEach((feature) => {
+                const list = appStore[feature];
+                if (!Array.isArray(list)) return;
+                list.forEach((item) => {
+                    if (!item || this._isBuiltInPromptPresetId(item.id) || typeof item.content !== 'string') return;
+                    this._ensureImportedPromptUserPreset(
+                        target,
+                        app,
+                        feature,
+                        String(item.name || '导入配置').trim() || '导入配置',
+                        item.content,
+                        item.id
+                    );
+                });
+            });
+        });
+    }
+
     createPromptUserPreset(app, feature, name, content) {
         this.ensureLoaded();
         const safeName = String(name || '').trim();
@@ -2028,37 +2071,12 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
         data[app][feature].push(preset);
         this._savePromptUserPresets(data);
         this._setActivePromptPresetId(app, feature, id);
-        this.updatePrompt(app, feature, preset.content);
+        this._setPromptContentInMemory(app, feature, preset.content);
         return preset;
     }
 
     updateActivePromptUserPreset(app, feature, content) {
-        this.ensureLoaded();
-        const activeId = this.getActivePromptPresetId(app, feature);
-        const nextContent = String(content || '');
-        if (!activeId) {
-            this.updatePrompt(app, feature, nextContent);
-            return null;
-        }
-
-        if (this._isBuiltInPromptPresetId(activeId)) {
-            throw new Error('内置默认预设不能直接覆盖；请点击“新增预设”另存为自定义版本。');
-        }
-
-        const data = this._loadPromptUserPresets();
-        const list = Array.isArray(data?.[app]?.[feature]) ? data[app][feature] : [];
-        const preset = list.find(item => String(item?.id || '') === activeId);
-        if (!preset) {
-            this._setActivePromptPresetId(app, feature, '');
-            this.updatePrompt(app, feature, nextContent);
-            return null;
-        }
-
-        preset.content = nextContent;
-        preset.updatedAt = Date.now();
-        this._savePromptUserPresets(data);
-        this.updatePrompt(app, feature, nextContent);
-        return preset;
+        return this.updatePrompt(app, feature, content);
     }
 
     applyPromptPreset(app, feature, presetId) {
@@ -2072,21 +2090,21 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
             const defaults = this.getDefaultPrompts();
             const defaultContent = defaults?.[app]?.[feature]?.content || '';
             this._setActivePromptPresetId(app, feature, '');
-            this.updatePrompt(app, feature, defaultContent);
+            this._setPromptContentInMemory(app, feature, defaultContent);
             return { id: '', name: this._getPlainDefaultPromptName(app, feature), content: defaultContent };
         }
 
         const builtInPreset = this.getBuiltInPromptPresets(app, feature).find(item => String(item.id) === safeId);
         if (builtInPreset) {
             this._setActivePromptPresetId(app, feature, builtInPreset.id);
-            this.updatePrompt(app, feature, builtInPreset.content);
+            this._setPromptContentInMemory(app, feature, builtInPreset.content);
             return builtInPreset;
         }
 
         const preset = this.getPromptUserPresets(app, feature).find(item => String(item.id) === safeId);
         if (!preset) throw new Error('找不到该提示词预设');
         this._setActivePromptPresetId(app, feature, preset.id);
-        this.updatePrompt(app, feature, preset.content);
+        this._setPromptContentInMemory(app, feature, preset.content);
         return preset;
     }
 
@@ -2111,7 +2129,7 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
         const defaultPresetId = builtIns[0]?.id || '';
         const defaultContent = builtIns[0]?.content || defaults?.[app]?.[feature]?.content || '';
         this._setActivePromptPresetId(app, feature, defaultPresetId);
-        this.updatePrompt(app, feature, defaultContent);
+        this._setPromptContentInMemory(app, feature, defaultContent);
         return defaultContent;
     }
 
@@ -2123,7 +2141,7 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
         const plainDefaultName = this._getPlainDefaultPromptName(app, feature);
         const options = [
             includePlainDefault ? `<option value="" ${activeId ? '' : 'selected'}>${this._escapeHtml(plainDefaultName)}</option>` : '',
-            ...builtInPresets.map(preset => `<option value="${this._escapeHtml(preset.id)}" ${activeId === preset.id ? 'selected' : ''}>${this._escapeHtml(preset.name)}</option>`),
+            ...builtInPresets.map((preset, index) => `<option value="${this._escapeHtml(preset.id)}" ${activeId === preset.id || (!activeId && index === 0) ? 'selected' : ''}>${this._escapeHtml(preset.name)}</option>`),
             ...userPresets.map(preset => `<option value="${this._escapeHtml(preset.id)}" ${activeId === preset.id ? 'selected' : ''}>${this._escapeHtml(preset.name)}</option>`)
         ].join('');
 
@@ -2223,17 +2241,17 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
 
         // 1. 核心提示词
         if (this.prompts.core.enabled) {
-            sections.push(this.prompts.core.content);
+            sections.push(this.getPromptForFeature('core'));
         }
 
         // 2. 微信线下模式（如果启用）
         if (this.isEnabled('wechat', 'offline')) {
-            sections.push(this.prompts.wechat.offline.content);
+            sections.push(this.getPromptForFeature('wechat', 'offline'));
         }
 
         // 3. 朋友圈（如果启用）
         if (this.isEnabled('wechat', 'moments')) {
-            sections.push(this.prompts.wechat.moments.content);
+            sections.push(this.getPromptForFeature('wechat', 'moments'));
         }
 
         return sections.join('\n\n');
@@ -2247,11 +2265,34 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
         }
         return this.prompts[app]?.[feature]?.content || '';
     }
+
+    _buildPromptSettingsForStorage() {
+        const stored = {};
+        const blockedKeys = new Set(['content', 'name', 'description', 'order']);
+        this._forEachPromptConfig(this.prompts || {}, (app, feature, promptConfig) => {
+            const targetParent = feature
+                ? (stored[app] = stored[app] || {})
+                : stored;
+            const target = {};
+            Object.keys(promptConfig || {}).forEach((key) => {
+                if (blockedKeys.has(key)) return;
+                const value = promptConfig[key];
+                if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+                    target[key] = value;
+                }
+            });
+            if (Object.keys(target).length > 0) {
+                if (feature) targetParent[feature] = target;
+                else targetParent[app] = target;
+            }
+        });
+        return stored;
+    }
     
     // 保存配置
     savePrompts() {
         this.ensureLoaded();
-        return this.storage.set('phone-prompts', JSON.stringify(this.prompts), true);
+        return this.storage.set('phone-prompts', JSON.stringify(this._buildPromptSettingsForStorage()), true);
     }
 
     // 一键恢复所有提示词到默认最新版
@@ -2263,49 +2304,34 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
         const nextActivePresets = {};
         let restoredActivePresetCount = 0;
 
-        Object.keys(nextPrompts).forEach(app => {
-            const appConfig = nextPrompts[app];
-            if (!appConfig || typeof appConfig !== 'object') return;
-
-            Object.keys(appConfig).forEach(feature => {
-                const promptConfig = appConfig[feature];
-                if (!promptConfig || typeof promptConfig !== 'object' || typeof promptConfig.content !== 'string') return;
-
-                const activeId = String(activePresets?.[app]?.[feature] || '').trim();
-                if (!activeId) return;
-
-                const builtInPreset = this._getBuiltInPromptPresetsFromDefaults(defaults, app, feature)
-                    .find(preset => String(preset?.id || '') === activeId);
-                if (builtInPreset) {
-                    promptConfig.content = String(builtInPreset.content || '');
-                    if (!nextActivePresets[app]) nextActivePresets[app] = {};
-                    nextActivePresets[app][feature] = activeId;
-                    restoredActivePresetCount++;
-                    return;
-                }
-
-                const presets = Array.isArray(presetStore?.[app]?.[feature]) ? presetStore[app][feature] : [];
-                const activePreset = presets.find(preset => String(preset?.id || '') === activeId);
-                if (!activePreset) return;
-
-                promptConfig.content = String(activePreset.content || '');
-                if (!nextActivePresets[app]) nextActivePresets[app] = {};
-                nextActivePresets[app][feature] = activeId;
-                restoredActivePresetCount++;
-            });
-        });
-
-        [
-            { app: 'wechat', feature: 'offline' },
-            { app: 'honey', feature: 'live' }
-        ].forEach(({ app, feature }) => {
-            const defaultBuiltIns = this._getBuiltInPromptPresetsFromDefaults(defaults, app, feature);
-            if (String(nextActivePresets?.[app]?.[feature] || '').trim() || !defaultBuiltIns[0]?.id) return;
-            if (!nextActivePresets[app]) nextActivePresets[app] = {};
-            nextActivePresets[app][feature] = defaultBuiltIns[0].id;
-            if (nextPrompts?.[app]?.[feature]) {
-                nextPrompts[app][feature].content = defaultBuiltIns[0].content;
+        this._forEachPromptConfig(nextPrompts, (app, feature, promptConfig) => {
+            const activeId = String(activePresets?.[app]?.[feature] || '').trim();
+            const builtIns = this._getBuiltInPromptPresetsFromDefaults(defaults, app, feature);
+            const defaultBuiltIn = builtIns[0];
+            if (!activeId) {
+                if (defaultBuiltIn) promptConfig.content = String(defaultBuiltIn.content || '');
+                return;
             }
+
+            const builtInPreset = builtIns.find(preset => String(preset?.id || '') === activeId);
+            if (builtInPreset) {
+                promptConfig.content = String(builtInPreset.content || '');
+                if (!nextActivePresets[app]) nextActivePresets[app] = {};
+                nextActivePresets[app][feature] = builtInPreset.id;
+                return;
+            }
+
+            const presets = Array.isArray(presetStore?.[app]?.[feature]) ? presetStore[app][feature] : [];
+            const activePreset = presets.find(preset => String(preset?.id || '') === activeId);
+            if (!activePreset) {
+                if (defaultBuiltIn) promptConfig.content = String(defaultBuiltIn.content || '');
+                return;
+            }
+
+            promptConfig.content = String(activePreset.content || '');
+            if (!nextActivePresets[app]) nextActivePresets[app] = {};
+            nextActivePresets[app][feature] = activeId;
+            restoredActivePresetCount++;
         });
 
         this.prompts = nextPrompts;
@@ -2316,10 +2342,11 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
         await this.savePrompts();
         return {
             prompts: this.prompts,
-            defaultPromptCount: Object.values(nextPrompts).reduce((sum, appConfig) => {
-                if (!appConfig || typeof appConfig !== 'object') return sum;
-                return sum + Object.values(appConfig).filter(item => item && typeof item.content === 'string').length;
-            }, 0),
+            defaultPromptCount: (() => {
+                let count = 0;
+                this._forEachPromptConfig(nextPrompts, () => { count++; });
+                return count;
+            })(),
             restoredActivePresetCount
         };
     }
@@ -2327,14 +2354,73 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
     // 导出配置
     exportConfig() {
         this.ensureLoaded();
-        return JSON.stringify(this.prompts, null, 2);
+        return JSON.stringify({
+            version: 2,
+            promptSettings: this._buildPromptSettingsForStorage(),
+            promptUserPresets: this._loadPromptUserPresets(),
+            activePromptPresets: this._loadActivePromptPresets()
+        }, null, 2);
     }
     
     // 导入配置
     importConfig(jsonString) {
         try {
             const imported = JSON.parse(jsonString);
-            this.prompts = imported;
+            const defaults = this.getDefaultPrompts();
+            const promptTree = imported?.promptSettings || imported?.prompts || imported;
+            const nextPrompts = this._clonePromptTree(defaults);
+            const nextUserPresets = this._loadPromptUserPresets();
+            const nextActivePresets = {};
+
+            this._copySavedPromptSettings(nextPrompts, promptTree);
+            this._mergeImportedPromptUserPresets(nextUserPresets, imported?.promptUserPresets);
+
+            this._forEachPromptConfig(defaults, (app, feature, defaultPrompt) => {
+                const builtIns = this._getBuiltInPromptPresetsFromDefaults(defaults, app, feature);
+                const importedActiveId = String(imported?.activePromptPresets?.[app]?.[feature] || '').trim();
+                const importedNode = this._getPromptNode(promptTree, app, feature);
+                const importedContent = typeof importedNode?.content === 'string' ? importedNode.content : '';
+                const importedBuiltIn = importedActiveId
+                    ? builtIns.find(preset => String(preset?.id || '') === importedActiveId)
+                    : null;
+
+                if (importedBuiltIn) {
+                    if (!nextActivePresets[app]) nextActivePresets[app] = {};
+                    nextActivePresets[app][feature] = importedBuiltIn.id;
+                    return;
+                }
+
+                const importedCustomPresets = Array.isArray(nextUserPresets?.[app]?.[feature]) ? nextUserPresets[app][feature] : [];
+                let importedCustom = importedActiveId
+                    ? importedCustomPresets.find(preset => String(preset?.id || '') === importedActiveId)
+                    : null;
+                if (!importedCustom && importedActiveId) {
+                    const importedPreset = imported?.promptUserPresets?.[app]?.[feature]?.find?.(preset => String(preset?.id || '') === importedActiveId);
+                    if (importedPreset?.content) {
+                        importedCustom = importedCustomPresets.find(preset => this._promptContentsEqual(preset.content, importedPreset.content));
+                    }
+                }
+                if (importedCustom) {
+                    if (!nextActivePresets[app]) nextActivePresets[app] = {};
+                    nextActivePresets[app][feature] = importedCustom.id;
+                    return;
+                }
+
+                if (!importedContent) return;
+
+                const matchesBuiltIn = builtIns.some(preset => this._promptContentsEqual(preset.content, importedContent));
+                const defaultContent = String((builtIns[0]?.content ?? defaultPrompt.content) || '');
+                if (matchesBuiltIn || this._promptContentsEqual(defaultContent, importedContent)) return;
+
+                const preset = this._ensureImportedPromptUserPreset(nextUserPresets, app, feature, '导入配置', importedContent);
+                if (!nextActivePresets[app]) nextActivePresets[app] = {};
+                nextActivePresets[app][feature] = preset.id;
+            });
+
+            this._savePromptUserPresets(nextUserPresets);
+            this._saveActivePromptPresets(nextActivePresets);
+            this.prompts = nextPrompts;
+            this._applyActivePromptContents(this.prompts, defaults);
             this._loaded = true;  // 标记已加载
             this.savePrompts();
             return true;

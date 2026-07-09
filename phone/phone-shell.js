@@ -695,27 +695,60 @@ export class PhoneShell {
         });
     }
     
-    getCurrentTime() {
-    const timeManager = window.VirtualPhone?.timeManager;
-    
-    if (timeManager) {
-        const storyTime = timeManager.getCurrentStoryTime();
-        if (storyTime?.time && !storyTime.isReal) {
-            this._lastStatusBarStoryTime = storyTime;
-            return storyTime.time;
-        }
-        if (this._lastStatusBarStoryTime?.time) {
-            return this._lastStatusBarStoryTime.time;
-        }
-        return storyTime?.time;
+    _isLobbyMode(context = null) {
+        const ctx = context || window.VirtualPhone?.storage?.getContext?.() || window.SillyTavern?.getContext?.() || {};
+        const charName = String(ctx?.name2 || '').trim();
+        if (/^SillyTavern System$/i.test(charName)) return true;
+        const chatId = String(ctx?.chatMetadata?.file_name || ctx?.chatId || '').trim();
+        if (chatId) return false;
+        return !charName;
     }
-    
-    // 降级方案
-    const now = new Date();
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    return `${hours}:${minutes}`;
-}
+
+    _isStorageTruthy(key) {
+        const raw = window.VirtualPhone?.storage?.get?.(key);
+        return raw === true || raw === 'true' || raw === 1;
+    }
+
+    _isStorageEnabledByDefault(key) {
+        const raw = window.VirtualPhone?.storage?.get?.(key);
+        if (raw === undefined || raw === null || raw === '') return true;
+        return raw === true || raw === 'true' || raw === 1;
+    }
+
+    _shouldUseRealTimeForPhoneDisplay() {
+        const context = window.VirtualPhone?.storage?.getContext?.() || window.SillyTavern?.getContext?.() || {};
+        const isLobby = this._isLobbyMode(context);
+        const onlineOnlyKey = isLobby ? 'phone_lobby_wechat_online_only_mode' : 'wechat_online_only_mode';
+        const interopKey = isLobby ? 'phone_lobby_wechat_online_mode' : 'wechat_online_mode';
+        const realTimeKey = isLobby ? 'phone_lobby_wechat_online_only_real_time_enabled' : 'wechat_online_only_real_time_enabled';
+        return this._isStorageTruthy(onlineOnlyKey)
+            && !this._isStorageTruthy(interopKey)
+            && this._isStorageEnabledByDefault(realTimeKey);
+    }
+
+    getCurrentTime() {
+        const timeManager = window.VirtualPhone?.timeManager;
+
+        if (timeManager) {
+            if (this._shouldUseRealTimeForPhoneDisplay() && typeof timeManager.getRealTime === 'function') {
+                return timeManager.getRealTime()?.time;
+            }
+            const storyTime = timeManager.getCurrentStoryTime();
+            if (storyTime?.time && !storyTime.isReal) {
+                this._lastStatusBarStoryTime = storyTime;
+                return storyTime.time;
+            }
+            if (this._lastStatusBarStoryTime?.time) {
+                return this._lastStatusBarStoryTime.time;
+            }
+            return storyTime?.time;
+        }
+
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+    }
     
     startClock() {
     // 初始化显示

@@ -562,9 +562,11 @@ export class PhoneCallView {
                 return;
             }
 
-            this._addCallRecord(safeName, 'missed', 0, []);
-            this.app.phoneShell.showNotification('未接通', decision.reason || `${safeName} 未接听`, '📵');
-            this.renderContacts();
+            this._addCallRecord(safeName, 'rejected', 0, []);
+            await this._showOutgoingCallRejectedDialog(safeName, decision.reason || `${safeName} 暂时不方便接听。`);
+            if (this.currentView === 'dialing' && this.currentCaller === safeName) {
+                this.renderContacts();
+            }
         }, 1200);
     }
 
@@ -709,8 +711,12 @@ export class PhoneCallView {
         const saveBtn = query('#phone-call-save-call');
         if (saveBtn) saveBtn.onclick = () => {
             const content = query('#phone-call-call-prompt')?.value || '';
-            if (pm) pm.updateActivePromptUserPreset?.('phone', 'call', content) ?? pm.updatePrompt('phone', 'call', content);
-            this.app.phoneShell.showNotification('已保存', '通话提示词已更新', '✅');
+            try {
+                if (pm) pm.updateActivePromptUserPreset?.('phone', 'call', content) ?? pm.updatePrompt('phone', 'call', content);
+                this.app.phoneShell.showNotification('已保存', '通话提示词已更新', '✅');
+            } catch (e) {
+                this.app.phoneShell.showNotification('不能保存默认', e?.message || '请先新增预设再保存', '⚠️');
+            }
         };
 
         // 恢复通话默认
@@ -769,6 +775,47 @@ export class PhoneCallView {
                 if (!fold) return;
                 fold.classList.toggle('is-open');
             });
+        });
+    }
+
+    _showOutgoingCallRejectedDialog(callerName, reason) {
+        const host = document.querySelector('.phone-view-current') || this.app.phoneShell?.screen || document.body;
+        const safeName = String(callerName || '对方').trim() || '对方';
+        const safeReason = String(reason || `${safeName} 暂时不方便接听。`).trim();
+        const modalId = `phone-call-reject-reason-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+        return new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.id = modalId;
+            modal.className = 'phone-call-reject-reason-modal';
+            modal.style.cssText = `
+                position:absolute;
+                inset:0;
+                z-index:2600;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                padding:18px;
+                box-sizing:border-box;
+                background:rgba(0,0,0,0.36);
+            `;
+            modal.innerHTML = `
+                <div style="width:100%; max-width:300px; background:rgba(255,255,255,0.96); border-radius:14px; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,0.24);">
+                    <div style="padding:16px 16px 10px; text-align:center; border-bottom:0.5px solid rgba(0,0,0,0.08);">
+                        <div style="font-size:15px; font-weight:600; color:#111;">${this._escapeHtml(safeName)}拒绝了电话</div>
+                    </div>
+                    <div style="padding:14px 16px 16px; font-size:13px; line-height:1.6; color:#333; white-space:pre-wrap;">${this._escapeHtml(safeReason)}</div>
+                    <button type="button" id="${this._escapeAttr(modalId)}-ok" style="width:100%; height:42px; border:none; border-top:0.5px solid rgba(0,0,0,0.08); background:#fff; color:#07c160; font-size:15px; font-weight:600; cursor:pointer;">确定</button>
+                </div>
+            `;
+
+            const close = () => {
+                modal.remove();
+                resolve();
+            };
+
+            host.appendChild(modal);
+            modal.querySelector(`#${this._escapeCssAttr(modalId)}-ok`)?.addEventListener('click', close, { once: true });
         });
     }
 
@@ -1022,7 +1069,7 @@ export class PhoneCallView {
             isCallSending = true;
             setCallStatus('red');
             try {
-                await requestAIReply('【系统提示】电话已接通。现在是用户主动拨打给你，你必须先开口说第一句话，像真实电话接通后的自然开场。');
+                await requestAIReply(`【系统提示】现在是用户主动拨打给你，${callerName}可选择拒绝/接听。`);
             } finally {
                 isCallSending = false;
                 setCallStatus('green');
@@ -1262,25 +1309,28 @@ export class PhoneCallView {
                 }).filter(Boolean).join('\n')
                 : '';
 
-            const messages = [
-                {
-                    role: 'system',
-                    content: [
-                        '【主动拨打电话接听判定】',
-                        `${userName} 正在主动拨打 ${callRoleName} 的电话。`,
-                        `你只需要判断 ${callRoleName} 此刻是否会接听电话。`,
-                        '必须结合角色性格、关系、当前剧情、情绪和场景判断。',
-                        '只输出一行 JSON，不要解释，不要输出代码块。',
-                        '格式：{"answer":"yes","reason":"简短原因"} 或 {"answer":"no","reason":"简短原因"}'
-                    ].join('\n'),
-                    isPhoneMessage: true
-                }
-            ];
+            const messages = [];
 
             if (recentChat) {
                 messages.push({
                     role: 'system',
                     content: `【最近剧情】\n${recentChat}`,
+                    isPhoneMessage: true
+                });
+            }
+
+            const pm = this._getPromptManager();
+            const callPrompt = pm?.getPromptForFeature('phone', 'call') || '';
+            if (callPrompt) {
+                const processedPrompt = callPrompt
+                    .replace(/\{\{char\}\}/gi, callRoleName)
+                    .replace(/\{\{callerName\}\}/gi, callRoleName)
+                    .replace(/\{\{caller\}\}/gi, callRoleName)
+                    .replace(/\{\{roleName\}\}/gi, callRoleName)
+                    .replace(/\{\{user\}\}/gi, userName);
+                messages.push({
+                    role: 'system',
+                    content: processedPrompt,
                     isPhoneMessage: true
                 });
             }
@@ -1294,18 +1344,30 @@ export class PhoneCallView {
             const result = await apiManager.callAI(messages, {
                 preserve_roles: true,
                 appId: 'phone_online',
-                max_tokens: 120
+                max_tokens: 280
             });
             if (!result.success) throw new Error(result.error || '接听判定失败');
 
             const raw = String(result.summary || result.content || result.text || '').trim();
+            const callBody = raw.match(/<Call>([\s\S]*?)<\/Call>/i)?.[1]?.trim() || raw;
+            const rejectMatch = callBody.match(/\[拒绝电话\]\s*[：:]\s*([\s\S]*)/i);
+            if (rejectMatch) {
+                return {
+                    answered: false,
+                    reason: this._cleanCallRejectReason(rejectMatch[1], callRoleName)
+                };
+            }
+
             const jsonText = raw.match(/\{[\s\S]*\}/)?.[0] || raw;
             let parsed = null;
             try {
                 parsed = JSON.parse(jsonText);
             } catch (e) {
                 const negative = /不接|拒接|没接|挂断|no|false|decline|reject/i.test(raw);
-                return { answered: !negative, reason: negative ? `${callRoleName} 暂时没有接听` : '' };
+                return {
+                    answered: !negative,
+                    reason: negative ? this._cleanCallRejectReason(raw, callRoleName) : ''
+                };
             }
 
             const answer = String(parsed?.answer || parsed?.answered || '').toLowerCase();
@@ -1314,7 +1376,7 @@ export class PhoneCallView {
                 || (answer !== 'no' && answer !== 'false' && /接听|会接/.test(String(parsed?.answer || '')));
             return {
                 answered,
-                reason: String(parsed?.reason || '').trim()
+                reason: this._cleanCallRejectReason(parsed?.reason || '', callRoleName)
             };
         } catch (error) {
             console.warn('📞 主动拨号接听判定失败，默认接通:', error);
@@ -1439,17 +1501,6 @@ export class PhoneCallView {
                 role: 'system',
                 content: '[Start a new chat]',
                 name: 'SYSTEM (分界线)',
-                isPhoneMessage: true
-            });
-
-            messages.push({
-                role: 'system',
-                content: [
-                    '【通话身份锁定】',
-                    `你必须严格根据角色设定，扮演“${callRoleName}”与${userName}通话。`,
-                    `当前来电方姓名：${callRoleName}。`,
-                    '严禁切换成其他角色名称回复，严禁使用不确定的“你/某人/角色A/B”代称。'
-                ].join('\n'),
                 isPhoneMessage: true
             });
 
@@ -2284,6 +2335,19 @@ export class PhoneCallView {
         });
 
         return deduped.length > 0 ? deduped : ['...'];
+    }
+
+    _cleanCallRejectReason(text, callerName = '') {
+        const safeCaller = String(callerName || '').trim();
+        let cleaned = String(text || '').trim();
+        cleaned = cleaned.replace(/<Call>|<\/Call>|<Phone>|<\/Phone>/gi, '').trim();
+        cleaned = cleaned.replace(/\[拒绝电话\]\s*[：:]\s*/gi, '').trim();
+        cleaned = cleaned.replace(/^---[\s\S]*?---\s*/gm, '').trim();
+        if (safeCaller) {
+            cleaned = cleaned.replace(new RegExp(`^${safeCaller.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[：:]\\s*`, 'i'), '').trim();
+        }
+        cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+        return cleaned || (safeCaller ? `${safeCaller} 暂时不方便接听。` : '对方暂时不方便接听。');
     }
 
     _escapeHtml(text) {

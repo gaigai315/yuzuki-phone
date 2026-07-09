@@ -1291,8 +1291,12 @@ export class DiaryView {
             if (!textarea) return;
             const pm = this._getPromptManager();
             if (pm?.prompts?.diary?.generate) {
-                pm.updateActivePromptUserPreset?.('diary', 'generate', textarea.value) ?? pm.updatePrompt?.('diary', 'generate', textarea.value);
-                alert('✅ 提示词已保存');
+                try {
+                    pm.updateActivePromptUserPreset?.('diary', 'generate', textarea.value) ?? pm.updatePrompt?.('diary', 'generate', textarea.value);
+                    alert('✅ 提示词已保存');
+                } catch (e) {
+                    alert(`⚠️ ${e?.message || '请先新增预设再保存'}`);
+                }
             }
         };
 

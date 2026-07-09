@@ -5731,16 +5731,17 @@ input:checked + .toggle-slider:before {
 #phone-panel-content #video-chat-input,
 #phone-panel-content #voice-chat-input {
     background: rgba(255, 255, 255, 0.12) !important;
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
-    caret-color: #ffffff !important;
+    color: var(--phone-global-text, #000000) !important;
+    -webkit-text-fill-color: var(--phone-global-text, #000000) !important;
+    caret-color: var(--phone-global-text, #000000) !important;
     border: 1px solid rgba(255, 255, 255, 0.22) !important;
     box-shadow: inset 0 0 0 1000px rgba(255, 255, 255, 0.12) !important;
 }
 #phone-panel-content #video-chat-input::placeholder,
 #phone-panel-content #voice-chat-input::placeholder {
-    color: rgba(255, 255, 255, 0.62) !important;
-    -webkit-text-fill-color: rgba(255, 255, 255, 0.62) !important;
+    color: var(--phone-global-text, #000000) !important;
+    -webkit-text-fill-color: var(--phone-global-text, #000000) !important;
+    opacity: 0.5 !important;
 }
 #phone-panel-content #phone-call-input,
 #phone-panel-content .phone-call-input {

@@ -3571,8 +3571,12 @@ export class WechatApp {
         // 保存按钮
         document.getElementById('save-prompt')?.addEventListener('click', () => {
             const content = document.getElementById('prompt-editor').value;
-            promptManager?.updateActivePromptUserPreset?.(app, feature, content) ?? promptManager?.updatePrompt(app, feature, content);
-            this.phoneShell.showNotification('保存成功', '提示词已更新', '✅');
+            try {
+                promptManager?.updateActivePromptUserPreset?.(app, feature, content) ?? promptManager?.updatePrompt(app, feature, content);
+                this.phoneShell.showNotification('保存成功', '提示词已更新', '✅');
+            } catch (e) {
+                this.phoneShell.showNotification('不能保存默认', e?.message || '请先新增预设再保存', '⚠️');
+            }
         });
 
         // 恢复默认按钮

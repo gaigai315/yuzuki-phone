@@ -254,8 +254,12 @@ export class MusicView {
                 if (textarea) {
                     const pm = window.VirtualPhone?.promptManager;
                     if (pm) {
-                        pm.updateActivePromptUserPreset?.('music', 'recommend', textarea.value) ?? pm.updatePrompt('music', 'recommend', textarea.value);
-                        this.app.phoneShell.showNotification('音乐', '提示词已保存', '✅');
+                        try {
+                            pm.updateActivePromptUserPreset?.('music', 'recommend', textarea.value) ?? pm.updatePrompt('music', 'recommend', textarea.value);
+                            this.app.phoneShell.showNotification('音乐', '提示词已保存', '✅');
+                        } catch (e) {
+                            this.app.phoneShell.showNotification('不能保存默认', e?.message || '请先新增预设再保存', '⚠️');
+                        }
                     }
                 }
             };

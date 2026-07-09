@@ -4663,6 +4663,9 @@ export class SettingsApp {
             const enabled = !!e.target.checked;
             await this.storage.set(key, enabled);
             window.VirtualPhone?.timeManager?.clearCache?.();
+            window.dispatchEvent(new CustomEvent('phone:timeUpdated'));
+            window.VirtualPhone?.phoneShell?.updateStatusBarTime?.();
+            window.VirtualPhone?.homeScreen?.updateTimeDisplay?.();
             this.phoneShell?.showNotification?.('线上时间', enabled ? '纯线上模式将使用现实时间' : '纯线上模式将使用剧情时间', enabled ? '🕒' : '📖');
         });
 
@@ -4724,7 +4727,7 @@ export class SettingsApp {
                     if (typeof promptManager.savePrompts === 'function') {
                         await promptManager.savePrompts();
                     } else {
-                        await this.storage.set('phone-prompts', JSON.stringify(defaults), true);
+                        await this.storage.set('phone-prompts', '{}', true);
                     }
                 }
                 await this.storage.set('games_poker_ai_prompt', '', true);
