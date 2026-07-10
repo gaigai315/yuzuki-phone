@@ -7967,6 +7967,17 @@ if (window.GGP_Loaded) {
             // 🔥 第零阶段：只加载最核心的 2 个模块
             await loadCoreModules();
             let phonePromptHandler = async () => {};
+            let phonePromptRunTail = Promise.resolve();
+            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER)\s*\}\}/i;
+            const runPhonePromptHandler = (eventData, source = 'unknown') => {
+                const run = phonePromptRunTail
+                    .catch(() => undefined)
+                    .then(() => phonePromptHandler(eventData));
+                phonePromptRunTail = run.catch((error) => {
+                    console.warn(`[手机插件] ${source} 注入队列异常:`, error);
+                });
+                return run;
+            };
 
             // 🔥 第一阶段：核心数据初始化
             loadData();
@@ -10539,12 +10550,15 @@ if (window.GGP_Loaded) {
                     window.hooks.addFilter('chat_completion_prompt_ready', async (chat) => {
                         // 包装成旧版 eventData 格式兼容原有代码
                         let eventData = { chat: chat, prompt: [] };
-                        await phonePromptHandler(eventData); 
+                        await runPhonePromptHandler(eventData, 'prompt_ready');
                         return eventData.chat; // 必须返回修改后的数组给酒馆
                     });
                 } else {
                     // 旧版本酒馆兼容
-                    context.eventSource.on(context.event_types.CHAT_COMPLETION_PROMPT_READY, phonePromptHandler);
+                    context.eventSource.on(
+                        context.event_types.CHAT_COMPLETION_PROMPT_READY,
+                        (eventData) => runPhonePromptHandler(eventData, 'prompt_ready_event')
+                    );
                 }
 
             } else {
@@ -10594,12 +10608,12 @@ if (window.GGP_Loaded) {
 
                             if (targetArray) {
                                 // 🌟 1. 核心防御：连同外层 bodyObj 一起检查，防止变量被移动端或 Claude 抽离到 system 字段
-                                const hasMacros = JSON.stringify(bodyObj).match(/\{\{\s*PHONE_PROMPT\s*\}\}|\{\{\s*PHONE_HISTORY\s*\}\}|\{\{\s*HONEY_HISTORY\s*\}\}|\{\{\s*WEIBO_HISTORY\s*\}\}|\{\{\s*MUSIC_PROMPT\s*\}\}|\{\{\s*MOFO_PROMPT\s*\}\}|\{\{\s*DIARY_HISTORY\s*\}\}|\{\{\s*CALENDAR_REMINDER\s*\}\}/i);
+                                const hasMacros = JSON.stringify(bodyObj).match(PHONE_REQUEST_MACRO_PATTERN);
                                 const hasWechatOnlineToOfflinePending = !!getWechatOnlineToOfflineTransferPending();
 
                                 if (hasMacros || hasWechatOnlineToOfflinePending) {
                                     if (hasMacros) {
-                                        console.log('🚨 [手机插件] 警告：酒馆发送过快导致 Hook 被无视，请求体残留变量！正在执行网卡级底层强行注入...');
+                                        console.info('📱 [手机插件] prompt_ready 后仍有手机变量，正在执行发送前最终注入。');
                                     }
                                     
                                     let safeEvent = { chat: targetArray, prompt: [] };
@@ -10611,7 +10625,7 @@ if (window.GGP_Loaded) {
                                     }
 
                                     // 强行在发包前，调用注入函数再跑一遍！
-                                    await phonePromptHandler(safeEvent);
+                                    await runPhonePromptHandler(safeEvent, 'fetch_final');
                                     
                                     // 🔥 处理完毕后，完美缝合：把刚刚塞进去的、以及插件新注入的系统块，全部抽出来重新拼接回 system 字段
                                     if (hasSystemField) {
@@ -10626,7 +10640,7 @@ if (window.GGP_Loaded) {
                                     if (hasWechatOnlineToOfflinePending) {
                                         clearWechatOnlineToOfflineTransferPending();
                                     }
-                                    console.log('✅ [手机插件] 底层强行注入完毕，完美缝合防抢跑！');
+                                    console.info('✅ [手机插件] 发送前最终注入完成。');
                                 }
 
                                 // 🌟 2. 处理图片占位符 (保留原有的发图功能)
@@ -10651,6 +10665,19 @@ if (window.GGP_Loaded) {
 
                                 // 🌟 3. 将修复好的完美数据重新打包
                                 options.body = JSON.stringify(bodyObj);
+                                try {
+                                    Object.defineProperty(options, 'stPhonePromptFinalized', { value: true, configurable: true });
+                                } catch (_error) {
+                                    options.stPhonePromptFinalized = true;
+                                }
+                                window.dispatchEvent(new CustomEvent('st-phone-request-finalized', {
+                                    detail: {
+                                        url: String(url || ''),
+                                        hadMacros: Boolean(hasMacros),
+                                        messageCount: targetArray.length,
+                                        timestamp: Date.now()
+                                    }
+                                }));
                             }
                         } catch (e) {
                             console.error('🔥 手机底层拦截器异常:', e);
