@@ -2120,6 +2120,22 @@ export class WechatData {
             message.id = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         }
 
+        if (message.type === 'wangxiang_task_confirmation') {
+            const wangxiangApp = window.VirtualPhone?.wangxiangApp;
+            const confirmedTask = wangxiangApp?.confirmTaskAssignmentByTitle?.(message.taskTitle, {
+                chatId,
+                messageId: message.id,
+                publisherName: chat?.name || message.from || '',
+                fromMainChatTag: message.fromMainChatTag === true,
+                tavernMessageIndex: message.tavernMessageIndex,
+                batchId: message.batchId
+            });
+            message.assignmentMatched = !!confirmedTask;
+            if (confirmedTask && wangxiangApp?._buildWechatTaskData) {
+                message.wangxiangTaskData = wangxiangApp._buildWechatTaskData(confirmedTask);
+            }
+        }
+
         // 🔥 将消息真正塞入内存
         const shouldOrderedInsert = message.fromMainChatTag
             && message.tavernMessageIndex !== undefined
@@ -2258,6 +2274,10 @@ getMessagePreview(message) {
             return `${icon} ${stripSpeechPrefix(message.content || '')}`;
         case 'weibo_card':
             return '[微博分享]';
+        case 'wangxiang_task_card':
+            return '[万象任务申请]';
+        case 'wangxiang_task_confirmation':
+            return message.assignmentMatched === false ? '[任务派发确认：未匹配]' : '[任务已确认派发]';
         case 'poker_card':
             return '[德州扑克分享]';
         case 'werewolf_card':
@@ -3621,6 +3641,8 @@ parseAIResponse(text) {
                 }
             }
         }
+
+        window.VirtualPhone?.wangxiangApp?.rollbackWechatAssignmentsToFloor?.(targetTavernIndex);
 
         // 如果真的发生了回滚，保存并重置时间锚点
         if (isDirty) {

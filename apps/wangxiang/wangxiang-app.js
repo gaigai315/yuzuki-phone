@@ -8,12 +8,12 @@
 import { WangxiangView } from './wangxiang-view.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
-const WANGXIANG_TASK_LEVELS = {
-    '普通': { accent: 'green', icon: 'fa-list-check', difficulty: 1 },
-    '中级': { accent: 'cyan', icon: 'fa-shield-halved', difficulty: 2 },
-    '高级': { accent: 'purple', icon: 'fa-crosshairs', difficulty: 3 },
-    '特级': { accent: 'orange', icon: 'fa-crown', difficulty: 4 }
-};
+const WANGXIANG_TASK_VISUALS = [
+    { accent: 'green', icon: 'fa-list-check' },
+    { accent: 'cyan', icon: 'fa-shield-halved' },
+    { accent: 'purple', icon: 'fa-crosshairs' },
+    { accent: 'orange', icon: 'fa-crown' }
+];
 
 export class WangxiangApp {
     constructor(phoneShell, storage) {
@@ -57,28 +57,188 @@ export class WangxiangApp {
             || null;
     }
 
-    async acceptTask(taskId) {
+    _normalizeTaskTitle(value) {
+        return String(value || '').trim().replace(/\s+/g, '');
+    }
+
+    _buildWechatTaskData(task) {
+        return {
+            id: String(task?.id || ''),
+            title: String(task?.title || '未命名任务'),
+            publisher: String(task?.publisher || '万象任务中心'),
+            description: String(task?.description || ''),
+            location: String(task?.location || '未注明'),
+            reward: String(task?.reward || '0'),
+            prestige: String(task?.prestige || '0'),
+            extraReward: String(task?.extraReward || '无'),
+            publishedAt: String(task?.publishedAt || task?.remaining || '--'),
+            estimatedDuration: String(task?.estimatedDuration || task?.duration || '未注明'),
+            objectives: Array.isArray(task?.objectives) ? task.objectives.map(item => ({ ...item })) : [],
+            status: String(task?.status || 'available')
+        };
+    }
+
+    async contactTaskPublisher(taskId) {
         this._syncTaskDataScope();
-        const id = String(taskId || '').trim();
-        const task = this.generatedTasks.find(item => String(item?.id || '') === id);
+        const task = this.getTaskById(taskId);
         if (!task) throw new Error('任务不存在或已刷新');
 
-        const existing = this.managedTasks.find(item => String(item?.id || '') === id);
+        const publisherName = String(task.publisher || '').trim();
+        if (!publisherName) throw new Error('任务没有发布人信息');
+
+        let wechatApp = window.VirtualPhone?.wechatApp || null;
+        if (!wechatApp) {
+            const module = await import('../wechat/wechat-app.js');
+            wechatApp = new module.WechatApp(this.phoneShell, this.storage);
+            if (!window.VirtualPhone) window.VirtualPhone = {};
+            window.VirtualPhone.wechatApp = wechatApp;
+        }
+        if (window.VirtualPhone?.cachedWechatData) {
+            wechatApp.wechatData = window.VirtualPhone.cachedWechatData;
+        }
+
+        const wechatData = wechatApp.wechatData;
+        const publisherNameKey = wechatData._normalizeLookupName?.(publisherName)
+            || publisherName.replace(/\s+/g, '').toLowerCase();
+        let contact = (wechatData.getContacts?.() || []).find(item => {
+            const contactNameKey = wechatData._normalizeLookupName?.(item?.name)
+                || String(item?.name || '').trim().replace(/\s+/g, '').toLowerCase();
+            return !!contactNameKey && contactNameKey === publisherNameKey;
+        }) || null;
+        if (!contact) {
+            const contactId = `contact_wangxiang_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            contact = wechatData.addContact({
+                id: contactId,
+                name: publisherName,
+                avatar: '👤',
+                letter: wechatData.getFirstLetter?.(publisherName) || '#',
+                relation: '万象任务发布人',
+                sourceApp: 'wangxiang',
+                sourceLabel: '万象任务'
+            });
+            wechatData.globalSocialStore?.upsertContact?.({
+                app: 'wechat',
+                appContactId: contact?.id || contactId,
+                name: publisherName,
+                avatar: contact?.avatar || '👤',
+                relation: '万象任务发布人',
+                extra: { sourceApp: 'wangxiang' }
+            });
+        }
+
+        const contactId = String(contact?.id || '').trim();
+        let chat = contactId ? wechatData.getChatByContactId?.(contactId) : null;
+        if (!chat) {
+            chat = wechatData.createChat({
+                id: `chat_${contactId || `wangxiang_${Date.now()}`}`,
+                contactId,
+                name: publisherName,
+                type: 'single',
+                avatar: contact?.avatar || '👤'
+            });
+        }
+
+        const taskData = this._buildWechatTaskData(task);
+        const objectiveText = taskData.objectives
+            .map(item => `${String(item?.title || '任务目标')}（${Number(item?.current || 0)}/${Math.max(1, Number(item?.total || 1))}）`)
+            .join('；');
+        const confirmationTitle = taskData.title.replace(/[\]\r\n]/g, '').trim();
+        const content = [
+            '[万象任务申请]',
+            `任务名称：${taskData.title}`,
+            `发布者：${taskData.publisher}`,
+            `任务描述：${taskData.description}`,
+            `任务目标：${objectiveText || '完成任务要求'}`,
+            `奖励：${taskData.reward} 信用点`,
+            `发布时间：${taskData.publishedAt}`,
+            `预估耗时：${taskData.estimatedDuration}`,
+            '发布者可根据当前剧情进度、角色自身视角与性格人设，自主决定同意或拒绝派发。',
+            `若同意派发，请只回复：[确认派发任务：${confirmationTitle}]`,
+            '若拒绝派发，无需回复确认派发任务的格式，也不要输出确认标签；请以符合角色性格与立场的口吻自然说明拒绝。'
+        ].join('\n');
+
+        const added = wechatData.addMessage(chat.id, {
+            from: 'me',
+            type: 'wangxiang_task_card',
+            content,
+            wangxiangTaskData: taskData,
+            avatar: wechatData.getUserInfo?.()?.avatar || ''
+        });
+        if (!added) throw new Error('任务卡片发送失败');
+        wechatApp.enqueueExternalMessageForAI?.(chat.id);
+
+        wechatApp.currentChat = chat;
+        window.currentWechatApp = wechatApp;
+        window.dispatchEvent(new CustomEvent('phone:openApp', { detail: { appId: 'wechat' } }));
+        setTimeout(() => wechatApp.openChat?.(chat.id), 0);
+        return { task, contact, chat };
+    }
+
+    confirmTaskAssignmentByTitle(taskTitle, source = {}) {
+        this._syncTaskDataScope();
+        const titleKey = this._normalizeTaskTitle(taskTitle);
+        if (!titleKey) return null;
+
+        const publisherKey = this._normalizeTaskTitle(source.publisherName);
+        const candidates = this.generatedTasks.filter(task =>
+            this._normalizeTaskTitle(task?.title) === titleKey && task?.status !== 'completed'
+        );
+        const task = candidates.find(item => publisherKey && this._normalizeTaskTitle(item?.publisher) === publisherKey)
+            || candidates[0]
+            || this.managedTasks.find(item => this._normalizeTaskTitle(item?.title) === titleKey)
+            || null;
+        if (!task) return null;
+
+        const existing = this.managedTasks.find(item => String(item?.id || '') === String(task.id || ''));
         if (existing) return existing;
 
+        const assignmentSource = {
+            kind: 'wechat_confirmation',
+            chatId: String(source.chatId || ''),
+            messageId: String(source.messageId || ''),
+            fromMainChatTag: source.fromMainChatTag === true,
+            tavernMessageIndex: Number.isFinite(Number(source.tavernMessageIndex)) ? Number(source.tavernMessageIndex) : null,
+            batchId: String(source.batchId || '')
+        };
         const managedTask = {
             ...task,
             status: 'active',
             progress: 0,
-            acceptedAt: Date.now()
+            acceptedAt: Date.now(),
+            assignmentSource
         };
         task.status = 'active';
         this.managedTasks = [managedTask, ...this.managedTasks];
-        await Promise.all([
-            this._saveGeneratedTasks(),
-            this._saveManagedTasks()
-        ]);
+        Promise.all([this._saveGeneratedTasks(), this._saveManagedTasks()]).catch(error => {
+            console.error('[Wangxiang] 保存微信确认派发状态失败:', error);
+        });
         return managedTask;
+    }
+
+    rollbackWechatAssignmentsToFloor(targetTavernIndex) {
+        const targetFloor = Number(targetTavernIndex);
+        if (!Number.isFinite(targetFloor)) return false;
+        const removedIds = new Set();
+        this.managedTasks = this.managedTasks.filter(task => {
+            const source = task?.assignmentSource;
+            const shouldRemove = source?.kind === 'wechat_confirmation'
+                && source.fromMainChatTag === true
+                && Number(source.tavernMessageIndex) >= targetFloor;
+            if (shouldRemove) removedIds.add(String(task.id || ''));
+            return !shouldRemove;
+        });
+        if (!removedIds.size) return false;
+        this.generatedTasks.forEach(task => {
+            if (removedIds.has(String(task?.id || ''))) task.status = 'available';
+        });
+        Promise.all([this._saveGeneratedTasks(), this._saveManagedTasks()]).catch(error => {
+            console.error('[Wangxiang] 回滚微信确认派发状态失败:', error);
+        });
+        return true;
+    }
+
+    async acceptTask(taskId) {
+        throw new Error('请联系任务发布者，并由对方确认派发后领取任务');
     }
 
     async setManagedTaskStatus(taskId, status, patch = {}) {
@@ -138,8 +298,8 @@ export class WangxiangApp {
             const result = await apiManager.callAI(messages, {
                 appId: 'wangxiang',
                 temperature: 0.75,
-                max_tokens: 2600,
-                min_max_tokens: 1800
+                max_tokens: 4200,
+                min_max_tokens: 3000
             });
             if (!result?.success) throw new Error(result?.error || '任务生成失败');
 
@@ -253,11 +413,10 @@ export class WangxiangApp {
 
     _parseTaskBlock(block, index) {
         const text = String(block || '').trim();
-        const titleMatch = text.match(/^\s*\[(普通|中级|高级|特级|特技)\]\s*任务标题\s*[:：]\s*(.+)$/m);
+        const titleMatch = text.match(/^\s*(?:\[(普通|中级|高级|特级|特技)\]\s*)?任务标题\s*[:：]\s*(.+)$/m);
         if (!titleMatch) return null;
 
-        const normalizedLevel = titleMatch[1] === '特技' ? '特级' : titleMatch[1];
-        const levelConfig = WANGXIANG_TASK_LEVELS[normalizedLevel];
+        const visual = WANGXIANG_TASK_VISUALS[index % WANGXIANG_TASK_VISUALS.length];
         const readField = field => text.match(new RegExp(`^\\s*${field}\\s*[:：]\\s*(.+)$`, 'm'))?.[1]?.trim() || '';
         const contentMatch = text.match(/任务内容\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:任务目标|奖励)\s*[:：]|$)/);
         const description = String(contentMatch?.[1] || '').replace(/\s+/g, ' ').trim();
@@ -265,26 +424,23 @@ export class WangxiangApp {
         const reward = rewardRaw || '0';
         const objectives = this._parseTaskObjectives(text);
         const comments = this._parseTaskComments(text);
+        const publisherOrg = readField('发布者组织');
 
         return {
             id: `generated-${Date.now().toString(36)}-${index}-${Math.random().toString(36).slice(2, 6)}`,
-            level: normalizedLevel,
             title: titleMatch[2].trim(),
             description: description || '任务详情将在接取后进一步说明。',
-            publisher: readField('发布者') || '万象任务中心',
-            remaining: readField('发布时间') || '--:--:--',
+            publisher: readField('发布者') || publisherOrg || '万象任务中心',
+            publishedAt: readField('发布时间') || '--',
+            estimatedDuration: readField('预估耗时') || readField('预计时长') || '未注明',
             reward,
             prestige: readField('声望值').replace(/[^\d.,+-]/g, '') || '0',
             extraReward: readField('额外奖励') || '无',
-            icon: levelConfig.icon,
-            accent: levelConfig.accent,
-            difficulty: levelConfig.difficulty,
-            remainingTime: readField('剩余时间') || '未注明',
-            publisherOrg: readField('发布者组织') || '独立委托方',
+            icon: visual.icon,
+            accent: visual.accent,
+            publisherOrg: publisherOrg || '独立委托方',
             publisherReputation: readField('发布者信誉') || '未知',
             location: readField('任务地点') || '未注明',
-            recommendedLevel: readField('推荐等级') || '无',
-            duration: readField('预计时长') || '未注明',
             objectives,
             comments,
             status: 'available'
@@ -323,22 +479,33 @@ export class WangxiangApp {
             .filter(Boolean)
             .map((row, index) => {
                 const parts = row.split(/[｜|]/).map(part => part.trim());
+                const isLegacyLevelFormat = parts.length >= 4;
                 return {
                     id: `comment-${index + 1}`,
                     name: parts[0] || '匿名执行者',
-                    level: parts[1] || 'Lv.??',
-                    time: parts[2] || '刚刚',
-                    content: parts.slice(3).join('｜') || parts[1] || row
+                    time: (isLegacyLevelFormat ? parts[2] : parts[1]) || '刚刚',
+                    content: (isLegacyLevelFormat ? parts.slice(3) : parts.slice(2)).join('｜') || row
                 };
             })
             .slice(0, 5);
+    }
+
+    _normalizeLoadedTask(task, index = 0) {
+        const visual = WANGXIANG_TASK_VISUALS[index % WANGXIANG_TASK_VISUALS.length];
+        return {
+            ...task,
+            publishedAt: String(task?.publishedAt || task?.remaining || '--'),
+            estimatedDuration: String(task?.estimatedDuration || task?.duration || '未注明'),
+            icon: String(task?.icon || visual.icon),
+            accent: String(task?.accent || visual.accent)
+        };
     }
 
     _loadGeneratedTasks() {
         try {
             const saved = this.storage?.get?.('wangxiang_generated_tasks', null);
             const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
-            return Array.isArray(parsed) ? parsed : [];
+            return Array.isArray(parsed) ? parsed.map((task, index) => this._normalizeLoadedTask(task, index)) : [];
         } catch (error) {
             console.warn('[Wangxiang] 读取任务缓存失败:', error);
             return [];
@@ -349,7 +516,7 @@ export class WangxiangApp {
         try {
             const saved = this.storage?.get?.('wangxiang_managed_tasks', null);
             const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
-            return Array.isArray(parsed) ? parsed : [];
+            return Array.isArray(parsed) ? parsed.map((task, index) => this._normalizeLoadedTask(task, index)) : [];
         } catch (error) {
             console.warn('[Wangxiang] 读取我的任务失败:', error);
             return [];

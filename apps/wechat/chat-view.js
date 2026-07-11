@@ -46,6 +46,7 @@ export class ChatView {
         this.currentPlayingCallMsgId = null;
         this.currentTtsRound = null;
         this._suppressWeiboCardClickUntil = 0;
+        this._suppressWangxiangCardClickUntil = 0;
         this._inlineStickerHydrateTimer = null;
         this._missingBoundVoiceWarned = new Set();
         this._aiReplyTimeCursor = null;
@@ -3205,6 +3206,37 @@ renderChatRoom(chat) {
                 break;
             }
 
+            case 'wangxiang_task_card':
+            case 'wangxiang_task_confirmation': {
+                const task = msg.wangxiangTaskData || {};
+                const isConfirmation = msg.type === 'wangxiang_task_confirmation';
+                const matched = msg.assignmentMatched !== false;
+                const title = this._escapeHtml(task.title || msg.taskTitle || '万象任务');
+                const description = this._escapeHtml(task.description || (isConfirmation ? '发布人已确认派发该任务' : '点击查看任务详情'));
+                const footerLabel = isConfirmation
+                    ? (matched ? '已确认派发' : '未匹配到同名任务')
+                    : '任务申请';
+                const accentColor = isConfirmation ? (matched ? '#16a36a' : '#d97706') : '#1687b8';
+                messageBody = `
+                <div class="message-wangxiang-task-card" data-msg-id="${this._escapeHtml(msg.id || '')}" style="background:#fff; border:1px solid #e3e8ec; border-radius:8px; overflow:hidden; width:220px; max-width:100%; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+                    <div style="padding:11px 11px 10px;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:7px;">
+                            <div style="width:30px; height:30px; border-radius:7px; background:${accentColor}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:14px; flex:0 0 30px;"><i class="fa-solid ${isConfirmation ? 'fa-clipboard-check' : 'fa-list-check'}"></i></div>
+                            <div style="min-width:0; flex:1;">
+                                <div style="font-size:13px; font-weight:700; color:#17212b; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</div>
+                                <div style="font-size:10px; color:${accentColor}; line-height:1.25; margin-top:2px;">${footerLabel}</div>
+                            </div>
+                        </div>
+                        <div style="font-size:12px; color:#5f6b75; line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word;">${description}</div>
+                    </div>
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 10px; background:#f5f7f8; border-top:1px solid #e8ecef;">
+                        <span style="font-size:11px; color:#77838d;">万象</span>
+                        <span style="font-size:10px; color:#9aa4ac;">查看详情</span>
+                    </div>
+                </div>`;
+                break;
+            }
+
             case 'poker_card': {
                 const poker = msg.pokerData || {};
                 const title = this._escapeHtml(poker.title || '德州扑克牌局记录');
@@ -4319,6 +4351,48 @@ renderChatRoom(chat) {
         return isPlaceholderOnly(fullContent) ? '[微博分享]' : (fullContent || '[微博分享]');
     }
 
+    _formatWangxiangTaskForPrompt(msg = {}) {
+        const fullContent = String(msg.content || '').trim();
+        const task = msg.wangxiangTaskData && typeof msg.wangxiangTaskData === 'object'
+            ? msg.wangxiangTaskData
+            : {};
+        const isConfirmation = msg.type === 'wangxiang_task_confirmation';
+        const isPlaceholder = !fullContent
+            || /^\[(?:wangxiang_task_card|wangxiang_task_confirmation|万象任务申请|任务已确认派发|任务派发确认：未匹配)\]$/i.test(fullContent);
+        if (!isConfirmation && !isPlaceholder) return fullContent;
+        if (Object.keys(task).length === 0) {
+            return fullContent || (isConfirmation ? '[万象任务确认]' : '[万象任务申请]');
+        }
+
+        const objectives = (Array.isArray(task.objectives) ? task.objectives : [])
+            .map(item => {
+                const title = String(item?.title || '完成任务要求').trim();
+                const current = Number(item?.current || 0);
+                const total = Math.max(1, Number(item?.total || 1));
+                return `${title}（${current}/${total}）`;
+            })
+            .filter(Boolean);
+        const rewards = [
+            task.reward ? `${task.reward} 信用点` : '',
+            task.prestige ? `${task.prestige} 声望值` : '',
+            task.extraReward && task.extraReward !== '无' ? `额外奖励：${task.extraReward}` : ''
+        ].filter(Boolean);
+        const lines = [
+            isConfirmation
+                ? `[万象任务确认：${msg.assignmentMatched === false ? '未匹配到任务' : '已确认派发'}]`
+                : '[万象任务申请]',
+            task.title ? `任务名称：${task.title}` : '',
+            task.publisher ? `发布者：${task.publisher}` : '',
+            task.description ? `任务描述：${task.description}` : '',
+            task.location ? `任务地点：${task.location}` : '',
+            objectives.length ? `任务目标：${objectives.join('；')}` : '',
+            rewards.length ? `任务奖励：${rewards.join('；')}` : '',
+            task.publishedAt ? `发布时间：${task.publishedAt}` : '',
+            task.estimatedDuration ? `预估耗时：${task.estimatedDuration}` : ''
+        ].filter(Boolean);
+        return lines.join('\n');
+    }
+
     _formatMessageContentForPrompt(msg, targetChat = null) {
         if (!msg || typeof msg !== 'object') return '';
         if (msg.hiddenFromPrompt === true || msg.isTimeMarker === true || msg.type === 'time_marker') return '';
@@ -4389,6 +4463,9 @@ renderChatRoom(chat) {
         }
         if (msg.type === 'weibo_card') {
             return this._formatWeiboCardForPrompt(msg);
+        }
+        if (msg.type === 'wangxiang_task_card' || msg.type === 'wangxiang_task_confirmation') {
+            return this._formatWangxiangTaskForPrompt(msg);
         }
         if (msg.type === 'music_listen') {
             return this._formatMusicListenMessageForPrompt(msg, targetChat);
@@ -6171,6 +6248,18 @@ renderChatRoom(chat) {
         if (!content || typeof content !== 'string') return null;
         const trimmedContent = String(content || '').trim();
 
+        const wangxiangAssignmentMatch = trimmedContent.match(/^\[确认派发任务[：:]\s*([^\]\r\n]+)\]$/);
+        if (wangxiangAssignmentMatch) {
+            const taskTitle = String(wangxiangAssignmentMatch[1] || '').trim();
+            if (taskTitle) {
+                return {
+                    type: 'wangxiang_task_confirmation',
+                    taskTitle,
+                    content: `[确认派发任务：${taskTitle}]`
+                };
+            }
+        }
+
         const coAdoptResponseMatch = trimmedContent.match(/^\[(同意收养|拒绝收养)\]$/);
         if (coAdoptResponseMatch) {
             const decisionText = coAdoptResponseMatch[1];
@@ -6350,7 +6439,7 @@ renderChatRoom(chat) {
             }];
         }
 
-        const inlineSpecialRegex = /\[(?:同意收养|拒绝收养)\]|\[使用[：:]\s*[^x×\]\s]+\s*[x×]\s*\d+\]\s*(?:[（(][\s\S]*?[）)])?|\[(?:收款|领取红包|退回转账|退回红包)\](?:\s*[（(]\s*[^）)]*\s*[）)])?|\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*蜜语\s*\]|【\s*蜜语\s*】)\s*(?:[（(]\s*[^）)]*\s*[）)])?|(?:\[\s*音乐\s*\]|【\s*音乐\s*】)\s*[（(]\s*[^，,）)]+?(?:\s*[，,]\s*[^）)]+?)?\s*[）)]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
+        const inlineSpecialRegex = /\[确认派发任务[：:]\s*[^\]\r\n]+\]|\[(?:同意收养|拒绝收养)\]|\[使用[：:]\s*[^x×\]\s]+\s*[x×]\s*\d+\]\s*(?:[（(][\s\S]*?[）)])?|\[(?:收款|领取红包|退回转账|退回红包)\](?:\s*[（(]\s*[^）)]*\s*[）)])?|\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*蜜语\s*\]|【\s*蜜语\s*】)\s*(?:[（(]\s*[^）)]*\s*[）)])?|(?:\[\s*音乐\s*\]|【\s*音乐\s*】)\s*[（(]\s*[^，,）)]+?(?:\s*[，,]\s*[^）)]+?)?\s*[）)]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
         const inlineMatches = [];
         this._collectInlineImagePromptMatches(rawContent).forEach(item => inlineMatches.push(item));
         let regexMatch;
@@ -6606,6 +6695,18 @@ renderChatRoom(chat) {
                 }
                 const messageId = e.currentTarget.dataset.msgId;
                 if (messageId) this.openWeiboCard(messageId);
+            });
+        });
+        currentView.querySelectorAll('.message-wangxiang-task-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                if (this._isMessageSelectionActiveForCurrentChat()) return;
+                if (Date.now() < (this._suppressWangxiangCardClickUntil || 0)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                const messageId = e.currentTarget.dataset.msgId;
+                if (messageId) this.openWangxiangTaskCard(messageId);
             });
         });
         currentView.querySelectorAll('.message-poker-card').forEach(card => {
@@ -6939,6 +7040,70 @@ renderChatRoom(chat) {
                 console.error('打开蜜语失败:', err);
                 this.app.phoneShell?.showNotification('蜜语', '打开蜜语失败：' + (err?.message || err), '⚠️');
             });
+        }
+    }
+
+    openWangxiangTaskCard(messageId) {
+        try {
+            const chatId = this.app.currentChat?.id;
+            if (!chatId) return;
+            const messages = this.app.wechatData.getMessages(chatId) || [];
+            const target = messages.find(message => String(message?.id || '') === String(messageId || ''));
+            if (!target || !['wangxiang_task_card', 'wangxiang_task_confirmation'].includes(target.type)) return;
+
+            const task = target.wangxiangTaskData || {};
+            const title = this._escapeHtml(task.title || target.taskTitle || '万象任务');
+            const publisher = this._escapeHtml(task.publisher || this.app.currentChat?.name || '任务发布人');
+            const description = this._escapeHtml(task.description || '暂无任务描述');
+            const publishedAt = this._escapeHtml(task.publishedAt || '--');
+            const estimatedDuration = this._escapeHtml(task.estimatedDuration || task.duration || '未注明');
+            const reward = this._escapeHtml(task.reward || '0');
+            const objectives = Array.isArray(task.objectives) ? task.objectives : [];
+
+            const currentView = document.querySelector('.phone-view-current') || document;
+            const host = currentView.querySelector('.wechat-app') || currentView;
+            if (!host) return;
+            currentView.querySelector('#wechat-wangxiang-task-modal')?.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'wechat-wangxiang-task-modal';
+            modal.style.cssText = 'position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.52);display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;';
+            modal.innerHTML = `
+                <div role="dialog" aria-modal="true" aria-label="万象任务详情" style="width:100%;max-width:320px;max-height:84%;display:flex;flex-direction:column;overflow:hidden;border-radius:8px;background:#f7f9fa;box-shadow:0 12px 30px rgba(0,0,0,.25);">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 13px;border-bottom:1px solid #e2e7ea;background:#fff;">
+                        <div style="min-width:0;">
+                            <div style="font-size:14px;font-weight:700;color:#17212b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</div>
+                            <div style="margin-top:3px;font-size:11px;color:#1687b8;">万象任务</div>
+                        </div>
+                        <button type="button" data-wangxiang-modal-close aria-label="关闭" style="width:30px;height:30px;min-width:30px;margin:0;padding:0;border:0;border-radius:50%;background:#eef2f4;color:#52606b;display:grid;place-items:center;"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="wechat-wangxiang-task-modal-body" style="min-height:0;overflow-y:auto;touch-action:pan-y;overscroll-behavior:contain;padding:13px;color:#33404a;">
+                        <div style="display:grid;grid-template-columns:68px minmax(0,1fr);gap:7px 8px;padding:10px;border:1px solid #dfe6e9;border-radius:6px;background:#fff;font-size:12px;line-height:1.45;">
+                            <span style="color:#7c8993;">发布人</span><strong style="font-weight:600;">${publisher}</strong>
+                            <span style="color:#7c8993;">发布时间</span><strong style="font-weight:500;">${publishedAt}</strong>
+                            <span style="color:#7c8993;">预估耗时</span><strong style="font-weight:500;">${estimatedDuration}</strong>
+                            <span style="color:#7c8993;">信用点</span><strong style="font-weight:600;color:#1687b8;">${reward}</strong>
+                        </div>
+                        <section style="margin-top:10px;padding:11px;border:1px solid #dfe6e9;border-radius:6px;background:#fff;">
+                            <div style="font-size:12px;font-weight:700;color:#26343e;margin-bottom:7px;">任务描述</div>
+                            <div style="font-size:12px;line-height:1.65;color:#53616c;white-space:pre-wrap;word-break:break-word;">${description}</div>
+                        </section>
+                        ${objectives.length ? `
+                        <section style="margin-top:10px;padding:11px;border:1px solid #dfe6e9;border-radius:6px;background:#fff;">
+                            <div style="font-size:12px;font-weight:700;color:#26343e;margin-bottom:7px;">任务目标</div>
+                            ${objectives.map(item => `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid #edf0f2;font-size:12px;color:#53616c;"><span>${this._escapeHtml(item?.title || '完成任务要求')}</span><strong style="font-weight:500;color:#1687b8;white-space:nowrap;">${Number(item?.current || 0)}/${Math.max(1, Number(item?.total || 1))}</strong></div>`).join('')}
+                        </section>` : ''}
+                    </div>
+                </div>`;
+            host.appendChild(modal);
+            const close = () => modal.remove();
+            modal.querySelector('[data-wangxiang-modal-close]')?.addEventListener('click', close);
+            modal.addEventListener('click', event => {
+                if (event.target === modal) close();
+            });
+        } catch (error) {
+            console.error('打开万象任务卡片失败:', error);
+            this.app.phoneShell?.showNotification?.('提示', '万象任务卡片打开失败', '⚠️');
         }
     }
 
@@ -8060,7 +8225,7 @@ renderChatRoom(chat) {
         const currentView = this.getCurrentWechatView();
         const messagesDiv = currentView?.querySelector('#chat-messages');
         if (!messagesDiv) return;
-        const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-poker-card, .message-werewolf-card, .message-music-card, .message-music-listen-card';
+        const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-music-card, .message-music-listen-card';
         const resolveMessageIndexFromElement = (msgElement) => {
             const messages = this.app?.wechatData?.getMessages?.(this.app?.currentChat?.id) || [];
             const domIndex = Number.parseInt(msgElement?.dataset?.messageIndex || '', 10);
@@ -8114,6 +8279,9 @@ renderChatRoom(chat) {
                     longPressTriggered = true;
                     if (targetBubble.closest('.message-weibo-card')) {
                         this._suppressWeiboCardClickUntil = Date.now() + 800;
+                    }
+                    if (targetBubble.closest('.message-wangxiang-task-card')) {
+                        this._suppressWangxiangCardClickUntil = Date.now() + 800;
                     }
                     if (targetBubble.closest('.message-poker-card')) {
                         this._suppressPokerCardClickUntil = Date.now() + 800;
@@ -9913,7 +10081,7 @@ renderChatRoom(chat) {
         // ========================================
         const storage = window.VirtualPhone?.storage;
         const shouldInjectVectorAnchor = (() => {
-            const basePerms = { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false };
+            const basePerms = { allowSummary: false, allowTable: false, allowVector: false };
             const defaults = { ...basePerms, allowSummary: true, allowVector: true };
             try {
                 const rawPerms = storage?.get('phone_memory_permissions');
@@ -11706,7 +11874,7 @@ renderChatRoom(chat) {
         if (!contentEl) return;
 
         // 找到气泡元素（包括图片）
-        const bubbleEl = contentEl.querySelector('.message-text, .message-voice, .message-redpacket, .message-image-box, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-poker-card, .message-werewolf-card, .message-music-card, .message-music-listen-card');
+        const bubbleEl = contentEl.querySelector('.message-text, .message-voice, .message-redpacket, .message-image-box, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-music-card, .message-music-listen-card');
         if (!bubbleEl) return;
 
         // 设置气泡为相对定位（用于菜单绝对定位的参考）

@@ -12,6 +12,7 @@
 // 设置APP
 import { ImageUploadManager } from './image-upload.js';
 import { ImageCropper } from './image-cropper.js';
+import { DEFAULT_APP_ICONS, PHONE_CONFIG } from '../../config/apps.js';
 import * as PhoneTagFilter from '../../config/tag-filter.js';
 import {
     PHONE_CONTEXT_LIMIT_KEY,
@@ -116,18 +117,18 @@ export class SettingsApp {
 
     _getDefaultAppsForCustomization() {
         return [
-            { id: 'wechat', name: '微信', icon: '💬', color: '#07c160' },
-            { id: 'weibo', name: '微博', icon: '👁️‍🗨️', color: '#ff8200' },
-            { id: 'honey', name: '蜜语', icon: '💕', color: '#ff6b9d' },
-            { id: 'games', name: '游戏', icon: '🎮', color: '#722ed1' },
-            { id: 'mofo', name: '魔坊', icon: '🪄', color: '#1677ff' },
-            { id: 'phone', name: '通话', icon: '📞', color: '#52c41a' },
-            { id: 'diary', name: '日记', icon: '📔', color: '#faad14' },
-            { id: 'calendar', name: '日历', icon: '📅', color: '#5d83a8' },
-            { id: 'music', name: '音乐', icon: '🎵', color: '#eb2f96' },
-            { id: 'album', name: '相册', icon: '🖼️', color: '#4096ff' },
-            { id: 'wangxiang', name: '万象', icon: '🧿', color: '#315c50' },
-            { id: 'settings', name: '设置', icon: '⚙️', color: '#8c8c8c' }
+            { id: 'wechat', name: '微信', icon: '💬', color: '#07c160', defaultIcon: DEFAULT_APP_ICONS.wechat },
+            { id: 'weibo', name: '微博', icon: '👁️‍🗨️', color: '#ff8200', defaultIcon: DEFAULT_APP_ICONS.weibo },
+            { id: 'honey', name: '蜜语', icon: '💕', color: '#ff6b9d', defaultIcon: DEFAULT_APP_ICONS.honey },
+            { id: 'games', name: '游戏', icon: '🎮', color: '#722ed1', defaultIcon: DEFAULT_APP_ICONS.games },
+            { id: 'mofo', name: '魔坊', icon: '🪄', color: '#1677ff', defaultIcon: DEFAULT_APP_ICONS.mofo },
+            { id: 'phone', name: '通话', icon: '📞', color: '#52c41a', defaultIcon: DEFAULT_APP_ICONS.phone },
+            { id: 'diary', name: '日记', icon: '📔', color: '#faad14', defaultIcon: DEFAULT_APP_ICONS.diary },
+            { id: 'calendar', name: '日历', icon: '📅', color: '#5d83a8', defaultIcon: DEFAULT_APP_ICONS.calendar },
+            { id: 'music', name: '音乐', icon: '🎵', color: '#eb2f96', defaultIcon: DEFAULT_APP_ICONS.music },
+            { id: 'album', name: '相册', icon: '🖼️', color: '#4096ff', defaultIcon: DEFAULT_APP_ICONS.album },
+            { id: 'wangxiang', name: '万象', icon: '🧿', color: '#315c50', defaultIcon: DEFAULT_APP_ICONS.wangxiang },
+            { id: 'settings', name: '设置', icon: '⚙️', color: '#8c8c8c', defaultIcon: DEFAULT_APP_ICONS.settings }
         ];
     }
 
@@ -777,7 +778,8 @@ export class SettingsApp {
         const homeLayout = homeLayoutRaw === 'cards' ? 'cards' : 'icons';
         const cardLayoutCustomCss = String(this.storage.get(CARD_LAYOUT_CUSTOM_CSS_KEY) || '');
         // 加载壁纸和颜色设置
-        const wallpaper = this.imageManager.getWallpaper();
+        const customWallpaper = this.imageManager.getWallpaper();
+        const wallpaper = customWallpaper || PHONE_CONFIG.defaultWallpaper;
         const hasWallpaper = !!String(wallpaper || '').trim();
         const wallpaperStyle = hasWallpaper
             ? `background-image: url('${String(wallpaper).replace(/'/g, "\\'")}'); background-size: cover; background-position: center;`
@@ -3579,15 +3581,16 @@ export class SettingsApp {
         
         return APPS.map(app => {
             const customIcon = this.imageManager.getAppIcon(app.id);
+            const iconImage = customIcon || app.defaultIcon;
             const displayName = this._getAppDisplayName(app, customNames);
             return `
                 <div class="upload-app-icon-item" data-app="${app.id}" data-upload-icon-target="upload-icon-${app.id}" role="button" tabindex="0" style="text-align: center; position: relative; touch-action: manipulation;">
                     <div style="display: block;">
                         <div style="width: 40px; height: 40px; border-radius: 10px;
-                                    ${customIcon ? `background-image: url('${customIcon}'); background-size: contain; background-position: center; background-repeat: no-repeat; background-color: transparent;` : `background: ${app.color};`}
+                                    ${iconImage ? `background-image: url('${iconImage}'); background-size: contain; background-position: center; background-repeat: no-repeat; background-color: transparent;` : `background: ${app.color};`}
                                     display: flex; align-items: center; justify-content: center; margin: 0 auto;
                                     font-size: 20px;">
-                            ${customIcon ? '' : app.icon}
+                            ${iconImage ? '' : app.icon}
                         </div>
                         <div style="font-size: 9px; margin-top: 3px; color: #666;">${this._escapeHtml(displayName)}</div>
                     </div>
@@ -3625,17 +3628,18 @@ export class SettingsApp {
         return APPS.map((app, index) => {
             const isSelected = dockAppIds.includes(app.id);
             const customIcon = this.imageManager.getAppIcon(app.id);
+            const iconImage = customIcon || app.defaultIcon;
             const displayName = this._getAppDisplayName(app, customNames);
 
             return `
                 <div class="dock-config-item" data-app="${app.id}" style="text-align: center; cursor: pointer;">
                     <div style="width: 40px; height: 40px; border-radius: 10px;
-                                ${customIcon ? `background-image: url('${customIcon}'); background-size: contain; background-position: center; background-repeat: no-repeat; background-color: transparent;` : `background: ${app.color};`}
+                                ${iconImage ? `background-image: url('${iconImage}'); background-size: contain; background-position: center; background-repeat: no-repeat; background-color: transparent;` : `background: ${app.color};`}
                                 display: flex; align-items: center; justify-content: center; margin: 0 auto;
                                 font-size: 20px; position: relative;
                                 border: 2px solid ${isSelected ? '#07c160' : 'transparent'};
                                 box-shadow: ${isSelected ? '0 0 6px rgba(7, 193, 96, 0.5)' : 'none'};">
-                        ${customIcon ? '' : app.icon}
+                        ${iconImage ? '' : app.icon}
                         ${isSelected ? '<span style="position: absolute; bottom: -2px; right: -2px; background: #07c160; color: #fff; width: 14px; height: 14px; border-radius: 50%; font-size: 9px; display: flex; align-items: center; justify-content: center;">✓</span>' : ''}
                     </div>
                     <div style="font-size: 9px; margin-top: 3px; color: #666;">${this._escapeHtml(displayName)}</div>
@@ -3648,15 +3652,15 @@ export class SettingsApp {
         const basePerms = {
             allowSummary: false,
             allowTable: false,
-            allowVector: false,
-            allowPrompt: false
+            allowVector: false
         };
         const defaultsByApp = {
             wechat: { allowSummary: true, allowVector: true },
             weibo: { allowSummary: true, allowVector: true },
             diary: { allowSummary: true, allowVector: true },
-            honey: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false },
-            phone_online: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false }
+            wangxiang: { allowSummary: true, allowTable: true, allowVector: true },
+            honey: { allowSummary: false, allowTable: false, allowVector: false },
+            phone_online: { allowSummary: false, allowTable: false, allowVector: false }
         };
         return { ...basePerms, ...(defaultsByApp[appId] || {}) };
     }
@@ -3684,6 +3688,7 @@ export class SettingsApp {
             { id: 'wechat', name: '微信', desc: '聊天与社交场景' },
             { id: 'weibo', name: '微博', desc: '动态与评论场景' },
             { id: 'diary', name: '日记', desc: '日记生成场景' },
+            { id: 'wangxiang', name: '万象', desc: '任务大厅生成场景' },
             { id: 'honey', name: '蜜语', desc: '直播互动场景' },
             { id: 'phone_online', name: '通话', desc: '语音/视频通话场景' }
         ];
@@ -3742,20 +3747,16 @@ export class SettingsApp {
                             <div class="setting-item">
                                 <div class="setting-label" style="font-size: 14px; color: #111;">${def.name}</div>
                                 <div class="setting-desc">${def.desc}</div>
-                                <div style="display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 8px 10px; margin-top: 8px;">
-                                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#333;">
+                                <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px 6px; margin-top:8px;">
+                                    <label style="display:flex; min-width:0; align-items:center; gap:6px; font-size:12px; color:#333; white-space:nowrap;">
                                         <input type="checkbox" class="phone-memory-perm" data-app-id="${def.id}" data-perm-key="allowSummary" ${merged.allowSummary ? 'checked' : ''}>
                                         总结
                                     </label>
-                                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#333;">
+                                    <label style="display:flex; min-width:0; align-items:center; gap:6px; font-size:12px; color:#333; white-space:nowrap;">
                                         <input type="checkbox" class="phone-memory-perm" data-app-id="${def.id}" data-perm-key="allowTable" ${merged.allowTable ? 'checked' : ''}>
                                         表格数据
                                     </label>
-                                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#333;">
-                                        <input type="checkbox" class="phone-memory-perm" data-app-id="${def.id}" data-perm-key="allowPrompt" ${merged.allowPrompt ? 'checked' : ''}>
-                                        实时提示词
-                                    </label>
-                                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#333;">
+                                    <label style="display:flex; min-width:0; align-items:center; gap:6px; font-size:12px; color:#333; white-space:nowrap;">
                                         <input type="checkbox" class="phone-memory-perm" data-app-id="${def.id}" data-perm-key="allowVector" ${merged.allowVector ? 'checked' : ''}>
                                         向量检索
                                     </label>
@@ -4278,19 +4279,19 @@ export class SettingsApp {
 
             const preview = activeSettingsRoot?.querySelector('#wallpaper-preview') || document.getElementById('wallpaper-preview');
             if (preview) {
-                preview.style.display = 'none';
+                preview.style.display = 'block';
                 const img = preview.querySelector('img');
                 if (img) {
-                    img.style.display = 'none';
-                    img.removeAttribute('src');
+                    img.style.display = 'block';
+                    img.src = PHONE_CONFIG.defaultWallpaper;
                 }
             }
 
             if (activeSettingsRoot) {
-                activeSettingsRoot.classList.remove('settings-has-wallpaper');
-                activeSettingsRoot.style.backgroundImage = '';
-                activeSettingsRoot.style.backgroundSize = '';
-                activeSettingsRoot.style.backgroundPosition = '';
+                activeSettingsRoot.classList.add('settings-has-wallpaper');
+                activeSettingsRoot.style.backgroundImage = `url("${PHONE_CONFIG.defaultWallpaper.replace(/"/g, '\\"')}")`;
+                activeSettingsRoot.style.backgroundSize = 'cover';
+                activeSettingsRoot.style.backgroundPosition = 'center';
             }
 
             // 通知主屏幕更新
@@ -4298,7 +4299,7 @@ export class SettingsApp {
                 detail: { wallpaper: null } 
             }));
             
-            this.phoneShell?.showNotification?.('已删除', '手机壁纸已删除', '✅');
+            this.phoneShell?.showNotification?.('已恢复', '手机壁纸已恢复为默认背景', '✅');
         }));
 
         document.getElementById('choose-card-time-image-btn')?.addEventListener('click', (e) => {

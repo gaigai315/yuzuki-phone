@@ -44,19 +44,10 @@ export class HomeScreen {
         }
         const renderKeyAttr = forceDomRefresh ? ` data-render-key="${this._homeRenderVersion}"` : '';
 
-        // 获取自定义壁纸
-        let customWallpaper = null;
-        try {
-            if (window.VirtualPhone?.imageManager) {
-                customWallpaper = window.VirtualPhone.imageManager.getWallpaper();
-            }
-        } catch (e) {
-            console.warn('获取壁纸失败:', e);
-        }
+        const wallpaper = this._getWallpaperImage();
 
-        // 只有自定义壁纸时才设置内联样式，否则使用CSS中的玻璃效果
-        const wallpaperStyle = customWallpaper
-            ? `background-image: url('${customWallpaper}'); background-size: cover; background-position: center;`
+        const wallpaperStyle = wallpaper
+            ? `background-image: url('${wallpaper}'); background-size: cover; background-position: center;`
             : '';
 
         const homeLayout = this.getHomeLayout();
@@ -83,6 +74,15 @@ export class HomeScreen {
     getHomeLayout() {
         const layout = String(window.VirtualPhone?.storage?.get('phone-home-layout') || 'icons');
         return layout === 'cards' ? 'cards' : 'icons';
+    }
+
+    _getWallpaperImage() {
+        try {
+            return window.VirtualPhone?.imageManager?.getWallpaper?.() || PHONE_CONFIG.defaultWallpaper;
+        } catch (e) {
+            console.warn('获取壁纸失败:', e);
+            return PHONE_CONFIG.defaultWallpaper;
+        }
     }
 
     getCardLayoutCustomCssText() {
@@ -223,6 +223,11 @@ export class HomeScreen {
         return null;
     }
 
+    _getAppIconImage(app) {
+        if (!app) return null;
+        return this._getCustomIcon(app.id) || String(app.defaultIcon || '').trim() || null;
+    }
+
     _buildCustomIconStyle(iconUrl, { fit = 'contain' } = {}) {
         const safeUrl = String(iconUrl || '').trim();
         if (!safeUrl) return '';
@@ -264,9 +269,9 @@ export class HomeScreen {
 
     renderAppGlyph(app, className = 'home-widget-icon') {
         if (!app) return '';
-        const customIcon = this._getCustomIcon(app.id);
-        if (customIcon) {
-            return `<span class="${className} custom-icon" style="${this._buildCustomIconStyle(customIcon)}"></span>`;
+        const iconImage = this._getAppIconImage(app);
+        if (iconImage) {
+            return `<span class="${className} custom-icon" style="${this._buildCustomIconStyle(iconImage)}"></span>`;
         }
         return `<span class="${className}" style="--app-color:${app.color};">${this._escapeHtml(app.icon)}</span>`;
     }
@@ -318,12 +323,12 @@ export class HomeScreen {
 
     renderSocialApp(app) {
         if (!app) return '';
-        const customIcon = this._getCustomIcon(app.id);
-        const iconStyle = customIcon
-            ? this._buildCustomIconStyle(customIcon)
+        const iconImage = this._getAppIconImage(app);
+        const iconStyle = iconImage
+            ? this._buildCustomIconStyle(iconImage)
             : `background:${app.color};`;
-        const iconContent = customIcon ? '' : this._escapeHtml(app.icon);
-        const customClass = customIcon ? 'custom-icon' : '';
+        const iconContent = iconImage ? '' : this._escapeHtml(app.icon);
+        const customClass = iconImage ? 'custom-icon' : '';
         return `
             <div class="app-icon yzp-home-app-action home-social-app yzp-home-social-app" data-app="${app.id}" style="--app-color:${app.color};">
                 <div class="home-social-icon yzp-home-social-icon ${customClass}" style="${iconStyle}">
@@ -346,12 +351,12 @@ export class HomeScreen {
 
     renderFreeAppIcon(app) {
         if (!app) return '';
-        const customIcon = this._getCustomIcon(app.id);
-        const iconStyle = customIcon
-            ? this._buildCustomIconStyle(customIcon)
+        const iconImage = this._getAppIconImage(app);
+        const iconStyle = iconImage
+            ? this._buildCustomIconStyle(iconImage)
             : `background:${app.color};`;
-        const iconContent = customIcon ? '' : this._escapeHtml(app.icon);
-        const customClass = customIcon ? 'custom-icon' : '';
+        const iconContent = iconImage ? '' : this._escapeHtml(app.icon);
+        const customClass = iconImage ? 'custom-icon' : '';
         return `
             <div class="app-icon yzp-home-app-action home-free-icon yzp-home-free-icon" data-app="${app.id}" style="--app-color:${app.color};">
                 <div class="home-app-squircle yzp-home-app-squircle ${customClass}" style="${iconStyle}">
@@ -484,15 +489,14 @@ export class HomeScreen {
         const dockApps = this.getDockApps();
 
         return dockApps.map(app => {
-            // 获取自定义图标
-            const customIcon = this._getCustomIcon(app.id);
+            const iconImage = this._getAppIconImage(app);
 
-            const iconStyle = customIcon
-                ? this._buildCustomIconStyle(customIcon)
+            const iconStyle = iconImage
+                ? this._buildCustomIconStyle(iconImage)
                 : '';
 
-            const customClass = customIcon ? 'custom-icon' : '';
-            const iconContent = customIcon ? '' : app.icon;
+            const customClass = iconImage ? 'custom-icon' : '';
+            const iconContent = iconImage ? '' : app.icon;
 
             return `
                 <div class="dock-app yzp-home-dock-app ${customClass}" data-app="${app.id}" style="${iconStyle}">
@@ -504,28 +508,15 @@ export class HomeScreen {
     
     renderAppIcon(app) {
         const badge = app.badge > 0 ? `<span class="app-badge">${app.badge}</span>` : '';
+        const iconImage = this._getAppIconImage(app);
         
-        // 获取自定义图标
-        let customIcon = null;
-        try {
-            if (window.VirtualPhone?.imageManager) {
-                customIcon = window.VirtualPhone.imageManager.getAppIcon(app.id);
-            }
-        } catch (e) {
-            console.warn('获取APP图标失败:', e);
-        }
-        
-        // 如果有自定义图标，用背景图；否则用emoji
-        const iconStyle = customIcon
-            ? ''
-            : '';
+        const iconStyle = '';
 
-        const iconContent = customIcon
-            ? this._renderCustomIconImage(customIcon, 'home-custom-icon-img yzp-home-custom-icon-img')
+        const iconContent = iconImage
+            ? this._renderCustomIconImage(iconImage, 'home-custom-icon-img yzp-home-custom-icon-img')
             : `<span class="app-icon-emoji yzp-home-app-icon-emoji">${app.icon}</span>`;
 
-        // 自定义图标添加特殊class，用于移除默认背景效果
-        const customClass = customIcon ? 'custom-icon' : '';
+        const customClass = iconImage ? 'custom-icon' : '';
 
         return `
             <div class="app-icon yzp-home-app-icon yzp-home-app-action" data-app="${app.id}" style="--app-color: ${app.color}">

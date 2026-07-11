@@ -57,7 +57,7 @@ export class WangxiangView {
         const link = existingLink || document.createElement('link');
         link.id = 'wangxiang-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./wangxiang.css', import.meta.url).href;
+        link.href = new URL('./wangxiang.css?v=20260711-estimated-duration', import.meta.url).href;
         this._cssLoadingPromise = new Promise(resolve => {
             let settled = false;
             const finish = () => {
@@ -214,8 +214,19 @@ export class WangxiangView {
                                 <span aria-hidden="true"></span>
                             </label>
                         </div>
-                        <div id="wangxiang-worldbook-list" class="wangxiang-worldbook-list">
-                            <p class="wangxiang-settings-message">正在读取当前可用世界书...</p>
+                        <div class="phone-prompt-fold wangxiang-worldbook-fold" data-default-open="false">
+                            <div class="phone-prompt-fold-header" role="button" tabindex="0" aria-expanded="false" aria-controls="wangxiang-worldbook-fold-content">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">世界书选择</div>
+                                    <div class="phone-prompt-fold-desc">展开后勾选要注入的酒馆世界书</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow" aria-hidden="true"></i>
+                            </div>
+                            <div id="wangxiang-worldbook-fold-content" class="phone-prompt-fold-content" aria-hidden="true">
+                                <div id="wangxiang-worldbook-list" class="wangxiang-worldbook-list">
+                                    <p class="wangxiang-settings-message">正在读取当前可用世界书...</p>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     <section class="wangxiang-settings-section wangxiang-prompt-section">
@@ -250,13 +261,12 @@ export class WangxiangView {
     _renderTaskDetailContent(task) {
         const accent = ['cyan', 'green', 'purple', 'orange'].includes(task.accent) ? task.accent : 'cyan';
         const statusMap = {
-            available: { label: '可接取', icon: 'fa-satellite-dish' },
+            available: { label: '待联系', icon: 'fa-comments' },
             active: { label: '进行中', icon: 'fa-satellite-dish' },
             submit: { label: '待提交', icon: 'fa-file-circle-check' },
             completed: { label: '已完成', icon: 'fa-circle-check' }
         };
         const status = statusMap[task.status] || statusMap.available;
-        const difficulty = Math.max(1, Math.min(4, Number(task.difficulty || 1)));
         const objectives = Array.isArray(task.objectives) && task.objectives.length
             ? task.objectives
             : [{ id: 'objective-1', title: '完成任务要求', current: 0, total: 1, completed: false }];
@@ -267,13 +277,8 @@ export class WangxiangView {
             <div class="wangxiang-task-detail-content is-${accent}" data-task-detail-id="${this._escapeHtml(task.id)}">
                 <section class="wangxiang-task-detail-hero">
                     <div class="wangxiang-task-detail-title-row">
-                        <h1><span>[${this._escapeHtml(task.level || '普通')}]</span>${this._escapeHtml(task.title)}</h1>
+                        <h1>${this._escapeHtml(task.title)}</h1>
                         <div class="wangxiang-task-detail-status"><i class="fa-solid ${status.icon}" aria-hidden="true"></i>${status.label}</div>
-                    </div>
-                    <div class="wangxiang-task-detail-stats">
-                        <div><i class="fa-solid fa-coins" aria-hidden="true"></i><span>信用点奖励<strong>${this._escapeHtml(task.reward || '0')}</strong></span></div>
-                        <div><span>任务难度<strong class="wangxiang-task-detail-difficulty"><em>${this._escapeHtml(task.level || '普通')}</em>${Array.from({ length: difficulty }, () => '<i class="fa-solid fa-diamond"></i>').join('')}</strong></span></div>
-                        <div><i class="fa-regular fa-clock" aria-hidden="true"></i><span>剩余时间<strong>${this._escapeHtml(task.remainingTime || '未注明')}</strong></span></div>
                     </div>
                 </section>
 
@@ -283,7 +288,7 @@ export class WangxiangView {
                         <span>任务发布人</span>
                         <h2>${this._escapeHtml(task.publisher || '万象任务中心')}</h2>
                         <p>${this._escapeHtml(task.publisherOrg || '独立委托方')}</p>
-                        <strong>信誉等级：${this._escapeHtml(task.publisherReputation || '未知')}</strong>
+                        <strong>发布者信誉：${this._escapeHtml(task.publisherReputation || '未知')}</strong>
                     </div>
                     <button type="button" data-task-detail-action="contact">联系发布人</button>
                 </section>
@@ -313,9 +318,8 @@ export class WangxiangView {
                     <h2><i class="fa-regular fa-rectangle-list" aria-hidden="true"></i>任务信息</h2>
                     <div class="wangxiang-task-detail-info">
                         <span><i class="fa-solid fa-location-dot"></i>任务地点<strong>${this._escapeHtml(task.location || '未注明')}</strong></span>
-                        <span><i class="fa-regular fa-user"></i>推荐等级<strong>${this._escapeHtml(task.recommendedLevel || '无')}</strong></span>
-                        <span><i class="fa-regular fa-clock"></i>预计时长<strong>${this._escapeHtml(task.duration || '未注明')}</strong></span>
-                        <span><i class="fa-regular fa-calendar"></i>发布时间<strong>${this._escapeHtml(task.remaining || '--:--:--')}</strong></span>
+                        <span><i class="fa-regular fa-calendar"></i>发布时间<strong>${this._escapeHtml(task.publishedAt || task.remaining || '--')}</strong></span>
+                        <span><i class="fa-regular fa-clock"></i>预估耗时<strong>${this._escapeHtml(task.estimatedDuration || task.duration || '未注明')}</strong></span>
                     </div>
                 </section>
 
@@ -324,7 +328,7 @@ export class WangxiangView {
                     ${comments.length ? comments.map(comment => `
                         <article>
                             <div><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i></div>
-                            <p><strong>${this._escapeHtml(comment.name)} <small>${this._escapeHtml(comment.level)}</small></strong><span>${this._escapeHtml(comment.time)}</span>${this._escapeHtml(comment.content)}</p>
+                            <p><strong>${this._escapeHtml(comment.name)}</strong><span>${this._escapeHtml(comment.time)}</span>${this._escapeHtml(comment.content)}</p>
                         </article>
                     `).join('') : '<p class="wangxiang-task-detail-no-comments">暂无讨论</p>'}
                 </section>
@@ -366,7 +370,7 @@ export class WangxiangView {
                 <button type="button" class="is-primary" data-task-detail-action="track"><i class="fa-solid fa-location-crosshairs"></i>追踪任务</button>
             `;
         }
-        return '<button type="button" class="is-primary" data-task-detail-action="accept"><i class="fa-solid fa-clipboard-check"></i>接取任务</button>';
+        return '<button type="button" class="is-primary" data-task-detail-action="accept"><i class="fa-solid fa-comments"></i>联系领取</button>';
     }
 
     _renderMyTasksPanel() {
@@ -590,10 +594,13 @@ export class WangxiangView {
         root.querySelector('.wangxiang-task-detail-back')?.addEventListener('click', () => {
             this._hideTaskDetail(root);
         });
+        this._bindWorldbookFold(root);
         root.querySelector('#wangxiang-use-worldbook')?.addEventListener('change', async event => {
             const enabled = !!event.target.checked;
             await window.VirtualPhone?.worldbookManager?.setEnabled?.('wangxiang', enabled);
-            if (enabled) this.renderWangxiangWorldbookList(root);
+            if (enabled && root.querySelector('.wangxiang-worldbook-fold')?.classList.contains('is-open')) {
+                this.renderWangxiangWorldbookList(root);
+            }
             this.app.phoneShell?.showNotification?.(
                 enabled ? '已开启' : '已关闭',
                 `任务生成${enabled ? '会' : '不会'}引用勾选的世界书`,
@@ -639,7 +646,6 @@ export class WangxiangView {
         taskPanel.setAttribute('aria-hidden', 'true');
         settingsPanel.classList.remove('is-hidden');
         settingsPanel.setAttribute('aria-hidden', 'false');
-        this.renderWangxiangWorldbookList(root);
     }
 
     _hideTaskSettings(root) {
@@ -659,6 +665,30 @@ export class WangxiangView {
         const root = document.querySelector('.phone-view-current .wangxiang-app');
         if (this._hideTaskDetail(root)) return true;
         return this._hideTaskSettings(root);
+    }
+
+    _bindWorldbookFold(root) {
+        const fold = root?.querySelector('.wangxiang-worldbook-fold');
+        const header = fold?.querySelector('.phone-prompt-fold-header');
+        const content = fold?.querySelector('.phone-prompt-fold-content');
+        if (!fold || !header || !content) return;
+
+        const setOpen = open => {
+            fold.classList.toggle('is-open', open);
+            header.setAttribute('aria-expanded', String(open));
+            content.setAttribute('aria-hidden', String(!open));
+            if (open && fold.dataset.listLoaded !== '1') {
+                fold.dataset.listLoaded = '1';
+                this.renderWangxiangWorldbookList(root);
+            }
+        };
+        setOpen(String(fold.dataset.defaultOpen || '').toLowerCase() === 'true');
+        header.addEventListener('click', () => setOpen(!fold.classList.contains('is-open')));
+        header.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setOpen(!fold.classList.contains('is-open'));
+        });
     }
 
     async renderWangxiangWorldbookList(root = document) {
@@ -736,16 +766,7 @@ export class WangxiangView {
                     this._showTaskDetail(root, taskId);
                     return;
                 }
-                hallButton.disabled = true;
-                try {
-                    const task = await this.app.acceptTask(taskId);
-                    this._renderTaskList(root);
-                    this._renderManagedTaskList(root);
-                    this.app.phoneShell?.showNotification?.('任务已接取', task.title, '✅');
-                } catch (error) {
-                    hallButton.disabled = false;
-                    this.app.phoneShell?.showNotification?.('接取失败', error?.message || '请稍后重试', '❌');
-                }
+                this.app.phoneShell?.showNotification?.('请先联系发布者', '打开任务详情，通过“联系发布人”发送任务卡片并领取任务', 'ℹ️');
                 return;
             }
 
@@ -816,8 +837,18 @@ export class WangxiangView {
         const taskId = this.currentTaskId;
         if (!taskId) return;
         if (action === 'contact') {
-            const task = this.app.getTaskById?.(taskId);
-            this.app.phoneShell?.showNotification?.('任务发布人', task?.publisher || '暂无联系方式', 'ℹ️');
+            button.disabled = true;
+            try {
+                const result = await this.app.contactTaskPublisher?.(taskId);
+                this.app.phoneShell?.showNotification?.('已发送任务卡片', `已联系 ${result?.task?.publisher || '任务发布人'}`, '✅');
+            } catch (error) {
+                button.disabled = false;
+                this.app.phoneShell?.showNotification?.('联系失败', error?.message || '请稍后重试', '❌');
+            }
+            return;
+        }
+        if (action === 'accept') {
+            this.app.phoneShell?.showNotification?.('请先联系发布者', '请通过“联系发布人”发送任务卡片并领取任务', 'ℹ️');
             return;
         }
         if (action === 'track') {
@@ -830,14 +861,13 @@ export class WangxiangView {
         button.disabled = true;
         try {
             let task = null;
-            if (action === 'accept') task = await this.app.acceptTask(taskId);
-            else if (action === 'submit') task = await this.app.completeTask(taskId);
+            if (action === 'submit') task = await this.app.completeTask(taskId);
             else if (action === 'abandon') task = await this.app.abandonTask(taskId);
             if (!task) return;
             this._renderTaskList(root);
             this._renderManagedTaskList(root);
             this._refreshTaskDetail(root);
-            const messageMap = { accept: '任务已接取', submit: '任务已完成', abandon: '任务已放弃' };
+            const messageMap = { submit: '任务已完成', abandon: '任务已放弃' };
             this.app.phoneShell?.showNotification?.(messageMap[action] || '任务已更新', task.title, action === 'abandon' ? 'ℹ️' : '✅');
         } catch (error) {
             button.disabled = false;
@@ -856,7 +886,7 @@ export class WangxiangView {
     _renderTaskCard(task) {
         const accent = ['cyan', 'green', 'purple', 'orange'].includes(task.accent) ? task.accent : 'cyan';
         const isManaged = ['active', 'submit', 'completed'].includes(task.status);
-        const statusText = task.status === 'completed' ? '已完成' : (isManaged ? '进行中' : '可接取');
+        const statusText = task.status === 'completed' ? '已完成' : (isManaged ? '进行中' : '联系领取');
 
         return `
             <article class="wangxiang-task-card is-${accent}${isManaged ? ' is-active' : ''}" data-task-id="${this._escapeHtml(task.id)}">
@@ -865,19 +895,18 @@ export class WangxiangView {
                 </div>
                 <div class="wangxiang-task-card-main">
                     <h2 class="wangxiang-task-card-title">
-                        ${task.level ? `<span class="wangxiang-task-level">${this._escapeHtml(task.level)}</span>` : ''}
                         <span>${this._escapeHtml(task.title)}</span>
                     </h2>
                     <p class="wangxiang-task-card-description">${this._escapeHtml(task.description)}</p>
                     <div class="wangxiang-task-card-meta">
                         <span><i class="fa-solid fa-user" aria-hidden="true"></i>${this._escapeHtml(task.publisher)}</span>
-                        <span><i class="fa-regular fa-clock" aria-hidden="true"></i>${this._escapeHtml(task.remaining)}</span>
+                        <span><i class="fa-regular fa-clock" aria-hidden="true"></i>${this._escapeHtml(task.publishedAt || task.remaining || '--')}</span>
                     </div>
                 </div>
                 <div class="wangxiang-task-card-side">
                     <span class="wangxiang-task-reward-label">奖励</span>
                     <strong class="wangxiang-task-reward"><span>¥</span>${this._escapeHtml(task.reward)}</strong>
-                    <button class="wangxiang-task-action${isManaged ? ' is-active' : ''}" type="button" data-task-action="${isManaged ? 'view' : 'accept'}">
+                    <button class="wangxiang-task-action${isManaged ? ' is-active' : ''}" type="button" data-task-action="${isManaged ? 'view' : 'contact-required'}">
                         ${statusText}
                     </button>
                 </div>

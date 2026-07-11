@@ -5122,6 +5122,17 @@ export class WechatApp {
         }
     }
 
+    enqueueExternalMessageForAI(chatId) {
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId || !this.chatView?.isOnlineMode?.()) return false;
+        const queued = this.chatView._enqueuePendingChat?.(safeChatId, {
+            shouldStartTimer: false,
+            shouldShowStatus: true
+        });
+        if (queued) this.chatView._restartPendingTimerIfNeeded?.(safeChatId);
+        return !!queued;
+    }
+
     openMoments() {
         this.momentsView.render();
     }

@@ -9230,6 +9230,47 @@ if (window.GGP_Loaded) {
                                             if (rebuilt && rebuilt !== '[微博分享]') return rebuilt;
                                             return isPlaceholderOnly(fullContent) ? '[微博分享]' : (fullContent || '[微博分享]');
                                         };
+                                        const formatWangxiangTaskForOfflinePrompt = (msg = {}) => {
+                                            const fullContent = String(msg.content || '').trim();
+                                            const task = msg.wangxiangTaskData && typeof msg.wangxiangTaskData === 'object'
+                                                ? msg.wangxiangTaskData
+                                                : {};
+                                            const isConfirmation = msg.type === 'wangxiang_task_confirmation';
+                                            const isPlaceholder = !fullContent
+                                                || /^\[(?:wangxiang_task_card|wangxiang_task_confirmation|万象任务申请|任务已确认派发|任务派发确认：未匹配)\]$/i.test(fullContent);
+                                            if (!isConfirmation && !isPlaceholder) return fullContent;
+                                            if (Object.keys(task).length === 0) {
+                                                return fullContent || (isConfirmation ? '[万象任务确认]' : '[万象任务申请]');
+                                            }
+
+                                            const objectives = (Array.isArray(task.objectives) ? task.objectives : [])
+                                                .map(item => {
+                                                    const title = String(item?.title || '完成任务要求').trim();
+                                                    const current = Number(item?.current || 0);
+                                                    const total = Math.max(1, Number(item?.total || 1));
+                                                    return `${title}（${current}/${total}）`;
+                                                })
+                                                .filter(Boolean);
+                                            const rewards = [
+                                                task.reward ? `${task.reward} 信用点` : '',
+                                                task.prestige ? `${task.prestige} 声望值` : '',
+                                                task.extraReward && task.extraReward !== '无' ? `额外奖励：${task.extraReward}` : ''
+                                            ].filter(Boolean);
+                                            const lines = [
+                                                isConfirmation
+                                                    ? `[万象任务确认：${msg.assignmentMatched === false ? '未匹配到任务' : '已确认派发'}]`
+                                                    : '[万象任务申请]',
+                                                task.title ? `任务名称：${task.title}` : '',
+                                                task.publisher ? `发布者：${task.publisher}` : '',
+                                                task.description ? `任务描述：${task.description}` : '',
+                                                task.location ? `任务地点：${task.location}` : '',
+                                                objectives.length ? `任务目标：${objectives.join('；')}` : '',
+                                                rewards.length ? `任务奖励：${rewards.join('；')}` : '',
+                                                task.publishedAt ? `发布时间：${task.publishedAt}` : '',
+                                                task.estimatedDuration ? `预估耗时：${task.estimatedDuration}` : ''
+                                            ].filter(Boolean);
+                                            return lines.join('\n');
+                                        };
                                         const honeyInviteStates = [];
                                         allChats.forEach((chat) => {
                                             if (!chat || chat.type === 'group' || !chat.honeyInviteState) return;
@@ -9392,6 +9433,8 @@ if (window.GGP_Loaded) {
                                                             : (imgUrl ? `[发送了图片] 图片地址: ${imgUrl}` : '[发送了图片]');
                                                     } else if (msg.type === 'weibo_card') {
                                                         content = formatWeiboCardForOfflinePrompt(msg);
+                                                    } else if (msg.type === 'wangxiang_task_card' || msg.type === 'wangxiang_task_confirmation') {
+                                                        content = formatWangxiangTaskForOfflinePrompt(msg);
                                                     } else if (msg.type === 'poker_card') {
                                                         const poker = msg.pokerData || {};
                                                         content = poker.content || poker.desc || msg.content || '[德州扑克分享]';

@@ -325,14 +325,15 @@ export class ApiManager {
             const rawPerms = this.storage.get('phone_memory_permissions');
             const allPerms = rawPerms ? (typeof rawPerms === 'string' ? JSON.parse(rawPerms) : rawPerms) : {};
 
-            const basePerms = { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false };
+            const basePerms = { allowSummary: false, allowTable: false, allowVector: false };
             const defaultPermsByApp = {
                 wechat: { allowSummary: true, allowVector: true },
                 weibo: { allowSummary: true, allowVector: true },
                 diary: { allowSummary: true, allowVector: true },
-                games: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false },
-                honey: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false },
-                phone_online: { allowSummary: false, allowTable: false, allowVector: false, allowPrompt: false }
+                wangxiang: { allowSummary: true, allowTable: true, allowVector: true },
+                games: { allowSummary: false, allowTable: false, allowVector: false },
+                honey: { allowSummary: false, allowTable: false, allowVector: false },
+                phone_online: { allowSummary: false, allowTable: false, allowVector: false }
             };
             const defaultPerms = { ...basePerms, ...(defaultPermsByApp[appId] || {}) };
             const currentPerms = { ...defaultPerms, ...(allPerms?.[appId] || {}) };
@@ -342,7 +343,7 @@ export class ApiManager {
                 allowSummary: currentPerms.allowSummary === true,
                 allowTable: currentPerms.allowTable === true,
                 allowVector: currentPerms.allowVector === true,
-                allowPrompt: currentPerms.allowPrompt === true
+                allowPrompt: false
             };
         } catch (e) {
             console.warn('⚠️ [ApiManager] 读取记忆插件权限失败，已回退默认禁用:', e);

@@ -268,6 +268,7 @@ export class PhoneShell {
                 '.weibo-forward-overlay', '.weibo-forward-dialog', '.weibo-forward-dialog-compose', '.weibo-forward-list',
                 '#wechat-weibo-preview-modal', '#wechat-weibo-preview-modal > div',
                 '#wechat-poker-preview-modal', '#wechat-poker-preview-modal > div', '.wechat-poker-preview-body',
+                '#wechat-wangxiang-task-modal', '#wechat-wangxiang-task-modal > div', '.wechat-wangxiang-task-modal-body',
                 '#wechat-werewolf-preview-modal', '#wechat-werewolf-preview-modal > div', '.wechat-werewolf-preview-body',
                 '.wechat-call-transcript-overlay', '.wechat-call-transcript-panel', '.wechat-call-transcript-body',
                 '.phone-image-viewer-overlay', '.phone-image-viewer-stage',
