@@ -6829,7 +6829,7 @@ if (window.GGP_Loaded) {
     function hidePhoneTags() {
         // 1. 注入 CSS (保证底线隐藏，防止闪烁)
         if (!document.getElementById('st-phone-hide-style')) {
-            $('<style id="st-phone-hide-style">phone, wechat, music, weibo { display: none !important; }</style>').appendTo('head');
+            $('<style id="st-phone-hide-style">phone, wechat, music, weibo, 任务进度 { display: none !important; }</style>').appendTo('head');
         }
 
         // 2. 遍历页面上的消息气泡
@@ -6838,17 +6838,17 @@ if (window.GGP_Loaded) {
             let html = root.innerHTML;
 
             // 快速跳过，提升性能
-            if (!html || !/phone|wechat|music|weibo|手机来电通话|PHONE_CHAT_MODE/i.test(html)) {
+            if (!html || !/phone|wechat|music|weibo|任务进度|手机来电通话|PHONE_CHAT_MODE/i.test(html)) {
                 return;
             }
 
             // 隐藏那些被解析为真实 DOM 元素的孤立标签
-            $(root).find('phone, wechat, music, weibo').hide();
+            $(root).find('phone, wechat, music, weibo, 任务进度').hide();
 
             let changed = false;
 
             // 策略 A: 尝试完整匹配并替换 (适用于格式完美，没有被浏览器截断的情况)
-            const tags = ['music', 'phone', 'wechat', 'weibo'];
+            const tags = ['music', 'phone', 'wechat', 'weibo', '任务进度'];
             tags.forEach(tag => {
                 const rx = new RegExp(`(?:<p>|<br>\\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)${tag}(?:>|&gt;)[\\s\\S]*?(?:<|&lt;)\\/${tag}(?:>|&gt;)(?:<\\/code><\\/pre>)?(?:<\\/p>)?`, 'gi');
                 const replaced = html.replace(rx, '');
@@ -6868,7 +6868,7 @@ if (window.GGP_Loaded) {
             // 🔥 策略 B: 兜底斩断法 ！！！核心大招！！！
             // 专门对付浏览器 DOM 解析时吃掉闭合标签导致正则失效的千古难题。
             // 只要发现开头标签，直接把后面的一切内容全部截断删除！(因为标签都在消息最末尾，安全无痛)
-            const fallbackRegex = /(?:<p>|<br>\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)(?:music|phone|wechat|weibo)(?:>|&gt;)[\s\S]*$/i;
+            const fallbackRegex = /(?:<p>|<br>\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)(?:music|phone|wechat|weibo|任务进度)(?:>|&gt;)[\s\S]*$/i;
             const fallbackReplaced = html.replace(fallbackRegex, '');
             if (fallbackReplaced !== html) {
                 html = fallbackReplaced;
@@ -7216,6 +7216,42 @@ if (window.GGP_Loaded) {
             });
     }
 
+    async function ensureWangxiangApp() {
+        const module = await import('./apps/wangxiang/wangxiang-app.js');
+        if (!window.VirtualPhone.wangxiangApp) {
+            window.VirtualPhone.wangxiangApp = new module.WangxiangApp(phoneShell, storage);
+        }
+        return window.VirtualPhone.wangxiangApp;
+    }
+
+    async function rollbackWangxiangTaskProgress(floor, exact = false) {
+        let app = window.VirtualPhone?.wangxiangApp || null;
+        if (!app) {
+            const saved = storage?.get?.('wangxiang_task_progress_history', null);
+            const hasHistory = Array.isArray(saved)
+                ? saved.length > 0
+                : (typeof saved === 'string' && saved.trim() !== '' && saved.trim() !== '[]');
+            if (!hasHistory) return false;
+            app = await ensureWangxiangApp();
+        }
+        return exact
+            ? app.rollbackTaskProgressAtFloor(floor)
+            : app.rollbackTaskProgressToFloor(floor);
+    }
+
+    async function processWangxiangTaskProgressTags(text, source = {}) {
+        if (!/<任务进度>[\s\S]*?<\/任务进度>/i.test(String(text || ''))) return null;
+        const app = await ensureWangxiangApp();
+        const result = await app.applyTaskProgressText(text, source);
+        if (result?.changed && currentApp === 'wangxiang') {
+            await app.render();
+        }
+        if (result?.completions?.length) {
+            await app.wangxiangView.showTaskProgressPopup(result.completions);
+        }
+        return result;
+    }
+
     function onMessageReceived(messageId) {
         try {
             const context = getContext();
@@ -7337,6 +7373,8 @@ if (window.GGP_Loaded) {
                             // 回滚当前楼层（含）及之后的数据，为新内容腾出空间
                             wechatDataInstance.rollbackToFloor(index);
                         }
+                        rollbackWangxiangTaskProgress(index, exactReplayForMessage)
+                            .catch(error => console.warn('[Wangxiang] 正文应用前任务进度回滚失败:', error));
                     } catch (e) {
                         console.warn('⚠️ [手机插件] 消息渲染前回滚失败:', e);
                     }
@@ -7353,6 +7391,10 @@ if (window.GGP_Loaded) {
                             window.VirtualPhone.showMofoUpdateBubble(preferred.id);
                         }
                     }).catch(e => console.warn('Mofo tag process error:', e));
+                    processWangxiangTaskProgressTags(text, {
+                        tavernMessageIndex: index,
+                        batchId: currentBatchId
+                    }).catch(e => console.warn('Wangxiang task progress tag process error:', e));
                 }
                 // 兼容旧版 <Phone> 标签
                 const commands = parsePhoneCommands(text);
@@ -7972,7 +8014,7 @@ if (window.GGP_Loaded) {
             await loadCoreModules();
             let phonePromptHandler = async () => {};
             let phonePromptRunTail = Promise.resolve();
-            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER)\s*\}\}/i;
+            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS)\s*\}\}/i;
             const runPhonePromptHandler = (eventData, source = 'unknown') => {
                 const run = phonePromptRunTail
                     .catch(() => undefined)
@@ -8762,6 +8804,8 @@ if (window.GGP_Loaded) {
                             } else if (wechatDataInstance && typeof wechatDataInstance.rollbackToFloor === 'function') {
                                 hasRolledBack = wechatDataInstance.rollbackToFloor(id);
                             }
+                            rollbackWangxiangTaskProgress(id, true)
+                                .catch(error => console.warn('[Wangxiang] 滑动任务进度回滚失败:', error));
                             // 🔥 终极防闪退保护
                             if (hasRolledBack && window.currentWechatApp) {
                                 const isCallOverlayVisible = !!document.querySelector('.call-fullscreen');
@@ -8853,6 +8897,8 @@ if (window.GGP_Loaded) {
                                         }
                                     }
                                 }
+                                rollbackWangxiangTaskProgress(mesId, false)
+                                    .catch(error => console.warn('[Wangxiang] 重新生成任务进度回滚失败:', error));
                             } catch(e) {}
                         }, 10); // 极小延迟确保 DOM 不阻塞
                     }
@@ -8869,7 +8915,7 @@ if (window.GGP_Loaded) {
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}'];
+                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}', '{{WANGXIANG_TASKS}}'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
                                 let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
@@ -8882,8 +8928,8 @@ if (window.GGP_Loaded) {
                                         }
                                     });
                                     // 兼容 {{ XXX }}（含空格）
-                                    if (/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER)\s*\}\}/i.test(c)) {
-                                        c = c.replace(/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER)\s*\}\}/gi, '').trim();
+                                    if (/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS)\s*\}\}/i.test(c)) {
+                                        c = c.replace(/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS)\s*\}\}/gi, '').trim();
                                         modified = true;
                                     }
                                     if (modified) {
@@ -9004,6 +9050,7 @@ if (window.GGP_Loaded) {
                                             }
                                         }
                                     }
+                                    hasRolledBack = await rollbackWangxiangTaskProgress(targetFloor, false) || hasRolledBack;
                                 }
                             } catch(e) {
                                 console.warn('[手机插件] 幽灵数据斩断保护异常:', e);
@@ -9267,6 +9314,7 @@ if (window.GGP_Loaded) {
                                                 objectives.length ? `任务目标：${objectives.join('；')}` : '',
                                                 rewards.length ? `任务奖励：${rewards.join('；')}` : '',
                                                 task.publishedAt ? `发布时间：${task.publishedAt}` : '',
+                                                (task.startsAt || task.startTime) ? `任务开始时间：${task.startsAt || task.startTime}` : '',
                                                 task.estimatedDuration ? `预估耗时：${task.estimatedDuration}` : ''
                                             ].filter(Boolean);
                                             return lines.join('\n');
@@ -9621,6 +9669,7 @@ if (window.GGP_Loaded) {
                                     let mofoPromptContent = '';
                                     let diaryHistoryContent = '';
                                     let calendarReminderContent = '';
+                                    let wangxiangTaskContent = '';
                                     let weiboInjectEnabled = false;
 
                                     // 🔥 确保 promptManager 已加载（修复懒加载导致的 null 问题）
@@ -9807,7 +9856,29 @@ if (window.GGP_Loaded) {
                                         console.warn('⚠️ [手机] 注入日历全局提醒失败:', e);
                                     }
 
-                                    // 2.8️⃣ 添加蜜语直播总结（用于线下正文延续蜜语主播关系）
+                                    // 万象当前任务变量：只在正文存在变量时注入已接取任务
+                                    try {
+                                        const hasWangxiangTaskMacro = messages.some(msg => {
+                                            const content = msg?.content || msg?.mes || msg?.text || msg?.parts?.[0]?.text || '';
+                                            return typeof content === 'string' && /\{\{\s*WANGXIANG_TASKS\s*\}\}/i.test(content);
+                                        });
+                                        if (hasWangxiangTaskMacro) {
+                                            window.VirtualPhone?.wangxiangApp?._syncTaskDataScope?.();
+                                            let managedTasks = window.VirtualPhone?.wangxiangApp?.getManagedTasks?.() || null;
+                                            if (!Array.isArray(managedTasks)) {
+                                                const saved = storage?.get('wangxiang_managed_tasks', null);
+                                                const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+                                                managedTasks = Array.isArray(parsed) ? parsed : [];
+                                            }
+                                            const wangxiangModule = await import('./apps/wangxiang/wangxiang-app.js');
+                                            wangxiangTaskContent = wangxiangModule.buildWangxiangTaskInjectionContent(managedTasks);
+                                        }
+                                    } catch (e) {
+                                        wangxiangTaskContent = '';
+                                        console.warn('⚠️ [手机] 注入万象已接任务失败:', e);
+                                    }
+
+                                    // 2.9️⃣ 添加蜜语直播总结（用于线下正文延续蜜语主播关系）
                                     if (honeyOfflineSummaryByName.size > 0) {
                                         honeyHistoryContent += `【蜜语直播总结】\n`;
                                         honeyHistoryContent += `以下是蜜语主播直播间历史总结，会影响线下剧情中的关系背景和时间线；不要逐字复述。\n\n`;
@@ -10133,7 +10204,7 @@ if (window.GGP_Loaded) {
                                     };
 
                                     // 🔥 辅助函数：原地拆分注入 (Gaigai 终极防弹版)
-                                    const injectIntoMessages = (targetVar, contentToInject, identifier) => {
+                                    const injectIntoMessages = (targetVar, contentToInject, identifier, fallbackWhenMissing = true) => {
                                         const normalizedVarName = String(targetVar || '').replace(/[{}]/g, '').trim();
                                         const spacedVarRegex = normalizedVarName
                                             ? new RegExp(`\\{\\{\\s*${normalizedVarName}\\s*\\}\\}`, 'i')
@@ -10171,6 +10242,7 @@ if (window.GGP_Loaded) {
                                             if (id === 'mofo_system_prompt') return 'SYSTEM (魔坊)';
                                             if (id === 'diary_system_history') return 'SYSTEM (日记)';
                                             if (id === 'calendar_system_reminder') return 'SYSTEM (日历)';
+                                            if (id === 'wangxiang_active_tasks') return 'SYSTEM (万象已接任务)';
                                             if (id === 'phone_system_rules') {
                                                 const source = String(text || '');
                                                 const tags = [];
@@ -10228,7 +10300,7 @@ if (window.GGP_Loaded) {
                                         }
 
                                         // 4. 兜底策略：如果没找到变量，默认插入到最后一条 user 消息之前
-                                        if (!replaced) {
+                                        if (!replaced && fallbackWhenMissing) {
                                             let insertPos = messages.length;
                                             for (let i = messages.length - 1; i >= 0; i--) {
                                                 if (messages[i].role === 'user') {
@@ -10250,6 +10322,7 @@ if (window.GGP_Loaded) {
                                     injectIntoMessages('{{MOFO_PROMPT}}', mofoPromptContent, 'mofo_system_prompt');
                                     injectIntoMessages('{{DIARY_HISTORY}}', diaryHistoryContent, 'diary_system_history');
                                     injectIntoMessages('{{CALENDAR_REMINDER}}', calendarReminderContent, 'calendar_system_reminder');
+                                    injectIntoMessages('{{WANGXIANG_TASKS}}', wangxiangTaskContent, 'wangxiang_active_tasks', false);
 
                                     // ============================
                                     // 🎵 {{MUSIC_PROMPT}} 独立注入
@@ -10492,6 +10565,7 @@ if (window.GGP_Loaded) {
                                             const MOFO_VAR = '{{MOFO_PROMPT}}';
                                             const DIARY_VAR = '{{DIARY_HISTORY}}';
                                             const CALENDAR_VAR = '{{CALENDAR_REMINDER}}';
+                                            const WANGXIANG_VAR = '{{WANGXIANG_TASKS}}';
                                             const PHONE_PROMPT_SPACED_REGEX = /\{\{\s*PHONE_PROMPT\s*\}\}/gi;
                                             const PHONE_HISTORY_SPACED_REGEX = /\{\{\s*PHONE_HISTORY\s*\}\}/gi;
                                             const HONEY_HISTORY_SPACED_REGEX = /\{\{\s*HONEY_HISTORY\s*\}\}/gi;
@@ -10500,6 +10574,7 @@ if (window.GGP_Loaded) {
                                             const MOFO_PROMPT_SPACED_REGEX = /\{\{\s*MOFO_PROMPT\s*\}\}/gi;
                                             const DIARY_HISTORY_SPACED_REGEX = /\{\{\s*DIARY_HISTORY\s*\}\}/gi;
                                             const CALENDAR_REMINDER_SPACED_REGEX = /\{\{\s*CALENDAR_REMINDER\s*\}\}/gi;
+                                            const WANGXIANG_TASKS_SPACED_REGEX = /\{\{\s*WANGXIANG_TASKS\s*\}\}/gi;
                                             if (c.includes(TARGET_VAR)) {
                                                 c = c.split(TARGET_VAR).join('');
                                                 modified = true;
@@ -10562,6 +10637,14 @@ if (window.GGP_Loaded) {
                                             }
                                             if (CALENDAR_REMINDER_SPACED_REGEX.test(c)) {
                                                 c = c.replace(CALENDAR_REMINDER_SPACED_REGEX, '');
+                                                modified = true;
+                                            }
+                                            if (c.includes(WANGXIANG_VAR)) {
+                                                c = c.split(WANGXIANG_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (WANGXIANG_TASKS_SPACED_REGEX.test(c)) {
+                                                c = c.replace(WANGXIANG_TASKS_SPACED_REGEX, '');
                                                 modified = true;
                                             }
 

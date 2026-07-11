@@ -529,8 +529,22 @@ export class WorldbookManager {
         return '';
     }
 
+    isSessionIsolatedApp(appKey) {
+        return appKey === 'wangxiang';
+    }
+
     getEnabled(appKey) {
         const fallback = appKey === 'honey' ? false : true;
+        if (this.isSessionIsolatedApp(appKey)) {
+            const sessionRaw = this.storage?.get?.(this.getGlobalEnabledKey(appKey), undefined);
+            if (sessionRaw !== undefined && sessionRaw !== null) {
+                return parseBooleanSetting(sessionRaw, fallback);
+            }
+            const previousSessionRaw = this.storage?.get?.(this.getPreviousChatScopedEnabledKey(appKey), undefined);
+            return previousSessionRaw !== undefined && previousSessionRaw !== null
+                ? parseBooleanSetting(previousSessionRaw, fallback)
+                : fallback;
+        }
         const scopedRaw = this.storage?.get?.(this.getEnabledKey(appKey), undefined);
         if (scopedRaw !== undefined && scopedRaw !== null) {
             return parseBooleanSetting(scopedRaw, fallback);
@@ -560,12 +574,17 @@ export class WorldbookManager {
     }
 
     async setEnabled(appKey, enabled) {
-        const keys = uniqueStrings([
-            this.getEnabledKey(appKey),
-            this.getPreviousChatScopedEnabledKey(appKey),
-            this.getGlobalEnabledKey(appKey),
-            this.getAppEnabledKey(appKey)
-        ]);
+        const keys = this.isSessionIsolatedApp(appKey)
+            ? uniqueStrings([
+                this.getGlobalEnabledKey(appKey),
+                this.getPreviousChatScopedEnabledKey(appKey)
+            ])
+            : uniqueStrings([
+                this.getEnabledKey(appKey),
+                this.getPreviousChatScopedEnabledKey(appKey),
+                this.getGlobalEnabledKey(appKey),
+                this.getAppEnabledKey(appKey)
+            ]);
         for (const key of keys) {
             await this.storage?.set?.(key, !!enabled);
         }
@@ -577,6 +596,13 @@ export class WorldbookManager {
     }
 
     getSelectionState(appKey) {
+        if (this.isSessionIsolatedApp(appKey)) {
+            let sessionRaw = this.storage?.get?.(this.getGlobalSelectionKey(appKey), undefined);
+            if (sessionRaw === undefined || sessionRaw === null) {
+                sessionRaw = this.storage?.get?.(this.getPreviousChatScopedSelectionKey(appKey), undefined);
+            }
+            return this._parseSelectionState(sessionRaw);
+        }
         let raw = this.storage?.get?.(this.getSelectionKey(appKey), undefined);
         if (raw === undefined || raw === null) {
             raw = this.storage?.get?.(this.getPreviousChatScopedSelectionKey(appKey), undefined);
@@ -590,6 +616,10 @@ export class WorldbookManager {
         if (raw === undefined || raw === null) {
             raw = this.storage?.get?.(this.getLegacySelectionKey(appKey), null);
         }
+        return this._parseSelectionState(raw);
+    }
+
+    _parseSelectionState(raw) {
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
             return {
                 initialized: raw.initialized === true,
@@ -623,12 +653,17 @@ export class WorldbookManager {
             initialized: true,
             ids: unique
         };
-        const keys = uniqueStrings([
-            this.getSelectionKey(appKey),
-            this.getPreviousChatScopedSelectionKey(appKey),
-            this.getGlobalSelectionKey(appKey),
-            this.getAppSelectionKey(appKey)
-        ]);
+        const keys = this.isSessionIsolatedApp(appKey)
+            ? uniqueStrings([
+                this.getGlobalSelectionKey(appKey),
+                this.getPreviousChatScopedSelectionKey(appKey)
+            ])
+            : uniqueStrings([
+                this.getSelectionKey(appKey),
+                this.getPreviousChatScopedSelectionKey(appKey),
+                this.getGlobalSelectionKey(appKey),
+                this.getAppSelectionKey(appKey)
+            ]);
         for (const key of keys) {
             await this.storage?.set?.(key, selection);
         }

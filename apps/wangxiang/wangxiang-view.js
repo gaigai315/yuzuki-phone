@@ -8,6 +8,7 @@
 const WANGXIANG_BACKGROUND_URL = new URL('./wangxiang.png', import.meta.url).href;
 const WANGXIANG_TITLE_URL = new URL('./wxbt.png', import.meta.url).href;
 const WANGXIANG_NAV_BACKGROUND_URL = new URL('./wxanbj.png', import.meta.url).href;
+const WANGXIANG_TASK_PANEL_BACKGROUND_URL = new URL('./wxrwxq.png', import.meta.url).href;
 
 const WANGXIANG_NAV_ITEMS = [
     { id: 'task-hall', label: '任务大厅', icon: 'fa-list-check' },
@@ -57,7 +58,7 @@ export class WangxiangView {
         const link = existingLink || document.createElement('link');
         link.id = 'wangxiang-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./wangxiang.css?v=20260711-estimated-duration', import.meta.url).href;
+        link.href = new URL('./wangxiang.css?v=20260712-task-progress-popup', import.meta.url).href;
         this._cssLoadingPromise = new Promise(resolve => {
             let settled = false;
             const finish = () => {
@@ -81,6 +82,42 @@ export class WangxiangView {
         }
         await this.loadCSS();
         this._renderContent();
+    }
+
+    async showTaskProgressPopup(completions) {
+        const items = Array.isArray(completions) ? completions.filter(Boolean) : [];
+        if (!items.length) return;
+        await this.loadCSS();
+        document.getElementById('wangxiang-progress-popup-root')?.remove();
+
+        const root = document.createElement('div');
+        root.id = 'wangxiang-progress-popup-root';
+        root.innerHTML = `
+            <div class="wangxiang-progress-popup" role="dialog" aria-modal="true" aria-labelledby="wangxiang-progress-popup-title" style="background-image:url('${WANGXIANG_TASK_PANEL_BACKGROUND_URL}')">
+                <div class="wangxiang-progress-popup-head">
+                    <span><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span>
+                    <div>
+                        <strong id="wangxiang-progress-popup-title">任务目标已完成</strong>
+                        <small>万象任务进度提醒</small>
+                    </div>
+                </div>
+                <div class="wangxiang-progress-popup-list">
+                    ${items.map(item => `
+                        <div class="wangxiang-progress-popup-item">
+                            <span>${this._escapeHtml(item.taskTitle || '未命名任务')}</span>
+                            <strong>${this._escapeHtml(item.objectiveTitle || '任务目标')}</strong>
+                            <div><b>${Number(item.current || 0)}/${Math.max(1, Number(item.total || 1))}</b><em>100%</em></div>
+                        </div>
+                    `).join('')}
+                </div>
+                <button type="button" class="wangxiang-progress-popup-confirm">
+                    <i class="fa-solid fa-check" aria-hidden="true"></i><span>确定</span>
+                </button>
+            </div>`;
+        document.body.appendChild(root);
+        const close = () => root.remove();
+        root.querySelector('.wangxiang-progress-popup-confirm')?.addEventListener('click', close, { once: true });
+        root.querySelector('.wangxiang-progress-popup-confirm')?.focus?.();
     }
 
     _renderLoadingView() {
@@ -319,6 +356,7 @@ export class WangxiangView {
                     <div class="wangxiang-task-detail-info">
                         <span><i class="fa-solid fa-location-dot"></i>任务地点<strong>${this._escapeHtml(task.location || '未注明')}</strong></span>
                         <span><i class="fa-regular fa-calendar"></i>发布时间<strong>${this._escapeHtml(task.publishedAt || task.remaining || '--')}</strong></span>
+                        <span><i class="fa-regular fa-calendar-check"></i>开始时间<strong>${this._escapeHtml(task.startsAt || task.startTime || '未注明')}</strong></span>
                         <span><i class="fa-regular fa-clock"></i>预估耗时<strong>${this._escapeHtml(task.estimatedDuration || task.duration || '未注明')}</strong></span>
                     </div>
                 </section>

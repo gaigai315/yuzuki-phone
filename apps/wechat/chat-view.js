@@ -4388,6 +4388,7 @@ renderChatRoom(chat) {
             objectives.length ? `任务目标：${objectives.join('；')}` : '',
             rewards.length ? `任务奖励：${rewards.join('；')}` : '',
             task.publishedAt ? `发布时间：${task.publishedAt}` : '',
+            (task.startsAt || task.startTime) ? `任务开始时间：${task.startsAt || task.startTime}` : '',
             task.estimatedDuration ? `预估耗时：${task.estimatedDuration}` : ''
         ].filter(Boolean);
         return lines.join('\n');
@@ -7056,6 +7057,7 @@ renderChatRoom(chat) {
             const publisher = this._escapeHtml(task.publisher || this.app.currentChat?.name || '任务发布人');
             const description = this._escapeHtml(task.description || '暂无任务描述');
             const publishedAt = this._escapeHtml(task.publishedAt || '--');
+            const startsAt = this._escapeHtml(task.startsAt || task.startTime || '未注明');
             const estimatedDuration = this._escapeHtml(task.estimatedDuration || task.duration || '未注明');
             const reward = this._escapeHtml(task.reward || '0');
             const objectives = Array.isArray(task.objectives) ? task.objectives : [];
@@ -7081,6 +7083,7 @@ renderChatRoom(chat) {
                         <div style="display:grid;grid-template-columns:68px minmax(0,1fr);gap:7px 8px;padding:10px;border:1px solid #dfe6e9;border-radius:6px;background:#fff;font-size:12px;line-height:1.45;">
                             <span style="color:#7c8993;">发布人</span><strong style="font-weight:600;">${publisher}</strong>
                             <span style="color:#7c8993;">发布时间</span><strong style="font-weight:500;">${publishedAt}</strong>
+                            <span style="color:#7c8993;">开始时间</span><strong style="font-weight:500;">${startsAt}</strong>
                             <span style="color:#7c8993;">预估耗时</span><strong style="font-weight:500;">${estimatedDuration}</strong>
                             <span style="color:#7c8993;">信用点</span><strong style="font-weight:600;color:#1687b8;">${reward}</strong>
                         </div>

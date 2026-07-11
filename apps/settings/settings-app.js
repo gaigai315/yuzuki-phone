@@ -1653,6 +1653,13 @@ export class SettingsApp {
 
                             <div class="settings-subsection-title">📓 其他线下记录</div>
 
+                            <div class="setting-item">
+                                <div>
+                                    <div class="setting-label">万象当前任务变量</div>
+                                    <div class="setting-desc"><code>{{WANGXIANG_TASKS}}</code> 只在酒馆正文中注入当前已接取且尚未完成的任务详情与进度；没有已接任务时变量会被清空</div>
+                                </div>
+                            </div>
+
                             <div class="setting-item setting-toggle">
                                 <div>
                                     <div class="setting-label">电话通话记录注入线下</div>

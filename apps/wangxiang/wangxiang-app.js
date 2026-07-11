@@ -15,6 +15,78 @@ const WANGXIANG_TASK_VISUALS = [
     { accent: 'orange', icon: 'fa-crown' }
 ];
 
+export function buildWangxiangTaskInjectionContent(tasks) {
+    const activeTasks = (Array.isArray(tasks) ? tasks : [])
+        .filter(task => task?.status === 'active' || task?.status === 'submit');
+    if (!activeTasks.length) return '';
+
+    const clean = (value, fallback = '未注明') => {
+        const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+        return text || fallback;
+    };
+    const statusLabel = status => status === 'submit' ? '待提交' : '进行中';
+    const formatProgress = task => {
+        const explicit = Number(task?.progress);
+        if (Number.isFinite(explicit)) return Math.max(0, Math.min(100, Math.round(explicit)));
+        const objectives = Array.isArray(task?.objectives) ? task.objectives : [];
+        const totals = objectives.reduce((sum, item) => sum + Math.max(1, Number(item?.total || 1)), 0);
+        const current = objectives.reduce((sum, item) => {
+            const total = Math.max(1, Number(item?.total || 1));
+            return sum + Math.max(0, Math.min(total, Number(item?.current || 0)));
+        }, 0);
+        return totals > 0 ? Math.round((current / totals) * 100) : 0;
+    };
+
+    const blocks = activeTasks.map((task, index) => {
+        const objectives = (Array.isArray(task?.objectives) ? task.objectives : []).map((item, objectiveIndex) => {
+            const total = Math.max(1, Number(item?.total || 1));
+            const current = Math.max(0, Math.min(total, Number(item?.current || 0)));
+            const completed = item?.completed === true || current >= total;
+            return `- ${clean(item?.title, `任务目标 ${objectiveIndex + 1}`)}｜${current}/${total}｜${completed ? '已完成' : '进行中'}`;
+        });
+        return [
+            `--- 已接任务 ${index + 1} ---`,
+            `任务名称：${clean(task?.title, '未命名任务')}`,
+            `当前状态：${statusLabel(task?.status)}`,
+            `发布者：${clean(task?.publisher)}`,
+            `发布者组织：${clean(task?.publisherOrg)}`,
+            `发布者信誉：${clean(task?.publisherReputation)}`,
+            `任务描述：${clean(task?.description, '暂无任务描述')}`,
+            `任务地点：${clean(task?.location)}`,
+            `发布时间：${clean(task?.publishedAt || task?.remaining)}`,
+            `任务开始时间：${clean(task?.startsAt || task?.startTime)}`,
+            `预估耗时：${clean(task?.estimatedDuration || task?.duration)}`,
+            `任务奖励：${clean(task?.reward, '0')} 信用点；${clean(task?.prestige, '0')} 声望值；额外奖励：${clean(task?.extraReward, '无')}`,
+            `总进度：${formatProgress(task)}%`,
+            '任务目标：',
+            ...(objectives.length ? objectives : ['- 暂无具体目标｜0/1｜进行中'])
+        ].join('\n');
+    });
+
+    return `【万象当前已接任务】\n以下内容是用户已经接取且尚未完成的任务事实。续写剧情时应保持任务信息与进度一致，不要把未接取任务视为已接取。\n\n${blocks.join('\n\n')}`;
+}
+
+export function parseWangxiangTaskProgressTags(text) {
+    const updates = [];
+    const tagRegex = /<任务进度>([\s\S]*?)<\/任务进度>/gi;
+    let tagMatch;
+    while ((tagMatch = tagRegex.exec(String(text || ''))) !== null) {
+        String(tagMatch[1] || '').split('\n').forEach(rawLine => {
+            const line = rawLine.replace(/^\s*[-•]\s*/, '').trim();
+            if (!line) return;
+            const match = line.match(/^(.+?)[｜|](.+?)\s*[:：]\s*(\d+)\s*\/\s*(\d+)\s*$/);
+            if (!match) return;
+            updates.push({
+                taskTitle: match[1].trim(),
+                objectiveTitle: match[2].trim(),
+                current: Number(match[3]),
+                total: Number(match[4])
+            });
+        });
+    }
+    return updates;
+}
+
 export class WangxiangApp {
     constructor(phoneShell, storage) {
         this.phoneShell = phoneShell;
@@ -24,6 +96,7 @@ export class WangxiangApp {
         this._taskDataScopeKey = this._getCurrentTaskScopeKey();
         this.generatedTasks = this._loadGeneratedTasks();
         this.managedTasks = this._loadManagedTasks();
+        this.taskProgressHistory = this._loadTaskProgressHistory();
         this._reconcileGeneratedTaskStatuses();
 
         window.addEventListener('phone:swipeBack', () => this.handleSwipeBack());
@@ -38,6 +111,7 @@ export class WangxiangApp {
         this._taskDataScopeKey = '';
         this.generatedTasks = [];
         this.managedTasks = [];
+        this.taskProgressHistory = [];
         this.wangxiangView.currentTaskId = '';
         this._syncTaskDataScope();
     }
@@ -61,6 +135,164 @@ export class WangxiangApp {
         return String(value || '').trim().replace(/\s+/g, '');
     }
 
+    _syncGeneratedTaskProgress(task) {
+        const generatedTask = this.generatedTasks.find(item => String(item?.id || '') === String(task?.id || ''));
+        if (!generatedTask) return;
+        generatedTask.progress = Number(task?.progress || 0);
+        generatedTask.objectives = Array.isArray(task?.objectives)
+            ? task.objectives.map(item => ({ ...item }))
+            : [];
+    }
+
+    _recalculateTaskProgress(task) {
+        const objectives = Array.isArray(task?.objectives) ? task.objectives : [];
+        const total = objectives.reduce((sum, item) => sum + Math.max(1, Number(item?.total || 1)), 0);
+        const current = objectives.reduce((sum, item) => {
+            const objectiveTotal = Math.max(1, Number(item?.total || 1));
+            return sum + Math.max(0, Math.min(objectiveTotal, Number(item?.current || 0)));
+        }, 0);
+        task.progress = total > 0 ? Math.round((current / total) * 100) : 0;
+        return task.progress;
+    }
+
+    async applyTaskProgressText(text, source = {}) {
+        this._syncTaskDataScope();
+        const parsedUpdates = parseWangxiangTaskProgressTags(text);
+        if (!parsedUpdates.length) return { changed: false, completions: [], updates: [] };
+
+        const floor = Number(source.tavernMessageIndex);
+        const hasFloor = Number.isFinite(floor) && floor >= 0;
+        const batchId = String(source.batchId || '');
+        const duplicate = this.taskProgressHistory.some(entry =>
+            hasFloor && Number(entry?.tavernMessageIndex) === floor && String(entry?.batchId || '') === batchId
+        );
+        if (duplicate) return { changed: false, completions: [], updates: [] };
+        if (hasFloor) this._rollbackTaskProgressHistory(entry => Number(entry?.tavernMessageIndex) === floor);
+
+        const taskSnapshots = new Map();
+        const appliedUpdates = [];
+        const completions = [];
+        parsedUpdates.forEach(update => {
+            const taskKey = this._normalizeTaskTitle(update.taskTitle);
+            const objectiveKey = this._normalizeTaskTitle(update.objectiveTitle);
+            const task = this.managedTasks.find(item =>
+                (item?.status === 'active' || item?.status === 'submit')
+                && this._normalizeTaskTitle(item?.title) === taskKey
+            );
+            if (!task) return;
+            const objective = (Array.isArray(task.objectives) ? task.objectives : []).find(item =>
+                this._normalizeTaskTitle(item?.title) === objectiveKey
+            );
+            if (!objective) return;
+
+            const storedTotal = Math.max(1, Number(objective.total || 1));
+            if (Number(update.total) !== storedTotal) return;
+            const previousCurrent = Math.max(0, Math.min(storedTotal, Number(objective.current || 0)));
+            const nextCurrent = Math.max(0, Math.min(storedTotal, Number(update.current || 0)));
+            if (nextCurrent <= previousCurrent) return;
+
+            if (!taskSnapshots.has(task.id)) {
+                taskSnapshots.set(task.id, {
+                    taskId: String(task.id || ''),
+                    previousProgress: Number(task.progress || 0),
+                    objectives: []
+                });
+            }
+            taskSnapshots.get(task.id).objectives.push({
+                objectiveId: String(objective.id || ''),
+                objectiveTitle: String(objective.title || ''),
+                previousCurrent,
+                previousCompleted: objective.completed === true
+            });
+
+            objective.current = nextCurrent;
+            objective.total = storedTotal;
+            objective.completed = nextCurrent >= storedTotal;
+            appliedUpdates.push({
+                taskId: String(task.id || ''),
+                taskTitle: String(task.title || ''),
+                objectiveId: String(objective.id || ''),
+                objectiveTitle: String(objective.title || ''),
+                current: nextCurrent,
+                total: storedTotal
+            });
+            if (previousCurrent < storedTotal && nextCurrent >= storedTotal) {
+                completions.push({
+                    taskTitle: String(task.title || ''),
+                    objectiveTitle: String(objective.title || ''),
+                    current: nextCurrent,
+                    total: storedTotal
+                });
+            }
+        });
+
+        if (!appliedUpdates.length) {
+            await Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory()]);
+            return { changed: false, completions: [], updates: [] };
+        }
+
+        taskSnapshots.forEach(snapshot => {
+            const task = this.managedTasks.find(item => String(item?.id || '') === snapshot.taskId);
+            if (!task) return;
+            this._recalculateTaskProgress(task);
+            this._syncGeneratedTaskProgress(task);
+        });
+        this.taskProgressHistory.push({
+            tavernMessageIndex: hasFloor ? floor : null,
+            batchId,
+            taskSnapshots: Array.from(taskSnapshots.values())
+        });
+        await Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory()]);
+        return { changed: true, completions, updates: appliedUpdates };
+    }
+
+    _rollbackTaskProgressHistory(predicate) {
+        const matched = this.taskProgressHistory.filter(predicate);
+        if (!matched.length) return false;
+        [...matched].reverse().forEach(entry => {
+            [...(Array.isArray(entry?.taskSnapshots) ? entry.taskSnapshots : [])].reverse().forEach(snapshot => {
+                const task = this.managedTasks.find(item => String(item?.id || '') === String(snapshot?.taskId || ''));
+                if (!task) return;
+                [...(Array.isArray(snapshot?.objectives) ? snapshot.objectives : [])].reverse().forEach(change => {
+                    const objective = (Array.isArray(task.objectives) ? task.objectives : []).find(item =>
+                        (change?.objectiveId && String(item?.id || '') === String(change.objectiveId))
+                        || this._normalizeTaskTitle(item?.title) === this._normalizeTaskTitle(change?.objectiveTitle)
+                    );
+                    if (!objective) return;
+                    objective.current = Number(change.previousCurrent || 0);
+                    objective.completed = change.previousCompleted === true;
+                });
+                task.progress = Number(snapshot.previousProgress || 0);
+                this._syncGeneratedTaskProgress(task);
+            });
+        });
+        const matchedSet = new Set(matched);
+        this.taskProgressHistory = this.taskProgressHistory.filter(entry => !matchedSet.has(entry));
+        return true;
+    }
+
+    rollbackTaskProgressAtFloor(targetTavernIndex) {
+        const floor = Number(targetTavernIndex);
+        if (!Number.isFinite(floor)) return false;
+        const changed = this._rollbackTaskProgressHistory(entry => Number(entry?.tavernMessageIndex) === floor);
+        if (changed) {
+            Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory()])
+                .catch(error => console.error('[Wangxiang] 保存任务进度精确回滚失败:', error));
+        }
+        return changed;
+    }
+
+    rollbackTaskProgressToFloor(targetTavernIndex) {
+        const floor = Number(targetTavernIndex);
+        if (!Number.isFinite(floor)) return false;
+        const changed = this._rollbackTaskProgressHistory(entry => Number(entry?.tavernMessageIndex) >= floor);
+        if (changed) {
+            Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory()])
+                .catch(error => console.error('[Wangxiang] 保存任务进度回滚失败:', error));
+        }
+        return changed;
+    }
+
     _buildWechatTaskData(task) {
         return {
             id: String(task?.id || ''),
@@ -72,6 +304,7 @@ export class WangxiangApp {
             prestige: String(task?.prestige || '0'),
             extraReward: String(task?.extraReward || '无'),
             publishedAt: String(task?.publishedAt || task?.remaining || '--'),
+            startsAt: String(task?.startsAt || task?.startTime || '未注明'),
             estimatedDuration: String(task?.estimatedDuration || task?.duration || '未注明'),
             objectives: Array.isArray(task?.objectives) ? task.objectives.map(item => ({ ...item })) : [],
             status: String(task?.status || 'available')
@@ -151,6 +384,7 @@ export class WangxiangApp {
             `任务目标：${objectiveText || '完成任务要求'}`,
             `奖励：${taskData.reward} 信用点`,
             `发布时间：${taskData.publishedAt}`,
+            `任务开始时间：${taskData.startsAt}`,
             `预估耗时：${taskData.estimatedDuration}`,
             '发布者可根据当前剧情进度、角色自身视角与性格人设，自主决定同意或拒绝派发。',
             `若同意派发，请只回复：[确认派发任务：${confirmationTitle}]`,
@@ -218,6 +452,7 @@ export class WangxiangApp {
     rollbackWechatAssignmentsToFloor(targetTavernIndex) {
         const targetFloor = Number(targetTavernIndex);
         if (!Number.isFinite(targetFloor)) return false;
+        const progressRolledBack = this.rollbackTaskProgressToFloor(targetFloor);
         const removedIds = new Set();
         this.managedTasks = this.managedTasks.filter(task => {
             const source = task?.assignmentSource;
@@ -227,7 +462,7 @@ export class WangxiangApp {
             if (shouldRemove) removedIds.add(String(task.id || ''));
             return !shouldRemove;
         });
-        if (!removedIds.size) return false;
+        if (!removedIds.size) return progressRolledBack;
         this.generatedTasks.forEach(task => {
             if (removedIds.has(String(task?.id || ''))) task.status = 'available';
         });
@@ -432,6 +667,7 @@ export class WangxiangApp {
             description: description || '任务详情将在接取后进一步说明。',
             publisher: readField('发布者') || publisherOrg || '万象任务中心',
             publishedAt: readField('发布时间') || '--',
+            startsAt: readField('任务开始时间') || readField('开始时间') || '未注明',
             estimatedDuration: readField('预估耗时') || readField('预计时长') || '未注明',
             reward,
             prestige: readField('声望值').replace(/[^\d.,+-]/g, '') || '0',
@@ -495,6 +731,7 @@ export class WangxiangApp {
         return {
             ...task,
             publishedAt: String(task?.publishedAt || task?.remaining || '--'),
+            startsAt: String(task?.startsAt || task?.startTime || '未注明'),
             estimatedDuration: String(task?.estimatedDuration || task?.duration || '未注明'),
             icon: String(task?.icon || visual.icon),
             accent: String(task?.accent || visual.accent)
@@ -523,6 +760,17 @@ export class WangxiangApp {
         }
     }
 
+    _loadTaskProgressHistory() {
+        try {
+            const saved = this.storage?.get?.('wangxiang_task_progress_history', null);
+            const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            console.warn('[Wangxiang] 读取任务进度历史失败:', error);
+            return [];
+        }
+    }
+
     _getCurrentTaskScopeKey() {
         try {
             const scopedKey = this.storage?.getStorageKey?.('wangxiang-scope');
@@ -543,6 +791,7 @@ export class WangxiangApp {
         this._taskDataScopeKey = nextScopeKey;
         this.generatedTasks = this._loadGeneratedTasks();
         this.managedTasks = this._loadManagedTasks();
+        this.taskProgressHistory = this._loadTaskProgressHistory();
         this._reconcileGeneratedTaskStatuses();
         return true;
     }
@@ -563,6 +812,10 @@ export class WangxiangApp {
 
     _saveManagedTasks() {
         return this.storage?.set?.('wangxiang_managed_tasks', JSON.stringify(this.managedTasks));
+    }
+
+    _saveTaskProgressHistory() {
+        return this.storage?.set?.('wangxiang_task_progress_history', JSON.stringify(this.taskProgressHistory));
     }
 
     _getContext() {
