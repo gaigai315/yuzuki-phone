@@ -44,6 +44,7 @@ export class PhoneStorage {
             /^story-/,            // 时间数据（避免频繁触发 settings_updated）
             /^diary_/,            // 日记数据（按聊天独立存储）
             /^calendar_/,         // 日历备忘录（按聊天独立存储）
+            /^wangxiang_/,        // 万象任务与订单数据
             /^phone_call_/,       // 通话记录数据
             /^music_/,            // 音乐播放列表数据
         ];

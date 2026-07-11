@@ -7722,6 +7722,10 @@ if (window.GGP_Loaded) {
             if (window.VirtualPhone.weiboApp) {
                 window.VirtualPhone.weiboApp.clearCache();
             }
+            // 🌐 清空万象任务缓存，切换后重新读取当前聊天文件
+            if (window.VirtualPhone.wangxiangApp) {
+                window.VirtualPhone.wangxiangApp.clearCache();
+            }
             // 🍯 清空蜜语实例，避免切换会话后复用未绑定当前手机壳/旧会话数据的懒加载实例
             if (window.VirtualPhone.honeyApp) {
                 try {
@@ -8418,12 +8422,12 @@ if (window.GGP_Loaded) {
                         });
                 } else if (appId === 'wangxiang') {
                     import('./apps/wangxiang/wangxiang-app.js')
-                        .then(module => {
+                        .then(async module => {
                             try {
                                 if (!window.VirtualPhone.wangxiangApp) {
                                     window.VirtualPhone.wangxiangApp = new module.WangxiangApp(phoneShell, storage);
                                 }
-                                window.VirtualPhone.wangxiangApp.render();
+                                await window.VirtualPhone.wangxiangApp.render();
                             } catch (initError) {
                                 console.error('❌ 万象APP初始化失败:', initError);
                                 phoneShell?.showNotification('错误', '万象加载失败', '❌');

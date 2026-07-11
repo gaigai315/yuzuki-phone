@@ -126,6 +126,7 @@ export class SettingsApp {
             { id: 'calendar', name: '日历', icon: '📅', color: '#5d83a8' },
             { id: 'music', name: '音乐', icon: '🎵', color: '#eb2f96' },
             { id: 'album', name: '相册', icon: '🖼️', color: '#4096ff' },
+            { id: 'wangxiang', name: '万象', icon: '🧿', color: '#315c50' },
             { id: 'settings', name: '设置', icon: '⚙️', color: '#8c8c8c' }
         ];
     }

@@ -5525,8 +5525,8 @@ input:checked + .toggle-slider:before {
 }
 
 /* 2. 拯救所有表单控件 (对抗主题对裸标签 input, textarea, select 的 !important 劫持) */
-#phone-panel-content input:not(.honey-app *):not(.wechat-app .chat-input):not([type="checkbox"]):not([type="range"]):not([type="color"]):not(#honey-chat-input):not(#video-chat-input):not(#voice-chat-input):not(#phone-call-input),
-#phone-panel-content textarea:not(.honey-app *) {
+#phone-panel-content input:not(.honey-app *):not(.wangxiang-app *):not(.wechat-app .chat-input):not([type="checkbox"]):not([type="range"]):not([type="color"]):not(#honey-chat-input):not(#video-chat-input):not(#voice-chat-input):not(#phone-call-input),
+#phone-panel-content textarea:not(.honey-app *):not(.wangxiang-app *) {
     background: #ffffff !important;
     background-image: none !important;
     box-shadow: none !important;

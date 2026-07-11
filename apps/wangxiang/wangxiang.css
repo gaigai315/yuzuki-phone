@@ -172,6 +172,13 @@
     gap: 8px;
 }
 
+#phone-panel-content .phone-screen .wangxiang-task-title-group {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+}
+
 #phone-panel-content .phone-screen .wangxiang-task-title {
     position: relative;
     min-width: 0;
@@ -201,6 +208,286 @@
     flex: 0 0 auto;
     align-items: center;
     gap: 3px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-settings-open,
+#phone-panel-content .phone-screen .wangxiang-settings-back {
+    display: grid;
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 1px solid rgba(91, 205, 255, 0.48) !important;
+    border-radius: 4px !important;
+    background: rgba(10, 54, 77, 0.58) !important;
+    box-shadow: inset 0 0 10px rgba(73, 194, 245, 0.1) !important;
+    color: #8ee5ff !important;
+    font-size: 11px;
+    place-items: center;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-settings-open:active,
+#phone-panel-content .phone-screen .wangxiang-settings-back:active {
+    background: rgba(38, 132, 174, 0.46) !important;
+}
+
+/* 任务大厅设置 */
+#phone-panel-content .phone-screen .wangxiang-task-settings-panel {
+    gap: 8px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-header {
+    display: flex;
+    min-height: 42px;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 9px;
+    padding: 0 3px 8px;
+    border-bottom: 1px solid rgba(92, 198, 247, 0.24);
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-header h1,
+#phone-panel-content .phone-screen .wangxiang-settings-header p,
+#phone-panel-content .phone-screen .wangxiang-settings-section-heading h2,
+#phone-panel-content .phone-screen .wangxiang-settings-section-heading p,
+#phone-panel-content .phone-screen .wangxiang-settings-message {
+    margin: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-header h1 {
+    color: #f2fbff;
+    font-size: 15px;
+    line-height: 1.25;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-header p {
+    margin-top: 2px;
+    color: #7898aa;
+    font-size: 8px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-scroll {
+    gap: 10px;
+    padding: 0 1px 14px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-section {
+    flex: 0 0 auto;
+    padding: 10px;
+    border: 1px solid rgba(74, 182, 228, 0.36);
+    border-radius: 5px;
+    background: rgba(2, 18, 31, 0.9);
+    box-shadow: inset 0 0 18px rgba(54, 160, 208, 0.07);
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-section-heading > div {
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-section-heading h2 {
+    color: #eaf7fd;
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-section-heading p,
+#phone-panel-content .phone-screen .wangxiang-settings-message {
+    margin-top: 3px;
+    color: #7893a4;
+    font-size: 7.5px;
+    line-height: 1.45;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-message.is-error {
+    color: #ff8b8b;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-toggle {
+    position: relative;
+    display: block;
+    width: 32px;
+    height: 18px;
+    flex: 0 0 auto;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-toggle input {
+    position: absolute !important;
+    z-index: 2;
+    inset: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-toggle input::before,
+#phone-panel-content .phone-screen .wangxiang-settings-toggle input::after {
+    display: none !important;
+    content: none !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-toggle span {
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(111, 153, 173, 0.65);
+    border-radius: 9px;
+    background: rgba(40, 65, 78, 0.9);
+    transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-toggle span::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #a9bdc7;
+    transition: transform 0.18s ease, background 0.18s ease;
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-toggle input:checked + span {
+    border-color: #49cfff;
+    background: rgba(24, 137, 184, 0.72);
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-toggle input:checked + span::after {
+    background: #effcff;
+    transform: translateX(14px);
+}
+
+#phone-panel-content .phone-screen .wangxiang-settings-toggle input:focus-visible + span {
+    outline: 1px solid #b9efff;
+    outline-offset: 2px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-worldbook-list {
+    margin-top: 8px;
+    border-top: 1px solid rgba(74, 182, 228, 0.2);
+}
+
+#phone-panel-content .phone-screen .wangxiang-worldbook-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 1px;
+    border-bottom: 1px solid rgba(74, 182, 228, 0.13);
+}
+
+#phone-panel-content .phone-screen .wangxiang-worldbook-item input {
+    width: 14px !important;
+    min-width: 14px !important;
+    height: 14px !important;
+    min-height: 14px !important;
+    margin: 1px 0 0 !important;
+    padding: 0 !important;
+    opacity: 1 !important;
+    appearance: auto !important;
+    -webkit-appearance: checkbox !important;
+    accent-color: #38c9ff;
+}
+
+#phone-panel-content .phone-screen .wangxiang-worldbook-item > span {
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-worldbook-item strong,
+#phone-panel-content .phone-screen .wangxiang-worldbook-item small {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+#phone-panel-content .phone-screen .wangxiang-worldbook-item strong {
+    color: #ddecf3;
+    font-size: 9px;
+    font-weight: 500;
+    line-height: 1.35;
+}
+
+#phone-panel-content .phone-screen .wangxiang-worldbook-item small {
+    margin-top: 2px;
+    color: #718b9a;
+    font-size: 7px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-prompt-section .phone-prompt-preset-tools {
+    gap: 5px !important;
+    margin: 9px 0 6px !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-prompt-section .phone-prompt-preset-select {
+    width: 100% !important;
+    height: 29px !important;
+    padding: 0 7px !important;
+    border: 1px solid rgba(79, 183, 226, 0.46) !important;
+    border-radius: 4px !important;
+    background: #071d2a !important;
+    color: #dceff7 !important;
+    font-size: 8px !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-prompt-section .phone-prompt-preset-tools > div {
+    gap: 5px !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-prompt-section .phone-prompt-preset-tools button {
+    min-width: 0;
+    height: 27px !important;
+    margin: 0 !important;
+    padding: 0 3px !important;
+    border: 1px solid rgba(73, 192, 240, 0.46) !important;
+    border-radius: 4px !important;
+    background: rgba(11, 66, 91, 0.64) !important;
+    box-shadow: none !important;
+    color: #dff7ff !important;
+    font-size: 7.5px !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-prompt-section .phone-prompt-preset-delete {
+    border-color: rgba(255, 111, 111, 0.4) !important;
+    color: #ffadad !important;
+}
+
+#phone-panel-content .phone-screen #wangxiang-task-prompt {
+    display: block;
+    width: 100% !important;
+    min-height: 210px;
+    margin: 0 !important;
+    padding: 9px !important;
+    resize: vertical;
+    border: 1px solid rgba(79, 183, 226, 0.46) !important;
+    border-radius: 4px !important;
+    outline: none;
+    background: rgba(1, 13, 23, 0.94) !important;
+    background-image: none !important;
+    box-shadow: inset 0 0 14px rgba(38, 145, 191, 0.08) !important;
+    color: #dbeaf0 !important;
+    font-family: inherit;
+    font-size: 8px !important;
+    line-height: 1.55;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen #wangxiang-task-prompt:focus {
+    border-color: #56d4ff !important;
+    box-shadow: 0 0 0 1px rgba(86, 212, 255, 0.12), inset 0 0 14px rgba(38, 145, 191, 0.08) !important;
 }
 
 #phone-panel-content .phone-screen .wangxiang-task-sort,
@@ -263,20 +550,117 @@
     overflow-x: hidden;
     overflow-y: auto;
     padding: 9px 2px 18px;
-    scrollbar-color: rgba(73, 181, 229, 0.5) transparent;
-    scrollbar-width: thin;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     touch-action: pan-y;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
 }
 
 #phone-panel-content .phone-screen .wangxiang-content-scroll::-webkit-scrollbar {
-    width: 3px;
+    display: none;
+    width: 0;
+    height: 0;
 }
 
-#phone-panel-content .phone-screen .wangxiang-content-scroll::-webkit-scrollbar-thumb {
-    border-radius: 2px;
-    background: rgba(73, 181, 229, 0.5);
+#phone-panel-content .phone-screen .wangxiang-task-scroll.wangxiang-content-scroll {
+    gap: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-pull-indicator {
+    display: grid;
+    height: 0;
+    min-height: 0;
+    flex: 0 0 auto;
+    overflow: hidden;
+    color: #78cce9;
+    transition: height 0.2s ease;
+    place-items: center;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-pull-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 8px;
+    line-height: 1;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-pull-inner i {
+    font-size: 9px;
+    transition: transform 0.18s ease;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-pull-indicator.is-ready {
+    color: #d9f7ff;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-pull-indicator.is-ready i {
+    transform: rotate(180deg);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-pull-indicator.is-loading {
+    color: #67d8ff;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-pull-indicator.is-success {
+    color: #64e3a8;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-pull-indicator.is-error {
+    color: #ff8d8d;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-list {
+    display: flex;
+    min-width: 0;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 9px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-empty {
+    display: flex;
+    min-height: 180px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #56788c;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-empty i {
+    color: #4a91b0;
+    font-size: 22px;
+    filter: drop-shadow(0 0 7px rgba(73, 195, 239, 0.25));
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-empty strong {
+    font-size: 9px;
+    font-weight: 500;
+}
+
+#phone-panel-content .phone-screen .wangxiang-my-tasks-empty {
+    display: flex;
+    min-height: 210px;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #56788c;
+}
+
+#phone-panel-content .phone-screen .wangxiang-my-tasks-empty i {
+    color: #4a91b0;
+    font-size: 22px;
+    filter: drop-shadow(0 0 7px rgba(73, 195, 239, 0.25));
+}
+
+#phone-panel-content .phone-screen .wangxiang-my-tasks-empty strong {
+    font-size: 9px;
+    font-weight: 500;
 }
 
 #phone-panel-content .phone-screen .wangxiang-task-card {
@@ -354,6 +738,10 @@
 }
 
 #phone-panel-content .phone-screen .wangxiang-task-card-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 5px;
     margin: 0;
     overflow: hidden;
     color: #f4f9fd;
@@ -363,6 +751,23 @@
     letter-spacing: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-card-title > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-level {
+    flex: 0 0 auto;
+    padding: 2px 4px;
+    border: 1px solid var(--wangxiang-task-accent);
+    border-radius: 3px;
+    color: var(--wangxiang-task-accent);
+    font-size: 7px;
+    font-weight: 600;
+    line-height: 1;
 }
 
 #phone-panel-content .phone-screen .wangxiang-task-card-description {
@@ -696,7 +1101,9 @@
     box-sizing: border-box;
 }
 
-#phone-panel-content .phone-screen .wangxiang-market-search input {
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-market-search > input[type="search"] {
+    appearance: none;
+    -webkit-appearance: none;
     width: 100%;
     min-width: 0;
     height: 30px;
@@ -704,14 +1111,19 @@
     padding: 0 !important;
     border: 0 !important;
     background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
     box-shadow: none !important;
     color: #e6f5fd !important;
+    -webkit-text-fill-color: #e6f5fd;
     font-size: 10px;
     outline: 0;
 }
 
-#phone-panel-content .phone-screen .wangxiang-market-search input::placeholder {
-    color: #718b9c;
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-market-search > input[type="search"]::placeholder {
+    color: #718b9c !important;
+    opacity: 1 !important;
+    -webkit-text-fill-color: #718b9c;
 }
 
 #phone-panel-content .phone-screen .wangxiang-market-filter {
@@ -1080,6 +1492,534 @@
     box-shadow: 0 0 7px rgba(53, 190, 245, 0.18) !important;
 }
 
+/* 任务详情 */
+#phone-panel-content .phone-screen .wangxiang-task-detail-panel {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: #020d17;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    color: #ddecf4;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(1, 11, 20, 0.82);
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-panel.is-hidden {
+    display: none !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-header {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    min-height: 82px;
+    flex: 0 0 82px;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 14px 7px;
+    border-bottom: 1px solid rgba(58, 178, 232, 0.25);
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-header img {
+    display: block;
+    width: 145px;
+    max-height: 55px;
+    object-fit: contain;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-back {
+    display: grid;
+    width: 31px;
+    min-width: 31px;
+    height: 31px;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 1px solid rgba(66, 193, 246, 0.48) !important;
+    border-radius: 4px !important;
+    background: rgba(4, 39, 61, 0.78) !important;
+    box-shadow: inset 0 0 11px rgba(68, 192, 244, 0.12) !important;
+    color: #83ddff !important;
+    font-size: 12px;
+    place-items: center;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-scroll.wangxiang-content-scroll {
+    position: relative;
+    z-index: 1;
+    gap: 0;
+    padding: 9px 10px 16px;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-content {
+    --wangxiang-detail-accent: #57d3ff;
+    --wangxiang-detail-soft: rgba(87, 211, 255, 0.13);
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 7px;
+    padding-bottom: 3px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-content.is-green {
+    --wangxiang-detail-accent: #62e2ae;
+    --wangxiang-detail-soft: rgba(98, 226, 174, 0.12);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-content.is-purple {
+    --wangxiang-detail-accent: #ad7dff;
+    --wangxiang-detail-soft: rgba(173, 125, 255, 0.13);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-content.is-orange {
+    --wangxiang-detail-accent: #ffad55;
+    --wangxiang-detail-soft: rgba(255, 173, 85, 0.13);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-hero,
+#phone-panel-content .phone-screen .wangxiang-task-detail-publisher,
+#phone-panel-content .phone-screen .wangxiang-task-detail-section {
+    position: relative;
+    flex: 0 0 auto;
+    border: 1px solid rgba(68, 181, 229, 0.46);
+    border-radius: 4px;
+    background: rgba(2, 19, 33, 0.92);
+    box-shadow: inset 0 0 18px rgba(46, 153, 202, 0.07);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-hero {
+    border-color: color-mix(in srgb, var(--wangxiang-detail-accent) 55%, transparent);
+    box-shadow: inset 0 0 22px var(--wangxiang-detail-soft);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-title-row {
+    display: flex;
+    min-height: 42px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 7px;
+    padding: 7px 9px;
+    border-bottom: 1px solid rgba(71, 184, 230, 0.24);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-title-row h1 {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: #effaff;
+    font-size: 15px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-title-row h1 span {
+    margin-right: 5px;
+    color: var(--wangxiang-detail-accent);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-status {
+    display: flex;
+    height: 28px;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    padding: 0 7px;
+    border: 1px solid var(--wangxiang-detail-accent);
+    border-radius: 3px;
+    background: var(--wangxiang-detail-soft);
+    color: var(--wangxiang-detail-accent);
+    font-size: 10px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-stats {
+    display: grid;
+    min-height: 72px;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
+    padding: 7px 5px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-stats > div {
+    display: flex;
+    min-width: 0;
+    min-height: 52px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 5px;
+    border-right: 1px solid rgba(71, 184, 230, 0.24);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-stats > div:last-child {
+    border-right: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-stats > div > i {
+    color: var(--wangxiang-detail-accent);
+    font-size: 18px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-stats span {
+    min-width: 0;
+    color: #839dad;
+    font-size: 9px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-stats strong {
+    display: block;
+    margin-top: 3px;
+    overflow: hidden;
+    color: #e8f7fd;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-difficulty {
+    display: flex !important;
+    align-items: center;
+    gap: 3px;
+    color: var(--wangxiang-detail-accent) !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-difficulty em {
+    margin-right: 2px;
+    color: #d7e8ef;
+    font-size: 9px;
+    font-style: normal;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-difficulty i {
+    font-size: 9px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-publisher {
+    display: grid;
+    min-height: 104px;
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 9px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-publisher-icon {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    border: 1px solid var(--wangxiang-detail-accent);
+    background: var(--wangxiang-detail-soft);
+    color: var(--wangxiang-detail-accent);
+    font-size: 19px;
+    place-items: center;
+    clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-publisher > div:nth-child(2) {
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-publisher span,
+#phone-panel-content .phone-screen .wangxiang-task-detail-publisher p {
+    display: block;
+    margin: 0;
+    color: #8298a7;
+    font-size: 9px;
+    line-height: 1.45;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-publisher h2 {
+    margin: 2px 0;
+    overflow: hidden;
+    color: #f0f8fc;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-publisher strong {
+    display: block;
+    margin-top: 3px;
+    color: #63d998;
+    font-size: 9px;
+    font-weight: 500;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-publisher button {
+    height: 31px;
+    margin: 0 !important;
+    padding: 0 8px !important;
+    border: 1px solid rgba(68, 198, 248, 0.58) !important;
+    border-radius: 3px !important;
+    background: rgba(12, 67, 94, 0.55) !important;
+    box-shadow: none !important;
+    color: #83ddff !important;
+    font-size: 9px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-section {
+    padding: 10px 11px 11px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-section > h2 {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0 0 7px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(67, 185, 234, 0.25);
+    color: #6fd5ff;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-section > h2 span {
+    margin-left: auto;
+    color: #7f96a4;
+    font-size: 9px;
+    font-weight: 400;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-description {
+    margin: 0;
+    color: #b6c8d2;
+    font-size: 10.5px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-objectives {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-objective {
+    display: grid;
+    grid-template-columns: 22px minmax(78px, 0.8fr) minmax(76px, 1fr) 43px;
+    align-items: center;
+    gap: 6px;
+    color: #b9cad3;
+    font-size: 9.5px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-objective > i {
+    color: #91c9dd;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-objective > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-objective > div {
+    height: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: rgba(35, 84, 108, 0.68);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-objective > div i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--wangxiang-detail-accent);
+    box-shadow: 0 0 7px var(--wangxiang-detail-accent);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-objective > strong {
+    color: #a9bec8;
+    font-size: 8.5px;
+    font-weight: 500;
+    text-align: right;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-objective.is-completed > strong {
+    color: #68dc8e;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-rewards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-rewards > div {
+    display: flex;
+    min-width: 0;
+    min-height: 60px;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid rgba(65, 167, 209, 0.32);
+    background: rgba(7, 35, 50, 0.72);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-rewards i {
+    flex: 0 0 auto;
+    color: var(--wangxiang-detail-accent);
+    font-size: 17px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-rewards span {
+    min-width: 0;
+    color: #8198a6;
+    font-size: 8.5px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-rewards strong {
+    display: block;
+    margin-top: 2px;
+    overflow: hidden;
+    color: #dceef5;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-info {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 12px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-info > span {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 16px 54px minmax(0, 1fr);
+    align-items: center;
+    gap: 3px;
+    color: #8198a6;
+    font-size: 8.5px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-info i {
+    color: #64c9f2;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-info strong {
+    overflow: hidden;
+    color: #c5d6de;
+    font-size: 8.5px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-discussion article {
+    display: grid;
+    grid-template-columns: 33px minmax(0, 1fr);
+    gap: 7px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(65, 166, 208, 0.13);
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-discussion article:last-child {
+    border-bottom: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-discussion article > div {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    border: 1px solid rgba(75, 181, 223, 0.4);
+    background: rgba(20, 62, 82, 0.52);
+    color: #7dcced;
+    font-size: 13px;
+    place-items: center;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-discussion article p {
+    margin: 0;
+    color: #aebfc8;
+    font-size: 9.5px;
+    line-height: 1.55;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-discussion article p > strong {
+    display: inline-block;
+    margin-right: 6px;
+    color: #dceaf0;
+    font-size: 9.5px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-discussion article p small {
+    margin-left: 3px;
+    color: #68bce0;
+    font-size: 8px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-discussion article p > span {
+    color: #718794;
+    font-size: 8px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-discussion article p > span::after {
+    content: '';
+    display: block;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-no-comments {
+    margin: 0;
+    padding: 8px 0;
+    color: #69818f;
+    font-size: 9px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-actions {
+    display: flex;
+    gap: 7px;
+    padding-top: 2px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-actions button {
+    display: flex;
+    height: 42px;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 0 !important;
+    padding: 0 8px !important;
+    border: 1px solid #47c9ff !important;
+    border-radius: 4px !important;
+    background: rgba(10, 69, 100, 0.7) !important;
+    box-shadow: inset 0 0 15px rgba(57, 187, 240, 0.1), 0 0 8px rgba(49, 177, 230, 0.16) !important;
+    color: #ddf7ff !important;
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-actions button.is-danger {
+    border-color: #f15d61 !important;
+    background: rgba(93, 24, 30, 0.65) !important;
+    color: #ffb4b6 !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-task-detail-actions button.is-completed,
+#phone-panel-content .phone-screen .wangxiang-task-detail-actions button:disabled {
+    opacity: 0.62;
+}
+
 @media (max-width: 500px), (hover: none) and (pointer: coarse) {
     #phone-panel-content .phone-screen .wangxiang-primary-nav {
         height: 58px;
@@ -1133,9 +2073,41 @@
         font-size: 15px;
     }
 
+    #phone-panel-content .phone-screen .wangxiang-task-title-group {
+        gap: 5px;
+    }
+
     #phone-panel-content .phone-screen .wangxiang-task-sort,
-    #phone-panel-content .phone-screen .wangxiang-task-filter {
+    #phone-panel-content .phone-screen .wangxiang-task-filter,
+    #phone-panel-content .phone-screen .wangxiang-task-settings-open,
+    #phone-panel-content .phone-screen .wangxiang-settings-back {
         height: 24px;
+    }
+
+    #phone-panel-content .phone-screen .wangxiang-task-settings-open,
+    #phone-panel-content .phone-screen .wangxiang-settings-back {
+        width: 24px;
+        min-width: 24px;
+        font-size: 9px;
+    }
+
+    #phone-panel-content .phone-screen .wangxiang-settings-header {
+        min-height: 35px;
+        gap: 7px;
+        padding-bottom: 7px;
+    }
+
+    #phone-panel-content .phone-screen .wangxiang-settings-header h1 {
+        font-size: 13px;
+    }
+
+    #phone-panel-content .phone-screen .wangxiang-settings-section {
+        padding: 8px;
+    }
+
+    #phone-panel-content .phone-screen #wangxiang-task-prompt {
+        min-height: 190px;
+        font-size: 7.5px !important;
     }
 
     #phone-panel-content .phone-screen .wangxiang-task-sort {
@@ -1159,6 +2131,14 @@
     #phone-panel-content .phone-screen .wangxiang-content-scroll {
         gap: 7px;
         padding: 7px 1px 13px;
+    }
+
+    #phone-panel-content .phone-screen .wangxiang-task-scroll.wangxiang-content-scroll {
+        gap: 0;
+    }
+
+    #phone-panel-content .phone-screen .wangxiang-task-list {
+        gap: 7px;
     }
 
     #phone-panel-content .phone-screen .wangxiang-task-card {
