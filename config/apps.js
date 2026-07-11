@@ -56,6 +56,13 @@ export const APPS = [
             presets: []
         }
     },
+    {
+        id: 'wangxiang',
+        name: '万象',
+        icon: '🧿',
+        color: '#315c50',
+        data: {}
+    },
     // 第二行
     {
         id: 'phone',

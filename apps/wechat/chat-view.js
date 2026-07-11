@@ -1746,6 +1746,78 @@ export class ChatView {
         return aliases;
     }
 
+    _buildPhoneCallHistoryContextForSingleChat(chat = null, userName = '用户') {
+        const targetChat = chat || this.app.currentChat;
+        if (!targetChat || targetChat.type === 'group') return '';
+
+        const contactById = targetChat.contactId
+            ? this.app.wechatData?.getContact?.(targetChat.contactId)
+            : null;
+        const contactByName = this.app.wechatData?.findContactByNameLoose?.(targetChat.name, { includeChats: false });
+        const aliasKeys = new Set([
+            targetChat.name,
+            targetChat.remark,
+            targetChat.nickname,
+            contactById?.name,
+            contactById?.remark,
+            contactById?.nickname,
+            contactByName?.name,
+            contactByName?.remark,
+            contactByName?.nickname
+        ].map(name => this._normalizeLookupName(name)).filter(Boolean));
+        if (aliasKeys.size === 0) return '';
+
+        let callHistory = null;
+        try {
+            const phoneCallData = window.VirtualPhone?.phoneApp?.phoneCallData;
+            if (phoneCallData?.getCallHistory) {
+                callHistory = phoneCallData.getCallHistory();
+            } else {
+                const storage = window.VirtualPhone?.storage || this.app?.storage;
+                const saved = storage?.get?.('phone_call_history', null);
+                if (saved) {
+                    callHistory = typeof saved === 'string' ? JSON.parse(saved) : saved;
+                }
+            }
+        } catch (e) {
+            console.warn('[微信] 读取通话 App 历史记录失败:', e);
+            return '';
+        }
+
+        if (!Array.isArray(callHistory) || callHistory.length === 0) return '';
+
+        const matchedCalls = callHistory.filter(record => {
+            const callerKey = this._normalizeLookupName(record?.caller);
+            return callerKey
+                && aliasKeys.has(callerKey)
+                && record?.status === 'answered'
+                && Array.isArray(record?.transcript)
+                && record.transcript.length > 0;
+        });
+        if (matchedCalls.length === 0) return '';
+
+        const callLimit = this._readNonNegativeLimit('phone-call-limit', 10);
+        if (callLimit <= 0) return '';
+
+        const contactName = String(targetChat.name || matchedCalls[0]?.caller || '当前好友').trim();
+        let text = `【📞 与 ${contactName} 的通话 App 历史记录】\n`;
+        text += '以下内容来自独立“通话”App，仅作为你们已经发生过的通话时间线和对话背景；不要逐字复述。\n\n';
+
+        matchedCalls.forEach(record => {
+            const dateTime = `${record.date || ''} ${record.time || ''}`.trim();
+            const duration = record.duration ? `，时长 ${record.duration}` : '';
+            text += `━━━ ${dateTime || '历史通话'}${duration} ━━━\n`;
+            record.transcript.slice(-callLimit).forEach(message => {
+                const speaker = message?.from === 'me' ? userName : contactName;
+                const content = String(message?.text || '').trim();
+                if (content) text += `${speaker}: ${content}\n`;
+            });
+            text += '\n';
+        });
+
+        return text.trim();
+    }
+
     _getCallPromptFeature(callMode, targetChat = null) {
         const chat = targetChat || this.app.currentChat;
         if (chat?.type === 'group') {
@@ -10287,6 +10359,9 @@ renderChatRoom(chat) {
             wechatTranscript += `\n`;
             wechatTranscript += await appendWechatChatTranscript(targetChat, recentWechatMessages);
         }
+        const phoneCallHistoryContext = !isGroupChat
+            ? this._buildPhoneCallHistoryContextForSingleChat(targetChat, userName)
+            : '';
 
         if (!callMode && catboxCoAdoptContext) {
             messages.push({
@@ -10364,6 +10439,15 @@ renderChatRoom(chat) {
                 messages.push(contactProfileMessage);
             }
 
+            if (phoneCallHistoryContext) {
+                messages.push({
+                    role: 'system',
+                    content: phoneCallHistoryContext,
+                    name: 'SYSTEM (通话 App 记录)',
+                    isPhoneMessage: true
+                });
+            }
+
             if (wechatTranscript) {
                 messages.push({
                     role: 'system',
@@ -10391,6 +10475,14 @@ renderChatRoom(chat) {
             }
             if (contactProfileMessage) {
                 messages.push(contactProfileMessage);
+            }
+            if (phoneCallHistoryContext) {
+                messages.push({
+                    role: 'system',
+                    content: phoneCallHistoryContext,
+                    name: 'SYSTEM (通话 App 记录)',
+                    isPhoneMessage: true
+                });
             }
             if (wechatTranscript) {
                 messages.push({

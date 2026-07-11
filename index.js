@@ -8416,6 +8416,23 @@ if (window.GGP_Loaded) {
                             console.error('❌ 导入 mofo-app.js 失败:', importError);
                             phoneShell?.showNotification('错误', '魔坊模块加载失败', '❌');
                         });
+                } else if (appId === 'wangxiang') {
+                    import('./apps/wangxiang/wangxiang-app.js')
+                        .then(module => {
+                            try {
+                                if (!window.VirtualPhone.wangxiangApp) {
+                                    window.VirtualPhone.wangxiangApp = new module.WangxiangApp(phoneShell, storage);
+                                }
+                                window.VirtualPhone.wangxiangApp.render();
+                            } catch (initError) {
+                                console.error('❌ 万象APP初始化失败:', initError);
+                                phoneShell?.showNotification('错误', '万象加载失败', '❌');
+                            }
+                        })
+                        .catch(importError => {
+                            console.error('❌ 导入 wangxiang-app.js 失败:', importError);
+                            phoneShell?.showNotification('错误', '万象模块加载失败', '❌');
+                        });
                 } else if (appId === 'games') {
                     ensureGamesCSSPreloaded();
                     if (!window.VirtualPhone.gamesApp) {

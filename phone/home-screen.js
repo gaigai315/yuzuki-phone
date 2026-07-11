@@ -306,7 +306,7 @@ export class HomeScreen {
     }
 
     renderSocialCard() {
-        const socialIds = ['wechat', 'weibo', 'album'];
+        const socialIds = ['wechat', 'weibo', 'album', 'wangxiang'];
         const socialApps = socialIds.map(id => this.getAppById(id)).filter(Boolean);
         if (socialApps.length === 0) return '';
         return `

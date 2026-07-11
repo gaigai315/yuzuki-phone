@@ -898,11 +898,11 @@ export class PhoneCallView {
                 </div>
 
                 <div class="phone-call-bottom">
-                    <input type="text" class="phone-call-input" id="phone-call-input" placeholder="发送消息...">
+                    <input type="text" class="phone-call-input" id="phone-call-input" placeholder="${isOutgoingCall ? '等待对方回应...' : '发送消息...'}"${isOutgoingCall ? ' disabled aria-disabled="true"' : ''}>
                     <button class="phone-call-regen-btn" id="phone-call-regen" title="重新生成" style="display:none; color: rgba(255,255,255,0.7);">
                         <i class="fa-solid fa-rotate-right" style="color: inherit;"></i>
                     </button>
-                    <button class="phone-call-send-btn" id="phone-call-send" style="color: #34c759;">
+                    <button class="phone-call-send-btn" id="phone-call-send" style="color: #34c759;"${isOutgoingCall ? ' disabled aria-disabled="true"' : ''}>
                         <i class="fa-solid fa-paper-plane" style="color: inherit;"></i>
                     </button>
                     <button class="phone-call-hangup-btn" id="phone-call-hangup" style="color: #ff3b30;">
@@ -915,6 +915,24 @@ export class PhoneCallView {
         this._setPhoneShellContent(html, 'phone-active', {
             replaceViewIds: shouldReplaceDialingView ? ['phone-dialing'] : []
         });
+
+        const phoneInput = document.getElementById('phone-call-input');
+        const phoneSendBtn = document.getElementById('phone-call-send');
+        let isOpeningLinePending = isOutgoingCall;
+        const setOpeningComposerLocked = (locked) => {
+            isOpeningLinePending = !!locked;
+            if (phoneInput) {
+                phoneInput.disabled = isOpeningLinePending;
+                phoneInput.setAttribute('aria-disabled', String(isOpeningLinePending));
+                phoneInput.placeholder = isOpeningLinePending ? '等待对方回应...' : '发送消息...';
+            }
+            if (phoneSendBtn) {
+                phoneSendBtn.disabled = isOpeningLinePending;
+                phoneSendBtn.setAttribute('aria-disabled', String(isOpeningLinePending));
+                phoneSendBtn.style.opacity = isOpeningLinePending ? '0.35' : '';
+            }
+        };
+        setOpeningComposerLocked(isOpeningLinePending);
 
         // 记录通话开始的剧情时间
         const timeManager = window.VirtualPhone?.timeManager;
@@ -1066,18 +1084,21 @@ export class PhoneCallView {
 
         const triggerOpeningLine = async () => {
             if (!isOutgoingCall || isCallSending || this.currentView !== 'active' || this.currentCaller !== callerName) return;
+            setOpeningComposerLocked(true);
             isCallSending = true;
             setCallStatus('red');
             try {
                 await requestAIReply(`【系统提示】现在是用户主动拨打给你，${callerName}可选择拒绝/接听。`);
             } finally {
                 isCallSending = false;
+                setOpeningComposerLocked(false);
                 setCallStatus('green');
             }
         };
 
         // 发送消息
         const sendMessage = async () => {
+            if (isOpeningLinePending) return;
             this.audioPlayer.pause();
             this.audioPlayer.src = '';
 
@@ -1172,9 +1193,6 @@ export class PhoneCallView {
         };
 
         // 绑定事件
-        const phoneInput = document.getElementById('phone-call-input');
-        const phoneSendBtn = document.getElementById('phone-call-send');
-
         phoneInput?.addEventListener('focus', () => {
             clearCallBatchTimer();
             setCallStatus('green');
@@ -1198,7 +1216,7 @@ export class PhoneCallView {
         let isHandlingCallSend = false;
         const executeCallSend = (e) => {
             if (e) e.preventDefault();
-            if (isHandlingCallSend) return;
+            if (isOpeningLinePending || isHandlingCallSend) return;
             isHandlingCallSend = true;
             sendMessage();
             setTimeout(() => {
@@ -1505,7 +1523,20 @@ export class PhoneCallView {
             });
 
             // ========================================
-            // 5️⃣ 通话提示词（phone.call）
+            // 5️⃣ 同一联系人的微信单聊记录
+            // ========================================
+            const wechatHistoryContext = await this._buildWechatHistoryContextForCall(callRoleName, userName);
+            if (wechatHistoryContext) {
+                messages.push({
+                    role: 'system',
+                    content: wechatHistoryContext,
+                    name: 'SYSTEM (微信单聊记录)',
+                    isPhoneMessage: true
+                });
+            }
+
+            // ========================================
+            // 6️⃣ 通话提示词（phone.call）
             // ========================================
             const pm = this._getPromptManager();
             const callPrompt = pm?.getPromptForFeature('phone', 'call') || '';
@@ -1524,7 +1555,7 @@ export class PhoneCallView {
             }
 
             // ========================================
-            // 6️⃣ 通话聊天记录（最近 phone-call-limit 条）
+            // 7️⃣ 通话聊天记录（最近 phone-call-limit 条）
             // ========================================
             const callLimit = storage ? (parseInt(storage.get('phone-call-limit')) || 10) : 10;
             const recentMessages = chatMessages.slice(-callLimit);
@@ -1542,7 +1573,7 @@ export class PhoneCallView {
             }
 
             // ========================================
-            // 7️⃣ 当前用户消息
+            // 8️⃣ 当前用户消息
             // ========================================
             messages.push({
                 role: 'user',
@@ -2012,6 +2043,147 @@ export class PhoneCallView {
                 || null;
         } catch (e) {
             return null;
+        }
+    }
+
+    _normalizeWechatLookupName(value = '') {
+        return String(value || '')
+            .trim()
+            .replace(/\s+/g, '')
+            .replace(/[（(][^（）()]*[）)]/g, '')
+            .toLowerCase();
+    }
+
+    _formatWechatMessageForPhonePrompt(message, chat = null) {
+        if (!message || typeof message !== 'object') return '';
+        if (message.hiddenFromPrompt === true || message.isTimeMarker === true || message.type === 'time_marker') return '';
+
+        const wechatFormatter = window.VirtualPhone?.wechatApp?.chatView?._formatMessageContentForPrompt;
+        if (typeof wechatFormatter === 'function') {
+            try {
+                const formatted = wechatFormatter.call(window.VirtualPhone.wechatApp.chatView, message, chat);
+                if (formatted) return String(formatted).trim();
+            } catch (e) {
+                console.warn('📞 [通话] 复用微信消息格式化失败，已使用本地格式:', e);
+            }
+        }
+
+        const type = String(message.type || 'text').trim();
+        const content = String(message.content || '').trim();
+        if (type === 'text' || type === 'system') return content;
+        if (type === 'image') return '[图片]';
+        if (type === 'image_prompt') return content || '[图片]';
+        if (type === 'sticker') return `[表情包]（${message.keyword || content || '表情包'}）`;
+        if (type === 'voice') return `[语音] ${String(message.voiceText || content || '').trim()}`.trim();
+        if (type === 'location') return `[定位]（${message.locationText || message.locationAddress || content || '未知位置'}）`;
+        if (type === 'transfer') {
+            const status = message.status === 'received' ? '已收款' : (message.status === 'refunded' ? '已退回' : '未收款');
+            return `[转账 ¥${message.amount || ''}]（状态：${status}）`;
+        }
+        if (type === 'redpacket') {
+            const status = message.status === 'opened' ? '已领取' : (message.status === 'refunded' ? '已退回' : '未领取');
+            return `[红包 ¥${message.amount || ''}]（状态：${status}）`;
+        }
+        if (type === 'call_record') {
+            const callType = message.callType === 'video' ? '视频通话' : '语音通话';
+            const status = message.status === 'answered'
+                ? `通话时长 ${message.duration || '未知'}`
+                : (message.status === 'rejected' || message.status === 'declined')
+                    ? '对方已拒绝'
+                    : message.status === 'cancelled'
+                        ? '用户已取消'
+                        : '未接听';
+            return `[微信${callType} - ${status}]`;
+        }
+        return content || `[${type}]`;
+    }
+
+    async _buildWechatHistoryContextForCall(callerName, userName = '用户') {
+        const callerKey = this._normalizeWechatLookupName(callerName);
+        if (!callerKey) return '';
+
+        try {
+            const wechatData = await this._ensurePhoneWechatDataLoaded();
+            if (!wechatData) return '';
+
+            const contacts = typeof wechatData.getContacts === 'function' ? (wechatData.getContacts() || []) : [];
+            const contact = contacts.find(item => [item?.name, item?.remark, item?.nickname]
+                .some(value => this._normalizeWechatLookupName(value) === callerKey)) || null;
+            const chatList = typeof wechatData.getChatList === 'function' ? (wechatData.getChatList() || []) : [];
+            const chat = (contact?.id && typeof wechatData.getChatByContactId === 'function'
+                ? wechatData.getChatByContactId(contact.id)
+                : null)
+                || chatList.find(item => item?.type !== 'group'
+                    && [item?.name, item?.remark, item?.nickname]
+                        .some(value => this._normalizeWechatLookupName(value) === callerKey))
+                || null;
+            if (!chat || chat.type === 'group' || typeof wechatData.getMessages !== 'function') return '';
+
+            const storage = window.VirtualPhone?.storage || this.app?.storage;
+            const rawLimit = storage?.get?.('wechat-single-chat-limit');
+            const parsedLimit = Number.parseInt(rawLimit, 10);
+            const messageLimit = rawLimit === undefined || rawLimit === null || rawLimit === '' || !Number.isFinite(parsedLimit)
+                ? 200
+                : Math.max(0, Math.min(9999, parsedLimit));
+            if (messageLimit <= 0) return '';
+
+            const allMessages = wechatData.getMessages(chat.id) || [];
+            let totalLines = 0;
+            let startIndex = allMessages.length;
+            for (let index = allMessages.length - 1; index >= 0; index--) {
+                const message = allMessages[index];
+                if (message?.hiddenFromPrompt === true || message?.isTimeMarker === true || message?.type === 'time_marker') continue;
+                const transcriptLines = message?.type === 'call_record' && Array.isArray(message.transcript)
+                    ? message.transcript.length
+                    : 0;
+                totalLines += transcriptLines + 1;
+                startIndex = index;
+                if (totalLines >= messageLimit) break;
+            }
+
+            const recentMessages = allMessages.slice(startIndex);
+            if (recentMessages.length === 0) return '';
+
+            const contactName = String(chat.name || contact?.name || callerName || '当前联系人').trim();
+            let text = `【💬 与 ${contactName} 的微信单聊记录】\n`;
+            text += '以下内容来自微信中同一联系人的单聊，仅作为本次电话交流的既有背景；不要逐字复述。\n\n';
+            let lastDate = '';
+            let hasContent = false;
+
+            recentMessages.forEach(message => {
+                if (message?.hiddenFromPrompt === true || message?.isTimeMarker === true || message?.type === 'time_marker') return;
+                const content = this._formatWechatMessageForPhonePrompt(message, chat);
+                const transcript = message?.type === 'call_record' && Array.isArray(message.transcript)
+                    ? message.transcript
+                    : [];
+                if (!content && transcript.length === 0) return;
+
+                if (message.date && message.date !== lastDate) {
+                    text += `--- ${message.date} ---\n`;
+                    lastDate = message.date;
+                }
+
+                const time = message.time ? `[${message.time}] ` : '';
+                const speaker = message.from === 'me'
+                    ? userName
+                    : (message.from === 'system' || message.type === 'system' ? '系统' : contactName);
+                if (content) {
+                    text += `${time}${speaker}: ${content}\n`;
+                    hasContent = true;
+                }
+                transcript.forEach(line => {
+                    const lineText = String(line?.text || '').trim();
+                    if (!lineText) return;
+                    const lineSpeaker = line?.from === 'me' ? userName : contactName;
+                    text += `  [微信通话记录] ${lineSpeaker}: ${lineText}\n`;
+                    hasContent = true;
+                });
+            });
+
+            return hasContent ? text.trim() : '';
+        } catch (error) {
+            console.warn('📞 [通话] 注入微信单聊记录失败:', error);
+            return '';
         }
     }
 

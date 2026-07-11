@@ -291,6 +291,7 @@ export class PhoneShell {
                 '.games-catbox-coadopt-overlay', '.games-catbox-coadopt-panel', '.games-catbox-coadopt-list',
                 '.games-catbox-letters-overlay', '.games-catbox-letter-paper', '.games-catbox-letter-list',
                 '.album-body', '.album-grid', '.album-preview-panel',
+                '.wangxiang-content-scroll',
                 '.yzp-calendar-main', '.yzp-calendar-settings-body', '.yzp-calendar-prompt-editor',
                 '.yzp-calendar-memo-list', '.yzp-calendar-add-sheet', '.yzp-calendar-month-sheet', '.yzp-calendar-detail-sheet', '.yzp-calendar-detail-body', '.yzp-calendar-memo-input', '.yzp-calendar-type-menu',
                 '#phone-inline-reply-menu-pop', '.inline-reply-tabbar', '.inline-reply-page',
@@ -914,7 +915,7 @@ export class PhoneShell {
         const panel = this.container?.querySelector?.('.phone-body-panel') || document.querySelector('.phone-body-panel');
         if (!panel) return;
 
-        panel.classList.remove('phone-body-panel-honey', 'phone-body-panel-games');
+        panel.classList.remove('phone-body-panel-honey', 'phone-body-panel-games', 'phone-body-panel-wangxiang');
 
         const safeViewId = String(viewId || '');
         const safeHtml = String(html || '');
@@ -924,6 +925,10 @@ export class PhoneShell {
         }
         if (safeViewId.startsWith('games-') || /\bgames-app\b/.test(safeHtml)) {
             panel.classList.add('phone-body-panel-games');
+            return;
+        }
+        if (safeViewId.startsWith('wangxiang-') || /\bwangxiang-app\b/.test(safeHtml)) {
+            panel.classList.add('phone-body-panel-wangxiang');
         }
     }
 
