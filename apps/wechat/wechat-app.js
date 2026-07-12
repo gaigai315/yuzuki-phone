@@ -4032,13 +4032,22 @@ export class WechatApp {
             || raw.startsWith('/');
     }
 
+    _isWechatAvatarPoolAssetValue(avatarStr = '') {
+        const normalized = this._normalizeAvatarPathForLookup(avatarStr).replace(/\\/g, '/');
+        if (!normalized) return false;
+        if (/(?:^|\/)apps\/wechat\/avatars\/(?:male|female)(?:_elder)?\d+\.(?:png|jpe?g|webp|gif)$/i.test(normalized)) {
+            return true;
+        }
+        return (Array.isArray(this._avatarPool?.all) ? this._avatarPool.all : [])
+            .some(item => this._normalizeAvatarPathForLookup(item).replace(/\\/g, '/') === normalized);
+    }
+
     _resolveContactGenderByName(name = '') {
         const safeName = String(name || '').trim();
         if (!safeName) return 'unknown';
         const contact = this.wechatData?.findContactByNameLoose?.(safeName, { includeChats: false })
             || this.wechatData?.getContactByName?.(safeName);
-        if (!contact) return 'unknown';
-        return this.wechatData?.getContactGender?.(contact.id || safeName) || 'unknown';
+        return this.wechatData?.getContactGender?.(contact?.id || safeName) || 'unknown';
     }
 
     _resolveContactAvatarGroupByName(name = '') {
@@ -4046,8 +4055,7 @@ export class WechatApp {
         if (!safeName) return '';
         const contact = this.wechatData?.findContactByNameLoose?.(safeName, { includeChats: false })
             || this.wechatData?.getContactByName?.(safeName);
-        if (!contact) return '';
-        return this.wechatData?.getContactAvatarGroup?.(contact.id || safeName) || '';
+        return this.wechatData?.getContactAvatarGroup?.(contact?.id || safeName) || '';
     }
 
     _pickStableAvatarFromPool(pool = [], seed = '') {
@@ -4277,7 +4285,7 @@ export class WechatApp {
         }
 
         // 用户自定义头像优先；如果图片资源被删除/失效，自动回退到性别默认头像。
-        if (this._isCustomAvatarValue(avatarStr)) {
+        if (this._isCustomAvatarValue(avatarStr) && !this._isWechatAvatarPoolAssetValue(avatarStr)) {
             if (this._missingAvatarPaths.has(this._normalizeAvatarPathForLookup(avatarStr))) return autoAvatar
                 ? `<span style="display:block;position:relative;width:100%;height:100%;">${initialHtml}<img src="${escapeAttr(autoAvatar)}" style="${imageStyle};position:absolute;inset:0;" onerror="this.remove();"></span>`
                 : initialHtml;

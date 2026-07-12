@@ -3020,10 +3020,6 @@ if (window.GGP_Loaded) {
             const rocketButton = document.getElementById('quick-reply-rocket-button');
             if (rocketButton?.parentElement) return rocketButton.parentElement;
 
-            // 最后兜底：发送按钮同级
-            const sendButton = document.getElementById('send_but');
-            if (sendButton?.parentElement) return sendButton.parentElement;
-
             return null;
         };
 
@@ -3205,6 +3201,13 @@ if (window.GGP_Loaded) {
             }
 
             const host = getInlineReplyHost();
+
+            // 没有 QR 宿主时不显示入口，并清理旧版插在发送键旁的兜底按钮
+            if (!host) {
+                existingWrapper?.remove();
+                existingBtn?.remove();
+                return;
+            }
 
             // 已存在时做兼容修复：确保在目标容器中，交给 QR 白名单机制控制显示
             if (existingBtn) {
@@ -8014,7 +8017,7 @@ if (window.GGP_Loaded) {
             await loadCoreModules();
             let phonePromptHandler = async () => {};
             let phonePromptRunTail = Promise.resolve();
-            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS)\s*\}\}/i;
+            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i;
             const runPhonePromptHandler = (eventData, source = 'unknown') => {
                 const run = phonePromptRunTail
                     .catch(() => undefined)
@@ -8915,7 +8918,7 @@ if (window.GGP_Loaded) {
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}', '{{WANGXIANG_TASKS}}'];
+                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}', '{{WANGXIANG_TASKS}}', '{{WANGXIANG_ORDERS}}'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
                                 let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
@@ -8928,8 +8931,8 @@ if (window.GGP_Loaded) {
                                         }
                                     });
                                     // 兼容 {{ XXX }}（含空格）
-                                    if (/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS)\s*\}\}/i.test(c)) {
-                                        c = c.replace(/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS)\s*\}\}/gi, '').trim();
+                                    if (/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i.test(c)) {
+                                        c = c.replace(/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/gi, '').trim();
                                         modified = true;
                                     }
                                     if (modified) {
@@ -9670,6 +9673,7 @@ if (window.GGP_Loaded) {
                                     let diaryHistoryContent = '';
                                     let calendarReminderContent = '';
                                     let wangxiangTaskContent = '';
+                                    let wangxiangOrderContent = '';
                                     let weiboInjectEnabled = false;
 
                                     // 🔥 确保 promptManager 已加载（修复懒加载导致的 null 问题）
@@ -9876,6 +9880,29 @@ if (window.GGP_Loaded) {
                                     } catch (e) {
                                         wangxiangTaskContent = '';
                                         console.warn('⚠️ [手机] 注入万象已接任务失败:', e);
+                                    }
+
+                                    // 万象配送订单变量：只注入已支付并处于配送中的订单
+                                    try {
+                                        const hasWangxiangOrderMacro = messages.some(msg => {
+                                            const content = msg?.content || msg?.mes || msg?.text || msg?.parts?.[0]?.text || '';
+                                            return typeof content === 'string' && /\{\{\s*WANGXIANG_ORDERS\s*\}\}/i.test(content);
+                                        });
+                                        if (hasWangxiangOrderMacro) {
+                                            window.VirtualPhone?.wangxiangApp?._syncTaskDataScope?.();
+                                            let orders = window.VirtualPhone?.wangxiangApp?.getMarketplaceOrders?.() || null;
+                                            if (!Array.isArray(orders)) {
+                                                const saved = storage?.get('wangxiang_marketplace_orders', null);
+                                                const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+                                                orders = Array.isArray(parsed) ? parsed : [];
+                                            }
+                                            const wangxiangModule = await import('./apps/wangxiang/wangxiang-app.js');
+                                            const currentUserName = String(SillyTavern?.getContext?.()?.name1 || '用户');
+                                            wangxiangOrderContent = wangxiangModule.buildWangxiangOrderInjectionContent(orders, currentUserName);
+                                        }
+                                    } catch (e) {
+                                        wangxiangOrderContent = '';
+                                        console.warn('⚠️ [手机] 注入万象配送订单失败:', e);
                                     }
 
                                     // 2.9️⃣ 添加蜜语直播总结（用于线下正文延续蜜语主播关系）
@@ -10323,6 +10350,7 @@ if (window.GGP_Loaded) {
                                     injectIntoMessages('{{DIARY_HISTORY}}', diaryHistoryContent, 'diary_system_history');
                                     injectIntoMessages('{{CALENDAR_REMINDER}}', calendarReminderContent, 'calendar_system_reminder');
                                     injectIntoMessages('{{WANGXIANG_TASKS}}', wangxiangTaskContent, 'wangxiang_active_tasks', false);
+                                    injectIntoMessages('{{WANGXIANG_ORDERS}}', wangxiangOrderContent, 'wangxiang_shipping_orders', false);
 
                                     // ============================
                                     // 🎵 {{MUSIC_PROMPT}} 独立注入
@@ -10566,6 +10594,7 @@ if (window.GGP_Loaded) {
                                             const DIARY_VAR = '{{DIARY_HISTORY}}';
                                             const CALENDAR_VAR = '{{CALENDAR_REMINDER}}';
                                             const WANGXIANG_VAR = '{{WANGXIANG_TASKS}}';
+                                            const WANGXIANG_ORDERS_VAR = '{{WANGXIANG_ORDERS}}';
                                             const PHONE_PROMPT_SPACED_REGEX = /\{\{\s*PHONE_PROMPT\s*\}\}/gi;
                                             const PHONE_HISTORY_SPACED_REGEX = /\{\{\s*PHONE_HISTORY\s*\}\}/gi;
                                             const HONEY_HISTORY_SPACED_REGEX = /\{\{\s*HONEY_HISTORY\s*\}\}/gi;
@@ -10575,6 +10604,7 @@ if (window.GGP_Loaded) {
                                             const DIARY_HISTORY_SPACED_REGEX = /\{\{\s*DIARY_HISTORY\s*\}\}/gi;
                                             const CALENDAR_REMINDER_SPACED_REGEX = /\{\{\s*CALENDAR_REMINDER\s*\}\}/gi;
                                             const WANGXIANG_TASKS_SPACED_REGEX = /\{\{\s*WANGXIANG_TASKS\s*\}\}/gi;
+                                            const WANGXIANG_ORDERS_SPACED_REGEX = /\{\{\s*WANGXIANG_ORDERS\s*\}\}/gi;
                                             if (c.includes(TARGET_VAR)) {
                                                 c = c.split(TARGET_VAR).join('');
                                                 modified = true;
@@ -10645,6 +10675,14 @@ if (window.GGP_Loaded) {
                                             }
                                             if (WANGXIANG_TASKS_SPACED_REGEX.test(c)) {
                                                 c = c.replace(WANGXIANG_TASKS_SPACED_REGEX, '');
+                                                modified = true;
+                                            }
+                                            if (c.includes(WANGXIANG_ORDERS_VAR)) {
+                                                c = c.split(WANGXIANG_ORDERS_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (WANGXIANG_ORDERS_SPACED_REGEX.test(c)) {
+                                                c = c.replace(WANGXIANG_ORDERS_SPACED_REGEX, '');
                                                 modified = true;
                                             }
 

@@ -17,23 +17,6 @@ const WANGXIANG_NAV_ITEMS = [
     { id: 'my-orders', label: '我的订单', icon: 'fa-receipt' }
 ];
 
-const WANGXIANG_PRODUCTS = [
-    { id: 'medical-case', name: '高级医疗补给箱', description: '内含高效治疗剂及应急医疗物资', price: '2,180', stock: 36, icon: 'fa-briefcase-medical', rarity: 'rare', category: '医疗补给', featured: true },
-    { id: 'medical-pack', name: '便携医疗包', description: '快速恢复生命值30%', price: '680', stock: 127, icon: 'fa-kit-medical', rarity: 'epic', category: '医疗补给' },
-    { id: 'ammo-case', name: '突击步枪弹药箱', description: '5.56mm通用弹药（200发）', price: '420', stock: 89, icon: 'fa-box-open', rarity: 'rare', category: '补给物资' },
-    { id: 'combat-chip', name: '战术增强芯片', description: '提升暴击率+8%，持续30分钟', price: '1,280', stock: 56, icon: 'fa-microchip', rarity: 'excellent', category: '强化芯片' },
-    { id: 'armor-plate', name: '复合装甲板', description: '减少受到的伤害15%', price: '2,680', stock: 34, icon: 'fa-shield-halved', rarity: 'epic', category: '战斗装备' },
-    { id: 'scout-drone', name: '侦察无人机', description: '侦查周围区域，持续60秒', price: '1,980', stock: 21, icon: 'fa-plane', rarity: 'rare', category: '特殊道具' },
-    { id: 'mystery-case', name: '神秘补给箱', description: '随机获得稀有或传说级物品', price: '4,880', stock: 12, icon: 'fa-cube', rarity: 'legendary', category: '特殊道具' }
-];
-
-const WANGXIANG_ORDERS = [
-    { id: 'WX202507110001', name: '万象能量核心·标准版', quantity: 1, time: '2025-07-11 18:02:44', total: '1,280.00', status: '待付款', statusType: 'pending', icon: 'fa-cube', actions: ['取消订单', '去支付'] },
-    { id: 'WX202507110002', name: '城市安全巡查设备套装', quantity: 2, time: '2025-07-10 16:45:21', total: '2,560.00', status: '待发货', statusType: 'shipping', icon: 'fa-box', actions: ['联系客服', '再次购买'] },
-    { id: 'WX202507100003', name: '物资运输无人车·X1', quantity: 1, time: '2025-07-09 10:22:18', total: '5,680.00', status: '运输中', statusType: 'transit', icon: 'fa-truck-fast', actions: ['查看物流', '确认收货'] },
-    { id: 'WX202507080004', name: '悬赏任务通行证（高级）', quantity: 1, time: '2025-07-08 09:15:33', total: '9,960.00', status: '已完成', statusType: 'completed', icon: 'fa-crosshairs', actions: ['再次购买', '联系客服'] }
-];
-
 export class WangxiangView {
     constructor(app) {
         this.app = app;
@@ -43,6 +26,8 @@ export class WangxiangView {
         this.currentTaskId = '';
         this._taskRefreshStatus = 'idle';
         this._taskRefreshTimer = null;
+        this._marketRefreshStatus = 'idle';
+        this._marketRefreshTimer = null;
     }
 
     async loadCSS() {
@@ -58,7 +43,7 @@ export class WangxiangView {
         const link = existingLink || document.createElement('link');
         link.id = 'wangxiang-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./wangxiang.css?v=20260712-task-progress-popup', import.meta.url).href;
+        link.href = new URL('./wangxiang.css?v=20260712-wallet-delivery', import.meta.url).href;
         this._cssLoadingPromise = new Promise(resolve => {
             let settled = false;
             const finish = () => {
@@ -156,8 +141,13 @@ export class WangxiangView {
                 ${this._renderTaskSettingsPanel()}
                 ${this._renderMyTasksPanel()}
                 ${this._renderMarketplacePanel()}
+                ${this._renderMarketplaceSettingsPanel()}
                 ${this._renderOrdersPanel()}
                 ${this._renderTaskDetailPanel()}
+                ${this._renderMarketplacePurchaseDialog()}
+                ${this._renderInfoDetailDialog()}
+                ${this._renderAddressDialog()}
+                ${this._renderPaymentDialog()}
             </div>
         `, 'wangxiang-home');
         requestAnimationFrame(() => this._bindEvents());
@@ -195,15 +185,6 @@ export class WangxiangView {
                                 <i class="fa-solid fa-gear" aria-hidden="true"></i>
                             </button>
                         </div>
-                        <div class="wangxiang-task-tools">
-                            <button class="wangxiang-task-sort" type="button">
-                                <span>默认排序</span>
-                                <i class="fa-solid fa-caret-down" aria-hidden="true"></i>
-                            </button>
-                            <button class="wangxiang-task-filter" type="button" aria-label="筛选任务" title="筛选任务">
-                                <i class="fa-solid fa-filter" aria-hidden="true"></i>
-                            </button>
-                        </div>
                     </div>
                     <p class="wangxiang-task-subtitle">海量任务，真实可靠，自由接取，完成即可获得奖励。</p>
                 </header>
@@ -231,7 +212,7 @@ export class WangxiangView {
         return `
             <section class="wangxiang-content-panel wangxiang-task-settings-panel is-hidden" data-wangxiang-settings="tasks" aria-hidden="true" aria-labelledby="wangxiang-task-settings-title">
                 <header class="wangxiang-settings-header">
-                    <button class="wangxiang-settings-back" type="button" aria-label="返回任务大厅" title="返回任务大厅">
+                    <button class="wangxiang-settings-back" type="button" data-wangxiang-settings-back="tasks" aria-label="返回任务大厅" title="返回任务大厅">
                         <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
                     </button>
                     <div>
@@ -247,11 +228,11 @@ export class WangxiangView {
                                 <p>生成任务时注入勾选的酒馆世界书</p>
                             </div>
                             <label class="wangxiang-settings-toggle">
-                                <input class="wangxiang-settings-toggle-input st-phone-toggle-input" id="wangxiang-use-worldbook" type="checkbox" ${useWorldbook ? 'checked' : ''}>
+                                <input class="wangxiang-settings-toggle-input st-phone-toggle-input" id="wangxiang-use-worldbook" type="checkbox" data-wangxiang-worldbook-toggle="wangxiang" data-wangxiang-worldbook-label="任务生成" ${useWorldbook ? 'checked' : ''}>
                                 <span aria-hidden="true"></span>
                             </label>
                         </div>
-                        <div class="phone-prompt-fold wangxiang-worldbook-fold" data-default-open="false">
+                        <div class="phone-prompt-fold wangxiang-worldbook-fold" data-default-open="false" data-wangxiang-worldbook-key="wangxiang">
                             <div class="phone-prompt-fold-header" role="button" tabindex="0" aria-expanded="false" aria-controls="wangxiang-worldbook-fold-content">
                                 <div class="phone-prompt-fold-main">
                                     <div class="phone-prompt-fold-title">世界书选择</div>
@@ -274,7 +255,7 @@ export class WangxiangView {
                             </div>
                         </div>
                         ${presetControls}
-                        <textarea id="wangxiang-task-prompt" spellcheck="false" aria-label="任务生成提示词">${this._escapeHtml(prompt)}</textarea>
+                        <textarea class="wangxiang-prompt-textarea" id="wangxiang-task-prompt" spellcheck="false" aria-label="任务生成提示词">${this._escapeHtml(prompt)}</textarea>
                     </section>
                 </div>
             </section>
@@ -347,7 +328,7 @@ export class WangxiangView {
                     <div class="wangxiang-task-detail-rewards">
                         <div><i class="fa-solid fa-coins"></i><span>信用点<strong>${this._escapeHtml(task.reward || '0')}</strong></span></div>
                         <div><i class="fa-solid fa-star"></i><span>声望值<strong>+${this._escapeHtml(task.prestige || '0')}</strong></span></div>
-                        <div><i class="fa-solid fa-box-open"></i><span>额外奖励<strong>${this._escapeHtml(task.extraReward || '无')}</strong></span></div>
+                        <div class="wangxiang-detail-clickable" role="button" tabindex="0" data-wangxiang-extra-reward><i class="fa-solid fa-box-open"></i><span>额外奖励<strong>${this._escapeHtml(task.extraReward || '无')}</strong></span></div>
                     </div>
                 </section>
 
@@ -383,7 +364,7 @@ export class WangxiangView {
         const percent = completed ? 100 : Math.round((current / total) * 100);
         const icons = ['fa-skull', 'fa-flask', 'fa-shield-halved', 'fa-location-crosshairs'];
         return `
-            <div class="wangxiang-task-detail-objective${completed ? ' is-completed' : ''}">
+            <div class="wangxiang-task-detail-objective wangxiang-detail-clickable${completed ? ' is-completed' : ''}" role="button" tabindex="0" data-wangxiang-objective-index="${index}">
                 <i class="fa-solid ${icons[index % icons.length]}" aria-hidden="true"></i>
                 <span>${this._escapeHtml(objective.title || `任务目标 ${index + 1}`)}</span>
                 <div><i style="width:${percent}%"></i></div>
@@ -500,9 +481,7 @@ export class WangxiangView {
 
     _renderMarketplacePanel() {
         const state = this._panelState('marketplace');
-        const featured = WANGXIANG_PRODUCTS.find(product => product.featured);
-        const products = WANGXIANG_PRODUCTS.filter(product => !product.featured);
-        const categories = ['全部', '补给物资', '战斗装备', '强化芯片', '医疗补给', '特殊道具'];
+        const categories = ['全部', ...this.app.getMarketplaceCategories()];
 
         return `
             <section class="wangxiang-content-panel wangxiang-market-panel${state.className}" data-wangxiang-panel="marketplace" aria-hidden="${state.ariaHidden}" aria-label="商品商场">
@@ -511,106 +490,311 @@ export class WangxiangView {
                         <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                         <input type="search" placeholder="搜索商品名称或关键词" aria-label="搜索商品">
                     </label>
-                    <button class="wangxiang-market-filter" type="button">
-                        <i class="fa-solid fa-filter" aria-hidden="true"></i>
-                        <span>筛选</span>
+                    <button class="wangxiang-market-settings-open" type="button" aria-label="商品商场设置" title="商品商场设置">
+                        <i class="fa-solid fa-gear" aria-hidden="true"></i>
+                        <span>设置</span>
                     </button>
                 </div>
                 <div class="wangxiang-market-categories" role="tablist" aria-label="商品分类">
                     ${categories.map((category, index) => `
-                        <button type="button" role="tab" class="${index === 0 ? 'is-active' : ''}" aria-selected="${index === 0}" data-market-category="${this._escapeHtml(category)}">${this._escapeHtml(category)}</button>
+                        <button type="button" role="tab" class="${index === 0 ? 'is-active' : ''}" aria-selected="${index === 0}" data-market-category-index="${index}">${this._escapeHtml(category)}</button>
                     `).join('')}
                 </div>
                 <div class="wangxiang-market-scroll wangxiang-content-scroll">
-                    ${this._renderFeaturedProduct(featured)}
-                    <div class="wangxiang-product-grid">
-                        ${products.map(product => this._renderProductCard(product)).join('')}
+                    <div class="wangxiang-market-pull-indicator" aria-live="polite">
+                        <div class="wangxiang-market-pull-inner"></div>
+                    </div>
+                    <div class="wangxiang-market-product-list" aria-live="polite">
+                        ${this._renderMarketplaceProductListContent()}
                     </div>
                 </div>
             </section>
         `;
     }
 
-    _renderFeaturedProduct(product) {
-        if (!product) return '';
+    _renderMarketplaceProductListContent() {
+        const products = this.app.getMarketplaceProducts?.() || [];
+        return products.map(product => this._renderMarketplaceProductCard(product)).join('');
+    }
+
+    _renderMarketplaceProductCard(product) {
+        const categoryIndex = Math.max(1, Math.min(5, Number(product?.categoryIndex || 1)));
+        const categories = this.app.getMarketplaceCategories();
+        const categoryName = categories[categoryIndex - 1] || '商品';
+        const icons = ['fa-box-open', 'fa-shield-halved', 'fa-microchip', 'fa-kit-medical', 'fa-gem'];
+        const tags = (Array.isArray(product?.tags) ? product.tags : []).slice(0, 2);
+        const searchText = [categoryName, product?.name, product?.description, ...tags].filter(Boolean).join(' ').toLocaleLowerCase();
+        const stockMatch = String(product?.stock ?? '').replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+        const isSoldOut = !!stockMatch && Number(stockMatch[0]) <= 0;
         return `
-            <article class="wangxiang-featured-product">
-                <div class="wangxiang-featured-copy">
-                    <span class="wangxiang-product-promo">今日特惠</span>
-                    <h2>${this._escapeHtml(product.name)}</h2>
-                    <p>${this._escapeHtml(product.description)}</p>
-                    <small>限时价</small>
-                    <strong><span>¥</span>${this._escapeHtml(product.price)}</strong>
+            <article class="wangxiang-market-product-card" data-market-category-index="${categoryIndex}" data-market-search-text="${this._escapeHtml(searchText)}">
+                <div class="wangxiang-market-product-icon" aria-hidden="true">
+                    <i class="fa-solid ${icons[categoryIndex - 1]}"></i>
                 </div>
-                <div class="wangxiang-featured-visual" aria-hidden="true">
-                    <i class="fa-solid ${this._escapeHtml(product.icon)}"></i>
+                <div class="wangxiang-market-product-main">
+                    <div class="wangxiang-market-product-heading">
+                        <span>${this._escapeHtml(categoryName)}</span>
+                        <div class="wangxiang-market-product-tags">
+                            ${tags.map(tag => `<small>${this._escapeHtml(tag)}</small>`).join('')}
+                        </div>
+                    </div>
+                    <h2>${this._escapeHtml(product?.name || '未命名商品')}</h2>
+                    <button class="wangxiang-market-product-description" type="button" data-market-product-detail="${this._escapeHtml(product?.id || '')}">${this._escapeHtml(product?.description || '')}</button>
+                    <div class="wangxiang-market-product-meta">
+                        <strong><small>售价</small>${this._escapeHtml(product?.price || '0')}</strong>
+                        <span>库存：${this._escapeHtml(product?.stock || '0')}</span>
+                    </div>
                 </div>
+                <button class="wangxiang-market-product-buy" type="button" data-market-buy-product="${this._escapeHtml(product?.id || '')}" ${isSoldOut ? 'disabled' : ''}>
+                    <i class="fa-solid ${isSoldOut ? 'fa-ban' : 'fa-cart-shopping'}" aria-hidden="true"></i>
+                    <span>${isSoldOut ? '已售罄' : '购买'}</span>
+                </button>
             </article>
         `;
     }
 
-    _renderProductCard(product) {
-        const rarityLabels = { epic: '史诗', rare: '稀有', excellent: '优秀', legendary: '传说' };
-        const rarity = Object.prototype.hasOwnProperty.call(rarityLabels, product.rarity) ? product.rarity : 'rare';
+    _renderMarketplaceSettingsPanel() {
+        const promptManager = window.VirtualPhone?.promptManager;
+        const worldbookManager = window.VirtualPhone?.worldbookManager;
+        const prompt = promptManager?.getPromptForFeature?.('wangxiang', 'marketplace')
+            || promptManager?.getDefaultPrompts?.()?.wangxiang?.marketplace?.content
+            || '';
+        const useWorldbook = worldbookManager?.getEnabled?.('wangxiang-marketplace') || false;
+        const presetControls = promptManager?.renderPromptPresetControls?.('wangxiang', 'marketplace') || '';
+        const categories = this.app.getMarketplaceCategories();
+
         return `
-            <article class="wangxiang-product-card is-${rarity}" data-product-id="${this._escapeHtml(product.id)}">
-                <span class="wangxiang-product-rarity">${rarityLabels[rarity]}</span>
-                <div class="wangxiang-product-visual" aria-hidden="true">
-                    <i class="fa-solid ${this._escapeHtml(product.icon)}"></i>
+            <section class="wangxiang-content-panel wangxiang-market-settings-panel is-hidden" data-wangxiang-settings="marketplace" aria-hidden="true" aria-labelledby="wangxiang-market-settings-title">
+                <header class="wangxiang-settings-header">
+                    <button class="wangxiang-settings-back" type="button" data-wangxiang-settings-back="marketplace" aria-label="返回商品商场" title="返回商品商场">
+                        <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                    </button>
+                    <div>
+                        <h1 id="wangxiang-market-settings-title">商品商场设置</h1>
+                        <p>生成上下文、提示词与商品分类</p>
+                    </div>
+                </header>
+                <div class="wangxiang-settings-scroll wangxiang-content-scroll">
+                    <section class="wangxiang-settings-section">
+                        <div class="wangxiang-settings-section-heading">
+                            <div>
+                                <h2>世界书引用</h2>
+                                <p>生成商品时注入勾选的酒馆世界书</p>
+                            </div>
+                            <label class="wangxiang-settings-toggle">
+                                <input class="wangxiang-settings-toggle-input st-phone-toggle-input" type="checkbox" data-wangxiang-worldbook-toggle="wangxiang-marketplace" data-wangxiang-worldbook-label="商品生成" ${useWorldbook ? 'checked' : ''}>
+                                <span aria-hidden="true"></span>
+                            </label>
+                        </div>
+                        <div class="phone-prompt-fold wangxiang-worldbook-fold" data-default-open="false" data-wangxiang-worldbook-key="wangxiang-marketplace">
+                            <div class="phone-prompt-fold-header" role="button" tabindex="0" aria-expanded="false">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">世界书选择</div>
+                                    <div class="phone-prompt-fold-desc">展开后勾选要注入的酒馆世界书</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow" aria-hidden="true"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content" aria-hidden="true">
+                                <div class="wangxiang-worldbook-list">
+                                    <p class="wangxiang-settings-message">正在读取当前可用世界书...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="wangxiang-settings-section wangxiang-market-category-settings">
+                        <div class="wangxiang-settings-section-heading">
+                            <div>
+                                <h2>商品分类</h2>
+                                <p>“全部”固定保留，其余分类可自行修改</p>
+                            </div>
+                        </div>
+                        <div class="wangxiang-market-category-editor">
+                            <label class="is-locked"><span>固定分类</span><input type="text" value="全部" disabled></label>
+                            ${categories.map((category, index) => `
+                                <label><span>分类 ${index + 1}</span><input type="text" maxlength="8" value="${this._escapeHtml(category)}" data-market-category-input="${index}"></label>
+                            `).join('')}
+                        </div>
+                        <button class="wangxiang-market-categories-save" type="button">
+                            <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+                            <span>保存分类</span>
+                        </button>
+                    </section>
+                    <section class="wangxiang-settings-section wangxiang-prompt-section">
+                        <div class="wangxiang-settings-section-heading">
+                            <div>
+                                <h2>商品生成提示词</h2>
+                                <p>默认预设会随代码更新；需要修改时请新增自定义预设</p>
+                            </div>
+                        </div>
+                        ${presetControls}
+                        <textarea class="wangxiang-prompt-textarea" id="wangxiang-market-prompt" spellcheck="false" aria-label="商品生成提示词">${this._escapeHtml(prompt)}</textarea>
+                    </section>
                 </div>
-                <h3>${this._escapeHtml(product.name)}</h3>
-                <p>${this._escapeHtml(product.description)}</p>
-                <div class="wangxiang-product-price-row">
-                    <strong><span>¥</span>${this._escapeHtml(product.price)}</strong>
-                    <small>库存：${this._escapeHtml(product.stock)}</small>
-                </div>
-                <button class="wangxiang-product-buy" type="button">购买</button>
-            </article>
+            </section>
         `;
     }
 
     _renderOrdersPanel() {
         const state = this._panelState('my-orders');
-        const tabs = ['全部', '待付款', '待发货', '运输中', '已完成'];
         return `
             <section class="wangxiang-content-panel wangxiang-orders-panel${state.className}" data-wangxiang-panel="my-orders" aria-hidden="${state.ariaHidden}" aria-label="我的订单">
-                <div class="wangxiang-order-tabs" role="tablist" aria-label="订单状态">
-                    ${tabs.map((tab, index) => `
-                        <button type="button" role="tab" class="${index === 0 ? 'is-active' : ''}" aria-selected="${index === 0}" data-order-tab="${this._escapeHtml(tab)}">${this._escapeHtml(tab)}</button>
-                    `).join('')}
-                </div>
                 <div class="wangxiang-orders-scroll wangxiang-content-scroll">
-                    ${WANGXIANG_ORDERS.map(order => this._renderOrderCard(order)).join('')}
+                    <section class="wangxiang-order-account">${this._renderOrderAccountContent()}</section>
+                    <section class="wangxiang-order-addresses">${this._renderOrderAddressesContent()}</section>
+                    <div class="wangxiang-order-list">${this._renderMarketplaceOrdersContent()}</div>
                 </div>
             </section>
         `;
     }
 
-    _renderOrderCard(order) {
+    _renderOrderAccountContent() {
+        const credit = this.app.getCreditBalance?.() || 0;
+        const wechat = this.app.getWechatWalletBalance?.();
         return `
-            <article class="wangxiang-order-card is-${this._escapeHtml(order.statusType)}" data-order-id="${this._escapeHtml(order.id)}">
-                <header class="wangxiang-order-card-header">
-                    <span>订单号：${this._escapeHtml(order.id)}</span>
-                    <strong>${this._escapeHtml(order.status)}</strong>
+            <div class="wangxiang-order-account-user">
+                <span><i class="fa-solid fa-user" aria-hidden="true"></i>当前用户</span>
+                <strong>${this._escapeHtml(this.app.getCurrentUserName?.() || '用户')}</strong>
+            </div>
+            <div class="wangxiang-order-balance-grid">
+                <div><span>信用点</span><strong>${this._escapeHtml(Number(credit).toLocaleString('zh-CN'))}</strong></div>
+                <div><span>微信零钱</span><strong>${wechat === null || wechat === undefined ? '未初始化' : `¥${Number(wechat).toFixed(2)}`}</strong></div>
+            </div>
+        `;
+    }
+
+    _renderOrderAddressesContent() {
+        const addresses = this.app.getDeliveryAddresses?.() || [];
+        return `
+            <header><div><h2>收货地址</h2><p>支付时选择配送地址</p></div><button type="button" data-wangxiang-address-add aria-label="添加地址" title="添加地址"><i class="fa-solid fa-plus" aria-hidden="true"></i></button></header>
+            <div class="wangxiang-order-address-list">
+                ${addresses.map(address => `
+                    <article class="${address.isDefault ? 'is-default' : ''}">
+                        <button type="button" class="wangxiang-address-main" data-wangxiang-address-default="${this._escapeHtml(address.id)}">
+                            <span>${this._escapeHtml(address.label || '常用地址')}${address.isDefault ? '<small>默认</small>' : ''}</span>
+                            <strong>${this._escapeHtml(address.recipient)} · ${this._escapeHtml(address.phone)}</strong>
+                            <p>${this._escapeHtml(address.address)}</p>
+                        </button>
+                        <button type="button" data-wangxiang-address-remove="${this._escapeHtml(address.id)}" aria-label="删除地址" title="删除地址"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>
+                    </article>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    _renderMarketplaceOrdersContent() {
+        return (this.app.getMarketplaceOrders?.() || []).map(order => this._renderMarketplaceOrderCard(order)).join('');
+    }
+
+    _renderMarketplaceOrderCard(order) {
+        const isShipping = order?.status === 'shipping';
+        return `
+            <article class="wangxiang-order-card${isShipping ? ' is-shipping' : ''}" data-market-order-id="${this._escapeHtml(order?.id || '')}">
+                <header>
+                    <span>订单号：${this._escapeHtml(order?.id || '')}</span>
+                    <strong>${isShipping ? '配送中' : '待支付'}</strong>
                 </header>
-                <div class="wangxiang-order-card-body">
-                    <div class="wangxiang-order-product-icon" aria-hidden="true">
-                        <i class="fa-solid ${this._escapeHtml(order.icon)}"></i>
-                    </div>
-                    <div class="wangxiang-order-product-info">
-                        <h2>${this._escapeHtml(order.name)}</h2>
-                        <p>数量：×${this._escapeHtml(order.quantity)}</p>
-                        <small>下单时间：${this._escapeHtml(order.time)}</small>
-                    </div>
-                    <div class="wangxiang-order-total">
-                        <span>共${this._escapeHtml(order.quantity)}件</span>
-                        <strong><small>¥</small>${this._escapeHtml(order.total)}</strong>
+                <div class="wangxiang-order-body">
+                    <div class="wangxiang-order-icon" aria-hidden="true"><i class="fa-solid fa-box"></i></div>
+                    <div class="wangxiang-order-main">
+                        <h2>${this._escapeHtml(order?.name || '未命名商品')}</h2>
+                        <p>单价：${this._escapeHtml(order?.unitPrice || '0')} · 数量：${this._escapeHtml(order?.quantity || 1)}</p>
+                        <small>${this._escapeHtml(isShipping ? (order?.shippingAt || order?.paidAt || '') : (order?.createdAt || ''))}</small>
                     </div>
                 </div>
-                <footer class="wangxiang-order-actions">
-                    ${order.actions.map((action, index) => `<button type="button" class="${index === order.actions.length - 1 ? 'is-primary' : ''}">${this._escapeHtml(action)}</button>`).join('')}
+                <footer>
+                    <div><span>合计</span><strong>${this._escapeHtml(order?.totalPrice || '0')}</strong></div>
+                    <button type="button" data-market-order-pay="${this._escapeHtml(order?.id || '')}" ${isShipping ? 'disabled' : ''}>
+                        <i class="fa-solid ${isShipping ? 'fa-truck-fast' : 'fa-credit-card'}" aria-hidden="true"></i>
+                        <span>${isShipping ? '配送中' : '支付'}</span>
+                    </button>
                 </footer>
             </article>
+        `;
+    }
+
+    _renderMarketplacePurchaseDialog() {
+        return `
+            <div class="wangxiang-purchase-overlay is-hidden" data-wangxiang-purchase-dialog aria-hidden="true">
+                <section class="wangxiang-purchase-dialog" role="dialog" aria-modal="true" aria-labelledby="wangxiang-purchase-title">
+                    <header>
+                        <div>
+                            <h2 id="wangxiang-purchase-title">选择购买数量</h2>
+                            <p class="wangxiang-purchase-product-name"></p>
+                        </div>
+                        <button type="button" data-wangxiang-purchase-close aria-label="关闭" title="关闭"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                    </header>
+                    <div class="wangxiang-purchase-price"></div>
+                    <div class="wangxiang-purchase-stepper">
+                        <button type="button" data-wangxiang-quantity-step="-1" aria-label="减少数量" title="减少数量"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>
+                        <input type="number" min="1" max="999" step="1" value="1" aria-label="购买数量">
+                        <button type="button" data-wangxiang-quantity-step="1" aria-label="增加数量" title="增加数量"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
+                    </div>
+                    <footer>
+                        <button type="button" data-wangxiang-purchase-close>取消</button>
+                        <button type="button" class="is-primary" data-wangxiang-purchase-confirm>
+                            <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+                            <span>提交订单</span>
+                        </button>
+                    </footer>
+                </section>
+            </div>
+        `;
+    }
+
+    _renderInfoDetailDialog() {
+        return `
+            <div class="wangxiang-info-overlay is-hidden" data-wangxiang-info-dialog aria-hidden="true">
+                <section class="wangxiang-info-dialog" role="dialog" aria-modal="true" aria-labelledby="wangxiang-info-title">
+                    <header>
+                        <div>
+                            <span class="wangxiang-info-eyebrow"></span>
+                            <h2 id="wangxiang-info-title"></h2>
+                        </div>
+                        <button type="button" data-wangxiang-info-close aria-label="关闭" title="关闭"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                    </header>
+                    <div class="wangxiang-info-dialog-body">
+                        <p class="wangxiang-info-text"></p>
+                        <div class="wangxiang-info-progress is-hidden">
+                            <div class="wangxiang-info-progress-meta"><span>任务进度</span><strong></strong></div>
+                            <div class="wangxiang-info-progress-track"><i></i></div>
+                        </div>
+                        <div class="wangxiang-info-meta"></div>
+                    </div>
+                </section>
+            </div>
+        `;
+    }
+
+    _renderAddressDialog() {
+        return `
+            <div class="wangxiang-form-overlay is-hidden" data-wangxiang-address-dialog aria-hidden="true">
+                <section class="wangxiang-form-dialog" role="dialog" aria-modal="true" aria-labelledby="wangxiang-address-title">
+                    <header><h2 id="wangxiang-address-title">添加收货地址</h2><button type="button" data-wangxiang-address-close aria-label="关闭" title="关闭"><i class="fa-solid fa-xmark"></i></button></header>
+                    <div class="wangxiang-form-dialog-body">
+                        <label><span>地址名称</span><input type="text" maxlength="12" data-address-field="label" placeholder="例如：家"></label>
+                        <label><span>收货人</span><input type="text" maxlength="30" data-address-field="recipient"></label>
+                        <label><span>联系电话</span><input type="text" maxlength="30" data-address-field="phone"></label>
+                        <label><span>详细地址</span><textarea maxlength="160" data-address-field="address"></textarea></label>
+                    </div>
+                    <footer><button type="button" data-wangxiang-address-close>取消</button><button type="button" class="is-primary" data-wangxiang-address-save>保存地址</button></footer>
+                </section>
+            </div>
+        `;
+    }
+
+    _renderPaymentDialog() {
+        return `
+            <div class="wangxiang-form-overlay is-hidden" data-wangxiang-payment-dialog aria-hidden="true">
+                <section class="wangxiang-form-dialog wangxiang-payment-dialog" role="dialog" aria-modal="true" aria-labelledby="wangxiang-payment-title">
+                    <header><div><h2 id="wangxiang-payment-title">确认支付</h2><p class="wangxiang-payment-order-name"></p></div><button type="button" data-wangxiang-payment-close aria-label="关闭" title="关闭"><i class="fa-solid fa-xmark"></i></button></header>
+                    <div class="wangxiang-form-dialog-body">
+                        <div class="wangxiang-payment-amount"></div>
+                        <fieldset class="wangxiang-payment-methods"><legend>支付方式</legend></fieldset>
+                        <fieldset class="wangxiang-payment-addresses"><legend>收货地址</legend><div></div></fieldset>
+                    </div>
+                    <footer><button type="button" data-wangxiang-payment-close>取消</button><button type="button" class="is-primary" data-wangxiang-payment-confirm>确认支付</button></footer>
+                </section>
+            </div>
         `;
     }
 
@@ -626,40 +810,74 @@ export class WangxiangView {
         root.querySelector('.wangxiang-task-settings-open')?.addEventListener('click', () => {
             this._showTaskSettings(root);
         });
-        root.querySelector('.wangxiang-settings-back')?.addEventListener('click', () => {
-            this._hideTaskSettings(root);
+        root.querySelector('.wangxiang-market-settings-open')?.addEventListener('click', () => {
+            this._showMarketplaceSettings(root);
+        });
+        root.querySelectorAll('[data-wangxiang-settings-back]').forEach(button => {
+            button.addEventListener('click', () => {
+                this._hideSettings(root, button.dataset.wangxiangSettingsBack);
+            });
         });
         root.querySelector('.wangxiang-task-detail-back')?.addEventListener('click', () => {
             this._hideTaskDetail(root);
         });
         this._bindWorldbookFold(root);
-        root.querySelector('#wangxiang-use-worldbook')?.addEventListener('change', async event => {
-            const enabled = !!event.target.checked;
-            await window.VirtualPhone?.worldbookManager?.setEnabled?.('wangxiang', enabled);
-            if (enabled && root.querySelector('.wangxiang-worldbook-fold')?.classList.contains('is-open')) {
-                this.renderWangxiangWorldbookList(root);
-            }
-            this.app.phoneShell?.showNotification?.(
-                enabled ? '已开启' : '已关闭',
-                `任务生成${enabled ? '会' : '不会'}引用勾选的世界书`,
-                enabled ? '✅' : 'ℹ️'
-            );
+        root.querySelectorAll('[data-wangxiang-worldbook-toggle]').forEach(input => {
+            input.addEventListener('change', async event => {
+                const appKey = String(event.target.dataset.wangxiangWorldbookToggle || 'wangxiang');
+                const label = String(event.target.dataset.wangxiangWorldbookLabel || '内容生成');
+                const enabled = !!event.target.checked;
+                await window.VirtualPhone?.worldbookManager?.setEnabled?.(appKey, enabled);
+                const panel = event.target.closest('[data-wangxiang-settings]');
+                const fold = panel?.querySelector(`.wangxiang-worldbook-fold[data-wangxiang-worldbook-key="${appKey}"]`);
+                if (enabled && fold?.classList.contains('is-open')) this.renderWangxiangWorldbookList(fold);
+                this.app.phoneShell?.showNotification?.(
+                    enabled ? '已开启' : '已关闭',
+                    `${label}${enabled ? '会' : '不会'}引用勾选的世界书`,
+                    enabled ? '✅' : 'ℹ️'
+                );
+            });
         });
 
         window.VirtualPhone?.promptManager?.bindPromptPresetControls?.(root, 'wangxiang', 'tasks', '#wangxiang-task-prompt', {
             notify: (title, message, icon) => this.app.phoneShell?.showNotification?.(title, message, icon)
         });
+        window.VirtualPhone?.promptManager?.bindPromptPresetControls?.(root, 'wangxiang', 'marketplace', '#wangxiang-market-prompt', {
+            notify: (title, message, icon) => this.app.phoneShell?.showNotification?.(title, message, icon)
+        });
 
-        this._bindSegmentedControl(root, '.wangxiang-market-categories button');
-        this._bindSegmentedControl(root, '.wangxiang-order-tabs button');
+        root.querySelector('.wangxiang-market-categories-save')?.addEventListener('click', async buttonEvent => {
+            const button = buttonEvent.currentTarget;
+            const inputs = Array.from(root.querySelectorAll('[data-market-category-input]'));
+            try {
+                const categories = await this.app.setMarketplaceCategories(inputs.map(input => input.value));
+                root.querySelectorAll('.wangxiang-market-categories [data-market-category-index]').forEach(tab => {
+                    const index = Number(tab.dataset.marketCategoryIndex);
+                    tab.textContent = index === 0 ? '全部' : categories[index - 1];
+                });
+                this._renderMarketplaceProductList(root);
+                this.app.phoneShell?.showNotification?.('保存成功', '商品分类已更新', '✅');
+            } catch (error) {
+                this.app.phoneShell?.showNotification?.('保存失败', error?.message || '请检查商品分类', '⚠️');
+                inputs.find(input => !String(input.value || '').trim())?.focus();
+            } finally {
+                button.blur();
+            }
+        });
+
+        this._bindMarketplaceFilters(root);
         this._bindTaskPullRefresh(root);
         this._syncTaskRefreshIndicator(root);
+        this._bindMarketplacePullRefresh(root);
+        this._syncMarketplaceRefreshIndicator(root);
+        this._bindMarketplaceOrderActions(root);
+        this._bindInfoDetailActions(root);
         this._bindTaskActions(root);
     }
 
     _switchSection(root, section) {
         if (!WANGXIANG_NAV_ITEMS.some(item => item.id === section)) return;
-        this._hideTaskSettings(root);
+        this._hideAllSettings(root);
         this.currentSection = section;
 
         root.querySelectorAll('.wangxiang-primary-nav-item').forEach(button => {
@@ -674,6 +892,7 @@ export class WangxiangView {
             panel.classList.toggle('is-hidden', !isActive);
             panel.setAttribute('aria-hidden', String(!isActive));
         });
+        if (section === 'my-orders') this._renderMarketplaceOrders(root);
     }
 
     _showTaskSettings(root) {
@@ -686,57 +905,99 @@ export class WangxiangView {
         settingsPanel.setAttribute('aria-hidden', 'false');
     }
 
+    _showMarketplaceSettings(root) {
+        const marketPanel = root.querySelector('[data-wangxiang-panel="marketplace"]');
+        const settingsPanel = root.querySelector('[data-wangxiang-settings="marketplace"]');
+        if (!marketPanel || !settingsPanel) return;
+        marketPanel.classList.add('is-hidden');
+        marketPanel.setAttribute('aria-hidden', 'true');
+        settingsPanel.classList.remove('is-hidden');
+        settingsPanel.setAttribute('aria-hidden', 'false');
+    }
+
     _hideTaskSettings(root) {
-        const settingsPanel = root?.querySelector('[data-wangxiang-settings="tasks"]');
+        return this._hideSettings(root, 'tasks');
+    }
+
+    _hideSettings(root, settingsKey) {
+        const settingsPanel = root?.querySelector(`[data-wangxiang-settings="${settingsKey}"]`);
         if (!settingsPanel || settingsPanel.classList.contains('is-hidden')) return false;
         settingsPanel.classList.add('is-hidden');
         settingsPanel.setAttribute('aria-hidden', 'true');
-        if (this.currentSection === 'task-hall') {
-            const taskPanel = root.querySelector('[data-wangxiang-panel="task-hall"]');
-            taskPanel?.classList.remove('is-hidden');
-            taskPanel?.setAttribute('aria-hidden', 'false');
+        const section = settingsKey === 'marketplace' ? 'marketplace' : 'task-hall';
+        if (this.currentSection === section) {
+            const contentPanel = root.querySelector(`[data-wangxiang-panel="${section}"]`);
+            contentPanel?.classList.remove('is-hidden');
+            contentPanel?.setAttribute('aria-hidden', 'false');
         }
         return true;
     }
 
+    _hideAllSettings(root) {
+        return ['tasks', 'marketplace'].some(settingsKey => this._hideSettings(root, settingsKey));
+    }
+
     handleBack() {
         const root = document.querySelector('.phone-view-current .wangxiang-app');
+        const paymentDialog = root?.querySelector('[data-wangxiang-payment-dialog]');
+        if (paymentDialog && !paymentDialog.classList.contains('is-hidden')) {
+            this._closeMarketplacePaymentDialog(root);
+            return true;
+        }
+        const addressDialog = root?.querySelector('[data-wangxiang-address-dialog]');
+        if (addressDialog && !addressDialog.classList.contains('is-hidden')) {
+            this._closeAddressDialog(root);
+            return true;
+        }
+        const infoDialog = root?.querySelector('[data-wangxiang-info-dialog]');
+        if (infoDialog && !infoDialog.classList.contains('is-hidden')) {
+            this._closeInfoDetailDialog(root);
+            return true;
+        }
+        const purchaseDialog = root?.querySelector('[data-wangxiang-purchase-dialog]');
+        if (purchaseDialog && !purchaseDialog.classList.contains('is-hidden')) {
+            this._closeMarketplacePurchaseDialog(root);
+            return true;
+        }
         if (this._hideTaskDetail(root)) return true;
-        return this._hideTaskSettings(root);
+        return this._hideAllSettings(root);
     }
 
     _bindWorldbookFold(root) {
-        const fold = root?.querySelector('.wangxiang-worldbook-fold');
-        const header = fold?.querySelector('.phone-prompt-fold-header');
-        const content = fold?.querySelector('.phone-prompt-fold-content');
-        if (!fold || !header || !content) return;
+        root?.querySelectorAll('.wangxiang-worldbook-fold').forEach(fold => {
+            const header = fold.querySelector('.phone-prompt-fold-header');
+            const content = fold.querySelector('.phone-prompt-fold-content');
+            if (!header || !content) return;
 
-        const setOpen = open => {
-            fold.classList.toggle('is-open', open);
-            header.setAttribute('aria-expanded', String(open));
-            content.setAttribute('aria-hidden', String(!open));
-            if (open && fold.dataset.listLoaded !== '1') {
-                fold.dataset.listLoaded = '1';
-                this.renderWangxiangWorldbookList(root);
-            }
-        };
-        setOpen(String(fold.dataset.defaultOpen || '').toLowerCase() === 'true');
-        header.addEventListener('click', () => setOpen(!fold.classList.contains('is-open')));
-        header.addEventListener('keydown', event => {
-            if (event.key !== 'Enter' && event.key !== ' ') return;
-            event.preventDefault();
-            setOpen(!fold.classList.contains('is-open'));
+            const setOpen = open => {
+                fold.classList.toggle('is-open', open);
+                header.setAttribute('aria-expanded', String(open));
+                content.setAttribute('aria-hidden', String(!open));
+                if (open && fold.dataset.listLoaded !== '1') {
+                    fold.dataset.listLoaded = '1';
+                    this.renderWangxiangWorldbookList(fold);
+                }
+            };
+            setOpen(String(fold.dataset.defaultOpen || '').toLowerCase() === 'true');
+            header.addEventListener('click', () => setOpen(!fold.classList.contains('is-open')));
+            header.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                setOpen(!fold.classList.contains('is-open'));
+            });
         });
     }
 
-    async renderWangxiangWorldbookList(root = document) {
-        const container = root.querySelector?.('#wangxiang-worldbook-list');
+    async renderWangxiangWorldbookList(scope = document) {
+        const fold = scope.matches?.('.wangxiang-worldbook-fold') ? scope : scope.querySelector?.('.wangxiang-worldbook-fold');
+        const container = fold?.querySelector?.('.wangxiang-worldbook-list');
         const manager = window.VirtualPhone?.worldbookManager;
         if (!container || !manager) return;
+        const appKey = String(fold.dataset.wangxiangWorldbookKey || 'wangxiang');
 
         try {
             const sources = await manager.listAvailableWorldbooks({ includeEntries: true, force: true });
-            const selection = manager.getSelectionState('wangxiang');
+            const selection = manager.getSelectionState(appKey);
             if (!sources.length) {
                 container.innerHTML = '<p class="wangxiang-settings-message">未读取到酒馆世界书列表。</p>';
                 return;
@@ -763,8 +1024,8 @@ export class WangxiangView {
             container.querySelectorAll('.wangxiang-worldbook-choice').forEach(input => {
                 input.addEventListener('change', async () => {
                     const ids = Array.from(container.querySelectorAll('.wangxiang-worldbook-choice:checked')).map(item => item.value);
-                    await manager.setSelection('wangxiang', ids);
-                    this.renderWangxiangWorldbookList(root);
+                    await manager.setSelection(appKey, ids);
+                    this.renderWangxiangWorldbookList(fold);
                 });
             });
         } catch (error) {
@@ -784,6 +1045,377 @@ export class WangxiangView {
                 });
             };
         });
+    }
+
+    _renderMarketplaceProductList(root) {
+        const list = root?.querySelector('.wangxiang-market-product-list');
+        if (!list) return;
+        list.innerHTML = this._renderMarketplaceProductListContent();
+        this._bindMarketplaceFilters(root);
+    }
+
+    _bindMarketplaceFilters(root) {
+        const buttons = Array.from(root.querySelectorAll('.wangxiang-market-categories button'));
+        const searchInput = root.querySelector('.wangxiang-market-search input');
+        if (!buttons.length) return;
+
+        const apply = () => {
+            const activeButton = buttons.find(button => button.classList.contains('is-active')) || buttons[0];
+            const activeCategory = Number(activeButton?.dataset.marketCategoryIndex || 0);
+            const query = String(searchInput?.value || '').trim().toLocaleLowerCase();
+            root.querySelectorAll('.wangxiang-market-product-card').forEach(card => {
+                const categoryMatches = activeCategory === 0 || Number(card.dataset.marketCategoryIndex) === activeCategory;
+                const searchMatches = !query || String(card.dataset.marketSearchText || '').includes(query);
+                card.classList.toggle('is-hidden-by-filter', !categoryMatches || !searchMatches);
+            });
+        };
+
+        buttons.forEach(button => {
+            button.onclick = () => {
+                buttons.forEach(item => {
+                    const isActive = item === button;
+                    item.classList.toggle('is-active', isActive);
+                    item.setAttribute('aria-selected', String(isActive));
+                });
+                apply();
+            };
+        });
+        if (searchInput) searchInput.oninput = apply;
+        apply();
+    }
+
+    _renderMarketplaceOrders(root) {
+        const account = root?.querySelector('.wangxiang-order-account');
+        const addresses = root?.querySelector('.wangxiang-order-addresses');
+        const list = root?.querySelector('.wangxiang-order-list');
+        if (account) account.innerHTML = this._renderOrderAccountContent();
+        if (addresses) addresses.innerHTML = this._renderOrderAddressesContent();
+        if (list) list.innerHTML = this._renderMarketplaceOrdersContent();
+    }
+
+    _bindInfoDetailActions(root) {
+        if (root.dataset.infoDetailActionsBound === '1') return;
+        root.dataset.infoDetailActionsBound = '1';
+        const overlay = root.querySelector('[data-wangxiang-info-dialog]');
+
+        root.addEventListener('click', event => {
+            const productTrigger = event.target?.closest?.('[data-market-product-detail]');
+            if (productTrigger) {
+                const product = (this.app.getMarketplaceProducts?.() || []).find(item => String(item?.id || '') === String(productTrigger.dataset.marketProductDetail || ''));
+                if (!product) return;
+                const category = this.app.getMarketplaceCategories?.()?.[Math.max(0, Number(product.categoryIndex || 1) - 1)] || '商品';
+                this._openInfoDetailDialog(root, {
+                    eyebrow: category,
+                    title: product.name || '商品详情',
+                    text: product.description || '暂无商品简介',
+                    meta: `售价：${product.price || '0'} · 库存：${product.stock || '0'}`
+                });
+                return;
+            }
+
+            const objectiveTrigger = event.target?.closest?.('[data-wangxiang-objective-index]');
+            if (objectiveTrigger) {
+                const detail = objectiveTrigger.closest('[data-task-detail-id]');
+                const task = this.app.getTaskById?.(detail?.dataset?.taskDetailId || '');
+                const index = Math.max(0, Number(objectiveTrigger.dataset.wangxiangObjectiveIndex || 0));
+                const objectives = Array.isArray(task?.objectives) && task.objectives.length
+                    ? task.objectives
+                    : [{ title: '完成任务要求', current: 0, total: 1, completed: false }];
+                const objective = objectives[index];
+                if (!task || !objective) return;
+                const total = Math.max(1, Number(objective.total || 1));
+                const current = Math.max(0, Math.min(total, Number(objective.current || 0)));
+                const completed = objective.completed === true || current >= total;
+                this._openInfoDetailDialog(root, {
+                    eyebrow: task.title || '任务详情',
+                    title: '任务目标',
+                    text: objective.title || `任务目标 ${index + 1}`,
+                    progress: { current, total, percent: completed ? 100 : Math.round((current / total) * 100), completed }
+                });
+                return;
+            }
+
+            const rewardTrigger = event.target?.closest?.('[data-wangxiang-extra-reward]');
+            if (rewardTrigger) {
+                const detail = rewardTrigger.closest('[data-task-detail-id]');
+                const task = this.app.getTaskById?.(detail?.dataset?.taskDetailId || '');
+                if (!task) return;
+                this._openInfoDetailDialog(root, {
+                    eyebrow: task.title || '任务详情',
+                    title: '额外奖励',
+                    text: task.extraReward || '无'
+                });
+                return;
+            }
+
+            if (event.target?.closest?.('[data-wangxiang-info-close]')) this._closeInfoDetailDialog(root);
+        });
+
+        root.addEventListener('keydown', event => {
+            const trigger = event.target?.closest?.('[data-wangxiang-objective-index], [data-wangxiang-extra-reward]');
+            if (!trigger || (event.key !== 'Enter' && event.key !== ' ')) return;
+            event.preventDefault();
+            trigger.click();
+        });
+
+        overlay?.addEventListener('click', event => {
+            if (event.target === overlay) this._closeInfoDetailDialog(root);
+        });
+    }
+
+    _openInfoDetailDialog(root, detail = {}) {
+        const overlay = root?.querySelector('[data-wangxiang-info-dialog]');
+        if (!overlay) return;
+        const eyebrow = overlay.querySelector('.wangxiang-info-eyebrow');
+        const title = overlay.querySelector('#wangxiang-info-title');
+        const text = overlay.querySelector('.wangxiang-info-text');
+        const meta = overlay.querySelector('.wangxiang-info-meta');
+        const progress = overlay.querySelector('.wangxiang-info-progress');
+        const progressLabel = progress?.querySelector('.wangxiang-info-progress-meta strong');
+        const progressBar = progress?.querySelector('.wangxiang-info-progress-track i');
+        if (eyebrow) eyebrow.textContent = String(detail.eyebrow || '详细信息');
+        if (title) title.textContent = String(detail.title || '详细信息');
+        if (text) text.textContent = String(detail.text || '暂无内容');
+        if (meta) {
+            meta.textContent = String(detail.meta || '');
+            meta.classList.toggle('is-hidden', !detail.meta);
+        }
+        if (progress) {
+            const hasProgress = !!detail.progress;
+            progress.classList.toggle('is-hidden', !hasProgress);
+            if (hasProgress) {
+                const state = detail.progress;
+                if (progressLabel) progressLabel.textContent = state.completed ? `已完成 · ${state.current}/${state.total}` : `${state.current}/${state.total}`;
+                if (progressBar) progressBar.style.width = `${Math.max(0, Math.min(100, Number(state.percent || 0)))}%`;
+            }
+        }
+        overlay.classList.remove('is-hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        requestAnimationFrame(() => overlay.querySelector('[data-wangxiang-info-close]')?.focus());
+    }
+
+    _closeInfoDetailDialog(root) {
+        const overlay = root?.querySelector('[data-wangxiang-info-dialog]');
+        if (!overlay) return;
+        overlay.classList.add('is-hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    _bindMarketplaceOrderActions(root) {
+        if (root.dataset.marketplaceOrderActionsBound === '1') return;
+        root.dataset.marketplaceOrderActionsBound = '1';
+        const overlay = root.querySelector('[data-wangxiang-purchase-dialog]');
+        const quantityInput = overlay?.querySelector('.wangxiang-purchase-stepper input');
+
+        const clampQuantity = () => {
+            if (!quantityInput) return 1;
+            const min = Math.max(1, Number(quantityInput.min || 1));
+            const max = Math.max(min, Number(quantityInput.max || 999));
+            const value = Math.max(min, Math.min(max, Math.floor(Number(quantityInput.value) || min)));
+            quantityInput.value = String(value);
+            return value;
+        };
+
+        root.addEventListener('click', async event => {
+            const buyButton = event.target?.closest?.('[data-market-buy-product]');
+            if (buyButton && !buyButton.disabled) {
+                this._openMarketplacePurchaseDialog(root, buyButton.dataset.marketBuyProduct);
+                return;
+            }
+
+            if (event.target?.closest?.('[data-wangxiang-purchase-close]')) {
+                this._closeMarketplacePurchaseDialog(root);
+                return;
+            }
+
+            const stepButton = event.target?.closest?.('[data-wangxiang-quantity-step]');
+            if (stepButton && quantityInput) {
+                quantityInput.value = String(clampQuantity() + Number(stepButton.dataset.wangxiangQuantityStep || 0));
+                clampQuantity();
+                return;
+            }
+
+            const confirmButton = event.target?.closest?.('[data-wangxiang-purchase-confirm]');
+            if (confirmButton && overlay) {
+                const productId = String(overlay.dataset.productId || '');
+                confirmButton.disabled = true;
+                try {
+                    await this.app.createMarketplaceOrder(productId, clampQuantity());
+                    this._closeMarketplacePurchaseDialog(root);
+                    this._renderMarketplaceOrders(root);
+                    this._switchSection(root, 'my-orders');
+                    this.app.phoneShell?.showNotification?.('订单已创建', '请在“我的订单”中完成支付', '✅');
+                } catch (error) {
+                    this.app.phoneShell?.showNotification?.('下单失败', error?.message || '无法创建订单', '❌');
+                } finally {
+                    confirmButton.disabled = false;
+                }
+                return;
+            }
+
+            const payButton = event.target?.closest?.('[data-market-order-pay]');
+            if (payButton && !payButton.disabled) {
+                this._openMarketplacePaymentDialog(root, payButton.dataset.marketOrderPay);
+                return;
+            }
+
+            if (event.target?.closest?.('[data-wangxiang-address-add]')) {
+                this._openAddressDialog(root);
+                return;
+            }
+            if (event.target?.closest?.('[data-wangxiang-address-close]')) {
+                this._closeAddressDialog(root);
+                return;
+            }
+            const removeAddress = event.target?.closest?.('[data-wangxiang-address-remove]');
+            if (removeAddress) {
+                if (!window.confirm('删除这条收货地址？')) return;
+                await this.app.removeDeliveryAddress(removeAddress.dataset.wangxiangAddressRemove);
+                this._renderMarketplaceOrders(root);
+                return;
+            }
+            const defaultAddress = event.target?.closest?.('[data-wangxiang-address-default]');
+            if (defaultAddress) {
+                await this.app.setDefaultDeliveryAddress(defaultAddress.dataset.wangxiangAddressDefault);
+                this._renderMarketplaceOrders(root);
+                return;
+            }
+            const saveAddress = event.target?.closest?.('[data-wangxiang-address-save]');
+            if (saveAddress) {
+                const dialog = root.querySelector('[data-wangxiang-address-dialog]');
+                const read = field => dialog?.querySelector(`[data-address-field="${field}"]`)?.value || '';
+                saveAddress.disabled = true;
+                try {
+                    await this.app.addDeliveryAddress({
+                        label: read('label'),
+                        recipient: read('recipient'),
+                        phone: read('phone'),
+                        address: read('address')
+                    });
+                    this._closeAddressDialog(root);
+                    this._renderMarketplaceOrders(root);
+                    this.app.phoneShell?.showNotification?.('保存成功', '收货地址已添加', '✅');
+                } catch (error) {
+                    this.app.phoneShell?.showNotification?.('保存失败', error?.message || '无法添加地址', '❌');
+                } finally {
+                    saveAddress.disabled = false;
+                }
+                return;
+            }
+
+            if (event.target?.closest?.('[data-wangxiang-payment-close]')) {
+                this._closeMarketplacePaymentDialog(root);
+                return;
+            }
+            const confirmPayment = event.target?.closest?.('[data-wangxiang-payment-confirm]');
+            if (confirmPayment) {
+                const dialog = root.querySelector('[data-wangxiang-payment-dialog]');
+                const method = dialog?.querySelector('input[name="wangxiang-payment-method"]:checked')?.value || '';
+                const addressId = dialog?.querySelector('input[name="wangxiang-payment-address"]:checked')?.value || '';
+                confirmPayment.disabled = true;
+                try {
+                    await this.app.payMarketplaceOrder(dialog?.dataset?.orderId || '', method, addressId);
+                    this._closeMarketplacePaymentDialog(root);
+                    this._renderMarketplaceOrders(root);
+                    this._renderMarketplaceProductList(root);
+                    this.app.phoneShell?.showNotification?.('支付成功', '商品已进入配送流程', '✅');
+                } catch (error) {
+                    this.app.phoneShell?.showNotification?.('支付失败', error?.message || '订单支付失败', '❌');
+                } finally {
+                    confirmPayment.disabled = false;
+                }
+            }
+        });
+
+        overlay?.addEventListener('click', event => {
+            if (event.target === overlay) this._closeMarketplacePurchaseDialog(root);
+        });
+        root.querySelector('[data-wangxiang-address-dialog]')?.addEventListener('click', event => {
+            if (event.target === event.currentTarget) this._closeAddressDialog(root);
+        });
+        root.querySelector('[data-wangxiang-payment-dialog]')?.addEventListener('click', event => {
+            if (event.target === event.currentTarget) this._closeMarketplacePaymentDialog(root);
+        });
+        quantityInput?.addEventListener('change', clampQuantity);
+    }
+
+    _openAddressDialog(root) {
+        const overlay = root?.querySelector('[data-wangxiang-address-dialog]');
+        if (!overlay) return;
+        overlay.querySelectorAll('input, textarea').forEach(input => { input.value = ''; });
+        overlay.classList.remove('is-hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        requestAnimationFrame(() => overlay.querySelector('[data-address-field="label"]')?.focus());
+    }
+
+    _closeAddressDialog(root) {
+        const overlay = root?.querySelector('[data-wangxiang-address-dialog]');
+        if (!overlay) return;
+        overlay.classList.add('is-hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    _openMarketplacePaymentDialog(root, orderId) {
+        const order = (this.app.getMarketplaceOrders?.() || []).find(item => String(item.id) === String(orderId || ''));
+        const overlay = root?.querySelector('[data-wangxiang-payment-dialog]');
+        if (!order || !overlay) return;
+        const amount = this.app._readMarketplaceAmount?.(order.totalPrice);
+        const credit = this.app.getCreditBalance?.() || 0;
+        const wechat = this.app.getWechatWalletBalance?.();
+        const addresses = this.app.getDeliveryAddresses?.() || [];
+        overlay.dataset.orderId = String(order.id);
+        const name = overlay.querySelector('.wangxiang-payment-order-name');
+        const amountEl = overlay.querySelector('.wangxiang-payment-amount');
+        const methods = overlay.querySelector('.wangxiang-payment-methods');
+        const addressList = overlay.querySelector('.wangxiang-payment-addresses > div');
+        if (name) name.textContent = `${order.name} × ${order.quantity}`;
+        if (amountEl) amountEl.textContent = `应付：${order.totalPrice}`;
+        if (methods) methods.innerHTML = `<legend>支付方式</legend>
+            <label class="${Number(credit) < Number(amount) ? 'is-disabled' : ''}"><input type="radio" name="wangxiang-payment-method" value="credit" ${Number(credit) >= Number(amount) ? 'checked' : 'disabled'}><span><strong>信用点</strong><small>余额 ${Number(credit).toLocaleString('zh-CN')}</small></span></label>
+            <label class="${wechat === null || Number(wechat) < Number(amount) ? 'is-disabled' : ''}"><input type="radio" name="wangxiang-payment-method" value="wechat" ${wechat === null || Number(wechat) < Number(amount) ? 'disabled' : Number(credit) < Number(amount) ? 'checked' : ''}><span><strong>微信支付</strong><small>${wechat === null ? '未初始化' : `余额 ¥${Number(wechat).toFixed(2)}`}</small></span></label>
+        `;
+        if (addressList) addressList.innerHTML = addresses.length ? addresses.map((address, index) => `
+            <label><input type="radio" name="wangxiang-payment-address" value="${this._escapeHtml(address.id)}" ${address.isDefault || (!addresses.some(item => item.isDefault) && index === 0) ? 'checked' : ''}><span><strong>${this._escapeHtml(address.recipient)} · ${this._escapeHtml(address.phone)}</strong><small>${this._escapeHtml(address.address)}</small></span></label>
+        `).join('') : '<p class="wangxiang-payment-no-address">请先在订单页添加收货地址</p>';
+        overlay.classList.remove('is-hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+    }
+
+    _closeMarketplacePaymentDialog(root) {
+        const overlay = root?.querySelector('[data-wangxiang-payment-dialog]');
+        if (!overlay) return;
+        overlay.classList.add('is-hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+        delete overlay.dataset.orderId;
+    }
+
+    _openMarketplacePurchaseDialog(root, productId) {
+        const product = (this.app.getMarketplaceProducts?.() || []).find(item => String(item?.id || '') === String(productId || ''));
+        const overlay = root?.querySelector('[data-wangxiang-purchase-dialog]');
+        if (!product || !overlay) return;
+        const quantityInput = overlay.querySelector('.wangxiang-purchase-stepper input');
+        const stockMatch = String(product.stock ?? '').replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+        const maxQuantity = stockMatch ? Math.max(1, Math.min(999, Math.floor(Number(stockMatch[0])))) : 999;
+        overlay.dataset.productId = String(product.id || '');
+        const name = overlay.querySelector('.wangxiang-purchase-product-name');
+        const price = overlay.querySelector('.wangxiang-purchase-price');
+        if (name) name.textContent = String(product.name || '未命名商品');
+        if (price) price.textContent = `单价：${String(product.price || '0')} · 库存：${String(product.stock || '0')}`;
+        if (quantityInput) {
+            quantityInput.max = String(maxQuantity);
+            quantityInput.value = '1';
+        }
+        overlay.classList.remove('is-hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        requestAnimationFrame(() => quantityInput?.focus());
+    }
+
+    _closeMarketplacePurchaseDialog(root) {
+        const overlay = root?.querySelector('[data-wangxiang-purchase-dialog]');
+        if (!overlay) return;
+        overlay.classList.add('is-hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+        delete overlay.dataset.productId;
     }
 
     _bindTaskActions(root) {
@@ -1119,20 +1751,185 @@ export class WangxiangView {
         indicator.classList.remove('is-ready', 'is-loading', 'is-success', 'is-error');
         if (this.app.isRefreshingTasks || this._taskRefreshStatus === 'loading') {
             indicator.classList.add('is-loading');
-            indicator.style.height = '36px';
+            indicator.style.height = '28px';
             inner.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>正在生成任务...</span>';
             return;
         }
         if (this._taskRefreshStatus === 'success') {
             indicator.classList.add('is-success');
-            indicator.style.height = '36px';
+            indicator.style.height = '28px';
             inner.innerHTML = '<i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>任务刷新成功</span>';
             return;
         }
         if (this._taskRefreshStatus === 'error') {
             indicator.classList.add('is-error');
-            indicator.style.height = '36px';
+            indicator.style.height = '28px';
             inner.innerHTML = '<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>任务刷新失败</span>';
+            return;
+        }
+        indicator.style.height = '0px';
+        inner.innerHTML = '';
+    }
+
+    async _handleMarketplaceRefresh(root) {
+        if (this.app.isRefreshingMarketplace) return;
+        this._marketRefreshStatus = 'loading';
+        this._syncMarketplaceRefreshIndicator(root);
+        try {
+            const refreshPromise = this.app.refreshMarketplace();
+            this._renderMarketplaceProductList(root);
+            const products = await refreshPromise;
+            if (!products?.length) return;
+            this._renderMarketplaceProductList(root);
+            this._marketRefreshStatus = 'success';
+            this._syncMarketplaceRefreshIndicator(root);
+        } catch (error) {
+            console.error('[Wangxiang] 商品刷新失败:', error);
+            this._marketRefreshStatus = 'error';
+            this._syncMarketplaceRefreshIndicator(root);
+            this.app.phoneShell?.showNotification?.('万象', error?.message || '商品刷新失败', '❌');
+        } finally {
+            if (this._marketRefreshTimer) clearTimeout(this._marketRefreshTimer);
+            const finalStatus = this._marketRefreshStatus;
+            this._marketRefreshTimer = setTimeout(() => {
+                if (this._marketRefreshStatus === finalStatus && finalStatus !== 'loading') {
+                    this._marketRefreshStatus = 'idle';
+                    this._syncMarketplaceRefreshIndicator(root);
+                }
+            }, 1300);
+        }
+    }
+
+    _bindMarketplacePullRefresh(root) {
+        const panel = root.querySelector('[data-wangxiang-panel="marketplace"]');
+        const scroll = root.querySelector('.wangxiang-market-scroll');
+        if (!panel || !scroll || panel.dataset.marketPullRefreshBound === '1') return;
+        panel.dataset.marketPullRefreshBound = '1';
+
+        let startX = 0;
+        let startY = 0;
+        let pullDistance = 0;
+        let pressing = false;
+        let pressType = '';
+        let previousUserSelect = '';
+        const maxPull = 86;
+        const triggerThreshold = 56;
+        const canPull = () => !this.app.isRefreshingMarketplace && scroll.scrollTop <= 2 && this.currentSection === 'marketplace';
+
+        const startPress = (clientX, clientY, type) => {
+            if (!canPull()) return false;
+            startX = clientX;
+            startY = clientY;
+            pullDistance = 0;
+            pressing = true;
+            pressType = type;
+            if (type === 'mouse') {
+                previousUserSelect = document.body.style.userSelect;
+                document.body.style.userSelect = 'none';
+            }
+            return true;
+        };
+
+        const movePress = (clientX, clientY, event) => {
+            if (!pressing) return;
+            const deltaX = clientX - startX;
+            const deltaY = clientY - startY;
+            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 8) {
+                pressing = false;
+                pullDistance = 0;
+                if (pressType === 'mouse') {
+                    document.body.style.userSelect = previousUserSelect || '';
+                    previousUserSelect = '';
+                }
+                pressType = '';
+                this._syncMarketplaceRefreshIndicator(root);
+                return;
+            }
+            if (deltaY < 6) return;
+            pullDistance = Math.min(maxPull, Math.round(deltaY * 0.55));
+            const ready = pullDistance >= triggerThreshold;
+            this._setMarketplacePullHint(root, pullDistance, ready ? '松手生成商品' : '下拉生成商品', ready);
+            if (event?.cancelable) event.preventDefault();
+        };
+
+        const endPress = () => {
+            if (!pressing) return;
+            const shouldRefresh = pullDistance >= triggerThreshold;
+            pressing = false;
+            pullDistance = 0;
+            if (pressType === 'mouse') document.body.style.userSelect = previousUserSelect || '';
+            pressType = '';
+            previousUserSelect = '';
+            if (shouldRefresh) this._handleMarketplaceRefresh(root);
+            else this._syncMarketplaceRefreshIndicator(root);
+        };
+
+        const onTouchStart = event => {
+            if (event.target?.closest?.('button, input, select, textarea, a')) return;
+            const touch = event.touches?.[0];
+            if (touch) startPress(touch.clientX, touch.clientY, 'touch');
+        };
+        const onTouchMove = event => {
+            const touch = event.touches?.[0];
+            if (touch) movePress(touch.clientX, touch.clientY, event);
+        };
+        const onTouchEnd = () => {
+            if (pressType === 'touch') endPress();
+        };
+        const onMouseDown = event => {
+            if (event.target?.closest?.('button, input, select, textarea, a')) return;
+            if (event.button !== 0 || !startPress(event.clientX, event.clientY, 'mouse')) return;
+            event.preventDefault();
+            const onMove = moveEvent => movePress(moveEvent.clientX, moveEvent.clientY, moveEvent);
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                window.removeEventListener('blur', onUp);
+                endPress();
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+            window.addEventListener('blur', onUp);
+        };
+
+        panel.addEventListener('touchstart', onTouchStart, { passive: true });
+        panel.addEventListener('touchmove', onTouchMove, { passive: false });
+        panel.addEventListener('touchend', onTouchEnd);
+        panel.addEventListener('touchcancel', onTouchEnd);
+        panel.addEventListener('mousedown', onMouseDown);
+    }
+
+    _setMarketplacePullHint(root, height, text, ready = false) {
+        const indicator = root.querySelector('.wangxiang-market-pull-indicator');
+        const inner = root.querySelector('.wangxiang-market-pull-inner');
+        if (!indicator || !inner) return;
+        indicator.classList.remove('is-loading', 'is-success', 'is-error');
+        indicator.classList.toggle('is-ready', ready);
+        indicator.style.height = `${Math.max(0, height)}px`;
+        inner.innerHTML = `<i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>${text}</span>`;
+    }
+
+    _syncMarketplaceRefreshIndicator(root) {
+        const indicator = root?.querySelector('.wangxiang-market-pull-indicator');
+        const inner = root?.querySelector('.wangxiang-market-pull-inner');
+        if (!indicator || !inner) return;
+        indicator.classList.remove('is-ready', 'is-loading', 'is-success', 'is-error');
+        if (this.app.isRefreshingMarketplace || this._marketRefreshStatus === 'loading') {
+            indicator.classList.add('is-loading');
+            indicator.style.height = '28px';
+            inner.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>正在生成商品...</span>';
+            return;
+        }
+        if (this._marketRefreshStatus === 'success') {
+            indicator.classList.add('is-success');
+            indicator.style.height = '28px';
+            inner.innerHTML = '<i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>商品刷新成功</span>';
+            return;
+        }
+        if (this._marketRefreshStatus === 'error') {
+            indicator.classList.add('is-error');
+            indicator.style.height = '28px';
+            inner.innerHTML = '<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>商品刷新失败</span>';
             return;
         }
         indicator.style.height = '0px';

@@ -14,6 +14,7 @@
 // ========================================
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { readPhoneContextLimit } from '../../config/context-settings.js';
+import { PHONE_CONFIG } from '../../config/apps.js';
 
 export class PhoneCallView {
     constructor(app) {
@@ -2001,6 +2002,9 @@ export class PhoneCallView {
             } catch (e) {
                 wallpaper = '';
             }
+        }
+        if (!wallpaper) {
+            wallpaper = String(PHONE_CONFIG.defaultWallpaper || '').trim();
         }
 
         if (!wallpaper) {

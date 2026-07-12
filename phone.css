@@ -3916,6 +3916,26 @@ input:checked + .toggle-slider:before {
     }
 }
 
+/* 桌面端图标式首页：提高主网格与 Dock 图标的视觉占比 */
+@media (min-width: 501px) and (hover: hover) and (pointer: fine) {
+    #phone-panel-content .phone-screen .home-layout-icons .app-icon-bg {
+        width: 52px !important;
+        height: 52px !important;
+        border-radius: 14px !important;
+    }
+
+    #phone-panel-content .phone-screen .home-layout-icons .app-icon-emoji {
+        font-size: 29px !important;
+    }
+
+    #phone-panel-content .phone-screen .home-layout-icons .dock-app {
+        width: 48px !important;
+        height: 48px !important;
+        font-size: 27px !important;
+        border-radius: 14px !important;
+    }
+}
+
 /* 🔥 已删除：移动端聊天输入框的 max-width 限制，由 wechat-app.js 中的 flex 布局自动适配 */
 
 /* ========================================

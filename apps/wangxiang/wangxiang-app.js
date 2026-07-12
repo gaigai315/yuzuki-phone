@@ -7,6 +7,7 @@
 
 import { WangxiangView } from './wangxiang-view.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
+import { WechatData } from '../wechat/wechat-data.js';
 
 const WANGXIANG_TASK_VISUALS = [
     { accent: 'green', icon: 'fa-list-check' },
@@ -14,6 +15,8 @@ const WANGXIANG_TASK_VISUALS = [
     { accent: 'purple', icon: 'fa-crosshairs' },
     { accent: 'orange', icon: 'fa-crown' }
 ];
+
+const WANGXIANG_DEFAULT_MARKET_CATEGORIES = ['补给物资', '战斗装备', '强化芯片', '医疗补给', '特殊道具'];
 
 export function buildWangxiangTaskInjectionContent(tasks) {
     const activeTasks = (Array.isArray(tasks) ? tasks : [])
@@ -66,6 +69,27 @@ export function buildWangxiangTaskInjectionContent(tasks) {
     return `【万象当前已接任务】\n以下内容是用户已经接取且尚未完成的任务事实。续写剧情时应保持任务信息与进度一致，不要把未接取任务视为已接取。\n\n${blocks.join('\n\n')}`;
 }
 
+export function buildWangxiangOrderInjectionContent(orders, userName = '用户') {
+    const shippingOrders = (Array.isArray(orders) ? orders : []).filter(order => order?.status === 'shipping');
+    if (!shippingOrders.length) return '';
+    const clean = (value, fallback = '未注明') => String(value ?? '').replace(/\s+/g, ' ').trim() || fallback;
+    const blocks = shippingOrders.map((order, index) => [
+        `--- 配送订单 ${index + 1} ---`,
+        `订单号：${clean(order.id)}`,
+        `购买用户：${clean(userName, '用户')}`,
+        `购买时间：${clean(order.createdAt)}`,
+        `支付时间：${clean(order.paidAt || order.shippingAt)}`,
+        `商品名称：${clean(order.name, '未命名商品')}`,
+        `商品信息：${clean(order.description, '暂无商品说明')}`,
+        `购买数量：${Math.max(1, Number(order.quantity || 1))}`,
+        `支付金额：${clean(order.totalPrice, '0')}`,
+        `支付方式：${order.paymentMethod === 'wechat' ? '微信支付' : '信用点'}`,
+        `配送状态：正在配送中`,
+        `收货信息：${clean(order.addressSnapshot?.recipient)}，${clean(order.addressSnapshot?.phone)}，${clean(order.addressSnapshot?.address)}`
+    ].join('\n'));
+    return `【万象商品配送信息】\n以下商品已由${clean(userName, '用户')}购买并支付，当前正在配送中。续写剧情时可将其视为确定发生的购买与配送事实，不要重复下单或假设尚未支付。\n\n${blocks.join('\n\n')}`;
+}
+
 export function parseWangxiangTaskProgressTags(text) {
     const updates = [];
     const tagRegex = /<任务进度>([\s\S]*?)<\/任务进度>/gi;
@@ -92,11 +116,18 @@ export class WangxiangApp {
         this.phoneShell = phoneShell;
         this.storage = storage;
         this.wangxiangView = new WangxiangView(this);
+        this.wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData || new WechatData(storage);
         this.isRefreshingTasks = false;
+        this.isRefreshingMarketplace = false;
         this._taskDataScopeKey = this._getCurrentTaskScopeKey();
         this.generatedTasks = this._loadGeneratedTasks();
         this.managedTasks = this._loadManagedTasks();
         this.taskProgressHistory = this._loadTaskProgressHistory();
+        this.marketplaceCategories = this._loadMarketplaceCategories();
+        this.marketplaceProducts = this._loadMarketplaceProducts();
+        this.marketplaceOrders = this._loadMarketplaceOrders();
+        this.creditBalance = this._loadCreditBalance();
+        this.deliveryAddresses = this._loadDeliveryAddresses();
         this._reconcileGeneratedTaskStatuses();
 
         window.addEventListener('phone:swipeBack', () => this.handleSwipeBack());
@@ -112,8 +143,198 @@ export class WangxiangApp {
         this.generatedTasks = [];
         this.managedTasks = [];
         this.taskProgressHistory = [];
+        this.marketplaceCategories = [];
+        this.marketplaceProducts = [];
+        this.marketplaceOrders = [];
+        this.creditBalance = 0;
+        this.deliveryAddresses = [];
         this.wangxiangView.currentTaskId = '';
         this._syncTaskDataScope();
+    }
+
+    getMarketplaceCategories() {
+        return Array.isArray(this.marketplaceCategories) && this.marketplaceCategories.length === WANGXIANG_DEFAULT_MARKET_CATEGORIES.length
+            ? [...this.marketplaceCategories]
+            : [...WANGXIANG_DEFAULT_MARKET_CATEGORIES];
+    }
+
+    getMarketplaceProducts() {
+        return Array.isArray(this.marketplaceProducts) ? this.marketplaceProducts : [];
+    }
+
+    getMarketplaceOrders() {
+        return Array.isArray(this.marketplaceOrders) ? this.marketplaceOrders : [];
+    }
+
+    getCurrentUserName() {
+        const context = this._getContext();
+        return String(context?.name1 || this._getWechatData()?.getUserInfo?.()?.name || '用户').trim() || '用户';
+    }
+
+    getCreditBalance() {
+        return Math.max(0, Number(this.creditBalance || 0));
+    }
+
+    getWechatWalletBalance() {
+        const balance = this._getWechatData()?.getWalletBalance?.();
+        return balance === null || balance === undefined || !Number.isFinite(Number(balance)) ? null : Math.max(0, Number(balance));
+    }
+
+    getDeliveryAddresses() {
+        return Array.isArray(this.deliveryAddresses) ? this.deliveryAddresses.map(item => ({ ...item })) : [];
+    }
+
+    async addDeliveryAddress(address = {}) {
+        this._syncTaskDataScope();
+        const recipient = String(address.recipient || '').trim();
+        const phone = String(address.phone || '').trim();
+        const detail = String(address.address || '').replace(/\s+/g, ' ').trim();
+        if (!recipient || !phone || !detail) throw new Error('请完整填写收货人、联系电话和地址');
+        const item = {
+            id: `address-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+            label: String(address.label || '常用地址').trim().slice(0, 12) || '常用地址',
+            recipient: recipient.slice(0, 30),
+            phone: phone.slice(0, 30),
+            address: detail.slice(0, 160),
+            isDefault: this.deliveryAddresses.length === 0 || address.isDefault === true
+        };
+        if (item.isDefault) this.deliveryAddresses.forEach(existing => { existing.isDefault = false; });
+        this.deliveryAddresses.push(item);
+        await this._saveDeliveryAddresses();
+        return { ...item };
+    }
+
+    async removeDeliveryAddress(addressId) {
+        this._syncTaskDataScope();
+        const removed = this.deliveryAddresses.find(item => String(item.id) === String(addressId || ''));
+        this.deliveryAddresses = this.deliveryAddresses.filter(item => String(item.id) !== String(addressId || ''));
+        if (removed?.isDefault && this.deliveryAddresses[0]) this.deliveryAddresses[0].isDefault = true;
+        await this._saveDeliveryAddresses();
+        return !!removed;
+    }
+
+    async setDefaultDeliveryAddress(addressId) {
+        this._syncTaskDataScope();
+        const target = this.deliveryAddresses.find(item => String(item.id) === String(addressId || ''));
+        if (!target) throw new Error('收货地址不存在');
+        this.deliveryAddresses.forEach(item => { item.isDefault = item === target; });
+        await this._saveDeliveryAddresses();
+        return { ...target, isDefault: true };
+    }
+
+    _getWechatData() {
+        return window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData || this.wechatData;
+    }
+
+    async createMarketplaceOrder(productId, quantity = 1) {
+        this._syncTaskDataScope();
+        const product = this.marketplaceProducts.find(item => String(item?.id || '') === String(productId || ''));
+        if (!product) throw new Error('商品不存在或已刷新');
+        const safeQuantity = Math.max(1, Math.min(999, Math.floor(Number(quantity) || 1)));
+        const stock = this._readMarketplaceStock(product.stock);
+        if (Number.isFinite(stock) && safeQuantity > stock) throw new Error(`当前库存仅剩 ${stock}`);
+
+        const order = {
+            id: `WX${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+            productId: String(product.id || ''),
+            categoryIndex: Number(product.categoryIndex || 1),
+            name: String(product.name || '未命名商品'),
+            description: String(product.description || ''),
+            unitPrice: String(product.price || '0'),
+            totalPrice: this._formatMarketplaceTotal(product.price, safeQuantity),
+            quantity: safeQuantity,
+            status: 'pending',
+            createdAt: new Date().toLocaleString('zh-CN', { hour12: false })
+        };
+        this.marketplaceOrders.unshift(order);
+        await this._saveMarketplaceOrders();
+        return { ...order };
+    }
+
+    async payMarketplaceOrder(orderId, paymentMethod, addressId) {
+        this._syncTaskDataScope();
+        const order = this.marketplaceOrders.find(item => String(item?.id || '') === String(orderId || ''));
+        if (!order) throw new Error('订单不存在');
+        if (order.status !== 'pending') return { ...order };
+        const method = paymentMethod === 'wechat' ? 'wechat' : paymentMethod === 'credit' ? 'credit' : '';
+        if (!method) throw new Error('请选择支付方式');
+        const address = this.deliveryAddresses.find(item => String(item.id) === String(addressId || ''));
+        if (!address) throw new Error('请选择收货地址');
+        const amount = this._readMarketplaceAmount(order.totalPrice);
+        if (!Number.isFinite(amount)) throw new Error('订单金额无法识别');
+        const product = this.marketplaceProducts.find(item => String(item?.id || '') === String(order.productId || ''));
+        const productStock = product ? this._readMarketplaceStock(product.stock) : Number.NaN;
+        if (Number.isFinite(productStock) && Number(order.quantity) > productStock) throw new Error(`当前库存仅剩 ${productStock}`);
+
+        if (method === 'credit') {
+            if (this.getCreditBalance() < amount) throw new Error(`信用点不足，当前仅有 ${this.getCreditBalance().toLocaleString('zh-CN')}`);
+            this.creditBalance = Math.max(0, this.getCreditBalance() - amount);
+        } else {
+            const wechatBalance = this.getWechatWalletBalance();
+            if (wechatBalance === null) throw new Error('微信零钱尚未初始化');
+            if (wechatBalance < amount) throw new Error(`微信零钱不足，当前仅有 ¥${wechatBalance.toFixed(2)}`);
+            this._getWechatData()?.updateWalletBalance?.(-amount);
+        }
+
+        if (product && Number.isFinite(productStock)) {
+            product.stock = this._replaceMarketplaceStock(product.stock, Math.max(0, productStock - Number(order.quantity)));
+        }
+        order.status = 'shipping';
+        order.paymentMethod = method;
+        order.addressId = String(address.id);
+        order.addressSnapshot = { ...address };
+        order.paidAt = new Date().toLocaleString('zh-CN', { hour12: false });
+        order.shippingAt = order.paidAt;
+        await Promise.all([
+            this._saveMarketplaceOrders(),
+            method === 'credit' ? this._saveCreditBalance() : Promise.resolve(),
+            product ? this._saveMarketplaceProducts() : Promise.resolve()
+        ]);
+        return { ...order };
+    }
+
+    _readMarketplaceStock(value) {
+        const match = String(value ?? '').replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+        return match ? Math.max(0, Math.floor(Number(match[0]))) : Number.NaN;
+    }
+
+    _readMarketplaceAmount(value) {
+        const match = String(value ?? '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+        const amount = match ? Number(match[0]) : Number.NaN;
+        return Number.isFinite(amount) && amount >= 0 ? amount : Number.NaN;
+    }
+
+    _replaceMarketplaceStock(value, nextStock) {
+        const text = String(value ?? '');
+        return /\d[\d,.]*/.test(text) ? text.replace(/\d[\d,.]*/, String(nextStock)) : String(nextStock);
+    }
+
+    _formatMarketplaceTotal(price, quantity) {
+        const text = String(price || '0').trim();
+        const match = text.match(/-?\d[\d,]*(?:\.\d+)?/);
+        if (!match) return quantity === 1 ? text : `${text} × ${quantity}`;
+        const amount = Number(match[0].replace(/,/g, ''));
+        if (!Number.isFinite(amount)) return quantity === 1 ? text : `${text} × ${quantity}`;
+        const total = amount * quantity;
+        const formatted = Number.isInteger(total) ? total.toLocaleString('zh-CN') : total.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+        return text.replace(match[0], formatted);
+    }
+
+    async setMarketplaceCategories(categories) {
+        const normalized = (Array.isArray(categories) ? categories : [])
+            .map(value => String(value || '').replace(/\s+/g, ' ').trim());
+        if (normalized.length !== WANGXIANG_DEFAULT_MARKET_CATEGORIES.length || normalized.some(value => !value)) {
+            throw new Error('请填写全部商品分类');
+        }
+        if (normalized.some(value => value.length > 8)) {
+            throw new Error('商品分类名称最多 8 个字');
+        }
+        if (new Set(normalized.map(value => value.toLocaleLowerCase())).size !== normalized.length) {
+            throw new Error('商品分类名称不能重复');
+        }
+        this.marketplaceCategories = normalized;
+        await this.storage?.set?.('wangxiang_market_categories', JSON.stringify(normalized));
+        return this.getMarketplaceCategories();
     }
 
     getGeneratedTasks() {
@@ -482,12 +703,20 @@ export class WangxiangApp {
         if (!allowedStatuses.has(status)) throw new Error('无效的任务状态');
         const task = this.managedTasks.find(item => String(item?.id || '') === String(taskId || ''));
         if (!task) throw new Error('未找到已接取任务');
+        const creditAlreadyGranted = task.creditRewardGranted === true || task.status === 'completed';
 
         Object.assign(task, patch, { status });
         if (status === 'submit') task.progress = 100;
         if (status === 'completed') {
             task.progress = 100;
             task.completedAt = task.completedAt || new Date().toLocaleString('zh-CN', { hour12: false });
+            if (!creditAlreadyGranted) {
+                const rewardAmount = this._readMarketplaceAmount(task.reward);
+                const safeReward = Number.isFinite(rewardAmount) ? rewardAmount : 0;
+                this.creditBalance = this.getCreditBalance() + safeReward;
+                task.creditRewardGranted = true;
+                task.creditRewardAmount = safeReward;
+            }
         }
         const generatedTask = this.generatedTasks.find(item => String(item?.id || '') === String(task.id || ''));
         if (generatedTask) generatedTask.status = status;
@@ -496,7 +725,8 @@ export class WangxiangApp {
         }
         await Promise.all([
             this._saveGeneratedTasks(),
-            this._saveManagedTasks()
+            this._saveManagedTasks(),
+            status === 'completed' && !creditAlreadyGranted ? this._saveCreditBalance() : Promise.resolve()
         ]);
         return task;
     }
@@ -557,6 +787,117 @@ export class WangxiangApp {
         } finally {
             this.isRefreshingTasks = false;
         }
+    }
+
+    async refreshMarketplace() {
+        if (this.isRefreshingMarketplace) return null;
+        this._syncTaskDataScope();
+        const requestScopeKey = this._taskDataScopeKey;
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+
+        this.isRefreshingMarketplace = true;
+        try {
+            this.marketplaceProducts = [];
+            await this._saveMarketplaceProducts();
+            const messages = await this._buildMarketplaceMessages();
+            const result = await apiManager.callAI(messages, {
+                appId: 'wangxiang',
+                temperature: 0.75,
+                max_tokens: 4800,
+                min_max_tokens: 3200
+            });
+            if (!result?.success) throw new Error(result?.error || '商品生成失败');
+
+            const rawText = String(result.summary || result.content || result.text || '').trim();
+            const cleanedText = applyPhoneTagFilter(rawText, { storage: this.storage }) || rawText;
+            if (this._getCurrentTaskScopeKey() !== requestScopeKey) {
+                throw new Error('生成期间会话已切换，本次商品未写入任何聊天');
+            }
+            const products = this._parseMarketplaceResponse(cleanedText);
+            if (!products.length) throw new Error('没有解析到有效商品，请重新下拉生成');
+
+            this.marketplaceProducts = products;
+            await this._saveMarketplaceProducts();
+            return this.getMarketplaceProducts();
+        } finally {
+            this.isRefreshingMarketplace = false;
+        }
+    }
+
+    async _buildMarketplaceMessages() {
+        const context = this._getContext();
+        if (!context) throw new Error('无法访问 SillyTavern 角色信息');
+
+        const userName = context.name1 || '用户';
+        const charName = context.name2 || '角色';
+        const messages = [
+            this._buildCharacterMessage(context, charName),
+            this._buildPersonaMessage(context, userName)
+        ].filter(Boolean);
+
+        const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('wangxiang-marketplace');
+        if (worldbookMessage?.content) messages.push(worldbookMessage);
+
+        const promptManager = window.VirtualPhone?.promptManager;
+        promptManager?.ensureLoaded?.();
+        let marketplacePrompt = promptManager?.getPromptForFeature?.('wangxiang', 'marketplace')
+            || promptManager?.getDefaultPrompts?.()?.wangxiang?.marketplace?.content
+            || '';
+        const categoryText = this.getMarketplaceCategories().map(category => `- ${category}`).join('\n');
+        marketplacePrompt = String(marketplacePrompt)
+            .replace(/\{\{\s*user\s*\}\}/g, userName)
+            .replace(/\{\{\s*char\s*\}\}/g, charName)
+            .replace(/\{\{\s*storyTime\s*\}\}/gi, this._getCurrentPhoneTimeLabel())
+            .replace(/\{\{\s*marketCategories\s*\}\}/gi, categoryText)
+            .trim();
+        if (!marketplacePrompt) throw new Error('商品商场提示词为空');
+        messages.push({ role: 'user', content: marketplacePrompt, isPhoneMessage: true });
+        return messages;
+    }
+
+    _parseMarketplaceResponse(rawText) {
+        const wrapper = String(rawText || '').match(/<商场>([\s\S]*?)<\/商场>/i);
+        if (!wrapper) return [];
+
+        const categories = this.getMarketplaceCategories();
+        const normalize = value => String(value || '').replace(/[\s　]+/g, '').toLocaleLowerCase();
+        const categoryIndexByName = new Map(categories.map((category, index) => [normalize(category), index + 1]));
+        const content = String(wrapper[1] || '');
+        const headings = Array.from(content.matchAll(/^\s*\[([^\]\r\n]+)\]\s*$/gm));
+        const products = [];
+
+        headings.forEach((heading, headingIndex) => {
+            const categoryIndex = categoryIndexByName.get(normalize(heading[1]));
+            if (!categoryIndex) return;
+            const sectionStart = Number(heading.index || 0) + heading[0].length;
+            const sectionEnd = headingIndex + 1 < headings.length ? Number(headings[headingIndex + 1].index || content.length) : content.length;
+            const section = content.slice(sectionStart, sectionEnd).replace(/^\s*---+\s*$/gm, '').trim();
+            const itemBlocks = section.split(/(?=^\s*物品\s*[:：])/m).filter(block => /^\s*物品\s*[:：]/.test(block));
+
+            itemBlocks.forEach(block => {
+                const readField = field => String(block.match(new RegExp(`^\\s*${field}\\s*[:：]\\s*(.+?)\\s*$`, 'm'))?.[1] || '').trim();
+                const name = readField('物品');
+                if (!name) return;
+                const rawTags = readField('标签');
+                const tags = rawTags
+                    .split(/[|｜,，、/I]+/)
+                    .map(tag => tag.trim().slice(0, 2))
+                    .filter(Boolean)
+                    .slice(0, 2);
+                products.push({
+                    id: `market-${Date.now().toString(36)}-${products.length}-${Math.random().toString(36).slice(2, 6)}`,
+                    categoryIndex,
+                    name: name.slice(0, 40),
+                    price: readField('售价').slice(0, 24) || '0',
+                    description: readField('简介').slice(0, 240),
+                    stock: readField('库存').slice(0, 24) || '0',
+                    tags
+                });
+            });
+        });
+
+        return products.slice(0, 60);
     }
 
     async _buildTaskMessages() {
@@ -771,6 +1112,112 @@ export class WangxiangApp {
         }
     }
 
+    _loadMarketplaceCategories() {
+        try {
+            const saved = this.storage?.get?.('wangxiang_market_categories', null);
+            const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            if (!Array.isArray(parsed) || parsed.length !== WANGXIANG_DEFAULT_MARKET_CATEGORIES.length) {
+                return [...WANGXIANG_DEFAULT_MARKET_CATEGORIES];
+            }
+            const normalized = parsed.map(value => String(value || '').replace(/\s+/g, ' ').trim());
+            if (normalized.some(value => !value || value.length > 8)) return [...WANGXIANG_DEFAULT_MARKET_CATEGORIES];
+            if (new Set(normalized.map(value => value.toLocaleLowerCase())).size !== normalized.length) {
+                return [...WANGXIANG_DEFAULT_MARKET_CATEGORIES];
+            }
+            return normalized;
+        } catch (error) {
+            console.warn('[Wangxiang] 读取商品分类失败:', error);
+            return [...WANGXIANG_DEFAULT_MARKET_CATEGORIES];
+        }
+    }
+
+    _loadMarketplaceProducts() {
+        try {
+            const saved = this.storage?.get?.('wangxiang_marketplace_products', null);
+            const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            if (!Array.isArray(parsed)) return [];
+            return parsed.filter(product => product && product.name && Number(product.categoryIndex) >= 1 && Number(product.categoryIndex) <= 5)
+                .map(product => ({
+                    id: String(product.id || `market-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`),
+                    categoryIndex: Number(product.categoryIndex),
+                    name: String(product.name || '').slice(0, 40),
+                    price: String(product.price || '0').slice(0, 24),
+                    description: String(product.description || '').slice(0, 240),
+                    stock: String(product.stock || '0').slice(0, 24),
+                    tags: (Array.isArray(product.tags) ? product.tags : []).map(tag => String(tag || '').slice(0, 2)).filter(Boolean).slice(0, 2)
+                }))
+                .slice(0, 60);
+        } catch (error) {
+            console.warn('[Wangxiang] 读取商城商品失败:', error);
+            return [];
+        }
+    }
+
+    _loadMarketplaceOrders() {
+        try {
+            const saved = this.storage?.get?.('wangxiang_marketplace_orders', null);
+            const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            if (!Array.isArray(parsed)) return [];
+            return parsed.filter(order => order && order.id && order.name)
+                .map(order => ({
+                    id: String(order.id),
+                    productId: String(order.productId || ''),
+                    categoryIndex: Math.max(1, Math.min(5, Number(order.categoryIndex || 1))),
+                    name: String(order.name || '未命名商品').slice(0, 40),
+                    description: String(order.description || '').slice(0, 240),
+                    unitPrice: String(order.unitPrice || '0').slice(0, 24),
+                    totalPrice: String(order.totalPrice || order.unitPrice || '0').slice(0, 32),
+                    quantity: Math.max(1, Math.min(999, Math.floor(Number(order.quantity) || 1))),
+                    status: order.status === 'shipping' || order.status === 'paid' ? 'shipping' : 'pending',
+                    createdAt: String(order.createdAt || ''),
+                    paidAt: String(order.paidAt || ''),
+                    shippingAt: String(order.shippingAt || order.paidAt || ''),
+                    paymentMethod: order.paymentMethod === 'wechat' ? 'wechat' : order.paymentMethod === 'credit' ? 'credit' : '',
+                    addressId: String(order.addressId || ''),
+                    addressSnapshot: order.addressSnapshot && typeof order.addressSnapshot === 'object'
+                        ? {
+                            id: String(order.addressSnapshot.id || order.addressId || ''),
+                            label: String(order.addressSnapshot.label || ''),
+                            recipient: String(order.addressSnapshot.recipient || ''),
+                            phone: String(order.addressSnapshot.phone || ''),
+                            address: String(order.addressSnapshot.address || '')
+                        }
+                        : null
+                }))
+                .slice(0, 200);
+        } catch (error) {
+            console.warn('[Wangxiang] 读取商城订单失败:', error);
+            return [];
+        }
+    }
+
+    _loadCreditBalance() {
+        const saved = this.storage?.get?.('wangxiang_credit_balance', 0);
+        const value = Number(saved);
+        return Number.isFinite(value) && value >= 0 ? value : 0;
+    }
+
+    _loadDeliveryAddresses() {
+        try {
+            const saved = this.storage?.get?.('wangxiang_delivery_addresses', null);
+            const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            if (!Array.isArray(parsed)) return [];
+            const addresses = parsed.filter(item => item && item.id && item.recipient && item.address).map(item => ({
+                id: String(item.id),
+                label: String(item.label || '常用地址').slice(0, 12),
+                recipient: String(item.recipient || '').slice(0, 30),
+                phone: String(item.phone || '').slice(0, 30),
+                address: String(item.address || '').slice(0, 160),
+                isDefault: item.isDefault === true
+            })).slice(0, 20);
+            if (addresses.length && !addresses.some(item => item.isDefault)) addresses[0].isDefault = true;
+            return addresses;
+        } catch (error) {
+            console.warn('[Wangxiang] 读取收货地址失败:', error);
+            return [];
+        }
+    }
+
     _getCurrentTaskScopeKey() {
         try {
             const scopedKey = this.storage?.getStorageKey?.('wangxiang-scope');
@@ -792,6 +1239,11 @@ export class WangxiangApp {
         this.generatedTasks = this._loadGeneratedTasks();
         this.managedTasks = this._loadManagedTasks();
         this.taskProgressHistory = this._loadTaskProgressHistory();
+        this.marketplaceCategories = this._loadMarketplaceCategories();
+        this.marketplaceProducts = this._loadMarketplaceProducts();
+        this.marketplaceOrders = this._loadMarketplaceOrders();
+        this.creditBalance = this._loadCreditBalance();
+        this.deliveryAddresses = this._loadDeliveryAddresses();
         this._reconcileGeneratedTaskStatuses();
         return true;
     }
@@ -816,6 +1268,22 @@ export class WangxiangApp {
 
     _saveTaskProgressHistory() {
         return this.storage?.set?.('wangxiang_task_progress_history', JSON.stringify(this.taskProgressHistory));
+    }
+
+    _saveMarketplaceProducts() {
+        return this.storage?.set?.('wangxiang_marketplace_products', JSON.stringify(this.marketplaceProducts));
+    }
+
+    _saveMarketplaceOrders() {
+        return this.storage?.set?.('wangxiang_marketplace_orders', JSON.stringify(this.marketplaceOrders));
+    }
+
+    _saveCreditBalance() {
+        return this.storage?.set?.('wangxiang_credit_balance', this.getCreditBalance());
+    }
+
+    _saveDeliveryAddresses() {
+        return this.storage?.set?.('wangxiang_delivery_addresses', JSON.stringify(this.deliveryAddresses));
     }
 
     _getContext() {

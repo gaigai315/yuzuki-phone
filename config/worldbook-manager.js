@@ -530,7 +530,7 @@ export class WorldbookManager {
     }
 
     isSessionIsolatedApp(appKey) {
-        return appKey === 'wangxiang';
+        return appKey === 'wangxiang' || appKey === 'wangxiang-marketplace';
     }
 
     getEnabled(appKey) {

@@ -2358,7 +2358,11 @@ getWeekday(date) {
         if (!key) return false;
         const safeGender = this._normalizeGenderValue(gender);
         const map = this.getContactGenderMap();
+        const previousGender = this._normalizeGenderValue(map[key]);
         map[key] = safeGender;
+        if (previousGender !== safeGender) {
+            delete this.getContactAutoAvatarMap()[key];
+        }
         this.saveData();
         return true;
     }
@@ -2388,10 +2392,14 @@ getWeekday(date) {
         if (!key) return false;
         const safeGroup = this._normalizeAvatarGroupValue(group);
         const map = this.getContactAvatarGroupMap();
+        const previousGroup = this._normalizeAvatarGroupValue(map[key]);
         if (safeGroup) {
             map[key] = safeGroup;
         } else {
             delete map[key];
+        }
+        if (previousGroup !== safeGroup) {
+            delete this.getContactAutoAvatarMap()[key];
         }
         this.saveData();
         return true;
@@ -2458,6 +2466,7 @@ getWeekday(date) {
         }
         if (contact) {
             const oldName = contact.name; // 记录旧名字
+            const hasAvatarUpdate = Object.prototype.hasOwnProperty.call(updates || {}, 'avatar');
             Object.assign(contact, updates);
 
             // 🔥 新增：如果修改了名字，同步更新关联的聊天窗口名字
@@ -2472,6 +2481,18 @@ getWeekday(date) {
                         chatByName.name = updates.name;
                     }
                 }
+            }
+
+            if (hasAvatarUpdate) {
+                const nextAvatar = String(updates.avatar || '').trim();
+                this.data.chats.forEach((chat) => {
+                    if (chat.type === 'group') return;
+                    if (String(chat.contactId || '').trim() === String(contact.id || safeContactId).trim()
+                        || this._isSameLookupName(chat.name, oldName)
+                        || this._isSameLookupName(chat.name, contact.name)) {
+                        chat.avatar = nextAvatar;
+                    }
+                });
             }
 
             this.saveData();
@@ -3905,6 +3926,62 @@ parseAIResponse(text) {
             this.saveData();
         }
     }    
+
+    async updateGroupMemberProfile(chatId, oldName, updates = {}) {
+        const chat = this.getChat(chatId);
+        const previousName = String(oldName || '').trim();
+        const nextName = String(updates.name || previousName).trim();
+        if (!chat || chat.type !== 'group' || !previousName || !nextName) return false;
+
+        const previousKey = this._normalizeLookupName(previousName);
+        const nextKey = this._normalizeLookupName(nextName);
+        const hasCollision = (chat.members || []).some(member => {
+            const memberKey = this._normalizeLookupName(member);
+            return memberKey && memberKey !== previousKey && memberKey === nextKey;
+        });
+        if (hasCollision) return false;
+
+        let memberMatched = false;
+        const renamedMembers = (chat.members || []).map(member => {
+            if (this._normalizeLookupName(member) !== previousKey) return member;
+            memberMatched = true;
+            return nextName;
+        });
+        if (!memberMatched) renamedMembers.push(nextName);
+        chat.members = Array.from(new Set(renamedMembers));
+
+        const messages = this.getMessages(chat.id);
+        messages.forEach(message => {
+            ['from', 'sender', 'senderName'].forEach(field => {
+                if (this._normalizeLookupName(message?.[field]) === previousKey) {
+                    message[field] = nextName;
+                }
+            });
+            if (this._normalizeLookupName(message?.quote?.sender) === previousKey) {
+                message.quote.sender = nextName;
+            }
+        });
+        this._messagesDirty[chat.id] = true;
+
+        const oldMapKey = this._getContactGenderMapKey(previousName);
+        const genderMap = this.getContactGenderMap();
+        const avatarGroupMap = this.getContactAvatarGroupMap();
+        const autoAvatarMap = this.getContactAutoAvatarMap();
+        if (oldMapKey && oldMapKey !== nextName) {
+            delete genderMap[oldMapKey];
+            delete avatarGroupMap[oldMapKey];
+            delete autoAvatarMap[oldMapKey];
+        }
+
+        genderMap[nextName] = this._normalizeGenderValue(updates.gender);
+        const avatarGroup = this._normalizeAvatarGroupValue(updates.avatarGroup);
+        if (avatarGroup) avatarGroupMap[nextName] = avatarGroup;
+        else delete avatarGroupMap[nextName];
+        delete autoAvatarMap[nextName];
+
+        await this.saveData();
+        return true;
+    }
     
 // ========================================
 // 🎨 自定义表情管理

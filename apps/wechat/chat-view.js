@@ -8094,19 +8094,39 @@ renderChatRoom(chat) {
         this.bindSpecialMessageEvents();
         this.bindInnerThoughtEvents();
 
-        // 添加头像点击事件
-        queryAll('.message-avatar').forEach(avatar => {
-            avatar.addEventListener('click', (e) => {
+        // 消息列表会局部替换节点，头像点击必须委托给稳定容器。
+        const avatarMessagesDiv = query('#chat-messages') || document.getElementById('chat-messages');
+        if (avatarMessagesDiv && !avatarMessagesDiv._profileAvatarEventBound) {
+            avatarMessagesDiv._profileAvatarEventBound = true;
+            avatarMessagesDiv.addEventListener('click', (e) => {
+                const avatar = e.target.closest?.('.message-avatar');
+                if (!avatar || !avatarMessagesDiv.contains(avatar)) return;
                 if (this._isMessageSelectionActiveForCurrentChat()) return;
-                const message = e.target.closest('.chat-message');
-                if (!message) return;
-                const isMe = message.classList.contains('message-right');
 
-                if (!isMe) {
-                    this.showAvatarSettings(this.app.currentChat);
+                const message = avatar.closest('.chat-message');
+                if (!message || message.classList.contains('message-right')) return;
+
+                e.stopImmediatePropagation();
+                const currentChat = this.app.currentChat;
+                const senderName = currentChat?.type === 'group'
+                    ? String(message.querySelector('.message-sender')?.textContent || '').trim()
+                    : '';
+                const senderContact = senderName
+                    ? (this.app.wechatData.getContactByName?.(senderName)
+                        || this.app.wechatData.findContactByNameLoose?.(senderName, { includeChats: false }))
+                    : null;
+
+                if (!senderContact?.id && currentChat?.type === 'group' && senderName) {
+                    this.app.contactsView?.showEditGroupMemberPage?.(currentChat.id, senderName);
+                    return;
                 }
+
+                const targetChat = senderContact?.id
+                    ? { ...currentChat, contactId: senderContact.id, name: senderContact.name }
+                    : currentChat;
+                this.showAvatarSettings(targetChat);
             });
-        });
+        }
 
         // 滚动到底部（首次加载时）
         this.scrollToBottomIfNeeded(true);
@@ -11066,248 +11086,18 @@ renderChatRoom(chat) {
     }
 
     showAvatarSettings(chat) {
-        // 🔥 不用弹窗，在手机内部显示设置页面
-        const html = `
-        <div class="wechat-app">
-            <div class="wechat-header">
-                <div class="wechat-header-left">
-                    <button class="wechat-back-btn" id="back-to-chat">
-                        <i class="fa-solid fa-chevron-left"></i>
-                    </button>
-                </div>
-                <div class="wechat-header-title">聊天设置</div>
-                <div class="wechat-header-right"></div>
-            </div>
+        const contact = (chat?.contactId ? this.app.wechatData.getContact(chat.contactId) : null)
+            || this.app.wechatData.getContactByName?.(chat?.name)
+            || this.app.wechatData.findContactByNameLoose?.(chat?.name, { includeChats: false });
 
-            <div class="wechat-content" style="background: #ededed;">
-                <!-- 头像区域 -->
-                <div style="background: #fff; padding: 20px; margin-bottom: 10px;">
-                    <div style="text-align: center; margin-bottom: 15px; color: #999; font-size: 13px;">
-                        点击头像更换
-                    </div>
-                    <div id="avatar-preview" style="
-                        width: 100px;
-                        height: 100px;
-                        border-radius: 10px;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        margin: 0 auto;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 50px;
-                        cursor: pointer;
-                        overflow: hidden;
-                    ">${this.app.renderAvatar(chat.avatar, '👤', chat.name)}</div>
-                    <input type="file" id="avatar-upload" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display: none;">
-                </div>
-
-                <!-- 备注名 -->
-                <div style="background: #fff; padding: 15px 20px; margin-bottom: 10px;">
-                    <div style="color: #999; font-size: 13px; margin-bottom: 8px;">备注名</div>
-                    <input type="text" id="remark-input" value="${chat.name}"
-                           placeholder="设置备注名" style="
-                        width: 100%;
-                        padding: 10px;
-                        border: 1px solid #e5e5e5;
-                        border-radius: 6px;
-                        font-size: 15px;
-                        box-sizing: border-box;
-                    ">
-                </div>
-
-                <!-- 保存按钮 -->
-                <div style="padding: 20px;">
-                    <button id="save-chat-settings" style="
-                        width: 100%;
-                        padding: 12px;
-                        background: #07c160;
-                        color: #fff;
-                        border: none;
-                        border-radius: 6px;
-                        font-size: 16px;
-                        cursor: pointer;
-                    ">保存</button>
-                </div>
-
-                <!-- 🔥 清空聊天记录按钮 -->
-                <div style="padding: 0 20px 20px;">
-                    <button id="clear-chat-messages" style="
-                        width: 100%;
-                        padding: 12px;
-                        background: #fff;
-                        color: #ff3b30;
-                        border: 1px solid #ff3b30;
-                        border-radius: 6px;
-                        font-size: 16px;
-                        cursor: pointer;
-                    ">清空聊天记录</button>
-                </div>
-            </div>
-        </div>
-    `;
-
-        this.app.phoneShell.setContent(html);
-
-        // 🔥 临时存储新头像
-        let newAvatar = null;
-
-        // 绑定事件
-        document.getElementById('back-to-chat')?.addEventListener('click', () => {
-            this.app.render();
-        });
-
-        document.getElementById('avatar-preview')?.addEventListener('click', () => {
-            document.getElementById('avatar-upload').click();
-        });
-
-        document.getElementById('avatar-upload')?.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            e.target.value = '';
-
-            if (file.size > 5 * 1024 * 1024) {
-                this.app.phoneShell.showNotification('提示', '图片太大，请选择小于5MB的图片', '⚠️');
-                return;
-            }
-
-            try {
-                const cropper = new ImageCropper({
-                    title: '裁剪好友头像',
-                    aspectRatio: 1,
-                    outputWidth: 512,
-                    outputHeight: 512,
-                    quality: 0.92,
-                    maxFileSize: 5 * 1024 * 1024
-                });
-                const croppedImage = await cropper.open(file);
-
-                const preview = document.getElementById('avatar-preview');
-                if (preview) {
-                    preview.innerHTML = `<img src="${croppedImage}" style="width:100%;height:100%;object-fit:cover;">`;
-                }
-
-                this.app.phoneShell.showNotification('处理中', '正在上传头像...', '⏳');
-                newAvatar = await window.VirtualPhone?.imageManager?.uploadDataUrl?.(croppedImage, 'chat_avatar');
-                if (!newAvatar) throw new Error('图片上传管理器未初始化');
-                this.app.phoneShell.showNotification('成功', '头像已上传', '✅');
-            } catch (err) {
-                if (String(err?.message || '') === '用户取消') return;
-                console.warn('单聊头像上传失败:', err);
-                this.app.phoneShell.showNotification('上传失败', err?.message || '头像上传失败', '❌');
-            }
-        });
-
-        document.getElementById('save-chat-settings')?.addEventListener('click', () => {
-            const remark = document.getElementById('remark-input').value.trim();
-            if (remark && remark !== chat.name) {
-                const oldName = chat.name;
-                chat.name = remark;
-
-                // 🔥 同步更新通讯录里的联系人名字
-                if (chat.contactId) {
-                    this.app.wechatData.updateContact(chat.contactId, { 
-                        name: remark, 
-                        letter: this.app.wechatData.getFirstLetter(remark) 
-                    });
-                } else {
-                    // 兜底兼容旧数据
-                    const contact = this.app.wechatData.getContacts().find(c => c.name === oldName);
-                    if (contact) {
-                        this.app.wechatData.updateContact(contact.id, { 
-                            name: remark, 
-                            letter: this.app.wechatData.getFirstLetter(remark) 
-                        });
-                    }
-                }
-            }
-
-            // 🔥 如果上传了新头像，同步到所有相关位置
-            if (newAvatar) {
-                const oldAvatar = String(chat.avatar || '').trim();
-                // 使用更可靠的同步方法
-                this.app.wechatData.syncAvatarByChat(chat, newAvatar);
-                if (oldAvatar && oldAvatar !== newAvatar) {
-                    const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldAvatar, { quiet: true, skipIfReferenced: true });
-                    cleanupTask?.catch?.(() => { });
-                }
-            } else {
-                this.app.wechatData.saveData();
-            }
-
-            setTimeout(() => this.app.render(), 200);
-        });
-
-        // 🔥 清空聊天记录按钮
-        document.getElementById('clear-chat-messages')?.addEventListener('click', () => {
-            // 显示确认弹窗
-            const confirmHtml = `
-            <div style="
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(0,0,0,0.5);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 9999;
-            " id="clear-confirm-modal">
-                <div style="
-                    background: #fff;
-                    border-radius: 12px;
-                    padding: 20px;
-                    width: 280px;
-                    text-align: center;
-                ">
-                    <div style="font-size: 16px; font-weight: 500; margin-bottom: 10px;">确定清空聊天记录？</div>
-                    <div style="font-size: 14px; color: #999; margin-bottom: 20px;">此操作不可恢复</div>
-                    <div style="display: flex; gap: 10px;">
-                        <button id="clear-cancel" style="
-                            flex: 1;
-                            padding: 10px;
-                            background: #f5f5f5;
-                            color: #333;
-                            border: none;
-                            border-radius: 6px;
-                            font-size: 15px;
-                            cursor: pointer;
-                        ">取消</button>
-                        <button id="clear-confirm" style="
-                            flex: 1;
-                            padding: 10px;
-                            background: #ff3b30;
-                            color: #fff;
-                            border: none;
-                            border-radius: 6px;
-                            font-size: 15px;
-                            cursor: pointer;
-                        ">清空</button>
-                    </div>
-                </div>
-            </div>
-        `;
-            document.body.insertAdjacentHTML('beforeend', confirmHtml);
-
-            document.getElementById('clear-cancel')?.addEventListener('click', () => {
-                document.getElementById('clear-confirm-modal')?.remove();
+        if (contact?.id && this.app.contactsView?.showEditContactPage) {
+            this.app.contactsView.showEditContactPage(contact.id, {
+                returnToChatId: chat?.id
             });
+            return;
+        }
 
-            document.getElementById('clear-confirm')?.addEventListener('click', () => {
-                // 清空当前聊天的所有消息
-                this.app.wechatData.clearMessages(chat.id);
-                this._clearPendingStateForChat(chat.id);
-                document.getElementById('clear-confirm-modal')?.remove();
-
-                // 🔥🔥🔥 核心修复：通知手机外壳立即刷新左上角状态栏时间
-                if (this.app.phoneShell && typeof this.app.phoneShell.updateStatusBarTime === 'function') {
-                    this.app.phoneShell.updateStatusBarTime();
-                }
-
-                this.app.phoneShell.showNotification('已清空', '聊天记录已清空', '✅');
-                setTimeout(() => this.app.render(), 500);
-            });
-        });
+        this.app.phoneShell.showNotification('提示', '未找到对应联系人，请先到通讯录添加', '⚠️');
     }
 
     _setHeaderStatusDot(color = 'green', targetChatId = null) {

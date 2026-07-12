@@ -443,14 +443,127 @@ export class ContactsView {
         }, 100);
     }
 
+    showEditGroupMemberPage(chatId, memberName) {
+        const chat = this.app.wechatData.getChat(chatId);
+        const originalName = String(memberName || '').trim();
+        if (!chat || chat.type !== 'group' || !originalName) return;
+
+        const gender = String(this.app.wechatData.getContactGender?.(originalName) || 'unknown');
+        const avatarGroup = String(this.app.wechatData.getContactAvatarGroup?.(originalName) || '');
+        const shellBg = this.app._getMainShellBackgroundConfig?.() || {};
+        const panelStyle = shellBg.contentBgStyle
+            ? 'background: rgba(255,255,255,0.34); border: 1px solid rgba(255,255,255,0.36); backdrop-filter: blur(12px) saturate(135%); -webkit-backdrop-filter: blur(12px) saturate(135%);'
+            : 'background: #fff; border: 1px solid #e5e5e5;';
+        const fieldStyle = shellBg.contentBgStyle
+            ? 'background: rgba(255,255,255,0.84); border: 1px solid rgba(255,255,255,0.56); color: #111;'
+            : 'background: #fff; border: 1px solid #e5e5e5; color: #111;';
+        const html = `
+            <div class="${shellBg.appClass || 'wechat-app'}" style="${shellBg.appStyle || ''}">
+                <div class="wechat-header">
+                    <div class="wechat-header-left">
+                        <button class="wechat-back-btn" id="back-from-edit-group-member"><i class="fa-solid fa-chevron-left"></i></button>
+                    </div>
+                    <div class="wechat-header-title">编辑群成员</div>
+                    <div class="wechat-header-right"></div>
+                </div>
+                <div class="wechat-content" style="${shellBg.contentBgStyle || 'background: #ededed;'} padding: 12px;">
+                    <div style="${panelStyle} border-radius: 10px; padding: 18px 15px;">
+                        <div id="edit-group-member-avatar-preview" style="width:64px;height:64px;border-radius:50%;overflow:hidden;margin:0 auto 18px;background:#fff;border:1px solid #d8d8d8;display:flex;align-items:center;justify-content:center;font-size:28px;"></div>
+                        <label style="display:block;margin-bottom:12px;">
+                            <div style="font-size:11px;color:#888;margin-bottom:5px;">群内名称 *</div>
+                            <input id="edit-group-member-name" type="text" maxlength="20" value="${this._escapeAttr(originalName)}" style="width:100%;padding:9px 10px;${fieldStyle}border-radius:6px;font-size:13px;box-sizing:border-box;">
+                        </label>
+                        <label style="display:block;margin-bottom:12px;">
+                            <div style="font-size:11px;color:#888;margin-bottom:5px;">性别</div>
+                            <select id="edit-group-member-gender" style="width:100%;height:34px;padding:0 9px;${fieldStyle}border-radius:6px;font-size:13px;box-sizing:border-box;">
+                                <option value="unknown" ${gender === 'unknown' ? 'selected' : ''}>未设置</option>
+                                <option value="female" ${gender === 'female' ? 'selected' : ''}>女</option>
+                                <option value="male" ${gender === 'male' ? 'selected' : ''}>男</option>
+                            </select>
+                        </label>
+                        <label style="display:block;">
+                            <div style="font-size:11px;color:#888;margin-bottom:5px;">默认头像类型</div>
+                            <select id="edit-group-member-avatar-group" style="width:100%;height:34px;padding:0 9px;${fieldStyle}border-radius:6px;font-size:13px;box-sizing:border-box;">
+                                <option value="" ${!avatarGroup ? 'selected' : ''}>跟随性别</option>
+                                <option value="female" ${avatarGroup === 'female' ? 'selected' : ''}>普通女</option>
+                                <option value="male" ${avatarGroup === 'male' ? 'selected' : ''}>普通男</option>
+                                <option value="female_elder" ${avatarGroup === 'female_elder' ? 'selected' : ''}>年长女</option>
+                                <option value="male_elder" ${avatarGroup === 'male_elder' ? 'selected' : ''}>年长男</option>
+                            </select>
+                        </label>
+                    </div>
+                    <button id="save-edit-group-member" style="width:100%;margin-top:12px;padding:11px;background:#07c160;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:500;cursor:pointer;">保存</button>
+                </div>
+            </div>
+        `;
+
+        const returnToGroup = () => {
+            this.app.currentView = 'chats';
+            this.app.currentChat = this.app.wechatData.getChat(chatId) || null;
+            this.app.render();
+        };
+
+        this.app.currentView = 'contacts';
+        this.app.currentChat = null;
+        this.app.phoneShell.setContent(html, `wechat-edit-group-member-${chatId}`);
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const query = selector => currentView.querySelector(selector) || document.querySelector(selector);
+        const renderPreview = () => {
+            const name = String(query('#edit-group-member-name')?.value || originalName).trim();
+            const selectedGender = String(query('#edit-group-member-gender')?.value || 'unknown');
+            const selectedGroup = String(query('#edit-group-member-avatar-group')?.value || '');
+            const avatar = this.app._resolveAutoAvatarForName?.(name, selectedGender, selectedGroup) || '';
+            const preview = query('#edit-group-member-avatar-preview');
+            if (!preview) return;
+            preview.innerHTML = avatar
+                ? `<img src="${this._escapeAttr(avatar)}" style="width:100%;height:100%;object-fit:cover;">`
+                : `<span>${this._escapeHtml(Array.from(name)[0] || '群')}</span>`;
+        };
+
+        query('#back-from-edit-group-member')?.addEventListener('click', returnToGroup);
+        query('#edit-group-member-name')?.addEventListener('input', renderPreview);
+        query('#edit-group-member-gender')?.addEventListener('change', renderPreview);
+        query('#edit-group-member-avatar-group')?.addEventListener('change', renderPreview);
+        renderPreview();
+        Promise.resolve(this.app._ensureWechatAvatarPoolLoaded?.()).then(renderPreview).catch(() => {});
+
+        query('#save-edit-group-member')?.addEventListener('click', async () => {
+            const name = String(query('#edit-group-member-name')?.value || '').trim();
+            if (!name) {
+                this.app.phoneShell.showNotification('提示', '请输入群内名称', '⚠️');
+                return;
+            }
+            const existingContact = this.app.wechatData.findContactByNameLoose?.(name, { includeChats: false });
+            if (existingContact?.id) {
+                this.app.phoneShell.showNotification('提示', '该名称已属于微信好友，请使用其他群内名称', '⚠️');
+                return;
+            }
+            const saved = await this.app.wechatData.updateGroupMemberProfile(chatId, originalName, {
+                name,
+                gender: query('#edit-group-member-gender')?.value,
+                avatarGroup: query('#edit-group-member-avatar-group')?.value
+            });
+            if (!saved) {
+                this.app.phoneShell.showNotification('提示', '群内名称已被其他成员使用', '⚠️');
+                return;
+            }
+            this.app.phoneShell.showNotification('保存成功', '群成员资料已更新', '✅');
+            setTimeout(returnToGroup, 300);
+        });
+    }
+
     showEditContactPage(contactId, options = {}) {
         const contact = this.app.wechatData.getContact(contactId)
             || this.app.wechatData.findContactByNameLoose?.(contactId, { includeChats: false });
         if (!contact) return;
         const safeContactId = String(contact.id || contactId || '').trim();
         const returnToChatList = options?.returnToChatList === true;
+        const returnToChatId = String(options?.returnToChatId || '').trim();
         const returnFromEditContact = () => {
-            if (returnToChatList) {
+            if (returnToChatId) {
+                this.app.currentView = 'chats';
+                this.app.currentChat = this.app.wechatData.getChat(returnToChatId) || null;
+            } else if (returnToChatList) {
                 this.app.currentView = 'chats';
                 this.app.currentChat = null;
             } else {
@@ -460,7 +573,9 @@ export class ContactsView {
             this.app.render();
         };
 
-        const avatarHtml = this.app.renderAvatar(contact.avatar, '👤', contact.name);
+        const storedAvatar = String(contact.avatar || '').trim();
+        const editableAvatar = this.app._isWechatAvatarPoolAssetValue?.(storedAvatar) ? '' : storedAvatar;
+        const avatarHtml = this.app.renderAvatar(editableAvatar, '👤', contact.name);
         const currentTtsProvider = this._getCurrentTtsProvider();
         const contactTtsVoices = this._getContactTtsVoices(contact);
         const contactTtsProvider = String(contact.ttsProvider || '').trim();
@@ -709,7 +824,7 @@ export class ContactsView {
         this.app.currentChat = null;
         this.app.phoneShell.setContent(html, `wechat-edit-contact-${safeContactId || 'unknown'}`);
 
-        let selectedAvatar = contact.avatar;
+        let selectedAvatar = editableAvatar;
         const originalReferenceImage = referenceImage;
         let selectedReferenceImage = referenceImage;
         let referenceImageDeleted = false;
