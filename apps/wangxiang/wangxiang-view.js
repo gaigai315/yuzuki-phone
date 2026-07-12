@@ -1803,8 +1803,12 @@ export class WangxiangView {
     _bindMarketplacePullRefresh(root) {
         const panel = root.querySelector('[data-wangxiang-panel="marketplace"]');
         const scroll = root.querySelector('.wangxiang-market-scroll');
-        if (!panel || !scroll || panel.dataset.marketPullRefreshBound === '1') return;
-        panel.dataset.marketPullRefreshBound = '1';
+        const triggerAreas = [
+            root.querySelector('.wangxiang-market-toolbar'),
+            root.querySelector('.wangxiang-market-categories'),
+            scroll
+        ].filter(Boolean);
+        if (!panel || !scroll || !triggerAreas.length) return;
 
         let startX = 0;
         let startY = 0;
@@ -1865,7 +1869,9 @@ export class WangxiangView {
         };
 
         const onTouchStart = event => {
-            if (event.target?.closest?.('button, input, select, textarea, a')) return;
+            // Buttons remain valid pull handles on compact mobile layouts. A real pull
+            // cancels their click in touchmove; editable controls keep native gestures.
+            if (event.target?.closest?.('input, select, textarea, [contenteditable="true"]')) return;
             const touch = event.touches?.[0];
             if (touch) startPress(touch.clientX, touch.clientY, 'touch');
         };
@@ -1892,11 +1898,15 @@ export class WangxiangView {
             window.addEventListener('blur', onUp);
         };
 
-        panel.addEventListener('touchstart', onTouchStart, { passive: true });
-        panel.addEventListener('touchmove', onTouchMove, { passive: false });
-        panel.addEventListener('touchend', onTouchEnd);
-        panel.addEventListener('touchcancel', onTouchEnd);
-        panel.addEventListener('mousedown', onMouseDown);
+        triggerAreas.forEach(area => {
+            if (area.dataset.marketPullRefreshBound === '1') return;
+            area.dataset.marketPullRefreshBound = '1';
+            area.addEventListener('touchstart', onTouchStart, { passive: true });
+            area.addEventListener('touchmove', onTouchMove, { passive: false });
+            area.addEventListener('touchend', onTouchEnd);
+            area.addEventListener('touchcancel', onTouchEnd);
+            area.addEventListener('mousedown', onMouseDown);
+        });
     }
 
     _setMarketplacePullHint(root, height, text, ready = false) {

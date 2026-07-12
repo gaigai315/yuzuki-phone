@@ -862,16 +862,57 @@ export class ChatView {
             .trim();
     }
 
+    _normalizeWechatResponseBoundaries(text) {
+        let out = String(text || '').replace(/\r\n/g, '\n');
+        if (!out) return '';
+
+        // Some compatible proxies HTML-escape the response envelope, sometimes twice.
+        // Decode only WeChat tag boundaries so message text and other HTML stay inert.
+        const escapedBoundary = /(?:&(?:amp;)*lt;|&#0*60;)(\s*\/?\s*wechat\b[^\r\n]*?)(?:&(?:amp;)*gt;|&#0*62;)/gi;
+        for (let pass = 0; pass < 3; pass++) {
+            const decoded = out.replace(escapedBoundary, '<$1>');
+            if (decoded === out) break;
+            out = decoded;
+        }
+        return out;
+    }
+
+    _stripWechatBoundaryArtifacts(text) {
+        let out = this._normalizeWechatResponseBoundaries(text).trim();
+        if (!out) return '';
+
+        // A proxy assistant-prefill can prepend a second <wechat>, while truncated
+        // streams may leave an unmatched boundary. Neither is chat message content.
+        out = out
+            .replace(/^\s*(?:<\s*wechat\b[^>]*>\s*)+/i, '')
+            .replace(/(?:\s*<\s*\/\s*wechat\s*>\s*)+$/i, '')
+            .replace(/^[\t ]*<\s*\/?\s*wechat\b[^>]*>[\t ]*$/gmi, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+        return out;
+    }
+
+    _cleanWechatResponsePayload(text) {
+        let out = this._normalizeWechatResponseBoundaries(text).trim();
+        for (let pass = 0; pass < 3 && out; pass++) {
+            const cleaned = this._stripWechatCommentWrapper(this._stripWechatBoundaryArtifacts(out));
+            if (cleaned === out) break;
+            out = cleaned;
+        }
+        return this._stripWechatBoundaryArtifacts(out);
+    }
+
     _extractWechatTagPayload(text) {
-        const match = String(text || '').match(/<\s*wechat\b[^>]*>([\s\S]*?)<\s*\/\s*wechat\s*>/i);
+        const normalized = this._normalizeWechatResponseBoundaries(text);
+        const match = normalized.match(/<\s*wechat\b[^>]*>([\s\S]*?)<\s*\/\s*wechat\s*>/i);
         if (!match) return '';
-        return this._stripWechatCommentWrapper(match[1]);
+        return this._cleanWechatResponsePayload(match[1]);
     }
 
     _extractWechatTagPayloadOrSelf(text) {
         const payload = this._extractWechatTagPayload(text);
         if (payload) return payload;
-        return this._stripWechatCommentWrapper(text);
+        return this._cleanWechatResponsePayload(text);
     }
 
     _getPendingChatIdsOrdered(preferredChatId = null) {
