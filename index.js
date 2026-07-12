@@ -7255,6 +7255,27 @@ if (window.GGP_Loaded) {
         return result;
     }
 
+    async function processWangxiangMarketplaceDeliveries() {
+        let app = window.VirtualPhone?.wangxiangApp || null;
+        let orders = app?.getMarketplaceOrders?.() || null;
+        if (!Array.isArray(orders)) {
+            try {
+                const saved = storage?.get?.('wangxiang_marketplace_orders', null);
+                orders = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            } catch (error) {
+                orders = [];
+            }
+        }
+        if (!Array.isArray(orders) || !orders.some(order => order?.status === 'shipping' || order?.status === 'paid')) return [];
+
+        app = app || await ensureWangxiangApp();
+        const deliveredOrders = await app.checkMarketplaceDeliveries({ showPopup: false, refreshTime: true });
+        if (!deliveredOrders.length) return [];
+        if (currentApp === 'wangxiang') await app.render();
+        await app.wangxiangView.showMarketplaceDeliveryPopup(deliveredOrders);
+        return deliveredOrders;
+    }
+
     function onMessageReceived(messageId) {
         try {
             const context = getContext();
@@ -7397,7 +7418,10 @@ if (window.GGP_Loaded) {
                     processWangxiangTaskProgressTags(text, {
                         tavernMessageIndex: index,
                         batchId: currentBatchId
-                    }).catch(e => console.warn('Wangxiang task progress tag process error:', e));
+                    })
+                        .catch(e => console.warn('Wangxiang task progress tag process error:', e))
+                        .then(() => processWangxiangMarketplaceDeliveries())
+                        .catch(e => console.warn('Wangxiang marketplace delivery check error:', e));
                 }
                 // 兼容旧版 <Phone> 标签
                 const commands = parsePhoneCommands(text);

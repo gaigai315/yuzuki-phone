@@ -1879,6 +1879,20 @@
     color: #67dca0;
 }
 
+#phone-panel-content .phone-screen .wangxiang-order-card.is-delivered {
+    border-color: rgba(105, 221, 166, 0.52);
+}
+
+#phone-panel-content .phone-screen .wangxiang-order-card.is-delivered > header strong {
+    color: #91efbd;
+}
+
+#phone-panel-content .phone-screen .wangxiang-order-card.is-delivered .wangxiang-order-icon {
+    border-color: rgba(105, 221, 166, 0.45);
+    background: rgba(39, 126, 83, 0.2);
+    color: #84eab2;
+}
+
 #phone-panel-content .phone-screen .wangxiang-order-body {
     display: grid;
     grid-template-columns: 46px minmax(0, 1fr);
@@ -1964,6 +1978,12 @@
     border-color: rgba(86, 182, 132, 0.42) !important;
     background: rgba(35, 112, 72, 0.18) !important;
     color: #80c9a1 !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-order-card.is-delivered > footer button:disabled {
+    border-color: rgba(103, 220, 164, 0.5) !important;
+    background: rgba(39, 126, 83, 0.22) !important;
+    color: #9aeec0 !important;
 }
 
 /* 购买数量弹窗 */

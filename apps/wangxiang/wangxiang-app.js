@@ -70,24 +70,28 @@ export function buildWangxiangTaskInjectionContent(tasks) {
 }
 
 export function buildWangxiangOrderInjectionContent(orders, userName = '用户') {
-    const shippingOrders = (Array.isArray(orders) ? orders : []).filter(order => order?.status === 'shipping');
-    if (!shippingOrders.length) return '';
+    const deliveryOrders = (Array.isArray(orders) ? orders : [])
+        .filter(order => order?.status === 'shipping' || order?.status === 'delivered');
+    if (!deliveryOrders.length) return '';
     const clean = (value, fallback = '未注明') => String(value ?? '').replace(/\s+/g, ' ').trim() || fallback;
-    const blocks = shippingOrders.map((order, index) => [
+    const blocks = deliveryOrders.map((order, index) => [
         `--- 配送订单 ${index + 1} ---`,
         `订单号：${clean(order.id)}`,
         `购买用户：${clean(userName, '用户')}`,
         `购买时间：${clean(order.createdAt)}`,
-        `支付时间：${clean(order.paidAt || order.shippingAt)}`,
+        `下单支付时间：${clean(order.paidAt || order.shippingAt)}`,
+        `预计配送时长：${clean(order.estimatedDelivery, '1小时')}`,
+        `预计送达时间：${clean(order.estimatedArrivalAt)}`,
         `商品名称：${clean(order.name, '未命名商品')}`,
         `商品信息：${clean(order.description, '暂无商品说明')}`,
         `购买数量：${Math.max(1, Number(order.quantity || 1))}`,
         `支付金额：${clean(order.totalPrice, '0')}`,
         `支付方式：${order.paymentMethod === 'wechat' ? '微信支付' : '信用点'}`,
-        `配送状态：正在配送中`,
+        `配送状态：${order.status === 'delivered' ? '已送达' : '正在配送中'}`,
+        ...(order.status === 'delivered' ? [`实际送达确认时间：${clean(order.deliveredAt)}`] : []),
         `收货信息：${clean(order.addressSnapshot?.recipient)}，${clean(order.addressSnapshot?.phone)}，${clean(order.addressSnapshot?.address)}`
     ].join('\n'));
-    return `【万象商品配送信息】\n以下商品已由${clean(userName, '用户')}购买并支付，当前正在配送中。续写剧情时可将其视为确定发生的购买与配送事实，不要重复下单或假设尚未支付。\n\n${blocks.join('\n\n')}`;
+    return `【万象商品配送信息】\n以下商品已由${clean(userName, '用户')}购买并支付，配送状态、支付时间与预计送达时间均为确定事实。续写剧情时不要重复下单或假设尚未支付。\n\n${blocks.join('\n\n')}`;
 }
 
 export function parseWangxiangTaskProgressTags(text) {
@@ -131,11 +135,18 @@ export class WangxiangApp {
         this._reconcileGeneratedTaskStatuses();
 
         window.addEventListener('phone:swipeBack', () => this.handleSwipeBack());
+        window.addEventListener('phone:timeUpdated', () => {
+            this._handlePhoneTimeUpdated().catch(error => console.warn('[Wangxiang] 配送状态检查失败:', error));
+        });
     }
 
-    render() {
+    async render() {
         this._syncTaskDataScope();
-        return this.wangxiangView.render();
+        const deliveredOrders = await this.checkMarketplaceDeliveries({ showPopup: false });
+        await this.wangxiangView.render();
+        if (deliveredOrders.length) {
+            await this.wangxiangView.showMarketplaceDeliveryPopup(deliveredOrders);
+        }
     }
 
     clearCache() {
@@ -240,6 +251,7 @@ export class WangxiangApp {
             categoryIndex: Number(product.categoryIndex || 1),
             name: String(product.name || '未命名商品'),
             description: String(product.description || ''),
+            estimatedDelivery: String(product.estimatedDelivery || '1小时'),
             unitPrice: String(product.price || '0'),
             totalPrice: this._formatMarketplaceTotal(product.price, safeQuantity),
             quantity: safeQuantity,
@@ -283,14 +295,126 @@ export class WangxiangApp {
         order.paymentMethod = method;
         order.addressId = String(address.id);
         order.addressSnapshot = { ...address };
-        order.paidAt = new Date().toLocaleString('zh-CN', { hour12: false });
+        const paidTime = this._getCurrentPhoneTimeData();
+        const deliveryMinutes = this._parseMarketplaceDeliveryMinutes(order.estimatedDelivery);
+        const arrivalTime = this._addMinutesToPhoneTime(paidTime, deliveryMinutes);
+        order.paidAt = this._formatPhoneTimeData(paidTime);
+        order.paidAtTimestamp = paidTime.timestamp;
         order.shippingAt = order.paidAt;
+        order.estimatedDelivery = String(order.estimatedDelivery || '1小时');
+        order.estimatedDeliveryMinutes = deliveryMinutes;
+        order.estimatedArrivalAt = this._formatPhoneTimeData(arrivalTime);
+        order.estimatedArrivalTimestamp = arrivalTime.timestamp;
         await Promise.all([
             this._saveMarketplaceOrders(),
             method === 'credit' ? this._saveCreditBalance() : Promise.resolve(),
             product ? this._saveMarketplaceProducts() : Promise.resolve()
         ]);
         return { ...order };
+    }
+
+    _getCurrentPhoneTimeData(options = {}) {
+        try {
+            const timeManager = window.VirtualPhone?.timeManager;
+            if (options.refresh === true) timeManager?.clearCache?.();
+            const current = timeManager?.getCurrentStoryTime?.() || timeManager?.getCurrentTime?.();
+            if (current?.date && current?.time) {
+                const parsedTimestamp = timeManager?.parseTimeToTimestamp?.(current);
+                const timestamp = Number.isFinite(Number(parsedTimestamp))
+                    ? Number(parsedTimestamp)
+                    : Number.isFinite(Number(current.timestamp)) ? Number(current.timestamp) : Date.now();
+                return {
+                    date: String(current.date),
+                    weekday: String(current.weekday || ''),
+                    time: String(current.time),
+                    timestamp
+                };
+            }
+        } catch (error) {
+            console.warn('[Wangxiang] 获取配送时间基准失败:', error);
+        }
+        const now = new Date();
+        return {
+            date: `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, '0')}月${String(now.getDate()).padStart(2, '0')}日`,
+            weekday: '',
+            time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+            timestamp: now.getTime()
+        };
+    }
+
+    _formatPhoneTimeData(timeData = {}) {
+        return [timeData.date, timeData.weekday, timeData.time]
+            .map(value => String(value || '').trim())
+            .filter(Boolean)
+            .join(' ');
+    }
+
+    _parseMarketplaceDeliveryMinutes(value) {
+        const text = String(value || '').replace(/\s+/g, '').toLocaleLowerCase();
+        let minutes = 0;
+        const addMatches = (regex, multiplier) => {
+            let match;
+            while ((match = regex.exec(text)) !== null) minutes += Number(match[1]) * multiplier;
+        };
+        addMatches(/(\d+(?:\.\d+)?)(?:天|日|days?)/g, 24 * 60);
+        addMatches(/(\d+(?:\.\d+)?)(?:小时|时|hours?|hrs?)/g, 60);
+        addMatches(/(\d+(?:\.\d+)?)(?:分钟|分|minutes?|mins?)/g, 1);
+        if (/半小时/.test(text)) minutes += 30;
+        if (!Number.isFinite(minutes) || minutes <= 0) minutes = 60;
+        return Math.max(1, Math.min(30 * 24 * 60, Math.round(minutes)));
+    }
+
+    _addMinutesToPhoneTime(baseTime, minutes) {
+        try {
+            const calculated = window.VirtualPhone?.timeManager?.addMinutesToStoryTime?.(baseTime, minutes);
+            if (calculated?.date && calculated?.time && Number.isFinite(Number(calculated.timestamp))) {
+                return calculated;
+            }
+        } catch (error) {
+            console.warn('[Wangxiang] 计算预计送达时间失败:', error);
+        }
+        const timestamp = Number(baseTime?.timestamp) + (Math.max(1, Number(minutes) || 60) * 60 * 1000);
+        const date = new Date(timestamp);
+        return {
+            date: `${date.getFullYear()}年${String(date.getMonth() + 1).padStart(2, '0')}月${String(date.getDate()).padStart(2, '0')}日`,
+            weekday: '',
+            time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`,
+            timestamp
+        };
+    }
+
+    async checkMarketplaceDeliveries(options = {}) {
+        this._syncTaskDataScope();
+        const current = this._getCurrentPhoneTimeData({ refresh: options.refreshTime === true });
+        const currentTimestamp = Number(current.timestamp);
+        if (!Number.isFinite(currentTimestamp)) return [];
+
+        const deliveredOrders = [];
+        this.marketplaceOrders.forEach(order => {
+            if (order?.status !== 'shipping') return;
+            const arrivalTimestamp = Number(order.estimatedArrivalTimestamp);
+            if (!Number.isFinite(arrivalTimestamp) || currentTimestamp < arrivalTimestamp) return;
+            order.status = 'delivered';
+            order.deliveredAt = this._formatPhoneTimeData(current);
+            order.deliveredAtTimestamp = currentTimestamp;
+            deliveredOrders.push({ ...order });
+        });
+        if (!deliveredOrders.length) return [];
+
+        await this._saveMarketplaceOrders();
+        if (options.showPopup !== false) {
+            await this.wangxiangView.showMarketplaceDeliveryPopup(deliveredOrders);
+        }
+        return deliveredOrders;
+    }
+
+    async _handlePhoneTimeUpdated() {
+        const deliveredOrders = await this.checkMarketplaceDeliveries({ showPopup: false, refreshTime: true });
+        if (!deliveredOrders.length) return [];
+        const root = document.querySelector('.phone-view-current .wangxiang-app');
+        if (root) this.wangxiangView._renderMarketplaceOrders(root);
+        await this.wangxiangView.showMarketplaceDeliveryPopup(deliveredOrders);
+        return deliveredOrders;
     }
 
     _readMarketplaceStock(value) {
@@ -321,6 +445,7 @@ export class WangxiangApp {
     }
 
     async setMarketplaceCategories(categories) {
+        this._syncTaskDataScope();
         const normalized = (Array.isArray(categories) ? categories : [])
             .map(value => String(value || '').replace(/\s+/g, ' ').trim());
         if (normalized.length !== WANGXIANG_DEFAULT_MARKET_CATEGORIES.length || normalized.some(value => !value)) {
@@ -762,9 +887,7 @@ export class WangxiangApp {
             const messages = await this._buildTaskMessages();
             const result = await apiManager.callAI(messages, {
                 appId: 'wangxiang',
-                temperature: 0.75,
-                max_tokens: 4200,
-                min_max_tokens: 3000
+                temperature: 0.75
             });
             if (!result?.success) throw new Error(result?.error || '任务生成失败');
 
@@ -803,9 +926,7 @@ export class WangxiangApp {
             const messages = await this._buildMarketplaceMessages();
             const result = await apiManager.callAI(messages, {
                 appId: 'wangxiang',
-                temperature: 0.75,
-                max_tokens: 4800,
-                min_max_tokens: 3200
+                temperature: 0.75
             });
             if (!result?.success) throw new Error(result?.error || '商品生成失败');
 
@@ -892,6 +1013,7 @@ export class WangxiangApp {
                     price: readField('售价').slice(0, 24) || '0',
                     description: readField('简介').slice(0, 240),
                     stock: readField('库存').slice(0, 24) || '0',
+                    estimatedDelivery: readField('预计配送时间').slice(0, 32) || '1小时',
                     tags
                 });
             });
@@ -1144,6 +1266,7 @@ export class WangxiangApp {
                     price: String(product.price || '0').slice(0, 24),
                     description: String(product.description || '').slice(0, 240),
                     stock: String(product.stock || '0').slice(0, 24),
+                    estimatedDelivery: String(product.estimatedDelivery || '1小时').slice(0, 32),
                     tags: (Array.isArray(product.tags) ? product.tags : []).map(tag => String(tag || '').slice(0, 2)).filter(Boolean).slice(0, 2)
                 }))
                 .slice(0, 60);
@@ -1168,10 +1291,17 @@ export class WangxiangApp {
                     unitPrice: String(order.unitPrice || '0').slice(0, 24),
                     totalPrice: String(order.totalPrice || order.unitPrice || '0').slice(0, 32),
                     quantity: Math.max(1, Math.min(999, Math.floor(Number(order.quantity) || 1))),
-                    status: order.status === 'shipping' || order.status === 'paid' ? 'shipping' : 'pending',
+                    status: order.status === 'delivered' ? 'delivered' : order.status === 'shipping' || order.status === 'paid' ? 'shipping' : 'pending',
                     createdAt: String(order.createdAt || ''),
                     paidAt: String(order.paidAt || ''),
+                    paidAtTimestamp: Number(order.paidAtTimestamp) || 0,
                     shippingAt: String(order.shippingAt || order.paidAt || ''),
+                    estimatedDelivery: String(order.estimatedDelivery || '1小时').slice(0, 32),
+                    estimatedDeliveryMinutes: Math.max(1, Number(order.estimatedDeliveryMinutes) || this._parseMarketplaceDeliveryMinutes(order.estimatedDelivery)),
+                    estimatedArrivalAt: String(order.estimatedArrivalAt || ''),
+                    estimatedArrivalTimestamp: Number(order.estimatedArrivalTimestamp) || 0,
+                    deliveredAt: String(order.deliveredAt || ''),
+                    deliveredAtTimestamp: Number(order.deliveredAtTimestamp) || 0,
                     paymentMethod: order.paymentMethod === 'wechat' ? 'wechat' : order.paymentMethod === 'credit' ? 'credit' : '',
                     addressId: String(order.addressId || ''),
                     addressSnapshot: order.addressSnapshot && typeof order.addressSnapshot === 'object'

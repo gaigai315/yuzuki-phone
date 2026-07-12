@@ -43,7 +43,7 @@ export class WangxiangView {
         const link = existingLink || document.createElement('link');
         link.id = 'wangxiang-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./wangxiang.css?v=20260712-wallet-delivery', import.meta.url).href;
+        link.href = new URL('./wangxiang.css?v=20260712-order-arrival', import.meta.url).href;
         this._cssLoadingPromise = new Promise(resolve => {
             let settled = false;
             const finish = () => {
@@ -92,6 +92,52 @@ export class WangxiangView {
                             <span>${this._escapeHtml(item.taskTitle || '未命名任务')}</span>
                             <strong>${this._escapeHtml(item.objectiveTitle || '任务目标')}</strong>
                             <div><b>${Number(item.current || 0)}/${Math.max(1, Number(item.total || 1))}</b><em>100%</em></div>
+                        </div>
+                    `).join('')}
+                </div>
+                <button type="button" class="wangxiang-progress-popup-confirm">
+                    <i class="fa-solid fa-check" aria-hidden="true"></i><span>确定</span>
+                </button>
+            </div>`;
+        document.body.appendChild(root);
+        const close = () => root.remove();
+        root.querySelector('.wangxiang-progress-popup-confirm')?.addEventListener('click', close, { once: true });
+        root.querySelector('.wangxiang-progress-popup-confirm')?.focus?.();
+    }
+
+    async showMarketplaceDeliveryPopup(orders) {
+        const items = Array.isArray(orders) ? orders.filter(Boolean) : [];
+        if (!items.length) return;
+        await this.loadCSS();
+        const activePopup = document.getElementById('wangxiang-progress-popup-root');
+        if (activePopup) {
+            await new Promise(resolve => {
+                const observer = new MutationObserver(() => {
+                    if (document.body.contains(activePopup)) return;
+                    observer.disconnect();
+                    resolve();
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            });
+        }
+
+        const root = document.createElement('div');
+        root.id = 'wangxiang-progress-popup-root';
+        root.innerHTML = `
+            <div class="wangxiang-progress-popup wangxiang-delivery-popup" role="dialog" aria-modal="true" aria-labelledby="wangxiang-progress-popup-title" style="background-image:url('${WANGXIANG_TASK_PANEL_BACKGROUND_URL}')">
+                <div class="wangxiang-progress-popup-head">
+                    <span><i class="fa-solid fa-box-open" aria-hidden="true"></i></span>
+                    <div>
+                        <strong id="wangxiang-progress-popup-title">商品已送达</strong>
+                        <small>万象订单配送提醒</small>
+                    </div>
+                </div>
+                <div class="wangxiang-progress-popup-list">
+                    ${items.map(item => `
+                        <div class="wangxiang-progress-popup-item">
+                            <span>${this._escapeHtml(item.name || '未命名商品')}</span>
+                            <strong>${this._escapeHtml(`数量 ${Math.max(1, Number(item.quantity || 1))} · 已送达`)}</strong>
+                            <div><b>${this._escapeHtml(item.addressSnapshot?.label || item.addressSnapshot?.recipient || '收货地址')}</b><em>已签收</em></div>
                         </div>
                     `).join('')}
                 </div>
@@ -517,11 +563,35 @@ export class WangxiangView {
         return products.map(product => this._renderMarketplaceProductCard(product)).join('');
     }
 
+    _resolveMarketplaceCategoryIcon(categoryName) {
+        const name = String(categoryName || '').replace(/\s+/g, '').toLocaleLowerCase();
+        const rules = [
+            { pattern: /外卖|餐饮|食品|食物|料理|零食|饮品|饮料|酒水|甜品|生鲜|果蔬|粮油|补给/, icon: 'fa-utensils' },
+            { pattern: /医疗|医药|药品|药剂|治疗|急救|护理|保健|丹药|疗愈|恢复/, icon: 'fa-kit-medical' },
+            { pattern: /服装|衣物|衣饰|时装|穿戴|鞋靴|鞋包|帽|外套|内衣|布料|纺织/, icon: 'fa-shirt' },
+            { pattern: /武器|装备|战斗|军械|防具|护甲|盔甲|枪械|刀剑|弓弩|盾牌|弹药/, icon: 'fa-shield-halved' },
+            { pattern: /科技|芯片|电子|数码|机械|机甲|终端|通讯|强化|改造|智能|能源/, icon: 'fa-microchip' },
+            { pattern: /魔法|法术|炼金|符文|卷轴|法器|灵器|仙术|修真|秘术|神秘/, icon: 'fa-wand-magic-sparkles' },
+            { pattern: /首饰|珠宝|宝石|奢侈|收藏|古董|饰品|珍品|稀有/, icon: 'fa-gem' },
+            { pattern: /图书|书籍|典籍|知识|情报|资料|档案|教材|技能书|秘籍/, icon: 'fa-book-open' },
+            { pattern: /家居|家具|家电|居家|住宅|房产|地产|建筑/, icon: 'fa-house' },
+            { pattern: /工具|器材|设备|仪器|工坊|制造|维修|工程/, icon: 'fa-screwdriver-wrench' },
+            { pattern: /材料|素材|矿物|矿石|金属|木材|零件|资源|原料/, icon: 'fa-cubes-stacked' },
+            { pattern: /载具|车辆|汽车|飞船|舰船|交通|坐骑|航空/, icon: 'fa-car-side' },
+            { pattern: /宠物|灵兽|召唤兽|伙伴|生物/, icon: 'fa-paw' },
+            { pattern: /娱乐|游戏|玩具|影音|音乐|演出|票务/, icon: 'fa-gamepad' },
+            { pattern: /农牧|农业|种子|植物|花卉|园艺/, icon: 'fa-seedling' },
+            { pattern: /金融|货币|金币|信用|兑换|证券/, icon: 'fa-coins' },
+            { pattern: /服务|委托|代办|租赁|配送|维修/, icon: 'fa-bell-concierge' }
+        ];
+        return rules.find(rule => rule.pattern.test(name))?.icon || 'fa-box-open';
+    }
+
     _renderMarketplaceProductCard(product) {
         const categoryIndex = Math.max(1, Math.min(5, Number(product?.categoryIndex || 1)));
         const categories = this.app.getMarketplaceCategories();
         const categoryName = categories[categoryIndex - 1] || '商品';
-        const icons = ['fa-box-open', 'fa-shield-halved', 'fa-microchip', 'fa-kit-medical', 'fa-gem'];
+        const categoryIcon = this._resolveMarketplaceCategoryIcon(categoryName);
         const tags = (Array.isArray(product?.tags) ? product.tags : []).slice(0, 2);
         const searchText = [categoryName, product?.name, product?.description, ...tags].filter(Boolean).join(' ').toLocaleLowerCase();
         const stockMatch = String(product?.stock ?? '').replace(/,/g, '').match(/\d+(?:\.\d+)?/);
@@ -529,7 +599,7 @@ export class WangxiangView {
         return `
             <article class="wangxiang-market-product-card" data-market-category-index="${categoryIndex}" data-market-search-text="${this._escapeHtml(searchText)}">
                 <div class="wangxiang-market-product-icon" aria-hidden="true">
-                    <i class="fa-solid ${icons[categoryIndex - 1]}"></i>
+                    <i class="fa-solid ${categoryIcon}"></i>
                 </div>
                 <div class="wangxiang-market-product-main">
                     <div class="wangxiang-market-product-heading">
@@ -687,25 +757,29 @@ export class WangxiangView {
 
     _renderMarketplaceOrderCard(order) {
         const isShipping = order?.status === 'shipping';
+        const isDelivered = order?.status === 'delivered';
+        const isPaid = isShipping || isDelivered;
+        const statusText = isDelivered ? '已送达' : isShipping ? '配送中' : '待支付';
         return `
-            <article class="wangxiang-order-card${isShipping ? ' is-shipping' : ''}" data-market-order-id="${this._escapeHtml(order?.id || '')}">
+            <article class="wangxiang-order-card${isShipping ? ' is-shipping' : ''}${isDelivered ? ' is-delivered' : ''}" data-market-order-id="${this._escapeHtml(order?.id || '')}">
                 <header>
                     <span>订单号：${this._escapeHtml(order?.id || '')}</span>
-                    <strong>${isShipping ? '配送中' : '待支付'}</strong>
+                    <strong>${statusText}</strong>
                 </header>
                 <div class="wangxiang-order-body">
                     <div class="wangxiang-order-icon" aria-hidden="true"><i class="fa-solid fa-box"></i></div>
                     <div class="wangxiang-order-main">
                         <h2>${this._escapeHtml(order?.name || '未命名商品')}</h2>
                         <p>单价：${this._escapeHtml(order?.unitPrice || '0')} · 数量：${this._escapeHtml(order?.quantity || 1)}</p>
-                        <small>${this._escapeHtml(isShipping ? (order?.shippingAt || order?.paidAt || '') : (order?.createdAt || ''))}</small>
+                        <small>${this._escapeHtml(isPaid ? (order?.paidAt || order?.shippingAt || '') : (order?.createdAt || ''))}</small>
+                        ${isPaid ? `<small>预计送达：${this._escapeHtml(order?.estimatedArrivalAt || '待确认')}</small>` : ''}
                     </div>
                 </div>
                 <footer>
                     <div><span>合计</span><strong>${this._escapeHtml(order?.totalPrice || '0')}</strong></div>
-                    <button type="button" data-market-order-pay="${this._escapeHtml(order?.id || '')}" ${isShipping ? 'disabled' : ''}>
-                        <i class="fa-solid ${isShipping ? 'fa-truck-fast' : 'fa-credit-card'}" aria-hidden="true"></i>
-                        <span>${isShipping ? '配送中' : '支付'}</span>
+                    <button type="button" data-market-order-pay="${this._escapeHtml(order?.id || '')}" ${isPaid ? 'disabled' : ''}>
+                        <i class="fa-solid ${isDelivered ? 'fa-box-open' : isShipping ? 'fa-truck-fast' : 'fa-credit-card'}" aria-hidden="true"></i>
+                        <span>${isDelivered ? '已送达' : isShipping ? '配送中' : '支付'}</span>
                     </button>
                 </footer>
             </article>
