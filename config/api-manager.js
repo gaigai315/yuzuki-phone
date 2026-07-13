@@ -859,7 +859,6 @@ export class ApiManager {
                     reverse_proxy: cleanBaseUrl,
                     custom_url: apiUrl,
                     proxy_password: apiKey,
-                    custom_include_headers: { 'Content-Type': 'application/json' },
                     model,
                     messages: cleanMessages,
                     temperature,
@@ -870,10 +869,13 @@ export class ApiManager {
                 };
                 this._attachPhoneSignalToPayload(proxyPayload, phoneSignal);
 
-                // 与记忆插件保持一致：同时提供 proxy_password 和 Authorization，
-                // 兼容部分 OP/中转后端只读取 custom_include_headers 的情况。
-                if (authHeader) {
-                    proxyPayload.custom_include_headers["Authorization"] = authHeader;
+                // 酒馆的 OpenAI 兼容路由会根据 proxy_password 生成鉴权头；
+                // custom_include_headers 只属于 custom 路由，否则新版后端会因字段类型校验拒绝请求。
+                if (targetSource === 'custom') {
+                    proxyPayload.custom_include_headers = { 'Content-Type': 'application/json' };
+                    if (authHeader) {
+                        proxyPayload.custom_include_headers.Authorization = authHeader;
+                    }
                 }
                 if (modelLower.includes('gemini')) {
                     const safetyConfig = buildSafetyConfig();

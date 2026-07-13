@@ -8928,9 +8928,11 @@ export class SettingsApp {
                             chat_completion_source: targetSource,
                             custom_url: apiUrl,
                             reverse_proxy: apiUrl,
-                            proxy_password: apiKey,
-                            custom_include_headers: customHeaders
+                            proxy_password: apiKey
                         };
+                        if (targetSource === 'custom') {
+                            proxyPayload.custom_include_headers = customHeaders;
+                        }
 
                         try {
                             const response = await fetch('/api/backends/chat-completions/status', {
