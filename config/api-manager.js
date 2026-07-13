@@ -795,8 +795,10 @@ export class ApiManager {
                             : '';
                 throw new Error(`${label} 失败 ${response.status}${tip}: ${errText.substring(0, 1000)}`);
             }
-            const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-            if (requestStream && response.body && contentType.includes('text/event-stream')) {
+            // 酒馆的 forwardFetchResponse 只转发响应体和状态码，部分版本不会保留
+            // 上游的 text/event-stream 响应头。请求既然明确启用了 stream，就应直接
+            // 按流读取，否则 response.text() 会一直等待上游物理断开连接。
+            if (requestStream && response.body) {
                 return await this._readUniversalStream(response.body, `[${label}]`);
             }
             const text = await response.text();
@@ -1043,8 +1045,7 @@ export class ApiManager {
                 throw new Error(`直连请求失败 ${directResponse.status}${statusTip}: ${errText.substring(0, 1000)}`);
             }
 
-            const contentType = directResponse.headers.get('content-type') || '';
-            if (contentType.includes('text/event-stream') && directResponse.body) {
+            if (streamEnabled && directResponse.body) {
                 return await this._readUniversalStream(directResponse.body, '[浏览器直连]');
             }
 
@@ -1102,26 +1103,51 @@ export class ApiManager {
 
     _extractStreamContent(chunk) {
         if (!chunk) return { content: '', reasoning: '', finishReason: '', error: null };
-        if (chunk.error) {
-            const errMsg = chunk.error.message || JSON.stringify(chunk.error);
+        const payload = chunk?.data && typeof chunk.data === 'object'
+            && (chunk.data.choices || chunk.data.candidates || chunk.data.error)
+            ? chunk.data
+            : chunk;
+        if (payload.error) {
+            const errMsg = payload.error.message || JSON.stringify(payload.error);
             return { content: '', reasoning: '', finishReason: 'error', error: errMsg };
         }
 
-        const finishReason = chunk.choices?.[0]?.finish_reason || chunk.candidates?.[0]?.finishReason || '';
-        if (finishReason === 'SAFETY' || finishReason === 'RECITATION' || finishReason === 'safety') {
+        const choice = payload.choices?.[0];
+        const candidate = payload.candidates?.[0];
+        const finishReason = choice?.finish_reason || candidate?.finishReason || '';
+        if (['safety', 'recitation', 'content_filter'].includes(String(finishReason).toLowerCase())) {
             return { content: '', reasoning: '', finishReason, error: `内容被安全策略拦截 (${finishReason})` };
         }
 
-        const reasoning = chunk.choices?.[0]?.delta?.reasoning_content || '';
-        let content = '';
-        if (chunk.choices?.[0]?.delta?.content) content = chunk.choices[0].delta.content;
-        else if (chunk.choices?.[0]?.message?.content) content = chunk.choices[0].message.content;
-        else if (chunk.data?.choices?.[0]?.message?.content) content = chunk.data.choices[0].message.content;
-        else if (chunk.choices?.[0]?.text) content = chunk.choices[0].text;
-        else if (chunk.data?.choices?.[0]?.text) content = chunk.data.choices[0].text;
-        else if (chunk.candidates?.[0]?.content?.parts?.[0]?.text) content = chunk.candidates[0].content.parts[0].text;
-        else if (chunk.delta?.text) content = chunk.delta.text;
-        else if (chunk.content_block?.text) content = chunk.content_block.text;
+        const normalizeContent = (value) => {
+            if (typeof value === 'string') return value;
+            if (!Array.isArray(value)) return '';
+            return value.map(part => (
+                typeof part === 'string'
+                    ? part
+                    : String(part?.text || part?.content || '')
+            )).join('');
+        };
+        const candidateParts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+        const reasoning =
+            choice?.delta?.reasoning_content
+            || choice?.delta?.reasoning
+            || choice?.message?.reasoning_content
+            || choice?.message?.reasoning
+            || candidateParts.filter(part => part?.thought).map(part => String(part?.text || '')).join('')
+            || payload.delta?.thinking
+            || '';
+        const content =
+            normalizeContent(choice?.delta?.content)
+            || normalizeContent(choice?.delta?.text)
+            || normalizeContent(choice?.message?.content)
+            || normalizeContent(choice?.text)
+            || candidateParts.filter(part => !part?.thought).map(part => String(part?.text || '')).join('')
+            || normalizeContent(payload.delta?.message?.content?.text)
+            || normalizeContent(payload.delta?.text)
+            || normalizeContent(payload.content_block?.text)
+            || (payload.object !== 'chat.completion.chunk' ? normalizeContent(payload.content) : '')
+            || '';
 
         return { content, reasoning, finishReason, error: null };
     }
@@ -1411,50 +1437,78 @@ export class ApiManager {
         let fullReasoning = '';
         let isTruncated = false;
         let buffer = '';
+        let rawResponse = '';
+        let reachedStreamEnd = false;
+
+        const getEventData = (eventChunk) => {
+            let eventData = '';
+            let hasDataField = false;
+            const lines = String(eventChunk || '').split(/\r\n|\r|\n/g);
+            for (const line of lines) {
+                const match = /^([^:]+)(?:: ?(.*))?$/.exec(line);
+                if (!match || match[1] !== 'data') continue;
+                hasDataField = true;
+                eventData += `${match[2] || ''}\n`;
+            }
+            if (hasDataField) return eventData.endsWith('\n') ? eventData.slice(0, -1) : eventData;
+            const trimmed = String(eventChunk || '').trim();
+            return trimmed.startsWith('{') ? trimmed : '';
+        };
+
+        const processEvent = (eventChunk) => {
+            const rawData = getEventData(eventChunk);
+            if (!rawData) return;
+            if (rawData.trim() === '[DONE]') {
+                reachedStreamEnd = true;
+                return;
+            }
+
+            let chunk;
+            try {
+                chunk = JSON.parse(rawData);
+            } catch (_e) {
+                // 与酒馆 EventSourceStream 一致：只处理完整 SSE 事件，坏事件留给后续事件继续恢复。
+                return;
+            }
+
+            const { content, reasoning, finishReason, error } = this._extractStreamContent(chunk);
+            if (error) throw new Error(`${logPrefix} ${error}`.trim());
+            if (finishReason === 'length') isTruncated = true;
+            if (reasoning) fullReasoning += reasoning;
+            if (content) fullText += content;
+            // 酒馆以 [DONE] 或响应体结束为准；这里额外接受 finish_reason，
+            // 兼容只发结束原因却不关闭连接的 OpenAI 兼容端点。
+            if (finishReason) reachedStreamEnd = true;
+        };
 
         try {
             while (true) {
                 const { done, value } = await reader.read();
+                let decoded = '';
                 if (value) {
-                    buffer += decoder.decode(value, { stream: !done });
+                    decoded = decoder.decode(value, { stream: !done });
                 } else if (done) {
-                    buffer += decoder.decode();
+                    decoded = decoder.decode();
                 }
+                buffer += decoded;
+                rawResponse += decoded;
 
-                const lines = buffer.split('\n');
-                if (!done) buffer = lines.pop() || '';
-                else buffer = '';
+                const events = buffer.split(/\r\n\r\n|\r\r|\n\n/g);
+                const leftover = events.pop() || '';
+                buffer = done ? '' : leftover;
+                if (done && leftover.trim()) events.push(leftover);
 
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed || trimmed.startsWith(':')) continue;
-                    if (trimmed === 'data: [DONE]' || trimmed === 'data:[DONE]') continue;
-
-                    const sseMatch = trimmed.match(/^data:\s*/);
-                    const jsonStr = sseMatch
-                        ? trimmed.substring(sseMatch[0].length)
-                        : (trimmed.startsWith('{') ? trimmed : null);
-                    if (!jsonStr || jsonStr === '[DONE]') continue;
-
-                    try {
-                        const chunk = JSON.parse(jsonStr);
-                        const { content, reasoning, finishReason, error } = this._extractStreamContent(chunk);
-                        if (error) throw new Error(`${logPrefix} ${error}`.trim());
-                        if (finishReason === 'length') isTruncated = true;
-                        if (reasoning) fullReasoning += reasoning;
-                        if (content) fullText += content;
-                    } catch (e) {
-                        const msg = String(e?.message || '');
-                        if (msg.includes('安全策略拦截') || msg.includes('内容被')) {
-                            throw e;
-                        }
-                        // 解析失败容错，忽略单个坏 chunk
-                    }
+                for (const eventChunk of events) {
+                    processEvent(eventChunk);
+                    if (reachedStreamEnd) break;
                 }
-                if (done) break;
+                if (done || reachedStreamEnd) break;
             }
 
             let summary = String(fullText || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
+            if (!summary && !fullReasoning && rawResponse.trim() && !/(^|\r?\n)\s*data:/.test(rawResponse)) {
+                return this._parseApiResponse(rawResponse);
+            }
             if (!summary && fullReasoning && String(fullReasoning).trim()) {
                 throw new Error(`API 只返回了 reasoning_content，未返回正文内容${isTruncated ? '，可能是 max_tokens 太小，模型把输出额度用在思考过程里' : ''}`);
             }
@@ -1464,6 +1518,13 @@ export class ApiManager {
             if (!summary) throw new Error('流式传输返回为空');
             return { success: true, summary };
         } finally {
+            if (reachedStreamEnd) {
+                try {
+                    await reader.cancel();
+                } catch (_e) {
+                    // 上游可能已经自行关闭，忽略重复取消错误。
+                }
+            }
             reader.releaseLock();
         }
     }

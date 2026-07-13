@@ -325,10 +325,6 @@ export class WerewolfView {
             this._settingsOpen = false;
             this.render();
         });
-        document.getElementById('games-werewolf-worldbook-enabled')?.addEventListener('change', async e => {
-            await this.app.setWerewolfWorldbookEnabled(!!e.target.checked);
-            this.renderWerewolfWorldbookList();
-        });
         document.getElementById('games-werewolf-prompt-save')?.addEventListener('click', () => {
             this.app.setWerewolfPrompt(document.getElementById('games-werewolf-ai-prompt')?.value || '');
             this.app.phoneShell?.showNotification?.('狼人杀设置', '提示词已保存', '✅');
@@ -341,7 +337,6 @@ export class WerewolfView {
             if (textarea) textarea.value = text;
             this.app.phoneShell?.showNotification?.('狼人杀设置', '已恢复默认提示词', '✅');
         });
-        this.renderWerewolfWorldbookList();
     }
 
     _bindRecordEvents() {
@@ -814,26 +809,17 @@ export class WerewolfView {
     _renderSettingsOverlay() {
         if (!this._settingsOpen) return '';
         const prompt = this.app.getWerewolfPrompt();
-        const worldbookChecked = this.app.isWerewolfWorldbookEnabled() ? 'checked' : '';
         return `
             <div class="games-werewolf-settings-overlay" id="games-werewolf-settings-overlay">
                 <div class="games-werewolf-settings-panel">
                     <div class="games-werewolf-invite-head">
                         <div>
                             <div class="games-werewolf-entry-title">狼人杀设置</div>
-                            <div class="games-werewolf-entry-desc">默认提示词与世界书</div>
+                            <div class="games-werewolf-entry-desc">狼人杀 AI 默认提示词</div>
                         </div>
                         <button class="games-werewolf-icon-btn" id="games-werewolf-settings-close" type="button" aria-label="关闭">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
-                    </div>
-                    <label class="games-werewolf-setting-toggle">
-                        <span>使用世界书</span>
-                        <input id="games-werewolf-worldbook-enabled" type="checkbox" ${worldbookChecked}>
-                    </label>
-                    <div class="games-werewolf-setting-desc">请求会注入角色卡和用户信息；开启后额外注入已勾选世界书，不注入酒馆最近正文。</div>
-                    <div class="games-werewolf-worldbook-list" id="games-werewolf-worldbook-list">
-                        <div class="games-werewolf-setting-desc">正在读取当前可用世界书...</div>
                     </div>
                     <div class="games-werewolf-prompt-card">
                         <div class="games-werewolf-prompt-title">默认狼人杀提示词</div>
@@ -987,44 +973,6 @@ export class WerewolfView {
         const phaseMap = { setup: '准备', night: '夜晚', day: '白天', vote: '投票', last_words: '遗言', ended: '结束' };
         const visibility = item.visibility === 'public' ? '公开' : '后台';
         return `第${Number(item.day || 1)}天 · ${phaseMap[item.phase] || item.phase || '记录'} · ${visibility}`;
-    }
-
-    async renderWerewolfWorldbookList() {
-        const container = document.getElementById('games-werewolf-worldbook-list');
-        const manager = window.VirtualPhone?.worldbookManager;
-        if (!container || !manager) return;
-        if (!this.app.isWerewolfWorldbookEnabled()) {
-            container.innerHTML = '<div class="games-werewolf-setting-desc">世界书注入已关闭。</div>';
-            return;
-        }
-        try {
-            const sources = await manager.listAvailableWorldbooks({ includeEntries: false, force: true });
-            const selection = manager.getSelectionState('games');
-            if (!sources.length) {
-                container.innerHTML = '<div class="games-werewolf-setting-desc">未读取到世界书列表。</div>';
-                return;
-            }
-            const isSelected = source => selection.initialized && manager.matchesSelection?.(source, selection.ids);
-            container.innerHTML = [...sources].sort((a, b) => Number(isSelected(b)) - Number(isSelected(a))).map(source => `
-                <label class="games-werewolf-worldbook-item">
-                    <input type="checkbox" class="games-werewolf-worldbook-choice" value="${this._escapeAttr(source.id)}" ${isSelected(source) ? 'checked' : ''}>
-                    <span>
-                        <strong>${this._escape(source.name)}</strong>
-                        <em>${this._escape(source.sourceLabel || '世界书')} · ${isSelected(source) ? '发送时读取并注入' : '未勾选不读取'}</em>
-                    </span>
-                </label>
-            `).join('');
-            container.querySelectorAll('.games-werewolf-worldbook-choice').forEach(input => {
-                input.addEventListener('change', async () => {
-                    const ids = Array.from(container.querySelectorAll('.games-werewolf-worldbook-choice:checked')).map(item => item.value);
-                    await manager.setSelection('games', ids);
-                    this.renderWerewolfWorldbookList();
-                });
-            });
-        } catch (error) {
-            console.warn('[Werewolf] 世界书列表渲染失败:', error);
-            container.innerHTML = '<div class="games-werewolf-setting-desc">世界书读取失败，请稍后重试。</div>';
-        }
     }
 
     _emptySeatCount() {

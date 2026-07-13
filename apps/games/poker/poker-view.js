@@ -4,6 +4,8 @@
 
 import { STREET_LABELS } from './poker-data.js';
 
+const POKER_CSS_URL = new URL('./poker.css?v=1.0.2', import.meta.url).href;
+
 export class PokerView {
     constructor(app) {
         this.app = app;
@@ -17,6 +19,7 @@ export class PokerView {
         this._wagerModalDefault = 0;
         this._setupOpen = false;
         this._settingsOpen = false;
+        this._pokerSettingsOpen = false;
         this._aiErrorDialog = null;
         this._shareOverlayOpen = false;
         this._shareTarget = null;
@@ -44,6 +47,19 @@ export class PokerView {
                 </div>
 
                 <div class="games-lobby-content">
+                    <button class="games-game-card games-undercover-card" id="games-open-undercover" type="button">
+                        <div class="games-game-art">
+                            <div class="games-undercover-lobby-art" aria-hidden="true">
+                                <i class="fa-solid fa-user-secret"></i>
+                            </div>
+                        </div>
+                        <div class="games-game-info">
+                            <div class="games-game-title">谁是卧底</div>
+                            <div class="games-game-desc">身份推理 · 好友与 AI 对局</div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right games-game-chevron"></i>
+                    </button>
+
                     <button class="games-game-card games-werewolf-card" id="games-open-werewolf" type="button">
                         <div class="games-game-art">
                             <div class="games-werewolf-lobby-art" aria-hidden="true">狼</div>
@@ -108,6 +124,7 @@ export class PokerView {
                 </div>
                 ${this._renderPokerSetupOverlay()}
                 ${this._renderSettingsOverlay()}
+                ${this._renderPokerSettingsOverlay()}
                 ${this._renderAiErrorDialog()}
             </div>
         `;
@@ -204,7 +221,7 @@ export class PokerView {
         return `
             <div class="games-setup-overlay" id="games-setup-overlay">
                 <div class="games-setup-panel">
-                    <div class="games-setup-hero">
+                    <button class="games-setup-hero" id="games-poker-settings-open" type="button" aria-label="打开德州扑克设置">
                         <div class="games-game-card-stack">
                             ${this._renderCard({ rank: 'A', suitSymbol: '♠', color: 'black' }, true)}
                             ${this._renderCard({ rank: 'K', suitSymbol: '♥', color: 'red' }, true)}
@@ -212,7 +229,8 @@ export class PokerView {
                         <div>
                             <div class="games-game-title">德州扑克</div>
                         </div>
-                    </div>
+                        <i class="fa-solid fa-chevron-right games-setup-hero-chevron" aria-hidden="true"></i>
+                    </button>
 
                     <div class="games-setup-label">游戏人数</div>
                     <div class="games-player-count-grid">
@@ -259,18 +277,49 @@ export class PokerView {
 
     _renderSettingsOverlay() {
         if (!this._settingsOpen) return '';
-        const prompt = this.app.getPokerPrompt();
-        const speechChecked = this.app.isPokerAiSpeechEnabled() ? 'checked' : '';
-        const worldbookChecked = this.app.isPokerWorldbookEnabled() ? 'checked' : '';
+        const worldbookChecked = this.app.isGamesWorldbookEnabled() ? 'checked' : '';
         return `
             <div class="games-settings-overlay" id="games-settings-overlay">
                 <div class="games-settings-panel">
                     <div class="games-settings-head">
                         <div>
-                            <div class="games-game-title">德州扑克设置</div>
-                            <div class="games-game-desc">AI 行动与牌桌发言提示词</div>
+                            <div class="games-game-title">游戏设置</div>
+                            <div class="games-game-desc">所有游戏共用的世界书注入</div>
                         </div>
                         <button class="games-icon-btn" id="games-settings-close" type="button" title="关闭">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <section class="games-general-worldbook-settings" aria-label="游戏通用世界书设置">
+                        <div class="games-prompt-title">游戏通用世界书</div>
+                        <div class="games-prompt-desc">勾选结果统一用于狼人杀、德州扑克、谁是卧底等需要 AI 的游戏。</div>
+                        <label class="games-setting-toggle">
+                            <span>启用世界书注入</span>
+                            <input id="games-worldbook-enabled" type="checkbox" ${worldbookChecked}>
+                        </label>
+                        <div class="games-setting-desc">发送游戏 AI 请求时读取下方勾选内容；未勾选的世界书不会读取。</div>
+                        <div class="games-worldbook-list" id="games-worldbook-list">
+                            <div class="games-setting-desc">正在读取当前可用世界书...</div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderPokerSettingsOverlay() {
+        if (!this._pokerSettingsOpen) return '';
+        const prompt = this.app.getPokerPrompt();
+        const speechChecked = this.app.isPokerAiSpeechEnabled() ? 'checked' : '';
+        return `
+            <div class="games-settings-overlay" id="games-poker-settings-overlay">
+                <div class="games-settings-panel">
+                    <div class="games-settings-head">
+                        <div>
+                            <div class="games-game-title">德州扑克设置</div>
+                            <div class="games-game-desc">AI 发言与默认提示词</div>
+                        </div>
+                        <button class="games-icon-btn" id="games-poker-settings-close" type="button" title="关闭">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
@@ -278,22 +327,12 @@ export class PokerView {
                         <span>AI 发言</span>
                         <input id="games-poker-ai-speech" type="checkbox" ${speechChecked}>
                     </label>
-                    <label class="games-setting-toggle">
-                        <span>使用酒馆世界书</span>
-                        <input id="games-poker-worldbook-enabled" type="checkbox" ${worldbookChecked}>
-                    </label>
-                    <div class="games-setting-desc">开启后会注入当前角色卡对应勾选的世界书、角色卡、用户卡与最近酒馆上下文。</div>
-                    <div class="games-worldbook-list" id="games-worldbook-list">
-                        <div class="games-setting-desc">正在读取当前可用世界书...</div>
-                    </div>
-                    <div class="games-prompt-card">
-                        <div class="games-prompt-title">默认德州扑克提示词</div>
-                        <div class="games-prompt-desc">控制微信好友在牌桌中的发言、下注决策和互动边界。</div>
-                        <textarea id="games-poker-ai-prompt" class="games-settings-textarea">${this._escape(prompt)}</textarea>
-                        <div class="games-prompt-actions">
-                            <button class="games-prompt-btn games-prompt-btn-muted" id="games-poker-prompt-reset" type="button">恢复默认</button>
-                            <button class="games-prompt-btn games-prompt-btn-primary" id="games-poker-prompt-save" type="button">保存</button>
-                        </div>
+                    <div class="games-prompt-title games-prompt-subtitle">默认提示词</div>
+                    <div class="games-prompt-desc">控制牌桌发言、下注决策和互动边界。</div>
+                    <textarea id="games-poker-ai-prompt" class="games-settings-textarea">${this._escape(prompt)}</textarea>
+                    <div class="games-prompt-actions">
+                        <button class="games-prompt-btn games-prompt-btn-muted" id="games-poker-prompt-reset" type="button">恢复默认</button>
+                        <button class="games-prompt-btn games-prompt-btn-primary" id="games-poker-prompt-save" type="button">保存</button>
                     </div>
                 </div>
             </div>
@@ -475,6 +514,9 @@ export class PokerView {
         document.getElementById('games-open-poker')?.addEventListener('click', () => {
             this.openPokerSetupOverlay();
         });
+        document.getElementById('games-open-undercover')?.addEventListener('click', () => {
+            this.app.openUndercover();
+        });
         document.getElementById('games-open-2048')?.addEventListener('click', () => {
             this.app.open2048();
         });
@@ -505,6 +547,10 @@ export class PokerView {
     }
 
     _bindPokerSetupEvents() {
+        document.getElementById('games-poker-settings-open')?.addEventListener('click', () => {
+            this._pokerSettingsOpen = true;
+            this.renderLobby();
+        });
         document.querySelectorAll('.games-player-count-btn[data-player-count]').forEach(btn => {
             btn.addEventListener('click', () => {
                 this.app.gamesData.setSelectedPlayerCount(Number(btn.dataset.playerCount || 5));
@@ -721,13 +767,10 @@ export class PokerView {
             this._settingsOpen = false;
             this.app.currentView === 'poker' ? this.renderPoker() : this.renderLobby();
         });
-        document.getElementById('games-poker-ai-speech')?.addEventListener('change', e => {
-            this.app.setPokerAiSpeechEnabled(!!e.target.checked);
-        });
         this.renderGamesWorldbookList();
-        document.getElementById('games-poker-worldbook-enabled')?.addEventListener('change', async e => {
+        document.getElementById('games-worldbook-enabled')?.addEventListener('change', async e => {
             const enabled = !!e.target.checked;
-            await this.app.setPokerWorldbookEnabled(enabled);
+            await this.app.setGamesWorldbookEnabled(enabled);
             if (enabled) this.renderGamesWorldbookList();
             else {
                 const container = document.getElementById('games-worldbook-list');
@@ -736,15 +779,27 @@ export class PokerView {
         });
         document.getElementById('games-poker-prompt-save')?.addEventListener('click', () => {
             this.app.setPokerPrompt(document.getElementById('games-poker-ai-prompt')?.value || '');
-            this.app.phoneShell?.showNotification?.('游戏设置', '德州扑克提示词已保存', '✅');
-            this._settingsOpen = false;
-            this.app.currentView === 'poker' ? this.renderPoker() : this.renderLobby();
+            this.app.phoneShell?.showNotification?.('德州扑克设置', '提示词已保存', '✅');
+            this._pokerSettingsOpen = false;
+            this.renderLobby();
         });
         document.getElementById('games-poker-prompt-reset')?.addEventListener('click', () => {
             const text = this.app.resetPokerPrompt();
             const textarea = document.getElementById('games-poker-ai-prompt');
             if (textarea) textarea.value = text;
-            this.app.phoneShell?.showNotification?.('游戏设置', '德州扑克提示词已恢复默认', '✅');
+            this.app.phoneShell?.showNotification?.('德州扑克设置', '提示词已恢复默认', '✅');
+        });
+        document.getElementById('games-poker-settings-close')?.addEventListener('click', () => {
+            this._pokerSettingsOpen = false;
+            this.renderLobby();
+        });
+        document.getElementById('games-poker-settings-overlay')?.addEventListener('click', e => {
+            if (e.target?.id !== 'games-poker-settings-overlay') return;
+            this._pokerSettingsOpen = false;
+            this.renderLobby();
+        });
+        document.getElementById('games-poker-ai-speech')?.addEventListener('change', e => {
+            this.app.setPokerAiSpeechEnabled(!!e.target.checked);
         });
         document.getElementById('games-ai-error-close')?.addEventListener('click', () => {
             this._aiErrorDialog = null;
@@ -772,7 +827,7 @@ export class PokerView {
     }
 
     isPokerComposing() {
-        if (this._actionPanelOpen || this._wagerModalOpen || this._shareOverlayOpen || this._settingsOpen) return true;
+        if (this._actionPanelOpen || this._wagerModalOpen || this._shareOverlayOpen || this._settingsOpen || this._pokerSettingsOpen) return true;
         const input = document.querySelector('.phone-view-current #games-action-input') || document.getElementById('games-action-input');
         const inputText = String(input?.value || this._pendingChatInput || '').trim();
         const inputFocused = !!input && document.activeElement === input;
@@ -959,7 +1014,7 @@ export class PokerView {
         const manager = window.VirtualPhone?.worldbookManager;
         if (!container || !manager) return;
 
-        if (!this.app.isPokerWorldbookEnabled()) {
+        if (!this.app.isGamesWorldbookEnabled()) {
             container.innerHTML = '<div class="games-setting-desc">世界书注入已关闭。</div>';
             return;
         }
@@ -1044,14 +1099,16 @@ export class PokerView {
 
     _loadCSS() {
         if (this._cssLoaded) return;
-        if (document.getElementById('games-css')) {
+        const existing = document.getElementById('games-css');
+        if (existing) {
+            if (existing.href !== POKER_CSS_URL) existing.href = POKER_CSS_URL;
             this._cssLoaded = true;
             return;
         }
         const link = document.createElement('link');
         link.id = 'games-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./poker.css?v=1.0.0', import.meta.url).href;
+        link.href = POKER_CSS_URL;
         document.head.appendChild(link);
         this._cssLoaded = true;
     }

@@ -416,13 +416,33 @@
 }
 
 .games-setup-hero {
+    width: 100%;
     display: grid;
-    grid-template-columns: 82px minmax(0, 1fr);
+    grid-template-columns: 82px minmax(0, 1fr) 16px;
     align-items: center;
     gap: 13px;
     min-height: 96px;
-    padding-bottom: 14px;
+    margin: 0;
+    padding: 0 0 14px;
+    border: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    box-sizing: border-box;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#phone-panel-content .phone-screen .games-setup-hero:active {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+#phone-panel-content .phone-screen .games-setup-hero-chevron {
+    color: rgba(247, 243, 232, 0.42);
+    font-size: 13px;
+    justify-self: end;
 }
 
 .games-setup-label {
@@ -635,6 +655,12 @@
     color: #ff9a8f !important;
 }
 
+#phone-panel-content .phone-screen .games-general-worldbook-settings {
+    margin-top: 12px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .games-worldbook-list {
     max-height: 132px;
     overflow: auto;
@@ -716,18 +742,6 @@
     font-size: 10px;
 }
 
-.games-prompt-card {
-    width: 100%;
-    margin-top: 14px;
-    padding: 12px;
-    box-sizing: border-box;
-    border-radius: 8px;
-    background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03)),
-        rgba(2, 13, 16, 0.48);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
 .games-prompt-title {
     color: #fff8e5;
     font-size: 13px;
@@ -740,6 +754,11 @@
     color: rgba(247, 243, 232, 0.56);
     font-size: 11px;
     line-height: 1.35;
+}
+
+#phone-panel-content .phone-screen .games-prompt-subtitle {
+    margin-top: 12px;
+    font-size: 12px;
 }
 
 .games-settings-textarea {

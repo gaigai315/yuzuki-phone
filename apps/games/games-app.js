@@ -12,12 +12,16 @@ import { CatboxData } from './catbox/catbox-data.js';
 import { CatboxView } from './catbox/catbox-view.js';
 import { WerewolfData } from './werewolf/werewolf-data.js';
 import { WerewolfView } from './werewolf/werewolf-view.js';
-import { buildGameSillyTavernContextMessages } from './common/games-ai-context.js';
+import { UndercoverData } from './undercover/undercover-data.js';
+import { UndercoverView } from './undercover/undercover-view.js';
 
 const CATBOX_CSS_URL = new URL('./catbox/catbox.css?v=1.0.0', import.meta.url).href;
-const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.48', import.meta.url).href;
+const WEREWOLF_CSS_URL = new URL('./werewolf/werewolf.css?v=1.0.49', import.meta.url).href;
 const WEREWOLF_API_COOLDOWN_MS = 5000;
 const WEREWOLF_LAST_WORDS_TIMEOUT_MS = 180000;
+const UNDERCOVER_PLAYER_COUNT = 6;
+const UNDERCOVER_USER_TURN_DELAY_MS = 6000;
+const UNDERCOVER_API_COOLDOWN_MS = 5000;
 const CATBOX_PRELOAD_ASSETS = [
     new URL('./catbox/assets/wxxw1.png', import.meta.url).href,
     new URL('./catbox/assets/wxxw2.png', import.meta.url).href,
@@ -49,11 +53,22 @@ export class GamesApp extends PokerApp {
         this.catboxView = new CatboxView(this);
         this.werewolfData = new WerewolfData(storage);
         this.werewolfView = new WerewolfView(this);
+        this.undercoverData = new UndercoverData(storage);
+        this.undercoverView = new UndercoverView(this);
         this._werewolfDriving = false;
         this._werewolfNightDriving = false;
         this._lastWerewolfApiRequestAt = 0;
+        this._undercoverDriving = false;
+        this._undercoverRunId = 0;
+        this._undercoverAbortController = null;
+        this._undercoverPendingUserContext = false;
+        this._undercoverUserTurnTimer = null;
+        this._undercoverUserTurnDelayMs = UNDERCOVER_USER_TURN_DELAY_MS;
+        this._undercoverApiCooldownMs = UNDERCOVER_API_COOLDOWN_MS;
+        this._lastUndercoverApiCompletedAt = 0;
         this._preloadCatboxAssets();
         this._preloadWerewolfAssets();
+        this.undercoverView.preload();
         window.addEventListener('phone:panelVisibility', event => {
             const open = !!event.detail?.open;
             if (this.currentView !== 'sudoku') return;
@@ -70,6 +85,584 @@ export class GamesApp extends PokerApp {
         this.applyPhoneChromeTheme();
         this.currentView = 'game2048';
         this.game2048View.render();
+    }
+
+    openUndercover() {
+        this.applyPhoneChromeTheme();
+        this.currentView = 'undercover';
+        this.undercoverView.render();
+    }
+
+    getWechatContactsForUndercover() {
+        const wechatData = this.getWechatData();
+        const rawContacts = wechatData?.getContacts?.() || [];
+        return this.getWechatContactsForPoker().map(contact => {
+            const raw = rawContacts.find(item => (
+                String(item?.id || '').trim() === contact.id
+                || String(item?.name || '').trim() === contact.name
+                || String(item?.remark || '').trim() === contact.name
+            )) || {};
+            return {
+                ...contact,
+                personality: String(
+                    raw.personality
+                    || raw.signature
+                    || raw.description
+                    || raw.remark
+                    || '熟悉用户，发言自然，会根据场上内容判断'
+                ).trim()
+            };
+        });
+    }
+
+    async startUndercoverGame(invitedContacts = []) {
+        this.stopUndercoverFlow();
+        const runId = this._undercoverRunId;
+        const wechatData = this.getWechatData();
+        const userInfo = wechatData?.getUserInfo?.() || {};
+        const prepared = this.undercoverData.prepareGame({
+            name: String(userInfo.name || '你').trim() || '你',
+            avatar: this.resolvePlayerAvatar({ id: 'user', name: userInfo.name || '你', avatar: userInfo.avatar }),
+            personality: String(userInfo.signature || userInfo.personality || '按用户自己的方式发言').trim()
+        }, invitedContacts);
+        this.undercoverView.renderGame(prepared);
+
+        return this._runUndercoverDealerStep(prepared, runId);
+    }
+
+    resumeUndercoverGame() {
+        const storedGame = this.undercoverData.getState().game;
+        if (!storedGame) return false;
+        this.stopUndercoverFlow();
+        const runId = this._undercoverRunId;
+        const latestPublicMessage = [...(storedGame.chatMessages || [])]
+            .reverse()
+            .find(message => message?.source !== 'system');
+        this._undercoverPendingUserContext = latestPublicMessage?.source === 'user';
+        this.undercoverView.renderGame(storedGame);
+        if (storedGame.phase === 'ended' || storedGame.status === 'error') return true;
+        if (storedGame.phase === 'matching') {
+            const prepared = this.undercoverData.markDealerThinking();
+            this.undercoverView.syncGameRuntimeState?.(prepared);
+            Promise.resolve().then(() => this._runUndercoverDealerStep(prepared, runId));
+            return true;
+        }
+        Promise.resolve().then(() => this.driveUndercoverTurns({
+            runId,
+            includeUserContext: this._undercoverPendingUserContext
+        }));
+        return true;
+    }
+
+    async _runUndercoverDealerStep(prepared, runId = this._undercoverRunId) {
+        try {
+            const emptyCount = prepared.players.filter(player => player.empty || player.source === 'pending').length;
+            const result = await this._callUndercoverDealerAi(emptyCount, prepared.players, runId);
+            if (runId !== this._undercoverRunId) return null;
+            if (result?.success === false) throw new Error(result.error || '开局发牌请求失败');
+            const parsed = this._parseUndercoverDealerResult(result?.summary || result?.content || result?.text || '');
+            const incomplete = parsed.players.length < emptyCount || !parsed.wordPair.civilian || !parsed.wordPair.undercover;
+            const game = this.undercoverData.applyDealerResult(parsed.players, parsed.wordPair);
+            this.undercoverView.renderGame(game);
+            if (incomplete) {
+                this.phoneShell?.showNotification?.('谁是卧底', 'AI 返回不完整，已自动补齐缺失内容', '⚠️');
+            }
+            await this.driveUndercoverTurns({ runId });
+            return this.undercoverData.getState().game;
+        } catch (error) {
+            if (runId !== this._undercoverRunId) return null;
+            console.warn('[Undercover] 开局发牌失败:', error);
+            const message = this._formatError?.(error, '开局发牌失败') || error?.message || '开局发牌失败';
+            const game = this.undercoverData.setGameError(message);
+            this.undercoverView.syncGameRuntimeState?.(game);
+            return null;
+        }
+    }
+
+    submitUndercoverUserSpeech(content = '') {
+        const message = this.undercoverData.addUserChatMessage(content);
+        if (!message) return null;
+        this._clearUndercoverUserTurnTimer();
+        this._undercoverPendingUserContext = true;
+        this.undercoverView.appendChatMessage?.(message);
+        this.undercoverView.syncGameRuntimeState?.(this.undercoverData.getState().game);
+        return message;
+    }
+
+    setUndercoverUserInputFocused(focused, options = {}) {
+        if (!this.undercoverData.canUserSpeak()) return null;
+        const hasDraft = !!options.hasDraft;
+        this._clearUndercoverUserTurnTimer();
+        const game = this.undercoverData.setUserInputFocused(!!focused || hasDraft);
+        this.undercoverView.syncGameRuntimeState?.(game);
+        if (!focused && !hasDraft && this.undercoverData.hasPendingUserSpeech()) {
+            this._undercoverUserTurnTimer = setTimeout(() => {
+                this._undercoverUserTurnTimer = null;
+                const input = document.getElementById('games-undercover-chat-input');
+                const isInputActive = document.activeElement === input;
+                const hasCurrentDraft = !!String(input?.value || '').trim();
+                if (isInputActive || hasCurrentDraft) {
+                    const activeGame = this.undercoverData.setUserInputFocused(true);
+                    this.undercoverView.syncGameRuntimeState?.(activeGame);
+                    return;
+                }
+                this.finishUndercoverUserTurn();
+            }, Math.max(0, Number(this._undercoverUserTurnDelayMs || UNDERCOVER_USER_TURN_DELAY_MS)));
+        }
+        return game;
+    }
+
+    finishUndercoverUserTurn() {
+        this._clearUndercoverUserTurnTimer();
+        const game = this.undercoverData.finishUserTurn();
+        if (!game) return null;
+        this._undercoverPendingUserContext = true;
+        this.undercoverView.syncGameRuntimeState?.(game);
+        Promise.resolve().then(() => this.driveUndercoverTurns({
+            runId: this._undercoverRunId,
+            includeUserContext: true
+        }));
+        return game;
+    }
+
+    _clearUndercoverUserTurnTimer() {
+        if (this._undercoverUserTurnTimer) clearTimeout(this._undercoverUserTurnTimer);
+        this._undercoverUserTurnTimer = null;
+    }
+
+    submitUndercoverUserVote(targetSeat) {
+        const vote = this.undercoverData.submitUserVote(targetSeat);
+        if (!vote) return null;
+        this.undercoverView.syncGameRuntimeState?.(this.undercoverData.getState().game);
+        Promise.resolve().then(() => this.driveUndercoverTurns({ runId: this._undercoverRunId }));
+        return vote;
+    }
+
+    retryUndercoverFlow() {
+        const game = this.undercoverData.getState().game;
+        if (!game || game.status !== 'error') return false;
+        if (game.phase === 'matching') {
+            const prepared = this.undercoverData.markDealerThinking();
+            this.undercoverView.syncGameRuntimeState?.(prepared);
+            Promise.resolve().then(() => this._runUndercoverDealerStep(prepared, this._undercoverRunId));
+            return true;
+        }
+        Promise.resolve().then(() => this.driveUndercoverTurns({ runId: this._undercoverRunId }));
+        return true;
+    }
+
+    async driveUndercoverTurns(options = {}) {
+        if (this._undercoverDriving) return;
+        const runId = Number(options.runId ?? this._undercoverRunId);
+        let includeUserContext = !!options.includeUserContext || this._undercoverPendingUserContext;
+        this._undercoverDriving = true;
+        try {
+            let guard = 0;
+            while (guard < UNDERCOVER_PLAYER_COUNT && runId === this._undercoverRunId) {
+                const state = this.undercoverData.getState();
+                if (!state.game || state.game.phase === 'ended') return;
+                if (state.game.phase === 'voting') {
+                    if (this.undercoverData.canUserVote()) {
+                        this.undercoverView.syncGameRuntimeState?.(state.game);
+                        return;
+                    }
+                    await this._runUndercoverVote(runId, { includeUserContext });
+                    const nextGame = this.undercoverData.getState().game;
+                    if (nextGame?.phase === 'playing' && runId === this._undercoverRunId) {
+                        Promise.resolve().then(() => this.driveUndercoverTurns({ runId }));
+                    }
+                    return;
+                }
+                if (state.game.phase !== 'playing') return;
+                guard += 1;
+                const speaker = this.undercoverData.getCurrentSpeaker();
+                if (!speaker) return;
+                if (speaker.isUser) {
+                    this.undercoverView.syncGameRuntimeState?.(state.game);
+                    return;
+                }
+
+                const thinkingGame = this.undercoverData.markCurrentSpeakerThinking();
+                this.undercoverView.syncGameRuntimeState?.(thinkingGame);
+                try {
+                    const result = await this._callUndercoverSpeechAi(speaker, {
+                        includeUserContext,
+                        runId
+                    });
+                    if (runId !== this._undercoverRunId) return;
+                    if (result?.success === false) throw new Error(result.error || 'AI 发言请求失败');
+                    const speech = this._parseUndercoverSpeech(result?.summary || result?.content || result?.text || '');
+                    if (!speech) throw new Error('AI 未返回有效的谁是卧底发言');
+                    const message = this.undercoverData.addAiSpeech(speaker.seat, speech);
+                    if (!message) throw new Error('当前发言回合已经变化');
+                    includeUserContext = false;
+                    this._undercoverPendingUserContext = false;
+                    this.undercoverView.appendChatMessage?.(message);
+                    this.undercoverView.syncGameRuntimeState?.(this.undercoverData.getState().game);
+                } catch (error) {
+                    if (runId !== this._undercoverRunId) return;
+                    console.warn('[Undercover] AI 发言失败:', error);
+                    const message = this._formatError?.(error, 'AI 发言失败') || error?.message || 'AI 发言失败';
+                    const game = this.undercoverData.setGameError(message);
+                    this.undercoverView.syncGameRuntimeState?.(game);
+                    return;
+                }
+            }
+        } finally {
+            this._undercoverDriving = false;
+            const pendingGame = this.undercoverData.getState().game;
+            if (
+                runId === this._undercoverRunId
+                && pendingGame?.phase === 'voting'
+                && pendingGame?.status === 'vote_ready'
+            ) {
+                Promise.resolve().then(() => this.driveUndercoverTurns({ runId }));
+            }
+        }
+    }
+
+    async _runUndercoverVote(runId = this._undercoverRunId, options = {}) {
+        const state = this.undercoverData.getState().game;
+        if (!state || state.phase !== 'voting') return null;
+        const thinkingGame = this.undercoverData.markVoteThinking();
+        this.undercoverView.syncGameRuntimeState?.(thinkingGame);
+        try {
+            const result = await this._callUndercoverVoteAi(thinkingGame, runId, options);
+            if (runId !== this._undercoverRunId) return null;
+            if (result?.success === false) throw new Error(result.error || 'AI 投票请求失败');
+            const votes = this._parseUndercoverVotes(result?.summary || result?.content || result?.text || '');
+            const applied = this.undercoverData.applyVoteResult(votes);
+            if (!applied) throw new Error('本轮投票结算失败');
+            this._undercoverPendingUserContext = false;
+            this.undercoverView.appendChatMessage?.(applied.message);
+            this.undercoverView.syncGameRuntimeState?.(applied.game);
+            if (applied.game.phase === 'ended') {
+                const title = applied.game.winner === 'civilian' ? '平民阵营获胜' : '卧底获胜';
+                this.phoneShell?.showNotification?.('谁是卧底', title, '🏆');
+            }
+            return applied;
+        } catch (error) {
+            if (runId !== this._undercoverRunId) return null;
+            console.warn('[Undercover] AI 投票失败:', error);
+            const message = this._formatError?.(error, 'AI 投票失败') || error?.message || 'AI 投票失败';
+            const game = this.undercoverData.setGameError(message);
+            this.undercoverView.syncGameRuntimeState?.(game);
+            return null;
+        }
+    }
+
+    stopUndercoverFlow() {
+        this._undercoverRunId += 1;
+        this._undercoverDriving = false;
+        this._undercoverPendingUserContext = false;
+        this._clearUndercoverUserTurnTimer();
+        if (this._undercoverAbortController) {
+            try {
+                this._undercoverAbortController.abort();
+            } catch (error) {
+                console.warn('[Undercover] 中止请求失败:', error);
+            }
+            this._undercoverAbortController = null;
+        }
+    }
+
+    async _callUndercoverDealerAi(emptyCount, players = [], runId = this._undercoverRunId) {
+        const existingPlayers = (Array.isArray(players) ? players : [])
+            .filter(player => !player.empty && player.source !== 'pending')
+            .map(player => `${player.seat}号：${player.name}`)
+            .join('\n') || '无';
+        const messages = [
+            {
+                role: 'system',
+                name: 'SYSTEM (谁是卧底午夜场发牌官)',
+                isPhoneMessage: true,
+                content: this._getUndercoverDealerPrompt(emptyCount)
+            },
+            {
+                role: 'user',
+                name: 'USER (谁是卧底开局任务)',
+                isPhoneMessage: true,
+                content: [
+                    `空缺人数：${Math.max(0, Number(emptyCount || 0))}`,
+                    '已经落座的真人玩家：',
+                    existingPlayers,
+                    '请生成所有空缺位置需要的 AI 玩家资料，并给出本轮身份词。'
+                ].join('\n')
+            }
+        ];
+        return this._callUndercoverAi(messages, {
+            runId,
+            temperature: 0.96,
+            max_tokens: 1100
+        });
+    }
+
+    async _callUndercoverSpeechAi(player, options = {}) {
+        const state = this.undercoverData.getState().game;
+        if (!state) throw new Error('谁是卧底游戏状态不存在');
+        const publicLog = (state.chatMessages || []).slice(-36).map(message => (
+            `第${Number(message.round || 1)}轮 ${Number(message.senderSeat || 0)}号 ${message.senderName}：${message.content}`
+        ));
+        const playerList = (state.players || [])
+            .slice()
+            .sort((a, b) => Number(a.seat) - Number(b.seat))
+            .map(item => `${item.seat}号 ${item.name}（${item.alive === false ? '已出局' : '存活'}）`)
+            .join('、');
+        const shouldIncludeRoleContext = !!options.includeUserContext || player?.source === 'wechat';
+        const userContext = shouldIncludeRoleContext
+            ? await this.buildGamesAiContextMessages({
+                includeWorldbook: true,
+                includeRecentChat: true
+            })
+            : [];
+        const messages = [
+            {
+                role: 'system',
+                name: 'SYSTEM (谁是卧底发言规则)',
+                isPhoneMessage: true,
+                content: this.getUndercoverPrompt()
+            },
+            ...userContext,
+            {
+                role: 'system',
+                name: 'SYSTEM (当前玩家私有信息)',
+                isPhoneMessage: true,
+                content: [
+                    `当前轮次：第 ${Number(state.round || 1)} 轮。`,
+                    `当前玩家：${player.seat}号 ${player.name}。`,
+                    `当前玩家自己的词：${player.word}。`,
+                    `当前玩家自己的性格与发言风格：${player.personality || '自然、简短地发言'}。`,
+                    `本局公开座位：${playerList}。`,
+                    '除当前玩家自己的词和性格外，你没有收到任何其他玩家的身份词、真实身份或私有性格。',
+                    '本局公开发言：',
+                    publicLog.length ? publicLog.join('\n') : '暂无，这是本局第一段发言。'
+                ].join('\n')
+            },
+            {
+                role: 'user',
+                name: 'USER (当前发言任务)',
+                isPhoneMessage: true,
+                content: [
+                    `请以 ${player.seat}号 ${player.name} 的身份完成当前这一段发言。`,
+                    '发言必须拆成3到8个自然、口语化的短句，每个短句单独换行，不要把所有内容写成一个长段落。',
+                    '只能返回以下标签，不要输出其他内容：',
+                    '<谁是卧底发言>',
+                    '发言内容',
+                    '</谁是卧底发言>'
+                ].join('\n')
+            }
+        ];
+        return this._callUndercoverAi(messages, {
+            runId: options.runId,
+            temperature: 0.88,
+            max_tokens: 420
+        });
+    }
+
+    async _callUndercoverVoteAi(game, runId = this._undercoverRunId, options = {}) {
+        const alivePlayers = (game?.players || []).filter(player => player.alive !== false);
+        const aiVoters = alivePlayers.filter(player => !player.isUser);
+        const publicLog = (game?.chatMessages || [])
+            .slice(-48)
+            .map(message => message.source === 'system'
+                ? `第${Number(message.round || 1)}轮 系统：${message.content}`
+                : `第${Number(message.round || 1)}轮 ${Number(message.senderSeat || 0)}号 ${message.senderName}：${message.content}`);
+        const voterProfiles = aiVoters.map(player => [
+            `${player.seat}号 ${player.name}`,
+            `投票性格与风格：${player.personality || '根据公开发言理性判断'}`
+        ].join('｜'));
+        const userVote = game?.userVote
+            ? `${game.userVote.voterSeat}号 -> ${game.userVote.targetSeat}号`
+            : '用户本轮不参与投票';
+        const userContext = await this.buildGamesAiContextMessages({
+            includeWorldbook: true,
+            includeRecentChat: true
+        });
+        const messages = [
+            {
+                role: 'system',
+                name: 'SYSTEM (谁是卧底投票裁判)',
+                isPhoneMessage: true,
+                content: [
+                    '你是六人谁是卧底游戏的投票裁判。现在一轮公开发言已经结束。',
+                    '你需要在一次回复中分别扮演所有列出的 AI 托管玩家，根据唯一提供的普通玩家身份词、各自性格和全部公开发言独立投票。',
+                    '不同玩家可以得出不同判断。不得让任何玩家知道其他人的身份词、真实身份或私有性格。',
+                    '投票上下文只会提供普通玩家身份词；不得索取、猜测系统信息或要求提供卧底身份词。',
+                    '不能替用户改票，不能遗漏任何列出的 AI 投票者，不能投给自己或已经出局的玩家。',
+                    '必须只返回 <谁是卧底投票> 标签，不要 Markdown，不要解释。'
+                ].join('\n')
+            },
+            ...userContext,
+            {
+                role: 'system',
+                name: 'SYSTEM (本轮投票上下文)',
+                isPhoneMessage: true,
+                content: [
+                    `当前轮次：第 ${Number(game?.round || 1)} 轮。`,
+                    `存活座位：${alivePlayers.map(player => `${player.seat}号 ${player.name}`).join('、')}。`,
+                    `用户票：${userVote}。`,
+                    `普通玩家身份词：${String(game?.wordPair?.civilian || '').trim() || '未知'}。`,
+                    'AI 投票者的性格与投票风格：',
+                    voterProfiles.join('\n') || '无',
+                    '全部公开发言：',
+                    publicLog.join('\n') || '暂无'
+                ].join('\n')
+            },
+            {
+                role: 'user',
+                name: 'USER (全员投票任务)',
+                isPhoneMessage: true,
+                content: [
+                    `需要模拟投票的座位：${aiVoters.map(player => `${player.seat}号`).join('、') || '无'}。`,
+                    '请让上面每个座位都投出且只投出一票。',
+                    '<谁是卧底投票>',
+                    '票型：1->3，2->4，3->2',
+                    '</谁是卧底投票>'
+                ].join('\n')
+            }
+        ];
+        return this._callUndercoverAi(messages, {
+            runId,
+            temperature: 0.76,
+            max_tokens: 520
+        });
+    }
+
+    async _callUndercoverAi(messages, options = {}) {
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager?.callAI) throw new Error('API Manager 未初始化');
+        await this._waitForPokerApiIdle();
+        await this._waitForUndercoverApiCooldown(options.runId);
+        if (Number(options.runId ?? this._undercoverRunId) !== this._undercoverRunId) {
+            const error = new Error('谁是卧底请求已中止');
+            error.name = 'AbortError';
+            throw error;
+        }
+        const controller = new AbortController();
+        this._undercoverAbortController = controller;
+        try {
+            const result = await apiManager.callAI(messages, {
+                appId: 'games',
+                temperature: options.temperature,
+                max_tokens: options.max_tokens,
+                signal: controller.signal
+            });
+            if (result?.aborted) {
+                const error = new Error('谁是卧底请求已中止');
+                error.name = 'AbortError';
+                throw error;
+            }
+            return result;
+        } finally {
+            this._lastUndercoverApiCompletedAt = Date.now();
+            if (this._undercoverAbortController === controller) {
+                this._undercoverAbortController = null;
+            }
+        }
+    }
+
+    async _waitForUndercoverApiCooldown(runId = this._undercoverRunId) {
+        const cooldown = Math.max(0, Number(this._undercoverApiCooldownMs || 0));
+        const elapsed = Date.now() - Number(this._lastUndercoverApiCompletedAt || 0);
+        const remaining = Math.max(0, cooldown - elapsed);
+        if (remaining > 0) {
+            await new Promise(resolve => setTimeout(resolve, remaining));
+        }
+        if (Number(runId ?? this._undercoverRunId) !== this._undercoverRunId) {
+            const error = new Error('谁是卧底请求已中止');
+            error.name = 'AbortError';
+            throw error;
+        }
+    }
+
+    _getUndercoverDealerPrompt(emptyCount = 0) {
+        const count = Math.max(0, Number(emptyCount || 0));
+        return this.getUndercoverDealerPromptTemplate()
+            .replace(/\{\{emptyCount\}\}/g, String(count));
+    }
+
+    getDefaultUndercoverDealerPromptTemplate() {
+        return [
+            '你现在是《谁是卧底》游戏的发牌官（Game Master）。',
+            '当前游戏共有6个座位，已有部分真人玩家落座。你需要完成以下两个任务：',
+            '',
+            '【任务一：生成AI玩家】',
+            '请根据系统提供的空缺人数（{{emptyCount}}人），严格生成对应数量的虚拟AI玩家。',
+            '1. 玩家昵称：要求极具个性，符合当代互联网年轻人的精神状态。可以是自嘲、抽象、擦边、暗黑、搞笑或海王风。每次生成必须保证极高的随机性和新鲜感。',
+            '2. 性格：用一两句话设定该AI的发言风格与游戏策略。',
+            '',
+            '【任务二：生成午夜局身份词】',
+            '请生成一对《谁是卧底》游戏的身份词。',
+            '1. 词汇主题大类（每次调用请随机选择一个细分领域）：',
+            '   - 两性边缘话题与暧昧互动（NSFW / 成人午夜场 / 两性亲密互动 / 经典姿势 / 暧昧道具）',
+            '   - 互联网地狱笑话与抽象烂梗',
+            '   - 奇葩小众癖好与人类迷惑行为',
+            '   - 职场/成年人的深夜崩溃瞬间',
+            '   - 酒桌野蛮文化与夜店社交',
+            '   - 渣男/渣女/海王的经典操作',
+            '2. 词汇要求：平民词和卧底词必须属于同一个极度细分的垂直领域。两者在概念和场景上必须高度相似且具有极强的迷惑性，但本质或细节上存在致命差异。（例如：传教士 vs 老汉推车；种草莓 vs 法式湿吻；打桩机 vs 缝纫机；制服诱惑 vs 角色扮演）。请尽量避免举例中的词汇。',
+            '3. 创新约束：禁止使用常见的陈词滥调。每次生成的词汇必须发散思维，极具脑洞，适合玩家进行隐晦的描述、试探与伪装。',
+            '4. 绝对不要给出任何解释、前言或废话。',
+            '',
+            '【输出格式要求】',
+            '必须严格按照以下标签格式输出（注意闭合标签准确），千万不要输出Markdown语法或其他无关内容！',
+            '',
+            '<玩家生成>',
+            '玩家昵称：昵称1',
+            '性格：性格描述1',
+            '---',
+            '玩家昵称：昵称2',
+            '性格：性格描述2',
+            '</玩家生成>',
+            '',
+            '<游戏身份词>',
+            '普通玩家身份词：词A',
+            '卧底玩家身份词：词B',
+            '</游戏身份词>'
+        ].join('\n');
+    }
+
+    _parseUndercoverDealerResult(text = '') {
+        const source = String(text || '').trim();
+        const playerBlock = source.match(/<玩家生成>([\s\S]*?)<\/玩家生成>/)?.[1] || '';
+        const players = playerBlock
+            .split(/\n\s*---\s*\n/)
+            .map(section => ({
+                name: String(section.match(/玩家昵称\s*[:：]\s*([^\n]+)/)?.[1] || '').trim(),
+                personality: String(section.match(/性格\s*[:：]\s*([\s\S]*?)$/)?.[1] || '').trim()
+            }))
+            .filter(player => player.name && player.personality);
+        const wordBlock = source.match(/<游戏身份词>([\s\S]*?)<\/游戏身份词>/)?.[1] || '';
+        return {
+            players,
+            wordPair: {
+                civilian: String(wordBlock.match(/普通玩家身份词\s*[:：]\s*([^\n]+)/)?.[1] || '').trim(),
+                undercover: String(wordBlock.match(/卧底玩家身份词\s*[:：]\s*([^\n]+)/)?.[1] || '').trim()
+            }
+        };
+    }
+
+    _parseUndercoverSpeech(text = '') {
+        const source = String(text || '').trim();
+        return String(source.match(/<谁是卧底发言>([\s\S]*?)<\/谁是卧底发言>/)?.[1] || '').trim();
+    }
+
+    _parseUndercoverVotes(text = '') {
+        const source = String(text || '').trim();
+        const block = source.match(/<谁是卧底投票>([\s\S]*?)<\/谁是卧底投票>/)?.[1] || '';
+        const voteText = block.match(/票型\s*[:：]\s*([^\n]+)/)?.[1] || block;
+        const votes = [];
+        const seen = new Set();
+        const pattern = /(\d+)\s*(?:号)?\s*(?:->|→|投给|投)\s*(\d+)\s*(?:号)?/g;
+        let match = null;
+        while ((match = pattern.exec(voteText))) {
+            const voterSeat = Number(match[1]);
+            const targetSeat = Number(match[2]);
+            if (seen.has(voterSeat)) continue;
+            seen.add(voterSeat);
+            votes.push({ voterSeat, targetSeat });
+        }
+        return votes;
     }
 
     move2048(direction) {
@@ -189,13 +782,93 @@ export class GamesApp extends PokerApp {
         return this.getDefaultWerewolfPrompt();
     }
 
-    isWerewolfWorldbookEnabled() {
-        return window.VirtualPhone?.worldbookManager?.getEnabled?.('games') ?? true;
+    _getUndercoverPromptManager() {
+        if (typeof window === 'undefined') return null;
+        const promptManager = window.VirtualPhone?.promptManager;
+        promptManager?.ensureLoaded?.();
+        return promptManager || null;
     }
 
-    async setWerewolfWorldbookEnabled(enabled) {
-        await window.VirtualPhone?.worldbookManager?.setEnabled?.('games', !!enabled);
-        return !!enabled;
+    getUndercoverDealerPromptTemplate() {
+        const promptManager = this._getUndercoverPromptManager();
+        return String(
+            promptManager?.getPromptForFeature?.('games', 'undercoverDealer')
+            || this.getDefaultUndercoverDealerPromptTemplate()
+        );
+    }
+
+    getDefaultUndercoverPrompt() {
+        const promptManager = this._getUndercoverPromptManager();
+        const managedDefault = promptManager?.getBuiltInPromptPresets?.('games', 'undercoverSpeech')?.[0]?.content;
+        if (managedDefault) return String(managedDefault);
+        return [
+            '你正在参与一场六人谁是卧底游戏。你的初始状态不知道自己是平民还是卧底。',
+            '请严格遵守以下游戏规则和发言逻辑：',
+            '',
+            '1. 【信息限制】你只能根据系统提供给你的词语、当前轮次、其他玩家的公开发言和投票记录进行判断。绝对不能在发言中直接说出或包含你的词语本身，也不能泄露任何系统提示信息。',
+            '2. 【身份推理与发言策略】',
+            '   - 根据上下文发言内容，请在暗中将他们的描述与你手中的词语进行对比。',
+            '   - 若他人的描述与你的词语相符，说明你大概率是平民。你的发言需继续描述自己的词，可以适度试探、抓漏洞或自证。',
+            '   - 若你发现多人的描述与你的词语存在明显偏差或冲突，说明你极有可能是卧底！此时你必须立刻停止描述自己的词，改为根据其他人的发言推测出“平民词”，并紧接着他们的逻辑进行伪装描述，以防被票出。',
+            '3. 【发言风格】必须符合玩家角色性格，语气简短、自然、口语化。禁止出现任何心理活动、动作描写或旁白。',
+            '4. 【篇幅限制】每次只生成当前你的一段发言，内容控制在3到8个短句之内。',
+            '5. 【格式要求】必须且只能返回 `<谁是卧底发言>` 标签包裹的发言内容，不要使用任何 Markdown 语法，不要输出任何解释、推理过程或多余的废话。',
+            '',
+            '<谁是卧底发言>',
+            '',
+            '</谁是卧底发言>'
+        ].join('\n');
+    }
+
+    getUndercoverPrompt() {
+        const promptManager = this._getUndercoverPromptManager();
+        if (promptManager) {
+            this._migrateLegacyUndercoverPrompt(promptManager);
+            return String(
+                promptManager.getPromptForFeature?.('games', 'undercoverSpeech')
+                || this.getDefaultUndercoverPrompt()
+            );
+        }
+        const saved = String(this.storage?.get?.('games_undercover_ai_prompt') || '').trim();
+        return saved || this.getDefaultUndercoverPrompt();
+    }
+
+    _migrateLegacyUndercoverPrompt(promptManager = this._getUndercoverPromptManager()) {
+        if (!promptManager || this.storage?.get?.('games_undercover_prompt_presets_migrated')) return;
+        const legacy = String(this.storage?.get?.('games_undercover_ai_prompt') || '').trim();
+        if (legacy) {
+            const existing = promptManager.getPromptUserPresets?.('games', 'undercoverSpeech')
+                ?.find?.(preset => String(preset?.content || '') === legacy);
+            if (existing) promptManager.applyPromptPreset?.('games', 'undercoverSpeech', existing.id);
+            else promptManager.createPromptUserPreset?.('games', 'undercoverSpeech', '旧版自定义提示词', legacy);
+        }
+        this.storage?.set?.('games_undercover_prompt_presets_migrated', '1', true);
+    }
+
+    setUndercoverPrompt(value) {
+        const text = String(value || '').trim();
+        const promptManager = this._getUndercoverPromptManager();
+        if (promptManager) {
+            this._migrateLegacyUndercoverPrompt(promptManager);
+            const activeId = promptManager.getActivePromptPresetId?.('games', 'undercoverSpeech') || '';
+            if (activeId && !String(activeId).startsWith('builtin:')) {
+                promptManager.updateActivePromptUserPreset?.('games', 'undercoverSpeech', text);
+            } else {
+                promptManager.createPromptUserPreset?.('games', 'undercoverSpeech', '自定义提示词', text);
+            }
+            return text;
+        }
+        this.storage?.set?.('games_undercover_ai_prompt', text, true);
+        return text;
+    }
+
+    resetUndercoverPrompt() {
+        const promptManager = this._getUndercoverPromptManager();
+        if (promptManager) {
+            return promptManager.resetPromptToDefault?.('games', 'undercoverSpeech') || this.getDefaultUndercoverPrompt();
+        }
+        this.storage?.set?.('games_undercover_ai_prompt', '', true);
+        return this.getDefaultUndercoverPrompt();
     }
 
     getWerewolfShareText() {
@@ -1376,8 +2049,7 @@ export class GamesApp extends PokerApp {
     }
 
     async _buildWerewolfWorldbookMessages() {
-        return buildGameSillyTavernContextMessages('games', this.storage, {
-            includeWorldbook: this.isWerewolfWorldbookEnabled(),
+        return this.buildGamesAiContextMessages({
             includeRecentChat: false
         });
     }
@@ -1719,24 +2391,31 @@ export class GamesApp extends PokerApp {
     }
 
     backToLobby() {
+        this.stopUndercoverFlow?.();
         this.game2048View?.destroy?.();
         this.sudokuView?.destroy?.();
         this.catboxView?.destroy?.();
         this.werewolfView?.destroy?.();
+        this.undercoverView?.destroy?.();
         super.backToLobby();
     }
 
     deactivate() {
+        this.stopUndercoverFlow?.();
         this.clearPokerSession?.();
         this.removePhoneChromeTheme?.();
         this.game2048View?.destroy?.();
         this.sudokuView?.destroy?.();
         this.catboxView?.destroy?.();
         this.werewolfView?.destroy?.();
+        this.undercoverView?.destroy?.();
     }
 
     handleSwipeBack() {
-        if (this.currentView === 'game2048' || this.currentView === 'sudoku' || this.currentView === 'catbox' || this.currentView === 'werewolf') {
+        if (this.currentView === 'undercover' && this.undercoverView?.handleBack?.()) {
+            return;
+        }
+        if (this.currentView === 'game2048' || this.currentView === 'sudoku' || this.currentView === 'catbox' || this.currentView === 'werewolf' || this.currentView === 'undercover') {
             this.backToLobby();
             return;
         }

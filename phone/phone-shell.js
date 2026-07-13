@@ -286,9 +286,14 @@ export class PhoneShell {
                 '.mofo-editor-overlay', '.mofo-editor-panel', '.mofo-editor-body',
                 '.games-app', '.games-lobby-content', '.games-log', '.games-contact-list', '.games-settings-panel', '.games-worldbook-list', '.games-ai-error-message',
                 '.games-werewolf-chat', '.games-werewolf-chat-scroll', '.games-werewolf-contact-list', '.games-werewolf-invite-panel',
-                '.games-werewolf-settings-panel', '.games-werewolf-worldbook-list', '.games-werewolf-settings-textarea',
+                '.games-werewolf-settings-panel', '.games-werewolf-settings-textarea',
                 '.games-werewolf-user-speech', '.games-werewolf-night-targets', '.games-werewolf-wolf-chat', '.games-werewolf-record-panel',
                 '.games-werewolf-record-overlay', '.games-werewolf-record-list', '.games-werewolf-record-item',
+                '.games-undercover-home', '.games-undercover-settings-overlay', '.games-undercover-settings-panel', '.games-undercover-settings-textarea',
+                '.games-undercover-start-choice-overlay', '.games-undercover-start-choice-panel',
+                '.games-undercover-error-overlay', '.games-undercover-error-dialog', '.games-undercover-error-message',
+                '.games-undercover-game-stage', '.games-undercover-chat-panel', '.games-undercover-chat-scroll',
+                '.games-undercover-invite-overlay', '.games-undercover-invite-panel', '.games-undercover-contact-list',
                 '.games-catbox-inventory-overlay', '.games-catbox-inventory-panel', '.games-catbox-inventory-list',
                 '.games-catbox-coadopt-overlay', '.games-catbox-coadopt-panel', '.games-catbox-coadopt-list',
                 '.games-catbox-letters-overlay', '.games-catbox-letter-paper', '.games-catbox-letter-list',
@@ -323,7 +328,7 @@ export class PhoneShell {
             const touchEditableHost = resolveEditableHost(e.target);
             const activeEditableHost = resolveEditableHost(document.activeElement);
             const hasFocusedTextInput = !!(activeEditableHost && isTextEditableElement(activeEditableHost) && phoneBody.contains(activeEditableHost));
-            if (isTextEditableElement(touchEditableHost) || hasFocusedTextInput || resolveGestureControlHost(e.target)) {
+            if (isTextEditableElement(touchEditableHost) || hasFocusedTextInput || resolveGestureControlHost(e.target) || resolveInteractiveHost(e.target)) {
                 this.touchStartX = undefined;
                 return;
             }

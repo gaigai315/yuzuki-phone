@@ -117,13 +117,17 @@ export class PokerApp {
         this.storage?.set?.('games_poker_ai_chat_enabled', !!enabled, true);
     }
 
-    isPokerWorldbookEnabled() {
+    isGamesWorldbookEnabled() {
         return window.VirtualPhone?.worldbookManager?.getEnabled?.('games') ?? true;
     }
 
-    async setPokerWorldbookEnabled(enabled) {
+    async setGamesWorldbookEnabled(enabled) {
         await window.VirtualPhone?.worldbookManager?.setEnabled?.('games', !!enabled);
         return !!enabled;
+    }
+
+    async buildGamesAiContextMessages(options = {}) {
+        return buildGameSillyTavernContextMessages('games', this.storage, options);
     }
 
     getPokerShareText() {
@@ -844,7 +848,7 @@ export class PokerApp {
             isPhoneMessage: true
         });
 
-        const tavernContextMessages = await buildGameSillyTavernContextMessages('games', this.storage);
+        const tavernContextMessages = await this.buildGamesAiContextMessages();
         if (tavernContextMessages.length > 0) {
             messages.push(...tavernContextMessages);
         }

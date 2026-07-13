@@ -1079,8 +1079,7 @@
     margin-bottom: 10px;
 }
 
-.games-werewolf-contact-list,
-.games-werewolf-worldbook-list {
+.games-werewolf-contact-list {
     display: grid;
     gap: 8px;
     max-height: 220px;
@@ -1160,45 +1159,6 @@
     color: rgba(238, 247, 255, 0.68);
     font-size: 11px;
     line-height: 1.45;
-}
-
-.games-werewolf-setting-toggle,
-.games-werewolf-worldbook-item {
-    min-height: 36px;
-    border: 1px solid rgba(100, 185, 255, 0.32);
-    border-radius: 8px;
-    background: rgba(7, 24, 39, 0.66);
-    color: #ddecff;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px;
-    box-sizing: border-box;
-    font-size: 12px;
-    font-weight: 800;
-}
-
-.games-werewolf-worldbook-item {
-    align-items: flex-start;
-    justify-content: flex-start;
-}
-
-.games-werewolf-worldbook-item span {
-    min-width: 0;
-}
-
-.games-werewolf-worldbook-item strong,
-.games-werewolf-worldbook-item em {
-    display: block;
-    line-height: 1.35;
-}
-
-.games-werewolf-worldbook-item em {
-    color: rgba(238, 247, 255, 0.58);
-    font-size: 10px;
-    font-style: normal;
-    font-weight: 600;
 }
 
 .games-werewolf-prompt-card {
