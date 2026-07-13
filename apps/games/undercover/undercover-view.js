@@ -1,4 +1,4 @@
-const UNDERCOVER_CSS_URL = new URL('./undercover.css?v=1.0.24', import.meta.url).href;
+const UNDERCOVER_CSS_URL = new URL('./undercover.css?v=1.0.27', import.meta.url).href;
 const UNDERCOVER_BACKGROUND_URL = new URL('./assets/sswdzt.png', import.meta.url).href;
 const UNDERCOVER_GAME_BACKGROUND_URL = new URL('./assets/sswd.png', import.meta.url).href;
 const UNDERCOVER_WORD_CARD_URL = new URL('./assets/sswdch.png', import.meta.url).href;
@@ -25,6 +25,8 @@ export class UndercoverView {
         this._startingGame = false;
         this._startChoiceOpen = false;
         this._pendingStartContacts = [];
+        this._shareOverlayOpen = false;
+        this._shareTarget = null;
     }
 
     preload() {
@@ -97,7 +99,9 @@ export class UndercoverView {
                             <strong>谁是卧底 <i class="games-undercover-status-dot ${this._getStatusDotClass(game)}" id="games-undercover-status-dot" aria-hidden="true"></i></strong>
                             <span id="games-undercover-status-text">${this._escape(this._getStatusText(game))}</span>
                         </div>
-                        <span class="games-undercover-toolbar-spacer" aria-hidden="true"></span>
+                        <div class="games-undercover-toolbar-action-slot" id="games-undercover-share-action-slot">
+                            ${this._renderShareAction(game)}
+                        </div>
                     </header>
                     <section class="games-undercover-player-strip" aria-label="本局六名玩家">
                         ${game.players.map(player => `
@@ -108,7 +112,7 @@ export class UndercoverView {
                                     </div>
                                     <img class="games-undercover-player-frame" src="${UNDERCOVER_PLAYER_FRAME_URLS[Math.max(0, Math.min(5, Number(player.seat || 1) - 1))]}" alt="${Number(player.seat || 0)}号头像框" draggable="false">
                                 </div>
-                                <div class="games-undercover-player-name" title="${this._escapeAttr(player.name)}">${this._escape(player.name)}</div>
+                                <div class="games-undercover-player-name" title="${this._escapeAttr(player.name)}">${this._escape(this._truncateDisplayName(player.name, 4))}</div>
                             </article>
                         `).join('')}
                     </section>
@@ -117,8 +121,10 @@ export class UndercoverView {
                         <div class="games-undercover-word-card-content">
                             <span class="games-undercover-word-private"><i class="fa-solid fa-eye-slash"></i>仅你可见</span>
                             <div class="games-undercover-word-line">
-                                <span>你的词</span>
-                                <i class="fa-solid fa-angles-right" aria-hidden="true"></i>
+                                <span class="games-undercover-word-prefix">
+                                    <span>你的词</span>
+                                    <i class="fa-solid fa-angles-right" aria-hidden="true"></i>
+                                </span>
                                 <strong>${this._escape(game.phase === 'matching' ? '正在发牌' : (game.userWord || game.players.find(player => player.isUser)?.word || '未知'))}</strong>
                             </div>
                         </div>
@@ -139,6 +145,9 @@ export class UndercoverView {
                     <div class="games-undercover-error-slot" id="games-undercover-error-slot">
                         ${this._renderGameErrorDialog(game)}
                     </div>
+                    <div class="games-undercover-share-overlay-slot" id="games-undercover-share-overlay-slot">
+                        ${this._renderShareOverlay(game)}
+                    </div>
                 </main>
             </div>
         `;
@@ -147,11 +156,14 @@ export class UndercoverView {
         this._bindGameComposer();
         this._bindVoteEvents();
         this._bindGameErrorEvents();
+        this._bindShareEvents();
         this._scrollChatToBottom();
     }
 
     backToHome() {
         this.app.stopUndercoverFlow?.();
+        this._shareOverlayOpen = false;
+        this._shareTarget = null;
         this._gameOpen = false;
         this.render();
     }
@@ -161,6 +173,12 @@ export class UndercoverView {
     }
 
     handleBack() {
+        if (this._shareOverlayOpen) {
+            this._shareOverlayOpen = false;
+            this._shareTarget = null;
+            this._syncShareUi();
+            return true;
+        }
         if (this._inviteOpen || this._settingsOpen || this._startChoiceOpen) {
             this._inviteOpen = false;
             this._settingsOpen = false;
@@ -453,6 +471,8 @@ export class UndercoverView {
         this._startingGame = false;
         this._startChoiceOpen = false;
         this._pendingStartContacts = [];
+        this._shareOverlayOpen = false;
+        this._shareTarget = null;
     }
 
     _renderChatMessages(messages = [], players = []) {
@@ -604,6 +624,162 @@ export class UndercoverView {
             send.setAttribute('aria-label', isFinishAction ? '结束发言' : '发送');
             send.title = isFinishAction ? '结束发言' : '发送';
         }
+        this._syncShareUi(game);
+    }
+
+    _renderShareAction(game = {}) {
+        if (game.phase !== 'ended') return '<span class="games-undercover-toolbar-spacer" aria-hidden="true"></span>';
+        return `
+            <button class="games-undercover-share-button" id="games-undercover-share-open" type="button" aria-label="分享本局战绩" title="分享">
+                <i class="fa-solid fa-share-nodes" aria-hidden="true"></i>
+            </button>
+        `;
+    }
+
+    _renderShareOverlay(game = this.app.undercoverData.getState().game) {
+        if (!this._shareOverlayOpen || game?.phase !== 'ended') return '';
+        const shareText = this.app.getUndercoverShareText?.() || '';
+        const preview = shareText.split('\n').filter(Boolean).slice(0, 5).join('\n');
+        const target = this._shareTarget;
+        if (target) {
+            return `
+                <div class="games-undercover-share-overlay" id="games-undercover-share-overlay" role="presentation">
+                    <section class="games-undercover-share-dialog games-undercover-share-compose" role="dialog" aria-modal="true" aria-label="发送谁是卧底战绩">
+                        <header class="games-undercover-share-header">
+                            <button class="games-undercover-share-close" id="games-undercover-share-back" type="button" aria-label="返回"><i class="fa-solid fa-chevron-left"></i></button>
+                            <span>发送给</span>
+                            <button class="games-undercover-share-close" id="games-undercover-share-close" type="button" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
+                        </header>
+                        <div class="games-undercover-share-recipient">
+                            <div class="games-undercover-share-avatar">${this.app.renderPlayerAvatar({ name: target.name, avatar: target.avatar })}</div>
+                            <div class="games-undercover-share-name">${this._escape(target.name)}</div>
+                        </div>
+                        ${this._renderShareCardPreview(preview)}
+                        <div class="games-undercover-share-actions">
+                            <button class="games-undercover-share-action games-undercover-share-cancel" id="games-undercover-share-cancel" type="button">取消</button>
+                            <button class="games-undercover-share-action games-undercover-share-send" id="games-undercover-share-send" type="button">发送</button>
+                        </div>
+                    </section>
+                </div>
+            `;
+        }
+
+        const targets = this._getShareTargets();
+        return `
+            <div class="games-undercover-share-overlay" id="games-undercover-share-overlay" role="presentation">
+                <section class="games-undercover-share-dialog" role="dialog" aria-modal="true" aria-label="分享到微信">
+                    <header class="games-undercover-share-header">
+                        <span>分享到微信</span>
+                        <button class="games-undercover-share-close" id="games-undercover-share-close" type="button" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
+                    </header>
+                    ${this._renderShareCardPreview(preview)}
+                    <div class="games-undercover-share-list">
+                        ${targets.length ? targets.map(item => `
+                            <button class="games-undercover-share-contact" type="button" data-name="${this._escapeAttr(item.name)}">
+                                <span class="games-undercover-share-avatar">${this.app.renderPlayerAvatar({ name: item.name, avatar: item.avatar })}</span>
+                                <span class="games-undercover-share-name">${this._escape(item.name)}</span>
+                                ${item.isGroup ? '<span class="games-undercover-share-type">群聊</span>' : ''}
+                            </button>
+                        `).join('') : '<div class="games-undercover-share-empty">请先在微信中添加好友或群聊</div>'}
+                    </div>
+                </section>
+            </div>
+        `;
+    }
+
+    _renderShareCardPreview(preview = '') {
+        return `
+            <div class="games-undercover-share-preview">
+                <div class="games-undercover-share-card">
+                    <div class="games-undercover-share-card-icon">卧</div>
+                    <div class="games-undercover-share-card-copy">
+                        <div class="games-undercover-share-card-title">谁是卧底本局战绩</div>
+                        <div class="games-undercover-share-card-desc">${this._escape(preview)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    _getShareTargets() {
+        const wechatData = this.app.getWechatData?.();
+        if (!wechatData) return [];
+        const contacts = (wechatData.getContacts?.() || [])
+            .filter(item => item && String(item.name || '').trim())
+            .map(item => ({
+                name: String(item.name || '').trim(),
+                avatar: this.app.resolveContactAvatar?.(item, wechatData) || item.avatar || '',
+                isGroup: false
+            }));
+        const groups = (wechatData.getChatList?.() || [])
+            .filter(item => item?.type === 'group' && String(item.name || '').trim())
+            .map(item => ({
+                name: String(item.name || '').trim(),
+                avatar: item.avatar || '👥',
+                isGroup: true
+            }));
+        const seen = new Set();
+        return [...contacts, ...groups].filter(item => {
+            if (seen.has(item.name)) return false;
+            seen.add(item.name);
+            return true;
+        });
+    }
+
+    _syncShareUi(game = this.app.undercoverData.getState().game) {
+        if (game?.phase !== 'ended') {
+            this._shareOverlayOpen = false;
+            this._shareTarget = null;
+        }
+        const actionSlot = document.getElementById('games-undercover-share-action-slot');
+        if (actionSlot) actionSlot.innerHTML = this._renderShareAction(game || {});
+        const overlaySlot = document.getElementById('games-undercover-share-overlay-slot');
+        if (overlaySlot) overlaySlot.innerHTML = this._renderShareOverlay(game);
+        this._bindShareEvents();
+    }
+
+    _bindShareEvents() {
+        document.getElementById('games-undercover-share-open')?.addEventListener('click', () => {
+            this._shareOverlayOpen = true;
+            this._shareTarget = null;
+            this._syncShareUi();
+        });
+        const close = () => {
+            this._shareOverlayOpen = false;
+            this._shareTarget = null;
+            this._syncShareUi();
+        };
+        document.getElementById('games-undercover-share-close')?.addEventListener('click', close);
+        document.getElementById('games-undercover-share-overlay')?.addEventListener('click', event => {
+            if (event.target?.id === 'games-undercover-share-overlay') close();
+        });
+        const clearTarget = () => {
+            this._shareTarget = null;
+            this._syncShareUi();
+        };
+        document.getElementById('games-undercover-share-back')?.addEventListener('click', clearTarget);
+        document.getElementById('games-undercover-share-cancel')?.addEventListener('click', clearTarget);
+        document.querySelectorAll('.games-undercover-share-contact[data-name]').forEach(button => {
+            button.addEventListener('click', () => {
+                const name = String(button.dataset.name || '').trim();
+                this._shareTarget = this._getShareTargets().find(item => item.name === name) || { name };
+                this._syncShareUi();
+            });
+        });
+        document.getElementById('games-undercover-share-send')?.addEventListener('click', async () => {
+            const target = this._shareTarget;
+            if (!target?.name) return;
+            const button = document.getElementById('games-undercover-share-send');
+            if (button) button.disabled = true;
+            try {
+                await this.app.shareUndercoverToWechat?.(target.name);
+                this.app.phoneShell?.showNotification?.('分享成功', `已发送给 ${target.name}`, '✅');
+                close();
+            } catch (error) {
+                this.app.phoneShell?.showNotification?.('分享失败', error?.message || '发送失败', '❌');
+                if (button) button.disabled = false;
+            }
+        });
     }
 
     _renderVotePanel(game = {}) {
@@ -728,6 +904,12 @@ export class UndercoverView {
             return `<img src="${this._escapeAttr(avatarUrl)}" alt="${this._escapeAttr(player.name || 'AI玩家')}">`;
         }
         return this.app.renderPlayerAvatar(player);
+    }
+
+    _truncateDisplayName(text, maxChars = 4) {
+        const chars = Array.from(String(text ?? ''));
+        const limit = Math.max(1, Number(maxChars) || 4);
+        return chars.length > limit ? `${chars.slice(0, limit).join('')}...` : chars.join('');
     }
 
     _escape(text) {

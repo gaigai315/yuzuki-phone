@@ -2,6 +2,7 @@ const STORAGE_KEY = 'games_undercover_state';
 const PLAYER_COUNT = 6;
 const MAX_INVITED_CONTACTS = PLAYER_COUNT - 1;
 const AI_AVATAR_PRESET_COUNT = 6;
+const MAX_RECENT_WORD_PAIRS = 10;
 const FALLBACK_WORD_PAIRS = [
     ['种草莓', '法式湿吻'],
     ['制服诱惑', '角色扮演'],
@@ -27,6 +28,7 @@ export class UndercoverData {
         return {
             ...this.state,
             selectedContactIds: [...this.state.selectedContactIds],
+            recentWordPairs: this._cloneWordHistory(this.state.recentWordPairs),
             game: this._cloneGame(this.state.game)
         };
     }
@@ -38,12 +40,17 @@ export class UndercoverData {
             return {
                 lastMode: parsed?.lastMode === 'friends' ? 'friends' : 'ai',
                 selectedContactIds: this._normalizeContactIds(parsed?.selectedContactIds),
+                recentWordPairs: this._normalizeWordHistory(parsed?.recentWordPairs),
                 game: this._normalizeStoredGame(parsed?.game)
             };
         } catch (error) {
             console.warn('[Undercover] 读取游戏状态失败:', error);
-            return { lastMode: 'ai', selectedContactIds: [], game: null };
+            return { lastMode: 'ai', selectedContactIds: [], recentWordPairs: [], game: null };
         }
+    }
+
+    getRecentWordPairs() {
+        return this._cloneWordHistory(this.state.recentWordPairs);
     }
 
     setLastMode(mode) {
@@ -190,6 +197,7 @@ export class UndercoverData {
         });
 
         const normalizedPair = this._normalizeWordPair(wordPair);
+        this._rememberWordPair(normalizedPair);
         const undercoverSeat = Math.floor(Math.random() * PLAYER_COUNT) + 1;
         const assignedPlayers = filledPlayers.map(player => {
             const isUndercover = Number(player.seat) === undercoverSeat;
@@ -585,9 +593,49 @@ export class UndercoverData {
     _normalizeWordPair(wordPair = {}) {
         const civilian = String(wordPair?.civilian || wordPair?.normal || '').trim();
         const undercover = String(wordPair?.undercover || '').trim();
-        if (civilian && undercover && civilian !== undercover) return { civilian, undercover };
-        const fallback = FALLBACK_WORD_PAIRS[Math.floor(Math.random() * FALLBACK_WORD_PAIRS.length)] || FALLBACK_WORD_PAIRS[0];
+        const usedWords = new Set(this._normalizeWordHistory(this.state.recentWordPairs)
+            .flatMap(item => [item.civilian, item.undercover])
+            .map(word => word.toLocaleLowerCase()));
+        const repeatsRecentWord = usedWords.has(civilian.toLocaleLowerCase())
+            || usedWords.has(undercover.toLocaleLowerCase());
+        if (civilian && undercover && civilian !== undercover && !repeatsRecentWord) return { civilian, undercover };
+        const unusedFallbacks = FALLBACK_WORD_PAIRS.filter(pair => (
+            !usedWords.has(String(pair?.[0] || '').toLocaleLowerCase())
+            && !usedWords.has(String(pair?.[1] || '').toLocaleLowerCase())
+        ));
+        const fallbackPool = unusedFallbacks.length ? unusedFallbacks : FALLBACK_WORD_PAIRS;
+        const fallback = fallbackPool[Math.floor(Math.random() * fallbackPool.length)] || FALLBACK_WORD_PAIRS[0];
         return { civilian: fallback[0], undercover: fallback[1] };
+    }
+
+    _rememberWordPair(wordPair = {}) {
+        const civilian = String(wordPair?.civilian || '').trim();
+        const undercover = String(wordPair?.undercover || '').trim();
+        if (!civilian || !undercover || civilian === undercover) return;
+        this.state.recentWordPairs = [
+            ...this._normalizeWordHistory(this.state.recentWordPairs),
+            { civilian, undercover, createdAt: Date.now() }
+        ].slice(-MAX_RECENT_WORD_PAIRS);
+    }
+
+    _normalizeWordHistory(history = []) {
+        return (Array.isArray(history) ? history : [])
+            .map(item => {
+                const civilian = String(item?.civilian || item?.normal || '').trim();
+                const undercover = String(item?.undercover || '').trim();
+                if (!civilian || !undercover || civilian === undercover) return null;
+                return {
+                    civilian,
+                    undercover,
+                    createdAt: Number.isFinite(Number(item?.createdAt)) ? Number(item.createdAt) : 0
+                };
+            })
+            .filter(Boolean)
+            .slice(-MAX_RECENT_WORD_PAIRS);
+    }
+
+    _cloneWordHistory(history = []) {
+        return this._normalizeWordHistory(history).map(item => ({ ...item }));
     }
 
     _splitSpeechSegments(text = '') {
@@ -664,6 +712,7 @@ export class UndercoverData {
         this.storage?.set?.(STORAGE_KEY, {
             ...this.state,
             selectedContactIds: [...this.state.selectedContactIds],
+            recentWordPairs: this._cloneWordHistory(this.state.recentWordPairs),
             game: this._cloneGame(this.state.game)
         }, true);
     }

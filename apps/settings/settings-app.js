@@ -2067,7 +2067,7 @@ export class SettingsApp {
 
                                 <div style="display: flex; gap: 10px; margin-top: 15px;">
                                     <button id="phone-api-test" style="flex: 1; padding: 10px; background: #e3f2fd; color: #1976d2; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">🧪 测试连接</button>
-                                    <button id="phone-api-save" style="flex: 1; padding: 10px; background: #07c160; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">💾 保存配置</button>
+                                    <button id="phone-api-save" style="flex: 1; padding: 10px; background: #07c160; color: #111 !important; -webkit-text-fill-color: #111 !important; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">💾 保存配置</button>
                                 </div>
                             </div>
                         </div>
@@ -8919,10 +8919,10 @@ export class SettingsApp {
                             targetSource = 'openai';
                         }
 
-                        const customHeaders = { 'Content-Type': 'application/json' };
-                        if (targetSource === 'custom' && authHeader) {
-                            customHeaders.Authorization = authHeader;
-                        }
+                        const customHeaders = JSON.stringify({
+                            'Content-Type': 'application/json',
+                            ...(targetSource === 'custom' && authHeader ? { Authorization: authHeader } : {})
+                        });
 
                         const proxyPayload = {
                             chat_completion_source: targetSource,

@@ -72,11 +72,13 @@
 #phone-panel-content .phone-screen .games-undercover-game-heading {
     min-width: 0;
     display: flex;
-    align-items: baseline;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
-    gap: 7px;
+    gap: 2px;
     color: #604126;
     text-shadow: 0 1px rgba(255, 255, 255, 0.72);
+    transform: translateY(-3px);
 }
 
 #phone-panel-content .phone-screen .games-undercover-game-heading strong {
@@ -122,6 +124,42 @@
     width: 40px;
     height: 37px;
     flex: 0 0 40px;
+}
+
+#phone-panel-content .phone-screen .games-undercover-toolbar-action-slot {
+    width: 40px;
+    height: 37px;
+    flex: 0 0 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-button {
+    width: 34px;
+    height: 34px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid rgba(117, 74, 38, 0.22);
+    border-radius: 50%;
+    background: rgba(255, 249, 229, 0.88);
+    color: #8a552f;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 10px rgba(91, 50, 25, 0.18);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    pointer-events: auto;
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
+    -webkit-tap-highlight-color: transparent;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-button:active {
+    transform: scale(0.94);
 }
 
 #phone-panel-content .phone-screen .games-undercover-back-image-btn {
@@ -333,27 +371,38 @@
     top: 50%;
     left: 0;
     right: 0;
-    width: auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    height: 32px;
     transform: translateY(-50%);
 }
 
-#phone-panel-content .phone-screen .games-undercover-word-line > span {
+#phone-panel-content .phone-screen .games-undercover-word-prefix {
+    position: absolute;
+    top: 50%;
+    left: 30%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    transform: translate(-100%, -50%);
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .games-undercover-word-prefix > span {
     color: #8b5c36;
     font-size: 12px;
     font-weight: 750;
     white-space: nowrap;
 }
 
-#phone-panel-content .phone-screen .games-undercover-word-line > i {
+#phone-panel-content .phone-screen .games-undercover-word-prefix > i {
     color: #d5964b;
     font-size: 10px;
 }
 
 #phone-panel-content .phone-screen .games-undercover-word-line > strong {
+    position: absolute;
+    top: 50%;
+    left: 50%;
     min-width: 0;
     max-width: 62%;
     overflow: hidden;
@@ -364,6 +413,7 @@
     letter-spacing: 0;
     text-align: center;
     text-overflow: ellipsis;
+    transform: translate(-50%, -50%);
     white-space: nowrap;
 }
 
@@ -604,6 +654,223 @@
     margin: 0;
     color: #3f664b;
     font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 58;
+    padding: 10px;
+    box-sizing: border-box;
+    background: rgba(43, 29, 20, 0.54);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-dialog {
+    width: 100%;
+    max-width: 350px;
+    max-height: 90%;
+    border-radius: 10px;
+    background: #fff;
+    color: #251d17;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 18px 38px rgba(46, 28, 16, 0.34);
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-header {
+    min-height: 42px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border-bottom: 1px solid #eee7df;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 750;
+    color: #251d17;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-close {
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #8e8178;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: none;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-preview {
+    padding: 10px 12px;
+    background: #f7f4f0;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-card {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 9px;
+    align-items: center;
+    border: 1px solid #eee6dc;
+    border-radius: 8px;
+    background: #fff;
+    padding: 9px;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-card-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 7px;
+    background: linear-gradient(145deg, #c27a35, #765031);
+    color: #fff8e9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 900;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-card-copy {
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-card-title {
+    color: #251d17;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-card-desc {
+    margin-top: 2px;
+    color: #7d7168;
+    font-size: 10px;
+    line-height: 1.35;
+    max-height: 42px;
+    overflow: hidden;
+    white-space: pre-line;
+    word-break: break-word;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 6px 0;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-contact,
+#phone-panel-content .phone-screen .games-undercover-share-recipient {
+    width: 100%;
+    min-height: 50px;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    color: #251d17;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    box-sizing: border-box;
+    box-shadow: none;
+    text-align: left;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-contact {
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-contact:active {
+    background: #f7f4f0;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #eee9e3;
+    border: 1px solid #e1d8cf;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-avatar img,
+#phone-panel-content .phone-screen .games-undercover-share-avatar > div {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-name {
+    min-width: 0;
+    color: #251d17;
+    font-size: 12px;
+    font-weight: 650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-type {
+    color: #a3978e;
+    font-size: 10px;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-empty {
+    padding: 20px 12px;
+    color: #94877e;
+    font-size: 12px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 12px;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-action {
+    height: 38px;
+    margin: 0;
+    border: 0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-cancel {
+    background: #ece9e6;
+    color: #41372f;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-send {
+    background: #34c759;
+    color: #fff;
+}
+
+#phone-panel-content .phone-screen .games-undercover-share-send:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
 }
 
 #phone-panel-content .phone-screen .games-undercover-composer {
@@ -1332,11 +1599,11 @@
         font-size: 8px;
     }
 
-    #phone-panel-content .phone-screen .games-undercover-word-line {
+    #phone-panel-content .phone-screen .games-undercover-word-prefix {
         gap: 6px;
     }
 
-    #phone-panel-content .phone-screen .games-undercover-word-line > span {
+    #phone-panel-content .phone-screen .games-undercover-word-prefix > span {
         font-size: 10px;
     }
 

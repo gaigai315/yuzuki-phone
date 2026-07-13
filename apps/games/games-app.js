@@ -117,6 +117,7 @@ export class GamesApp extends PokerApp {
 
     async startUndercoverGame(invitedContacts = []) {
         this.stopUndercoverFlow();
+        this._lastUndercoverApiCompletedAt = 0;
         const runId = this._undercoverRunId;
         const wechatData = this.getWechatData();
         const userInfo = wechatData?.getUserInfo?.() || {};
@@ -282,12 +283,14 @@ export class GamesApp extends PokerApp {
                     return;
                 }
 
-                const thinkingGame = this.undercoverData.markCurrentSpeakerThinking();
-                this.undercoverView.syncGameRuntimeState?.(thinkingGame);
                 try {
                     const result = await this._callUndercoverSpeechAi(speaker, {
                         includeUserContext,
-                        runId
+                        runId,
+                        onDispatch: () => {
+                            const thinkingGame = this.undercoverData.markCurrentSpeakerThinking();
+                            this.undercoverView.syncGameRuntimeState?.(thinkingGame);
+                        }
                     });
                     if (runId !== this._undercoverRunId) return;
                     if (result?.success === false) throw new Error(result.error || 'AI 发言请求失败');
@@ -324,10 +327,14 @@ export class GamesApp extends PokerApp {
     async _runUndercoverVote(runId = this._undercoverRunId, options = {}) {
         const state = this.undercoverData.getState().game;
         if (!state || state.phase !== 'voting') return null;
-        const thinkingGame = this.undercoverData.markVoteThinking();
-        this.undercoverView.syncGameRuntimeState?.(thinkingGame);
         try {
-            const result = await this._callUndercoverVoteAi(thinkingGame, runId, options);
+            const result = await this._callUndercoverVoteAi(state, runId, {
+                ...options,
+                onDispatch: () => {
+                    const thinkingGame = this.undercoverData.markVoteThinking();
+                    this.undercoverView.syncGameRuntimeState?.(thinkingGame);
+                }
+            });
             if (runId !== this._undercoverRunId) return null;
             if (result?.success === false) throw new Error(result.error || 'AI 投票请求失败');
             const votes = this._parseUndercoverVotes(result?.summary || result?.content || result?.text || '');
@@ -371,6 +378,13 @@ export class GamesApp extends PokerApp {
             .filter(player => !player.empty && player.source !== 'pending')
             .map(player => `${player.seat}号：${player.name}`)
             .join('\n') || '无';
+        const recentWordPairs = this.undercoverData.getRecentWordPairs?.() || [];
+        const recentWords = recentWordPairs.length
+            ? [...recentWordPairs]
+                .reverse()
+                .map((pair, index) => `${index + 1}. ${pair.civilian} / ${pair.undercover}`)
+                .join('\n')
+            : '暂无历史词组';
         const messages = [
             {
                 role: 'system',
@@ -386,6 +400,9 @@ export class GamesApp extends PokerApp {
                     `空缺人数：${Math.max(0, Number(emptyCount || 0))}`,
                     '已经落座的真人玩家：',
                     existingPlayers,
+                    '最近10局已经使用过的身份词（本局禁用）：',
+                    recentWords,
+                    '本局生成的普通玩家身份词和卧底玩家身份词，都不得复用上述列表中的任何一个词；请换一个新的细分领域。',
                     '请生成所有空缺位置需要的 AI 玩家资料，并给出本轮身份词。'
                 ].join('\n')
             }
@@ -400,9 +417,7 @@ export class GamesApp extends PokerApp {
     async _callUndercoverSpeechAi(player, options = {}) {
         const state = this.undercoverData.getState().game;
         if (!state) throw new Error('谁是卧底游戏状态不存在');
-        const publicLog = (state.chatMessages || []).slice(-36).map(message => (
-            `第${Number(message.round || 1)}轮 ${Number(message.senderSeat || 0)}号 ${message.senderName}：${message.content}`
-        ));
+        const publicLog = this._formatUndercoverPublicLog(state.chatMessages, 36);
         const playerList = (state.players || [])
             .slice()
             .sort((a, b) => Number(a.seat) - Number(b.seat))
@@ -455,24 +470,17 @@ export class GamesApp extends PokerApp {
         return this._callUndercoverAi(messages, {
             runId: options.runId,
             temperature: 0.88,
-            max_tokens: 420
+            max_tokens: 420,
+            onDispatch: options.onDispatch
         });
     }
 
     async _callUndercoverVoteAi(game, runId = this._undercoverRunId, options = {}) {
         const alivePlayers = (game?.players || []).filter(player => player.alive !== false);
         const aiVoters = alivePlayers.filter(player => !player.isUser);
-        const publicLog = (game?.chatMessages || [])
-            .slice(-48)
-            .map(message => message.source === 'system'
-                ? `第${Number(message.round || 1)}轮 系统：${message.content}`
-                : `第${Number(message.round || 1)}轮 ${Number(message.senderSeat || 0)}号 ${message.senderName}：${message.content}`);
-        const voterProfiles = aiVoters.map(player => [
-            `${player.seat}号 ${player.name}`,
-            `投票性格与风格：${player.personality || '根据公开发言理性判断'}`
-        ].join('｜'));
-        const userVote = game?.userVote
-            ? `${game.userVote.voterSeat}号 -> ${game.userVote.targetSeat}号`
+        const publicLog = this._formatUndercoverPublicLog(game?.chatMessages, 48);
+        const userVoteStatus = game?.userVote
+            ? '用户已完成本轮投票，具体投票目标由插件保密并在 AI 返回后独立计入统计'
             : '用户本轮不参与投票';
         const userContext = await this.buildGamesAiContextMessages({
             includeWorldbook: true,
@@ -485,10 +493,11 @@ export class GamesApp extends PokerApp {
                 isPhoneMessage: true,
                 content: [
                     '你是六人谁是卧底游戏的投票裁判。现在一轮公开发言已经结束。',
-                    '你需要在一次回复中分别扮演所有列出的 AI 托管玩家，根据唯一提供的普通玩家身份词、各自性格和全部公开发言独立投票。',
-                    '不同玩家可以得出不同判断。不得让任何玩家知道其他人的身份词、真实身份或私有性格。',
+                    '你需要在一次回复中分别扮演所有列出的 AI 托管玩家，根据唯一提供的普通玩家身份词和全部公开发言独立投票。',
+                    '不同玩家可以得出不同判断。不得让任何玩家知道其他人的身份词或真实身份。',
                     '投票上下文只会提供普通玩家身份词；不得索取、猜测系统信息或要求提供卧底身份词。',
-                    '不能替用户改票，不能遗漏任何列出的 AI 投票者，不能投给自己或已经出局的玩家。',
+                    '用户票由插件在本地独立保存和统计。不要推测、复述或输出用户投给了谁。',
+                    '只输出列出的 AI 投票者，不能遗漏，不能投给自己或已经出局的玩家。',
                     '必须只返回 <谁是卧底投票> 标签，不要 Markdown，不要解释。'
                 ].join('\n')
             },
@@ -500,10 +509,8 @@ export class GamesApp extends PokerApp {
                 content: [
                     `当前轮次：第 ${Number(game?.round || 1)} 轮。`,
                     `存活座位：${alivePlayers.map(player => `${player.seat}号 ${player.name}`).join('、')}。`,
-                    `用户票：${userVote}。`,
+                    `用户投票状态：${userVoteStatus}。`,
                     `普通玩家身份词：${String(game?.wordPair?.civilian || '').trim() || '未知'}。`,
-                    'AI 投票者的性格与投票风格：',
-                    voterProfiles.join('\n') || '无',
                     '全部公开发言：',
                     publicLog.join('\n') || '暂无'
                 ].join('\n')
@@ -514,9 +521,9 @@ export class GamesApp extends PokerApp {
                 isPhoneMessage: true,
                 content: [
                     `需要模拟投票的座位：${aiVoters.map(player => `${player.seat}号`).join('、') || '无'}。`,
-                    '请让上面每个座位都投出且只投出一票。',
+                    '请让上面每个 AI 座位都投出且只投出一票，不要输出用户的票。',
                     '<谁是卧底投票>',
-                    '票型：1->3，2->4，3->2',
+                    '票型：AI座位号->目标座位号，AI座位号->目标座位号',
                     '</谁是卧底投票>'
                 ].join('\n')
             }
@@ -524,8 +531,30 @@ export class GamesApp extends PokerApp {
         return this._callUndercoverAi(messages, {
             runId,
             temperature: 0.76,
-            max_tokens: 520
+            max_tokens: 520,
+            onDispatch: options.onDispatch
         });
+    }
+
+    _formatUndercoverPublicLog(messages = [], limit = 48) {
+        const source = (Array.isArray(messages) ? messages : [])
+            .slice(-Math.max(1, Number(limit) || 48))
+            .filter(message => String(message?.content || '').trim());
+        const lines = [];
+        let currentRound = null;
+        source.forEach(message => {
+            const round = Math.max(1, Number(message?.round || 1));
+            if (round !== currentRound) {
+                lines.push(currentRound === null ? `【第${round}轮】` : `----- 第${round}轮 -----`);
+                currentRound = round;
+            }
+            if (message.source === 'system') {
+                lines.push(`系统：${String(message.content || '').trim()}`);
+                return;
+            }
+            lines.push(`${Number(message.senderSeat || 0)}号 ${message.senderName || '玩家'}：${String(message.content || '').trim()}`);
+        });
+        return lines;
     }
 
     async _callUndercoverAi(messages, options = {}) {
@@ -538,8 +567,11 @@ export class GamesApp extends PokerApp {
             error.name = 'AbortError';
             throw error;
         }
+        if (typeof options.onDispatch === 'function') options.onDispatch();
         const controller = new AbortController();
         this._undercoverAbortController = controller;
+        const requestRunId = Number(options.runId ?? this._undercoverRunId);
+        let completedAt = 0;
         try {
             const result = await apiManager.callAI(messages, {
                 appId: 'games',
@@ -547,6 +579,7 @@ export class GamesApp extends PokerApp {
                 max_tokens: options.max_tokens,
                 signal: controller.signal
             });
+            completedAt = Number(result?.streamCompletedAt) || Date.now();
             if (result?.aborted) {
                 const error = new Error('谁是卧底请求已中止');
                 error.name = 'AbortError';
@@ -554,7 +587,9 @@ export class GamesApp extends PokerApp {
             }
             return result;
         } finally {
-            this._lastUndercoverApiCompletedAt = Date.now();
+            if (requestRunId === this._undercoverRunId) {
+                this._lastUndercoverApiCompletedAt = completedAt || Date.now();
+            }
             if (this._undercoverAbortController === controller) {
                 this._undercoverAbortController = null;
             }
@@ -563,7 +598,16 @@ export class GamesApp extends PokerApp {
 
     async _waitForUndercoverApiCooldown(runId = this._undercoverRunId) {
         const cooldown = Math.max(0, Number(this._undercoverApiCooldownMs || 0));
-        const elapsed = Date.now() - Number(this._lastUndercoverApiCompletedAt || 0);
+        const game = this.undercoverData?.getState?.()?.game;
+        const latestMessageAt = (Array.isArray(game?.chatMessages) ? game.chatMessages : [])
+            .reduce((latest, message) => Math.max(latest, Number(message?.createdAt || 0)), 0);
+        // 与狼人杀一致，从“发言已经写入游戏状态”之后开始冷却。
+        // API 完成时间只作为兜底，避免解析、落盘和 UI 更新占掉请求间隔。
+        const latestAnchor = Math.max(
+            Number(this._lastUndercoverApiCompletedAt || 0),
+            Number.isFinite(latestMessageAt) ? latestMessageAt : 0
+        );
+        const elapsed = Date.now() - latestAnchor;
         const remaining = Math.max(0, cooldown - elapsed);
         if (remaining > 0) {
             await new Promise(resolve => setTimeout(resolve, remaining));
@@ -869,6 +913,150 @@ export class GamesApp extends PokerApp {
         }
         this.storage?.set?.('games_undercover_ai_prompt', '', true);
         return this.getDefaultUndercoverPrompt();
+    }
+
+    getUndercoverShareText() {
+        const game = this.undercoverData?.getState?.()?.game || {};
+        if (game.phase !== 'ended') return '';
+
+        const players = Array.isArray(game.players) ? game.players.filter(Boolean) : [];
+        const playerBySeat = new Map(players.map(player => [Number(player.seat), player]));
+        const user = players.find(player => player.isUser);
+        const winnerFaction = game.winner === 'civilian' ? '平民阵营' : (game.winner === 'undercover' ? '卧底' : '未结算');
+        const userFaction = user?.role === 'undercover' ? 'undercover' : 'civilian';
+        const userResult = game.winner && user ? (game.winner === userFaction ? '你获胜' : '你落败') : '';
+        const undercover = playerBySeat.get(Number(game.undercoverSeat))
+            || players.find(player => player.role === 'undercover');
+        const sourceMap = { user: '本人', wechat: '微信好友', friend: '微信好友', ai: 'AI玩家' };
+        const playerLines = players
+            .slice()
+            .sort((a, b) => Number(a.seat) - Number(b.seat))
+            .map(player => {
+                const role = player.role === 'undercover' ? '卧底' : '平民';
+                const state = player.alive === false ? '已出局' : '存活';
+                const source = sourceMap[player.source] || (player.isUser ? '本人' : '真人玩家');
+                return `${Number(player.seat)}号 ${player.name || '玩家'} / ${role} / ${state} / ${source}`;
+            });
+        const voteLines = (Array.isArray(game.voteHistory) ? game.voteHistory : []).map(record => {
+            const votes = (record.votes || []).map(vote => {
+                const voter = playerBySeat.get(Number(vote.voterSeat));
+                const target = playerBySeat.get(Number(vote.targetSeat));
+                return `${Number(vote.voterSeat)}号${voter?.name ? ` ${voter.name}` : ''} → ${Number(vote.targetSeat)}号${target?.name ? ` ${target.name}` : ''}`;
+            }).join('，');
+            const eliminated = playerBySeat.get(Number(record.eliminatedSeat));
+            const result = eliminated
+                ? `${Number(eliminated.seat)}号 ${eliminated.name || '玩家'} 出局`
+                : `平票${(record.tiedSeats || []).length ? `（${record.tiedSeats.map(seat => `${Number(seat)}号`).join('、')}）` : ''}，无人出局`;
+            return `第${Number(record.round || 1)}轮：${votes || '暂无投票'}；${result}`;
+        });
+        const speechLines = this._formatUndercoverPublicLog(game.chatMessages, 120);
+        const storyTime = this._getUndercoverStoryShareTimeParts();
+        return [
+            '[谁是卧底战绩]',
+            storyTime.sharedAt ? `分享时间：${storyTime.sharedAt}` : '',
+            `结果：${winnerFaction}获胜${userResult ? `（${userResult}）` : ''}`,
+            `平民词：${game.wordPair?.civilian || '未知'}`,
+            `卧底词：${game.wordPair?.undercover || '未知'}`,
+            `卧底：${undercover ? `${Number(undercover.seat)}号 ${undercover.name || '玩家'}` : '未知'}`,
+            '',
+            '本局玩家：',
+            playerLines.length ? playerLines.map(line => `- ${line}`).join('\n') : '- 暂无',
+            '',
+            '投票记录：',
+            voteLines.length ? voteLines.map(line => `- ${line}`).join('\n') : '- 暂无',
+            '',
+            '公开发言：',
+            speechLines.length ? speechLines.join('\n') : '暂无公开发言'
+        ].filter(line => line !== '').join('\n');
+    }
+
+    buildUndercoverShareCardData(shareText = '') {
+        const content = String(shareText || this.getUndercoverShareText() || '').trim();
+        const game = this.undercoverData?.getState?.()?.game || {};
+        const user = (game.players || []).find(player => player.isUser);
+        const userFaction = user?.role === 'undercover' ? 'undercover' : 'civilian';
+        const userResult = game.winner && user ? (game.winner === userFaction ? '你获胜' : '你落败') : '';
+        const winnerText = game.winner === 'civilian' ? '平民阵营获胜' : (game.winner === 'undercover' ? '卧底获胜' : '本局结束');
+        const words = [game.wordPair?.civilian, game.wordPair?.undercover].filter(Boolean).join(' vs ');
+        return {
+            title: '谁是卧底本局战绩',
+            desc: [winnerText, userResult, words].filter(Boolean).join(' · ') || '点击查看完整本局战绩',
+            content,
+            result: [winnerText, userResult].filter(Boolean).join(' · '),
+            sharedAt: this._getUndercoverStoryShareTimeParts().sharedAt
+        };
+    }
+
+    _getUndercoverStoryShareTimeParts() {
+        try {
+            const timeManager = window.VirtualPhone?.timeManager;
+            const storyTime = timeManager?.getCurrentStoryTime?.();
+            const date = String(storyTime?.date || '').trim();
+            const time = String(storyTime?.time || '').trim().replace('：', ':');
+            if (date && /^\d{1,2}:\d{2}$/.test(time)) {
+                const timestamp = Number.isFinite(Number(storyTime?.timestamp))
+                    ? Number(storyTime.timestamp)
+                    : (typeof timeManager?.parseTimeToTimestamp === 'function' ? timeManager.parseTimeToTimestamp(storyTime) : 0);
+                return {
+                    date,
+                    time,
+                    weekday: storyTime?.weekday || '',
+                    timestamp: Number.isFinite(Number(timestamp)) ? Number(timestamp) : 0,
+                    sharedAt: [date, storyTime?.weekday, time].filter(Boolean).join(' ')
+                };
+            }
+        } catch (error) {
+            console.warn('[Games] 读取谁是卧底分享时间失败:', error);
+        }
+        return { date: '', time: '', weekday: '', timestamp: 0, sharedAt: '' };
+    }
+
+    async shareUndercoverToWechat(targetName, options = {}) {
+        const recipientName = String(targetName || '').trim();
+        if (!recipientName) throw new Error('未选择微信好友或群聊');
+        const wechatData = this.getWechatData();
+        if (!wechatData) throw new Error('微信数据库加载失败');
+
+        const game = this.undercoverData?.getState?.()?.game;
+        if (!game || game.phase !== 'ended') throw new Error('本局尚未结束，暂时无法分享');
+        const shareText = String(options.shareText || this.getUndercoverShareText() || '').trim();
+        if (!shareText) throw new Error('暂无可分享的谁是卧底战绩');
+
+        let chat = (wechatData.getChatList?.() || []).find(item => String(item?.name || '').trim() === recipientName);
+        if (!chat) {
+            const contact = (wechatData.getContacts?.() || []).find(item => String(item?.name || '').trim() === recipientName);
+            if (contact) {
+                chat = wechatData.createChat({
+                    id: `chat_${contact.id || Date.now()}`,
+                    contactId: contact.id,
+                    name: contact.name,
+                    type: 'single',
+                    avatar: contact.avatar || ''
+                });
+            }
+        }
+        if (!chat) throw new Error('未找到对应的微信好友或群聊');
+
+        const userInfo = wechatData.getUserInfo?.() || {};
+        const storyTime = this._getUndercoverStoryShareTimeParts();
+        const undercoverData = this.buildUndercoverShareCardData(shareText);
+        const shareTime = this._getWechatShareTimeFields(storyTime);
+        wechatData.addMessage(chat.id, {
+            from: 'me',
+            content: '[谁是卧底战绩分享]',
+            type: 'undercover_card',
+            undercoverData,
+            avatar: userInfo.avatar || '',
+            ...shareTime
+        });
+
+        chat.unread = (chat.unread || 0) + 1;
+        chat.lastMessage = '[谁是卧底战绩分享]';
+        chat.time = shareTime.time || chat.time;
+        if (shareTime.timestamp) chat.timestamp = shareTime.timestamp;
+        wechatData.saveData?.();
+        this._syncWechatHomeBadge(wechatData);
+        return { success: true, chatId: chat.id, chatName: chat.name };
     }
 
     getWerewolfShareText() {

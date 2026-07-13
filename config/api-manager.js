@@ -77,6 +77,46 @@ export class ApiManager {
         return parts.filter(Boolean).join(' | ') || fallback;
     }
 
+    _formatHttpFailureBody(status, rawBody = '') {
+        const body = String(rawBody || '').trim();
+        const statusMessages = {
+            500: '上游服务内部错误',
+            502: '上游网关返回无效响应',
+            503: '上游服务暂时不可用',
+            504: '上游网关响应超时',
+            520: '上游源站异常（Cloudflare 520）',
+            521: '上游源站拒绝连接（Cloudflare 521）',
+            522: '连接上游源站超时（Cloudflare 522）',
+            523: '上游源站不可达（Cloudflare 523）',
+            524: '上游生成或响应超时（Cloudflare 524）',
+            525: '上游 SSL 握手失败（Cloudflare 525）',
+            526: '上游 SSL 证书无效（Cloudflare 526）'
+        };
+        const isHtml = /<!doctype\s+html|<html[\s>]|<head[\s>]|<body[\s>]/i.test(body);
+        if (isHtml) return statusMessages[status] || '上游返回了 HTML 错误页';
+
+        if (body) {
+            try {
+                const parsed = JSON.parse(body);
+                const message = parsed?.error?.message || parsed?.message || parsed?.detail || parsed?.error;
+                if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 1000);
+            } catch (_e) {
+                // 不是 JSON 时保留纯文本错误。
+            }
+            return body.replace(/\s+/g, ' ').slice(0, 1000);
+        }
+        return statusMessages[status] || '响应体为空';
+    }
+
+    _isRouteFallbackFailure(status, rawBody = '') {
+        // 只在请求根本未进入生成、且很可能是协议或路由不匹配时换路由。
+        // Cloudflare 52x 和普通服务端 5xx 都可能已经进入生成，重发会造成重复调用。
+        if ([400, 404, 405, 415, 422].includes(Number(status))) return true;
+        return Number(status) === 502
+            && !/<!doctype\s+html|<html[\s>]/i.test(String(rawBody || ''))
+            && /invalid\s+url|err_invalid_url|failed\s+to\s+parse\s+(?:the\s+)?url|cannot\s+parse\s+url/i.test(String(rawBody || ''));
+    }
+
     _resolvePhoneApiConfig(rawConfig, appId = '') {
         if (!rawConfig || typeof rawConfig !== 'object') return rawConfig;
 
@@ -793,29 +833,45 @@ export class ApiManager {
                         : response.status === 500
                             ? ' (后端内部错误)'
                             : '';
-                throw new Error(`${label} 失败 ${response.status}${tip}: ${errText.substring(0, 1000)}`);
+                const detail = this._formatHttpFailureBody(response.status, errText);
+                const error = new Error(`${label} 失败 ${response.status}${tip}: ${detail}`);
+                error.status = response.status;
+                error.phoneRetryableRoute = this._isRouteFallbackFailure(response.status, errText);
+                throw error;
             }
             // 酒馆的 forwardFetchResponse 只转发响应体和状态码，部分版本不会保留
             // 上游的 text/event-stream 响应头。请求既然明确启用了 stream，就应直接
             // 按流读取，否则 response.text() 会一直等待上游物理断开连接。
-            if (requestStream && response.body) {
-                return await this._readUniversalStream(response.body, `[${label}]`);
+            try {
+                if (requestStream && response.body) {
+                    return await this._readUniversalStream(response.body, `[${label}]`);
+                }
+                const text = await response.text();
+                const chunkedResult = this._parseChunkedApiText(text);
+                if (chunkedResult) return chunkedResult;
+                return this._parseApiResponse(text);
+            } catch (error) {
+                // HTTP 200 说明上游已经接受并可能完成了生成。此时禁止换路由重发，
+                // 否则一次手机操作会产生多次模型请求。
+                error.phoneResponseAccepted = true;
+                throw error;
             }
-            const text = await response.text();
-            const chunkedResult = this._parseChunkedApiText(text);
-            if (chunkedResult) return chunkedResult;
-            return this._parseApiResponse(text);
         };
 
         const fetchProxyWithAuthRetry = async (payload, label) => {
             const endpoint = '/api/backends/chat-completions/generate';
-            const send = async (forceRefresh = false) => fetch(endpoint, {
-                method: 'POST',
-                headers: await this._getJsonRequestHeaders({ forceRefresh }),
-                body: JSON.stringify(payload),
-                credentials: 'include',
-                signal: options.signal
-            });
+            const send = async (forceRefresh = false) => {
+                const startedAt = Date.now();
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: await this._getJsonRequestHeaders({ forceRefresh }),
+                    body: JSON.stringify(payload),
+                    credentials: 'include',
+                    signal: options.signal
+                });
+                console.log(`⏱️ [ApiManager][${label}] 收到响应头: ${response.status}，等待 ${Date.now() - startedAt}ms`);
+                return response;
+            };
 
             let response = await send(false);
             if (!response.ok) {
@@ -841,12 +897,20 @@ export class ApiManager {
         const useProxy = ['local', 'openai', 'claude', 'proxy_only', 'deepseek', 'siliconflow', 'compatible', 'gemini'].includes(provider);
         if (useProxy) {
             try {
+                const apiUrlLower = apiUrl.toLowerCase();
+                const useProxyGeminiCompat = provider === 'proxy_only'
+                    && modelLower.includes('gemini')
+                    && !apiUrlLower.includes('127.0.0.1')
+                    && !apiUrlLower.includes('localhost')
+                    && !apiUrlLower.includes('/v1');
                 let targetSource = 'openai';
                 if (provider === 'claude') targetSource = 'claude';
+                if (provider === 'gemini') targetSource = 'makersuite';
                 if (provider === 'proxy_only' || provider === 'local') targetSource = 'custom';
+                if (useProxyGeminiCompat) targetSource = 'makersuite';
                 if (provider === 'proxy_only' || provider === 'compatible') {
                     const hinted = this._getProxyRouteHint(provider, apiUrl);
-                    if (hinted === 'custom' || hinted === 'openai') {
+                    if (!useProxyGeminiCompat && (hinted === 'custom' || hinted === 'openai')) {
                         targetSource = hinted;
                     }
                 }
@@ -854,6 +918,9 @@ export class ApiManager {
                 let cleanBaseUrl = apiUrl;
                 if (targetSource === 'openai' && cleanBaseUrl.endsWith('/chat/completions')) {
                     cleanBaseUrl = cleanBaseUrl.replace(/\/chat\/completions\/?$/, '');
+                }
+                if (targetSource === 'makersuite') {
+                    cleanBaseUrl = cleanBaseUrl.replace(/\/chat\/completions\/?$/, '').replace(/\/+$/, '');
                 }
 
                 const proxyPayload = {
@@ -869,15 +936,21 @@ export class ApiManager {
                     mode: 'chat',
                     instruction_mode: 'chat'
                 };
+                if (targetSource === 'makersuite') {
+                    proxyPayload.maxOutputTokens = maxTokens;
+                    proxyPayload.custom_prompt_post_processing = 'strict';
+                    proxyPayload.use_makersuite_sysprompt = true;
+                }
                 this._attachPhoneSignalToPayload(proxyPayload, phoneSignal);
 
                 // 酒馆的 OpenAI 兼容路由会根据 proxy_password 生成鉴权头；
-                // custom_include_headers 只属于 custom 路由，否则新版后端会因字段类型校验拒绝请求。
+                // custom_include_headers 只属于 custom 路由，并且酒馆后端要求它是 YAML 字符串。
+                // JSON 是合法 YAML；直接传对象会被 yaml.parse 静默忽略，导致 Authorization 丢失。
                 if (targetSource === 'custom') {
-                    proxyPayload.custom_include_headers = { 'Content-Type': 'application/json' };
-                    if (authHeader) {
-                        proxyPayload.custom_include_headers.Authorization = authHeader;
-                    }
+                    proxyPayload.custom_include_headers = JSON.stringify({
+                        'Content-Type': 'application/json',
+                        ...(authHeader ? { Authorization: authHeader } : {})
+                    });
                 }
                 if (modelLower.includes('gemini')) {
                     const safetyConfig = buildSafetyConfig();
@@ -898,6 +971,15 @@ export class ApiManager {
                 if (options.signal?.aborted) return { success: false, error: '已中断发送', aborted: true };
             }
 
+            if (proxyError?.phoneResponseAccepted || proxyError?.phoneRetryableRoute === false) {
+                return {
+                    success: false,
+                    error: proxyError?.phoneResponseAccepted
+                        ? `独立 API 响应解析失败: ${proxyError.message || '未知错误'}`
+                        : `独立 API 请求失败: ${proxyError.message || '未知错误'}`
+                };
+            }
+
             // 针对 proxy_only/compatible 做 OpenAI 协议降级重试（兼容 OP/Build 端口）
             if (provider === 'proxy_only' || provider === 'compatible') {
                 if (provider === 'compatible') {
@@ -907,7 +989,10 @@ export class ApiManager {
                             reverse_proxy: apiUrl,
                             custom_url: apiUrl,
                             proxy_password: apiKey,
-                            custom_include_headers: { 'Content-Type': 'application/json' },
+                            custom_include_headers: JSON.stringify({
+                                'Content-Type': 'application/json',
+                                ...(authHeader ? { Authorization: authHeader } : {})
+                            }),
                             model,
                             messages: cleanMessages,
                             temperature,
@@ -917,9 +1002,6 @@ export class ApiManager {
                             instruction_mode: 'chat'
                         };
                         this._attachPhoneSignalToPayload(customPayload, phoneSignal);
-                        if (authHeader) {
-                            customPayload.custom_include_headers.Authorization = authHeader;
-                        }
                         if (modelLower.includes('gemini')) {
                             const safetyConfig = buildSafetyConfig();
                             customPayload.gemini_safety_settings = safetyConfig;
@@ -971,10 +1053,11 @@ export class ApiManager {
             }
         }
 
-        const proxyAuthFailed = proxyError && /unauthori[sz]ed|csrf|forbidden|invalid token/i.test(String(proxyError.message || ''));
-        const allowDirectFallback = ['compatible', 'proxy_only', 'openai', 'gemini', 'deepseek', 'siliconflow'].includes(provider) || !useProxy || proxyAuthFailed;
-        if (!allowDirectFallback && proxyError) {
-            return { success: false, error: `后端代理失败: ${proxyError.message}` };
+        if (useProxy) {
+            return {
+                success: false,
+                error: `酒馆后端代理失败: ${proxyError?.message || '未返回可用响应'}`
+            };
         }
 
         const attemptDirectRequest = async (streamEnabled) => {
@@ -1433,81 +1516,78 @@ export class ApiManager {
     async _readUniversalStream(body, logPrefix = '') {
         const reader = body.getReader();
         const decoder = new TextDecoder('utf-8');
+        const streamReadStartedAt = Date.now();
         let fullText = '';
         let fullReasoning = '';
         let isTruncated = false;
         let buffer = '';
         let rawResponse = '';
-        let reachedStreamEnd = false;
-
-        const getEventData = (eventChunk) => {
-            let eventData = '';
-            let hasDataField = false;
-            const lines = String(eventChunk || '').split(/\r\n|\r|\n/g);
-            for (const line of lines) {
-                const match = /^([^:]+)(?:: ?(.*))?$/.exec(line);
-                if (!match || match[1] !== 'data') continue;
-                hasDataField = true;
-                eventData += `${match[2] || ''}\n`;
-            }
-            if (hasDataField) return eventData.endsWith('\n') ? eventData.slice(0, -1) : eventData;
-            const trimmed = String(eventChunk || '').trim();
-            return trimmed.startsWith('{') ? trimmed : '';
-        };
-
-        const processEvent = (eventChunk) => {
-            const rawData = getEventData(eventChunk);
-            if (!rawData) return;
-            if (rawData.trim() === '[DONE]') {
-                reachedStreamEnd = true;
-                return;
-            }
-
-            let chunk;
-            try {
-                chunk = JSON.parse(rawData);
-            } catch (_e) {
-                // 与酒馆 EventSourceStream 一致：只处理完整 SSE 事件，坏事件留给后续事件继续恢复。
-                return;
-            }
-
-            const { content, reasoning, finishReason, error } = this._extractStreamContent(chunk);
-            if (error) throw new Error(`${logPrefix} ${error}`.trim());
-            if (finishReason === 'length') isTruncated = true;
-            if (reasoning) fullReasoning += reasoning;
-            if (content) fullText += content;
-            // 酒馆以 [DONE] 或响应体结束为准；这里额外接受 finish_reason，
-            // 兼容只发结束原因却不关闭连接的 OpenAI 兼容端点。
-            if (finishReason) reachedStreamEnd = true;
-        };
+        let sawFirstChunk = false;
+        let reachedProtocolEnd = false;
 
         try {
             while (true) {
                 const { done, value } = await reader.read();
-                let decoded = '';
-                if (value) {
-                    decoded = decoder.decode(value, { stream: !done });
-                } else if (done) {
-                    decoded = decoder.decode();
+                if (value?.byteLength && !sawFirstChunk) {
+                    sawFirstChunk = true;
+                    console.log(`⏱️ [ApiManager]${logPrefix} 收到首个流分片: ${Date.now() - streamReadStartedAt}ms`);
                 }
+                const decoded = value
+                    ? decoder.decode(value, { stream: !done })
+                    : (done ? decoder.decode() : '');
                 buffer += decoded;
                 rawResponse += decoded;
 
-                const events = buffer.split(/\r\n\r\n|\r\r|\n\n/g);
-                const leftover = events.pop() || '';
-                buffer = done ? '' : leftover;
-                if (done && leftover.trim()) events.push(leftover);
+                const lines = buffer.split(/\r\n|\r|\n/g);
+                buffer = done ? '' : (lines.pop() || '');
+                for (const line of lines) {
+                    const trimmed = String(line || '').trim();
+                    if (!trimmed || trimmed.startsWith(':')) continue;
+                    if (trimmed === 'data: [DONE]' || trimmed === 'data:[DONE]' || trimmed === '[DONE]') {
+                        reachedProtocolEnd = true;
+                        break;
+                    }
+                    const rawData = trimmed.startsWith('data:')
+                        ? trimmed.replace(/^data:\s*/, '')
+                        : (trimmed.startsWith('{') ? trimmed : '');
+                    if (!rawData) continue;
+                    if (rawData === '[DONE]') {
+                        reachedProtocolEnd = true;
+                        break;
+                    }
 
-                for (const eventChunk of events) {
-                    processEvent(eventChunk);
-                    if (reachedStreamEnd) break;
+                    try {
+                        const chunk = JSON.parse(rawData);
+                        const { content, reasoning, finishReason, error } = this._extractStreamContent(chunk);
+                        if (error) throw new Error(`${logPrefix} ${error}`.trim());
+                        if (finishReason === 'length') isTruncated = true;
+                        if (reasoning) fullReasoning += reasoning;
+                        if (content) fullText += content;
+                    } catch (error) {
+                        if (/安全策略|内容被|unauthori|csrf|forbidden/i.test(String(error?.message || ''))) throw error;
+                        // 坏分片留给原始响应兜底；不因单个兼容分片触发整次请求重试。
+                    }
                 }
-                if (done || reachedStreamEnd) break;
+                if (!reachedProtocolEnd && !done) {
+                    const bufferedMarker = String(buffer || '').trim();
+                    if (bufferedMarker === 'data: [DONE]' || bufferedMarker === 'data:[DONE]' || bufferedMarker === '[DONE]') {
+                        buffer = '';
+                        reachedProtocolEnd = true;
+                    }
+                }
+                if (done || reachedProtocolEnd) break;
+            }
+
+            if (reachedProtocolEnd) {
+                console.log(`⏱️ [ApiManager]${logPrefix} 收到 [DONE]: ${Date.now() - streamReadStartedAt}ms`);
             }
 
             let summary = String(fullText || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
             if (!summary && !fullReasoning && rawResponse.trim() && !/(^|\r?\n)\s*data:/.test(rawResponse)) {
-                return this._parseApiResponse(rawResponse);
+                return {
+                    ...this._parseApiResponse(rawResponse),
+                    streamCompletedAt: Date.now()
+                };
             }
             if (!summary && fullReasoning && String(fullReasoning).trim()) {
                 throw new Error(`API 只返回了 reasoning_content，未返回正文内容${isTruncated ? '，可能是 max_tokens 太小，模型把输出额度用在思考过程里' : ''}`);
@@ -1516,13 +1596,20 @@ export class ApiManager {
                 summary += '\n\n[⚠️ 内容已因达到最大Token限制而截断]';
             }
             if (!summary) throw new Error('流式传输返回为空');
-            return { success: true, summary };
+            return {
+                success: true,
+                summary,
+                streamCompletedAt: Date.now()
+            };
         } finally {
-            if (reachedStreamEnd) {
+            if (reachedProtocolEnd) {
                 try {
+                    // [DONE] 已确认协议层完成。取消仍未物理结束的响应体，通知酒馆后端
+                    // 释放对应的上游流，避免连续请求耗尽浏览器连接池。
                     await reader.cancel();
+                    console.log(`⏱️ [ApiManager]${logPrefix} 已释放完成的流连接`);
                 } catch (_e) {
-                    // 上游可能已经自行关闭，忽略重复取消错误。
+                    // 响应体可能已在 [DONE] 后自行结束，忽略重复关闭错误。
                 }
             }
             reader.releaseLock();

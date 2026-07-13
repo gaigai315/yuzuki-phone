@@ -1048,11 +1048,25 @@ export class WechatData {
         return `emoji_legacy_${hash.toString(36)}`;
     }
 
+    normalizeCustomEmojiImagePath(pathLike) {
+        const raw = String(pathLike || '').trim();
+        if (!raw) return '';
+        if (/^(?:data:|blob:)/i.test(raw)) return raw;
+
+        const managedAbsolute = raw.match(/^(?:https?:)?\/\/[^/]+(\/backgrounds\/phone_[^?#]+(?:[?#].*)?)$/i);
+        if (managedAbsolute?.[1]) return managedAbsolute[1];
+        if (/^backgrounds\/phone_[^?#]+/i.test(raw)) return `/${raw}`;
+        if (/^phone_[\w-]+\.(?:png|jpe?g|gif|webp|avif|bmp|svg)(?:[?#].*)?$/i.test(raw)) {
+            return `/backgrounds/${raw}`;
+        }
+        return raw;
+    }
+
     _normalizeCustomEmojiList(list = []) {
         if (!Array.isArray(list)) return [];
 
         return list.map((emoji, index) => {
-            const safeImage = String(emoji?.image || '').trim();
+            const safeImage = this.normalizeCustomEmojiImagePath(emoji?.image);
             if (!safeImage) return null;
 
             const safeName = String(emoji?.name || '').trim() || `表情${index + 1}`;
@@ -1100,7 +1114,9 @@ export class WechatData {
     _loadGlobalCustomEmojis() {
         const raw = this.storage.get(this._getCustomEmojiGlobalKey(), '[]');
         if (Array.isArray(raw)) {
-            return this._normalizeCustomEmojiList(raw);
+            const normalized = this._normalizeCustomEmojiList(raw);
+            if (!this._isSameCustomEmojiList(raw, normalized)) this._saveGlobalCustomEmojis(normalized);
+            return normalized;
         }
         if (typeof raw !== 'string' || raw.trim() === '') {
             return [];
@@ -1108,7 +1124,9 @@ export class WechatData {
 
         try {
             const parsed = JSON.parse(raw);
-            return this._normalizeCustomEmojiList(parsed);
+            const normalized = this._normalizeCustomEmojiList(parsed);
+            if (!this._isSameCustomEmojiList(parsed, normalized)) this._saveGlobalCustomEmojis(normalized);
+            return normalized;
         } catch (e) {
             console.warn('⚠️ [微信] 读取全局自定义表情失败:', e);
             return [];
@@ -2282,6 +2300,8 @@ getMessagePreview(message) {
             return '[德州扑克分享]';
         case 'werewolf_card':
             return '[狼人杀复盘分享]';
+        case 'undercover_card':
+            return '[谁是卧底战绩分享]';
         case 'catbox_coadopt_invite':
             return message.catboxInviteStatus === 'accepted'
                 ? '[猫盒共养邀请：已接收]'

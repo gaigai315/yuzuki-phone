@@ -1872,6 +1872,23 @@ export class WechatApp {
     object-fit: cover;
 }
 
+.wechat-app .custom-emoji-item.is-broken {
+    border: 1px dashed rgba(120, 128, 140, 0.5);
+    box-sizing: border-box;
+    background: rgba(238, 241, 245, 0.9);
+}
+
+.wechat-app .custom-emoji-broken-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8b95a3;
+    font-size: 15px;
+    pointer-events: none;
+}
+
 .emoji-add {
     border: 2px dashed #ccc;
     color: #999;

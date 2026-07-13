@@ -21,7 +21,7 @@ const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${S
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
 const ST_PHONE_HONEY_CSS_URL = new URL('./apps/honey/honey.css?v=20260606-ticker-once', import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
-const ST_PHONE_GAMES_CSS_URL = new URL('./apps/games/poker/poker.css?v=1.0.0', import.meta.url).href;
+const ST_PHONE_GAMES_CSS_URL = new URL('./apps/games/poker/poker.css?v=1.0.2', import.meta.url).href;
 const ST_PHONE_UPDATE_MANIFEST_URLS = [
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/main/manifest.json',
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/master/manifest.json'
@@ -8507,7 +8507,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '万象模块加载失败', '❌');
                         });
                 } else if (appId === 'games') {
-                    ensureGamesCSSPreloaded();
+                    const gamesCssReady = ensureGamesCSSPreloaded();
                     if (!window.VirtualPhone.gamesApp) {
                         phoneShell?.setContent?.(`
                             <div class="games-app games-loading" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:radial-gradient(circle at 50% 34%, #286b5a 0%, #123f39 52%, #081f25 100%);color:#f7f3e8;font-size:13px;">
@@ -8516,8 +8516,8 @@ if (window.GGP_Loaded) {
                             </div>
                         `, 'games-loading');
                     }
-                    loadGamesModule()
-                        .then(module => {
+                    Promise.all([gamesCssReady, loadGamesModule()])
+                        .then(([, module]) => {
                             try {
                                 if (!window.VirtualPhone.gamesApp) {
                                     window.VirtualPhone.gamesApp = new module.GamesApp(phoneShell, storage);
@@ -9516,6 +9516,9 @@ if (window.GGP_Loaded) {
                                                     } else if (msg.type === 'werewolf_card') {
                                                         const werewolf = msg.werewolfData || {};
                                                         content = werewolf.content || werewolf.desc || msg.content || '[狼人杀复盘分享]';
+                                                    } else if (msg.type === 'undercover_card') {
+                                                        const undercover = msg.undercoverData || {};
+                                                        content = undercover.content || undercover.desc || msg.content || '[谁是卧底战绩分享]';
                                                     } else if (msg.type === 'call_record') {
                                                         const callTypeName = msg.callType === 'video' ? '视频' : '语音';
                                                         const callStatusText = msg.status === 'answered'

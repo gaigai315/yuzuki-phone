@@ -47,6 +47,9 @@ export class ChatView {
         this.currentTtsRound = null;
         this._suppressWeiboCardClickUntil = 0;
         this._suppressWangxiangCardClickUntil = 0;
+        this._suppressPokerCardClickUntil = 0;
+        this._suppressWerewolfCardClickUntil = 0;
+        this._suppressUndercoverCardClickUntil = 0;
         this._inlineStickerHydrateTimer = null;
         this._missingBoundVoiceWarned = new Set();
         this._aiReplyTimeCursor = null;
@@ -3329,6 +3332,32 @@ renderChatRoom(chat) {
                 break;
             }
 
+            case 'undercover_card': {
+                const undercover = msg.undercoverData || {};
+                const title = this._escapeHtml(undercover.title || '谁是卧底本局战绩');
+                const desc = this._escapeHtml(undercover.desc || undercover.content || '点击查看完整本局战绩');
+                const result = this._escapeHtml(undercover.result || '本局战绩分享');
+                messageBody = `
+                <div class="message-undercover-card" data-msg-id="${this._escapeHtml(msg.id || '')}" style="background:#fff; border:1px solid #e8e8e8; border-radius:8px; overflow:hidden; max-width:228px; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+                    <div style="padding:11px 11px 10px;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:7px;">
+                            <div style="width:28px; height:28px; border-radius:7px; background:linear-gradient(135deg,#c27a35,#604126); color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex-shrink:0;">卧</div>
+                            <div style="min-width:0; flex:1;">
+                                <div style="font-size:13px; font-weight:700; color:#1a1a1a; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</div>
+                                <div style="font-size:10px; color:#999; line-height:1.25; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${result}</div>
+                            </div>
+                        </div>
+                        <div style="font-size:12px; color:#666; line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word;">${desc}</div>
+                    </div>
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 10px; background:#f6f6f6; border-top:1px solid #eee;">
+                        <span style="font-size:11px; color:#999;">谁是卧底</span>
+                        <span style="font-size:10px; color:#b0b0b0;">查看战绩</span>
+                    </div>
+                </div>
+                `;
+                break;
+            }
+
             case 'catbox_care_card': {
                 const petName = this._escapeHtml(msg.catboxPetName || '小猫');
                 messageBody = `
@@ -3682,7 +3711,7 @@ renderChatRoom(chat) {
                         <!-- 自定义表情 -->
                         ${customEmojis.map(emoji => `
                             <span class="emoji-item custom-emoji-item ${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'is-selected' : ''}" data-emoji-type="custom" data-emoji-id="${this._escapeHtml(emoji.id || '')}" data-selection-mode="${isSelectionMode ? '1' : '0'}" title="${this._escapeHtml(String(emoji.description || emoji.name || '表情'))}" style="position:relative;${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'outline:2px solid #07c160; outline-offset:1px; border-radius:10px;' : ''}">
-                                <img src="${this.escapeInlineStickerAttr(emoji.image || '')}" alt="${this._escapeHtml(emoji.name || '')}">
+                                <img src="${this.escapeInlineStickerAttr(emoji.image || '')}" data-custom-emoji-src="${this.escapeInlineStickerAttr(emoji.image || '')}" alt="${this._escapeHtml(emoji.name || '')}" referrerpolicy="no-referrer">
                                 ${isSelectionMode ? `<span style="position:absolute; top:2px; right:2px; width:14px; height:14px; border-radius:50%; background:${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '#07c160' : 'rgba(255,255,255,0.9)'}; border:1px solid ${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '#07c160' : '#ccc'}; color:#fff; font-size:10px; line-height:12px; text-align:center;">${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '✓' : ''}</span>` : ''}
                             </span>
                         `).join('')}
@@ -4501,6 +4530,13 @@ renderChatRoom(chat) {
             const title = String(werewolf.title || '狼人杀复盘记录').trim();
             const content = String(werewolf.content || werewolf.desc || '').trim();
             const header = `[狼人杀复盘分享]${title ? ` ${title}` : ''}`;
+            return content ? `${header}\n${content}` : header;
+        }
+        if (msg.type === 'undercover_card') {
+            const undercover = msg.undercoverData || {};
+            const title = String(undercover.title || '谁是卧底本局战绩').trim();
+            const content = String(undercover.content || undercover.desc || '').trim();
+            const header = `[谁是卧底战绩分享]${title ? ` ${title}` : ''}`;
             return content ? `${header}\n${content}` : header;
         }
         if (msg.type === 'weibo_card') {
@@ -5508,6 +5544,38 @@ renderChatRoom(chat) {
         const height = Math.max(20, Number(maxHeight) || 156);
         const borderRadius = inline ? 6 : 8;
         return `<img src="${safeUrl}" alt="${safeName}" title="${safeName}" style="display:block;max-width:100%;max-height:${height}px;width:auto;height:auto;border-radius:${borderRadius}px;object-fit:contain;">`;
+    }
+
+    _bindCustomEmojiImageRecovery(item) {
+        const img = item?.querySelector?.('img[data-custom-emoji-src]');
+        if (!img) return;
+
+        let retried = false;
+        const showFallback = () => {
+            img.removeEventListener('error', handleError);
+            img.hidden = true;
+            item.classList.add('is-broken');
+            if (!item.querySelector('.custom-emoji-broken-placeholder')) {
+                const placeholder = document.createElement('span');
+                placeholder.className = 'custom-emoji-broken-placeholder';
+                placeholder.setAttribute('aria-label', '表情图片失效');
+                placeholder.innerHTML = '<i class="fa-regular fa-image" aria-hidden="true"></i>';
+                item.appendChild(placeholder);
+            }
+        };
+        const handleError = () => {
+            const source = String(img.dataset.customEmojiSrc || '').trim();
+            if (!retried && /^\/backgrounds\/phone_[^?#]+/i.test(source)) {
+                retried = true;
+                const separator = source.includes('?') ? '&' : '?';
+                img.src = `${source}${separator}phone_emoji_retry=${Date.now()}`;
+                return;
+            }
+            showFallback();
+        };
+
+        img.addEventListener('error', handleError);
+        if (img.complete && img.naturalWidth === 0) Promise.resolve().then(handleError);
     }
 
     renderTwemojiOutsideHtml(text, size = 16) {
@@ -6775,6 +6843,18 @@ renderChatRoom(chat) {
                 if (messageId) this.openWerewolfCard(messageId);
             });
         });
+        currentView.querySelectorAll('.message-undercover-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                if (this._isMessageSelectionActiveForCurrentChat()) return;
+                if (Date.now() < (this._suppressUndercoverCardClickUntil || 0)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                const messageId = e.currentTarget.dataset.msgId;
+                if (messageId) this.openUndercoverCard(messageId);
+            });
+        });
         currentView.querySelectorAll('.message-music-listen-cancel').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 if (this._isMessageSelectionActiveForCurrentChat()) return;
@@ -7386,6 +7466,68 @@ renderChatRoom(chat) {
 
         body?.addEventListener('touchend', finishPull, { passive: true });
         body?.addEventListener('touchcancel', finishPull, { passive: true });
+    }
+
+    openUndercoverCard(messageId) {
+        try {
+            const chatId = this.app.currentChat?.id;
+            if (!chatId) return;
+
+            const messages = this.app.wechatData.getMessages(chatId) || [];
+            const target = messages.find(message => message.id === messageId);
+            if (!target || target.type !== 'undercover_card' || !target.undercoverData) return;
+            this.showUndercoverCardPreviewModal(target.undercoverData);
+        } catch (error) {
+            console.error('打开谁是卧底战绩卡片失败:', error);
+            this.app.phoneShell?.showNotification('提示', '谁是卧底战绩卡片打开失败', '⚠️');
+        }
+    }
+
+    showUndercoverCardPreviewModal(undercoverData = {}) {
+        const title = this._escapeHtml(undercoverData.title || '谁是卧底本局战绩');
+        const result = this._escapeHtml(undercoverData.result || '本局战绩分享');
+        const content = this._escapeHtml(undercoverData.content || undercoverData.desc || '暂无战绩内容');
+        const timeText = this._escapeHtml(String(undercoverData.sharedAt || '').trim());
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const host = currentView.querySelector('.wechat-app') || currentView;
+        if (!host) return;
+
+        currentView.querySelector('#wechat-undercover-preview-modal')?.remove();
+        const modal = document.createElement('div');
+        modal.id = 'wechat-undercover-preview-modal';
+        modal.style.cssText = `
+            position:absolute; inset:0; z-index:9999;
+            background:rgba(0,0,0,0.5);
+            display:flex; align-items:center; justify-content:center;
+            padding:12px; box-sizing:border-box;
+        `;
+        modal.innerHTML = `
+            <div class="wechat-undercover-preview-panel" style="
+                background:#fff; border-radius:10px;
+                width:100%; max-width:320px; max-height:82%;
+                overflow:hidden; display:flex; flex-direction:column;
+                box-sizing:border-box;
+            ">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:13px 14px 10px; border-bottom:0.5px solid #eee;">
+                    <div style="min-width:0;">
+                        <div style="font-size:14px; color:#111; font-weight:700; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</div>
+                        <div style="font-size:10px; color:#999; margin-top:3px;">${result}${timeText ? ` · ${timeText}` : ''}</div>
+                    </div>
+                    <button id="wechat-undercover-preview-close" style="border:none; background:none; color:#999; font-size:14px; cursor:pointer; line-height:1; flex:0 0 auto;">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="wechat-undercover-preview-body" style="padding:12px 14px 14px; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain; min-height:0; flex:1;">
+                    <div style="font-size:12px; line-height:1.65; color:#333; text-align:left; white-space:pre-wrap; word-break:break-word; font-family:inherit;">${content}</div>
+                </div>
+            </div>
+        `;
+        host.appendChild(modal);
+        const close = () => modal.remove();
+        modal.addEventListener('click', event => {
+            if (event.target === modal) close();
+        });
+        modal.querySelector('#wechat-undercover-preview-close')?.addEventListener('click', close);
     }
 
     showWeiboCardPreviewModal(weiboData = {}) {
@@ -8049,6 +8191,7 @@ renderChatRoom(chat) {
 
         // 🔥 新增：选择自定义表情
         queryAll('.custom-emoji-item').forEach(item => {
+            this._bindCustomEmojiImageRecovery(item);
             let longPressTimer = null;
             let suppressClick = false;
             const clearLongPressTimer = () => {
@@ -8088,6 +8231,10 @@ renderChatRoom(chat) {
                 if (this.customEmojiSelectionMode) {
                     this._toggleCustomEmojiSelection(emojiId);
                     this.app.render();
+                    return;
+                }
+                if (item.classList.contains('is-broken')) {
+                    this.app.phoneShell.showNotification('表情图片失效', '请长按删除后重新添加', '⚠️');
                     return;
                 }
                 const emoji = this.app.wechatData.getCustomEmoji(emojiId);
@@ -8289,7 +8436,7 @@ renderChatRoom(chat) {
         const currentView = this.getCurrentWechatView();
         const messagesDiv = currentView?.querySelector('#chat-messages');
         if (!messagesDiv) return;
-        const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-music-card, .message-music-listen-card';
+        const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-undercover-card, .message-music-card, .message-music-listen-card';
         const resolveMessageIndexFromElement = (msgElement) => {
             const messages = this.app?.wechatData?.getMessages?.(this.app?.currentChat?.id) || [];
             const domIndex = Number.parseInt(msgElement?.dataset?.messageIndex || '', 10);
@@ -8352,6 +8499,9 @@ renderChatRoom(chat) {
                     }
                     if (targetBubble.closest('.message-werewolf-card')) {
                         this._suppressWerewolfCardClickUntil = Date.now() + 800;
+                    }
+                    if (targetBubble.closest('.message-undercover-card')) {
+                        this._suppressUndercoverCardClickUntil = Date.now() + 800;
                     }
                     this.showMessageMenu(index);
                 }
@@ -11708,7 +11858,7 @@ renderChatRoom(chat) {
         if (!contentEl) return;
 
         // 找到气泡元素（包括图片）
-        const bubbleEl = contentEl.querySelector('.message-text, .message-voice, .message-redpacket, .message-image-box, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-music-card, .message-music-listen-card');
+        const bubbleEl = contentEl.querySelector('.message-text, .message-voice, .message-redpacket, .message-image-box, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-undercover-card, .message-music-card, .message-music-listen-card');
         if (!bubbleEl) return;
 
         // 设置气泡为相对定位（用于菜单绝对定位的参考）
