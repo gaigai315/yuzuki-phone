@@ -14,6 +14,8 @@
 // SillyTavern 扩展插件
 // ========================================
 
+import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
+
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.3.5';
 const ST_PHONE_CSS_REVISION = '20260708-glass-fix';
@@ -5735,6 +5737,12 @@ if (window.GGP_Loaded) {
 
             // 🔥 兼容：AI 直接照抄模板变量时，避免 date 字段残留占位符干扰解析
             content = content.replace(/\{\{STORY_DATE\}\}/gi, '');
+            const wangxiangTaskTokens = tokenizeWangxiangTaskTags(content, {
+                tokenPrefix: 'ST_PHONE_OFFLINE_WANGXIANG_TASK',
+                idPrefix: 'wechat-invitation',
+                source: 'wechat_offline'
+            });
+            content = wangxiangTaskTokens.text;
 
             // 🔥🔥🔥 改用更可靠的解析方式：逐行解析
             const lines = content.split('\n');
@@ -5750,6 +5758,22 @@ if (window.GGP_Loaded) {
             let currentMessages = [];
             let groupMembers = [];
             let knownGroupMembers = [];
+
+            const pushCurrentMessage = (message) => {
+                const token = String(message?.content || '').trim();
+                const taskSpecial = wangxiangTaskTokens.tokenMap.get(token);
+                if (taskSpecial) {
+                    currentMessages.push({
+                        ...message,
+                        ...taskSpecial,
+                        sender: taskSpecial.sender || message.sender,
+                        content: taskSpecial.content
+                    });
+                    return;
+                }
+                parseMessageType(message);
+                currentMessages.push(message);
+            };
 
             // 🔥 辅助函数：保存当前联系人的消息
             const saveCurrentContact = () => {
@@ -5938,8 +5962,7 @@ if (window.GGP_Loaded) {
                         type: 'text',
                         quote: quote  // 🔥 携带引用信息
                     };
-                    parseMessageType(msgObj);
-                    currentMessages.push(msgObj);
+                    pushCurrentMessage(msgObj);
                     continue;
                 }
 
@@ -5963,8 +5986,7 @@ if (window.GGP_Loaded) {
                         type: 'text',
                         quote: quote  // 🔥 携带引用信息
                     };
-                    parseMessageType(msgObj);
-                    currentMessages.push(msgObj);
+                    pushCurrentMessage(msgObj);
                     continue;
                 }
 
@@ -5993,8 +6015,7 @@ if (window.GGP_Loaded) {
                         currentDate = parsedCurrentDateTime.date || currentDate;
                         currentWeekday = parsedCurrentDateTime.weekday || currentWeekday;
                     }
-                    parseMessageType(msgObj);
-                    currentMessages.push(msgObj);
+                    pushCurrentMessage(msgObj);
                 }
             }
 
@@ -6558,7 +6579,9 @@ if (window.GGP_Loaded) {
                     desc: msg.desc,
                     wish: msg.wish,
                     callType: msg.callType,
-                    quote: msg.quote
+                    quote: msg.quote,
+                    wangxiangTaskData: msg.wangxiangTaskData,
+                    taskInvitationStatus: msg.taskInvitationStatus
                 });
                 if (added) {
                     newMessagesAdded++;
@@ -9323,11 +9346,13 @@ if (window.GGP_Loaded) {
                                                 ? msg.wangxiangTaskData
                                                 : {};
                                             const isConfirmation = msg.type === 'wangxiang_task_confirmation';
+                                            const isInvitation = msg.type === 'wangxiang_task_invitation';
+                                            const invitationStatus = String(msg.taskInvitationStatus || 'pending');
                                             const isPlaceholder = !fullContent
-                                                || /^\[(?:wangxiang_task_card|wangxiang_task_confirmation|万象任务申请|任务已确认派发|任务派发确认：未匹配)\]$/i.test(fullContent);
-                                            if (!isConfirmation && !isPlaceholder) return fullContent;
+                                                || /^\[(?:wangxiang_task_card|wangxiang_task_confirmation|wangxiang_task_invitation|万象任务申请|万象任务邀请|任务已确认派发|任务派发确认：未匹配)\](?:\s+.*)?$/i.test(fullContent);
+                                            if (!isConfirmation && !isInvitation && !isPlaceholder) return fullContent;
                                             if (Object.keys(task).length === 0) {
-                                                return fullContent || (isConfirmation ? '[万象任务确认]' : '[万象任务申请]');
+                                                return fullContent || (isInvitation ? '[万象任务邀请]' : isConfirmation ? '[万象任务确认]' : '[万象任务申请]');
                                             }
 
                                             const objectives = (Array.isArray(task.objectives) ? task.objectives : [])
@@ -9344,9 +9369,11 @@ if (window.GGP_Loaded) {
                                                 task.extraReward && task.extraReward !== '无' ? `额外奖励：${task.extraReward}` : ''
                                             ].filter(Boolean);
                                             const lines = [
-                                                isConfirmation
-                                                    ? `[万象任务确认：${msg.assignmentMatched === false ? '未匹配到任务' : '已确认派发'}]`
-                                                    : '[万象任务申请]',
+                                                isInvitation
+                                                    ? `[万象任务邀请：${invitationStatus === 'accepted' ? '用户已同意并加入我的任务' : invitationStatus === 'cancelled' ? '用户已取消' : '等待用户处理'}]`
+                                                    : isConfirmation
+                                                        ? `[万象任务确认：${msg.assignmentMatched === false ? '未匹配到任务' : '已确认派发'}]`
+                                                        : '[万象任务申请]',
                                                 task.title ? `任务名称：${task.title}` : '',
                                                 task.publisher ? `发布者：${task.publisher}` : '',
                                                 task.description ? `任务描述：${task.description}` : '',
@@ -9521,7 +9548,7 @@ if (window.GGP_Loaded) {
                                                             : (imgUrl ? `[发送了图片] 图片地址: ${imgUrl}` : '[发送了图片]');
                                                     } else if (msg.type === 'weibo_card') {
                                                         content = formatWeiboCardForOfflinePrompt(msg);
-                                                    } else if (msg.type === 'wangxiang_task_card' || msg.type === 'wangxiang_task_confirmation') {
+                                                    } else if (msg.type === 'wangxiang_task_card' || msg.type === 'wangxiang_task_confirmation' || msg.type === 'wangxiang_task_invitation') {
                                                         content = formatWangxiangTaskForOfflinePrompt(msg);
                                                     } else if (msg.type === 'poker_card') {
                                                         const poker = msg.pokerData || {};

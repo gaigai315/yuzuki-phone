@@ -2296,6 +2296,10 @@ getMessagePreview(message) {
             return '[万象任务申请]';
         case 'wangxiang_task_confirmation':
             return message.assignmentMatched === false ? '[任务派发确认：未匹配]' : '[任务已确认派发]';
+        case 'wangxiang_task_invitation':
+            if (message.taskInvitationStatus === 'accepted') return '[任务邀请：已同意]';
+            if (message.taskInvitationStatus === 'cancelled') return '[任务邀请：已取消]';
+            return '[万象任务邀请]';
         case 'poker_card':
             return '[德州扑克分享]';
         case 'werewolf_card':
@@ -3619,6 +3623,8 @@ parseAIResponse(text) {
             this.saveData();
             window.VirtualPhone?.timeManager?.resetTime?.();
         }
+
+        window.VirtualPhone?.wangxiangApp?.rollbackWechatAssignmentsAtFloor?.(targetIndex);
 
         return isDirty;
     }

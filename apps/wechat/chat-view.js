@@ -14,6 +14,7 @@ import { captureWechatChatSnapshot } from './chat-snapshot.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { readPhoneContextLimit } from '../../config/context-settings.js';
 import { CatboxData } from '../games/catbox/catbox-data.js';
+import { parseWangxiangTaskTags, tokenizeWangxiangTaskTags } from '../wangxiang/wangxiang-task-parser.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
@@ -3357,21 +3358,29 @@ renderChatRoom(chat) {
             }
 
             case 'wangxiang_task_card':
-            case 'wangxiang_task_confirmation': {
+            case 'wangxiang_task_confirmation':
+            case 'wangxiang_task_invitation': {
                 const task = msg.wangxiangTaskData || {};
                 const isConfirmation = msg.type === 'wangxiang_task_confirmation';
+                const isInvitation = msg.type === 'wangxiang_task_invitation';
+                const invitationStatus = String(msg.taskInvitationStatus || 'pending');
                 const matched = msg.assignmentMatched !== false;
                 const title = this._escapeHtml(task.title || msg.taskTitle || '万象任务');
                 const description = this._escapeHtml(task.description || (isConfirmation ? '发布人已确认派发该任务' : '点击查看任务详情'));
-                const footerLabel = isConfirmation
-                    ? (matched ? '已确认派发' : '未匹配到同名任务')
-                    : '任务申请';
-                const accentColor = isConfirmation ? (matched ? '#16a36a' : '#d97706') : '#1687b8';
+                const footerLabel = isInvitation
+                    ? (invitationStatus === 'accepted' ? '已同意并加入我的任务' : invitationStatus === 'cancelled' ? '已取消' : '任务邀请')
+                    : isConfirmation
+                        ? (matched ? '已确认派发' : '未匹配到同名任务')
+                        : '任务申请';
+                const accentColor = isInvitation
+                    ? (invitationStatus === 'accepted' ? '#16a36a' : invitationStatus === 'cancelled' ? '#8b949e' : '#7c5ce7')
+                    : isConfirmation ? (matched ? '#16a36a' : '#d97706') : '#1687b8';
+                const iconClass = isInvitation ? 'fa-envelope-open-text' : isConfirmation ? 'fa-clipboard-check' : 'fa-list-check';
                 messageBody = `
                 <div class="message-wangxiang-task-card" data-msg-id="${this._escapeHtml(msg.id || '')}" style="background:#fff; border:1px solid #e3e8ec; border-radius:8px; overflow:hidden; width:220px; max-width:100%; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.04);">
                     <div style="padding:11px 11px 10px;">
                         <div style="display:flex; align-items:center; gap:8px; margin-bottom:7px;">
-                            <div style="width:30px; height:30px; border-radius:7px; background:${accentColor}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:14px; flex:0 0 30px;"><i class="fa-solid ${isConfirmation ? 'fa-clipboard-check' : 'fa-list-check'}"></i></div>
+                            <div style="width:30px; height:30px; border-radius:7px; background:${accentColor}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:14px; flex:0 0 30px;"><i class="fa-solid ${iconClass}"></i></div>
                             <div style="min-width:0; flex:1;">
                                 <div style="font-size:13px; font-weight:700; color:#17212b; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</div>
                                 <div style="font-size:10px; color:${accentColor}; line-height:1.25; margin-top:2px;">${footerLabel}</div>
@@ -4533,11 +4542,13 @@ renderChatRoom(chat) {
             ? msg.wangxiangTaskData
             : {};
         const isConfirmation = msg.type === 'wangxiang_task_confirmation';
+        const isInvitation = msg.type === 'wangxiang_task_invitation';
+        const invitationStatus = String(msg.taskInvitationStatus || 'pending');
         const isPlaceholder = !fullContent
-            || /^\[(?:wangxiang_task_card|wangxiang_task_confirmation|万象任务申请|任务已确认派发|任务派发确认：未匹配)\]$/i.test(fullContent);
-        if (!isConfirmation && !isPlaceholder) return fullContent;
+            || /^\[(?:wangxiang_task_card|wangxiang_task_confirmation|wangxiang_task_invitation|万象任务申请|万象任务邀请|任务已确认派发|任务派发确认：未匹配)\](?:\s+.*)?$/i.test(fullContent);
+        if (!isConfirmation && !isInvitation && !isPlaceholder) return fullContent;
         if (Object.keys(task).length === 0) {
-            return fullContent || (isConfirmation ? '[万象任务确认]' : '[万象任务申请]');
+            return fullContent || (isInvitation ? '[万象任务邀请]' : isConfirmation ? '[万象任务确认]' : '[万象任务申请]');
         }
 
         const objectives = (Array.isArray(task.objectives) ? task.objectives : [])
@@ -4554,9 +4565,11 @@ renderChatRoom(chat) {
             task.extraReward && task.extraReward !== '无' ? `额外奖励：${task.extraReward}` : ''
         ].filter(Boolean);
         const lines = [
-            isConfirmation
-                ? `[万象任务确认：${msg.assignmentMatched === false ? '未匹配到任务' : '已确认派发'}]`
-                : '[万象任务申请]',
+            isInvitation
+                ? `[万象任务邀请：${invitationStatus === 'accepted' ? '用户已同意并加入我的任务' : invitationStatus === 'cancelled' ? '用户已取消' : '等待用户处理'}]`
+                : isConfirmation
+                    ? `[万象任务确认：${msg.assignmentMatched === false ? '未匹配到任务' : '已确认派发'}]`
+                    : '[万象任务申请]',
             task.title ? `任务名称：${task.title}` : '',
             task.publisher ? `发布者：${task.publisher}` : '',
             task.description ? `任务描述：${task.description}` : '',
@@ -4648,7 +4661,7 @@ renderChatRoom(chat) {
         if (msg.type === 'weibo_card') {
             return this._formatWeiboCardForPrompt(msg);
         }
-        if (msg.type === 'wangxiang_task_card' || msg.type === 'wangxiang_task_confirmation') {
+        if (msg.type === 'wangxiang_task_card' || msg.type === 'wangxiang_task_confirmation' || msg.type === 'wangxiang_task_invitation') {
             return this._formatWangxiangTaskForPrompt(msg);
         }
         if (msg.type === 'music_listen') {
@@ -6464,6 +6477,20 @@ renderChatRoom(chat) {
         if (!content || typeof content !== 'string') return null;
         const trimmedContent = String(content || '').trim();
 
+        const invitedTask = parseWangxiangTaskTags(trimmedContent, {
+            idPrefix: 'wechat-invitation',
+            source: 'wechat_online',
+            maxTasks: 1
+        })[0];
+        if (invitedTask) {
+            return {
+                type: 'wangxiang_task_invitation',
+                content: `[万象任务邀请] ${invitedTask.title}`,
+                wangxiangTaskData: invitedTask,
+                taskInvitationStatus: 'pending'
+            };
+        }
+
         const wangxiangAssignmentMatch = trimmedContent.match(/^\[确认派发任务[：:]\s*([^\]\r\n]+)\]$/);
         if (wangxiangAssignmentMatch) {
             const taskTitle = String(wangxiangAssignmentMatch[1] || '').trim();
@@ -7271,23 +7298,92 @@ renderChatRoom(chat) {
         }
     }
 
+    async _ensureWangxiangAppForTaskInvitation() {
+        if (window.VirtualPhone?.wangxiangApp) return window.VirtualPhone.wangxiangApp;
+        const module = await import('../wangxiang/wangxiang-app.js');
+        if (!window.VirtualPhone) window.VirtualPhone = {};
+        window.VirtualPhone.wangxiangApp = new module.WangxiangApp(
+            this.app.phoneShell,
+            this.app.storage || window.VirtualPhone.storage
+        );
+        return window.VirtualPhone.wangxiangApp;
+    }
+
+    _updateWangxiangTaskInvitationStatus(chatId, messageId, status, managedTask = null) {
+        const messages = this.app.wechatData.getMessages(chatId) || [];
+        const target = messages.find(message => String(message?.id || '') === String(messageId || ''));
+        if (!target || target.type !== 'wangxiang_task_invitation') return null;
+        const nextTaskData = managedTask
+            ? {
+                ...(target.wangxiangTaskData || {}),
+                ...managedTask,
+                objectives: Array.isArray(managedTask.objectives) ? managedTask.objectives.map(item => ({ ...item })) : [],
+                comments: Array.isArray(managedTask.comments) ? managedTask.comments.map(item => ({ ...item })) : [],
+                status: 'active'
+            }
+            : target.wangxiangTaskData;
+        const updated = this.app.wechatData.updateMessageById?.(chatId, messageId, {
+            taskInvitationStatus: status,
+            managedTaskId: managedTask?.id || target.managedTaskId || '',
+            wangxiangTaskData: nextTaskData
+        });
+        this._refreshChatMessagesIfVisible(chatId);
+        return updated;
+    }
+
+    async _acceptWangxiangTaskInvitation(chatId, target) {
+        if (!target || target.type !== 'wangxiang_task_invitation') throw new Error('任务邀请不存在');
+        if (target.taskInvitationStatus === 'cancelled') throw new Error('该任务邀请已取消');
+        const wangxiangApp = await this._ensureWangxiangAppForTaskInvitation();
+        const managedTask = await wangxiangApp.acceptWechatTaskInvitation?.(target.wangxiangTaskData || {}, {
+            chatId,
+            messageId: target.id,
+            fromMainChatTag: target.fromMainChatTag === true,
+            tavernMessageIndex: target.tavernMessageIndex,
+            batchId: target.batchId
+        });
+        if (!managedTask) throw new Error('任务加入失败');
+        this._updateWangxiangTaskInvitationStatus(chatId, target.id, 'accepted', managedTask);
+        return managedTask;
+    }
+
     openWangxiangTaskCard(messageId) {
         try {
             const chatId = this.app.currentChat?.id;
             if (!chatId) return;
             const messages = this.app.wechatData.getMessages(chatId) || [];
             const target = messages.find(message => String(message?.id || '') === String(messageId || ''));
-            if (!target || !['wangxiang_task_card', 'wangxiang_task_confirmation'].includes(target.type)) return;
+            if (!target || !['wangxiang_task_card', 'wangxiang_task_confirmation', 'wangxiang_task_invitation'].includes(target.type)) return;
 
             const task = target.wangxiangTaskData || {};
+            const isInvitation = target.type === 'wangxiang_task_invitation';
+            const invitationStatus = String(target.taskInvitationStatus || 'pending');
             const title = this._escapeHtml(task.title || target.taskTitle || '万象任务');
             const publisher = this._escapeHtml(task.publisher || this.app.currentChat?.name || '任务发布人');
+            const publisherOrg = this._escapeHtml(task.publisherOrg || '独立委托方');
+            const publisherReputation = this._escapeHtml(task.publisherReputation || '未知');
             const description = this._escapeHtml(task.description || '暂无任务描述');
+            const location = this._escapeHtml(task.location || '未注明');
             const publishedAt = this._escapeHtml(task.publishedAt || '--');
             const startsAt = this._escapeHtml(task.startsAt || task.startTime || '未注明');
             const estimatedDuration = this._escapeHtml(task.estimatedDuration || task.duration || '未注明');
             const reward = this._escapeHtml(task.reward || '0');
+            const prestige = this._escapeHtml(task.prestige || '0');
+            const extraReward = this._escapeHtml(task.extraReward || '无');
             const objectives = Array.isArray(task.objectives) ? task.objectives : [];
+            const comments = Array.isArray(task.comments) ? task.comments : [];
+            const statusText = invitationStatus === 'accepted'
+                ? '已同意，任务已加入万象“我的任务”'
+                : invitationStatus === 'cancelled' ? '该任务邀请已取消' : '';
+            const actionsHtml = isInvitation && invitationStatus === 'pending'
+                ? `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:11px 13px;border-top:1px solid #e2e7ea;background:#fff;">
+                        <button type="button" data-wangxiang-invitation-action="cancel" style="height:38px;margin:0;border:1px solid #dfe4e8;border-radius:6px;background:#f3f5f6;color:#52606b;font-size:13px;font-weight:600;">取消</button>
+                        <button type="button" data-wangxiang-invitation-action="accept" style="height:38px;margin:0;border:0;border-radius:6px;background:#1687b8;color:#fff;font-size:13px;font-weight:700;">同意</button>
+                    </div>`
+                : statusText
+                    ? `<div style="padding:11px 13px;border-top:1px solid #e2e7ea;background:#fff;color:${invitationStatus === 'accepted' ? '#16875f' : '#7c8993'};font-size:12px;font-weight:600;text-align:center;">${statusText}</div>`
+                    : '';
 
             const currentView = document.querySelector('.phone-view-current') || document;
             const host = currentView.querySelector('.wechat-app') || currentView;
@@ -7298,21 +7394,26 @@ renderChatRoom(chat) {
             modal.id = 'wechat-wangxiang-task-modal';
             modal.style.cssText = 'position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.52);display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;';
             modal.innerHTML = `
-                <div role="dialog" aria-modal="true" aria-label="万象任务详情" style="width:100%;max-width:320px;max-height:84%;display:flex;flex-direction:column;overflow:hidden;border-radius:8px;background:#f7f9fa;box-shadow:0 12px 30px rgba(0,0,0,.25);">
+                <div role="dialog" aria-modal="true" aria-label="万象任务详情" style="width:100%;max-width:320px;max-height:88%;display:flex;flex-direction:column;overflow:hidden;border-radius:8px;background:#f7f9fa;box-shadow:0 12px 30px rgba(0,0,0,.25);">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 13px;border-bottom:1px solid #e2e7ea;background:#fff;">
                         <div style="min-width:0;">
                             <div style="font-size:14px;font-weight:700;color:#17212b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</div>
-                            <div style="margin-top:3px;font-size:11px;color:#1687b8;">万象任务</div>
+                            <div style="margin-top:3px;font-size:11px;color:#1687b8;">${isInvitation ? '任务邀请' : '万象任务'}</div>
                         </div>
                         <button type="button" data-wangxiang-modal-close aria-label="关闭" style="width:30px;height:30px;min-width:30px;margin:0;padding:0;border:0;border-radius:50%;background:#eef2f4;color:#52606b;display:grid;place-items:center;"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="wechat-wangxiang-task-modal-body" style="min-height:0;overflow-y:auto;touch-action:pan-y;overscroll-behavior:contain;padding:13px;color:#33404a;">
                         <div style="display:grid;grid-template-columns:68px minmax(0,1fr);gap:7px 8px;padding:10px;border:1px solid #dfe6e9;border-radius:6px;background:#fff;font-size:12px;line-height:1.45;">
                             <span style="color:#7c8993;">发布人</span><strong style="font-weight:600;">${publisher}</strong>
+                            <span style="color:#7c8993;">发布组织</span><strong style="font-weight:500;">${publisherOrg}</strong>
+                            <span style="color:#7c8993;">发布信誉</span><strong style="font-weight:500;">${publisherReputation}</strong>
+                            <span style="color:#7c8993;">任务地点</span><strong style="font-weight:500;">${location}</strong>
                             <span style="color:#7c8993;">发布时间</span><strong style="font-weight:500;">${publishedAt}</strong>
                             <span style="color:#7c8993;">开始时间</span><strong style="font-weight:500;">${startsAt}</strong>
                             <span style="color:#7c8993;">预估耗时</span><strong style="font-weight:500;">${estimatedDuration}</strong>
                             <span style="color:#7c8993;">信用点</span><strong style="font-weight:600;color:#1687b8;">${reward}</strong>
+                            <span style="color:#7c8993;">声望值</span><strong style="font-weight:600;color:#8b5cf6;">${prestige}</strong>
+                            <span style="color:#7c8993;">额外奖励</span><strong style="font-weight:500;">${extraReward}</strong>
                         </div>
                         <section style="margin-top:10px;padding:11px;border:1px solid #dfe6e9;border-radius:6px;background:#fff;">
                             <div style="font-size:12px;font-weight:700;color:#26343e;margin-bottom:7px;">任务描述</div>
@@ -7323,13 +7424,39 @@ renderChatRoom(chat) {
                             <div style="font-size:12px;font-weight:700;color:#26343e;margin-bottom:7px;">任务目标</div>
                             ${objectives.map(item => `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid #edf0f2;font-size:12px;color:#53616c;"><span>${this._escapeHtml(item?.title || '完成任务要求')}</span><strong style="font-weight:500;color:#1687b8;white-space:nowrap;">${Number(item?.current || 0)}/${Math.max(1, Number(item?.total || 1))}</strong></div>`).join('')}
                         </section>` : ''}
+                        ${comments.length ? `
+                        <section style="margin-top:10px;padding:11px;border:1px solid #dfe6e9;border-radius:6px;background:#fff;">
+                            <div style="font-size:12px;font-weight:700;color:#26343e;margin-bottom:7px;">任务讨论</div>
+                            ${comments.map(comment => `<div style="padding:7px 0;border-top:1px solid #edf0f2;font-size:12px;line-height:1.55;color:#53616c;"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:2px;"><strong style="color:#33404a;">${this._escapeHtml(comment?.name || '匿名执行者')}</strong><span style="color:#9aa4ac;white-space:nowrap;">${this._escapeHtml(comment?.time || '')}</span></div>${this._escapeHtml(comment?.content || '')}</div>`).join('')}
+                        </section>` : ''}
                     </div>
+                    ${actionsHtml}
                 </div>`;
             host.appendChild(modal);
             const close = () => modal.remove();
             modal.querySelector('[data-wangxiang-modal-close]')?.addEventListener('click', close);
             modal.addEventListener('click', event => {
                 if (event.target === modal) close();
+            });
+            modal.querySelector('[data-wangxiang-invitation-action="cancel"]')?.addEventListener('click', () => {
+                this._updateWangxiangTaskInvitationStatus(chatId, target.id, 'cancelled');
+                close();
+                this.app.phoneShell?.showNotification?.('任务邀请', '已取消该任务邀请', 'ℹ️');
+            });
+            modal.querySelector('[data-wangxiang-invitation-action="accept"]')?.addEventListener('click', async event => {
+                const button = event.currentTarget;
+                const actionButtons = modal.querySelectorAll('[data-wangxiang-invitation-action]');
+                actionButtons.forEach(item => { item.disabled = true; });
+                button.textContent = '正在加入...';
+                try {
+                    const managedTask = await this._acceptWangxiangTaskInvitation(chatId, target);
+                    close();
+                    this.app.phoneShell?.showNotification?.('任务已接取', `${managedTask.title} 已加入万象“我的任务”`, '✅');
+                } catch (error) {
+                    actionButtons.forEach(item => { item.disabled = false; });
+                    button.textContent = '同意';
+                    this.app.phoneShell?.showNotification?.('接取失败', error?.message || '请稍后重试', '❌');
+                }
             });
         } catch (error) {
             console.error('打开万象任务卡片失败:', error);
@@ -9219,6 +9346,12 @@ renderChatRoom(chat) {
             let backgroundGroupHints = {}; // 后台窗口的群聊提示 { "窗口名": true/false }
 
             let aiRawText = this._extractWechatTagPayloadOrSelf(aiResponse);
+            const wangxiangTaskTokens = tokenizeWangxiangTaskTags(aiRawText, {
+                tokenPrefix: 'ST_PHONE_ONLINE_WANGXIANG_TASK',
+                idPrefix: 'wechat-invitation',
+                source: 'wechat_online'
+            });
+            aiRawText = wangxiangTaskTokens.text;
             
             let triggerOffline = false;
             const isWechatInteropModeEnabledForOfflineTransfer = () => {
@@ -9404,6 +9537,17 @@ renderChatRoom(chat) {
                                 return;
                             }
 
+                            const wangxiangTaskSpecial = wangxiangTaskTokens.tokenMap.get(line);
+                            if (wangxiangTaskSpecial) {
+                                extractedMsgs.push({
+                                    sender: wangxiangTaskSpecial.sender || pendingSender || (isTargetCurrentChat ? (context.name2 || targetName) : targetName),
+                                    content: wangxiangTaskSpecial.content,
+                                    specialMessage: wangxiangTaskSpecial
+                                });
+                                pendingSender = '';
+                                return;
+                            }
+
                             const weiboSpecial = weiboTokenResult.tokenMap.get(line);
                             if (weiboSpecial) {
                                 extractedMsgs.push({
@@ -9546,6 +9690,17 @@ renderChatRoom(chat) {
                         const senderOnlyMatch = /^([^:：]+)[：:]\s*$/.exec(line);
                         if (senderOnlyMatch) {
                             pendingSender = senderOnlyMatch[1].trim();
+                            return;
+                        }
+
+                        const wangxiangTaskSpecial = wangxiangTaskTokens.tokenMap.get(line);
+                        if (wangxiangTaskSpecial) {
+                            parsedMessages.push({
+                                sender: wangxiangTaskSpecial.sender || pendingSender || (context.name2 || savedChatName),
+                                content: wangxiangTaskSpecial.content,
+                                specialMessage: wangxiangTaskSpecial
+                            });
+                            pendingSender = '';
                             return;
                         }
 

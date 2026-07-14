@@ -8,6 +8,7 @@
 import { WangxiangView } from './wangxiang-view.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { WechatData } from '../wechat/wechat-data.js';
+import { parseWangxiangTaskTags } from './wangxiang-task-parser.js';
 
 const WANGXIANG_TASK_VISUALS = [
     { accent: 'green', icon: 'fa-list-check' },
@@ -754,6 +755,42 @@ export class WangxiangApp {
         return { task, contact, chat };
     }
 
+    async acceptWechatTaskInvitation(taskData = {}, source = {}) {
+        this._syncTaskDataScope();
+        const sourceMessageId = String(source.messageId || '').trim();
+        const taskId = String(taskData?.id || '').trim()
+            || `wechat-invitation-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const existing = this.managedTasks.find(item =>
+            String(item?.id || '') === taskId
+            || (sourceMessageId && String(item?.assignmentSource?.messageId || '') === sourceMessageId)
+        );
+        if (existing) return existing;
+
+        const managedTask = this._normalizeLoadedTask({
+            ...taskData,
+            objectives: Array.isArray(taskData?.objectives) ? taskData.objectives.map(item => ({ ...item })) : [],
+            comments: Array.isArray(taskData?.comments) ? taskData.comments.map(item => ({ ...item })) : [],
+            id: taskId,
+            status: 'active',
+            acceptedAt: Date.now(),
+            assignmentSource: {
+                kind: 'wechat_invitation',
+                chatId: String(source.chatId || ''),
+                messageId: sourceMessageId,
+                fromMainChatTag: source.fromMainChatTag === true,
+                tavernMessageIndex: Number.isFinite(Number(source.tavernMessageIndex)) ? Number(source.tavernMessageIndex) : null,
+                batchId: String(source.batchId || '')
+            }
+        }, this.managedTasks.length);
+        this._recalculateTaskProgress(managedTask);
+        this.managedTasks = [managedTask, ...this.managedTasks];
+
+        const generatedTask = this.generatedTasks.find(item => String(item?.id || '') === taskId);
+        if (generatedTask) generatedTask.status = 'active';
+        await Promise.all([this._saveGeneratedTasks(), this._saveManagedTasks()]);
+        return managedTask;
+    }
+
     confirmTaskAssignmentByTitle(taskTitle, source = {}) {
         this._syncTaskDataScope();
         const titleKey = this._normalizeTaskTitle(taskTitle);
@@ -795,16 +832,21 @@ export class WangxiangApp {
         return managedTask;
     }
 
-    rollbackWechatAssignmentsToFloor(targetTavernIndex) {
+    rollbackWechatAssignmentsToFloor(targetTavernIndex, exact = false) {
         const targetFloor = Number(targetTavernIndex);
         if (!Number.isFinite(targetFloor)) return false;
-        const progressRolledBack = this.rollbackTaskProgressToFloor(targetFloor);
+        const progressRolledBack = exact
+            ? this.rollbackTaskProgressAtFloor(targetFloor)
+            : this.rollbackTaskProgressToFloor(targetFloor);
         const removedIds = new Set();
         this.managedTasks = this.managedTasks.filter(task => {
             const source = task?.assignmentSource;
-            const shouldRemove = source?.kind === 'wechat_confirmation'
+            const isWechatAssignment = source?.kind === 'wechat_confirmation' || source?.kind === 'wechat_invitation';
+            const sourceFloor = Number(source?.tavernMessageIndex);
+            const floorMatched = exact ? sourceFloor === targetFloor : sourceFloor >= targetFloor;
+            const shouldRemove = isWechatAssignment
                 && source.fromMainChatTag === true
-                && Number(source.tavernMessageIndex) >= targetFloor;
+                && floorMatched;
             if (shouldRemove) removedIds.add(String(task.id || ''));
             return !shouldRemove;
         });
@@ -816,6 +858,10 @@ export class WangxiangApp {
             console.error('[Wangxiang] 回滚微信确认派发状态失败:', error);
         });
         return true;
+    }
+
+    rollbackWechatAssignmentsAtFloor(targetTavernIndex) {
+        return this.rollbackWechatAssignmentsToFloor(targetTavernIndex, true);
     }
 
     async acceptTask(taskId) {
@@ -1099,94 +1145,11 @@ export class WangxiangApp {
     }
 
     _parseTaskResponse(rawText) {
-        const wrapper = String(rawText || '').match(/<任务>([\s\S]*?)<\/任务>/i);
-        if (!wrapper) return [];
-
-        return wrapper[1]
-            .split(/\n\s*---+\s*\n/g)
-            .map((block, index) => this._parseTaskBlock(block, index))
-            .filter(Boolean)
-            .slice(0, 10);
-    }
-
-    _parseTaskBlock(block, index) {
-        const text = String(block || '').trim();
-        const titleMatch = text.match(/^\s*(?:\[(普通|中级|高级|特级|特技)\]\s*)?任务标题\s*[:：]\s*(.+)$/m);
-        if (!titleMatch) return null;
-
-        const visual = WANGXIANG_TASK_VISUALS[index % WANGXIANG_TASK_VISUALS.length];
-        const readField = field => text.match(new RegExp(`^\\s*${field}\\s*[:：]\\s*(.+)$`, 'm'))?.[1]?.trim() || '';
-        const contentMatch = text.match(/任务内容\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:任务目标|奖励)\s*[:：]|$)/);
-        const description = String(contentMatch?.[1] || '').replace(/\s+/g, ' ').trim();
-        const rewardRaw = readField('奖励').replace(/[^\d.,]/g, '');
-        const reward = rewardRaw || '0';
-        const objectives = this._parseTaskObjectives(text);
-        const comments = this._parseTaskComments(text);
-        const publisherOrg = readField('发布者组织');
-
-        return {
-            id: `generated-${Date.now().toString(36)}-${index}-${Math.random().toString(36).slice(2, 6)}`,
-            title: titleMatch[2].trim(),
-            description: description || '任务详情将在接取后进一步说明。',
-            publisher: readField('发布者') || publisherOrg || '万象任务中心',
-            publishedAt: readField('发布时间') || '--',
-            startsAt: readField('任务开始时间') || readField('开始时间') || '未注明',
-            estimatedDuration: readField('预估耗时') || readField('预计时长') || '未注明',
-            reward,
-            prestige: readField('声望值').replace(/[^\d.,+-]/g, '') || '0',
-            extraReward: readField('额外奖励') || '无',
-            icon: visual.icon,
-            accent: visual.accent,
-            publisherOrg: publisherOrg || '独立委托方',
-            publisherReputation: readField('发布者信誉') || '未知',
-            location: readField('任务地点') || '未注明',
-            objectives,
-            comments,
-            status: 'available'
-        };
-    }
-
-    _parseTaskObjectives(text) {
-        const section = String(text || '').match(/任务目标\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:奖励|声望值|额外奖励|任务讨论)\s*[:：]|$)/)?.[1] || '';
-        const rows = section.split('\n').map(line => line.replace(/^\s*[-•]\s*/, '').trim()).filter(Boolean);
-        const objectives = rows.map((row, index) => {
-            const parts = row.split(/[｜|]/).map(part => part.trim()).filter(Boolean);
-            const progress = String(parts[1] || '').match(/(\d+)\s*\/\s*(\d+)/);
-            const total = Math.max(1, Number(progress?.[2] || 1));
-            const current = Math.max(0, Math.min(total, Number(progress?.[1] || 0)));
-            return {
-                id: `objective-${index + 1}`,
-                title: parts[0] || `任务目标 ${index + 1}`,
-                current,
-                total,
-                completed: current >= total
-            };
+        return parseWangxiangTaskTags(rawText, {
+            idPrefix: 'generated',
+            source: 'wangxiang_task_hall',
+            maxTasks: 10
         });
-        return objectives.length ? objectives.slice(0, 6) : [{
-            id: 'objective-1',
-            title: '完成任务要求',
-            current: 0,
-            total: 1,
-            completed: false
-        }];
-    }
-
-    _parseTaskComments(text) {
-        const section = String(text || '').match(/任务讨论\s*[:：]\s*([\s\S]*?)$/)?.[1] || '';
-        return section.split('\n')
-            .map(line => line.replace(/^\s*[-•]\s*/, '').trim())
-            .filter(Boolean)
-            .map((row, index) => {
-                const parts = row.split(/[｜|]/).map(part => part.trim());
-                const isLegacyLevelFormat = parts.length >= 4;
-                return {
-                    id: `comment-${index + 1}`,
-                    name: parts[0] || '匿名执行者',
-                    time: (isLegacyLevelFormat ? parts[2] : parts[1]) || '刚刚',
-                    content: (isLegacyLevelFormat ? parts.slice(3) : parts.slice(2)).join('｜') || row
-                };
-            })
-            .slice(0, 5);
     }
 
     _normalizeLoadedTask(task, index = 0) {
