@@ -9917,8 +9917,9 @@ renderChatRoom(chat) {
                             }
                         }
 
-                        // 如果当前在外层聊天列表，刷新列表以显示红点和新预览
-                        if (this.app.currentView === 'chats' && !this.app.currentChat) {
+                        // 仅刷新前台微信列表；后台重绘会把用户正在使用的其他 App 覆盖掉。
+                        const isWechatForeground = !!document.querySelector('.phone-view-current .wechat-app');
+                        if (isWechatForeground && this.app.currentView === 'chats' && !this.app.currentChat) {
                             this.app.render();
                         }
                     }
