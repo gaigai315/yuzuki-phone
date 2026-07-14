@@ -519,18 +519,47 @@ export class WangxiangApp {
         const taskSnapshots = new Map();
         const appliedUpdates = [];
         const completions = [];
-        parsedUpdates.forEach(update => {
+        const activeTasks = this.managedTasks.filter(item => item?.status === 'active' || item?.status === 'submit');
+        const genericTaskLabels = new Set(['任务名称', '任务标题', '当前任务', '已接任务'].map(value => this._normalizeTaskTitle(value)));
+        const resolveProgressTarget = (update) => {
             const taskKey = this._normalizeTaskTitle(update.taskTitle);
             const objectiveKey = this._normalizeTaskTitle(update.objectiveTitle);
-            const task = this.managedTasks.find(item =>
-                (item?.status === 'active' || item?.status === 'submit')
-                && this._normalizeTaskTitle(item?.title) === taskKey
+            const expectedTotal = Math.max(1, Number(update.total || 1));
+            const findMatchingObjectives = (task, requireTitle = true) => (Array.isArray(task?.objectives) ? task.objectives : [])
+                .filter(objective => {
+                    const storedTotal = Math.max(1, Number(objective?.total || 1));
+                    if (storedTotal !== expectedTotal) return false;
+                    return !requireTitle || this._normalizeTaskTitle(objective?.title) === objectiveKey;
+                });
+
+            if (!genericTaskLabels.has(taskKey)) {
+                const task = activeTasks.find(item => this._normalizeTaskTitle(item?.title) === taskKey);
+                if (!task) return null;
+                const objective = findMatchingObjectives(task, true)[0] || null;
+                return objective ? { task, objective, matchMode: 'exact' } : null;
+            }
+
+            const objectiveMatches = activeTasks.flatMap(task =>
+                findMatchingObjectives(task, true).map(objective => ({ task, objective, matchMode: 'generic_task_label_objective' }))
             );
-            if (!task) return;
-            const objective = (Array.isArray(task.objectives) ? task.objectives : []).find(item =>
-                this._normalizeTaskTitle(item?.title) === objectiveKey
-            );
-            if (!objective) return;
+            if (objectiveMatches.length === 1) return objectiveMatches[0];
+            if (objectiveMatches.length > 1) return null;
+
+            const titleMatches = activeTasks.filter(task => this._normalizeTaskTitle(task?.title) === objectiveKey);
+            if (titleMatches.length !== 1) return null;
+            const inferredObjectives = findMatchingObjectives(titleMatches[0], false);
+            return inferredObjectives.length === 1
+                ? { task: titleMatches[0], objective: inferredObjectives[0], matchMode: 'generic_task_label_title' }
+                : null;
+        };
+
+        parsedUpdates.forEach(update => {
+            const resolved = resolveProgressTarget(update);
+            if (!resolved) {
+                console.warn('[Wangxiang] 任务进度未匹配到唯一任务目标，已跳过:', update);
+                return;
+            }
+            const { task, objective } = resolved;
 
             const storedTotal = Math.max(1, Number(objective.total || 1));
             if (Number(update.total) !== storedTotal) return;
