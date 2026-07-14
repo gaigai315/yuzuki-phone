@@ -10,9 +10,9 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20260714-single-chat-moments';
+import { ChatView } from './chat-view.js?v=20260714-moments-phone-time';
 import { ContactsView } from './contacts-view.js';
-import { MomentsView } from './moments-view.js';
+import { MomentsView } from './moments-view.js?v=20260714-moments-phone-time';
 import { WechatData } from './wechat-data.js';
 import { ImageCropper } from '../settings/image-cropper.js';
 

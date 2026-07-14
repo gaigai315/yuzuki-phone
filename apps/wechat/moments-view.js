@@ -56,7 +56,7 @@ export class MomentsView {
 
     // 渲染单条朋友圈
     renderMomentItem(moment, hasBgImage = false) {
-        const timeStr = this.formatTime(moment.timestamp || moment.time);
+        const timeStr = this.formatTime(moment.time);
         // 🔥 优先实时从联系人/聊天获取头像，确保头像同步更新
         const contactAvatar = this.getContactAvatar(moment.name) || moment.avatar || '👤';
         const userName = String(this.app.wechatData.getUserInfo()?.name || '').trim();
@@ -1899,6 +1899,7 @@ ${momentsPrompt}
                     // 🔥 优先使用联系人的真实头像，如果没有才用AI返回的
                     const contactAvatar = this.getContactAvatar(m.name);
                     const finalAvatar = (contactAvatar && contactAvatar !== '👤') ? contactAvatar : (m.avatar || '👤');
+                    const momentStoryTime = this._resolveMomentStoryTime(m.time, currentTime);
 
                     return {
                         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
@@ -1906,8 +1907,10 @@ ${momentsPrompt}
                         avatar: finalAvatar,
                         text: m.text,
                         images: m.images || [],
-                        time: m.time || '刚刚',
-                        timestamp: Date.now(),
+                        time: momentStoryTime.time,
+                        date: momentStoryTime.date,
+                        weekday: momentStoryTime.weekday,
+                        timestamp: momentStoryTime.timestamp,
                         likes: m.likeList?.length || 0,
                         likeList: m.likeList || [],
                         comments: m.commentList?.length || 0,
@@ -2118,19 +2121,67 @@ ${momentsPrompt}
         return null;
     }
 
+    _getCurrentPhoneTimeSnapshot() {
+        const timeManager = window.VirtualPhone?.timeManager;
+        const storyTime = timeManager?.getCurrentStoryTime?.() || {};
+        const time = String(storyTime?.time || this.app?.phoneShell?.getCurrentTime?.() || '').trim() || '00:00';
+        const date = String(storyTime?.date || '').trim();
+        const weekday = String(storyTime?.weekday || '').trim();
+        const parsedTimestamp = date && typeof timeManager?.parseTimeToTimestamp === 'function'
+            ? Number(timeManager.parseTimeToTimestamp({ time, date, weekday }))
+            : Number(storyTime?.timestamp || 0);
+        return {
+            time,
+            date,
+            weekday,
+            timestamp: Number.isFinite(parsedTimestamp) && parsedTimestamp > 0 ? parsedTimestamp : Date.now()
+        };
+    }
+
+    _resolveMomentStoryTime(rawTime = '', baseTime = null) {
+        const timeManager = window.VirtualPhone?.timeManager;
+        const fallback = this._getCurrentPhoneTimeSnapshot();
+        const base = baseTime?.time
+            ? {
+                time: String(baseTime.time || '').trim(),
+                date: String(baseTime.date || fallback.date).trim(),
+                weekday: String(baseTime.weekday || fallback.weekday).trim(),
+                timestamp: Number(baseTime.timestamp || fallback.timestamp)
+            }
+            : fallback;
+        const label = String(rawTime || '').trim();
+
+        let minutesOffset = 0;
+        const minuteMatch = label.match(/(\d+)\s*分钟前/);
+        const hourMatch = label.match(/(\d+(?:\.\d+)?)\s*小时前/);
+        if (minuteMatch) {
+            minutesOffset = -Math.max(0, Number.parseInt(minuteMatch[1], 10) || 0);
+        } else if (hourMatch) {
+            minutesOffset = -Math.max(0, Math.round((Number.parseFloat(hourMatch[1]) || 0) * 60));
+        } else if (/半小时前/.test(label)) {
+            minutesOffset = -30;
+        }
+
+        if (minutesOffset < 0 && base.date && typeof timeManager?.addMinutesToStoryTime === 'function') {
+            return timeManager.addMinutesToStoryTime(base, minutesOffset);
+        }
+
+        const clockMatch = label.match(/^(\d{1,2})[:：](\d{2})$/);
+        if (clockMatch && base.date) {
+            const time = `${String(Number.parseInt(clockMatch[1], 10) || 0).padStart(2, '0')}:${clockMatch[2]}`;
+            const timestamp = typeof timeManager?.parseTimeToTimestamp === 'function'
+                ? Number(timeManager.parseTimeToTimestamp({ ...base, time }))
+                : base.timestamp;
+            return { ...base, time, timestamp };
+        }
+
+        return base;
+    }
+
     // 格式化时间
-    formatTime(timestamp) {
-        if (typeof timestamp === 'string') return timestamp;
-
-        const now = Date.now();
-        const diff = now - timestamp;
-
-        if (diff < 60000) return '刚刚';
-        if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-        if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
-
-        const date = new Date(timestamp);
-        return `${date.getMonth() + 1}月${date.getDate()}日`;
+    formatTime(phoneTime) {
+        const value = typeof phoneTime === 'string' ? phoneTime.trim() : '';
+        return value || '手机时间未知';
     }
 
     // 旧版render方法（保持兼容）
@@ -2360,6 +2411,7 @@ ${momentsPrompt}
 
         // 获取用户信息
         const userInfo = this.app.wechatData.getUserInfo();
+        const currentPhoneTime = this._getCurrentPhoneTimeSnapshot();
 
         // 创建朋友圈
         const moment = {
@@ -2368,8 +2420,10 @@ ${momentsPrompt}
             avatar: userInfo.avatar || '😊',
             text: text,
             images: images,
-            time: '刚刚',
-            timestamp: Date.now(),
+            time: currentPhoneTime.time,
+            date: currentPhoneTime.date,
+            weekday: currentPhoneTime.weekday,
+            timestamp: currentPhoneTime.timestamp,
             likes: 0,
             likeList: [],
             comments: 0,

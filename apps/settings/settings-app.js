@@ -49,7 +49,8 @@ const parsePhoneTagFilterDiagnosticJson = typeof PhoneTagFilter.parsePhoneTagFil
 const WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS = [
     'offline-wechat-prompt-enabled',
     'offline-single-chat-enabled',
-    'offline-group-chat-enabled'
+    'offline-group-chat-enabled',
+    'offline-moments-history-enabled'
 ];
 const WECHAT_ONLINE_PROACTIVE_ENABLED_KEY = 'wechat_online_proactive_enabled';
 const WECHAT_ONLINE_PROACTIVE_INTERVAL_KEY = 'wechat_online_proactive_interval_minutes';
@@ -1858,6 +1859,17 @@ export class SettingsApp {
                                 </div>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="offline-honey-chat-enabled" ${(this.storage.get('offline-honey-chat-enabled') === true || this.storage.get('offline-honey-chat-enabled') === 'true') ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item setting-toggle">
+                                <div>
+                                    <div class="setting-label">朋友圈变量注入</div>
+                                    <div class="setting-desc">有朋友圈内容且开启时，通过 <code>{{MOMENTS_HISTORY}}</code> 独立注入酒馆正文；关闭或无内容时不注入</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="offline-moments-history-enabled" ${(!isWechatOnlineOnlyMode && (this.storage.get('offline-moments-history-enabled') === true || this.storage.get('offline-moments-history-enabled') === 'true')) ? 'checked' : ''} ${isWechatOnlineOnlyMode ? 'disabled' : ''}>
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
@@ -5055,6 +5067,15 @@ export class SettingsApp {
 
         document.getElementById('offline-honey-chat-enabled')?.addEventListener('change', async (e) => {
             await this.storage.set('offline-honey-chat-enabled', !!e.target.checked);
+        });
+
+        document.getElementById('offline-moments-history-enabled')?.addEventListener('change', async (e) => {
+            if (this._isWechatOnlineOnlyModeEnabled()) {
+                e.target.checked = false;
+                await this.storage.set('offline-moments-history-enabled', false);
+                return;
+            }
+            await this.storage.set('offline-moments-history-enabled', !!e.target.checked);
         });
 
         document.getElementById('offline-diary-history-enabled')?.addEventListener('change', async (e) => {

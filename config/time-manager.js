@@ -73,6 +73,7 @@ export class TimeManager {
         return this._isStorageToggleEnabled('offline-wechat-prompt-enabled', true)
             || this._isStorageToggleEnabled('offline-single-chat-enabled', true)
             || this._isStorageToggleEnabled('offline-group-chat-enabled', true)
+            || this._isStorageToggleEnabled('offline-moments-history-enabled', false)
             || this._isStorageToggleEnabled('offline-honey-chat-enabled', false)
             || this._isStorageToggleEnabled('offline-phone-call-history-enabled', false)
             || this._isStorageToggleEnabled('offline-weibo-history-enabled', false)

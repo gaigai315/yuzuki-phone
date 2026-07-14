@@ -54,7 +54,8 @@ const ST_PHONE_CURRENT_UPDATE = {
         '【优化】优化群聊好友，非微信好友支持点击头像更改姓名、性别。',
         '【修复】主动拨打电话时，需等待对方首次回应后才能继续发送内容。',
         '【修复】修复 DeepSeek 官方独立 API 因 OpenAI 兼容路由参数错误而无法连接，并同步修正模型列表拉取。',
-        '【修复】修复微信收到后台回复时错误重绘手机界面、覆盖用户正在使用的其他 App。'
+        '【修复】修复微信收到后台回复时错误重绘手机界面、覆盖用户正在使用的其他 App。',
+        '【新增】朋友圈内容可注入微信单聊上下文，并可通过朋友圈变量独立注入酒馆正文。'
     ]
 };
 
@@ -8952,7 +8953,7 @@ if (window.GGP_Loaded) {
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}', '{{WANGXIANG_TASKS}}', '{{WANGXIANG_ORDERS}}'];
+                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{MOMENTS_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}', '{{WANGXIANG_TASKS}}', '{{WANGXIANG_ORDERS}}'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
                                 let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
@@ -8965,8 +8966,8 @@ if (window.GGP_Loaded) {
                                         }
                                     });
                                     // 兼容 {{ XXX }}（含空格）
-                                    if (/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i.test(c)) {
-                                        c = c.replace(/\{\{\s*(HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/gi, '').trim();
+                                    if (/\{\{\s*(MOMENTS_HISTORY|HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i.test(c)) {
+                                        c = c.replace(/\{\{\s*(MOMENTS_HISTORY|HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/gi, '').trim();
                                         modified = true;
                                     }
                                     if (modified) {
@@ -9025,6 +9026,7 @@ if (window.GGP_Loaded) {
                             const honeyOfflineSummaryByName = new Map();
                             const honeyOfflineSummaryByText = new Map();
                             const honeyOfflineSummaryByHost = new Map();
+                            let wechatDataForOfflineInjection = null;
                             const storage = window.VirtualPhone.storage;
                             const isPhoneEnabled = isPhoneFeatureEnabled();
                             const isStorageToggleOn = (key) => {
@@ -9116,6 +9118,7 @@ if (window.GGP_Loaded) {
                                             wechatDataParsed = typeof savedData === 'string' ? JSON.parse(savedData) : savedData;
                                         }
                                     }
+                                    wechatDataForOfflineInjection = wechatDataParsed;
 
                                     if (wechatDataParsed) {
                                         const allChats = Array.isArray(wechatDataParsed.chats)
@@ -9704,6 +9707,7 @@ if (window.GGP_Loaded) {
                                     // 将规则与聊天记录分离为多个变量
                                     let phoneRulesContent = '';
                                     let phoneHistoryContent = '';
+                                    let momentsHistoryContent = '';
                                     let honeyHistoryContent = '';
                                     let weiboHistoryContent = '';
                                     let mofoPromptContent = '';
@@ -9827,6 +9831,82 @@ if (window.GGP_Loaded) {
                                         } catch (e) {
                                             console.warn('⚠️ [手机] 获取微信线下提示词失败');
                                         }
+                                    }
+
+                                    // 2.4️⃣ 朋友圈独立变量注入：仅使用动态保存的手机剧情时间
+                                    try {
+                                        const momentsInjectEnabled = isStorageToggleOn('offline-moments-history-enabled');
+                                        const moments = Array.isArray(wechatDataForOfflineInjection?.moments)
+                                            ? wechatDataForOfflineInjection.moments
+                                            : [];
+                                        if (isWechatInteropEnabled && momentsInjectEnabled && moments.length > 0) {
+                                            const configuredLimit = Number.parseInt(storage?.get('wechat-moments-context-limit'), 10);
+                                            const momentsLimit = Number.isFinite(configuredLimit)
+                                                ? Math.max(1, Math.min(100, configuredLimit))
+                                                : 30;
+                                            const recentMoments = moments.slice(0, momentsLimit);
+                                            const formatMomentTime = (moment) => {
+                                                const date = String(moment?.date || '').trim();
+                                                const time = String(moment?.time || '').trim();
+                                                if (date && time) return `${date} ${time}`;
+                                                return time || date || '手机时间未知';
+                                            };
+                                            const formatMomentImage = (moment, image, index) => {
+                                                const imageState = Array.isArray(moment?.imageGenerationStates)
+                                                    ? moment.imageGenerationStates[index]
+                                                    : null;
+                                                const description = String(imageState?.description || imageState?.prompt || '').trim();
+                                                if (description) return `配图${index + 1}：${description}`;
+
+                                                const raw = typeof image === 'string'
+                                                    ? image.trim()
+                                                    : String(image?.description || image?.prompt || '').trim();
+                                                if (!raw || /^(?:\[(?:图片|视频)\])?(?:data:|blob:|https?:\/\/|\/backgrounds\/)/i.test(raw)) {
+                                                    return `配图${index + 1}：已发布图片`;
+                                                }
+                                                return `配图${index + 1}：${raw}`;
+                                            };
+                                            const lines = [
+                                                '【手机朋友圈已有动态】',
+                                                '以下是手机中已经发布的朋友圈及其真实互动。每条动态彼此独立；评论和回复属于对应动态，不要将其误当成本轮新消息，也不要逐字重复生成。'
+                                            ];
+
+                                            recentMoments.forEach((moment, index) => {
+                                                const authorName = String(moment?.name || '').trim() || '未知发布者';
+                                                const text = String(moment?.text || '').trim();
+                                                const images = Array.isArray(moment?.images) ? moment.images : [];
+                                                const likeList = (Array.isArray(moment?.likeList) ? moment.likeList : [])
+                                                    .map(name => String(name || '').trim())
+                                                    .filter(Boolean);
+                                                const comments = (Array.isArray(moment?.commentList) ? moment.commentList : [])
+                                                    .map(comment => ({
+                                                        name: String(comment?.name || '').trim(),
+                                                        text: String(comment?.text || '').trim(),
+                                                        replyTo: String(comment?.replyTo || '').trim()
+                                                    }))
+                                                    .filter(comment => comment.name && comment.text);
+
+                                                lines.push('', `--- 朋友圈动态 ${index + 1} ---`);
+                                                lines.push(`发布者：${authorName}`);
+                                                lines.push(`发布时间：${formatMomentTime(moment)}`);
+                                                lines.push(`正文：${text || (images.length > 0 ? '无文字，仅发布配图' : '无文字')}`);
+                                                images.forEach((image, imageIndex) => lines.push(formatMomentImage(moment, image, imageIndex)));
+                                                lines.push(`点赞：${likeList.length > 0 ? likeList.join('、') : '无'}`);
+                                                if (comments.length > 0) {
+                                                    lines.push('评论：');
+                                                    comments.forEach((comment) => {
+                                                        const replyText = comment.replyTo ? ` 回复 ${comment.replyTo}` : '';
+                                                        lines.push(`- ${comment.name}${replyText}：${comment.text}`);
+                                                    });
+                                                } else {
+                                                    lines.push('评论：无');
+                                                }
+                                            });
+                                            momentsHistoryContent = lines.join('\n').trim();
+                                        }
+                                    } catch (e) {
+                                        momentsHistoryContent = '';
+                                        console.warn('⚠️ [手机] 注入朋友圈记录失败:', e);
                                     }
 
                                     // 2.5️⃣ 魔坊线下提示词注入（按条目勾选过滤）
@@ -10288,6 +10368,11 @@ if (window.GGP_Loaded) {
                                                         cleanedText = cleanedText.replace(spacedVarGlobalRegex, '');
                                                     }
                                                     cleanedText = cleanedText.trim();
+                                                    if (!cleanedText) {
+                                                        messages.splice(i, 1);
+                                                        i--;
+                                                        continue;
+                                                    }
                                                     if (msg.content !== undefined) msg.content = cleanedText;
                                                     if (msg.mes !== undefined) msg.mes = cleanedText;
                                                     if (msg.text !== undefined) msg.text = cleanedText;
@@ -10302,6 +10387,7 @@ if (window.GGP_Loaded) {
                                         const resolveInjectedSystemName = (id, text) => {
                                             if (id === 'weibo_system_history') return 'SYSTEM (微博)';
                                             if (id === 'phone_system_history') return 'SYSTEM (微信历史)';
+                                            if (id === 'moments_system_history') return 'SYSTEM (朋友圈记录)';
                                             if (id === 'honey_system_history') return 'SYSTEM (蜜语)';
                                             if (id === 'mofo_system_prompt') return 'SYSTEM (魔坊)';
                                             if (id === 'diary_system_history') return 'SYSTEM (日记)';
@@ -10378,6 +10464,7 @@ if (window.GGP_Loaded) {
 
                                     // 🔥 分别注入规则和历史记录
                                     injectIntoMessages('{{PHONE_PROMPT}}', phoneRulesContent, 'phone_system_rules');
+                                    injectIntoMessages('{{MOMENTS_HISTORY}}', momentsHistoryContent, 'moments_system_history');
                                     injectIntoMessages('{{PHONE_HISTORY}}', phoneHistoryContent, 'phone_system_history');
                                     injectIntoMessages('{{HONEY_HISTORY}}', honeyHistoryContent, 'honey_system_history');
                                     if (weiboInjectEnabled) {

@@ -1834,13 +1834,10 @@ export class ChatView {
         if (relevantMoments.length === 0) return '';
 
         const formatMomentTime = (moment) => {
-            const displayTime = String(moment?.time || '').trim();
-            const timestamp = Number(moment?.timestamp || 0);
-            if (!Number.isFinite(timestamp) || timestamp <= 0) return displayTime || '时间未知';
-            const realTime = this._formatRealDateTime(timestamp);
-            return displayTime && displayTime !== '刚刚'
-                ? `${realTime.date} ${realTime.time}（朋友圈显示：${displayTime}）`
-                : `${realTime.date} ${realTime.time}`;
+            const date = String(moment?.date || '').trim();
+            const time = String(moment?.time || '').trim();
+            if (date && time) return `${date} ${time}`;
+            return time || date || '手机时间未知';
         };
         const formatMomentImage = (moment, image, index) => {
             const state = Array.isArray(moment?.imageGenerationStates)
