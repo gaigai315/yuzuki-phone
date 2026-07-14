@@ -214,7 +214,7 @@
     right: 4%;
     z-index: 2;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: stretch;
     min-height: 92px;
     padding: 8px 4px;
@@ -1984,6 +1984,168 @@
     border-color: rgba(103, 220, 164, 0.5) !important;
     background: rgba(39, 126, 83, 0.22) !important;
     color: #9aeec0 !important;
+}
+
+/* 我的背包 */
+#phone-panel-content .phone-screen .wangxiang-inventory-scroll.wangxiang-content-scroll {
+    padding-top: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-header {
+    display: flex;
+    min-height: 52px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 4px 2px 10px;
+    border-bottom: 1px solid rgba(74, 184, 230, 0.28);
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-header span,
+#phone-panel-content .phone-screen .wangxiang-inventory-header h2 {
+    display: block;
+    margin: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-header span {
+    color: #6f91a4;
+    font-size: 8px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-header h2 {
+    margin-top: 2px;
+    color: #ecf8fc;
+    font-size: 15px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-header > strong {
+    flex: 0 0 auto;
+    color: #8ee8ff;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 10px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    padding: 10px;
+    border: 1px solid rgba(77, 188, 236, 0.42);
+    border-radius: 5px;
+    background: rgba(2, 18, 31, 0.9);
+    box-shadow: inset 0 0 18px rgba(54, 160, 208, 0.07);
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item.is-task {
+    border-color: rgba(105, 221, 166, 0.48);
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item-icon {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    border: 1px solid rgba(77, 188, 236, 0.4);
+    border-radius: 4px;
+    background: rgba(29, 94, 124, 0.18);
+    color: #67d7ff;
+    font-size: 18px;
+    place-items: center;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item.is-task .wangxiang-inventory-item-icon {
+    border-color: rgba(105, 221, 166, 0.42);
+    background: rgba(39, 126, 83, 0.18);
+    color: #83e9b1;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item-main {
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item-main > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item-main h3 {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: #f0f8fc;
+    font-size: 12px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item-main > div > strong {
+    flex: 0 0 auto;
+    color: #efc56a;
+    font-size: 14px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item-main p {
+    display: -webkit-box;
+    margin: 4px 0 0;
+    overflow: hidden;
+    color: #829aa8;
+    font-size: 9px;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item-main footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 7px;
+    margin-top: 6px;
+    color: #6f8795;
+    font-size: 8px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item-main footer span,
+#phone-panel-content .phone-screen .wangxiang-inventory-item-main footer time {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-item-main footer span {
+    color: #79cde9;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-empty {
+    display: flex;
+    min-height: 180px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 7px;
+    color: #718b99;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-empty i {
+    color: #4c8ba8;
+    font-size: 28px;
+}
+
+#phone-panel-content .phone-screen .wangxiang-inventory-empty strong {
+    color: #a8c7d5;
+    font-size: 12px;
 }
 
 /* 购买数量弹窗 */

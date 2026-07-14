@@ -14,7 +14,8 @@ const WANGXIANG_NAV_ITEMS = [
     { id: 'task-hall', label: '任务大厅', icon: 'fa-list-check' },
     { id: 'my-tasks', label: '我的任务', icon: 'fa-clipboard-check' },
     { id: 'marketplace', label: '商品商场', icon: 'fa-store' },
-    { id: 'my-orders', label: '我的订单', icon: 'fa-receipt' }
+    { id: 'my-orders', label: '我的订单', icon: 'fa-receipt' },
+    { id: 'my-inventory', label: '我的背包', icon: 'fa-briefcase' }
 ];
 
 export class WangxiangView {
@@ -189,6 +190,7 @@ export class WangxiangView {
                 ${this._renderMarketplacePanel()}
                 ${this._renderMarketplaceSettingsPanel()}
                 ${this._renderOrdersPanel()}
+                ${this._renderInventoryPanel()}
                 ${this._renderTaskDetailPanel()}
                 ${this._renderMarketplacePurchaseDialog()}
                 ${this._renderInfoDetailDialog()}
@@ -790,6 +792,54 @@ export class WangxiangView {
         `;
     }
 
+    _renderInventoryPanel() {
+        const state = this._panelState('my-inventory');
+        return `
+            <section class="wangxiang-content-panel wangxiang-inventory-panel${state.className}" data-wangxiang-panel="my-inventory" aria-hidden="${state.ariaHidden}" aria-label="我的背包">
+                <div class="wangxiang-inventory-scroll wangxiang-content-scroll">
+                    ${this._renderInventoryContent()}
+                </div>
+            </section>
+        `;
+    }
+
+    _renderInventoryContent() {
+        const items = this.app.getInventoryItems?.() || [];
+        const totalQuantity = items.reduce((sum, item) => sum + Math.max(1, Number(item?.quantity || 1)), 0);
+        return `
+            <header class="wangxiang-inventory-header">
+                <div><span>INVENTORY</span><h2>我的背包</h2></div>
+                <strong>${this._escapeHtml(`${items.length} 种 · ${totalQuantity} 件`)}</strong>
+            </header>
+            ${items.length ? `
+                <div class="wangxiang-inventory-list">
+                    ${items.map(item => this._renderInventoryItem(item)).join('')}
+                </div>
+            ` : `
+                <div class="wangxiang-inventory-empty">
+                    <i class="fa-solid fa-box-open" aria-hidden="true"></i>
+                    <strong>背包暂无物品</strong>
+                </div>
+            `}
+        `;
+    }
+
+    _renderInventoryItem(item) {
+        const resolvedIcon = this._resolveMarketplaceCategoryIcon(item?.categoryName, item?.name);
+        const icon = item?.sourceType === 'task' && resolvedIcon === 'fa-box-open' ? 'fa-gift' : resolvedIcon;
+        const sourceClass = item?.sourceType === 'task' ? 'is-task' : 'is-order';
+        return `
+            <article class="wangxiang-inventory-item ${sourceClass}">
+                <div class="wangxiang-inventory-item-icon" aria-hidden="true"><i class="fa-solid ${icon}"></i></div>
+                <div class="wangxiang-inventory-item-main">
+                    <div><h3>${this._escapeHtml(item?.name || '未命名物品')}</h3><strong>×${this._escapeHtml(item?.quantity || 1)}</strong></div>
+                    ${item?.description ? `<p>${this._escapeHtml(item.description)}</p>` : ''}
+                    <footer><span>${this._escapeHtml(item?.sourceLabel || '获得物品')}</span><time>${this._escapeHtml(item?.acquiredAt || '')}</time></footer>
+                </div>
+            </article>
+        `;
+    }
+
     _renderMarketplacePurchaseDialog() {
         return `
             <div class="wangxiang-purchase-overlay is-hidden" data-wangxiang-purchase-dialog aria-hidden="true">
@@ -971,6 +1021,7 @@ export class WangxiangView {
             panel.setAttribute('aria-hidden', String(!isActive));
         });
         if (section === 'my-orders') this._renderMarketplaceOrders(root);
+        if (section === 'my-inventory') this._renderInventoryItems(root);
     }
 
     _showTaskSettings(root) {
@@ -1171,6 +1222,14 @@ export class WangxiangView {
         if (list) list.innerHTML = this._renderMarketplaceOrdersContent();
     }
 
+    _renderInventoryItems(root) {
+        const scroll = root?.querySelector('.wangxiang-inventory-scroll');
+        if (!scroll) return;
+        const scrollTop = scroll.scrollTop;
+        scroll.innerHTML = this._renderInventoryContent();
+        scroll.scrollTop = scrollTop;
+    }
+
     _bindInfoDetailActions(root) {
         if (root.dataset.infoDetailActionsBound === '1') return;
         root.dataset.infoDetailActionsBound = '1';
@@ -1284,6 +1343,66 @@ export class WangxiangView {
         root.dataset.marketplaceOrderActionsBound = '1';
         const overlay = root.querySelector('[data-wangxiang-purchase-dialog]');
         const quantityInput = overlay?.querySelector('.wangxiang-purchase-stepper input');
+        let orderPressTimer = null;
+        let pressedOrderCard = null;
+        let orderPressStartX = 0;
+        let orderPressStartY = 0;
+        let suppressOrderClickUntil = 0;
+
+        const clearOrderPress = () => {
+            if (orderPressTimer) clearTimeout(orderPressTimer);
+            orderPressTimer = null;
+            pressedOrderCard = null;
+        };
+        const deleteOrderRecord = async card => {
+            const orderId = String(card?.dataset?.marketOrderId || '');
+            if (!orderId || !window.confirm('删除这条订单记录？此操作不会退款或恢复库存。')) return;
+            try {
+                const removed = await this.app.removeMarketplaceOrder(orderId);
+                if (!removed) return;
+                this._renderMarketplaceOrders(root);
+                this.app.phoneShell?.showNotification?.('订单记录已删除', removed.name || '商品订单', '✅');
+            } catch (error) {
+                this.app.phoneShell?.showNotification?.('删除失败', error?.message || '无法删除订单记录', '❌');
+            }
+        };
+        const startOrderPress = event => {
+            if (event.pointerType === 'mouse' && event.button !== 0) return;
+            if (event.target?.closest?.('button, input, textarea, select, label')) return;
+            const card = event.target?.closest?.('.wangxiang-order-card[data-market-order-id]');
+            if (!card) return;
+            clearOrderPress();
+            pressedOrderCard = card;
+            orderPressStartX = Number(event.clientX || 0);
+            orderPressStartY = Number(event.clientY || 0);
+            orderPressTimer = setTimeout(() => {
+                orderPressTimer = null;
+                suppressOrderClickUntil = Date.now() + 500;
+                const target = pressedOrderCard;
+                pressedOrderCard = null;
+                deleteOrderRecord(target);
+            }, 550);
+        };
+        const moveOrderPress = event => {
+            if (!orderPressTimer) return;
+            const dx = Math.abs(Number(event.clientX || 0) - orderPressStartX);
+            const dy = Math.abs(Number(event.clientY || 0) - orderPressStartY);
+            if (dx > 16 || dy > 16) clearOrderPress();
+        };
+
+        root.addEventListener('pointerdown', startOrderPress);
+        root.addEventListener('pointermove', moveOrderPress);
+        root.addEventListener('pointerup', clearOrderPress);
+        root.addEventListener('pointercancel', clearOrderPress);
+        root.addEventListener('pointerleave', clearOrderPress);
+        root.addEventListener('contextmenu', event => {
+            const card = event.target?.closest?.('.wangxiang-order-card[data-market-order-id]');
+            if (!card || event.target?.closest?.('button, input, textarea, select, label')) return;
+            event.preventDefault();
+            suppressOrderClickUntil = Date.now() + 500;
+            clearOrderPress();
+            deleteOrderRecord(card);
+        });
 
         const clampQuantity = () => {
             if (!quantityInput) return 1;
@@ -1295,6 +1414,11 @@ export class WangxiangView {
         };
 
         root.addEventListener('click', async event => {
+            if (Date.now() < suppressOrderClickUntil && event.target?.closest?.('.wangxiang-order-card')) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             const buyButton = event.target?.closest?.('[data-market-buy-product]');
             if (buyButton && !buyButton.disabled) {
                 this._openMarketplacePurchaseDialog(root, buyButton.dataset.marketBuyProduct);

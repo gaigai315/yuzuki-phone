@@ -131,9 +131,11 @@ export class WangxiangApp {
         this.marketplaceCategories = this._loadMarketplaceCategories();
         this.marketplaceProducts = this._loadMarketplaceProducts();
         this.marketplaceOrders = this._loadMarketplaceOrders();
+        this.inventoryItems = this._loadInventoryItems();
         this.creditBalance = this._loadCreditBalance();
         this.deliveryAddresses = this._loadDeliveryAddresses();
         this._reconcileGeneratedTaskStatuses();
+        this._reconcilePersistedTaskAndInventoryState();
 
         window.addEventListener('phone:swipeBack', () => this.handleSwipeBack());
         window.addEventListener('phone:timeUpdated', () => {
@@ -171,6 +173,7 @@ export class WangxiangApp {
         this.marketplaceCategories = [];
         this.marketplaceProducts = [];
         this.marketplaceOrders = [];
+        this.inventoryItems = [];
         this.creditBalance = 0;
         this.deliveryAddresses = [];
         this.wangxiangView.currentTaskId = '';
@@ -189,6 +192,167 @@ export class WangxiangApp {
 
     getMarketplaceOrders() {
         return Array.isArray(this.marketplaceOrders) ? this.marketplaceOrders : [];
+    }
+
+    getInventoryItems() {
+        const stacks = new Map();
+        (Array.isArray(this.inventoryItems) ? this.inventoryItems : []).forEach(item => {
+            const stackKey = String(item?.name || '').replace(/\s+/g, '').toLocaleLowerCase();
+            if (!stackKey) return;
+            if (!stacks.has(stackKey)) {
+                stacks.set(stackKey, {
+                    ...item,
+                    quantity: 0,
+                    sourceCount: 0,
+                    sourceTypes: new Set()
+                });
+            }
+            const stack = stacks.get(stackKey);
+            stack.quantity += Math.max(1, Number(item?.quantity || 1));
+            stack.sourceCount += 1;
+            stack.sourceTypes.add(item?.sourceType === 'task' ? 'task' : 'order');
+            if (!stack.description && item?.description) stack.description = item.description;
+        });
+        return Array.from(stacks.values()).map(stack => {
+            const mixedSources = stack.sourceTypes.size > 1;
+            const sourceCount = stack.sourceCount;
+            const sourceLabel = sourceCount > 1
+                ? `${mixedSources ? '多种来源' : (stack.sourceType === 'task' ? '任务奖励' : '订单送达')} · 累计 ${sourceCount} 次`
+                : stack.sourceLabel;
+            delete stack.sourceTypes;
+            return { ...stack, sourceType: mixedSources ? 'mixed' : stack.sourceType, sourceLabel };
+        });
+    }
+
+    _addInventoryItem(item = {}) {
+        if (!Array.isArray(this.inventoryItems)) this.inventoryItems = [];
+        const sourceKey = String(item.sourceKey || '').trim();
+        const name = String(item.name || '').replace(/\s+/g, ' ').trim();
+        if (!sourceKey || !name || this.inventoryItems.some(existing => String(existing?.sourceKey || '') === sourceKey)) {
+            return null;
+        }
+        const inventoryItem = {
+            id: `inventory-${sourceKey.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 120)}`,
+            sourceKey,
+            sourceType: item.sourceType === 'task' ? 'task' : 'order',
+            sourceId: String(item.sourceId || ''),
+            sourceLabel: String(item.sourceLabel || (item.sourceType === 'task' ? '任务奖励' : '订单送达')).slice(0, 80),
+            name: name.slice(0, 80),
+            description: String(item.description || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+            quantity: Math.max(1, Math.min(9999, Math.floor(Number(item.quantity) || 1))),
+            categoryIndex: Math.max(0, Math.min(5, Number(item.categoryIndex || 0))),
+            categoryName: String(item.categoryName || '').slice(0, 40),
+            acquiredAt: String(item.acquiredAt || new Date().toLocaleString('zh-CN', { hour12: false })).slice(0, 80)
+        };
+        this.inventoryItems.unshift(inventoryItem);
+        if (this.inventoryItems.length > 500) this.inventoryItems.length = 500;
+        return inventoryItem;
+    }
+
+    _removeInventoryItemsBySourceKeys(sourceKeys) {
+        if (!Array.isArray(this.inventoryItems)) this.inventoryItems = [];
+        const keys = new Set((Array.isArray(sourceKeys) ? sourceKeys : []).map(value => String(value || '')).filter(Boolean));
+        if (!keys.size) return false;
+        const previousLength = this.inventoryItems.length;
+        this.inventoryItems = this.inventoryItems.filter(item => !keys.has(String(item?.sourceKey || '')));
+        return this.inventoryItems.length !== previousLength;
+    }
+
+    _parseTaskInventoryRewards(value) {
+        const text = String(value || '').replace(/\s+/g, ' ').trim();
+        if (!text || /^(?:无|暂无|没有|none|null|0)$/i.test(text)) return [];
+        const rewards = [];
+        text.split(/[、，,；;\n]+/).map(part => part.trim()).filter(Boolean).forEach(part => {
+            const standaloneQuantity = part.match(/^(\d+)\s*(?:个|件|份|瓶|盒|枚|颗|支|包|组|套)?$/);
+            if (standaloneQuantity && rewards.length) {
+                rewards[rewards.length - 1].quantity = Math.max(1, Math.min(9999, Number(standaloneQuantity[1]) || 1));
+                return;
+            }
+            let name = part;
+            let quantity = 1;
+            const prefix = part.match(/^(\d+)\s*(?:个|件|份|瓶|盒|枚|颗|支|包|组|套)\s*(.+)$/);
+            const suffix = part.match(/^(.*?)\s*(?:[xX×*]\s*(\d+)|(\d+)\s*(?:个|件|份|瓶|盒|枚|颗|支|包|组|套))\s*$/);
+            const plainNumber = part.match(/^(.*?)\s+(\d+)\s*$/);
+            if (prefix && String(prefix[2] || '').trim()) {
+                name = prefix[2].trim();
+                quantity = Number(prefix[1] || 1);
+            } else if (suffix && String(suffix[1] || '').trim()) {
+                name = suffix[1].trim();
+                quantity = Number(suffix[2] || suffix[3] || 1);
+            } else if (plainNumber && String(plainNumber[1] || '').trim()) {
+                name = plainNumber[1].trim();
+                quantity = Number(plainNumber[2] || 1);
+            }
+            name = name.replace(/^[\[【(（]\s*|\s*[\]】)）]$/g, '').trim();
+            if (!name || /^(?:无|暂无|没有)$/i.test(name)) return;
+            rewards.push({
+                name,
+                quantity: Math.max(1, Math.min(9999, Math.floor(quantity || 1)))
+            });
+        });
+        return rewards.slice(0, 10);
+    }
+
+    _grantTaskRewardsToInventory(task) {
+        const addedItems = [];
+        this._parseTaskInventoryRewards(task?.extraReward).forEach((reward, index) => {
+            const item = this._addInventoryItem({
+                sourceKey: `task:${String(task?.id || '')}:${index}`,
+                sourceType: 'task',
+                sourceId: String(task?.id || ''),
+                sourceLabel: `任务奖励 · ${String(task?.title || '未命名任务')}`,
+                name: reward.name,
+                description: `完成任务“${String(task?.title || '未命名任务')}”获得的额外奖励`,
+                quantity: reward.quantity,
+                acquiredAt: String(task?.completedAt || '')
+            });
+            if (item) addedItems.push(item);
+        });
+        return addedItems;
+    }
+
+    _grantDeliveredOrderToInventory(order) {
+        const categoryIndex = Math.max(1, Math.min(5, Number(order?.categoryIndex || 1)));
+        return this._addInventoryItem({
+            sourceKey: `order:${String(order?.id || '')}`,
+            sourceType: 'order',
+            sourceId: String(order?.id || ''),
+            sourceLabel: `订单送达 · ${String(order?.id || '')}`,
+            name: String(order?.name || '未命名商品'),
+            description: String(order?.description || ''),
+            quantity: Math.max(1, Number(order?.quantity || 1)),
+            categoryIndex,
+            categoryName: this.getMarketplaceCategories()[categoryIndex - 1] || '商品',
+            acquiredAt: String(order?.deliveredAt || '')
+        });
+    }
+
+    _reconcileInventoryItems({ persist = false } = {}) {
+        let changed = false;
+        [...this.marketplaceOrders].reverse().forEach(order => {
+            if (order?.status === 'delivered' && this._grantDeliveredOrderToInventory(order)) changed = true;
+        });
+        [...this.managedTasks].reverse().forEach(task => {
+            if (task?.status === 'completed' && this._grantTaskRewardsToInventory(task).length) changed = true;
+        });
+        if (changed && persist) {
+            this._saveInventoryItems().catch(error => console.error('[Wangxiang] 保存背包补录数据失败:', error));
+        }
+        return changed;
+    }
+
+    _reconcilePersistedTaskAndInventoryState() {
+        const taskResult = this._reconcileCompletedManagedTasks();
+        const inventoryChanged = this._reconcileInventoryItems();
+        if (!taskResult.changed && !inventoryChanged) return false;
+        const writes = [];
+        if (taskResult.changed) {
+            writes.push(this._saveGeneratedTasks(), this._saveManagedTasks(), this._saveTaskProgressHistory());
+        }
+        if (taskResult.creditChanged) writes.push(this._saveCreditBalance());
+        if (taskResult.changed || inventoryChanged) writes.push(this._saveInventoryItems());
+        Promise.all(writes).catch(error => console.error('[Wangxiang] 保存任务与背包补录数据失败:', error));
+        return true;
     }
 
     getCurrentUserName() {
@@ -273,6 +437,16 @@ export class WangxiangApp {
             createdAt: new Date().toLocaleString('zh-CN', { hour12: false })
         };
         this.marketplaceOrders.unshift(order);
+        await this._saveMarketplaceOrders();
+        return { ...order };
+    }
+
+    async removeMarketplaceOrder(orderId) {
+        this._syncTaskDataScope();
+        const id = String(orderId || '').trim();
+        const order = this.marketplaceOrders.find(item => String(item?.id || '') === id) || null;
+        if (!order) return null;
+        this.marketplaceOrders = this.marketplaceOrders.filter(item => String(item?.id || '') !== id);
         await this._saveMarketplaceOrders();
         return { ...order };
     }
@@ -411,11 +585,12 @@ export class WangxiangApp {
             order.status = 'delivered';
             order.deliveredAt = this._formatPhoneTimeData(current);
             order.deliveredAtTimestamp = currentTimestamp;
+            this._grantDeliveredOrderToInventory(order);
             deliveredOrders.push({ ...order });
         });
         if (!deliveredOrders.length) return [];
 
-        await this._saveMarketplaceOrders();
+        await Promise.all([this._saveMarketplaceOrders(), this._saveInventoryItems()]);
         if (options.showPopup !== false) {
             await this.wangxiangView.showMarketplaceDeliveryPopup(deliveredOrders);
         }
@@ -426,7 +601,10 @@ export class WangxiangApp {
         const deliveredOrders = await this.checkMarketplaceDeliveries({ showPopup: false, refreshTime: true });
         if (!deliveredOrders.length) return [];
         const root = document.querySelector('.phone-view-current .wangxiang-app');
-        if (root) this.wangxiangView._renderMarketplaceOrders(root);
+        if (root) {
+            this.wangxiangView._renderMarketplaceOrders(root);
+            this.wangxiangView._renderInventoryItems(root);
+        }
         await this.wangxiangView.showMarketplaceDeliveryPopup(deliveredOrders);
         return deliveredOrders;
     }
@@ -515,6 +693,95 @@ export class WangxiangApp {
         return task.progress;
     }
 
+    _areTaskObjectivesComplete(task) {
+        const objectives = Array.isArray(task?.objectives) ? task.objectives : [];
+        return objectives.length > 0 && objectives.every(item => {
+            const total = Math.max(1, Number(item?.total || 1));
+            return Math.max(0, Number(item?.current || 0)) >= total;
+        });
+    }
+
+    _cloneTaskForProgressHistory(task) {
+        if (!task) return null;
+        return {
+            ...task,
+            objectives: Array.isArray(task.objectives) ? task.objectives.map(item => ({ ...item })) : [],
+            comments: Array.isArray(task.comments) ? task.comments.map(item => ({ ...item })) : []
+        };
+    }
+
+    _captureTaskCompletionState(task, snapshot) {
+        if (!snapshot || Object.prototype.hasOwnProperty.call(snapshot, 'previousStatus')) return;
+        const generatedTaskIndex = this.generatedTasks.findIndex(item => String(item?.id || '') === String(task?.id || ''));
+        snapshot.previousStatus = String(task?.status || 'active');
+        snapshot.hadCompletedAt = Object.prototype.hasOwnProperty.call(task, 'completedAt');
+        snapshot.previousCompletedAt = task?.completedAt;
+        snapshot.hadCreditRewardGranted = Object.prototype.hasOwnProperty.call(task, 'creditRewardGranted');
+        snapshot.previousCreditRewardGranted = task?.creditRewardGranted;
+        snapshot.hadCreditRewardAmount = Object.prototype.hasOwnProperty.call(task, 'creditRewardAmount');
+        snapshot.previousCreditRewardAmount = task?.creditRewardAmount;
+        snapshot.generatedTaskIndex = generatedTaskIndex;
+        snapshot.generatedTaskSnapshot = generatedTaskIndex >= 0
+            ? this._cloneTaskForProgressHistory(this.generatedTasks[generatedTaskIndex])
+            : null;
+        snapshot.grantedCreditAmount = 0;
+        snapshot.grantedInventorySourceKeys = [];
+        snapshot.completionApplied = false;
+    }
+
+    _completeManagedTaskFromProgress(task, snapshot = null) {
+        if (!task || task.status === 'completed' || !this._areTaskObjectivesComplete(task)) return 0;
+        if (snapshot) this._captureTaskCompletionState(task, snapshot);
+
+        const creditAlreadyGranted = task.creditRewardGranted === true;
+        task.status = 'completed';
+        task.progress = 100;
+        task.completedAt = task.completedAt || new Date().toLocaleString('zh-CN', { hour12: false });
+        if (snapshot) snapshot.completionApplied = true;
+        const grantedInventoryItems = this._grantTaskRewardsToInventory(task);
+        if (snapshot && grantedInventoryItems.length) {
+            snapshot.grantedInventorySourceKeys.push(...grantedInventoryItems.map(item => item.sourceKey));
+        }
+
+        let grantedCreditAmount = 0;
+        if (!creditAlreadyGranted) {
+            const rewardAmount = this._readMarketplaceAmount(task.reward);
+            grantedCreditAmount = Number.isFinite(rewardAmount) ? rewardAmount : 0;
+            this.creditBalance = this.getCreditBalance() + grantedCreditAmount;
+            task.creditRewardGranted = true;
+            task.creditRewardAmount = grantedCreditAmount;
+        }
+        if (snapshot) snapshot.grantedCreditAmount = Number(snapshot.grantedCreditAmount || 0) + grantedCreditAmount;
+
+        this.generatedTasks = this.generatedTasks.filter(item => String(item?.id || '') !== String(task.id || ''));
+        return grantedCreditAmount;
+    }
+
+    _reconcileCompletedManagedTasks({ persist = false } = {}) {
+        let changed = false;
+        let creditChanged = false;
+        this.managedTasks.forEach(task => {
+            if (task?.status === 'completed' || !this._areTaskObjectivesComplete(task)) return;
+            const historySnapshot = [...this.taskProgressHistory].reverse()
+                .flatMap(entry => Array.isArray(entry?.taskSnapshots) ? entry.taskSnapshots : [])
+                .find(snapshot => String(snapshot?.taskId || '') === String(task?.id || '')) || null;
+            if (historySnapshot) this._captureTaskCompletionState(task, historySnapshot);
+            const grantedCredit = this._completeManagedTaskFromProgress(task, historySnapshot);
+            changed = true;
+            if (grantedCredit > 0) creditChanged = true;
+        });
+        if (changed && persist) {
+            Promise.all([
+                this._saveGeneratedTasks(),
+                this._saveManagedTasks(),
+                this._saveTaskProgressHistory(),
+                creditChanged ? this._saveCreditBalance() : Promise.resolve(),
+                this._saveInventoryItems()
+            ]).catch(error => console.error('[Wangxiang] 保存自动完成任务失败:', error));
+        }
+        return { changed, creditChanged };
+    }
+
     async applyTaskProgressText(text, source = {}) {
         this._syncTaskDataScope();
         const parsedUpdates = parseWangxiangTaskProgressTags(text);
@@ -581,9 +848,24 @@ export class WangxiangApp {
             if (nextCurrent <= previousCurrent) return;
 
             if (!taskSnapshots.has(task.id)) {
+                const generatedTaskIndex = this.generatedTasks.findIndex(item => String(item?.id || '') === String(task?.id || ''));
                 taskSnapshots.set(task.id, {
                     taskId: String(task.id || ''),
                     previousProgress: Number(task.progress || 0),
+                    previousStatus: String(task.status || 'active'),
+                    hadCompletedAt: Object.prototype.hasOwnProperty.call(task, 'completedAt'),
+                    previousCompletedAt: task.completedAt,
+                    hadCreditRewardGranted: Object.prototype.hasOwnProperty.call(task, 'creditRewardGranted'),
+                    previousCreditRewardGranted: task.creditRewardGranted,
+                    hadCreditRewardAmount: Object.prototype.hasOwnProperty.call(task, 'creditRewardAmount'),
+                    previousCreditRewardAmount: task.creditRewardAmount,
+                    generatedTaskIndex,
+                    generatedTaskSnapshot: generatedTaskIndex >= 0
+                        ? this._cloneTaskForProgressHistory(this.generatedTasks[generatedTaskIndex])
+                        : null,
+                    grantedCreditAmount: 0,
+                    grantedInventorySourceKeys: [],
+                    completionApplied: false,
                     objectives: []
                 });
             }
@@ -616,7 +898,13 @@ export class WangxiangApp {
         });
 
         if (!appliedUpdates.length) {
-            await Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory()]);
+            await Promise.all([
+                this._saveManagedTasks(),
+                this._saveGeneratedTasks(),
+                this._saveTaskProgressHistory(),
+                this._saveCreditBalance(),
+                this._saveInventoryItems()
+            ]);
             return { changed: false, completions: [], updates: [] };
         }
 
@@ -624,14 +912,24 @@ export class WangxiangApp {
             const task = this.managedTasks.find(item => String(item?.id || '') === snapshot.taskId);
             if (!task) return;
             this._recalculateTaskProgress(task);
-            this._syncGeneratedTaskProgress(task);
+            if (this._areTaskObjectivesComplete(task)) {
+                this._completeManagedTaskFromProgress(task, snapshot);
+            } else {
+                this._syncGeneratedTaskProgress(task);
+            }
         });
         this.taskProgressHistory.push({
             tavernMessageIndex: hasFloor ? floor : null,
             batchId,
             taskSnapshots: Array.from(taskSnapshots.values())
         });
-        await Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory()]);
+        await Promise.all([
+            this._saveManagedTasks(),
+            this._saveGeneratedTasks(),
+            this._saveTaskProgressHistory(),
+            this._saveCreditBalance(),
+            this._saveInventoryItems()
+        ]);
         return { changed: true, completions, updates: appliedUpdates };
     }
 
@@ -652,6 +950,31 @@ export class WangxiangApp {
                     objective.completed = change.previousCompleted === true;
                 });
                 task.progress = Number(snapshot.previousProgress || 0);
+                if (snapshot.completionApplied === true && Object.prototype.hasOwnProperty.call(snapshot, 'previousStatus')) {
+                    task.status = snapshot.previousStatus;
+                    if (snapshot.hadCompletedAt) task.completedAt = snapshot.previousCompletedAt;
+                    else delete task.completedAt;
+                    if (snapshot.hadCreditRewardGranted) task.creditRewardGranted = snapshot.previousCreditRewardGranted;
+                    else delete task.creditRewardGranted;
+                    if (snapshot.hadCreditRewardAmount) task.creditRewardAmount = snapshot.previousCreditRewardAmount;
+                    else delete task.creditRewardAmount;
+                }
+                if (snapshot.completionApplied === true && snapshot.generatedTaskSnapshot) {
+                    const restoredGeneratedTask = this._cloneTaskForProgressHistory(snapshot.generatedTaskSnapshot);
+                    const existingIndex = this.generatedTasks.findIndex(item => String(item?.id || '') === String(snapshot.taskId || ''));
+                    if (existingIndex >= 0) this.generatedTasks[existingIndex] = restoredGeneratedTask;
+                    else {
+                        const restoreIndex = Math.max(0, Math.min(this.generatedTasks.length, Number(snapshot.generatedTaskIndex) || 0));
+                        this.generatedTasks.splice(restoreIndex, 0, restoredGeneratedTask);
+                    }
+                }
+                const grantedCreditAmount = Math.max(0, Number(snapshot.grantedCreditAmount || 0));
+                if (grantedCreditAmount > 0) {
+                    this.creditBalance = Math.max(0, this.getCreditBalance() - grantedCreditAmount);
+                }
+                if (snapshot.completionApplied === true) {
+                    this._removeInventoryItemsBySourceKeys(snapshot.grantedInventorySourceKeys);
+                }
                 this._syncGeneratedTaskProgress(task);
             });
         });
@@ -665,7 +988,7 @@ export class WangxiangApp {
         if (!Number.isFinite(floor)) return false;
         const changed = this._rollbackTaskProgressHistory(entry => Number(entry?.tavernMessageIndex) === floor);
         if (changed) {
-            Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory()])
+            Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory(), this._saveCreditBalance(), this._saveInventoryItems()])
                 .catch(error => console.error('[Wangxiang] 保存任务进度精确回滚失败:', error));
         }
         return changed;
@@ -676,7 +999,7 @@ export class WangxiangApp {
         if (!Number.isFinite(floor)) return false;
         const changed = this._rollbackTaskProgressHistory(entry => Number(entry?.tavernMessageIndex) >= floor);
         if (changed) {
-            Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory()])
+            Promise.all([this._saveManagedTasks(), this._saveGeneratedTasks(), this._saveTaskProgressHistory(), this._saveCreditBalance(), this._saveInventoryItems()])
                 .catch(error => console.error('[Wangxiang] 保存任务进度回滚失败:', error));
         }
         return changed;
@@ -930,6 +1253,7 @@ export class WangxiangApp {
                 task.creditRewardGranted = true;
                 task.creditRewardAmount = safeReward;
             }
+            this._grantTaskRewardsToInventory(task);
         }
         const generatedTask = this.generatedTasks.find(item => String(item?.id || '') === String(task.id || ''));
         if (generatedTask) generatedTask.status = status;
@@ -939,7 +1263,8 @@ export class WangxiangApp {
         await Promise.all([
             this._saveGeneratedTasks(),
             this._saveManagedTasks(),
-            status === 'completed' && !creditAlreadyGranted ? this._saveCreditBalance() : Promise.resolve()
+            status === 'completed' && !creditAlreadyGranted ? this._saveCreditBalance() : Promise.resolve(),
+            status === 'completed' ? this._saveInventoryItems() : Promise.resolve()
         ]);
         return task;
     }
@@ -1326,6 +1651,38 @@ export class WangxiangApp {
         }
     }
 
+    _loadInventoryItems() {
+        try {
+            const saved = this.storage?.get?.('wangxiang_inventory_items', null);
+            const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            if (!Array.isArray(parsed)) return [];
+            const sourceKeys = new Set();
+            return parsed.filter(item => item && item.sourceKey && item.name)
+                .map(item => ({
+                    id: String(item.id || `inventory-${Date.now().toString(36)}`),
+                    sourceKey: String(item.sourceKey),
+                    sourceType: item.sourceType === 'task' ? 'task' : 'order',
+                    sourceId: String(item.sourceId || ''),
+                    sourceLabel: String(item.sourceLabel || '').slice(0, 80),
+                    name: String(item.name || '未命名物品').slice(0, 80),
+                    description: String(item.description || '').slice(0, 240),
+                    quantity: Math.max(1, Math.min(9999, Math.floor(Number(item.quantity) || 1))),
+                    categoryIndex: Math.max(0, Math.min(5, Number(item.categoryIndex || 0))),
+                    categoryName: String(item.categoryName || '').slice(0, 40),
+                    acquiredAt: String(item.acquiredAt || '').slice(0, 80)
+                }))
+                .filter(item => {
+                    if (sourceKeys.has(item.sourceKey)) return false;
+                    sourceKeys.add(item.sourceKey);
+                    return true;
+                })
+                .slice(0, 500);
+        } catch (error) {
+            console.warn('[Wangxiang] 读取背包失败:', error);
+            return [];
+        }
+    }
+
     _loadCreditBalance() {
         const saved = this.storage?.get?.('wangxiang_credit_balance', 0);
         const value = Number(saved);
@@ -1377,9 +1734,11 @@ export class WangxiangApp {
         this.marketplaceCategories = this._loadMarketplaceCategories();
         this.marketplaceProducts = this._loadMarketplaceProducts();
         this.marketplaceOrders = this._loadMarketplaceOrders();
+        this.inventoryItems = this._loadInventoryItems();
         this.creditBalance = this._loadCreditBalance();
         this.deliveryAddresses = this._loadDeliveryAddresses();
         this._reconcileGeneratedTaskStatuses();
+        this._reconcilePersistedTaskAndInventoryState();
         return true;
     }
 
@@ -1411,6 +1770,10 @@ export class WangxiangApp {
 
     _saveMarketplaceOrders() {
         return this.storage?.set?.('wangxiang_marketplace_orders', JSON.stringify(this.marketplaceOrders));
+    }
+
+    _saveInventoryItems() {
+        return Promise.resolve(this.storage?.set?.('wangxiang_inventory_items', JSON.stringify(this.inventoryItems)));
     }
 
     _saveCreditBalance() {
