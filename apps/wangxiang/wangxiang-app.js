@@ -72,7 +72,7 @@ export function buildWangxiangTaskInjectionContent(tasks) {
 
 export function buildWangxiangOrderInjectionContent(orders, userName = '用户') {
     const deliveryOrders = (Array.isArray(orders) ? orders : [])
-        .filter(order => order?.status === 'shipping' || order?.status === 'delivered');
+        .filter(order => order?.status === 'shipping');
     if (!deliveryOrders.length) return '';
     const clean = (value, fallback = '未注明') => String(value ?? '').replace(/\s+/g, ' ').trim() || fallback;
     const blocks = deliveryOrders.map((order, index) => [
@@ -88,8 +88,7 @@ export function buildWangxiangOrderInjectionContent(orders, userName = '用户')
         `购买数量：${Math.max(1, Number(order.quantity || 1))}`,
         `支付金额：${clean(order.totalPrice, '0')}`,
         `支付方式：${order.paymentMethod === 'wechat' ? '微信支付' : '信用点'}`,
-        `配送状态：${order.status === 'delivered' ? '已送达' : '正在配送中'}`,
-        ...(order.status === 'delivered' ? [`实际送达确认时间：${clean(order.deliveredAt)}`] : []),
+        '配送状态：正在配送中',
         `收货信息：${clean(order.addressSnapshot?.recipient)}，${clean(order.addressSnapshot?.phone)}，${clean(order.addressSnapshot?.address)}`
     ].join('\n'));
     return `【万象商品配送信息】\n以下商品已由${clean(userName, '用户')}购买并支付，配送状态、支付时间与预计送达时间均为确定事实。续写剧情时不要重复下单或假设尚未支付。\n\n${blocks.join('\n\n')}`;
