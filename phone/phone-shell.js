@@ -961,7 +961,7 @@ export class PhoneShell {
         // 1. 自动推断 viewId
         if (!viewId) {
             if (/class=["'][^"']*\bhome-screen\b/i.test(html)) viewId = 'home';
-            else if (html.includes('class="settings-app"')) viewId = 'settings';
+            else if (/class=["'][^"']*\bsettings-app\b/i.test(html)) viewId = 'settings';
             else {
                 const titleMatch = html.match(/class="wechat-header-title"[^>]*>([\s\S]*?)<\/div>/i);
                 viewId = titleMatch ? 'view-' + titleMatch[1].replace(/<[^>]+>/g, '').trim() : 'view-' + Math.random().toString(36).substr(2, 5);

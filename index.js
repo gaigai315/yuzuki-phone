@@ -4586,7 +4586,9 @@ if (window.GGP_Loaded) {
                 setTimeout(() => {
                     const isCallOverlayVisible = !!document.querySelector('#phone-panel .call-fullscreen, .phone-in-panel .call-fullscreen');
                     if (isCallOverlayVisible) return;
-                    window.VirtualPhone.wechatApp.render();
+                    const wechatApp = window.VirtualPhone.wechatApp;
+                    wechatApp.render();
+                    wechatApp.resumeAfterPanelOpen?.();
                 }, 50);
             }
         }

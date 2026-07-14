@@ -8432,6 +8432,39 @@ renderChatRoom(chat) {
     }
 
     // 🔥 抽取为独立方法：绑定消息长按事件（性能优化版：事件委托）
+    resumeAfterPanelOpen() {
+        const chatId = String(this.app.currentChat?.id || '').trim();
+        const currentView = this.getCurrentWechatView();
+        if (!chatId || !currentView?.querySelector?.('.wechat-app')) return false;
+
+        currentView.querySelectorAll('.message-action-menu, .wechat-time-marker-menu').forEach((menu) => {
+            const oldBubble = menu.parentElement;
+            menu.remove();
+            if (oldBubble?.closest?.('.chat-message')) {
+                oldBubble.style.removeProperty('overflow');
+            }
+        });
+        if (typeof this._activeCloseMenu === 'function') {
+            document.removeEventListener('click', this._activeCloseMenu);
+            document.removeEventListener('touchend', this._activeCloseMenu);
+            this._activeCloseMenu = null;
+        }
+        if (typeof this._activeTimeMarkerCloseMenu === 'function') {
+            document.removeEventListener('click', this._activeTimeMarkerCloseMenu);
+            document.removeEventListener('touchend', this._activeTimeMarkerCloseMenu);
+            this._activeTimeMarkerCloseMenu = null;
+        }
+
+        const refreshed = this._refreshCurrentChatMessages({ keepScroll: true });
+        const messagesDiv = this._getVisibleChatMessagesContainer(chatId);
+        if (messagesDiv) {
+            // 读取布局会让移动端浏览器丢弃面板 width/height 为 0 时遗留的合成层缓存。
+            void messagesDiv.offsetHeight;
+            this.bindMessageLongPressEvents();
+        }
+        return refreshed;
+    }
+
     bindMessageLongPressEvents() {
         const currentView = this.getCurrentWechatView();
         const messagesDiv = currentView?.querySelector('#chat-messages');
@@ -11861,11 +11894,6 @@ renderChatRoom(chat) {
         const bubbleEl = contentEl.querySelector('.message-text, .message-voice, .message-redpacket, .message-image-box, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-undercover-card, .message-music-card, .message-music-listen-card');
         if (!bubbleEl) return;
 
-        // 设置气泡为相对定位（用于菜单绝对定位的参考）
-        bubbleEl.style.position = 'relative';
-        // 🔥 核心修复：防止红包、转账的 overflow: hidden 将弹出的菜单裁切掉
-        bubbleEl.style.setProperty('overflow', 'visible', 'important');
-
         const isTextMessage = message.type === 'text' || !message.type;
         const isLocationMessage = message.type === 'location';
         const isImageMessage = message.type === 'image';
@@ -11894,13 +11922,18 @@ renderChatRoom(chat) {
         buttonsHtml += `<button class="msg-action-btn" data-action="delete" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #ff3b30; border: none; padding: 4px 8px; font-size: 11px; cursor: pointer;">删除</button>`;
 
         const menuEl = document.createElement('div');
-        menuEl.className = 'message-action-menu';
+        menuEl.className = 'message-action-menu wechat-message-action-menu';
         menuEl.style.cssText = `
-            position: absolute;
-            bottom: 100%;
-            ${isRight ? 'right: 0;' : 'left: 0;'}
-            margin-bottom: 2px;
-            z-index: 100;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            right: auto !important;
+            bottom: auto !important;
+            z-index: 10040 !important;
+            max-width: calc(100% - 16px) !important;
+            margin: 0 !important;
+            visibility: hidden !important;
+            transform: none !important;
         `;
         menuEl.innerHTML = `
             <div style="display: flex; background: rgba(255,255,255,0.9); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 4px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.12); white-space: nowrap;">
@@ -11908,12 +11941,47 @@ renderChatRoom(chat) {
             </div>
         `;
 
-        bubbleEl.insertBefore(menuEl, bubbleEl.firstChild);
+        const menuHost = bubbleEl.closest('.phone-view-layer')
+            || currentView?.querySelector?.('.wechat-app')
+            || currentView;
+        if (!menuHost?.appendChild || !menuHost?.getBoundingClientRect) return;
+        menuHost.appendChild(menuEl);
+
+        const positionMenu = () => {
+            if (!menuEl.isConnected || !bubbleEl.isConnected) return;
+            const hostRect = menuHost.getBoundingClientRect();
+            const bubbleRect = bubbleEl.getBoundingClientRect();
+            const menuRect = menuEl.getBoundingClientRect();
+            const hostWidth = hostRect.width || menuHost.clientWidth || 0;
+            const hostHeight = hostRect.height || menuHost.clientHeight || 0;
+            const edge = 8;
+            const gap = 4;
+
+            let left = isRight
+                ? bubbleRect.right - hostRect.left - menuRect.width
+                : bubbleRect.left - hostRect.left;
+            const maxLeft = Math.max(edge, hostWidth - menuRect.width - edge);
+            left = Math.min(Math.max(edge, left), maxLeft);
+
+            const above = bubbleRect.top - hostRect.top - menuRect.height - gap;
+            const below = bubbleRect.bottom - hostRect.top + gap;
+            const maxTop = Math.max(edge, hostHeight - menuRect.height - edge);
+            const top = above >= edge
+                ? above
+                : Math.min(Math.max(edge, below), maxTop);
+
+            menuEl.style.setProperty('left', `${Math.round(left)}px`, 'important');
+            menuEl.style.setProperty('top', `${Math.round(top)}px`, 'important');
+            menuEl.style.setProperty('right', 'auto', 'important');
+            menuEl.style.setProperty('bottom', 'auto', 'important');
+            menuEl.style.setProperty('visibility', 'visible', 'important');
+        };
+        positionMenu();
+        requestAnimationFrame(positionMenu);
 
         // 🔥 定义统一的菜单清理函数，彻底切断内存泄漏
         const cleanupMenu = () => {
             currentView.querySelectorAll('.message-action-menu').forEach(m => m.remove());
-            if (bubbleEl) bubbleEl.style.removeProperty('overflow');
             if (typeof this._activeCloseMenu === 'function') {
                 document.removeEventListener('click', this._activeCloseMenu);
                 document.removeEventListener('touchend', this._activeCloseMenu);

@@ -208,6 +208,217 @@ export class SettingsApp {
         };
     }
 
+    _applySettingsThemeIsolation(root = this._getActiveSettingsRoot()) {
+        if (!root) return;
+
+        root.id = 'yzp-settings-app';
+        const lock = (element, declarations) => {
+            if (!element) return;
+            Object.entries(declarations).forEach(([property, value]) => {
+                element.style.setProperty(property, value, 'important');
+            });
+        };
+        const lockAll = (selector, declarations) => {
+            root.querySelectorAll(selector).forEach(element => lock(element, declarations));
+        };
+
+        lock(root, {
+            'box-sizing': 'border-box',
+            'display': 'flex',
+            'flex-direction': 'column',
+            'position': 'relative',
+            'width': '100%',
+            'height': '100%',
+            'min-width': '0',
+            'min-height': '0',
+            'margin': '0',
+            'padding': '0',
+            'overflow': 'hidden',
+            'isolation': 'isolate',
+            'writing-mode': 'horizontal-tb',
+            'text-orientation': 'mixed',
+            'animation': 'none',
+            'transform': 'none'
+        });
+
+        lock(root.querySelector('.yzp-settings-header'), {
+            'box-sizing': 'border-box',
+            'display': 'flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            'position': 'sticky',
+            'top': '0',
+            'z-index': '100',
+            'width': '100%',
+            'height': '78px',
+            'min-height': '78px',
+            'max-height': '78px',
+            'margin': '0',
+            'padding': '34px 14px 0',
+            'flex': '0 0 78px',
+            'float': 'none',
+            'transform': 'none'
+        });
+
+        lock(root.querySelector('.yzp-settings-tabs'), {
+            'box-sizing': 'border-box',
+            'display': 'block',
+            'position': 'sticky',
+            'top': '78px',
+            'z-index': '99',
+            'width': '100%',
+            'height': '48px',
+            'min-height': '48px',
+            'max-height': '48px',
+            'margin': '0',
+            'padding': '7px 10px 8px',
+            'flex': '0 0 48px',
+            'overflow': 'hidden',
+            'float': 'none',
+            'transform': 'none'
+        });
+
+        const tabButtons = Array.from(root.querySelectorAll('.yzp-settings-tab-button'));
+        lock(root.querySelector('.yzp-settings-tabs-track'), {
+            'box-sizing': 'border-box',
+            'display': 'grid',
+            'grid-template-columns': `repeat(${Math.max(1, tabButtons.length)}, minmax(0, 1fr))`,
+            'grid-auto-flow': 'column',
+            'gap': '6px',
+            'position': 'relative',
+            'width': '100%',
+            'height': '33px',
+            'min-height': '33px',
+            'max-height': '33px',
+            'margin': '0',
+            'padding': '3px',
+            'overflow': 'hidden',
+            'float': 'none',
+            'transform': 'none'
+        });
+
+        tabButtons.forEach((button) => {
+            const isActive = button.classList.contains('active');
+            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            lock(button, {
+                'box-sizing': 'border-box',
+                'display': 'block',
+                'position': 'relative',
+                'inset': 'auto',
+                'width': '100%',
+                'min-width': '0',
+                'max-width': 'none',
+                'height': '27px',
+                'min-height': '27px',
+                'max-height': '27px',
+                'margin': '0',
+                'padding': '0',
+                'border': '0',
+                'border-radius': '10px',
+                'background': isActive ? '#ffffff' : 'transparent',
+                'box-shadow': isActive ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
+                'color': isActive ? '#111111' : '#666666',
+                'font-size': '12px',
+                'font-weight': isActive ? '700' : '500',
+                'line-height': '27px',
+                'letter-spacing': '0',
+                'text-align': 'center',
+                'text-transform': 'none',
+                'white-space': 'nowrap',
+                'overflow': 'hidden',
+                'float': 'none',
+                'opacity': '1',
+                'transform': 'none',
+                'animation': 'none'
+            });
+        });
+
+        lock(root.querySelector('.yzp-settings-body'), {
+            'box-sizing': 'border-box',
+            'display': 'block',
+            'position': 'relative',
+            'width': '100%',
+            'height': 'auto',
+            'min-width': '0',
+            'min-height': '0',
+            'margin': '0',
+            'padding': '12px 10px',
+            'flex': '1 1 auto',
+            'overflow-x': 'hidden',
+            'overflow-y': 'auto',
+            'float': 'none',
+            'transform': 'none'
+        });
+
+        root.querySelectorAll('.phone-settings-tab-content').forEach((panel) => {
+            const isActive = panel.classList.contains('is-active');
+            panel.hidden = !isActive;
+            panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+            lock(panel, {
+                'box-sizing': 'border-box',
+                'display': isActive ? 'block' : 'none',
+                'position': 'relative',
+                'inset': 'auto',
+                'width': '100%',
+                'height': 'auto',
+                'min-width': '0',
+                'min-height': '0',
+                'margin': '0',
+                'visibility': isActive ? 'visible' : 'hidden',
+                'opacity': isActive ? '1' : '0',
+                'pointer-events': isActive ? 'auto' : 'none',
+                'float': 'none',
+                'transform': 'none',
+                'animation': 'none'
+            });
+        });
+
+        lockAll('.setting-section', {
+            'box-sizing': 'border-box',
+            'display': 'block',
+            'position': 'relative',
+            'inset': 'auto',
+            'width': '100%',
+            'height': 'auto',
+            'min-width': '0',
+            'min-height': '0',
+            'float': 'none',
+            'transform': 'none'
+        });
+        lockAll('.setting-section-title', {
+            'box-sizing': 'border-box',
+            'display': 'block',
+            'position': 'relative',
+            'inset': 'auto',
+            'width': '100%',
+            'height': 'auto',
+            'float': 'none',
+            'transform': 'none'
+        });
+        root.querySelectorAll('.setting-item').forEach((item) => {
+            const declaredDisplay = item.style.getPropertyValue('display').trim();
+            lock(item, {
+                'box-sizing': 'border-box',
+                'display': declaredDisplay || 'block',
+                'position': 'relative',
+                'inset': 'auto',
+                'width': '100%',
+                'height': 'auto',
+                'min-width': '0',
+                'min-height': '0',
+                'float': 'none',
+                'transform': 'none'
+            });
+        });
+        lockAll('.setting-item.setting-toggle', {
+            'display': 'flex',
+            'flex-direction': 'row',
+            'align-items': 'center',
+            'justify-content': 'space-between',
+            'gap': '14px'
+        });
+    }
+
     _isLobbyMode(context = null) {
         const ctx = context || this._safeGetContext();
         const charName = String(ctx?.name2 || '').trim();
@@ -789,7 +1000,7 @@ export class SettingsApp {
         const phoneFrameColor = this.storage.get('phone-frame-color') || '#1a1a1a';
         const phoneShellScale = normalizePhoneShellScalePercent(this.storage.get('phone-shell-scale') || PHONE_SHELL_SCALE_DEFAULT);
         const html = `
-            <div class="settings-app ${hasWallpaper ? 'settings-has-wallpaper' : ''}" style="${wallpaperStyle}">
+            <div id="yzp-settings-app" class="settings-app yzp-settings-app ${hasWallpaper ? 'settings-has-wallpaper' : ''}" style="${wallpaperStyle}">
                 <style>
                     .settings-app {
                         box-sizing: border-box !important;
@@ -1436,25 +1647,25 @@ export class SettingsApp {
                         color: revert !important;
                     }
                 </style>
-                <div class="settings-app-header" style="background: #f7f7f7; color: #000; border-bottom: 0.5px solid #d8d8d8; display: flex; align-items: center; justify-content: center; position: sticky; top: 0; z-index: 100; height: 78px; min-height: 78px; padding: 34px 14px 0; box-sizing: border-box; flex-shrink: 0;">
+                <div class="settings-app-header yzp-settings-header" style="background: #f7f7f7; color: #000; border-bottom: 0.5px solid #d8d8d8; display: flex; align-items: center; justify-content: center; position: sticky; top: 0; z-index: 100; height: 78px; min-height: 78px; padding: 34px 14px 0; box-sizing: border-box; flex-shrink: 0;">
                     <h2 style="color: #000; font-size: 17px; font-weight: 500; margin: 0;">设置</h2>
                 </div>
 
-                <div class="settings-tabs" style="position: sticky; top: 78px; z-index: 99; background: rgba(247,247,247,0.96); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 0.5px solid #d8d8d8; min-height: 48px; padding: 7px 10px 8px; box-sizing: border-box; flex-shrink: 0;">
-                    <div style="display: grid; grid-template-columns: repeat(${isLobbyMode ? 6 : 5}, minmax(0, 1fr)); gap: 6px; position: relative; height: 33px; padding: 3px; border-radius: 13px; background: rgba(0,0,0,0.045); box-sizing: border-box;">
-                        <button class="settings-tab-btn ${this.currentTab === 'general' ? 'active' : ''}" data-tab="general" style="min-width: 0; border: none; background: ${this.currentTab === 'general' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'general' ? '700' : '500'}; color: ${this.currentTab === 'general' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'general' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">常规</button>
-                        <button class="settings-tab-btn ${this.currentTab === 'memory' ? 'active' : ''}" data-tab="memory" style="min-width: 0; border: none; background: ${this.currentTab === 'memory' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'memory' ? '700' : '500'}; color: ${this.currentTab === 'memory' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'memory' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">联动</button>
-                        <button class="settings-tab-btn ${this.currentTab === 'llm' ? 'active' : ''}" data-tab="llm" style="min-width: 0; border: none; background: ${this.currentTab === 'llm' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'llm' ? '700' : '500'}; color: ${this.currentTab === 'llm' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'llm' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">API</button>
-                        <button class="settings-tab-btn ${this.currentTab === 'tts' ? 'active' : ''}" data-tab="tts" style="min-width: 0; border: none; background: ${this.currentTab === 'tts' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'tts' ? '700' : '500'}; color: ${this.currentTab === 'tts' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'tts' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">TTS</button>
-                        <button class="settings-tab-btn ${this.currentTab === 'image' ? 'active' : ''}" data-tab="image" style="min-width: 0; border: none; background: ${this.currentTab === 'image' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'image' ? '700' : '500'}; color: ${this.currentTab === 'image' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'image' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">生图</button>
+                <div class="settings-tabs yzp-settings-tabs" style="position: sticky; top: 78px; z-index: 99; background: rgba(247,247,247,0.96); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 0.5px solid #d8d8d8; min-height: 48px; padding: 7px 10px 8px; box-sizing: border-box; flex-shrink: 0;">
+                    <div class="yzp-settings-tabs-track" role="tablist" aria-label="设置分类" style="display: grid; grid-template-columns: repeat(${isLobbyMode ? 6 : 5}, minmax(0, 1fr)); gap: 6px; position: relative; height: 33px; padding: 3px; border-radius: 13px; background: rgba(0,0,0,0.045); box-sizing: border-box;">
+                        <button type="button" role="tab" class="settings-tab-btn yzp-settings-tab-button ${this.currentTab === 'general' ? 'active' : ''}" data-tab="general" aria-controls="tab-general" aria-selected="${this.currentTab === 'general'}" style="min-width: 0; border: none; background: ${this.currentTab === 'general' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'general' ? '700' : '500'}; color: ${this.currentTab === 'general' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'general' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">常规</button>
+                        <button type="button" role="tab" class="settings-tab-btn yzp-settings-tab-button ${this.currentTab === 'memory' ? 'active' : ''}" data-tab="memory" aria-controls="tab-memory" aria-selected="${this.currentTab === 'memory'}" style="min-width: 0; border: none; background: ${this.currentTab === 'memory' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'memory' ? '700' : '500'}; color: ${this.currentTab === 'memory' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'memory' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">联动</button>
+                        <button type="button" role="tab" class="settings-tab-btn yzp-settings-tab-button ${this.currentTab === 'llm' ? 'active' : ''}" data-tab="llm" aria-controls="tab-llm" aria-selected="${this.currentTab === 'llm'}" style="min-width: 0; border: none; background: ${this.currentTab === 'llm' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'llm' ? '700' : '500'}; color: ${this.currentTab === 'llm' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'llm' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">API</button>
+                        <button type="button" role="tab" class="settings-tab-btn yzp-settings-tab-button ${this.currentTab === 'tts' ? 'active' : ''}" data-tab="tts" aria-controls="tab-tts" aria-selected="${this.currentTab === 'tts'}" style="min-width: 0; border: none; background: ${this.currentTab === 'tts' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'tts' ? '700' : '500'}; color: ${this.currentTab === 'tts' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'tts' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">TTS</button>
+                        <button type="button" role="tab" class="settings-tab-btn yzp-settings-tab-button ${this.currentTab === 'image' ? 'active' : ''}" data-tab="image" aria-controls="tab-image" aria-selected="${this.currentTab === 'image'}" style="min-width: 0; border: none; background: ${this.currentTab === 'image' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'image' ? '700' : '500'}; color: ${this.currentTab === 'image' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'image' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">生图</button>
                         ${isLobbyMode
-                            ? `<button class="settings-tab-btn ${this.currentTab === 'lobby' ? 'active' : ''}" data-tab="lobby" style="min-width: 0; border: none; background: ${this.currentTab === 'lobby' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'lobby' ? '700' : '500'}; color: ${this.currentTab === 'lobby' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'lobby' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">大厅</button>`
+                            ? `<button type="button" role="tab" class="settings-tab-btn yzp-settings-tab-button ${this.currentTab === 'lobby' ? 'active' : ''}" data-tab="lobby" aria-controls="tab-lobby" aria-selected="${this.currentTab === 'lobby'}" style="min-width: 0; border: none; background: ${this.currentTab === 'lobby' ? '#fff' : 'transparent'}; height: 27px; padding: 0; line-height: 27px; font-size: 12px; font-weight: ${this.currentTab === 'lobby' ? '700' : '500'}; color: ${this.currentTab === 'lobby' ? '#111' : '#666'}; border-radius: 10px; box-shadow: ${this.currentTab === 'lobby' ? '0 1px 4px rgba(0,0,0,0.12)' : 'none'}; transition: all .18s ease; white-space: nowrap;">大厅</button>`
                             : ''}
                     </div>
                 </div>
 
-                <div class="app-body">
-                    <div class="phone-settings-tab-content ${this.currentTab === 'general' ? 'is-active' : 'is-hidden'}" id="tab-general">
+                <div class="app-body yzp-settings-body">
+                    <div class="phone-settings-tab-content ${this.currentTab === 'general' ? 'is-active' : 'is-hidden'}" id="tab-general" role="tabpanel" ${this.currentTab === 'general' ? '' : 'hidden'}>
                         <!-- 当前角色信息 -->
                         <div class="setting-section">
                             <div class="setting-section-title">📱 当前角色</div>
@@ -1964,12 +2175,12 @@ export class SettingsApp {
                         </div>
                     </div>
 
-                    <div class="phone-settings-tab-content ${this.currentTab === 'memory' ? 'is-active' : 'is-hidden'}" id="tab-memory">
+                    <div class="phone-settings-tab-content ${this.currentTab === 'memory' ? 'is-active' : 'is-hidden'}" id="tab-memory" role="tabpanel" ${this.currentTab === 'memory' ? '' : 'hidden'}>
                         ${this.renderMemoryPermissionSection()}
                         ${this.renderTagFilterSection()}
                     </div>
 
-                    <div class="phone-settings-tab-content ${this.currentTab === 'llm' ? 'is-active' : 'is-hidden'}" id="tab-llm">
+                    <div class="phone-settings-tab-content ${this.currentTab === 'llm' ? 'is-active' : 'is-hidden'}" id="tab-llm" role="tabpanel" ${this.currentTab === 'llm' ? '' : 'hidden'}>
                         <!-- 🤖 大模型 API 配置 (独立聊天) -->
                         <div class="setting-section">
                             <div class="setting-section-title">🤖 大模型 API 配置</div>
@@ -2073,7 +2284,7 @@ export class SettingsApp {
                         </div>
                     </div>
 
-                    <div class="phone-settings-tab-content ${this.currentTab === 'tts' ? 'is-active' : 'is-hidden'}" id="tab-tts">
+                    <div class="phone-settings-tab-content ${this.currentTab === 'tts' ? 'is-active' : 'is-hidden'}" id="tab-tts" role="tabpanel" ${this.currentTab === 'tts' ? '' : 'hidden'}>
                         <!-- 🔊 语音功能 (TTS) -->
                         <div class="tts-section-list">
                             <details data-tts-fold-key="phone-tts-minimax-section-open" ${isTtsMiniMaxSectionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
@@ -2381,11 +2592,11 @@ export class SettingsApp {
                         </div>
                     </div>
 
-                <div class="phone-settings-tab-content ${this.currentTab === 'image' ? 'is-active' : 'is-hidden'}" id="tab-image">
+                <div class="phone-settings-tab-content ${this.currentTab === 'image' ? 'is-active' : 'is-hidden'}" id="tab-image" role="tabpanel" ${this.currentTab === 'image' ? '' : 'hidden'}>
                         ${this.renderImageGenerationSection()}
                     </div>
                     ${isLobbyMode
-                        ? `<div class="phone-settings-tab-content ${this.currentTab === 'lobby' ? 'is-active' : 'is-hidden'}" id="tab-lobby">
+                        ? `<div class="phone-settings-tab-content ${this.currentTab === 'lobby' ? 'is-active' : 'is-hidden'}" id="tab-lobby" role="tabpanel" ${this.currentTab === 'lobby' ? '' : 'hidden'}>
                             ${this.renderLobbyLinkSection(context)}
                         </div>`
                         : ''}
@@ -2394,6 +2605,7 @@ export class SettingsApp {
         `;
 
         this.phoneShell.setContent(html);
+        this._applySettingsThemeIsolation();
         this.bindEvents();
     }
 
