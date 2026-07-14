@@ -7258,7 +7258,8 @@ if (window.GGP_Loaded) {
         if (!window.VirtualPhone.wangxiangApp) {
             window.VirtualPhone.wangxiangApp = new module.WangxiangApp(phoneShell, storage);
         }
-        return window.VirtualPhone.wangxiangApp;
+        return window.VirtualPhone.wangxiangApp.attachRuntime?.(phoneShell, storage)
+            || window.VirtualPhone.wangxiangApp;
     }
 
     async function rollbackWangxiangTaskProgress(floor, exact = false) {
@@ -8530,7 +8531,9 @@ if (window.GGP_Loaded) {
                                 if (!window.VirtualPhone.wangxiangApp) {
                                     window.VirtualPhone.wangxiangApp = new module.WangxiangApp(phoneShell, storage);
                                 }
-                                await window.VirtualPhone.wangxiangApp.render();
+                                const app = window.VirtualPhone.wangxiangApp.attachRuntime?.(phoneShell, storage)
+                                    || window.VirtualPhone.wangxiangApp;
+                                await app.render();
                             } catch (initError) {
                                 console.error('❌ 万象APP初始化失败:', initError);
                                 phoneShell?.showNotification('错误', '万象加载失败', '❌');

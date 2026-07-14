@@ -563,11 +563,15 @@ export class WangxiangView {
         return products.map(product => this._renderMarketplaceProductCard(product)).join('');
     }
 
-    _resolveMarketplaceCategoryIcon(categoryName) {
-        const name = String(categoryName || '').replace(/\s+/g, '').toLocaleLowerCase();
+    _resolveMarketplaceCategoryIcon(...values) {
+        const name = values
+            .flat()
+            .filter(Boolean)
+            .map(value => String(value).replace(/\s+/g, '').toLocaleLowerCase())
+            .join('|');
         const rules = [
+            { pattern: /医疗|医药|药品|药物|药剂|药片|药丸|胶囊|处方|疫苗|抗生素|止痛|退烧|治疗|急救|护理|医用|诊疗|康复|保健|保健品|补剂|营养品|维生素|丹药|疗愈|恢复/, icon: 'fa-kit-medical' },
             { pattern: /外卖|餐饮|食品|食物|料理|零食|饮品|饮料|酒水|甜品|生鲜|果蔬|粮油|补给/, icon: 'fa-utensils' },
-            { pattern: /医疗|医药|药品|药剂|治疗|急救|护理|保健|丹药|疗愈|恢复/, icon: 'fa-kit-medical' },
             { pattern: /服装|衣物|衣饰|时装|穿戴|鞋靴|鞋包|帽|外套|内衣|布料|纺织/, icon: 'fa-shirt' },
             { pattern: /武器|装备|战斗|军械|防具|护甲|盔甲|枪械|刀剑|弓弩|盾牌|弹药/, icon: 'fa-shield-halved' },
             { pattern: /科技|芯片|电子|数码|机械|机甲|终端|通讯|强化|改造|智能|能源/, icon: 'fa-microchip' },
@@ -591,8 +595,8 @@ export class WangxiangView {
         const categoryIndex = Math.max(1, Math.min(5, Number(product?.categoryIndex || 1)));
         const categories = this.app.getMarketplaceCategories();
         const categoryName = categories[categoryIndex - 1] || '商品';
-        const categoryIcon = this._resolveMarketplaceCategoryIcon(categoryName);
         const tags = (Array.isArray(product?.tags) ? product.tags : []).slice(0, 2);
+        const categoryIcon = this._resolveMarketplaceCategoryIcon(categoryName, product?.name, tags);
         const searchText = [categoryName, product?.name, product?.description, ...tags].filter(Boolean).join(' ').toLocaleLowerCase();
         const stockMatch = String(product?.stock ?? '').replace(/,/g, '').match(/\d+(?:\.\d+)?/);
         const isSoldOut = !!stockMatch && Number(stockMatch[0]) <= 0;

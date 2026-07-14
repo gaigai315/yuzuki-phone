@@ -141,7 +141,20 @@ export class WangxiangApp {
         });
     }
 
+    attachRuntime(phoneShell, storage) {
+        if (phoneShell?.setContent) this.phoneShell = phoneShell;
+        if (storage) {
+            this.storage = storage;
+            if (this.wechatData) this.wechatData.storage = storage;
+        }
+        if (this.wangxiangView) this.wangxiangView.app = this;
+        return this;
+    }
+
     async render() {
+        if (!this.phoneShell?.setContent) {
+            throw new Error('万象运行时未绑定手机壳');
+        }
         this._syncTaskDataScope();
         const deliveredOrders = await this.checkMarketplaceDeliveries({ showPopup: false });
         await this.wangxiangView.render();
