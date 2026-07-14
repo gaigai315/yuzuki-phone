@@ -3181,7 +3181,7 @@ input:checked + .toggle-slider:before {
    防止酒馆主题/其他插件覆盖 checkbox 与 switch 外观
    ======================================== */
 
-.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input) {
+.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check) {
     -webkit-appearance: checkbox !important;
     appearance: auto !important;
     position: relative !important;
@@ -3209,23 +3209,22 @@ input:checked + .toggle-slider:before {
     vertical-align: middle !important;
 }
 
-.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):checked {
+.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):checked {
     -webkit-appearance: checkbox !important;
     appearance: auto !important;
     accent-color: #30c46b !important;
 }
 
-.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input)::after {
+.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check)::after {
     content: none !important;
 }
 
-.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):checked::after {
+.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):checked::after {
     content: none !important;
 }
 
 .phone-screen .wechat-worldbook-choice,
-.phone-screen .phone-honey-worldbook-choice,
-.phone-screen .phone-memory-perm {
+.phone-screen .phone-honey-worldbook-choice {
     margin-top: 2px !important;
 }
 
@@ -5575,7 +5574,7 @@ input:checked + .toggle-slider:before {
 }
 
 /* 3. 拯救滑块和复选框 (对抗主题对 input[type="range"] 和 checkbox 的魔改) */
-#phone-panel-content input[type="range"]::-webkit-slider-thumb {
+#phone-panel-content input[type="range"]:not(#phone-shell-scale-slider)::-webkit-slider-thumb {
     background: #07c160 !important;
     background-image: none !important;
     box-shadow: none !important;
@@ -5595,7 +5594,33 @@ input:checked + .toggle-slider:before {
     display: none !important; /* 清除主题塞进来的奇奇怪怪的背景图 */
 }
 
-/* 4. 拯救返回图标和省略号 (对抗主题强删 fa-chevron-left::before) */
+/* 4. 拯救微信顶部按钮、返回图标和省略号 */
+#phone-panel-content .phone-screen .wechat-app .wechat-header button.wechat-back-btn,
+#phone-panel-content .phone-screen .wechat-app .wechat-header button.wechat-header-btn {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    background: transparent !important;
+    background-image: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    filter: none !important;
+    margin: 0 !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    padding: 6px !important;
+    text-shadow: none !important;
+    transform: none !important;
+}
+
+#phone-panel-content .phone-screen .wechat-app .wechat-header button.wechat-back-btn::before,
+#phone-panel-content .phone-screen .wechat-app .wechat-header button.wechat-back-btn::after,
+#phone-panel-content .phone-screen .wechat-app .wechat-header button.wechat-header-btn::before,
+#phone-panel-content .phone-screen .wechat-app .wechat-header button.wechat-header-btn::after {
+    content: none !important;
+    display: none !important;
+}
+
 #phone-panel-content .fa-solid,
 #phone-panel-content .fa-regular {
     background-image: none !important;

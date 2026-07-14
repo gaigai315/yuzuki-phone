@@ -1055,25 +1055,11 @@ export class SettingsApp {
                         word-break: break-word !important;
                         overflow-wrap: anywhere !important;
                     }
-                    .settings-app input[type="checkbox"] {
+                    .settings-app input[type="checkbox"]:not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check) {
                         -webkit-appearance: checkbox !important;
                         appearance: auto !important;
                         opacity: 1 !important;
                         accent-color: #30c46b !important;
-                    }
-                    .settings-app .phone-memory-perm {
-                        -webkit-appearance: checkbox !important;
-                        appearance: auto !important;
-                        opacity: 1 !important;
-                        width: 16px !important;
-                        height: 16px !important;
-                        min-width: 16px !important;
-                        min-height: 16px !important;
-                        margin: 0 !important;
-                        accent-color: #30c46b !important;
-                        cursor: pointer !important;
-                        filter: none !important;
-                        transform: none !important;
                     }
                     .settings-app details > summary::-webkit-details-marker { display: none; }
                     .settings-app details > summary::marker { content: ''; }
@@ -1178,18 +1164,6 @@ export class SettingsApp {
                         border-radius: 10px;
                         padding: 0 8px;
                         background: #fff;
-                    }
-                    .settings-app .phone-lobby-item-row input[type="checkbox"] {
-                        -webkit-appearance: checkbox !important;
-                        appearance: auto !important;
-                        opacity: 1 !important;
-                        width: 16px !important;
-                        height: 16px !important;
-                        min-width: 16px !important;
-                        min-height: 16px !important;
-                        margin-top: 2px !important;
-                        accent-color: #30c46b !important;
-                        cursor: pointer;
                     }
                     #tab-general > details[data-settings-fold-key] {
                         margin: 10px 0 !important;
@@ -1307,7 +1281,6 @@ export class SettingsApp {
                     #tab-general .phone-shell-scale-control input[type="range"] {
                         flex: 1 1 auto;
                         min-width: 0;
-                        accent-color: #111827;
                         touch-action: pan-y;
                     }
                     #tab-general .phone-shell-scale-value {
@@ -4023,24 +3996,6 @@ export class SettingsApp {
         });
 
         document.querySelectorAll('.phone-memory-perm').forEach(input => {
-            const forceStyle = {
-                appearance: 'auto',
-                '-webkit-appearance': 'checkbox',
-                opacity: '1',
-                width: '16px',
-                height: '16px',
-                minWidth: '16px',
-                minHeight: '16px',
-                margin: '0',
-                accentColor: '#30c46b',
-                cursor: 'pointer',
-                filter: 'none',
-                transform: 'none'
-            };
-            Object.entries(forceStyle).forEach(([key, value]) => {
-                const cssKey = key.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
-                input.style.setProperty(cssKey, value, 'important');
-            });
             input.addEventListener('change', async (e) => {
                 const appId = String(e.target.dataset.appId || '').trim();
                 const permKey = String(e.target.dataset.permKey || '').trim();
