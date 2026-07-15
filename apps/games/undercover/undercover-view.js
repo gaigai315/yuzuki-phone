@@ -1,4 +1,4 @@
-const UNDERCOVER_CSS_URL = new URL('./undercover.css?v=1.0.27', import.meta.url).href;
+const UNDERCOVER_CSS_URL = new URL('./undercover.css?v=1.0.28', import.meta.url).href;
 const UNDERCOVER_BACKGROUND_URL = new URL('./assets/sswdzt.png', import.meta.url).href;
 const UNDERCOVER_GAME_BACKGROUND_URL = new URL('./assets/sswd.png', import.meta.url).href;
 const UNDERCOVER_WORD_CARD_URL = new URL('./assets/sswdch.png', import.meta.url).href;
@@ -785,8 +785,29 @@ export class UndercoverView {
     _renderVotePanel(game = {}) {
         if (game.status === 'error') return '';
         if (game.phase === 'ended') {
-            const result = game.winner === 'civilian' ? '平民找出了卧底' : '卧底坚持到了最后';
-            return `<div class="games-undercover-vote-panel is-result"><strong>${this._escape(game.statusText || '本局结束')}</strong><span>${this._escape(result)}</span></div>`;
+            const result = game.winner === 'civilian'
+                ? '平民找出了卧底'
+                : (game.winner === 'undercover' ? '卧底坚持到了最后' : '本局已经结束');
+            const undercoverPlayer = (game.players || []).find(player => (
+                player.role === 'undercover' || Number(player.seat) === Number(game.undercoverSeat)
+            ));
+            const civilianPlayer = (game.players || []).find(player => player.role === 'civilian');
+            const civilianWord = String(game.wordPair?.civilian || civilianPlayer?.word || '未知').trim();
+            const undercoverWord = String(game.wordPair?.undercover || undercoverPlayer?.word || '未知').trim();
+            const undercoverName = undercoverPlayer
+                ? `${Number(undercoverPlayer.seat)}号 ${undercoverPlayer.name || '玩家'}`
+                : '未知';
+            return `
+                <div class="games-undercover-vote-panel is-result">
+                    <strong>${this._escape(game.statusText || '本局结束')}</strong>
+                    <span>${this._escape(result)}</span>
+                    <div class="games-undercover-result-reveal">
+                        <span><b>平民词</b>${this._escape(civilianWord)}</span>
+                        <span><b>卧底词</b>${this._escape(undercoverWord)}</span>
+                        <span><b>卧底</b>${this._escape(undercoverName)}</span>
+                    </div>
+                </div>
+            `;
         }
         if (game.phase !== 'voting') return '';
         if (game.status !== 'waiting_user_vote') {

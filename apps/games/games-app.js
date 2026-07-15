@@ -1203,6 +1203,7 @@ export class GamesApp extends PokerApp {
     }
 
     async startWerewolfMatch(invitedContacts = []) {
+        this.werewolfData.randomizeSetupUserSeat();
         const emptySeats = this.werewolfData.getEmptySeats();
         if (!emptySeats.length) {
             this.phoneShell?.showNotification?.('狼人杀', '已经没有空位需要匹配', '🐺');
@@ -2319,6 +2320,10 @@ export class GamesApp extends PokerApp {
 
     _buildWerewolfInvitedPlayers(contacts = [], emptySeats = []) {
         const seats = emptySeats.slice();
+        for (let index = seats.length - 1; index > 0; index -= 1) {
+            const swap = Math.floor(Math.random() * (index + 1));
+            [seats[index], seats[swap]] = [seats[swap], seats[index]];
+        }
         const seen = new Set();
         return (Array.isArray(contacts) ? contacts : [])
             .map(contact => {

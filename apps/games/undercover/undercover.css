@@ -656,6 +656,33 @@
     font-size: 12px;
 }
 
+#phone-panel-content .phone-screen .games-undercover-result-reveal {
+    display: grid;
+    width: 100%;
+    margin-top: 5px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+}
+
+#phone-panel-content .phone-screen .games-undercover-result-reveal > span {
+    min-width: 0;
+    padding: 5px 3px;
+    border: 1px solid rgba(139, 92, 54, 0.18);
+    border-radius: 6px;
+    background: rgba(249, 224, 180, 0.58);
+    color: #70472c;
+    font-size: 9px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+#phone-panel-content .phone-screen .games-undercover-result-reveal b {
+    display: block;
+    margin-bottom: 2px;
+    color: #b06b2e;
+    font-size: 8px;
+}
+
 #phone-panel-content .phone-screen .games-undercover-share-overlay {
     position: absolute;
     inset: 0;

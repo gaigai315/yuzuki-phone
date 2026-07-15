@@ -38,6 +38,21 @@ export class WerewolfData {
         return this.state;
     }
 
+    randomizeSetupUserSeat() {
+        if (this.state?.phase !== 'setup' || this.state.matching) return this.state;
+        const user = this.state.players?.find(player => player.isUser);
+        if (!user) return this.state;
+        const userSeat = this._randomSeat();
+        this.state.players = Array.from({ length: 8 }, (_, index) => {
+            const seat = index + 1;
+            return seat === userSeat
+                ? { ...user, seat, role: '', alive: true, active: false }
+                : this._createEmptyPlayer(seat);
+        });
+        this._persist();
+        return this.state;
+    }
+
     updateUserInfo(userInfo = {}) {
         this._sanitizeSetupSeats();
         const user = this.state.players?.find(player => player.isUser);
