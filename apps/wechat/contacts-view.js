@@ -13,12 +13,15 @@
 // 微信通讯录视图
 // ========================================
 import { ImageCropper } from '../settings/image-cropper.js';
+import { AlbumData } from '../album/album-data.js';
+import { AlbumImagePicker } from '../album/album-image-picker.js';
 
 export class ContactsView {
     constructor(wechatApp) {
         this.app = wechatApp;
         this.searchText = '';
         this.groupsCollapsed = true;
+        this._albumImagePicker = null;
     }
 
     _escapeAttr(value = '') {
@@ -921,8 +924,74 @@ export class ContactsView {
             }
         });
 
-        query('#upload-edit-contact-avatar')?.addEventListener('click', () => {
-            query('#edit-contact-avatar-upload')?.click();
+        const getAlbumImagePicker = () => {
+            if (!this._albumImagePicker) {
+                const albumData = window.VirtualPhone?.albumApp?.albumData || new AlbumData(this.app.storage);
+                this._albumImagePicker = new AlbumImagePicker(albumData);
+            }
+            return this._albumImagePicker;
+        };
+
+        const applySelectedAvatar = async (nextAvatar, successMessage) => {
+            const safeNextAvatar = String(nextAvatar || '').trim();
+            if (!safeNextAvatar) throw new Error('头像路径无效');
+
+            const oldAvatar = String(selectedAvatar || contact.avatar || '').trim();
+            const preview = query('#edit-contact-avatar-preview');
+            if (safeNextAvatar === oldAvatar) {
+                if (preview) preview.innerHTML = this.app.renderAvatar(safeNextAvatar, '👤', contact.name);
+                this.app.phoneShell.showNotification('提示', '当前已经在使用这张头像', 'ℹ️');
+                return;
+            }
+
+            selectedAvatar = safeNextAvatar;
+            if (preview) preview.innerHTML = this.app.renderAvatar(selectedAvatar, '👤', contact.name);
+
+            const synced = this.app.wechatData.syncContactAvatar(safeContactId, selectedAvatar);
+            const savedContact = this.app.wechatData.getContact(safeContactId)
+                || this.app.wechatData.findContactByNameLoose?.(contact.name, { includeChats: false });
+            const savedChat = this.app.wechatData.getChatByContactId?.(safeContactId);
+            const contactAvatarSaved = String(savedContact?.avatar || '').trim() === selectedAvatar;
+            const chatAvatarSaved = !savedChat || String(savedChat.avatar || '').trim() === selectedAvatar;
+            if (!synced || !contactAvatarSaved || !chatAvatarSaved) {
+                selectedAvatar = oldAvatar || contact.avatar || '👤';
+                this.app.wechatData.syncContactAvatar(safeContactId, selectedAvatar);
+                if (preview) preview.innerHTML = this.app.renderAvatar(selectedAvatar, '👤', contact.name);
+                throw new Error('头像写入联系人数据失败，请重新打开联系人后再试');
+            }
+
+            if (window.VirtualPhone) {
+                window.VirtualPhone.cachedWechatData = this.app.wechatData;
+            }
+            if (oldAvatar && oldAvatar !== selectedAvatar) {
+                window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(
+                    oldAvatar,
+                    { quiet: true, skipIfReferenced: true }
+                )?.catch?.(() => { });
+            }
+            this.app.phoneShell.showNotification('成功', successMessage, '✅');
+        };
+
+        query('#upload-edit-contact-avatar')?.addEventListener('click', async () => {
+            const picker = getAlbumImagePicker();
+            const source = await picker.chooseSource();
+            if (source === 'device') {
+                query('#edit-contact-avatar-upload')?.click();
+                return;
+            }
+            if (source !== 'album') return;
+
+            const image = await picker.chooseImage();
+            if (!image) {
+                this.app.phoneShell.showNotification('提示', '相册 App 里还没有可复用的图片', 'ℹ️');
+                return;
+            }
+            try {
+                await applySelectedAvatar(image.path, '已复用相册中的头像');
+            } catch (err) {
+                console.warn('复用相册头像失败:', err);
+                this.app.phoneShell.showNotification('更换失败', err?.message || '头像更换失败', '❌');
+            }
         });
 
         query('#edit-contact-avatar-upload')?.addEventListener('change', async (e) => {
@@ -946,37 +1015,10 @@ export class ContactsView {
                 });
                 const croppedImage = await cropper.open(file);
 
-                const preview = query('#edit-contact-avatar-preview');
-                if (preview) {
-                    preview.innerHTML = `<img src="${croppedImage}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
-                }
-
                 this.app.phoneShell.showNotification('处理中', '正在上传头像...', '⏳');
-                const oldAvatar = String(selectedAvatar || contact.avatar || '').trim();
                 const uploadedAvatar = await window.VirtualPhone?.imageManager?.uploadDataUrl?.(croppedImage, 'contact_avatar');
                 if (!uploadedAvatar) throw new Error('图片上传管理器未初始化');
-
-                selectedAvatar = uploadedAvatar;
-                const synced = this.app.wechatData.syncContactAvatar(safeContactId, selectedAvatar);
-                const savedContact = this.app.wechatData.getContact(safeContactId)
-                    || this.app.wechatData.findContactByNameLoose?.(contact.name, { includeChats: false });
-                const savedChat = this.app.wechatData.getChatByContactId?.(safeContactId);
-                const contactAvatarSaved = String(savedContact?.avatar || '').trim() === selectedAvatar;
-                const chatAvatarSaved = !savedChat || String(savedChat.avatar || '').trim() === selectedAvatar;
-                if (!synced || !contactAvatarSaved || !chatAvatarSaved) {
-                    selectedAvatar = oldAvatar || contact.avatar || '👤';
-                    if (preview) {
-                        preview.innerHTML = this.app.renderAvatar(selectedAvatar, '👤', contact.name);
-                    }
-                    throw new Error('头像已上传，但写入联系人数据失败，请重新打开联系人后再试');
-                }
-                if (window.VirtualPhone) {
-                    window.VirtualPhone.cachedWechatData = this.app.wechatData;
-                }
-                if (oldAvatar && oldAvatar !== selectedAvatar) {
-                    window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldAvatar, { quiet: true, skipIfReferenced: true })?.catch?.(() => { });
-                }
-                this.app.phoneShell.showNotification('成功', '头像已上传并保存', '✅');
+                await applySelectedAvatar(uploadedAvatar, '头像已上传并保存');
             } catch (err) {
                 if (String(err?.message || '') === '用户取消') return;
                 console.warn('头像上传服务器失败:', err);

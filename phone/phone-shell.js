@@ -299,7 +299,7 @@ export class PhoneShell {
                 '.games-catbox-inventory-overlay', '.games-catbox-inventory-panel', '.games-catbox-inventory-list',
                 '.games-catbox-coadopt-overlay', '.games-catbox-coadopt-panel', '.games-catbox-coadopt-list',
                 '.games-catbox-letters-overlay', '.games-catbox-letter-paper', '.games-catbox-letter-list',
-                '.album-body', '.album-grid', '.album-preview-panel',
+                '.album-body', '.album-grid', '.album-preview-panel', '.album-image-picker-grid',
                 '.wangxiang-content-scroll',
                 '.yzp-calendar-main', '.yzp-calendar-settings-body', '.yzp-calendar-prompt-editor',
                 '.yzp-calendar-memo-list', '.yzp-calendar-add-sheet', '.yzp-calendar-month-sheet', '.yzp-calendar-detail-sheet', '.yzp-calendar-detail-body', '.yzp-calendar-memo-input', '.yzp-calendar-type-menu',
