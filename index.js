@@ -45,9 +45,10 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-16',
+    date: '2026-07-17',
     items: [
-        '【修复】修复跟随酒馆 API 时未遵循小手机流式设置，导致 AI 标签诊断等请求可能返回为空的问题。'
+        '【修复】修复跟随酒馆 API 时未遵循小手机流式设置，导致 AI 标签诊断等请求可能返回为空的问题。',
+        '【优化】优化微信会话样式功能。'
     ]
 };
 

@@ -6054,22 +6054,27 @@ export class WechatApp {
                         </select>
                         <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: #8e8e93; font-size: 12px; pointer-events: none;"></i>
                     </div>
-                    <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px;">
                         <button id="new-css-profile-btn" style="
-                            flex: 1; padding: 8px 6px; background: #fff; color: #333;
+                            min-width: 0; padding: 8px 6px; background: #fff; color: #333;
                             border: 1px solid #e7e7e7; border-radius: 8px; font-size: 12px; cursor: pointer;
                         ">新增预设</button>
+                        <button id="import-css-profile-btn" style="
+                            min-width: 0; padding: 8px 6px; background: #fff; color: #333;
+                            border: 1px solid #e7e7e7; border-radius: 8px; font-size: 12px; cursor: pointer;
+                        "><i class="fa-solid fa-file-import" style="margin-right: 4px;"></i>导入 TXT</button>
                         <button id="save-css-profile-btn" ${hasActiveChatCssProfile ? '' : 'disabled'} style="
-                            flex: 1; padding: 8px 6px; background: #07c160; color: #fff;
+                            min-width: 0; padding: 8px 6px; background: #07c160; color: #fff;
                             border: none; border-radius: 8px; font-size: 12px; cursor: ${hasActiveChatCssProfile ? 'pointer' : 'default'};
                             opacity: ${hasActiveChatCssProfile ? '1' : '0.45'};
                         ">保存当前</button>
                         <button id="delete-css-profile-btn" ${hasActiveChatCssProfile ? '' : 'disabled'} style="
-                            flex: 1; padding: 8px 6px; background: #fff; color: #ff3b30;
+                            min-width: 0; padding: 8px 6px; background: #fff; color: #ff3b30;
                             border: 1px solid #f1c6c2; border-radius: 8px; font-size: 12px; cursor: pointer;
                             opacity: ${hasActiveChatCssProfile ? '1' : '0.45'};
                         ">删除预设</button>
                     </div>
+                    <input id="import-css-profile-file" type="file" accept=".txt,text/plain,text/css" style="display: none;">
                     <div style="font-size: 11px; color: #999; margin-bottom: 6px; line-height: 1.45;">
                         可覆盖类名：.message-avatar、.message-text 等
                     </div>
@@ -6230,6 +6235,8 @@ export class WechatApp {
 
         const profileSelect = document.getElementById('chat-css-profile-select');
         const newProfileBtn = document.getElementById('new-css-profile-btn');
+        const importProfileBtn = document.getElementById('import-css-profile-btn');
+        const importProfileFile = document.getElementById('import-css-profile-file');
         const saveProfileBtn = document.getElementById('save-css-profile-btn');
         const deleteProfileBtn = document.getElementById('delete-css-profile-btn');
         const cssTextarea = document.getElementById('wechat-chat-custom-css');
@@ -6321,6 +6328,66 @@ export class WechatApp {
                 cssTextarea.focus();
             }
             this.phoneShell.showNotification('已新增预设', profile.name, '✅');
+        });
+
+        importProfileBtn?.addEventListener('click', () => {
+            if (!importProfileFile) return;
+            importProfileFile.value = '';
+            importProfileFile.click();
+        });
+
+        importProfileFile?.addEventListener('change', async () => {
+            const file = importProfileFile.files?.[0] || null;
+            importProfileFile.value = '';
+            if (!file) return;
+
+            const fileName = String(file.name || '').trim();
+            if (!/\.txt$/i.test(fileName)) {
+                this.phoneShell.showNotification('导入失败', '请选择 TXT 文件', '⚠️');
+                return;
+            }
+            if (Number(file.size || 0) > 1024 * 1024) {
+                this.phoneShell.showNotification('导入失败', 'TXT 文件不能超过 1MB', '⚠️');
+                return;
+            }
+
+            try {
+                const css = String(await file.text()).replace(/^\uFEFF/, '');
+                if (!css.trim()) {
+                    this.phoneShell.showNotification('导入失败', 'TXT 文件内容为空', '⚠️');
+                    return;
+                }
+
+                const name = fileName.replace(/\.txt$/i, '').trim() || '导入会话样式';
+                const profiles = this._loadChatCssProfiles();
+                let profile = profiles.find(item => item.name === name) || null;
+                const now = Date.now();
+
+                if (profile) {
+                    if (!window.confirm(`会话样式预设「${name}」已存在，是否用该 TXT 覆盖？`)) return;
+                    profile.css = css;
+                    profile.updatedAt = now;
+                } else {
+                    profile = {
+                        id: this._createChatCssProfileId(new Set(profiles.map(item => item.id))),
+                        name,
+                        css,
+                        createdAt: now,
+                        updatedAt: now
+                    };
+                    profiles.push(profile);
+                }
+
+                await this._saveChatCssProfiles(profiles);
+                await this._setActiveChatCssProfileId(profile.id);
+                await applyChatCssValue(profile.css);
+                renderCssSelect(profile.id);
+                if (cssTextarea) cssTextarea.value = profile.css;
+                this.phoneShell.showNotification('导入成功', `预设「${profile.name}」已设为当前样式`, '✅');
+            } catch (error) {
+                console.warn('[Wechat] 导入会话样式 TXT 失败:', error);
+                this.phoneShell.showNotification('导入失败', error?.message || '无法读取 TXT 文件', '❌');
+            }
         });
 
         saveProfileBtn?.addEventListener('click', async () => {
