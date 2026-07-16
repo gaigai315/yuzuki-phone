@@ -17,7 +17,7 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.3.5';
+const ST_PHONE_VERSION = '1.3.6';
 const ST_PHONE_CSS_REVISION = '20260708-glass-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
@@ -45,19 +45,9 @@ const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-08',
+    date: '2026-07-16',
     items: [
-        '【新增】新增万象APP，支持购物及接取任务。',
-        '【新增】游戏APP，新增谁是卧底游戏。',
-        '【提示词】默认提示词改成自动更新。需修改提示词，请新增提示词方案预设。',
-        '【优化】优化手机 App 内部分 CSS 渲染与界面显示。',
-        '【优化】微信单聊与电话通话现在会互相参考同一联系人的聊天记录，交流衔接更自然。',
-        '【优化】点击微信聊天头像将直接进入联系人资料编辑页，角色资料编辑更便捷。',
-        '【优化】优化群聊好友，非微信好友支持点击头像更改姓名、性别。',
-        '【修复】主动拨打电话时，需等待对方首次回应后才能继续发送内容。',
-        '【修复】修复 DeepSeek 官方独立 API 因 OpenAI 兼容路由参数错误而无法连接，并同步修正模型列表拉取。',
-        '【修复】修复微信收到后台回复时错误重绘手机界面、覆盖用户正在使用的其他 App。',
-        '【新增】朋友圈内容可注入微信单聊上下文，并可通过朋友圈变量独立注入酒馆正文。'
+        '【修复】修复跟随酒馆 API 时未遵循小手机流式设置，导致 AI 标签诊断等请求可能返回为空的问题。'
     ]
 };
 

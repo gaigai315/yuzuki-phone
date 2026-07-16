@@ -454,11 +454,11 @@ export class ApiManager {
         // 2. 判断是否启用独立 API
         const useIndependentAPI = apiConfig && apiConfig.useIndependentAPI === true;
         if (useIndependentAPI) {
-            console.log('🚀 [ApiManager] 智能路由 -> 走向独立 API (流式解析模式)');
+            console.log(`🚀 [ApiManager] 智能路由 -> 走向独立 API (流式: ${apiConfig.useStream !== false ? '开' : '关'})`);
             return await this._callIndependentAPI(messages, options, apiConfig, phoneSignal);
         } else {
-            console.log('🔄 [ApiManager] 智能路由 -> 走向酒馆原生 API (generateRaw)');
-            return await this._callTavernAPI(messages, options, phoneSignal);
+            console.log(`🔄 [ApiManager] 智能路由 -> 走向酒馆原生 API (流式: ${apiConfig?.useStream !== false ? '开' : '关'})`);
+            return await this._callTavernAPI(messages, options, phoneSignal, apiConfig);
         }
         } catch (error) {
             console.error('[ApiManager] callAI 异常详情:', {
@@ -511,7 +511,8 @@ export class ApiManager {
     // ========================================
     // 🛡️ 通道 A: 酒馆原生 API (终极流式兜底，完美防502/504/400)
     // ========================================
-    async _callTavernAPI(messages, options = {}, phoneSignal = null) {
+    async _callTavernAPI(messages, options = {}, phoneSignal = null, apiConfig = null) {
+        const enableStream = apiConfig?.useStream !== false;
         const isAbortLike = (err = null) => {
             const msg = String(err?.message || err || '').toLowerCase();
             return err?.name === 'AbortError' || err?.statusText === 'abort' || msg.includes('abort');
@@ -541,7 +542,13 @@ export class ApiManager {
                 parsedSettings = await this._getCachedTavernSettings();
             } catch (settingsError) {
                 console.warn('[ApiManager] 读取酒馆配置失败，回退 generateRaw:', this._formatError(settingsError, 'settings/get 失败'));
-                return await this._callTavernGenerateRawFallback(cleanMessages, this._resolveResponseLength(null, options), options, phoneSignal);
+                return await this._callTavernGenerateRawFallback(
+                    cleanMessages,
+                    this._resolveResponseLength(null, options),
+                    options,
+                    phoneSignal,
+                    enableStream
+                );
             }
             
             // 兼容不同版本的酒馆设置结构
@@ -602,7 +609,7 @@ export class ApiManager {
                 messages: cleanMessages,
                 temperature: temperature,
                 max_tokens: maxTokens,
-                stream: true  // ✅ 开启流式，彻底解决生成大段微博时的 504 Timeout
+                stream: enableStream
             };
             this._attachPhoneSignalToPayload(payload, phoneSignal);
 
@@ -629,7 +636,7 @@ export class ApiManager {
             }));
             payload.messages = requestMessages;
 
-            console.log(`🚀 [ApiManager] 触发原生 API (模式: ${chatSource}, 模型: ${model || '未指定'}, 代理: ${reverseProxy || '默认'})`);
+            console.log(`🚀 [ApiManager] 触发原生 API (模式: ${chatSource}, 模型: ${model || '未指定'}, 代理: ${reverseProxy || '默认'}, 流式: ${enableStream ? '开' : '关'})`);
 
             // 🌟 4. 发送到正确的官方路由
             const endpoint = '/api/backends/chat-completions/generate';
@@ -650,9 +657,10 @@ export class ApiManager {
                     console.warn('⚠️ [ApiManager] 原生 API 鉴权失败，刷新 CSRF 后重试一次');
                     response = await sendGenerateRequest(true);
                     if (response.ok) {
-                        return response.body
-                            ? await this._readUniversalStream(response.body, '[酒馆原生流式兜底]')
-                            : this._parseApiResponse(await response.text());
+                        if (enableStream && response.body) {
+                            return await this._readUniversalStream(response.body, '[酒馆原生流式]');
+                        }
+                        return this._parseApiResponse(await response.text());
                     }
                     errText = await response.text();
                 }
@@ -662,23 +670,22 @@ export class ApiManager {
                     /invalid url|err_invalid_url|\/chat\/completions/i.test(String(errText || ''))
                 ) {
                     console.warn('⚠️ [ApiManager] 检测到后端 URL 解析失败，自动回退到 generateRaw 兜底');
-                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal);
+                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal, enableStream);
                 }
                 if (this._isUnauthorizedResponse(response.status, errText)) {
                     console.warn('⚠️ [ApiManager] 原生 API 鉴权仍失败，回退 generateRaw');
-                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal);
+                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal, enableStream);
                 }
                 return { success: false, error: `原生 API 失败: ${response.status} ${errText || ''}`.trim() };
             }
 
-            if (!response.body) {
-                const fallbackText = await response.text();
-                if (!fallbackText) return { success: false, error: '原生 API 失败: 响应体为空' };
-                return this._parseApiResponse(fallbackText);
+            if (enableStream && response.body) {
+                return await this._readUniversalStream(response.body, '[酒馆原生流式]');
             }
 
-            // 5. 进入流式解析器，像打字机一样拼接文字
-            return await this._readUniversalStream(response.body, '[酒馆原生流式兜底]');
+            const responseText = await response.text();
+            if (!responseText) return { success: false, error: '原生 API 失败: 响应体为空' };
+            return this._parseApiResponse(responseText);
 
         } catch (e) {
             if (options?.signal?.aborted) return { success: false, error: '已中断发送', aborted: true };
@@ -692,7 +699,7 @@ export class ApiManager {
         }
     }
 
-    async _callTavernGenerateRawFallback(cleanMessages, maxTokens, options = {}, phoneSignal = null) {
+    async _callTavernGenerateRawFallback(cleanMessages, maxTokens, options = {}, phoneSignal = null, useStream = true) {
         try {
             const context = (typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function')
                 ? SillyTavern.getContext()
@@ -714,7 +721,7 @@ export class ApiManager {
                 quiet: true,
                 dryRun: false,
                 skip_save: true,
-                stream: true,
+                stream: useStream !== false,
                 include_world_info: false,
                 include_jailbreak: false,
                 include_character_card: false,
