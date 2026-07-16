@@ -374,17 +374,20 @@ export class SettingsApp {
             });
         });
 
-        lockAll('.setting-section', {
-            'box-sizing': 'border-box',
-            'display': 'block',
-            'position': 'relative',
-            'inset': 'auto',
-            'width': '100%',
-            'height': 'auto',
-            'min-width': '0',
-            'min-height': '0',
-            'float': 'none',
-            'transform': 'none'
+        root.querySelectorAll('.setting-section').forEach((section) => {
+            const declaredDisplay = section.style.getPropertyValue('display').trim();
+            lock(section, {
+                'box-sizing': 'border-box',
+                'display': declaredDisplay || 'block',
+                'position': 'relative',
+                'inset': 'auto',
+                'width': '100%',
+                'height': 'auto',
+                'min-width': '0',
+                'min-height': '0',
+                'float': 'none',
+                'transform': 'none'
+            });
         });
         lockAll('.setting-section-title', {
             'box-sizing': 'border-box',
@@ -5141,11 +5144,14 @@ export class SettingsApp {
         const imageNovelaiOnlyRows = Array.from(document.querySelectorAll('.phone-image-novelai-only'));
         const setImageProviderVisibility = () => {
             const provider = String(imageProvider?.value || 'novelai').trim() || 'novelai';
-            if (imageNovelaiSection) imageNovelaiSection.style.display = provider === 'novelai' ? '' : 'none';
-            if (imageOpenaiSection) imageOpenaiSection.style.display = provider === 'openai' ? '' : 'none';
-            if (imageSiliconflowSection) imageSiliconflowSection.style.display = provider === 'siliconflow' ? '' : 'none';
-            if (imageSdSection) imageSdSection.style.display = provider === 'sd' ? '' : 'none';
-            if (imageComfyUISection) imageComfyUISection.style.display = provider === 'comfyui' ? '' : 'none';
+            const setSectionVisible = (section, visible) => {
+                section?.style.setProperty('display', visible ? 'block' : 'none', 'important');
+            };
+            setSectionVisible(imageNovelaiSection, provider === 'novelai');
+            setSectionVisible(imageOpenaiSection, provider === 'openai');
+            setSectionVisible(imageSiliconflowSection, provider === 'siliconflow');
+            setSectionVisible(imageSdSection, provider === 'sd');
+            setSectionVisible(imageComfyUISection, provider === 'comfyui');
             imageNovelaiOnlyRows.forEach(row => {
                 row.style.display = provider === 'novelai' ? '' : 'none';
             });
