@@ -16,6 +16,10 @@ import { MomentsView } from './moments-view.js?v=20260714-moments-phone-time';
 import { WechatData } from './wechat-data.js';
 import { ImageCropper } from '../settings/image-cropper.js';
 
+const CHAT_CSS_VALUE_KEY = 'phone_global_chat_css';
+const CHAT_CSS_PROFILES_KEY = 'phone_chat_css_profiles';
+const CHAT_CSS_ACTIVE_PROFILE_KEY = 'phone_chat_css_active_profile';
+
 export class WechatApp {
     constructor(phoneShell, storage) {
         this.phoneShell = phoneShell;
@@ -93,10 +97,112 @@ export class WechatApp {
     _getUserCustomChatCss() {
         try {
             // 🔥 改为从全局配置中读取，所有会话共享
-            return String(this.storage?.get('phone_global_chat_css') || '');
+            return String(this.storage?.get(CHAT_CSS_VALUE_KEY) || '');
         } catch (e) {
             return '';
         }
+    }
+
+    _createChatCssProfileId(existingIds = new Set()) {
+        let id = '';
+        do {
+            id = `chat_css_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        } while (existingIds.has(id));
+        return id;
+    }
+
+    _loadChatCssProfiles() {
+        let parsed = [];
+        try {
+            const raw = this.storage?.get(CHAT_CSS_PROFILES_KEY);
+            parsed = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+        } catch (e) {
+            parsed = [];
+        }
+        if (!Array.isArray(parsed)) return [];
+
+        const usedIds = new Set();
+        const profiles = [];
+        let migrated = false;
+        parsed.forEach((item) => {
+            if (!item || typeof item !== 'object') {
+                migrated = true;
+                return;
+            }
+            const css = String(item.css || '');
+            let name = String(item.name || '').trim();
+            if (!name && !css) {
+                migrated = true;
+                return;
+            }
+            if (!name) {
+                name = `预设 ${profiles.length + 1}`;
+                migrated = true;
+            }
+
+            let id = String(item.id || '').trim();
+            if (!id || usedIds.has(id)) {
+                id = this._createChatCssProfileId(usedIds);
+                migrated = true;
+            }
+            usedIds.add(id);
+            profiles.push({
+                id,
+                name,
+                css,
+                createdAt: Number(item.createdAt) || Date.now(),
+                updatedAt: Number(item.updatedAt) || Number(item.createdAt) || Date.now()
+            });
+        });
+
+        if (migrated) {
+            this.storage?.set(CHAT_CSS_PROFILES_KEY, JSON.stringify(profiles));
+        }
+        return profiles;
+    }
+
+    _saveChatCssProfiles(profiles) {
+        const safeProfiles = Array.isArray(profiles) ? profiles : [];
+        return this.storage?.set(CHAT_CSS_PROFILES_KEY, JSON.stringify(safeProfiles));
+    }
+
+    _getActiveChatCssProfileId() {
+        return String(this.storage?.get(CHAT_CSS_ACTIVE_PROFILE_KEY) || '').trim();
+    }
+
+    _setActiveChatCssProfileId(profileId) {
+        return this.storage?.set(CHAT_CSS_ACTIVE_PROFILE_KEY, String(profileId || '').trim());
+    }
+
+    _ensureChatCssPresetState() {
+        const profiles = this._loadChatCssProfiles();
+        let activeId = this._getActiveChatCssProfileId();
+        let activeProfile = profiles.find(profile => profile.id === activeId) || null;
+        const appliedCss = this._getUserCustomChatCss();
+
+        // 旧版只有“已应用 CSS”而没有当前预设。升级时自动收纳，避免丢失用户样式。
+        if (!activeProfile && appliedCss) {
+            activeProfile = profiles.find(profile => profile.css === appliedCss) || null;
+            if (!activeProfile) {
+                const usedIds = new Set(profiles.map(profile => profile.id));
+                activeProfile = {
+                    id: this._createChatCssProfileId(usedIds),
+                    name: '现有会话样式',
+                    css: appliedCss,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
+                };
+                profiles.push(activeProfile);
+                this._saveChatCssProfiles(profiles);
+            }
+            activeId = activeProfile.id;
+            this._setActiveChatCssProfileId(activeId);
+        } else if (activeId && !activeProfile) {
+            activeId = '';
+            this._setActiveChatCssProfileId('');
+        }
+
+        return { profiles, activeId, activeProfile };
     }
 
     _applyCustomChatStyle(cssText) {
@@ -5487,11 +5593,18 @@ export class WechatApp {
         const useWechatWorldbook = window.VirtualPhone?.worldbookManager?.getEnabled?.('wechat') ?? true;
         const userInfo = this.wechatData.getUserInfo();
         const momentsBackground = String(userInfo?.momentsBackground || '').trim();
-        const globalCss = this.storage?.get('phone_global_chat_css') || '';
-        const safeCustomCss = String(globalCss)
+        const chatCssState = this._ensureChatCssPresetState();
+        const escapeChatCssHtml = (value) => String(value ?? '')
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        const safeCustomCss = escapeChatCssHtml(chatCssState.activeProfile?.css || '');
+        const chatCssProfileOptions = chatCssState.profiles.map(profile => `
+            <option value="${escapeChatCssHtml(profile.id)}" ${profile.id === chatCssState.activeId ? 'selected' : ''}>${escapeChatCssHtml(profile.name)}</option>
+        `).join('');
+        const hasActiveChatCssProfile = !!chatCssState.activeProfile;
         const momentsBackgroundPreview = momentsBackground
             ? `background-image:url('${momentsBackground}');background-size:cover;background-position:center;`
             : 'background:linear-gradient(135deg,#f3f4f6,#e9edf2);';
@@ -5936,33 +6049,36 @@ export class WechatApp {
                             background: #fafafa; font-size: 13px; color: #000;
                             -webkit-appearance: none; outline: none; cursor: pointer;
                         ">
-                            <option value="">-- 选择或输入CSS --</option>
+                            <option value="" ${hasActiveChatCssProfile ? '' : 'selected'} disabled>-- 请选择会话样式预设 --</option>
+                            ${chatCssProfileOptions}
                         </select>
                         <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: #8e8e93; font-size: 12px; pointer-events: none;"></i>
                     </div>
-                    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-                        <button id="save-css-profile-btn" style="
-                            flex: 1; padding: 8px 10px; background: #fafafa; color: #333;
+                    <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                        <button id="new-css-profile-btn" style="
+                            flex: 1; padding: 8px 6px; background: #fff; color: #333;
                             border: 1px solid #e7e7e7; border-radius: 8px; font-size: 12px; cursor: pointer;
-                        ">存为预设</button>
-                        <button id="delete-css-profile-btn" style="
-                            flex: 1; padding: 8px 10px; background: #fff; color: #ff3b30;
+                        ">新增预设</button>
+                        <button id="save-css-profile-btn" ${hasActiveChatCssProfile ? '' : 'disabled'} style="
+                            flex: 1; padding: 8px 6px; background: #07c160; color: #fff;
+                            border: none; border-radius: 8px; font-size: 12px; cursor: ${hasActiveChatCssProfile ? 'pointer' : 'default'};
+                            opacity: ${hasActiveChatCssProfile ? '1' : '0.45'};
+                        ">保存当前</button>
+                        <button id="delete-css-profile-btn" ${hasActiveChatCssProfile ? '' : 'disabled'} style="
+                            flex: 1; padding: 8px 6px; background: #fff; color: #ff3b30;
                             border: 1px solid #f1c6c2; border-radius: 8px; font-size: 12px; cursor: pointer;
-                        ">删除配置</button>
+                            opacity: ${hasActiveChatCssProfile ? '1' : '0.45'};
+                        ">删除预设</button>
                     </div>
                     <div style="font-size: 11px; color: #999; margin-bottom: 6px; line-height: 1.45;">
                         可覆盖类名：.message-avatar、.message-text 等
                     </div>
-                    <textarea id="wechat-chat-custom-css" placeholder=".message-right .message-text { border-radius: 14px; background: #c9f7b9; }\n.message-avatar { border: 1px solid #dfe3ea; }" style="
+                    <textarea id="wechat-chat-custom-css" ${hasActiveChatCssProfile ? '' : 'disabled'} placeholder="${hasActiveChatCssProfile ? '.message-right .message-text { border-radius: 14px; background: #c9f7b9; }' : '请先新增或选择一个会话样式预设'}" style="
                         width: 100%; min-height: 120px; padding: 10px; border: 1px solid #e7e7e7; border-radius: 8px;
-                        background: #fbfbfb; font-size: 12px; color: #333; line-height: 1.45;
+                        background: ${hasActiveChatCssProfile ? '#fbfbfb' : '#f3f3f3'}; font-size: 12px; color: #333; line-height: 1.45;
                         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
                         resize: vertical; outline: none; box-sizing: border-box; touch-action: pan-y; overscroll-behavior: contain;
                     ">${safeCustomCss}</textarea>
-                    <button id="apply-chat-css-btn" style="
-                        width: 100%; margin-top: 10px; padding: 9px 12px; border: none; border-radius: 8px;
-                        background: #07c160; color: #fff; font-size: 13px; cursor: pointer;
-                    ">应用会话样式</button>
                 </div>
 
                 <!-- 数据管理 -->
@@ -6113,97 +6229,135 @@ export class WechatApp {
         };
 
         const profileSelect = document.getElementById('chat-css-profile-select');
+        const newProfileBtn = document.getElementById('new-css-profile-btn');
         const saveProfileBtn = document.getElementById('save-css-profile-btn');
         const deleteProfileBtn = document.getElementById('delete-css-profile-btn');
-        const applyCssBtn = document.getElementById('apply-chat-css-btn');
         const cssTextarea = document.getElementById('wechat-chat-custom-css');
-        const loadCssProfiles = () => {
-            try {
-                const parsed = JSON.parse(this.storage?.get('phone_chat_css_profiles') || '[]');
-                if (!Array.isArray(parsed)) return [];
-                return parsed
-                    .map((profile) => ({
-                        name: String(profile?.name || '').trim(),
-                        css: String(profile?.css || '')
-                    }))
-                    .filter(profile => profile.name || profile.css);
-            } catch (e) {
-                return [];
+        let cssProfiles = this._loadChatCssProfiles();
+
+        const setCssProfileControlsState = (profile) => {
+            const hasProfile = !!profile;
+            if (cssTextarea) {
+                cssTextarea.disabled = !hasProfile;
+                cssTextarea.placeholder = hasProfile
+                    ? '.message-right .message-text { border-radius: 14px; background: #c9f7b9; }'
+                    : '请先新增或选择一个会话样式预设';
+                cssTextarea.style.background = hasProfile ? '#fbfbfb' : '#f3f3f3';
             }
-        };
-        const saveCssProfiles = (profiles) => {
-            const safeProfiles = Array.isArray(profiles) ? profiles : [];
-            this.storage?.set('phone_chat_css_profiles', JSON.stringify(safeProfiles));
-        };
-        const renderCssSelect = () => {
-            if (!profileSelect) return;
-            const profiles = loadCssProfiles();
-            profileSelect.innerHTML = '<option value="">-- 选择或输入CSS --</option>';
-            profiles.forEach((p, idx) => {
-                profileSelect.innerHTML += `<option value="${idx}">${String(p?.name || `预设 ${idx + 1}`).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</option>`;
+            [saveProfileBtn, deleteProfileBtn].forEach((button) => {
+                if (!button) return;
+                button.disabled = !hasProfile;
+                button.style.opacity = hasProfile ? '1' : '0.45';
+                button.style.cursor = hasProfile ? 'pointer' : 'default';
             });
         };
+
+        const applyChatCssValue = async (css) => {
+            const safeCss = String(css || '');
+            await this.storage?.set(CHAT_CSS_VALUE_KEY, safeCss);
+            this._applyCustomChatStyle(safeCss);
+        };
+
+        const renderCssSelect = (selectedId = this._getActiveChatCssProfileId()) => {
+            if (!profileSelect) return;
+            cssProfiles = this._loadChatCssProfiles();
+            profileSelect.replaceChildren();
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = '-- 请选择会话样式预设 --';
+            placeholder.disabled = true;
+            profileSelect.appendChild(placeholder);
+
+            cssProfiles.forEach((profile) => {
+                const option = document.createElement('option');
+                option.value = profile.id;
+                option.textContent = profile.name;
+                profileSelect.appendChild(option);
+            });
+
+            const activeProfile = cssProfiles.find(profile => profile.id === selectedId) || null;
+            profileSelect.value = activeProfile?.id || '';
+            if (!activeProfile) placeholder.selected = true;
+            setCssProfileControlsState(activeProfile);
+        };
+
         renderCssSelect();
-        profileSelect?.addEventListener('change', (e) => {
-            const idx = e.target.value;
-            if (idx === '') return;
-            const profiles = loadCssProfiles();
-            const profile = profiles[Number(idx)];
-            if (profile && cssTextarea) {
-                cssTextarea.value = profile.css || '';
-            }
+
+        profileSelect?.addEventListener('change', async () => {
+            const profile = cssProfiles.find(item => item.id === profileSelect.value) || null;
+            if (!profile) return;
+            await this._setActiveChatCssProfileId(profile.id);
+            if (cssTextarea) cssTextarea.value = profile.css;
+            setCssProfileControlsState(profile);
+            await applyChatCssValue(profile.css);
+            this.phoneShell.showNotification('已切换', `会话样式「${profile.name}」已应用`, '✅');
         });
-        saveProfileBtn?.addEventListener('click', () => {
-            const css = String(cssTextarea?.value || '').trim();
-            if (!css) {
-                this.phoneShell.showNotification('提示', 'CSS内容为空', '⚠️');
-                return;
-            }
-            const name = prompt('请输入新主题的名称（例如：极简白）：');
+
+        newProfileBtn?.addEventListener('click', async () => {
+            const name = String(window.prompt('请输入会话样式预设名称', '') || '').trim();
             if (!name) return;
-            const profiles = loadCssProfiles();
-            const safeName = String(name || '').trim();
-            if (!safeName) return;
-            const existingIdx = profiles.findIndex(p => p.name === safeName);
-            if (existingIdx > -1) {
-                if (confirm(`主题 "${safeName}" 已存在，是否覆盖更新？`)) {
-                    profiles[existingIdx].css = css;
-                } else return;
-            } else {
-                profiles.push({ name: safeName, css });
-            }
-            saveCssProfiles(profiles);
-            renderCssSelect();
-            if (profileSelect) profileSelect.value = String(profiles.findIndex(p => p.name === safeName));
-            this.phoneShell.showNotification('成功', '主题已保存', '✅');
-        });
-        deleteProfileBtn?.addEventListener('click', () => {
-            const idx = profileSelect?.value || '';
-            if (idx === '') {
-                this.phoneShell.showNotification('提示', '请先在下拉框选择一个要删除的主题', '⚠️');
+            const profiles = this._loadChatCssProfiles();
+            if (profiles.some(profile => profile.name === name)) {
+                this.phoneShell.showNotification('新增失败', `预设「${name}」已存在`, '⚠️');
                 return;
             }
-            const profiles = loadCssProfiles();
-            const profileIndex = Number(idx);
-            const profile = profiles[profileIndex];
+
+            const now = Date.now();
+            const profile = {
+                id: this._createChatCssProfileId(new Set(profiles.map(item => item.id))),
+                name,
+                css: '',
+                createdAt: now,
+                updatedAt: now
+            };
+            profiles.push(profile);
+            await this._saveChatCssProfiles(profiles);
+            await this._setActiveChatCssProfileId(profile.id);
+            await applyChatCssValue('');
+            renderCssSelect(profile.id);
+            if (cssTextarea) {
+                cssTextarea.value = '';
+                cssTextarea.focus();
+            }
+            this.phoneShell.showNotification('已新增预设', profile.name, '✅');
+        });
+
+        saveProfileBtn?.addEventListener('click', async () => {
+            const activeId = String(profileSelect?.value || '').trim();
+            const profiles = this._loadChatCssProfiles();
+            const profile = profiles.find(item => item.id === activeId) || null;
+            if (!profile) {
+                this.phoneShell.showNotification('保存失败', '请先新增或选择一个会话样式预设', '⚠️');
+                return;
+            }
+            profile.css = String(cssTextarea?.value || '');
+            profile.updatedAt = Date.now();
+            await this._saveChatCssProfiles(profiles);
+            await this._setActiveChatCssProfileId(profile.id);
+            await applyChatCssValue(profile.css);
+            this.phoneShell.showNotification('已保存', `预设「${profile.name}」已更新并应用`, '✅');
+        });
+
+        deleteProfileBtn?.addEventListener('click', async () => {
+            const activeId = String(profileSelect?.value || '').trim();
+            const profiles = this._loadChatCssProfiles();
+            const profileIndex = profiles.findIndex(item => item.id === activeId);
+            const profile = profileIndex >= 0 ? profiles[profileIndex] : null;
             if (!profile) {
                 renderCssSelect();
-                this.phoneShell.showNotification('提示', '未找到要删除的主题', '⚠️');
+                this.phoneShell.showNotification('删除失败', '请先选择一个会话样式预设', '⚠️');
                 return;
             }
-            if (confirm(`确定要删除主题 "${profile.name || `预设 ${profileIndex + 1}`}" 吗？`)) {
-                profiles.splice(profileIndex, 1);
-                saveCssProfiles(profiles);
-                renderCssSelect();
-                if (cssTextarea) cssTextarea.value = '';
-                this.phoneShell.showNotification('成功', '主题已删除', '🗑️');
-            }
-        });
-        applyCssBtn?.addEventListener('click', async () => {
-            const customCss = cssTextarea?.value || '';
-            await this.storage?.set('phone_global_chat_css', customCss);
-            this._applyCustomChatStyle(customCss);
-            this.phoneShell.showNotification('成功', '会话样式已应用', '✅');
+            if (!window.confirm(`删除会话样式预设「${profile.name}」？`)) return;
+
+            profiles.splice(profileIndex, 1);
+            await this._saveChatCssProfiles(profiles);
+            await this._setActiveChatCssProfileId('');
+            await applyChatCssValue('');
+            if (cssTextarea) cssTextarea.value = '';
+            renderCssSelect('');
+            this.phoneShell.showNotification('已删除预设', profile.name, '✅');
         });
 
         document.getElementById('wechat-use-worldbook')?.addEventListener('change', async (e) => {

@@ -8657,6 +8657,7 @@ if (window.GGP_Loaded) {
                     await Promise.all([
                         storage.remove('phone_global_chat_css'),
                         storage.remove('phone_chat_css_profiles'),
+                        storage.remove('phone_chat_css_active_profile'),
                         storage.remove('global_weibo_beautify')
                     ]);
                 } catch (e) {
