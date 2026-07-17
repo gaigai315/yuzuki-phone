@@ -114,7 +114,8 @@ export class WechatData {
                     timestamp: Number(chat.timestamp || 0) || 0,
                     pinnedAt: Math.max(0, Number(chat.pinnedAt || 0) || 0),
                     lastMessage: String(chat.lastMessage || ''),
-                    time: String(chat.time || '')
+                    time: String(chat.time || ''),
+                    date: String(chat.date || '')
                 });
                 return chat;
             })
@@ -321,6 +322,7 @@ export class WechatData {
                     if (chat && !chat.timestamp) {
                         const lastMsg = messages[messages.length - 1];
                         chat.timestamp = lastMsg.timestamp || Date.now();
+                        chat.date = lastMsg.date || chat.date || '';
                     }
                 } catch (e) {
                     console.error(`❌ 迁移聊天 ${chatId} 消息失败:`, e);
@@ -1612,6 +1614,7 @@ export class WechatData {
             if (chat && latestChangedIndex === messages.length - 1) {
                 chat.lastMessage = this.getMessagePreview(messages[latestChangedIndex]);
                 chat.time = messages[latestChangedIndex].time || chat.time || '';
+                chat.date = messages[latestChangedIndex].date || '';
                 chat.timestamp = messages[latestChangedIndex].timestamp || chat.timestamp || Date.now();
             }
 
@@ -1712,6 +1715,7 @@ export class WechatData {
             avatar: chatInfo.avatar,
             lastMessage: '',
             time: '刚刚',
+            date: '',
             unread: 0,
             timestamp: Date.now(),
             members: chatInfo.members || []
@@ -2206,6 +2210,7 @@ export class WechatData {
             if (latestPreviewMsg) {
                 chat.lastMessage = this.getMessagePreview(latestPreviewMsg);
                 chat.time = latestPreviewMsg.time || chat.time || '';
+                chat.date = latestPreviewMsg.date || '';
                 chat.timestamp = latestPreviewMsg.timestamp || chat.timestamp || Date.now();
             }
         }
@@ -2242,6 +2247,7 @@ export class WechatData {
         if (chat && targetIndex === messages.length - 1) {
             chat.lastMessage = this.getMessagePreview(messages[targetIndex]);
             chat.time = messages[targetIndex].time || chat.time || '';
+            chat.date = messages[targetIndex].date || '';
             chat.timestamp = messages[targetIndex].timestamp || chat.timestamp || Date.now();
         }
 
@@ -2844,6 +2850,7 @@ async loadContactsFromCharacter() {
                     avatar: group.avatar || '',
                     lastMessage: '',
                     time: '刚刚',
+                    date: '',
                     unread: 0,
                     members: groupMemberNames
                 });
@@ -3470,10 +3477,12 @@ parseAIResponse(text) {
                     const lastMsg = messages[messages.length - 1];
                     chat.lastMessage = this.getMessagePreview(lastMsg);
                     chat.time = lastMsg.time;
+                    chat.date = lastMsg.date || '';
                 } else {
                     // 没有消息了
                     chat.lastMessage = '';
                     chat.time = '';
+                    chat.date = '';
                 }
             }
 
@@ -3544,6 +3553,7 @@ parseAIResponse(text) {
             if (chat) {
                 chat.lastMessage = '';
                 chat.time = '';
+                chat.date = '';
                 chat.unread = 0;
                 
                 // 🔥 核心防御：记录清空发生时的酒馆正文层数，防止旧楼层标签亡灵复活
@@ -3604,10 +3614,12 @@ parseAIResponse(text) {
                     if (latestPreviewMsg) {
                         chat.lastMessage = this.getMessagePreview(latestPreviewMsg);
                         chat.time = latestPreviewMsg.time || '';
+                        chat.date = latestPreviewMsg.date || '';
                         chat.timestamp = latestPreviewMsg.timestamp || Date.now();
                     } else {
                         chat.lastMessage = '';
                         chat.time = '';
+                        chat.date = '';
                     }
                 }
             }
@@ -3680,10 +3692,12 @@ parseAIResponse(text) {
                         const lastMsg = msgs[msgs.length - 1];
                         chat.lastMessage = this.getMessagePreview(lastMsg);
                         chat.time = lastMsg.time;
+                        chat.date = lastMsg.date || '';
                         chat.timestamp = lastMsg.timestamp || Date.now();
                     } else {
                         chat.lastMessage = '';
                         chat.time = '';
+                        chat.date = '';
                     }
                 }
             }
@@ -3908,6 +3922,7 @@ parseAIResponse(text) {
             avatar: groupInfo.avatar || '',
             lastMessage: '',
             time: '刚刚',
+            date: '',
             unread: 0,
             timestamp: Date.now(),
             members: groupInfo.members || [],

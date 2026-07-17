@@ -3968,7 +3968,7 @@ input:checked + .toggle-slider:before {
     .setting-label, .setting-desc, .setting-value,
     .wechat-chat-name, .wechat-chat-last, .wechat-chat-time,
     .wechat-contact-name, .wechat-contact-signature,
-    .message-text, .message-time, .chat-time,
+    .message-text, .message-time,
     .app-name, .home-layout-icons .yzp-home-time, .home-layout-icons .yzp-home-date
 ) {
     color: var(--phone-global-text) !important;
@@ -4002,7 +4002,6 @@ input:checked + .toggle-slider:before {
     .wechat-contact-signature,
     .message-text,
     .message-time,
-    .chat-time,
     .phone-call-settings-title,
     .phone-call-settings-back,
     .phone-call-settings-label,

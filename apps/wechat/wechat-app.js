@@ -15,6 +15,7 @@ import { ContactsView } from './contacts-view.js';
 import { MomentsView } from './moments-view.js?v=20260714-moments-phone-time';
 import { WechatData } from './wechat-data.js';
 import { ImageCropper } from '../settings/image-cropper.js';
+import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
 
 const CHAT_CSS_VALUE_KEY = 'phone_global_chat_css';
 const CHAT_CSS_PROFILES_KEY = 'phone_chat_css_profiles';
@@ -702,7 +703,7 @@ export class WechatApp {
 
 .chat-time {
     font-size: 12px;
-    color: #b2b2b2;
+    color: #999;
     margin-bottom: 5px;
 }
 
@@ -4514,6 +4515,7 @@ export class WechatApp {
 
     renderChatList() {
         const chats = this.wechatData.getChatList();
+        const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || {};
 
         if (chats.length === 0) {
             return `
@@ -4540,7 +4542,7 @@ export class WechatApp {
                             <div class="chat-last-msg">${chat.lastMessage || '暂无消息'}</div>
                         </div>
                         <div class="chat-meta">
-                            <div class="chat-time">${chat.time || '刚刚'}</div>
+                            <div class="chat-time">${formatWechatChatListTime(chat, storyTime)}</div>
                             ${chat.unread > 0 ? `<span class="chat-badge">${chat.unread > 99 ? '99+' : chat.unread}</span>` : ''}
                         </div>
                     </div>

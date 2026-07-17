@@ -17,7 +17,7 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.3.7';
+const ST_PHONE_VERSION = '1.3.8';
 const ST_PHONE_CSS_REVISION = '20260708-glass-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
@@ -50,7 +50,9 @@ const ST_PHONE_CURRENT_UPDATE = {
     items: [
         '【优化】设置 App 新增“连点三下打开手机”开关，默认开启；关闭后会全局记住设置，并仅保留魔法棒入口。',
         '【优化】优化更换微信头像，支持从相册 App 复用已上传的图片为头像。',
-        '【修复】修复音乐播放器遇到失效链接时反复刷新和重复重试的问题，提升自动换源播放稳定性。'
+        '【修复】修复音乐播放器遇到失效链接时反复刷新和重复重试的问题，提升自动换源播放稳定性。',
+        '【修复】强化微信单聊与群聊识别，拦截模型误生成的好友同名二人群聊，同时保留正确单聊消息同步。',
+        '【优化】微信会话列表时间改为真实微信样式：当天显示时刻、昨天显示“昨天 HH:mm”、今年显示月/日、往年显示年/月/日，并统一为消息预览灰色。'
     ]
 };
 
@@ -8029,7 +8031,7 @@ if (window.GGP_Loaded) {
                 .settings-subsection-title, .phone-shell-scale-value, .app-name-custom-label,
                 .wechat-chat-name, .wechat-chat-last, .wechat-chat-time,
                 .wechat-contact-name, .wechat-contact-signature,
-                .message-text, .message-time, .chat-time,
+                .message-text, .message-time,
                 .album-title, .album-subtitle, .album-empty-title, .album-empty-copy,
                 .album-preview-name, .album-preview-path, .album-source,
                 .mofo-app, .yzp-calendar-settings-label, .yzp-calendar-settings-desc,
