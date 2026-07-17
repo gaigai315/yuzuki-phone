@@ -674,9 +674,9 @@ export class PhoneShell {
             if (!isPhoneEditableTarget(event.target)) return;
             event.stopPropagation();
         };
-        const updateKeyboardState = (event, active) => {
+        const updateInputState = (event, active) => {
             if (!isPhoneEditableTarget(event.target)) return;
-            this.container?.classList?.toggle?.('phone-keyboard-open', !!active);
+            // 蜜语使用该 body 状态调整直播输入栏；面板尺寸由 index.js 统一管理。
             document.body?.classList?.toggle?.('phone-input-active', !!active);
         };
         [
@@ -695,12 +695,12 @@ export class PhoneShell {
         ].forEach((eventName) => {
             this.container.addEventListener(eventName, isolate);
         });
-        this.container.addEventListener('focusin', (event) => updateKeyboardState(event, true));
+        this.container.addEventListener('focusin', (event) => updateInputState(event, true));
         this.container.addEventListener('focusout', (event) => {
             setTimeout(() => {
                 const active = document.activeElement;
                 if (active && isPhoneEditableTarget(active)) return;
-                updateKeyboardState(event, false);
+                updateInputState(event, false);
             }, 80);
         });
     }

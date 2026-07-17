@@ -97,7 +97,7 @@ if (window.GGP_Loaded) {
     let _lastWechatChatId = null; // 🔥 防串味：记录上一次处理微信数据的 chatId
     let _globalCssLoadingPromise = null;
     let _phoneStableViewportHeight = 0;
-    let _phoneKeyboardAnchorTop = 0;
+    let _phoneStableViewportWidth = 0;
     let _phoneViewportResizeTimer = null;
     let _phoneViewportSettleTimer = null;
     let _phoneKeyboardLikelyOpenUntil = 0;
@@ -441,6 +441,12 @@ if (window.GGP_Loaded) {
         const visualWidth = viewport?.width || window.innerWidth || document.documentElement?.clientWidth || 360;
         const visualTop = viewport?.offsetTop || 0;
         const visualLeft = viewport?.offsetLeft || 0;
+        const layoutWidth = Math.max(
+            window.innerWidth || 0,
+            document.documentElement?.clientWidth || 0
+        );
+        const currentHeight = Math.max(layoutHeight, visualHeight, 320);
+        const currentWidth = Math.max(layoutWidth, visualWidth, 320);
         const keyboardGap = layoutHeight && visualHeight ? layoutHeight - visualHeight : 0;
         const stableGap = _phoneStableViewportHeight ? _phoneStableViewportHeight - visualHeight : 0;
         const activeTag = String(document.activeElement?.tagName || '').toLowerCase();
@@ -450,31 +456,28 @@ if (window.GGP_Loaded) {
         const isLikelyKeyboardWindow = now < _phoneKeyboardLikelyOpenUntil;
         const hasKeyboardViewportGap = keyboardGap > 120 || stableGap > 120;
         const keyboardOpen = Boolean((isTypingTarget || isLikelyKeyboardWindow) && hasKeyboardViewportGap);
-        const phoneBody = panel?.querySelector?.('.phone-body-panel');
+        const orientationChanged = _phoneStableViewportWidth
+            && Math.abs(currentWidth - _phoneStableViewportWidth) > 80;
 
         panel?.classList.toggle('phone-keyboard-open', keyboardOpen);
 
-        if (options.force || !_phoneStableViewportHeight || !keyboardOpen) {
-            _phoneStableViewportHeight = Math.max(layoutHeight, visualHeight, 320);
-            if (phoneBody) {
-                const rect = phoneBody.getBoundingClientRect();
-                if (Number.isFinite(rect.top) && rect.top >= 0) {
-                    _phoneKeyboardAnchorTop = Math.round(rect.top);
-                }
-            }
+        // 收起键盘时，Android 可能先触发 focusout，稍后才恢复 viewport 高度。
+        // 只在视口确实恢复后更新稳定尺寸，避免把键盘态的小高度锁成面板高度。
+        if (options.force || !_phoneStableViewportHeight || orientationChanged || !hasKeyboardViewportGap) {
+            _phoneStableViewportHeight = currentHeight;
+            _phoneStableViewportWidth = currentWidth;
         }
 
-        const targetHeight = keyboardOpen
-            ? Math.max(visualHeight, 320)
-            : Math.max(layoutHeight, visualHeight, 320);
-        const safeKeyboardAnchorTop = keyboardOpen
-            ? Math.max(0, Math.min(_phoneKeyboardAnchorTop || 0, targetHeight - 320))
-            : Math.max(0, _phoneKeyboardAnchorTop || 0);
-        root.style.setProperty('--phone-panel-vh', `${Math.round(targetHeight)}px`);
-        root.style.setProperty('--phone-panel-vw', `${Math.round(Math.max(visualWidth, 320))}px`);
-        root.style.setProperty('--phone-panel-top', `${Math.round(Math.max(visualTop, 0))}px`);
-        root.style.setProperty('--phone-panel-left', `${Math.round(Math.max(visualLeft, 0))}px`);
-        root.style.setProperty('--phone-keyboard-anchor-top', `${Math.round(safeKeyboardAnchorTop)}px`);
+        const panelHeight = Math.max(_phoneStableViewportHeight || currentHeight, currentHeight);
+        const panelWidth = Math.max(_phoneStableViewportWidth || currentWidth, currentWidth);
+        root.style.setProperty('--phone-panel-vh', `${Math.round(panelHeight)}px`);
+        root.style.setProperty('--phone-panel-vw', `${Math.round(panelWidth)}px`);
+        root.style.setProperty('--phone-panel-top', '0px');
+        root.style.setProperty('--phone-panel-left', '0px');
+        root.style.setProperty('--phone-keyboard-vh', `${Math.round(Math.max(visualHeight, 320))}px`);
+        root.style.setProperty('--phone-keyboard-vw', `${Math.round(Math.max(visualWidth, 320))}px`);
+        root.style.setProperty('--phone-keyboard-top', `${Math.round(Math.max(visualTop, 0))}px`);
+        root.style.setProperty('--phone-keyboard-left', `${Math.round(Math.max(visualLeft, 0))}px`);
 
         if (!keyboardOpen && panel?.classList?.contains('phone-panel-open')) {
             applyPhonePanelDesktopPosition();
@@ -930,8 +933,10 @@ if (window.GGP_Loaded) {
         };
         const onFocusOut = (event) => {
             if (!shouldUpdatePhoneViewport(event.target)) return;
-            _phoneKeyboardLikelyOpenUntil = Date.now() + 180;
-            schedulePhonePanelViewportUpdate({ immediate: true, delay: 80, settleDelay: 260 });
+            // Android 的收键盘动画可能晚于 focusout 数百毫秒完成。
+            // 保持键盘态直到 viewport 恢复；900ms 复查用于兼容不补发 resize 的 WebView。
+            _phoneKeyboardLikelyOpenUntil = Date.now() + 800;
+            schedulePhonePanelViewportUpdate({ immediate: true, delay: 120, settleDelay: 900 });
         };
 
         if (bindPhonePanelViewportGuards._handlers) {

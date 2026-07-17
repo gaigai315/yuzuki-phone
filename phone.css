@@ -20,8 +20,12 @@
     /* 📏 手机壳缩放：宽度保持原样，高度缩小 5% */
     --phone-shell-width-scale: 1;
     --phone-shell-height-scale: 0.95;
-    /* 📐 手机面板高度：JS 会在键盘弹出时锁定，避免折叠屏被 dvh 压缩 */
+    /* 📐 外层保持完整页面高度，键盘可视区只用于约束内层手机 */
     --phone-panel-vh: 100dvh;
+    --phone-keyboard-vh: 100dvh;
+    --phone-keyboard-vw: 100vw;
+    --phone-keyboard-top: 0px;
+    --phone-keyboard-left: 0px;
 
     /* ⚠️ 已废弃：以下变量保留以防兼容性问题，但不再使用 */
     --phone-time-color: #ffffff;
@@ -289,20 +293,40 @@
 }
 
 #phone-panel.drawer-content.phone-keyboard-open {
-    padding: 8px 8px 8px !important;
-    justify-content: center !important;
+    padding: 0 !important;
 }
 
 #phone-panel.phone-keyboard-open #phone-panel-content {
-    min-height: calc(var(--phone-panel-vh, 100dvh) - 16px) !important;
+    position: fixed !important;
+    top: var(--phone-keyboard-top, 0px) !important;
+    left: var(--phone-keyboard-left, 0px) !important;
+    width: var(--phone-keyboard-vw, 100vw) !important;
+    min-width: 0 !important;
+    max-width: var(--phone-keyboard-vw, 100vw) !important;
+    height: var(--phone-keyboard-vh, 100dvh) !important;
+    min-height: 0 !important;
+    max-height: var(--phone-keyboard-vh, 100dvh) !important;
+    padding: 8px !important;
     justify-content: center !important;
 }
 
+#phone-panel.phone-keyboard-open .phone-in-panel {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+}
+
 #phone-panel.phone-keyboard-open .phone-body-panel {
+    width: min(
+        calc(400px * var(--phone-shell-width-scale, 1)),
+        calc(var(--phone-keyboard-vw, 100vw) * 0.95),
+        calc((var(--phone-keyboard-vh, 100dvh) - 16px) * 0.98 * 9 / 19.5 * var(--phone-shell-width-scale, 1))
+    ) !important;
     height: min(
         calc(866px * var(--phone-shell-height-scale, 1)),
-        calc((var(--phone-panel-vh, 100dvh) - 16px) * 0.98 * var(--phone-shell-height-scale, 1)),
-        calc(95vw * 19.5 / 9 * var(--phone-shell-height-scale, 1))
+        calc((var(--phone-keyboard-vh, 100dvh) - 16px) * 0.98 * var(--phone-shell-height-scale, 1)),
+        calc(var(--phone-keyboard-vw, 100vw) * 0.95 * 19.5 / 9 * var(--phone-shell-height-scale, 1))
     ) !important;
 }
 
@@ -311,7 +335,7 @@
     #phone-panel.drawer-content.phone-keyboard-open {
         justify-content: center !important;
         align-items: center !important;
-        padding: 8px !important;
+        padding: 0 !important;
     }
 
     #phone-panel.phone-keyboard-open #phone-panel-content,
@@ -321,9 +345,12 @@
         margin: 0 !important;
     }
 
-    /* 宽度保持平板比例，高度直接继承移动端的自适应安全算法 */
+    /* 平板键盘态沿用同一可视区约束，仅限制最大宽度 */
     #phone-panel.phone-keyboard-open .phone-body-panel {
-        width: min(calc(400px * var(--phone-shell-width-scale, 1)), 95vw) !important;
+        width: min(
+            calc(400px * var(--phone-shell-width-scale, 1)),
+            calc(var(--phone-keyboard-vw, 100vw) * 0.95)
+        ) !important;
         margin: 0 auto !important;
     }
 }
