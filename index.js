@@ -5452,6 +5452,12 @@ if (window.GGP_Loaded) {
             .toLowerCase();
     }
 
+    function normalizeWechatChatIdentityKey(value) {
+        return normalizeWechatRecipientKey(
+            String(value || '').replace(/\s*[（(]\s*已拉黑\s*[）)]\s*$/g, '')
+        );
+    }
+
     function getCurrentWechatRecipientAliases() {
         const aliases = new Set(['user', '{{user}}']);
         try {
@@ -5676,6 +5682,39 @@ if (window.GGP_Loaded) {
         const exact = memberList.find(item => normalizeWechatGroupMemberKey(item) === rawKey);
         if (exact) return exact;
         return '';
+    }
+
+    function shouldDiscardHallucinatedTwoPersonGroup(data) {
+        if (!data?.fromTavernMainChat || String(data?.chatType || '').toLowerCase() !== 'group') return false;
+
+        const groupNameKey = normalizeWechatChatIdentityKey(data.contact);
+        if (!groupNameKey) return false;
+
+        const { chats, contacts } = getWechatRuntimeSnapshot();
+        const hasExistingGroup = chats.some(chat =>
+            chat?.type === 'group' && normalizeWechatChatIdentityKey(chat?.name) === groupNameKey
+        );
+        if (hasExistingGroup) return false;
+
+        const hasSameNameFriend = data.hasSameNameSingleInBatch === true || contacts.some(contact =>
+            normalizeWechatChatIdentityKey(contact?.name) === groupNameKey
+            || normalizeWechatChatIdentityKey(contact?.remark) === groupNameKey
+        );
+        if (!hasSameNameFriend) return false;
+
+        const participantKeys = new Set();
+        const candidates = [
+            ...(Array.isArray(data.members) ? data.members : []),
+            ...(Array.isArray(data.messages) ? data.messages.map(message => message?.sender) : [])
+        ];
+        candidates.forEach((name) => {
+            const rawName = String(name || '').trim();
+            if (!rawName || isWechatSenderCurrentUser(rawName)) return;
+            const key = normalizeWechatGroupMemberKey(rawName);
+            if (key) participantKeys.add(key);
+        });
+
+        return participantKeys.size === 1;
     }
 
     // 🔥 新版：解析轻量级XML格式微信标签（支持 ---联系人--- 分隔多人）
@@ -6202,6 +6241,14 @@ if (window.GGP_Loaded) {
     function handleWechatTagData(data) {
         if (!data.contact || !data.messages) {
             console.warn('⚠️ 微信消息数据不完整:', data);
+            return;
+        }
+
+        if (shouldDiscardHallucinatedTwoPersonGroup(data)) {
+            console.warn('⚠️ [微信] 已拦截疑似误生成的同名二人群聊:', {
+                group: data.contact,
+                members: data.members
+            });
             return;
         }
 
@@ -7231,8 +7278,15 @@ if (window.GGP_Loaded) {
         }
 
         const wechatTagDataList = parseLightweightWechatTag(sourceText);
+        const singleChatNames = new Set(wechatTagDataList
+            .filter(data => data?.type === 'wechat_message' && String(data?.chatType || '').toLowerCase() !== 'group')
+            .map(data => normalizeWechatChatIdentityKey(data?.contact))
+            .filter(Boolean));
         wechatTagDataList.forEach((wechatTagData) => {
             if (wechatTagData?.type === 'empty') return;
+            const contactKey = normalizeWechatChatIdentityKey(wechatTagData?.contact);
+            wechatTagData.fromTavernMainChat = true;
+            wechatTagData.hasSameNameSingleInBatch = !!contactKey && singleChatNames.has(contactKey);
             tasks.push({
                 kind: 'wechat',
                 index: Number.isFinite(wechatTagData.sourceIndex) ? wechatTagData.sourceIndex : Number.MAX_SAFE_INTEGER,
