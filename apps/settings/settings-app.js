@@ -59,6 +59,7 @@ const LOBBY_WECHAT_ONLINE_PROACTIVE_INTERVAL_KEY = 'phone_lobby_wechat_online_pr
 const WECHAT_ONLINE_ONLY_REAL_TIME_ENABLED_KEY = 'wechat_online_only_real_time_enabled';
 const LOBBY_WECHAT_ONLINE_ONLY_REAL_TIME_ENABLED_KEY = 'phone_lobby_wechat_online_only_real_time_enabled';
 const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
+const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 
 function normalizePhoneShellScalePercent(value) {
     const raw = Number.parseFloat(value);
@@ -989,6 +990,7 @@ export class SettingsApp {
         const isGeneralTimeOpen = this.storage.get('phone-settings-general-time-open') === true;
         const isGeneralDataOpen = this.storage.get('phone-settings-general-data-open') === true;
         const isWechatMessageSoundEnabled = this._isStorageTruthy(WECHAT_MESSAGE_SOUND_ENABLED_KEY);
+        const isPhoneTripleTapEnabled = this._isStorageEnabledByDefault(PHONE_TRIPLE_TAP_ENABLED_KEY);
         const homeLayoutRaw = String(this.storage.get('phone-home-layout') || 'icons');
         const homeLayout = homeLayoutRaw === 'cards' ? 'cards' : 'icons';
         const cardLayoutCustomCss = String(this.storage.get(CARD_LAYOUT_CUSTOM_CSS_KEY) || '');
@@ -1707,6 +1709,17 @@ export class SettingsApp {
                                 </div>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="setting-inline-reply-btn" ${this.storage.get('phone_inline_reply_btn') !== false ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item setting-toggle" style="margin-top: 10px;">
+                                <div>
+                                    <div class="setting-label">连点三下打开手机</div>
+                                    <div class="setting-desc">在手机外连续点击三下快速打开或收起手机；关闭后仅可从魔法棒进入</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="setting-phone-triple-tap-enabled" ${isPhoneTripleTapEnabled ? 'checked' : ''}>
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
@@ -4887,6 +4900,10 @@ export class SettingsApp {
         // 快捷回复按钮开关
         document.getElementById('setting-inline-reply-btn')?.addEventListener('change', (e) => {
             this.storage.set('phone_inline_reply_btn', e.target.checked);
+        });
+
+        document.getElementById('setting-phone-triple-tap-enabled')?.addEventListener('change', async (e) => {
+            await this.storage.set(PHONE_TRIPLE_TAP_ENABLED_KEY, !!e.target.checked);
         });
 
         // 一键更新所有提示词（恢复默认）

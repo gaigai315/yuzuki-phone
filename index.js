@@ -42,11 +42,13 @@ const LOBBY_WECHAT_ONLINE_PROACTIVE_INTERVAL_KEY = 'phone_lobby_wechat_online_pr
 const LOBBY_WECHAT_ONLINE_PROACTIVE_LAST_AT_KEY = 'phone_lobby_wechat_online_proactive_last_trigger_at';
 const LOBBY_WECHAT_ONLINE_PROACTIVE_PENDING_KEY = 'phone_lobby_wechat_online_proactive_pending_at';
 const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
+const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-07-17',
     items: [
+        '【优化】设置 App 新增“连点三下打开手机”开关，默认开启；关闭后会全局记住设置，并仅保留魔法棒入口。',
         '【优化】优化更换微信头像，支持从相册 App 复用已上传的图片为头像。',
         '【修复】修复音乐播放器遇到失效链接时反复刷新和重复重试的问题，提升自动换源播放稳定性。'
     ]
@@ -400,6 +402,11 @@ if (window.GGP_Loaded) {
     function isPhoneFeatureEnabled() {
         const runtime = getRuntimeSettings();
         return !!(runtime && runtime.enabled);
+    }
+
+    function isPhoneTripleTapEnabled() {
+        const raw = storage?.get?.(PHONE_TRIPLE_TAP_ENABLED_KEY);
+        return raw !== false && raw !== 'false' && raw !== 0;
     }
 
     function isPhoneUserMessageListenerEnabled() {
@@ -8186,6 +8193,13 @@ if (window.GGP_Loaded) {
             document.body.addEventListener('click', (e) => {
                 // 如果功能被禁用，直接退出
                 if (!isPhoneFeatureEnabled()) return;
+
+                // 用户可在设置中全局关闭三击唤醒，关闭后仅保留魔法棒入口
+                if (!isPhoneTripleTapEnabled()) {
+                    phoneTapCount = 0;
+                    phoneLastTapTime = 0;
+                    return;
+                }
 
                 // 【核心防误触】如果在酒馆加载界面，直接屏蔽手势
                 const stLoader = document.getElementById('loader') || document.getElementById('loading_screen');
