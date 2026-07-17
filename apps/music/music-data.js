@@ -36,20 +36,32 @@ export class MusicData {
         this._prefetching = new Set(); // 预取中的歌曲，避免重复请求
         this._lyricCache = new Map(); // 歌词缓存，避免同一首歌重复请求
         this._externalMusicSourcePromise = null; // 备用音乐源懒加载任务
+        this._autoRetryingSongs = new WeakSet(); // 自动修复中的歌曲，仅保留在内存
+        this._lastAutoRetryAt = new WeakMap(); // 最近一次失败修复时间，防止快速循环
+        this._recoveryRequestedGeneration = -1; // 同一播放代次只触发一次自动修复
         this.onPlaybackStopped = null;
 
         // 音频事件绑定
         this.audioPlayer.addEventListener('ended', () => this._onTrackEnded());
         this.audioPlayer.addEventListener('error', (e) => {
             console.warn('🎵 [音乐] 播放出错:', e);
+            const playWasPending = this._playLock;
             this.isPlaying = false;
             this._playLock = false;
 
             const song = this.getCurrentSong();
             if (song && this.currentIndex >= 0 && !this._userPaused) {
+                if (playWasPending) {
+                    this._notifyStateChange();
+                    return;
+                }
                 console.log(`🎵 [音乐] 检测到链接不可播放，尝试自动修复: ${song.name}`);
-                this._invalidateSongUrl(song, this.activeListType);
-                this._recoverAndPlay(this.currentIndex);
+                this._requestPlaybackRecovery(
+                    song,
+                    this.currentIndex,
+                    this.activeListType,
+                    this._playGeneration
+                );
             } else {
                 this._notifyStateChange();
             }
@@ -346,7 +358,7 @@ export class MusicData {
     async play(index, listType = this.activeListType) {
         this.activeListType = listType;
         const playlist = this.getActiveList();
-        if (index < 0 || index >= playlist.length) return;
+        if (index < 0 || index >= playlist.length) return false;
 
         // 递增代次号，使之前的 play() 调用自动失效
         const generation = ++this._playGeneration;
@@ -371,12 +383,12 @@ export class MusicData {
                     this.isPlaying = false;
                     this._playLock = false;
                     this._notifyStateChange();
-                    return;
+                    return false;
                 }
 
                 const result = await this._fetchSongUrl(song.name, song.artist);
 
-                if (generation !== this._playGeneration) return;
+                if (generation !== this._playGeneration) return false;
 
                 if (result && result.url) {
                     song.url = result.url;
@@ -391,23 +403,25 @@ export class MusicData {
                 } else {
                     this._markSongFetchFailed(songKey);
                     this._playLock = false;
-                    this._recoverAndPlay(index);
-                    return;
+                    this._requestPlaybackRecovery(song, index, listType, generation);
+                    return false;
                 }
             }
 
-            if (generation !== this._playGeneration) return;
+            if (generation !== this._playGeneration) return false;
 
             await this._preferMetingSource(song, listType);
-            if (generation !== this._playGeneration) return;
+            if (generation !== this._playGeneration) return false;
 
             this.audioPlayer.src = song.url;
             await this.audioPlayer.play();
             this.isPlaying = true;
             this._playLock = false;
+            this._lastAutoRetryAt.delete(song);
             this._notifyStateChange();
             this._ensureLyrics(song, listType, generation);
             this._prefetchNeighbors(index, listType);
+            return true;
         } catch (e) {
             if (generation === this._playGeneration) {
                 console.warn(`🎵 [音乐] 播放失败: ${song?.name || ''}`, e);
@@ -415,10 +429,10 @@ export class MusicData {
                 this._playLock = false;
                 this._notifyStateChange();
                 if (song && !this._userPaused && e?.name !== 'NotAllowedError') {
-                    this._invalidateSongUrl(song, listType);
-                    this._recoverAndPlay(index);
+                    this._requestPlaybackRecovery(song, index, listType, generation);
                 }
             }
+            return false;
         }
     }
 
@@ -431,103 +445,132 @@ export class MusicData {
         else this.savePlaylist();
     }
 
-    async _recoverAndPlay(songIndex) {
-        const playlist = this.getActiveList();
-        if (songIndex < 0 || songIndex >= playlist.length) return;
+    _requestPlaybackRecovery(song, songIndex, listType, generation) {
+        if (!song || generation !== this._playGeneration) return false;
+        if (this._recoveryRequestedGeneration === generation) return false;
+
+        this._recoveryRequestedGeneration = generation;
+        this._invalidateSongUrl(song, listType);
+        if (this._autoRetryingSongs.has(song)) return false;
+
+        this._recoverAndPlay(songIndex, listType).catch(e => {
+            console.error('🎵 [音乐] 自动修复发生未处理异常:', this._formatErrorForLog(e));
+        });
+        return true;
+    }
+
+    async _recoverAndPlay(songIndex, listType = this.activeListType) {
+        const playlist = listType === 'favorites' ? this.getFavorites() : this.getPlaylist();
+        if (songIndex < 0 || songIndex >= playlist.length) return false;
 
         const song = playlist[songIndex];
-
         const now = Date.now();
-        if (song._autoRetrying || (song._lastAutoRetryAt && now - song._lastAutoRetryAt < 60000)) {
+        const lastAutoRetryAt = this._lastAutoRetryAt.get(song) || 0;
+        if (this._autoRetryingSongs.has(song) || (lastAutoRetryAt && now - lastAutoRetryAt < 60000)) {
             console.warn(`🎵 [音乐] 歌曲 "${song.name}" 正在修复或刚修复失败，暂时跳过。`);
-            this._notifyStateChange(); // 更新UI显示错误状态
-            return;
+            this._notifyStateChange();
+            return false;
         }
-        song._autoRetrying = true;
-        song._lastAutoRetryAt = now;
 
+        this._autoRetryingSongs.add(song);
+        this._lastAutoRetryAt.set(song, now);
         console.log(`🎵 [音乐] 正在为 "${song.name}" 自动搜索新链接...`);
 
         const applyRecoveredSong = async (result, label = '备用音乐源') => {
             if (!result?.url) return false;
-            console.log(`✅ [音乐] 自动修复成功！已切换到${label}: "${song.name}"`);
+
+            const previous = {
+                id: song.id,
+                url: song.url,
+                urlSource: song.urlSource,
+                name: song.name,
+                artist: song.artist,
+                pic: song.pic,
+                lrc: song.lrc
+            };
+
             song.id = result.id || song.id || null;
             song.url = result.url;
             song.urlSource = result.urlSource;
-            song.name = result.name || song.name;
-            song.artist = result.artist || song.artist || '未知';
             song.pic = result.pic || song.pic || null;
             song.lrc = Array.isArray(result.lrc) ? result.lrc : [];
-            delete song._autoRetrying;
-            delete song._lastAutoRetryAt;
-            if (this.activeListType === 'favorites') this.saveFavorites();
+
+            const played = await this.play(songIndex, listType);
+            if (!played) {
+                Object.assign(song, previous, { url: null, urlSource: null });
+                if (listType === 'favorites') this.saveFavorites();
+                else this.savePlaylist();
+                return false;
+            }
+
+            song.name = result.name || song.name;
+            song.artist = result.artist || song.artist || '未知';
+            this._lastAutoRetryAt.delete(song);
+            if (listType === 'favorites') this.saveFavorites();
             else this.savePlaylist();
-            await this.play(songIndex);
+            console.log(`✅ [音乐] 自动修复成功！已切换到${label}: "${song.name}"`);
             return true;
         };
 
         try {
-            const searchQuery = encodeURIComponent(`${song.name} ${song.artist}`);
-            let searchJson = null;
             try {
-                const searchRes = await fetch(`https://api.vkeys.cn/v2/music/netease?word=${searchQuery}`);
-                searchJson = await searchRes.json();
-            } catch (e) {
-                console.warn('🎵 [音乐] 自动修复搜索失败，准备尝试备用源:', this._formatErrorForLog(e));
-            }
-
-            if (Array.isArray(searchJson?.data) && searchJson.data.length > 0) {
-                // 遍历新的搜索结果，寻找一个不同的、可用的版本
-                for (const candidate of searchJson.data) {
-                    try {
-                        const urlRes = await fetch(`https://api.qijieya.cn/meting/?server=netease&type=song&id=${candidate.id}`);
-                        const urlData = await urlRes.json();
-
-                        if (urlData?.[0]?.url && !urlData[0].url.includes('music.163.com/404')) {
-                            let newUrl = urlData[0].url.replace('http://', 'https://');
-
-                            // 🔥 新增：检测修复到的新版本是不是坑人的30秒试听
-                            const isFull = await this._checkPlayableSongUrl(newUrl);
-                            if (!isFull) {
-                                console.warn(`🎵 [音乐] 修复找到的新版本仍是30秒试听，继续寻找下一个...`);
-                                continue;
-                            }
-
-                            console.log(`✅ [音乐] 自动修复成功！找到完整版新链接 for "${song.name}"`);
-
-                            await applyRecoveredSong({
-                                id: candidate.id,
-                                url: newUrl,
-                                urlSource: 'meting',
-                                pic: urlData[0].pic || song.pic,
-                                lrc: await this._fetchLyrics(candidate.id),
-                                name: candidate.song || candidate.name || song.name,
-                                artist: candidate.singer || candidate.artist || song.artist || '未知'
-                            }, 'Meting 源');
-                            return;
-                        }
-                    } catch (e) {
-                        // 忽略单个候选版本的获取失败
-                        continue;
-                    }
+                const searchQuery = encodeURIComponent(`${song.name} ${song.artist}`);
+                let searchJson = null;
+                try {
+                    const searchRes = await fetch(`https://api.vkeys.cn/v2/music/netease?word=${searchQuery}`);
+                    searchJson = await searchRes.json();
+                } catch (e) {
+                    console.warn('🎵 [音乐] 自动修复搜索失败，准备尝试备用源:', this._formatErrorForLog(e));
                 }
-            } else {
-                console.warn(`🎵 [音乐] 自动修复主源未搜索到结果: ${song.name} ${song.artist}`);
+
+                if (Array.isArray(searchJson?.data) && searchJson.data.length > 0) {
+                    for (const candidate of searchJson.data.slice(0, 15)) {
+                        try {
+                            const urlRes = await fetch(`https://api.qijieya.cn/meting/?server=netease&type=song&id=${candidate.id}`);
+                            const urlData = await urlRes.json();
+
+                            if (urlData?.[0]?.url && !urlData[0].url.includes('music.163.com/404')) {
+                                const newUrl = urlData[0].url.replace('http://', 'https://');
+                                const isFull = await this._checkPlayableSongUrl(newUrl);
+                                if (!isFull) {
+                                    console.warn('🎵 [音乐] 修复找到的新版本不可播放或仍是30秒试听，继续寻找下一个...');
+                                    continue;
+                                }
+
+                                const recovered = await applyRecoveredSong({
+                                    id: candidate.id,
+                                    url: newUrl,
+                                    urlSource: 'meting',
+                                    pic: urlData[0].pic || song.pic,
+                                    lrc: await this._fetchLyrics(candidate.id),
+                                    name: candidate.song || candidate.name || song.name,
+                                    artist: candidate.singer || candidate.artist || song.artist || '未知'
+                                }, 'Meting 源');
+                                if (recovered) return true;
+                            }
+                        } catch (_e) {
+                            continue;
+                        }
+                    }
+                } else {
+                    console.warn(`🎵 [音乐] 自动修复主源未搜索到结果: ${song.name} ${song.artist}`);
+                }
+            } catch (e) {
+                console.warn('🎵 [音乐] 主源自动修复异常，继续尝试备用源:', this._formatErrorForLog(e));
             }
 
-        } catch (e) {
-            console.warn('🎵 [音乐] 主源自动修复异常，继续尝试备用源:', this._formatErrorForLog(e));
+            try {
+                const externalResult = await this._fetchExternalMusicSourceSong(song.name, song.artist);
+                if (await applyRecoveredSong(externalResult, '备用音乐源')) return true;
+                console.warn('🎵 [音乐] 自动修复失败：所有替代版本及备用源均不可用。');
+            } catch (e) {
+                console.error('🎵 [音乐] 备用音乐源自动修复失败:', this._formatErrorForLog(e));
+            }
+        } finally {
+            this._autoRetryingSongs.delete(song);
         }
 
-        try {
-            const externalResult = await this._fetchExternalMusicSourceSong(song.name, song.artist);
-            if (await applyRecoveredSong(externalResult, '备用音乐源')) return;
-            console.warn(`🎵 [音乐] 自动修复失败：所有替代版本及备用源均不可用。`);
-        } catch (e) {
-            console.error('🎵 [音乐] 备用音乐源自动修复失败:', this._formatErrorForLog(e));
-        } finally {
-            delete song._autoRetrying;
-        }
+        return false;
     }
 
     pause() {
@@ -1026,16 +1069,16 @@ export class MusicData {
             };
             const timer = setTimeout(() => {
                 cleanup();
-                resolve(true);
-            }, 2500);
+                resolve(false);
+            }, 5000);
             audio.onloadedmetadata = () => {
                 const duration = Number(audio.duration);
                 cleanup();
-                resolve(!Number.isFinite(duration) || duration > 45);
+                resolve(duration === Infinity || (Number.isFinite(duration) && duration > 45));
             };
             audio.onerror = () => {
                 cleanup();
-                resolve(true);
+                resolve(false);
             };
             audio.src = safeUrl;
         });
@@ -1227,6 +1270,9 @@ export class MusicData {
         this._userPaused = false; // 🔥 新增：重置标记
         this._cardData = null;
         this._failedSongs.clear();
+        this._autoRetryingSongs = new WeakSet();
+        this._lastAutoRetryAt = new WeakMap();
+        this._recoveryRequestedGeneration = -1;
         this._playLock = false;
         this._playGeneration++;
         this._lyricCache.clear();
