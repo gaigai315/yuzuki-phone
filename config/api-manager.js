@@ -410,7 +410,7 @@ export class ApiManager {
     // ========================================
     /**
      * @param {Array} messages - 构建好的对话数组
-     * @param {Object} options - 额外参数 (如 signal, max_tokens)
+     * @param {Object} options - 额外参数（如 signal、temperature）
      * @returns {Promise<Object>} { success: boolean, summary: string, error: string }
      */
     async callAI(messages, options = {}) {
@@ -544,7 +544,7 @@ export class ApiManager {
                 console.warn('[ApiManager] 读取酒馆配置失败，回退 generateRaw:', this._formatError(settingsError, 'settings/get 失败'));
                 return await this._callTavernGenerateRawFallback(
                     cleanMessages,
-                    this._resolveResponseLength(null, options),
+                    this._resolveResponseLength(null),
                     options,
                     phoneSignal,
                     enableStream
@@ -579,18 +579,9 @@ export class ApiManager {
                 apiKey = oai.openai_key;
             }
 
-            // 🌟 修复：优先读取 OpenAI/Custom 专属的真实 DOM 滑块和后台数据
-            const maxTokensCandidates = [
-                options.max_tokens,                                  
-                document.getElementById('openai_max_tokens')?.value,
-                oai.openai_max_tokens,         
-                document.getElementById('amount_gen')?.value,
-                parsedSettings.amount_gen
-            ];
-            const maxTokens = maxTokensCandidates
-                .map(v => Number.parseInt(v, 10))
-                .find(v => Number.isFinite(v) && v > 0) || 8192;
-           // 🌟 修复：精准读取 OpenAI/Custom 专属的高级参数滑块和后台数据
+            // 跟随酒馆时只使用酒馆当前响应长度，不接受业务调用覆盖。
+            const maxTokens = this._resolveResponseLength(parsedSettings);
+            // 🌟 修复：精准读取 OpenAI/Custom 专属的高级参数滑块和后台数据
             const tempCandidates = [document.getElementById('temp_openai')?.value, oai.temp_openai, document.getElementById('temp')?.value, parsedSettings.temp];
             const temperature = tempCandidates.map(v => Number.parseFloat(v)).find(v => Number.isFinite(v)) ?? 1.0;
 
@@ -701,6 +692,10 @@ export class ApiManager {
 
     async _callTavernGenerateRawFallback(cleanMessages, maxTokens, options = {}, phoneSignal = null, useStream = true) {
         try {
+            const resolvedMaxTokens = Number.parseInt(maxTokens, 10);
+            if (!Number.isFinite(resolvedMaxTokens) || resolvedMaxTokens <= 0) {
+                return { success: false, error: '原生 API 失败: 无法读取酒馆最大回复长度设置' };
+            }
             const context = (typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function')
                 ? SillyTavern.getContext()
                 : null;
@@ -726,8 +721,8 @@ export class ApiManager {
                 include_jailbreak: false,
                 include_character_card: false,
                 include_names: false,
-                max_tokens: maxTokens,
-                length: maxTokens,
+                max_tokens: resolvedMaxTokens,
+                length: resolvedMaxTokens,
                 stop: [],
                 stop_sequence: []
             };
@@ -769,20 +764,11 @@ export class ApiManager {
         const modelLower = String(model || '').toLowerCase();
         let apiUrl = this._processApiUrl(apiConfig.apiUrl || '', provider);
         const apiKey = String(apiConfig.apiKey || '').trim();
-        const optionMaxTokens = Number.parseInt(options?.max_tokens, 10);
-        const minMaxTokens = Number.parseInt(options?.min_max_tokens, 10);
         const configMaxTokens = Number.parseInt(apiConfig?.maxTokens, 10);
-        const hasOptionMaxTokens = Number.isFinite(optionMaxTokens) && optionMaxTokens > 0;
-        const hasConfigMaxTokens = Number.isFinite(configMaxTokens) && configMaxTokens > 0;
-        // 独立 API 默认优先使用手机独立配置中的 maxTokens；
-        // 仅在临时覆盖配置（如设置页测试按钮）时，优先使用调用参数传入值。
-        const preferOptionMaxTokens = !!options?.overrideApiConfig;
-        const resolvedMaxTokens = preferOptionMaxTokens
-            ? (hasOptionMaxTokens ? optionMaxTokens : (hasConfigMaxTokens ? configMaxTokens : 8192))
-            : (hasConfigMaxTokens ? configMaxTokens : (hasOptionMaxTokens ? optionMaxTokens : 8192));
-        const maxTokens = Number.isFinite(minMaxTokens) && minMaxTokens > 0
-            ? Math.max(resolvedMaxTokens, minMaxTokens)
-            : resolvedMaxTokens;
+        // 独立 API 只使用小手机独立预设中的长度，不接受业务调用覆盖。
+        const maxTokens = Number.isFinite(configMaxTokens) && configMaxTokens > 0
+            ? configMaxTokens
+            : 8192;
         const optionTemperature = Number.parseFloat(options?.temperature);
         const configTemperature = Number.parseFloat(apiConfig?.temperature);
         const temperature = Number.isFinite(optionTemperature)
@@ -1305,20 +1291,30 @@ export class ApiManager {
         return 8192;
     }
 
-    _resolveResponseLength(context, options = {}) {
-        const candidates = [
-            options?.max_length,
-            options?.max_tokens,
-            context?.max_response_length,
-            context?.max_length,
-            context?.maxLength,
-            context?.amount_gen
+    _resolveResponseLength(context) {
+        const root = context && typeof context === 'object' ? context : {};
+        const oai = root.oai_settings && typeof root.oai_settings === 'object'
+            ? root.oai_settings
+            : root;
+        const getDomValue = (id) => (
+            typeof document !== 'undefined' ? document.getElementById(id)?.value : undefined
+        );
+        const configuredCandidates = [
+            getDomValue('openai_max_tokens'),
+            oai.openai_max_tokens,
+            getDomValue('amount_gen'),
+            root.amount_gen,
+            oai.amount_gen,
+            root.max_response_length,
+            oai.max_response_length,
+            root.max_length,
+            root.maxLength
         ];
-        for (const value of candidates) {
+        for (const value of configuredCandidates) {
             const parsed = Number.parseInt(value, 10);
             if (Number.isFinite(parsed) && parsed > 0) return parsed;
         }
-        return 8192;
+        throw new Error('无法读取酒馆最大回复长度设置');
     }
 
     _parseOpenAIModelsResponse(data) {

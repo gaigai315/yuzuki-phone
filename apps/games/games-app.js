@@ -1279,8 +1279,7 @@ export class GamesApp extends PokerApp {
         this._lastWerewolfApiRequestAt = Date.now();
         return apiManager.callAI(messages, {
             appId: 'games',
-            temperature: 0.9,
-            max_tokens: 900
+            temperature: 0.9
         });
     }
 
@@ -1590,8 +1589,7 @@ export class GamesApp extends PokerApp {
         this._lastWerewolfApiRequestAt = Date.now();
         return apiManager.callAI(messages, {
             appId: 'games',
-            temperature: step === 'werewolf' ? 0.85 : 0.75,
-            max_tokens: step === 'werewolf' ? 760 : 420
+            temperature: step === 'werewolf' ? 0.85 : 0.75
         });
     }
 
@@ -1647,7 +1645,7 @@ export class GamesApp extends PokerApp {
             }
         ];
         this._lastWerewolfApiRequestAt = Date.now();
-        return apiManager.callAI(messages, { appId: 'games', temperature: 0.86, max_tokens: 260 });
+        return apiManager.callAI(messages, { appId: 'games', temperature: 0.86 });
     }
 
     async _buildWerewolfNightMessages(actors, step) {
@@ -1931,8 +1929,7 @@ export class GamesApp extends PokerApp {
         this._lastWerewolfApiRequestAt = Date.now();
         return apiManager.callAI(messages, {
             appId: 'games',
-            temperature: 0.82,
-            max_tokens: 520
+            temperature: 0.82
         });
     }
 
@@ -1990,7 +1987,7 @@ export class GamesApp extends PokerApp {
             }
         ];
         this._lastWerewolfApiRequestAt = Date.now();
-        return apiManager.callAI(messages, { appId: 'games', temperature: 0.78, max_tokens: 520 });
+        return apiManager.callAI(messages, { appId: 'games', temperature: 0.78 });
     }
 
     async _callWerewolfLastWordsAi(player) {
@@ -2040,7 +2037,7 @@ export class GamesApp extends PokerApp {
         ];
         this._lastWerewolfApiRequestAt = Date.now();
         return this._withWerewolfTimeout(
-            apiManager.callAI(messages, { appId: 'games', temperature: 0.86, max_tokens: 420 }),
+            apiManager.callAI(messages, { appId: 'games', temperature: 0.86 }),
             WEREWOLF_LAST_WORDS_TIMEOUT_MS,
             '狼人杀遗言请求超时，请点击续接遗言重试'
         );
