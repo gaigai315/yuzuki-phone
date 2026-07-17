@@ -87,6 +87,18 @@ function applyPhoneShellScale(value) {
     return percent;
 }
 
+function isTauriTavernAndroidRuntime() {
+    try {
+        const userAgent = String(navigator?.userAgent || '');
+        const bridge = window?.TauriTavernAndroidSystemUiBridge;
+        return /Android/i.test(userAgent)
+            && !!bridge
+            && typeof bridge.setImmersiveFullscreenEnabled === 'function';
+    } catch (e) {
+        return false;
+    }
+}
+
 export class SettingsApp {
     constructor(phoneShell, storage, settings) {
         this.phoneShell = phoneShell;
@@ -214,6 +226,7 @@ export class SettingsApp {
         if (!root) return;
 
         root.id = 'yzp-settings-app';
+        const isTauriTavernAndroid = root.classList.contains('yzp-settings-tauri-android');
         const lock = (element, declarations) => {
             if (!element) return;
             Object.entries(declarations).forEach(([property, value]) => {
@@ -236,7 +249,7 @@ export class SettingsApp {
             'margin': '0',
             'padding': '0',
             'overflow': 'hidden',
-            'isolation': 'isolate',
+            'isolation': isTauriTavernAndroid ? 'auto' : 'isolate',
             'writing-mode': 'horizontal-tb',
             'text-orientation': 'mixed',
             'animation': 'none',
@@ -248,8 +261,8 @@ export class SettingsApp {
             'display': 'flex',
             'align-items': 'center',
             'justify-content': 'center',
-            'position': 'sticky',
-            'top': '0',
+            'position': isTauriTavernAndroid ? 'relative' : 'sticky',
+            'top': isTauriTavernAndroid ? 'auto' : '0',
             'z-index': '100',
             'width': '100%',
             'height': '78px',
@@ -265,8 +278,8 @@ export class SettingsApp {
         lock(root.querySelector('.yzp-settings-tabs'), {
             'box-sizing': 'border-box',
             'display': 'block',
-            'position': 'sticky',
-            'top': '78px',
+            'position': isTauriTavernAndroid ? 'relative' : 'sticky',
+            'top': isTauriTavernAndroid ? 'auto' : '78px',
             'z-index': '99',
             'width': '100%',
             'height': '48px',
@@ -340,12 +353,12 @@ export class SettingsApp {
             'display': 'block',
             'position': 'relative',
             'width': '100%',
-            'height': 'auto',
+            'height': isTauriTavernAndroid ? '0' : 'auto',
             'min-width': '0',
             'min-height': '0',
             'margin': '0',
             'padding': '12px 10px',
-            'flex': '1 1 auto',
+            'flex': isTauriTavernAndroid ? '1 1 0' : '1 1 auto',
             'overflow-x': 'hidden',
             'overflow-y': 'auto',
             'float': 'none',
@@ -998,7 +1011,9 @@ export class SettingsApp {
         const customWallpaper = this.imageManager.getWallpaper();
         const wallpaper = customWallpaper || PHONE_CONFIG.defaultWallpaper;
         const hasWallpaper = !!String(wallpaper || '').trim();
-        const wallpaperStyle = hasWallpaper
+        const isTauriTavernAndroid = isTauriTavernAndroidRuntime();
+        const useSettingsWallpaperGlass = hasWallpaper && !isTauriTavernAndroid;
+        const wallpaperStyle = useSettingsWallpaperGlass
             ? `background-image: url('${String(wallpaper).replace(/'/g, "\\'")}'); background-size: cover; background-position: center;`
             : '';
         const cardTimeImage = this.storage.get('phone-card-time-image') || null;
@@ -1006,7 +1021,7 @@ export class SettingsApp {
         const phoneFrameColor = this.storage.get('phone-frame-color') || '#1a1a1a';
         const phoneShellScale = normalizePhoneShellScalePercent(this.storage.get('phone-shell-scale') || PHONE_SHELL_SCALE_DEFAULT);
         const html = `
-            <div id="yzp-settings-app" class="settings-app yzp-settings-app ${hasWallpaper ? 'settings-has-wallpaper' : ''}" style="${wallpaperStyle}">
+            <div id="yzp-settings-app" class="settings-app yzp-settings-app ${useSettingsWallpaperGlass ? 'settings-has-wallpaper' : ''} ${isTauriTavernAndroid ? 'yzp-settings-tauri-android' : ''}" style="${wallpaperStyle}">
                 <style>
                     .settings-app {
                         box-sizing: border-box !important;
@@ -1036,6 +1051,33 @@ export class SettingsApp {
                         width: 0 !important;
                         height: 0 !important;
                         display: none !important;
+                    }
+                    #yzp-settings-app.yzp-settings-tauri-android {
+                        background: #f2f2f7 !important;
+                    }
+                    #yzp-settings-app.yzp-settings-tauri-android *,
+                    #yzp-settings-app.yzp-settings-tauri-android *::before,
+                    #yzp-settings-app.yzp-settings-tauri-android *::after {
+                        backdrop-filter: none !important;
+                        -webkit-backdrop-filter: none !important;
+                    }
+                    #yzp-settings-app.yzp-settings-tauri-android .yzp-settings-header,
+                    #yzp-settings-app.yzp-settings-tauri-android .yzp-settings-tabs {
+                        position: relative !important;
+                        top: auto !important;
+                        background: #f7f7f7 !important;
+                    }
+                    #yzp-settings-app.yzp-settings-tauri-android .yzp-settings-body {
+                        height: 0 !important;
+                        flex: 1 1 0 !important;
+                        background: #f2f2f7 !important;
+                        -webkit-overflow-scrolling: auto !important;
+                    }
+                    #yzp-settings-app.yzp-settings-tauri-android #tab-general > details[data-settings-fold-key],
+                    #yzp-settings-app.yzp-settings-tauri-android details[data-tts-fold-key],
+                    #yzp-settings-app.yzp-settings-tauri-android .setting-section {
+                        overflow: visible !important;
+                        box-shadow: none !important;
                     }
                     .settings-app,
                     .settings-app *,
