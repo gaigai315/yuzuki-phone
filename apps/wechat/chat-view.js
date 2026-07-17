@@ -80,6 +80,46 @@ export class ChatView {
         return Math.max(0, Math.min(maxValue, parsed));
     }
 
+    _resolveCallRecordStartTime(message = {}) {
+        const stored = String(message.callStartTime || '').trim();
+        if (/^\d{1,2}:\d{2}$/.test(stored)) return stored;
+
+        const endMatch = String(message.time || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+        const durationMatch = String(message.duration || '').match(/(?:(\d+)\s*分)?\s*(?:(\d+)\s*秒)?/);
+        if (!endMatch || !durationMatch || (!durationMatch[1] && !durationMatch[2])) return '';
+
+        const durationSeconds = (Number(durationMatch[1]) || 0) * 60 + (Number(durationMatch[2]) || 0);
+        const elapsedMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
+        const endMinutes = (Number(endMatch[1]) * 60) + Number(endMatch[2]);
+        const startMinutes = (endMinutes - elapsedMinutes + 24 * 60) % (24 * 60);
+        return `${String(Math.floor(startMinutes / 60)).padStart(2, '0')}:${String(startMinutes % 60).padStart(2, '0')}`;
+    }
+
+    _formatCallRecordForPrompt(message = {}, userName = '用户', endTimePrefix = '') {
+        const callTypeName = message.callType === 'video' ? '视频通话' : '语音通话';
+        if (message.status !== 'answered') {
+            const statusText = (message.status === 'rejected' || message.status === 'declined')
+                ? '对方已拒绝'
+                : message.status === 'cancelled'
+                    ? '已取消'
+                    : '未接听';
+            return `${endTimePrefix}[${callTypeName} - ${statusText}]\n`;
+        }
+
+        const callStartTime = this._resolveCallRecordStartTime(message);
+        const lines = [`${callStartTime ? `[${callStartTime}] ` : ''}[${callTypeName}聊天记录]`];
+        if (Array.isArray(message.transcript)) {
+            message.transcript.forEach((entry) => {
+                const speaker = entry?.from === 'me' ? userName : String(entry?.from || '对方');
+                const content = String(entry?.text || '').trim();
+                if (content) lines.push(`${speaker}: ${content}`);
+            });
+        }
+        const durationText = message.duration ? `，时长 ${message.duration}` : '';
+        lines.push(`${endTimePrefix}[${callTypeName}聊天结束${durationText}]`);
+        return `${lines.join('\n')}\n`;
+    }
+
     _stripWechatTagsFromTavernContext(text = '') {
         let out = String(text || '');
         if (!out) return out;
@@ -10891,8 +10931,9 @@ renderChatRoom(chat) {
                 if (msg?.hiddenFromPrompt === true || msg?.isTimeMarker === true || msg?.type === 'time_marker') {
                     continue;
                 }
-                if (msg.type === 'call_record' && msg.transcript && msg.transcript.length > 0) {
-                    totalLines += msg.transcript.length + 1; // transcript 行数 + 通话记录本身
+                if (msg.type === 'call_record') {
+                    const transcriptCount = Array.isArray(msg.transcript) ? msg.transcript.length : 0;
+                    totalLines += msg.status === 'answered' ? transcriptCount + 2 : 1;
                 } else {
                     totalLines += 1;
                 }
@@ -10954,21 +10995,7 @@ renderChatRoom(chat) {
                 if (msg.from === 'system' || msg.type === 'system') {
                     text += `${timeStr}[系统] ${msg.content || ''}\n`;
                 } else if (msg.type === 'call_record') {
-                    const callTypeName = msg.callType === 'video' ? '视频通话' : '语音通话';
-                    const statusText = msg.status === 'answered'
-                        ? `通话时长 ${msg.duration}`
-                        : (msg.status === 'rejected' || msg.status === 'declined')
-                            ? '对方已拒绝'
-                            : msg.status === 'cancelled'
-                                ? '已取消'
-                                : '未接听';
-                    text += `${timeStr}[${callTypeName} - ${statusText}]\n`;
-                    if (msg.transcript && msg.transcript.length > 0) {
-                        msg.transcript.forEach(t => {
-                            const tSpeaker = t.from === 'me' ? userName : t.from;
-                            text += `  [通话记录] ${tSpeaker}: ${t.text}\n`;
-                        });
-                    }
+                    text += this._formatCallRecordForPrompt(msg, userName, timeStr);
                 } else if (msg.type === 'image') {
                     const resolvedImageData = await this._resolveWechatImageForAi(msg.content, aiImageDataCache);
                     const imageText = this._formatMessageContentForPrompt(msg, chat) || '[图片]';
@@ -13965,6 +13992,9 @@ ${groupParticipants.join('、') || '暂无成员'}
             status: status,
             duration: duration,
             transcript: Array.isArray(options?.transcript) && options.transcript.length > 0 ? options.transcript : undefined,
+            callStartTime: String(callStartTime?.time || '').trim() || undefined,
+            callStartDate: String(callStartTime?.date || '').trim() || undefined,
+            callStartWeekday: String(callStartTime?.weekday || '').trim() || undefined,
             time: currentTime,  // ✅ 使用剧情时间
             date: storyTime?.date,
             weekday: storyTime?.weekday
