@@ -270,8 +270,8 @@ Execute output strictly in Simplified Chinese (简体中文). Render flesh, bodi
         return `当前手机时间（T_log）：{{STORY_DATE}} {{STORY_TIME}}
 
 {{user}}手机上的微信好友列表：{{wechatFriends}}
-{{user}}手机上的微信群聊列表：{{wechatGroups}}
 备注：好友名后带“（已拉黑）”表示{{user}}已经把该好友拉黑。已拉黑好友知道自己无法再通过微信联系{{user}}，不得使用<wechat>标签给{{user}}发送消息；如剧情需要，只能在正文中描写其无法发送、发送失败、改用线下或其他渠道等反应。
+{{user}}手机上的微信群聊列表：{{wechatGroups}}
 
 【手机微信调用准则】：
 [<wechat>手机消息标签]触发条件：仅当剧情正文中其他角色（char/npc）使用手机给{{user}}发送消息时，才使用此标签。
@@ -289,19 +289,13 @@ Execute output strictly in Simplified Chinese (简体中文). Render flesh, bodi
 - [HH:MM] 不得早于当前手机时间：{{STORY_TIME}}；如无明确延迟，默认从 {{STORY_TIME}} 起，按消息发生顺序自然递增。
 - 同一联系人连续多条消息，每条之间可以相隔 1-3 分钟；不同联系人或不同群聊的消息，应根据剧情先后合理错开时间。
 
-【严格参考单聊/群聊格式】：
+【严格参考单聊/群聊格式（注意单聊回复时，请勿使用群聊格式，只有在群聊时，才使用群里格式。）】：
 <wechat><!--
 ---好友A---
 接收人：{{user}}
 date:{{STORY_DATE}}
 [HH:MM] 好友A的消息1
 [HH:MM] 好友A的消息2
----群名---
-接收人：{{user}}
-type:group
-date:{{STORY_DATE}}
-[HH:MM] 发送者A: 消息内容
-[HH:MM] 发送者B: 消息内容
 ---群名---
 接收人：{{user}}
 type:group
