@@ -318,11 +318,6 @@
 }
 
 #phone-panel.phone-keyboard-open .phone-body-panel {
-    width: min(
-        calc(400px * var(--phone-shell-width-scale, 1)),
-        calc(var(--phone-keyboard-vw, 100vw) * 0.95),
-        calc((var(--phone-keyboard-vh, 100dvh) - 16px) * 0.98 * 9 / 19.5 * var(--phone-shell-width-scale, 1))
-    ) !important;
     height: min(
         calc(866px * var(--phone-shell-height-scale, 1)),
         calc((var(--phone-keyboard-vh, 100dvh) - 16px) * 0.98 * var(--phone-shell-height-scale, 1)),
