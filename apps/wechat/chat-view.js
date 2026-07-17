@@ -61,6 +61,7 @@ export class ChatView {
         this._wechatTtsCacheLimit = 24;
         this._imagePromptGenerationLocks = new Set();
         this.customEmojiSelectionMode = false;
+        this.customEmojiManageMenuOpen = false;
         this.selectedCustomEmojiIds = new Set();
         this.messageSelectionMode = false;
         this.selectedMessageIds = new Set();
@@ -1079,6 +1080,7 @@ export class ChatView {
 
         if (this.showEmoji) {
             this.showEmoji = false;
+            this.customEmojiManageMenuOpen = false;
             this._setCustomEmojiSelectionMode(false);
             this.app.render();
             setTimeout(restore, 0);
@@ -1145,6 +1147,7 @@ export class ChatView {
 
     resetTransientInputPanels() {
         this.showEmoji = false;
+        this.customEmojiManageMenuOpen = false;
         this.showMore = false;
         this.showQuickReplies = false;
         this.activeQuickReplyKey = '';
@@ -3842,26 +3845,32 @@ renderChatRoom(chat) {
                 <div class="emoji-tab ${this.emojiTab !== 'custom' ? 'active' : ''}" data-tab="default">
                     系统表情
                 </div>
-                <div class="emoji-tab ${this.emojiTab === 'custom' ? 'active' : ''}" data-tab="custom">
-                    我的表情
+                <div class="emoji-tab wechat-emoji-custom-tab ${this.emojiTab === 'custom' ? 'active' : ''}" data-tab="custom">
+                    <span>我的表情</span>
+                    <button type="button" class="wechat-emoji-manage-trigger" aria-label="表情管理" aria-expanded="false">
+                        <i class="fa-solid fa-broom" aria-hidden="true"></i>
+                    </button>
                 </div>
             </div>
 
             ${customMode ? `
-            <div class="emoji-custom-toolbar" style="display:flex; gap:6px; padding:8px 10px 6px; border-bottom:1px solid rgba(0,0,0,0.08); background:transparent;">
-                <button id="toggle-custom-emoji-manage" style="flex:1; border:1px solid ${isSelectionMode ? 'rgba(0,0,0,0.14)' : 'rgba(7,193,96,0.25)'}; border-radius:10px; background:${isSelectionMode ? 'rgba(0,0,0,0.06)' : 'rgba(7,193,96,0.14)'}; color:${isSelectionMode ? '#555' : '#0b8f52'}; font-size:12px; font-weight:600; padding:7px 8px;">
-                    ${isSelectionMode ? '完成' : '多选删除'}
+            <div class="wechat-emoji-manage-menu${this.customEmojiManageMenuOpen ? ' is-open' : ''}" aria-hidden="${this.customEmojiManageMenuOpen ? 'false' : 'true'}">
+                <button type="button" id="toggle-custom-emoji-manage" class="wechat-emoji-manage-action">
+                    <i class="fa-solid ${isSelectionMode ? 'fa-check' : 'fa-list-check'}" aria-hidden="true"></i>
+                    <span>${isSelectionMode ? '完成' : '多选删除'}</span>
                 </button>
-                <button id="delete-selected-custom-emoji" ${!isSelectionMode || selectedCount === 0 ? 'disabled' : ''} style="flex:1; border:1px solid ${isSelectionMode && selectedCount > 0 ? 'rgba(255,59,48,0.25)' : 'rgba(0,0,0,0.08)'}; border-radius:10px; background:${isSelectionMode && selectedCount > 0 ? 'rgba(255,59,48,0.12)' : 'rgba(0,0,0,0.05)'}; color:${isSelectionMode && selectedCount > 0 ? '#c53030' : '#aaa'}; font-size:12px; font-weight:600; padding:7px 8px;">
-                    删除选中${selectedCount > 0 ? `(${selectedCount})` : ''}
+                <button type="button" id="delete-selected-custom-emoji" class="wechat-emoji-manage-action is-danger" ${!isSelectionMode || selectedCount === 0 ? 'disabled' : ''}>
+                    <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                    <span>删除选中${selectedCount > 0 ? `(${selectedCount})` : ''}</span>
                 </button>
-                <button id="clear-custom-emoji-all" ${customEmojis.length === 0 ? 'disabled' : ''} style="flex:1; border:1px solid ${customEmojis.length > 0 ? 'rgba(217,83,79,0.26)' : 'rgba(0,0,0,0.08)'}; border-radius:10px; background:${customEmojis.length > 0 ? 'rgba(217,83,79,0.12)' : 'rgba(0,0,0,0.05)'}; color:${customEmojis.length > 0 ? '#b54742' : '#aaa'}; font-size:12px; font-weight:600; padding:7px 8px;">
-                    一键清空
+                <button type="button" id="clear-custom-emoji-all" class="wechat-emoji-manage-action is-danger" ${customEmojis.length === 0 ? 'disabled' : ''}>
+                    <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+                    <span>一键清空</span>
                 </button>
             </div>
             ${isSelectionMode ? `
-            <div style="padding:0 10px 6px; font-size:11px; color:#888;">
-                当前处于多选删除模式，点击表情可勾选。<button id="select-all-custom-emoji" style="border:none; background:transparent; color:#07c160; font-size:11px; padding:0; margin-left:4px;">${allSelected ? '取消全选' : '全选'}</button>
+            <div class="wechat-emoji-selection-hint">
+                当前处于多选删除模式，点击表情可勾选。<button type="button" id="select-all-custom-emoji">${allSelected ? '取消全选' : '全选'}</button>
             </div>
             ` : ''}
             ` : ''}
@@ -8433,11 +8442,23 @@ renderChatRoom(chat) {
         });
 
         // 🔥 新增：表情标签切换
+        query('.wechat-emoji-manage-trigger')?.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const trigger = event.currentTarget;
+            const menu = query('.wechat-emoji-manage-menu');
+            if (!menu) return;
+            const isOpen = menu.classList.toggle('is-open');
+            menu.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+            trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+
         queryAll('.emoji-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 this.emojiTab = tab.dataset.tab;
                 if (this.emojiTab !== 'custom') {
                     this._setCustomEmojiSelectionMode(false);
+                    this.customEmojiManageMenuOpen = false;
                 }
                 this.app.render();
             });
@@ -8449,6 +8470,7 @@ renderChatRoom(chat) {
         });
 
         query('#toggle-custom-emoji-manage')?.addEventListener('click', () => {
+            this.customEmojiManageMenuOpen = false;
             this._setCustomEmojiSelectionMode(!this.customEmojiSelectionMode);
             this.app.render();
         });
@@ -8460,11 +8482,13 @@ renderChatRoom(chat) {
 
         query('#delete-selected-custom-emoji')?.addEventListener('click', async () => {
             if (!this.customEmojiSelectionMode) return;
+            this.customEmojiManageMenuOpen = false;
             await this._deleteCustomEmojiSet(Array.from(this.selectedCustomEmojiIds), { clearAll: false });
         });
 
         query('#clear-custom-emoji-all')?.addEventListener('click', async () => {
             const ids = (this.app.wechatData.getCustomEmojis() || []).map(emoji => String(emoji?.id || '').trim()).filter(Boolean);
+            this.customEmojiManageMenuOpen = false;
             await this._deleteCustomEmojiSet(ids, { clearAll: true });
         });
 

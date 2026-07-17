@@ -153,8 +153,12 @@
 #phone-panel-content .phone-screen .album-image-picker-tile {
     position: relative;
     width: 100%;
+    height: auto;
     aspect-ratio: 1 / 1;
     min-width: 0;
+    min-height: 0;
+    display: block;
+    box-sizing: border-box;
     border: 1px solid #e5e5e5;
     border-radius: 6px;
     overflow: hidden;
@@ -164,10 +168,13 @@
 }
 
 #phone-panel-content .phone-screen .album-image-picker-tile img {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     display: block;
     object-fit: cover;
+    object-position: center;
 }
 
 #phone-panel-content .phone-screen .album-image-picker-tile span {

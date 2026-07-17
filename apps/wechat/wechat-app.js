@@ -1969,6 +1969,100 @@ export class WechatApp {
     background: #f8f8f8;
 }
 
+.wechat-app .wechat-emoji-custom-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.wechat-app .wechat-emoji-manage-trigger {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: currentColor;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.72;
+}
+
+.wechat-app .wechat-emoji-manage-trigger:hover,
+.wechat-app .wechat-emoji-manage-trigger:focus-visible {
+    background: rgba(7, 193, 96, 0.12);
+    opacity: 1;
+    outline: none;
+}
+
+.wechat-app .wechat-emoji-manage-menu {
+    display: none;
+    flex-direction: row;
+    gap: 6px;
+    padding: 8px 10px 6px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.wechat-app .wechat-emoji-manage-menu.is-open {
+    display: flex;
+}
+
+.wechat-app .wechat-emoji-manage-action {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 5px;
+    border: 1px solid rgba(7, 193, 96, 0.22);
+    border-radius: 9px;
+    background: rgba(7, 193, 96, 0.1);
+    color: #0b8f52;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.wechat-app .wechat-emoji-manage-action.is-danger {
+    border-color: rgba(255, 59, 48, 0.2);
+    background: rgba(255, 59, 48, 0.08);
+    color: #b54742;
+}
+
+.wechat-app .wechat-emoji-manage-action:disabled {
+    border-color: rgba(0, 0, 0, 0.08);
+    background: rgba(0, 0, 0, 0.05);
+    color: #aaa;
+    cursor: default;
+    opacity: 0.75;
+}
+
+.wechat-app .wechat-emoji-selection-hint {
+    padding: 0 10px 6px;
+    color: #888;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.wechat-app .wechat-emoji-selection-hint button {
+    padding: 0;
+    margin-left: 4px;
+    border: 0;
+    background: transparent;
+    color: #07c160;
+    font-size: 11px;
+    cursor: pointer;
+}
+
 /* 自定义表情样式 */
 .custom-emoji-item {
     width: 34px;

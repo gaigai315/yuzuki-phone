@@ -17,7 +17,7 @@ export class AlbumImagePicker {
         const link = document.createElement('link');
         link.id = 'album-image-picker-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./album-image-picker.css?v=1.0.0', import.meta.url).href;
+        link.href = new URL('./album-image-picker.css?v=1.0.1', import.meta.url).href;
         document.head.appendChild(link);
     }
 
