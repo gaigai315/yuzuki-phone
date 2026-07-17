@@ -140,7 +140,7 @@ export class WeiboView {
         const userName = context?.name1 || '微博用户';
         const nickname = profile.nickname || userName;
         const following = profile.following ?? 25;
-        const followers = profile.followers ?? 0;
+        const followers = this._formatProfileCount(profile.followers ?? 0);
         const postsCount = this.app.weiboData.getUserPosts().length;
         const ipLocation = profile.ipLocation || 'IP属地：未知';
         const verifyText = profile.verifyText || '微博个人认证';
@@ -3875,6 +3875,14 @@ export class WeiboView {
         if (num >= 10000) return (num / 10000).toFixed(1) + '万';
         if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
         return num.toString();
+    }
+
+    _formatProfileCount(value) {
+        const count = Math.max(0, Number(value) || 0);
+        if (count < 10000) return Math.round(count).toString();
+
+        const compact = (count / 10000).toFixed(1).replace(/\.0$/, '');
+        return `${compact}w`;
     }
 
     _getSillyTavernPersonaAvatar() {

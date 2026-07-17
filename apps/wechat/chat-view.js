@@ -2490,6 +2490,12 @@ renderChatRoom(chat) {
         const hasInputText = String(this.inputText || '').trim() !== '';
         const rightButtonIsMore = !isCurrentChatSending && !hasInputText;
         const safeChatId = this._escapeHtml(String(chat?.id || '').trim());
+        const inputAreaStyle = this.showQuickReplies
+            ? 'background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; border-top: none !important;'
+            : 'background: rgba(255, 255, 255, 0.15) !important; backdrop-filter: blur(35px) saturate(200%) !important; -webkit-backdrop-filter: blur(35px) saturate(200%) !important; border-top: 0.5px solid rgba(0, 0, 0, 0.15) !important;';
+        const inputBarStyle = this.showQuickReplies
+            ? 'background: rgba(255, 255, 255, 0.15) !important; backdrop-filter: blur(35px) saturate(200%) !important; -webkit-backdrop-filter: blur(35px) saturate(200%) !important; border-top: 0.5px solid rgba(0, 0, 0, 0.15) !important;'
+            : 'background: transparent !important;';
 
         return `
     <div class="chat-room" data-chat-id="${safeChatId}">
@@ -2498,7 +2504,7 @@ renderChatRoom(chat) {
                 </div>
 
                 <!-- 输入区 -->
-                <div class="chat-input-area" style="background: rgba(255, 255, 255, 0.15) !important; backdrop-filter: blur(35px) saturate(200%) !important; -webkit-backdrop-filter: blur(35px) saturate(200%) !important; border-top: 0.5px solid rgba(0, 0, 0, 0.15) !important;">
+                <div class="chat-input-area" style="${inputAreaStyle}">
                     <!-- 表情面板 -->
                     ${this.showEmoji ? this.renderEmojiPanel() : ''}
 
@@ -2512,7 +2518,7 @@ renderChatRoom(chat) {
                     ${this.activeQuote ? `<div class="active-quote-bar" style="padding: 2px 8px; background: rgba(0,0,0,0.05); font-size: 10px; color: #888; display: flex; justify-content: space-between; align-items: center; line-height: 1.2;"><div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">${this._escapeHtml(this.activeQuote.sender)}: ${this._escapeHtml(this.activeQuote.content.length > 20 ? this.activeQuote.content.substring(0, 20) + '...' : this.activeQuote.content)}</div><button id="cancel-quote-btn" style="background: none; border: none; color: #aaa; cursor: pointer; padding: 0 4px; font-size: 10px; line-height: 1;"><i class="fa-solid fa-xmark"></i></button></div>` : ''}
 
                     <!-- 输入行 -->
-                    <div class="chat-input-bar" style="display: flex; align-items: center; justify-content: space-between; background: transparent !important;">
+                    <div class="chat-input-bar" style="display: flex; align-items: center; justify-content: space-between; ${inputBarStyle}">
                         <div style="display: flex; align-items: center; gap: 0px;">
                             <button class="input-btn" id="quick-reply-btn" title="快捷回复">
                                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
