@@ -1185,6 +1185,12 @@ export class WechatData {
     _collectManagedImagePathsFromMessage(message, paths = new Set()) {
         if (!message || typeof message !== 'object') return paths;
 
+        // 自定义表情虽然以 image 消息保存，但它的图片属于全局表情库，
+        // 不能随着聊天记录清理而被物理删除。表情库只能由相册或表情管理明确清理。
+        if (message.customEmojiId || message.customEmojiName || message.customEmojiDescription) {
+            return paths;
+        }
+
         const mediaFields = [
             message.generatedImageUrl,
             message.imageUrl,
@@ -1199,7 +1205,17 @@ export class WechatData {
             mediaFields.push(message.content, message.image);
         }
 
-        mediaFields.forEach(value => this._collectManagedImagePathsFromValue(value, paths));
+        // 兼容早期没有 customEmoji* 标记的历史消息：按当前全局表情图片路径排除。
+        const messagePaths = new Set();
+        mediaFields.forEach(value => this._collectManagedImagePathsFromValue(value, messagePaths));
+        const customEmojiPaths = new Set(
+            (Array.isArray(this.data?.customEmojis) ? this.data.customEmojis : [])
+                .map(emoji => this._normalizeManagedBackgroundPath(emoji?.image))
+                .filter(Boolean)
+        );
+        messagePaths.forEach(path => {
+            if (!customEmojiPaths.has(this._normalizeManagedBackgroundPath(path))) paths.add(path);
+        });
         return paths;
     }
 
@@ -1311,7 +1327,8 @@ export class WechatData {
             contacts: [],
             messages: {},
             moments: [],
-            customEmojis: [],
+            // 全清微信数据也保留全局自定义表情；图片资产统一由相册 App 管理。
+            customEmojis: this._loadGlobalCustomEmojis(),
             contactGenderMap: {},
             contactAvatarGroupMap: {},
             contactAutoAvatarMap: {},
@@ -1319,7 +1336,6 @@ export class WechatData {
             musicListening: {}
         };
 
-        this._saveGlobalCustomEmojis([]);
         this._cleanupManagedImagesForDeletedMessages(deletedMessages);
 
         // 4. 保存重置后的空数据
