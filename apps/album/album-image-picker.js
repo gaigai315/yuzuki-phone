@@ -10,6 +10,7 @@ export class AlbumImagePicker {
         this.albumData = albumData;
         this._activeOverlay = null;
         this._activeResolve = null;
+        this._activeResizeObserver = null;
     }
 
     loadCSS() {
@@ -17,7 +18,7 @@ export class AlbumImagePicker {
         const link = document.createElement('link');
         link.id = 'album-image-picker-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./album-image-picker.css?v=1.0.1', import.meta.url).href;
+        link.href = new URL('./album-image-picker.css?v=1.0.2', import.meta.url).href;
         document.head.appendChild(link);
     }
 
@@ -102,6 +103,8 @@ export class AlbumImagePicker {
                     }
                 }, { once: true });
             });
+
+            this._watchPickerGridSize(overlay);
         });
     }
 
@@ -126,9 +129,42 @@ export class AlbumImagePicker {
     _close(value) {
         const resolve = this._activeResolve;
         this._activeResolve = null;
+        this._activeResizeObserver?.disconnect?.();
+        this._activeResizeObserver = null;
         this._activeOverlay?.remove();
         this._activeOverlay = null;
         if (resolve) resolve(value);
+    }
+
+    _watchPickerGridSize(overlay) {
+        requestAnimationFrame(() => {
+            if (this._activeOverlay !== overlay) return;
+            const grid = overlay.querySelector('.album-image-picker-grid');
+            if (!grid) return;
+
+            const syncSize = () => {
+                const style = getComputedStyle(grid);
+                const paddingX = (Number.parseFloat(style.paddingLeft) || 0)
+                    + (Number.parseFloat(style.paddingRight) || 0);
+                const columnGap = Number.parseFloat(style.columnGap) || 0;
+                const availableWidth = Math.max(0, grid.clientWidth - paddingX - (columnGap * 2));
+                const tileSize = Math.max(56, Math.floor(availableWidth / 3));
+                grid.style.setProperty('--album-image-picker-tile-size', `${tileSize}px`);
+                grid.querySelectorAll('.album-image-picker-tile').forEach((tile) => {
+                    tile.style.setProperty('height', `${tileSize}px`, 'important');
+                    const image = tile.querySelector('img');
+                    image?.style?.setProperty?.('width', '100%', 'important');
+                    image?.style?.setProperty?.('height', '100%', 'important');
+                    image?.style?.setProperty?.('object-fit', 'cover', 'important');
+                });
+            };
+
+            syncSize();
+            if (typeof ResizeObserver === 'function') {
+                this._activeResizeObserver = new ResizeObserver(syncSize);
+                this._activeResizeObserver.observe(grid);
+            }
+        });
     }
 
     _getSourceLabel(image) {
