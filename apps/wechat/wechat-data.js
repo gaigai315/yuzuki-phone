@@ -968,10 +968,10 @@ export class WechatData {
     _formatLobbyCharacterDetail(item = {}) {
         const name = String(item?.name || '').trim() || '未命名角色';
         const lines = [`- ${name}`];
-        const description = String(item?.description || '').trim();
-        const personality = String(item?.personality || '').trim();
-        const scenario = String(item?.scenario || '').trim();
-        const systemPrompt = String(item?.systemPrompt || '').trim();
+        const description = this._truncateAiContextText(item?.description, 1000);
+        const personality = this._truncateAiContextText(item?.personality, 600);
+        const scenario = this._truncateAiContextText(item?.scenario, 600);
+        const systemPrompt = this._truncateAiContextText(item?.systemPrompt, 600);
 
         if (description) lines.push(`  描述：${description}`);
         if (personality) lines.push(`  性格：${personality}`);
@@ -979,6 +979,16 @@ export class WechatData {
         if (systemPrompt) lines.push(`  系统提示词：${systemPrompt}`);
         if (lines.length === 1) lines.push('  （暂无可用详情）');
         return lines.join('\n');
+    }
+
+    _truncateAiContextText(value, maxChars, suffix = '\n...[内容过长已截断]') {
+        const text = String(value || '').trim();
+        const limit = Math.max(0, Number.parseInt(maxChars, 10) || 0);
+        if (!text || limit === 0) return '';
+        if (text.length <= limit) return text;
+        const safeSuffix = String(suffix || '').slice(0, limit);
+        const headLength = Math.max(0, limit - safeSuffix.length);
+        return `${text.slice(0, headLength).trimEnd()}${safeSuffix}`;
     }
 
     async _buildWechatWorldbookText() {
@@ -2921,39 +2931,27 @@ async buildContactPrompt(context) {
         ? context.characters[context.characterId]
         : null;
 
-    const description = String(char?.description || '').trim();
-    const personality = String(char?.personality || char?.description || '').trim();
-    const scenario = (context?.scenario || char?.scenario || '').trim();
-    const systemPrompt = String(char?.data?.system_prompt || char?.system_prompt || '').trim();
-    const mesExample = String(char?.mes_example || char?.data?.mes_example || '').trim();
-    const firstMes = String(char?.first_mes || char?.data?.first_mes || '').trim();
+    const description = this._truncateAiContextText(char?.description, 2400);
+    const personality = this._truncateAiContextText(char?.personality, 1200);
+    const scenario = this._truncateAiContextText(context?.scenario || char?.scenario, 1600);
+    const systemPrompt = this._truncateAiContextText(char?.data?.system_prompt || char?.system_prompt, 800);
+    const mesExample = this._truncateAiContextText(char?.mes_example || char?.data?.mes_example, 1000);
+    const firstMes = this._truncateAiContextText(char?.first_mes || char?.data?.first_mes, 600);
 
     let persona = '';
     const personaTextarea = document.getElementById('persona_description');
     if (!lobbySelection.isLobby && personaTextarea && personaTextarea.value) {
-        persona = personaTextarea.value.trim();
+        persona = this._truncateAiContextText(personaTextarea.value, 1800);
     } else if (lobbySelection.isLobby) {
         if (lobbyUserProfiles.length === 1) {
-            persona = lobbyUserProfiles[0].description || '暂无该用户人设';
+            persona = this._truncateAiContextText(lobbyUserProfiles[0].description, 1800) || '暂无该用户人设';
         } else if (lobbyUserProfiles.length > 1) {
             const lines = lobbyUserProfiles.map(item => {
-                const desc = item.description || '暂无该用户人设';
+                const desc = this._truncateAiContextText(item.description, 700) || '暂无该用户人设';
                 return `【${item.name}】\n${desc}`;
             });
-            persona = `大厅勾选用户人设如下：\n${lines.join('\n\n')}`;
+            persona = this._truncateAiContextText(`大厅勾选用户人设如下：\n${lines.join('\n\n')}`, 2200);
         }
-    }
-
-    let charWorldBook = '';
-    if (char?.data?.character_book?.entries) {
-        const entries = char.data.character_book.entries;
-        const chunks = [];
-        entries.forEach((entry, idx) => {
-            if (!entry?.content) return;
-            const title = entry.comment || entry.keys || `条目${idx + 1}`;
-            chunks.push(`【${title}】\n${entry.content}`);
-        });
-        charWorldBook = chunks.join('\n\n');
     }
 
     let chatHistory = '';
@@ -2975,9 +2973,9 @@ async buildContactPrompt(context) {
             const cleanText = String(rawText).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
             if (isLobbySystemNoise(msg, cleanText)) return;
             const speaker = msg?.is_user ? userName : charName;
-            lines.push(`${speaker}: ${cleanText.substring(0, 300)}`);
+            lines.push(`${speaker}: ${cleanText.substring(0, 180)}`);
         });
-        chatHistory = lines.slice(-20).join('\n');
+        chatHistory = lines.slice(-10).join('\n');
     }
 
     const promptManager = window.VirtualPhone?.promptManager;
@@ -3011,8 +3009,7 @@ async buildContactPrompt(context) {
         scenario ? `场景/背景：${scenario}` : '',
         systemPrompt ? `系统提示词：${systemPrompt}` : '',
         firstMes ? `开场白：${firstMes}` : '',
-        mesExample ? `对话示例：${mesExample}` : '',
-        charWorldBook ? `角色卡世界书：\n${charWorldBook}` : ''
+        mesExample ? `对话示例：${mesExample}` : ''
     ].filter(Boolean);
     messages.push({
         role: 'system',
@@ -3041,7 +3038,10 @@ async buildContactPrompt(context) {
 
     if (lobbySelection.isLobby) {
         const selectedCharacterText = lobbySelection.characters.length > 0
-            ? lobbySelection.characters.map(item => this._formatLobbyCharacterDetail(item)).join('\n')
+            ? this._truncateAiContextText(
+                lobbySelection.characters.map(item => this._formatLobbyCharacterDetail(item)).join('\n'),
+                3500
+            )
             : '未勾选角色卡';
         const selectedGroupText = lobbySelection.groups.length > 0
             ? lobbySelection.groups.map(item => {
@@ -3128,17 +3128,7 @@ async sendToAI(prompt) {
             const apiManager = window.VirtualPhone?.apiManager;
             if (!apiManager) throw new Error('API Manager 未初始化');
 
-            const resolvedMaxTokens = Math.max(
-                8192,
-                Number.parseInt(context?.max_response_length, 10) || 0,
-                Number.parseInt(context?.max_length, 10) || 0,
-                Number.parseInt(context?.amount_gen, 10) || 0
-            );
-            const callAiOptions = { appId: 'wechat', min_max_tokens: 8192 };
-            if (Number.isFinite(resolvedMaxTokens) && resolvedMaxTokens > 0) {
-                callAiOptions.max_tokens = resolvedMaxTokens;
-            }
-            const result = await apiManager.callAI(messages, callAiOptions);
+            const result = await apiManager.callAI(messages, { appId: 'wechat' });
 
             if (!result.success) {
                 throw new Error(result.error);

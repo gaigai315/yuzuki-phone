@@ -4927,26 +4927,17 @@ export class WechatApp {
             ? context.characters[context.characterId]
             : null;
 
-        // 主角/角色信息：补充更多角色卡字段，避免只塞名字和一句描述
+        // 钱包评估只需要身份背景；角色扮演提示词、示例和内置世界书不应进入请求。
         if (char) {
+            const limitContext = (value, maxChars) => this.wechatData?._truncateAiContextText?.(value, maxChars) || '';
             const charLines = [];
             charLines.push(`名字: ${char.name || context.name2 || '角色'}`);
-            if (char.description) charLines.push(`描述: ${String(char.description)}`);
-            if (char.personality) charLines.push(`性格: ${String(char.personality)}`);
-            if (char.scenario) charLines.push(`场景/背景: ${String(char.scenario)}`);
-            if (char.data?.system_prompt) charLines.push(`系统提示词: ${String(char.data.system_prompt)}`);
-            if (char.first_mes || char.data?.first_mes) charLines.push(`开场白: ${String(char.first_mes || char.data.first_mes)}`);
-            if (char.mes_example || char.data?.mes_example) charLines.push(`对话示例: ${String(char.mes_example || char.data.mes_example)}`);
-            if (char?.data?.character_book?.entries) {
-                const charBook = char.data.character_book.entries
-                    .filter(e => e && e.enabled !== false && e.content)
-                    .map(e => {
-                        const title = e.comment ? `【${e.comment}】` : '';
-                        return `${title}\n${String(e.content)}`;
-                    })
-                    .join('\n---\n');
-                if (charBook) charLines.push(`角色卡内置世界书:\n${charBook}`);
-            }
+            const description = limitContext(char.description, 2400);
+            const personality = limitContext(char.personality, 1200);
+            const scenario = limitContext(char.scenario, 1600);
+            if (description) charLines.push(`描述: ${description}`);
+            if (personality) charLines.push(`性格: ${personality}`);
+            if (scenario) charLines.push(`场景/背景: ${scenario}`);
             charInfo = charLines.join('\n');
         } else {
             charInfo = `名字: ${context.name2 || '角色'}`;
@@ -4960,7 +4951,10 @@ export class WechatApp {
         userLines.push(`名字: ${userName}`);
         if (wxUser?.name) userLines.push(`微信昵称: ${wxUser.name}`);
         if (wxUser?.signature) userLines.push(`微信签名: ${wxUser.signature}`);
-        if (personaText) userLines.push(`设定: ${personaText.substring(0, 800)}`);
+        if (personaText) {
+            const limitedPersona = this.wechatData?._truncateAiContextText?.(personaText, 1600) || personaText.substring(0, 1600);
+            userLines.push(`设定: ${limitedPersona}`);
+        }
         userInfo = userLines.join('\n');
 
         const selectedWorldbookText = await this.wechatData?._buildWechatWorldbookText?.() || '';
@@ -5004,7 +4998,7 @@ export class WechatApp {
 
         try {
             const apiManager = window.VirtualPhone?.apiManager;
-            const result = await apiManager.callAI(messages, { max_tokens: 8192, appId: 'wechat' });
+            const result = await apiManager.callAI(messages, { appId: 'wechat' });
 
             if (!result.success) throw new Error(result.error);
 
