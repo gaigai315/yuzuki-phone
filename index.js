@@ -17,7 +17,7 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.3.8';
+const ST_PHONE_VERSION = '1.3.9';
 const ST_PHONE_CSS_REVISION = '20260708-glass-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
@@ -48,15 +48,7 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-07-18',
     items: [
-        '【优化】设置 App 新增“连点三下打开手机”开关，默认开启；关闭后会全局记住设置，并仅保留魔法棒入口。',
-        '【优化】优化更换微信头像，支持从相册 App 复用已上传的图片为头像。',
-        '【修复】修复音乐播放器遇到失效链接时反复刷新和重复重试的问题，提升自动换源播放稳定性。',
-        '【修复】强化微信单聊与群聊识别，拦截模型误生成的好友同名二人群聊，同时保留正确单聊消息同步。',
-        '【优化】微信会话列表时间改为真实微信样式：当天显示时刻、昨天显示“昨天 HH:mm”、今年显示月/日、往年显示年/月/日，并统一为消息预览灰色。',
-        '【修复】兼容 TauriTavern 安卓版设置 App 显示异常，优化设置页滚动与渲染。',
-        '【修复】清理微信聊天数据时保留全局自定义表情及其图片，统一由相册 App 管理。',
-        '【优化】收起微信我的表情管理按钮，改用扫帚图标菜单并横向展示操作。',
-        '【修复】修复联系人从相册选择头像时缩略图堆叠显示的问题。'
+        '【修复】兼容类酒馆移动端 App 的渲染 CSS 兼容。'
     ]
 };
 

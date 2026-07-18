@@ -87,13 +87,16 @@ function applyPhoneShellScale(value) {
     return percent;
 }
 
-function isTauriTavernAndroidRuntime() {
+function shouldUseSettingsSafeRenderMode() {
     try {
         const userAgent = String(navigator?.userAgent || '');
-        const bridge = window?.TauriTavernAndroidSystemUiBridge;
-        return /Android/i.test(userAgent)
-            && !!bridge
-            && typeof bridge.setImmersiveFullscreenEnabled === 'function';
+        const isAndroid = /Android/i.test(userAgent);
+        const isIos = /iPhone|iPad|iPod/i.test(userAgent);
+        const isEmbeddedIosWebView = isIos && !/Safari\//i.test(userAgent);
+
+        // Android WebViews frequently report a customized UA and private bridge name.
+        // Key the conservative renderer to the platform instead of one host app API.
+        return isAndroid || isEmbeddedIosWebView;
     } catch (e) {
         return false;
     }
@@ -226,7 +229,7 @@ export class SettingsApp {
         if (!root) return;
 
         root.id = 'yzp-settings-app';
-        const isTauriTavernAndroid = root.classList.contains('yzp-settings-tauri-android');
+        const useSafeRenderMode = root.classList.contains('yzp-settings-safe-render');
         const lock = (element, declarations) => {
             if (!element) return;
             Object.entries(declarations).forEach(([property, value]) => {
@@ -249,7 +252,9 @@ export class SettingsApp {
             'margin': '0',
             'padding': '0',
             'overflow': 'hidden',
-            'isolation': isTauriTavernAndroid ? 'auto' : 'isolate',
+            'isolation': useSafeRenderMode ? 'auto' : 'isolate',
+            'visibility': 'visible',
+            'opacity': '1',
             'writing-mode': 'horizontal-tb',
             'text-orientation': 'mixed',
             'animation': 'none',
@@ -261,8 +266,8 @@ export class SettingsApp {
             'display': 'flex',
             'align-items': 'center',
             'justify-content': 'center',
-            'position': isTauriTavernAndroid ? 'relative' : 'sticky',
-            'top': isTauriTavernAndroid ? 'auto' : '0',
+            'position': useSafeRenderMode ? 'relative' : 'sticky',
+            'top': useSafeRenderMode ? 'auto' : '0',
             'z-index': '100',
             'width': '100%',
             'height': '78px',
@@ -272,14 +277,16 @@ export class SettingsApp {
             'padding': '34px 14px 0',
             'flex': '0 0 78px',
             'float': 'none',
+            'visibility': 'visible',
+            'opacity': '1',
             'transform': 'none'
         });
 
         lock(root.querySelector('.yzp-settings-tabs'), {
             'box-sizing': 'border-box',
             'display': 'block',
-            'position': isTauriTavernAndroid ? 'relative' : 'sticky',
-            'top': isTauriTavernAndroid ? 'auto' : '78px',
+            'position': useSafeRenderMode ? 'relative' : 'sticky',
+            'top': useSafeRenderMode ? 'auto' : '78px',
             'z-index': '99',
             'width': '100%',
             'height': '48px',
@@ -290,6 +297,20 @@ export class SettingsApp {
             'flex': '0 0 48px',
             'overflow': 'hidden',
             'float': 'none',
+            'visibility': 'visible',
+            'opacity': '1',
+            'transform': 'none'
+        });
+        lock(root.querySelector('.yzp-settings-header > h2'), {
+            'display': 'block',
+            'visibility': 'visible',
+            'opacity': '1',
+            'margin': '0',
+            'font-size': '17px',
+            'font-weight': '500',
+            'line-height': '1.2',
+            'letter-spacing': '0',
+            'text-align': 'center',
             'transform': 'none'
         });
 
@@ -309,6 +330,8 @@ export class SettingsApp {
             'padding': '3px',
             'overflow': 'hidden',
             'float': 'none',
+            'visibility': 'visible',
+            'opacity': '1',
             'transform': 'none'
         });
 
@@ -353,15 +376,17 @@ export class SettingsApp {
             'display': 'block',
             'position': 'relative',
             'width': '100%',
-            'height': isTauriTavernAndroid ? '0' : 'auto',
+            'height': useSafeRenderMode ? '0' : 'auto',
             'min-width': '0',
             'min-height': '0',
             'margin': '0',
             'padding': '12px 10px',
-            'flex': isTauriTavernAndroid ? '1 1 0' : '1 1 auto',
+            'flex': useSafeRenderMode ? '1 1 0' : '1 1 auto',
             'overflow-x': 'hidden',
             'overflow-y': 'auto',
             'float': 'none',
+            'visibility': 'visible',
+            'opacity': '1',
             'transform': 'none'
         });
 
@@ -400,6 +425,8 @@ export class SettingsApp {
                 'min-width': '0',
                 'min-height': '0',
                 'float': 'none',
+                'visibility': 'visible',
+                'opacity': '1',
                 'transform': 'none'
             });
         });
@@ -425,6 +452,8 @@ export class SettingsApp {
                 'min-width': '0',
                 'min-height': '0',
                 'float': 'none',
+                'visibility': 'visible',
+                'opacity': '1',
                 'transform': 'none'
             });
         });
@@ -434,6 +463,72 @@ export class SettingsApp {
             'align-items': 'center',
             'justify-content': 'space-between',
             'gap': '14px'
+        });
+        lock(root.querySelector('.yzp-settings-current-context'), {
+            'display': 'block',
+            'position': 'relative',
+            'width': '100%',
+            'height': 'auto',
+            'min-height': '0',
+            'margin': '0 0 12px',
+            'padding': '0',
+            'overflow': 'hidden',
+            'float': 'none',
+            'visibility': 'visible',
+            'opacity': '1',
+            'transform': 'none'
+        });
+        lock(root.querySelector('.yzp-settings-current-context-title'), {
+            'display': 'block',
+            'position': 'relative',
+            'width': '100%',
+            'height': 'auto',
+            'min-height': '27px',
+            'margin': '0',
+            'padding': '10px 12px 6px',
+            'float': 'none',
+            'visibility': 'visible',
+            'opacity': '1',
+            'font-size': '11px',
+            'font-weight': '600',
+            'line-height': '1',
+            'letter-spacing': '0',
+            'transform': 'none'
+        });
+        lock(root.querySelector('.yzp-settings-current-context-item'), {
+            'display': 'block',
+            'position': 'relative',
+            'width': '100%',
+            'height': 'auto',
+            'min-height': '58px',
+            'margin': '0',
+            'padding': '10px 12px',
+            'float': 'none',
+            'visibility': 'visible',
+            'opacity': '1',
+            'transform': 'none'
+        });
+        lock(root.querySelector('.yzp-settings-current-context-item > .setting-label'), {
+            'display': 'block',
+            'visibility': 'visible',
+            'opacity': '1',
+            'margin': '0',
+            'font-size': '13px',
+            'font-weight': '500',
+            'line-height': '1.35',
+            'letter-spacing': '0',
+            'transform': 'none'
+        });
+        lock(root.querySelector('.yzp-settings-current-context-item > .setting-value'), {
+            'display': 'block',
+            'visibility': 'visible',
+            'opacity': '1',
+            'margin': '2px 0 0',
+            'font-size': '12px',
+            'font-weight': '400',
+            'line-height': '1.35',
+            'letter-spacing': '0',
+            'transform': 'none'
         });
     }
 
@@ -1011,9 +1106,9 @@ export class SettingsApp {
         const customWallpaper = this.imageManager.getWallpaper();
         const wallpaper = customWallpaper || PHONE_CONFIG.defaultWallpaper;
         const hasWallpaper = !!String(wallpaper || '').trim();
-        const isTauriTavernAndroid = isTauriTavernAndroidRuntime();
-        const useSettingsWallpaperGlass = hasWallpaper && !isTauriTavernAndroid;
-        const wallpaperStyle = useSettingsWallpaperGlass
+        const useSafeRenderMode = shouldUseSettingsSafeRenderMode();
+        const useSettingsWallpaper = hasWallpaper;
+        const wallpaperStyle = useSettingsWallpaper
             ? `background-image: url('${String(wallpaper).replace(/'/g, "\\'")}'); background-size: cover; background-position: center;`
             : '';
         const cardTimeImage = this.storage.get('phone-card-time-image') || null;
@@ -1021,7 +1116,7 @@ export class SettingsApp {
         const phoneFrameColor = this.storage.get('phone-frame-color') || '#1a1a1a';
         const phoneShellScale = normalizePhoneShellScalePercent(this.storage.get('phone-shell-scale') || PHONE_SHELL_SCALE_DEFAULT);
         const html = `
-            <div id="yzp-settings-app" class="settings-app yzp-settings-app ${useSettingsWallpaperGlass ? 'settings-has-wallpaper' : ''} ${isTauriTavernAndroid ? 'yzp-settings-tauri-android' : ''}" style="${wallpaperStyle}">
+            <div id="yzp-settings-app" class="settings-app yzp-settings-app ${useSettingsWallpaper ? 'settings-has-wallpaper' : ''} ${useSafeRenderMode ? 'yzp-settings-safe-render' : ''}" style="${wallpaperStyle}">
                 <style>
                     .settings-app {
                         box-sizing: border-box !important;
@@ -1052,32 +1147,56 @@ export class SettingsApp {
                         height: 0 !important;
                         display: none !important;
                     }
-                    #yzp-settings-app.yzp-settings-tauri-android {
-                        background: #f2f2f7 !important;
+                    #yzp-settings-app.yzp-settings-safe-render {
+                        background-color: #f2f2f7 !important;
                     }
-                    #yzp-settings-app.yzp-settings-tauri-android *,
-                    #yzp-settings-app.yzp-settings-tauri-android *::before,
-                    #yzp-settings-app.yzp-settings-tauri-android *::after {
+                    #yzp-settings-app.yzp-settings-safe-render.settings-has-wallpaper {
+                        --settings-glass-bg: rgba(255,255,255,0.72);
+                        --settings-glass-bg-strong: rgba(255,255,255,0.82);
+                        --settings-glass-border: rgba(255,255,255,0.62);
+                    }
+                    #yzp-settings-app.yzp-settings-safe-render *,
+                    #yzp-settings-app.yzp-settings-safe-render *::before,
+                    #yzp-settings-app.yzp-settings-safe-render *::after {
                         backdrop-filter: none !important;
                         -webkit-backdrop-filter: none !important;
+                        filter: none !important;
+                        mix-blend-mode: normal !important;
                     }
-                    #yzp-settings-app.yzp-settings-tauri-android .yzp-settings-header,
-                    #yzp-settings-app.yzp-settings-tauri-android .yzp-settings-tabs {
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-header,
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-tabs {
                         position: relative !important;
                         top: auto !important;
-                        background: #f7f7f7 !important;
+                        background: rgba(247,247,247,0.86) !important;
                     }
-                    #yzp-settings-app.yzp-settings-tauri-android .yzp-settings-body {
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-tabs-track {
+                        background: #ececef !important;
+                    }
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-header,
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-header > h2,
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-tabs,
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-tabs-track,
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-body,
+                    #yzp-settings-app.yzp-settings-safe-render .phone-settings-tab-content.is-active,
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-current-context,
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-current-context * {
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                    }
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-body {
                         height: 0 !important;
                         flex: 1 1 0 !important;
-                        background: #f2f2f7 !important;
+                        background: transparent !important;
                         -webkit-overflow-scrolling: auto !important;
                     }
-                    #yzp-settings-app.yzp-settings-tauri-android #tab-general > details[data-settings-fold-key],
-                    #yzp-settings-app.yzp-settings-tauri-android details[data-tts-fold-key],
-                    #yzp-settings-app.yzp-settings-tauri-android .setting-section {
+                    #yzp-settings-app.yzp-settings-safe-render #tab-general > details[data-settings-fold-key],
+                    #yzp-settings-app.yzp-settings-safe-render details[data-tts-fold-key],
+                    #yzp-settings-app.yzp-settings-safe-render .setting-section {
                         overflow: visible !important;
-                        box-shadow: none !important;
+                        box-shadow: 0 6px 18px rgba(0,0,0,0.08) !important;
+                    }
+                    #yzp-settings-app.yzp-settings-safe-render .yzp-settings-current-context {
+                        overflow: hidden !important;
                     }
                     .settings-app,
                     .settings-app *,
@@ -1667,6 +1786,14 @@ export class SettingsApp {
                     .settings-app .phone-version-info-btn {
                         color: revert !important;
                     }
+                    #yzp-settings-app.settings-app.yzp-settings-app.yzp-settings-safe-render.settings-has-wallpaper *,
+                    #yzp-settings-app.settings-app.yzp-settings-app.yzp-settings-safe-render.settings-has-wallpaper *::before,
+                    #yzp-settings-app.settings-app.yzp-settings-app.yzp-settings-safe-render.settings-has-wallpaper *::after {
+                        backdrop-filter: none !important;
+                        -webkit-backdrop-filter: none !important;
+                        filter: none !important;
+                        mix-blend-mode: normal !important;
+                    }
                 </style>
                 <div class="settings-app-header yzp-settings-header" style="background: #f7f7f7; color: #000; border-bottom: 0.5px solid #d8d8d8; display: flex; align-items: center; justify-content: center; position: sticky; top: 0; z-index: 100; height: 78px; min-height: 78px; padding: 34px 14px 0; box-sizing: border-box; flex-shrink: 0;">
                     <h2 style="color: #000; font-size: 17px; font-weight: 500; margin: 0;">设置</h2>
@@ -1688,9 +1815,9 @@ export class SettingsApp {
                 <div class="app-body yzp-settings-body">
                     <div class="phone-settings-tab-content ${this.currentTab === 'general' ? 'is-active' : 'is-hidden'}" id="tab-general" role="tabpanel" ${this.currentTab === 'general' ? '' : 'hidden'}>
                         <!-- 当前角色信息 -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">📱 当前角色</div>
-                            <div class="setting-item">
+                        <div class="setting-section yzp-settings-current-context">
+                            <div class="setting-section-title yzp-settings-current-context-title">📱 当前角色</div>
+                            <div class="setting-item yzp-settings-current-context-item">
                                 <div class="setting-label">${charBlockLabel}</div>
                                 <div class="setting-value">${charName}</div>
                             </div>
