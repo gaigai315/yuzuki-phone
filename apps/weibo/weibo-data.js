@@ -1758,13 +1758,11 @@ export class WeiboData {
                 }
             }
 
-            // 组装最终展示给 AI 的微博内容
-            let postContentDisplay = post.content || '';
-            if (imageTokensStr) {
-                postContentDisplay += `\n[用户附带了以下真实图片，请务必结合图片画面细节进行评价互动]${imageTokensStr}`;
-            } else if (!post.content && post.images && post.images.length > 0) {
-                postContentDisplay = '[分享了图片]';
-            }
+            const postContentDisplay = this._buildWeiboPostContentDisplay(
+                post,
+                imageTokensStr,
+                '[用户附带了以下真实图片，请务必结合图片画面细节进行评价互动]'
+            );
 
             let prompt = promptManager?.getPromptForFeature('weibo', 'interaction') || '';
             prompt = prompt
@@ -1837,12 +1835,11 @@ export class WeiboData {
                 }
             }
 
-            let postContentDisplay = post.content || '';
-            if (imageTokensStr) {
-                postContentDisplay += `\n[此微博附带了以下真实图片，请务必结合图片画面细节进行评价互动]${imageTokensStr}`;
-            } else if (!post.content && post.images && post.images.length > 0) {
-                postContentDisplay = '[分享了图片]';
-            }
+            const postContentDisplay = this._buildWeiboPostContentDisplay(
+                post,
+                imageTokensStr,
+                '[此微博附带了以下真实图片，请务必结合图片画面细节进行评价互动]'
+            );
 
             const existingCommentContext = this._buildUserCommentReplyContext(post, meta, userComment);
 
@@ -2167,6 +2164,26 @@ export class WeiboData {
         return images
             .map((item, index) => this._extractWeiboImageDisplayTag(item, post?.imageGenerationStates?.[index]))
             .filter(Boolean);
+    }
+
+    _buildWeiboPostContentDisplay(post, imageTokensStr = '', imageTokenNotice = '') {
+        const sections = [];
+        const content = String(post?.content || '').trim();
+        if (content) sections.push(content);
+
+        const imageTexts = this._buildWeiboForwardImageTexts(post);
+        if (imageTexts.length > 0) {
+            sections.push(`配图：${imageTexts.join('')}`);
+        }
+
+        if (imageTokensStr) {
+            sections.push(`${imageTokenNotice}${imageTokensStr}`);
+        }
+
+        if (sections.length === 0 && Array.isArray(post?.images) && post.images.length > 0) {
+            return '[分享了图片]';
+        }
+        return sections.join('\n');
     }
 
     _extractWeiboImageDisplayTag(rawValue, imageState = null) {

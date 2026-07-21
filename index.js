@@ -17,7 +17,7 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.3.9';
+const ST_PHONE_VERSION = '1.4.0';
 const ST_PHONE_CSS_REVISION = '20260708-glass-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
@@ -46,9 +46,12 @@ const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-18',
+    date: '2026-07-22',
     items: [
-        '【修复】兼容类酒馆移动端 App 的渲染 CSS 兼容。'
+        '【修复】修复用户发言清洗关闭时，双方单聊被误判为同名二人群聊并导致微信消息为空的问题；群聊现在仅按 type:group 明确识别。',
+        '【修复】修复用户微博中的文字配图描述未传入后续互动的问题。',
+        '【修复】修复关闭并重开手机面板后，微信会话样式底栏图标可能空白的问题。',
+        '【优化】优化微信线上提示词，避免本轮用户消息在聊天记录与最新输入中重复出现。'
     ]
 };
 
@@ -3328,12 +3331,14 @@ if (window.GGP_Loaded) {
                         ...contacts.map(c => ({
                             name: c.name,
                             avatar: resolveAvatar(c.id, c.avatar),
-                            fallbackIcon: '👤'
+                            fallbackIcon: '👤',
+                            chatType: 'single'
                         })),
                         ...groups.map(g => ({
                             name: g.name,
                             avatar: resolveAvatar(g.id, g.avatar),
-                            fallbackIcon: '👥'
+                            fallbackIcon: '👥',
+                            chatType: 'group'
                         }))
                     ];
 
@@ -3483,7 +3488,7 @@ if (window.GGP_Loaded) {
                                 ? `<img src="${item.avatar}" class="inline-reply-avatar" alt="${escapeHtml(item.name)}">`
                                 : `<span>${item.fallbackIcon}</span>`;
                             html += `
-                                <div class="inline-reply-menu-item" data-name="${escapeHtml(item.name)}">
+                                <div class="inline-reply-menu-item" data-name="${escapeHtml(item.name)}" data-chat-type="${item.chatType}">
                                     ${avatarHtml}
                                     <span class="inline-reply-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
                                 </div>
@@ -4140,9 +4145,10 @@ if (window.GGP_Loaded) {
                                 ev.preventDefault();
                                 const name = String(el.dataset.name || '').trim();
                                 if (!name) return;
+                                const chatTypeLine = el.dataset.chatType === 'group' ? 'type:group\n' : '';
                                 const currentDateTime = formatWechatInlineReplyDateTime();
                                 const wechatUserName = getInlineReplyWechatUserName();
-                                const tagPrefix = `\n<wechat><!--\n---${wechatUserName}---\n接收人：${name}\ndate:${currentDateTime}\n`;
+                                const tagPrefix = `\n<wechat><!--\n---${wechatUserName}---\n接收人：${name}\n${chatTypeLine}date:${currentDateTime}\n`;
                                 const tagStr = `${tagPrefix}\n--></wechat>\n`;
                                 const cursorPos = tagPrefix.length;
                                 insertTextToSendTextarea(tagStr, cursorPos);
@@ -5644,10 +5650,6 @@ if (window.GGP_Loaded) {
         ) || null;
     }
 
-    function isWechatKnownGroupName(name) {
-        return !!getWechatKnownGroupByName(name);
-    }
-
     function isWechatRecipientAllowed(recipient, { contact, chatType } = {}) {
         if (isWechatRecipientCurrentUser(recipient)) return true;
 
@@ -5655,7 +5657,7 @@ if (window.GGP_Loaded) {
         const contactKey = normalizeWechatRecipientKey(contact);
         if (!recipientKey || !contactKey || recipientKey !== contactKey) return false;
 
-        return chatType === 'group' || isWechatKnownGroupName(contact);
+        return chatType === 'group';
     }
 
     function normalizeWechatGroupMemberKey(value) {
@@ -5683,7 +5685,9 @@ if (window.GGP_Loaded) {
     }
 
     function shouldDiscardHallucinatedTwoPersonGroup(data) {
-        if (!data?.fromTavernMainChat || String(data?.chatType || '').toLowerCase() !== 'group') return false;
+        if (String(data?.chatType || '').toLowerCase() !== 'group' || data?.chatTypeSource !== 'explicit') {
+            return false;
+        }
 
         const groupNameKey = normalizeWechatChatIdentityKey(data.contact);
         if (!groupNameKey) return false;
@@ -5694,25 +5698,25 @@ if (window.GGP_Loaded) {
         );
         if (hasExistingGroup) return false;
 
-        const hasSameNameFriend = data.hasSameNameSingleInBatch === true || contacts.some(contact =>
-            normalizeWechatChatIdentityKey(contact?.name) === groupNameKey
-            || normalizeWechatChatIdentityKey(contact?.remark) === groupNameKey
-        );
-        if (!hasSameNameFriend) return false;
+        const hasSameNameSingle = data.hasSameNameSingleInBatch === true
+            || chats.some(chat =>
+                chat?.type !== 'group' && normalizeWechatChatIdentityKey(chat?.name) === groupNameKey
+            )
+            || contacts.some(contact =>
+                normalizeWechatChatIdentityKey(contact?.name) === groupNameKey
+                || normalizeWechatChatIdentityKey(contact?.remark) === groupNameKey
+            );
+        if (!hasSameNameSingle) return false;
 
-        const participantKeys = new Set();
-        const candidates = [
+        const peerKeys = new Set([
             ...(Array.isArray(data.members) ? data.members : []),
             ...(Array.isArray(data.messages) ? data.messages.map(message => message?.sender) : [])
-        ];
-        candidates.forEach((name) => {
-            const rawName = String(name || '').trim();
-            if (!rawName || isWechatSenderCurrentUser(rawName)) return;
-            const key = normalizeWechatGroupMemberKey(rawName);
-            if (key) participantKeys.add(key);
-        });
+        ].map(name => String(name || '').trim())
+            .filter(name => name && !isWechatSenderCurrentUser(name))
+            .map(normalizeWechatGroupMemberKey)
+            .filter(Boolean));
 
-        return participantKeys.size === 1;
+        return peerKeys.size === 1;
     }
 
     // 🔥 新版：解析轻量级XML格式微信标签（支持 ---联系人--- 分隔多人）
@@ -5847,8 +5851,6 @@ if (window.GGP_Loaded) {
                             const recipientGroup = getWechatKnownGroupByName(currentRecipient);
                             currentContact = currentRecipient;
                             if (recipientGroup) {
-                                currentChatType = 'group';
-                                currentChatTypeSource = 'inferred';
                                 knownGroupMembers = Array.isArray(recipientGroup.members) ? [...recipientGroup.members] : [];
                             }
                             messagesToSave = messagesToSave.map(msg => ({ ...msg, sender: 'me' }));
@@ -5911,9 +5913,6 @@ if (window.GGP_Loaded) {
                     groupMembers = [];
                     const knownGroup = getWechatKnownGroupByName(currentContact);
                     knownGroupMembers = Array.isArray(knownGroup?.members) ? [...knownGroup.members] : [];
-                    if (knownGroup) {
-                        currentChatType = 'group';
-                    }
                     continue;
                 }
 
@@ -5985,14 +5984,9 @@ if (window.GGP_Loaded) {
                         msgContent = quoteMatch[3].trim();
                     }
 
-                    // 🔥 记录群成员
+                    // 记录显式/已知群聊的成员候选，但不据此推断聊天类型。
                     if (!groupMembers.includes(msgSender)) {
                         groupMembers.push(msgSender);
-                    }
-
-                    // 🔥 自动检测仅在未显式声明 type 时启用，避免单聊被误升级
-                    if (currentChatTypeSource !== 'explicit' && groupMembers.length > 1 && currentChatType !== 'group') {
-                        currentChatType = 'group';
                     }
 
                     const msgObj = {
@@ -6243,7 +6237,7 @@ if (window.GGP_Loaded) {
         }
 
         if (shouldDiscardHallucinatedTwoPersonGroup(data)) {
-            console.warn('⚠️ [微信] 已拦截疑似误生成的同名二人群聊:', {
+            console.warn('⚠️ [微信] 已拦截与单聊同名的 AI 误造二人群聊:', {
                 group: data.contact,
                 members: data.members
             });
@@ -6339,10 +6333,7 @@ if (window.GGP_Loaded) {
             const resolvedContactName = stripWechatBlockedMarker(rawContactName);
             const contactLookupKey = normalizeWechatName(resolvedContactName);
             const parsedAsGroupType = data.chatType === 'group';
-            const hasExistingGroupByName = wechatData.getChatList().some(c =>
-                c?.type === 'group' && normalizeWechatName(c?.name) === contactLookupKey
-            );
-            const effectiveIsGroupChat = parsedAsGroupType || hasExistingGroupByName;
+            const effectiveIsGroupChat = parsedAsGroupType;
             const isBlockedContact = (contact) => !!contact?.blocked;
 
             // 🔥🔥🔥 群聊处理：群聊不需要添加到联系人，直接找/创建群聊天 🔥🔥🔥
@@ -6415,7 +6406,7 @@ if (window.GGP_Loaded) {
                 wechatData._messagesLoaded[newChatId] = true;
                 
             } else if (chat) {
-                // 群聊模式提示词允许省略 type:group；解析器已根据群名/多人发言判定后，这里同步会话类型。
+                // 群聊只由当前标签中的 type:group 决定，这里同步显式声明的会话类型。
                 if (effectiveIsGroupChat && chat.type !== 'group') {
                     chat.type = 'group';
                     chat.members = data.members || [];
@@ -7283,7 +7274,6 @@ if (window.GGP_Loaded) {
         wechatTagDataList.forEach((wechatTagData) => {
             if (wechatTagData?.type === 'empty') return;
             const contactKey = normalizeWechatChatIdentityKey(wechatTagData?.contact);
-            wechatTagData.fromTavernMainChat = true;
             wechatTagData.hasSameNameSingleInBatch = !!contactKey && singleChatNames.has(contactKey);
             tasks.push({
                 kind: 'wechat',

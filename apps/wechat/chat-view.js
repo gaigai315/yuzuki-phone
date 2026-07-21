@@ -8760,6 +8760,21 @@ renderChatRoom(chat) {
 
         const refreshed = this._refreshCurrentChatMessages({ keepScroll: true });
         const messagesDiv = this._getVisibleChatMessagesContainer(chatId);
+        const chatRoom = currentView.querySelector('.chat-room');
+        if (chatRoom) {
+            const previousScrollTop = messagesDiv?.scrollTop;
+
+            // 面板关闭时会缩成 0x0；重新匹配一次会话根类，刷新自定义 CSS 的 :has()、变量和伪元素贴图。
+            chatRoom.classList.remove('chat-room');
+            void chatRoom.offsetHeight;
+            chatRoom.classList.add('chat-room');
+
+            const inputArea = chatRoom.querySelector('.chat-input-area');
+            if (inputArea) void inputArea.offsetHeight;
+            if (messagesDiv && Number.isFinite(previousScrollTop)) {
+                messagesDiv.scrollTop = previousScrollTop;
+            }
+        }
         if (messagesDiv) {
             // 读取布局会让移动端浏览器丢弃面板 width/height 为 0 时遗留的合成层缓存。
             void messagesDiv.offsetHeight;
@@ -9258,7 +9273,11 @@ renderChatRoom(chat) {
                     this._dequeuePendingChat(chatId);
                     continue;
                 }
-                const success = await this.sendToAI(combinedMessage, chatId);
+                const success = await this.sendToAI(combinedMessage, chatId, {
+                    latestUserMessageIds: pendingUserMessages
+                        .map(msg => String(msg?.id || '').trim())
+                        .filter(Boolean)
+                });
 
                 if (success) {
                     this._dequeuePendingChat(chatId);
@@ -10938,6 +10957,18 @@ renderChatRoom(chat) {
         // 6️⃣ 当前微信聊天记录 / 通话记录
         // ========================================
         const wechatMessages = this.app.wechatData.getMessages(targetChat.id);
+        const latestUserMessageIdSet = new Set(
+            (Array.isArray(options.latestUserMessageIds) ? options.latestUserMessageIds : [])
+                .map(id => String(id || '').trim())
+                .filter(Boolean)
+        );
+        // 本轮待回复消息会单独放入末尾的“用户最新输入”，不再混入已有聊天记录。
+        const latestUserMessages = latestUserMessageIdSet.size > 0
+            ? wechatMessages.filter(msg => latestUserMessageIdSet.has(String(msg?.id || '').trim()))
+            : [];
+        const historyWechatMessages = latestUserMessageIdSet.size > 0
+            ? wechatMessages.filter(msg => !latestUserMessageIdSet.has(String(msg?.id || '').trim()))
+            : wechatMessages;
 
         // 🔥 根据聊天类型动态读取限制条数（isGroupChat 和 storage 已在上方声明）
         const wechatLimit = isGroupChat
@@ -10949,9 +10980,9 @@ renderChatRoom(chat) {
         let recentWechatMessages = [];
         if (wechatLimit > 0) {
             let totalLines = 0;
-            let startIdx = wechatMessages.length;
-            for (let i = wechatMessages.length - 1; i >= 0; i--) {
-                const msg = wechatMessages[i];
+            let startIdx = historyWechatMessages.length;
+            for (let i = historyWechatMessages.length - 1; i >= 0; i--) {
+                const msg = historyWechatMessages[i];
                 if (msg?.hiddenFromPrompt === true || msg?.isTimeMarker === true || msg?.type === 'time_marker') {
                     continue;
                 }
@@ -10967,13 +10998,13 @@ renderChatRoom(chat) {
                 }
                 startIdx = i;
             }
-            recentWechatMessages = wechatMessages.slice(startIdx);
+            recentWechatMessages = historyWechatMessages.slice(startIdx);
         }
         const aiImageDataCache = new Map();
         const aiImageNotes = [];
         const aiImageTokenIds = [];
         const paymentStatusContext = !isGroupChat
-            ? this._buildWechatPaymentStatusContext(recentWechatMessages, userName)
+            ? this._buildWechatPaymentStatusContext([...recentWechatMessages, ...latestUserMessages], userName)
             : '';
         const musicListeningContext = !callMode
             ? this._buildMusicListeningContext(targetChat, userName)
@@ -10993,8 +11024,10 @@ renderChatRoom(chat) {
             ? `${realTimeInfo.date} ${realTimeInfo.time}`
             : `${storyTimeInfo?.date || ''} ${storyTimeInfo?.time || currentTime}`.trim();
 
-        const appendWechatChatTranscript = async (chat, messagesForChat) => {
-            let text = `━━━ ${chat.name} 的聊天记录 ━━━\n`;
+        const appendWechatChatTranscript = async (chat, messagesForChat, formatOptions = {}) => {
+            const includeHeader = formatOptions.includeHeader !== false;
+            const includeDates = formatOptions.includeDates !== false;
+            let text = includeHeader ? `━━━ ${chat.name} 的聊天记录 ━━━\n` : '';
             let lastDate = null;
             const chatIsGroup = chat?.type === 'group';
 
@@ -11008,7 +11041,7 @@ renderChatRoom(chat) {
                     speaker = msg.from;
                 }
 
-                if (msg.date && msg.date !== lastDate) {
+                if (includeDates && msg.date && msg.date !== lastDate) {
                     text += `--- ${msg.date} ---\n`;
                     lastDate = msg.date;
                 }
@@ -11086,13 +11119,21 @@ renderChatRoom(chat) {
                 wechatTranscript += `以下是用户手机已经存在的微信消息记录。使用微信时，请严格遵守当前微信模式规则，不得重复已有聊天记录内容。\n\n`;
                 wechatTranscript += transcriptSections.join('\n\n');
             }
-        } else if (recentWechatMessages.length > 0) {
-            wechatTranscript = '【📱 手机微信已有消息】\n';
-            wechatTranscript += `⏰ 当前时间：${currentTime}\n`;
-            wechatTranscript += `以下是用户手机已经存在的微信消息记录。使用微信时，请严格遵守当前微信模式规则，并严格执行【微信线下模式】关于历史消息不可重复生成的约束，不得重复已有聊天记录内容。\n`;
-            wechatTranscript += `\n`;
-            wechatTranscript += await appendWechatChatTranscript(targetChat, recentWechatMessages);
+        } else {
+            if (recentWechatMessages.length > 0) {
+                wechatTranscript = '【📱 手机微信已有消息】\n';
+                wechatTranscript += `⏰ 当前时间：${currentTime}\n`;
+                wechatTranscript += `以下是用户手机已经存在的微信消息记录。使用微信时，请严格遵守当前微信模式规则，并严格执行【微信线下模式】关于历史消息不可重复生成的约束，不得重复已有聊天记录内容。\n`;
+                wechatTranscript += `\n`;
+                wechatTranscript += await appendWechatChatTranscript(targetChat, recentWechatMessages);
+            }
         }
+        const formattedLatestUserInput = !isProactive && !callMode && latestUserMessages.length > 0
+            ? await appendWechatChatTranscript(targetChat, latestUserMessages, {
+                includeHeader: false,
+                includeDates: false
+            })
+            : '';
         const phoneCallHistoryContext = !isGroupChat
             ? this._buildPhoneCallHistoryContextForSingleChat(targetChat, userName)
             : '';
@@ -11272,11 +11313,11 @@ renderChatRoom(chat) {
                 finalUserContent += '\n群聊场景下，通话前后的发言仍需使用“发送者: 内容”格式，且发送者必须是群成员。';
             }
 
-            const latestUserInput = String(prompt || '').trim();
+            const latestUserInput = String(formattedLatestUserInput || prompt || '').trim();
             if (latestUserInput) {
                 finalUserContent += isProactive
                     ? `\n\n【线上主动触发背景】\n${latestUserInput}`
-                    : `\n\n【用户最新输入】\n${userName}: ${latestUserInput}`;
+                    : `\n\n【用户最新输入】\n${formattedLatestUserInput ? latestUserInput : `${userName}: ${latestUserInput}`}`;
             }
             finalUserContent += '\n\n【本轮约束】';
             if (isProactive) {
@@ -11299,7 +11340,6 @@ renderChatRoom(chat) {
                 finalUserContent += `\n- 即使角色卡主角、酒馆 assistant 或正文叙事视角不是“${targetChat?.name || charName}”，当前微信单聊也必须以“${targetChat?.name || charName}”的身份和口吻回复；角色卡和正文只作为背景参考。`;
                 finalUserContent += `\n- 【用户最新输入】是“${userName}”刚刚发出的消息，只能作为被回复的内容；禁止把“${userName}”当成聊天对象、联系人、窗口名或回复发送者，禁止输出“${userName}:”、用户:、玩家:。`;
                 finalUserContent += '\n- 微信消息内容必须是角色真实打进聊天框里的文字；禁止写动作、环境、神态、写字过程、语气说明，禁止出现“顿了顿/指尖悬停/又补了一条/语气里”等叙事句。';
-                finalUserContent += '\n- 正文/酒馆上下文是当前现实剧情状态的依据；如果正文显示双方已经线下面对面、同处一地、正在现实互动，你必须承认这个状态，必要时用 [转线下] 结束当前单聊微信，而不是把现实剧情当作不存在。';
             }
             finalUserContent += isProactive
                 ? '\n- 只输出新的主动微信消息；不得重复任何已有微信消息，也不得把正文里刚发生的对白原样复读成微信消息。'
