@@ -3947,6 +3947,12 @@ body.phone-input-active .honey-page-live .honey-input-bar {
     color: rgba(255, 245, 251, 0.96) !important;
 }
 
+#phone-panel-content .phone-screen .honey-app .phone-worldbook-entry-trigger,
+#phone-panel-content .phone-screen .honey-app .phone-worldbook-entry-trigger i {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+}
+
 .honey-worldbook-fold {
     margin-top: 10px;
 }

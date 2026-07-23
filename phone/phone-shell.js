@@ -281,6 +281,8 @@ export class PhoneShell {
                 '.phone-call-transcript', '#phone-call-transcript-messages',
                 '.phone-call-settings', '.phone-call-settings-body', '.phone-call-settings-section',
                 '.phone-call-prompt-textarea', '#phone-call-call-prompt',
+                '.phone-worldbook-entry-modal', '.phone-worldbook-entry-dialog', '.phone-worldbook-entry-list',
+                '.weibo-clear-data-overlay', '.weibo-clear-data-dialog',
                 '.phone-call-active', '.phone-call-messages', '#phone-call-messages', '.phone-call-bottom', '#phone-call-input',
                 '.honey-live-gifts', '.honey-live-gifts-list', '.honey-live-bottom',
                 '.mofo-app', '.mofo-list-col', '.mofo-detail-col',

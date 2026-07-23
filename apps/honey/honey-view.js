@@ -2125,12 +2125,12 @@ export class HoneyView {
 
     _buildSceneRetagInstruction() {
         return [
-            '请只重写当前蜜语直播画面的 NovelAI 英文生图 tag。',
+            '请重写当前直播剧情的直播画面的生图 tag。',
             '要求：',
-            '1. 只改写画面 tag，不续写剧情，不输出解释。',
+            '1. 严格根据生图tag的所有提示词，只写剧情画面 tag。',
             '2. 必须结合前文当前直播剧情、主播、标题、评论/弹幕互动，生成更贴合这一帧的英文逗号分隔 NAI tags。',
-            '3. 不要输出中文句子，不要输出 Markdown，不要输出多余内容。',
-            '4. 最终只输出一行，格式必须是：[画面]：[NAI英文tag提示词: tag1, tag2, tag3]'
+            '3. 禁止输出中文句子，禁止续写剧情，禁止输出解释、 Markdown，禁止输出除生图tag的格式的任何其他多余内容。',
+            '4. 只输出生图tag格式：[画面]：[tag1, tag2, tag3]'
         ].join('\n');
     }
 
@@ -2165,8 +2165,7 @@ export class HoneyView {
                 content: this._buildSceneRetagContext(scene),
                 isPhoneMessage: true
             });
-            const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('honey');
-            if (worldbookMessage) messages.push(worldbookMessage);
+            await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'honey');
             messages.push({
                 role: 'user',
                 content: this._buildSceneRetagInstruction(),
@@ -4543,50 +4542,7 @@ export class HoneyView {
         const container = root?.querySelector?.('#phone-honey-worldbook-list');
         const manager = window.VirtualPhone?.worldbookManager;
         if (!container || !manager) return;
-
-        try {
-            const sources = await manager.listAvailableWorldbooks({ includeEntries: true, force: true });
-            const selection = manager.getSelectionState('honey');
-            if (sources.length === 0) {
-                container.innerHTML = '<div class="honey-settings-desc" style="padding-top: 8px;">未读取到酒馆世界书列表。</div>';
-                return;
-            }
-
-            const isSelectedSource = (source) => selection.initialized && manager.matchesSelection?.(source, selection.ids);
-            const displaySources = [...sources].sort((a, b) => {
-                const aSelected = isSelectedSource(a) ? 1 : 0;
-                const bSelected = isSelectedSource(b) ? 1 : 0;
-                return bSelected - aSelected;
-            });
-
-            container.innerHTML = displaySources.map(source => {
-                const checked = (selection.initialized && manager.matchesSelection?.(source, selection.ids)) ? 'checked' : '';
-                const activeCount = Number(source.entries?.length || 0);
-                const totalCount = Number(source.totalEntries ?? activeCount);
-                const disabledText = activeCount ? '' : (totalCount > 0 ? '（无开启条目）' : '（读取失败或为空）');
-                const countText = totalCount > activeCount ? `${activeCount}/${totalCount} 条可注入` : `${activeCount} 条`;
-                return `
-                    <label class="phone-honey-worldbook-item">
-                        <input type="checkbox" class="phone-honey-worldbook-choice" value="${this._escapeHtml(source.id)}" ${checked} style="margin-top: 2px;">
-                        <span class="phone-honey-worldbook-text">
-                            <span class="phone-honey-worldbook-name">${this._escapeHtml(source.name)}${this._escapeHtml(disabledText)}</span>
-                            <span class="phone-honey-worldbook-meta">${this._escapeHtml(source.sourceLabel || '世界书')} · ${this._escapeHtml(countText)}</span>
-                        </span>
-                    </label>
-                `;
-            }).join('');
-
-            container.querySelectorAll('.phone-honey-worldbook-choice').forEach(input => {
-                input.addEventListener('change', async () => {
-                    const ids = Array.from(container.querySelectorAll('.phone-honey-worldbook-choice:checked')).map(item => item.value);
-                    await manager.setSelection('honey', ids);
-                    this.renderHoneyWorldbookList();
-                });
-            });
-        } catch (error) {
-            console.warn('[Honey] 世界书列表渲染失败:', error);
-            container.innerHTML = '<div class="honey-settings-desc" style="padding-top: 8px; color: #d93025;">世界书读取失败，请稍后重试。</div>';
-        }
+        await manager.renderWorldbookSelector(container, 'honey');
     }
 
     bindSettingsEvents() {

@@ -1013,47 +1013,7 @@ export class PokerView {
         const container = document.getElementById('games-worldbook-list');
         const manager = window.VirtualPhone?.worldbookManager;
         if (!container || !manager) return;
-
-        if (!this.app.isGamesWorldbookEnabled()) {
-            container.innerHTML = '<div class="games-setting-desc">世界书注入已关闭。</div>';
-            return;
-        }
-
-        try {
-            const sources = await manager.listAvailableWorldbooks({ includeEntries: false, force: true });
-            const selection = manager.getSelectionState('games');
-            if (!sources.length) {
-                container.innerHTML = '<div class="games-setting-desc">未读取到酒馆世界书列表。</div>';
-                return;
-            }
-            const isSelected = source => selection.initialized && manager.matchesSelection?.(source, selection.ids);
-            const displaySources = [...sources].sort((a, b) => Number(isSelected(b)) - Number(isSelected(a)));
-            container.innerHTML = displaySources.map(source => {
-                const checked = isSelected(source) ? 'checked' : '';
-                const disabledText = '';
-                const countText = checked ? '发送时读取并注入' : '未勾选不读取';
-                return `
-                    <label class="games-worldbook-item">
-                        <input type="checkbox" class="games-worldbook-choice" value="${this._escape(source.id)}" ${checked}>
-                        <span>
-                            <strong>${this._escape(source.name)}${this._escape(disabledText)}</strong>
-                            <em>${this._escape(source.sourceLabel || '世界书')} · ${this._escape(countText)}</em>
-                        </span>
-                    </label>
-                `;
-            }).join('');
-
-            container.querySelectorAll('.games-worldbook-choice').forEach(input => {
-                input.addEventListener('change', async () => {
-                    const ids = Array.from(container.querySelectorAll('.games-worldbook-choice:checked')).map(item => item.value);
-                    await manager.setSelection('games', ids);
-                    this.renderGamesWorldbookList();
-                });
-            });
-        } catch (error) {
-            console.warn('[Games] 世界书列表渲染失败:', error);
-            container.innerHTML = '<div class="games-setting-desc games-setting-error">世界书读取失败，请稍后重试。</div>';
-        }
+        await manager.renderWorldbookSelector(container, 'games');
     }
 
     _openWagerModal(action, defaultAmount, initialAmount) {

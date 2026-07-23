@@ -991,18 +991,6 @@ export class WechatData {
         return `${text.slice(0, headLength).trimEnd()}${safeSuffix}`;
     }
 
-    async _buildWechatWorldbookText() {
-        try {
-            const manager = window.VirtualPhone?.worldbookManager;
-            if (!manager) return '';
-            const message = await manager.buildWorldbookMessage('wechat');
-            return String(message?.content || '').trim();
-        } catch (error) {
-            console.warn('[Wechat] 读取世界书注入内容失败:', error);
-            return '';
-        }
-    }
-
     /**
      * 🔥 归一化用户信息：
      * - 首次默认昵称取 user 名
@@ -2993,13 +2981,7 @@ async buildContactPrompt(context) {
 
     const messages = [];
 
-    const selectedWorldbookText = await this._buildWechatWorldbookText();
-    if (selectedWorldbookText) {
-        messages.push({
-            role: 'system',
-            content: `【酒馆世界书勾选注入】\n${selectedWorldbookText}`
-        });
-    }
+    await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'wechat');
 
     const charCardParts = [
         `【当前主角角色卡】`,

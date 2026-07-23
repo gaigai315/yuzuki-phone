@@ -1008,14 +1008,12 @@ export class DiaryData {
             .replace(/\{\{personalImageTagInfo\}\}/g, personalImageTagInfo)
             .replace(/\{\{chatHistory\}\}/g, ''); // 清除占位符，聊天记录已通过消息数组传入
 
-        const worldInfoMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('diary');
         const wechatHistoryMessage = await this._buildDiaryWechatOnlineHistoryMessage(context);
 
-        const messages = [
-            ...(worldInfoMessage ? [worldInfoMessage] : []),
-            ...(wechatHistoryMessage ? [wechatHistoryMessage] : []),
-            ...chatMessages
-        ];
+        const messages = [];
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'diary');
+        if (wechatHistoryMessage) messages.push(wechatHistoryMessage);
+        messages.push(...chatMessages);
         this._appendDiaryPromptAtMessageEnd(messages, filledPrompt);
 
         // 🔥 构建消息数组：背景上下文 + 聊天记录 + 末尾日记提示词

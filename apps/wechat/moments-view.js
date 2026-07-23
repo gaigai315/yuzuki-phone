@@ -1959,8 +1959,7 @@ ${momentsPrompt}
             });
         }
 
-        const worldInfoMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('wechat');
-        if (worldInfoMessage) messages.push(worldInfoMessage);
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'wechat');
 
         const personaTextarea = document.getElementById('persona_description');
         if (personaTextarea && personaTextarea.value && personaTextarea.value.trim()) {

@@ -94,8 +94,7 @@ export async function buildGameSillyTavernContextMessages(appKey, storage, optio
     if (characterMessage) messages.push(characterMessage);
 
     if (options.includeWorldbook !== false) {
-        const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.(appKey, options.worldbookOptions || {});
-        if (worldbookMessage) messages.push(worldbookMessage);
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, appKey, options.worldbookOptions || {});
     }
 
     const personaMessage = buildPersonaMessage();

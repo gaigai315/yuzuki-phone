@@ -1230,9 +1230,9 @@ export class WeiboView {
                     <!-- 🔥 新增：数据管理 (清理空间) -->
                     <div class="weibo-settings-section">
                         <div class="weibo-settings-title">数据瘦身</div>
-                        <div class="weibo-settings-desc">清空手机内微博数据，并擦除酒馆聊天记录里臃肿的隐藏标签</div>
+                        <div class="weibo-settings-desc">可只清理微博内容，也可连同个人资料和美化全部清理</div>
                         <button class="weibo-settings-btn" id="weibo-clear-all-data-btn" style="background: #ff4d4f; color: #fff;">
-                            <i class="fa-solid fa-trash"></i> 彻底清空所有微博数据
+                            <i class="fa-solid fa-broom"></i> 清理微博数据
                         </button>
                     </div>
                 </div>
@@ -3094,6 +3094,78 @@ export class WeiboView {
         });
     }
 
+    _showWeiboClearDataDialog() {
+        const existing = document.querySelector('.weibo-clear-data-overlay');
+        if (typeof existing?._weiboClearClose === 'function') {
+            existing._weiboClearClose(null);
+        } else {
+            existing?.remove?.();
+        }
+
+        const phoneScreen = document.querySelector('#phone-panel-content .phone-screen');
+        if (!phoneScreen) return Promise.resolve(null);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'weibo-clear-data-overlay';
+        overlay.innerHTML = `
+            <section class="weibo-clear-data-dialog" role="dialog" aria-modal="true" aria-labelledby="weibo-clear-data-title">
+                <header class="weibo-clear-data-header">
+                    <div>
+                        <h3 id="weibo-clear-data-title">清理微博数据</h3>
+                        <p>请选择清理范围，此操作不可撤销。</p>
+                    </div>
+                    <button type="button" class="weibo-clear-data-close" data-clear-mode="cancel" title="关闭" aria-label="关闭">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </header>
+                <div class="weibo-clear-data-options">
+                    <button type="button" class="weibo-clear-data-option is-content" data-clear-mode="content">
+                        <i class="fa-solid fa-newspaper" aria-hidden="true"></i>
+                        <span>
+                            <strong>只清理微博内容</strong>
+                            <small>清空热搜、推荐和“我的”内容；保留昵称、关注/粉丝、个人资料与美化。</small>
+                        </span>
+                    </button>
+                    <button type="button" class="weibo-clear-data-option is-all" data-clear-mode="all">
+                        <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                        <span>
+                            <strong>全部清理</strong>
+                            <small>清空微博内容、个人资料、关注/粉丝、自动设置及美化。</small>
+                        </span>
+                    </button>
+                </div>
+                <button type="button" class="weibo-clear-data-cancel" data-clear-mode="cancel">取消</button>
+            </section>
+        `;
+        phoneScreen.appendChild(overlay);
+
+        return new Promise((resolve) => {
+            let settled = false;
+            const close = (mode = null) => {
+                if (settled) return;
+                settled = true;
+                document.removeEventListener('keydown', onKeyDown);
+                overlay.remove();
+                resolve(mode);
+            };
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') close(null);
+            };
+            overlay._weiboClearClose = close;
+            overlay.addEventListener('click', (event) => {
+                if (event.target === overlay) close(null);
+            });
+            overlay.querySelectorAll('[data-clear-mode]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    const mode = String(button.dataset.clearMode || '');
+                    close(mode === 'content' || mode === 'all' ? mode : null);
+                });
+            });
+            document.addEventListener('keydown', onKeyDown);
+            overlay.querySelector('.weibo-clear-data-close')?.focus?.();
+        });
+    }
+
     bindSettingsEvents() {
         this._bindPromptFoldToggles(document.querySelector('.phone-view-current .weibo-app') || document);
         const promptManagerForPresets = window.VirtualPhone?.promptManager;
@@ -3287,35 +3359,44 @@ export class WeiboView {
             }
         });
 
-        // 🔥 清空所有微博数据 (修复弹窗重复bug)
+        // 清理微博数据：内容清理与彻底清理使用不同的数据边界。
         const clearAllDataBtn = document.getElementById('weibo-clear-all-data-btn');
         if (clearAllDataBtn) {
             clearAllDataBtn.onclick = async () => {
-                if (confirm('⚠️ 警告：此操作将清空当前所有微博数据，并从酒馆聊天记录中永久擦除所有 <Weibo> 标签！\\n\\n此操作不可逆，是否继续？')) {
+                const clearMode = await this._showWeiboClearDataDialog();
+                if (!clearMode) return;
+
+                clearAllDataBtn.disabled = true;
+                try {
                     this.app.phoneShell.showNotification('清理中', '正在擦除数据...', '⏳');
                     const imagesToDelete = [
                         ...this._collectManagedWeiboImages(this.app.weiboData.getRecommendPosts()),
                         ...this._collectManagedWeiboImages(this.app.weiboData.getUserPosts())
                     ];
-                    
-                    // 1. 清空插件数据库、动态缓存与全局微博美化 CSS
-                    this.app.weiboData.clearAllData();
-                    this._applyCustomAvatarFrame('');
 
-                    const cssTextarea = document.getElementById('weibo-avatar-frame-css');
-                    if (cssTextarea) {
-                        cssTextarea.value = '';
+                    if (clearMode === 'all') {
+                        await this.app.weiboData.clearAllData();
+                        this._applyCustomAvatarFrame('');
+                        const cssTextarea = document.getElementById('weibo-avatar-frame-css');
+                        if (cssTextarea) cssTextarea.value = '';
+                    } else {
+                        await this.app.weiboData.clearContentData();
                     }
-                     
-                    // 2. 深入酒馆源文件擦除遗留标签
+
                     await this.app.weiboData.clearWeiboChatHistory();
                     await this._deleteServerImages(imagesToDelete);
-                     
-                    this.app.phoneShell.showNotification('清理完成', '微博数据、自定义 CSS 与历史标签已彻底清空', '✅');
-                    
-                    // 刷新回首页
+
+                    const message = clearMode === 'all'
+                        ? '微博内容、个人资料、美化与历史标签已清空'
+                        : '热搜、推荐和“我的”内容已清空，个人资料与美化已保留';
+                    this.app.phoneShell.showNotification('清理完成', message, '✅');
                     this.currentView = 'home';
                     this.render();
+                } catch (error) {
+                    console.error('[Weibo] 清理微博数据失败:', error);
+                    this.app.phoneShell.showNotification('清理失败', error?.message || '请稍后重试', '❌');
+                } finally {
+                    clearAllDataBtn.disabled = false;
                 }
             };
         }
@@ -3563,50 +3644,7 @@ export class WeiboView {
         const container = document.getElementById('weibo-worldbook-list');
         const manager = window.VirtualPhone?.worldbookManager;
         if (!container || !manager) return;
-
-        try {
-            const sources = await manager.listAvailableWorldbooks({ includeEntries: true, force: true });
-            const selection = manager.getSelectionState('weibo');
-            if (sources.length === 0) {
-                container.innerHTML = '<div class="weibo-settings-desc" style="padding: 8px 0;">未读取到酒馆世界书列表。</div>';
-                return;
-            }
-
-            const isSelectedSource = (source) => selection.initialized && manager.matchesSelection?.(source, selection.ids);
-            const displaySources = [...sources].sort((a, b) => {
-                const aSelected = isSelectedSource(a) ? 1 : 0;
-                const bSelected = isSelectedSource(b) ? 1 : 0;
-                return bSelected - aSelected;
-            });
-
-            container.innerHTML = displaySources.map(source => {
-                const checked = (selection.initialized && manager.matchesSelection?.(source, selection.ids)) ? 'checked' : '';
-                const activeCount = Number(source.entries?.length || 0);
-                const totalCount = Number(source.totalEntries ?? activeCount);
-                const disabledText = activeCount ? '' : (totalCount > 0 ? '（无开启条目）' : '（读取失败或为空）');
-                const countText = totalCount > activeCount ? `${activeCount}/${totalCount} 条可注入` : `${activeCount} 条`;
-                return `
-                    <label style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-top: 1px solid #f2f2f2;">
-                        <input type="checkbox" class="weibo-worldbook-choice" value="${this._escapeAttr(source.id)}" ${checked} style="-webkit-appearance: checkbox !important; appearance: auto !important; opacity: 1 !important; width: 16px; height: 16px; min-width: 16px; min-height: 16px; margin-top: 2px; accent-color: #30c46b;">
-                        <span style="min-width: 0;">
-                            <span style="display: block; font-size: 13px; color: var(--phone-global-text, #333);">${this._escapeHtml(source.name)}${this._escapeHtml(disabledText)}</span>
-                            <span style="display: block; font-size: 11px; color: #999; margin-top: 2px;">${this._escapeHtml(source.sourceLabel || '世界书')} · ${this._escapeHtml(countText)}</span>
-                        </span>
-                    </label>
-                `;
-            }).join('');
-
-            container.querySelectorAll('.weibo-worldbook-choice').forEach(input => {
-                input.addEventListener('change', async () => {
-                    const ids = Array.from(container.querySelectorAll('.weibo-worldbook-choice:checked')).map(item => item.value);
-                    await manager.setSelection('weibo', ids);
-                    this.renderWeiboWorldbookList();
-                });
-            });
-        } catch (error) {
-            console.warn('[Weibo] 世界书列表渲染失败:', error);
-            container.innerHTML = '<div class="weibo-settings-desc" style="color:#d93025; padding: 8px 0;">世界书读取失败，请稍后重试。</div>';
-        }
+        await manager.renderWorldbookSelector(container, 'weibo');
     }
 
    // ========================================

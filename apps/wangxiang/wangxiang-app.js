@@ -939,42 +939,47 @@ export class WangxiangApp {
             [...(Array.isArray(entry?.taskSnapshots) ? entry.taskSnapshots : [])].reverse().forEach(snapshot => {
                 const task = this.managedTasks.find(item => String(item?.id || '') === String(snapshot?.taskId || ''));
                 if (!task) return;
-                [...(Array.isArray(snapshot?.objectives) ? snapshot.objectives : [])].reverse().forEach(change => {
-                    const objective = (Array.isArray(task.objectives) ? task.objectives : []).find(item =>
-                        (change?.objectiveId && String(item?.id || '') === String(change.objectiveId))
-                        || this._normalizeTaskTitle(item?.title) === this._normalizeTaskTitle(change?.objectiveTitle)
-                    );
-                    if (!objective) return;
-                    objective.current = Number(change.previousCurrent || 0);
-                    objective.completed = change.previousCompleted === true;
-                });
-                task.progress = Number(snapshot.previousProgress || 0);
-                if (snapshot.completionApplied === true && Object.prototype.hasOwnProperty.call(snapshot, 'previousStatus')) {
-                    task.status = snapshot.previousStatus;
-                    if (snapshot.hadCompletedAt) task.completedAt = snapshot.previousCompletedAt;
-                    else delete task.completedAt;
-                    if (snapshot.hadCreditRewardGranted) task.creditRewardGranted = snapshot.previousCreditRewardGranted;
-                    else delete task.creditRewardGranted;
-                    if (snapshot.hadCreditRewardAmount) task.creditRewardAmount = snapshot.previousCreditRewardAmount;
-                    else delete task.creditRewardAmount;
-                }
-                if (snapshot.completionApplied === true && snapshot.generatedTaskSnapshot) {
-                    const restoredGeneratedTask = this._cloneTaskForProgressHistory(snapshot.generatedTaskSnapshot);
-                    const existingIndex = this.generatedTasks.findIndex(item => String(item?.id || '') === String(snapshot.taskId || ''));
-                    if (existingIndex >= 0) this.generatedTasks[existingIndex] = restoredGeneratedTask;
-                    else {
-                        const restoreIndex = Math.max(0, Math.min(this.generatedTasks.length, Number(snapshot.generatedTaskIndex) || 0));
-                        this.generatedTasks.splice(restoreIndex, 0, restoredGeneratedTask);
+                const preserveManualCompletion = snapshot.completionApplied !== true
+                    && task.status === 'completed'
+                    && task.completionSource === 'manual';
+                if (!preserveManualCompletion) {
+                    [...(Array.isArray(snapshot?.objectives) ? snapshot.objectives : [])].reverse().forEach(change => {
+                        const objective = (Array.isArray(task.objectives) ? task.objectives : []).find(item =>
+                            (change?.objectiveId && String(item?.id || '') === String(change.objectiveId))
+                            || this._normalizeTaskTitle(item?.title) === this._normalizeTaskTitle(change?.objectiveTitle)
+                        );
+                        if (!objective) return;
+                        objective.current = Number(change.previousCurrent || 0);
+                        objective.completed = change.previousCompleted === true;
+                    });
+                    task.progress = Number(snapshot.previousProgress || 0);
+                    if (snapshot.completionApplied === true && Object.prototype.hasOwnProperty.call(snapshot, 'previousStatus')) {
+                        task.status = snapshot.previousStatus;
+                        if (snapshot.hadCompletedAt) task.completedAt = snapshot.previousCompletedAt;
+                        else delete task.completedAt;
+                        if (snapshot.hadCreditRewardGranted) task.creditRewardGranted = snapshot.previousCreditRewardGranted;
+                        else delete task.creditRewardGranted;
+                        if (snapshot.hadCreditRewardAmount) task.creditRewardAmount = snapshot.previousCreditRewardAmount;
+                        else delete task.creditRewardAmount;
                     }
+                    if (snapshot.completionApplied === true && snapshot.generatedTaskSnapshot) {
+                        const restoredGeneratedTask = this._cloneTaskForProgressHistory(snapshot.generatedTaskSnapshot);
+                        const existingIndex = this.generatedTasks.findIndex(item => String(item?.id || '') === String(snapshot.taskId || ''));
+                        if (existingIndex >= 0) this.generatedTasks[existingIndex] = restoredGeneratedTask;
+                        else {
+                            const restoreIndex = Math.max(0, Math.min(this.generatedTasks.length, Number(snapshot.generatedTaskIndex) || 0));
+                            this.generatedTasks.splice(restoreIndex, 0, restoredGeneratedTask);
+                        }
+                    }
+                    const grantedCreditAmount = Math.max(0, Number(snapshot.grantedCreditAmount || 0));
+                    if (grantedCreditAmount > 0) {
+                        this.creditBalance = Math.max(0, this.getCreditBalance() - grantedCreditAmount);
+                    }
+                    if (snapshot.completionApplied === true) {
+                        this._removeInventoryItemsBySourceKeys(snapshot.grantedInventorySourceKeys);
+                    }
+                    this._syncGeneratedTaskProgress(task);
                 }
-                const grantedCreditAmount = Math.max(0, Number(snapshot.grantedCreditAmount || 0));
-                if (grantedCreditAmount > 0) {
-                    this.creditBalance = Math.max(0, this.getCreditBalance() - grantedCreditAmount);
-                }
-                if (snapshot.completionApplied === true) {
-                    this._removeInventoryItemsBySourceKeys(snapshot.grantedInventorySourceKeys);
-                }
-                this._syncGeneratedTaskProgress(task);
             });
         });
         const matchedSet = new Set(matched);
@@ -1244,6 +1249,12 @@ export class WangxiangApp {
         if (status === 'submit') task.progress = 100;
         if (status === 'completed') {
             task.progress = 100;
+            task.completionSource = String(patch?.completionSource || task.completionSource || 'manual');
+            (Array.isArray(task.objectives) ? task.objectives : []).forEach(objective => {
+                objective.total = Math.max(1, Number(objective?.total || 1));
+                objective.current = objective.total;
+                objective.completed = true;
+            });
             task.completedAt = task.completedAt || new Date().toLocaleString('zh-CN', { hour12: false });
             if (!creditAlreadyGranted) {
                 const rewardAmount = this._readMarketplaceAmount(task.reward);
@@ -1269,7 +1280,7 @@ export class WangxiangApp {
     }
 
     completeTask(taskId) {
-        return this.setManagedTaskStatus(taskId, 'completed');
+        return this.setManagedTaskStatus(taskId, 'completed', { completionSource: 'manual' });
     }
 
     async abandonTask(taskId) {
@@ -1369,8 +1380,7 @@ export class WangxiangApp {
             this._buildPersonaMessage(context, userName)
         ].filter(Boolean);
 
-        const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('wangxiang-marketplace');
-        if (worldbookMessage?.content) messages.push(worldbookMessage);
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'wangxiang-marketplace');
 
         const promptManager = window.VirtualPhone?.promptManager;
         promptManager?.ensureLoaded?.();
@@ -1445,8 +1455,7 @@ export class WangxiangApp {
             this._buildPersonaMessage(context, userName)
         ].filter(Boolean);
 
-        const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('wangxiang');
-        if (worldbookMessage?.content) messages.push(worldbookMessage);
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'wangxiang');
 
         const promptManager = window.VirtualPhone?.promptManager;
         promptManager?.ensureLoaded?.();

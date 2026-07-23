@@ -4957,8 +4957,6 @@ export class WechatApp {
         }
         userInfo = userLines.join('\n');
 
-        const selectedWorldbookText = await this.wechatData?._buildWechatWorldbookText?.() || '';
-
         // 2. 获取提示词
         const promptManager = window.VirtualPhone?.promptManager;
         if (promptManager && !promptManager._loaded && typeof promptManager.ensureLoaded === 'function') {
@@ -4973,12 +4971,7 @@ export class WechatApp {
         }
 
         const messages = [];
-        if (selectedWorldbookText) {
-            messages.push({
-                role: 'system',
-                content: `【微信世界书勾选注入】\n${selectedWorldbookText}`
-            });
-        }
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'wechat');
         messages.push({
             role: 'system',
             content: `【当前主角角色卡】\n${charInfo || '无'}`
@@ -6553,56 +6546,7 @@ export class WechatApp {
         const container = document.getElementById('wechat-worldbook-list');
         const manager = window.VirtualPhone?.worldbookManager;
         if (!container || !manager) return;
-        const escapeText = (value) => String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-
-        try {
-            const sources = await manager.listAvailableWorldbooks({ includeEntries: true, force: true });
-            const selection = manager.getSelectionState('wechat');
-            if (sources.length === 0) {
-                container.innerHTML = '<div style="font-size: 12px; color: #999; padding: 8px 0;">未读取到酒馆世界书列表。</div>';
-                return;
-            }
-
-            const isSelectedSource = (source) => selection.initialized && manager.matchesSelection?.(source, selection.ids);
-            const displaySources = [...sources].sort((a, b) => {
-                const aSelected = isSelectedSource(a) ? 1 : 0;
-                const bSelected = isSelectedSource(b) ? 1 : 0;
-                return bSelected - aSelected;
-            });
-
-            container.innerHTML = displaySources.map(source => {
-                const checked = (selection.initialized && manager.matchesSelection?.(source, selection.ids)) ? 'checked' : '';
-                const activeCount = Number(source.entries?.length || 0);
-                const totalCount = Number(source.totalEntries ?? activeCount);
-                const disabledText = activeCount ? '' : (totalCount > 0 ? '（无开启条目）' : '（读取失败或为空）');
-                const countText = totalCount > activeCount ? `${activeCount}/${totalCount} 条可注入` : `${activeCount} 条`;
-                return `
-                    <label style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-top: 1px solid #f2f2f2;">
-                        <input type="checkbox" class="wechat-worldbook-choice" value="${escapeText(source.id)}" ${checked} style="-webkit-appearance: checkbox !important; appearance: auto !important; opacity: 1 !important; width: 16px; height: 16px; min-width: 16px; min-height: 16px; margin-top: 2px; accent-color: #30c46b;">
-                        <span style="min-width: 0;">
-                            <span style="display: block; font-size: 13px; color: #333;">${escapeText(source.name)}${escapeText(disabledText)}</span>
-                            <span style="display: block; font-size: 11px; color: #999; margin-top: 2px;">${escapeText(source.sourceLabel || '世界书')} · ${escapeText(countText)}</span>
-                        </span>
-                    </label>
-                `;
-            }).join('');
-
-            container.querySelectorAll('.wechat-worldbook-choice').forEach(input => {
-                input.addEventListener('change', async () => {
-                    const ids = Array.from(container.querySelectorAll('.wechat-worldbook-choice:checked')).map(item => item.value);
-                    await manager.setSelection('wechat', ids);
-                    this.renderWechatWorldbookList();
-                });
-            });
-        } catch (error) {
-            console.warn('[Wechat] 世界书列表渲染失败:', error);
-            container.innerHTML = '<div style="font-size: 12px; color: #d93025; padding: 8px 0;">世界书读取失败，请稍后重试。</div>';
-        }
+        await manager.renderWorldbookSelector(container, 'wechat');
     }
 
     showAvatarManager() {

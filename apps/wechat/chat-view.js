@@ -10562,8 +10562,7 @@ renderChatRoom(chat) {
             });
         }
 
-        const worldInfoMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('wechat');
-        if (worldInfoMessage) messages.push(worldInfoMessage);
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'wechat');
 
         if (profileContextEnabled && lobbySelection.isLobby && lobbySelection.characters.length > 0) {
             const lobbyCharacterSummary = lobbySelection.characters.map(item => this._formatLobbyCharacterDetail(item)).join('\n');

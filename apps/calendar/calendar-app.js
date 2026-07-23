@@ -208,8 +208,7 @@ export class CalendarApp {
         const personaMessage = this._buildPersonaMessage(context, userName);
         if (personaMessage) messages.push(personaMessage);
 
-        const worldbookMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('wechat');
-        if (worldbookMessage) messages.push(worldbookMessage);
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'calendar');
 
         const recentMessages = this._collectRecentChatMessages(context, 30);
         if (recentMessages.length) messages.push(...recentMessages);

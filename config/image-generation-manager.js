@@ -2625,7 +2625,7 @@ export class ImageGenerationManager {
 
     async _waitForComfyUIHistory(baseUrl, promptId, signal = null) {
         const startedAt = Date.now();
-        const timeoutMs = 180000;
+        const timeoutMs = 300000;
         while (Date.now() - startedAt < timeoutMs) {
             if (signal?.aborted) throw new Error('ComfyUI 请求已取消');
             const response = await fetch(`${baseUrl}/history/${encodeURIComponent(promptId)}`, {

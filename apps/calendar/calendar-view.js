@@ -260,6 +260,7 @@ export class CalendarView {
 
     renderSettings(theme) {
         const promptManager = this.getPromptManager();
+        const worldbookManager = window.VirtualPhone?.worldbookManager;
         const prompt = this.getSchedulePromptConfig(promptManager);
         const holidays = this.app.calendarData.getHolidays();
         const reminderAdvanceMinutes = this.app.calendarData.getReminderAdvanceMinutes();
@@ -302,6 +303,32 @@ export class CalendarView {
                                 <input type="checkbox" id="yzp-calendar-auto-schedule-toggle" ${this.app.calendarData.isAutoScheduleEnabled() ? 'checked' : ''}>
                                 <span></span>
                             </label>
+                        </div>
+                    </section>
+                    <section class="yzp-calendar-settings-section">
+                        <div class="yzp-calendar-setting-row">
+                            <div>
+                                <div class="yzp-calendar-settings-label">使用酒馆世界书</div>
+                                <div class="yzp-calendar-settings-desc">日历独立保存所选世界书与条目。</div>
+                            </div>
+                            <label class="yzp-calendar-switch">
+                                <input type="checkbox" id="yzp-calendar-worldbook-toggle" ${(worldbookManager?.getEnabled?.('calendar') ?? true) ? 'checked' : ''}>
+                                <span></span>
+                            </label>
+                        </div>
+                        <div class="phone-prompt-fold" data-default-open="false">
+                            <div class="phone-prompt-fold-header">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">世界书选择</div>
+                                    <div class="phone-prompt-fold-desc">展开后选择日历可使用的世界书条目。</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content">
+                                <div id="yzp-calendar-worldbook-list">
+                                    <div class="phone-worldbook-status">正在读取当前可用世界书...</div>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     <section class="yzp-calendar-settings-section">
@@ -584,6 +611,19 @@ export class CalendarView {
                 window.VirtualPhone?._scheduleAutoCalendarIfNeeded?.({ reason: 'settings_enabled', forceCheck: true, delay: 800 });
             }
             this.app.phoneShell?.showNotification?.('日历', enabled ? '已开启自动补全日程' : '已关闭自动补全日程', '📅');
+        });
+        const calendarWorldbookList = root.querySelector('#yzp-calendar-worldbook-list');
+        const worldbookManager = window.VirtualPhone?.worldbookManager;
+        if (calendarWorldbookList && worldbookManager) {
+            worldbookManager.renderWorldbookSelector(calendarWorldbookList, 'calendar');
+        }
+        root.querySelector('#yzp-calendar-worldbook-toggle')?.addEventListener('change', async (e) => {
+            const enabled = !!e.target.checked;
+            await worldbookManager?.setEnabled?.('calendar', enabled);
+            if (calendarWorldbookList && worldbookManager) {
+                await worldbookManager.renderWorldbookSelector(calendarWorldbookList, 'calendar');
+            }
+            this.app.phoneShell?.showNotification?.('日历', enabled ? '已开启世界书注入' : '已关闭世界书注入', '📅');
         });
         root.querySelector('#yzp-calendar-holiday-add-form')?.addEventListener('submit', (e) => {
             e.preventDefault();

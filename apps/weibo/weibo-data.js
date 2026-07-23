@@ -667,10 +667,7 @@ export class WeiboData {
 
         // 世界书背景（复用微信/蜜语的角色卡级开关与勾选逻辑）
         try {
-            const worldInfoMessage = await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('weibo');
-            if (worldInfoMessage?.content) {
-                contextMessages.push(worldInfoMessage);
-            }
+            await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(contextMessages, 'weibo');
         } catch (e) {
             console.warn('[Weibo] 读取世界书失败:', e);
         }
@@ -2266,29 +2263,63 @@ export class WeiboData {
         this.stopBatch = false;
     }
 
-    clearAllData() {
+    _isContentDataKey(key) {
+        const safeKey = String(key || '');
+        return safeKey === 'weibo_recommend_posts'
+            || safeKey === this._userPostsKey
+            || safeKey === 'weibo_hot_searches'
+            || safeKey === this._likedRecommendPostsKey
+            || safeKey === this._likedHotSearchIndexKey
+            || safeKey.startsWith('weibo_hot_detail_')
+            || safeKey.startsWith('weibo_hot_floor_');
+    }
+
+    async clearContentData() {
+        this.clearCache();
+        window.VirtualPhone?._suppressAutoWeiboTrigger?.(60000, 'clear_weibo_data');
+
+        const chatStore = this.storage?._getChatMetadataStore?.();
+        const fallbackKeys = [
+            'weibo_recommend_posts',
+            this._userPostsKey,
+            'weibo_hot_searches',
+            this._likedRecommendPostsKey,
+            this._likedHotSearchIndexKey
+        ];
+        const contentKeys = chatStore && typeof chatStore === 'object'
+            ? Object.keys(chatStore).filter((key) => this._isContentDataKey(key))
+            : fallbackKeys;
+        await Promise.all(contentKeys.map((key) => this.storage.remove(key)));
+
+        const localProfile = this._readJSON(this._profileKey, null);
+        if (localProfile && typeof localProfile === 'object' && !Array.isArray(localProfile)) {
+            await this.storage.set(this._profileKey, JSON.stringify({ ...localProfile, posts: 0 }));
+        }
+    }
+
+    async clearAllData() {
         this.clearCache();
         window.VirtualPhone?._suppressAutoWeiboTrigger?.(60000, 'clear_weibo_data');
 
         // 当前聊天下的微博数据可能包含动态详情键/楼层键，直接按前缀彻底清空，避免“清空后残留旧微博”。
         const chatStore = this.storage?._getChatMetadataStore?.();
-        if (chatStore && typeof chatStore === 'object') {
-            Object.keys(chatStore).forEach((key) => {
-                if (/^weibo_/i.test(key)) {
-                    this.storage.remove(key);
-                }
-            });
-        } else {
-                this.storage.remove(this._profileKey);
-                this.storage.remove('weibo_recommend_posts');
-                this.storage.remove(this._userPostsKey);
-                this.storage.remove('weibo_hot_searches');
-                this.storage.remove('weibo_floor_settings');
-                this.storage.remove('weibo_auto_last_floor');
-        }
+        const fallbackKeys = [
+            this._profileKey,
+            'weibo_recommend_posts',
+            this._userPostsKey,
+            'weibo_hot_searches',
+            this._likedRecommendPostsKey,
+            this._likedHotSearchIndexKey,
+            'weibo_floor_settings',
+            'weibo_auto_last_floor'
+        ];
+        const allKeys = chatStore && typeof chatStore === 'object'
+            ? Object.keys(chatStore).filter((key) => /^weibo_/i.test(key))
+            : fallbackKeys;
+        await Promise.all(allKeys.map((key) => this.storage.remove(key)));
 
         // “彻底清空”时同步重置全局微博美化配置，防止危险 CSS 在后续会话继续污染界面。
-        this.storage.remove(this._globalBeautifyKey);
+        await this.storage.remove(this._globalBeautifyKey);
     }
 
     // ========================================

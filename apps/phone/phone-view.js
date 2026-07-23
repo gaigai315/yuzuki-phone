@@ -1445,17 +1445,14 @@ export class PhoneCallView {
                 if (char.data && char.data.character_book && char.data.character_book.entries) {
                     const entries = char.data.character_book.entries;
                     if (entries.length > 0) {
-                        let worldInfo = '【世界书/角色书信息】\n';
                         entries.forEach(entry => {
                             if (entry.content && entry.enabled !== false) {
-                                const content = String(entry.content || '');
-                                worldInfo += `${content}\n---\n`;
+                                messages.push({
+                                    role: 'system',
+                                    content: String(entry.content).trim(),
+                                    isPhoneMessage: true
+                                });
                             }
-                        });
-                        messages.push({
-                            role: 'system',
-                            content: worldInfo,
-                            isPhoneMessage: true
                         });
                     }
                 }

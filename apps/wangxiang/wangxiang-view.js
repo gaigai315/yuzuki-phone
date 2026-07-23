@@ -400,7 +400,7 @@ export class WangxiangView {
                     `).join('') : '<p class="wangxiang-task-detail-no-comments">暂无讨论</p>'}
                 </section>
 
-                <div class="wangxiang-task-detail-actions">${actionHtml}</div>
+                ${actionHtml ? `<div class="wangxiang-task-detail-actions">${actionHtml}</div>` : ''}
             </div>
         `;
     }
@@ -434,10 +434,10 @@ export class WangxiangView {
         if (task.status === 'active') {
             return `
                 <button type="button" class="is-danger" data-task-detail-action="abandon"><i class="fa-solid fa-xmark"></i>放弃任务</button>
-                <button type="button" class="is-primary" data-task-detail-action="track"><i class="fa-solid fa-location-crosshairs"></i>追踪任务</button>
+                <button type="button" class="is-primary" data-task-detail-action="submit"><i class="fa-solid fa-file-circle-check"></i>任务提交</button>
             `;
         }
-        return '<button type="button" class="is-primary" data-task-detail-action="accept"><i class="fa-solid fa-comments"></i>联系领取</button>';
+        return '';
     }
 
     _renderMyTasksPanel() {
@@ -1123,44 +1123,7 @@ export class WangxiangView {
         const manager = window.VirtualPhone?.worldbookManager;
         if (!container || !manager) return;
         const appKey = String(fold.dataset.wangxiangWorldbookKey || 'wangxiang');
-
-        try {
-            const sources = await manager.listAvailableWorldbooks({ includeEntries: true, force: true });
-            const selection = manager.getSelectionState(appKey);
-            if (!sources.length) {
-                container.innerHTML = '<p class="wangxiang-settings-message">未读取到酒馆世界书列表。</p>';
-                return;
-            }
-
-            const isSelected = source => selection.initialized && manager.matchesSelection?.(source, selection.ids);
-            const displaySources = [...sources].sort((a, b) => Number(isSelected(b)) - Number(isSelected(a)));
-            container.innerHTML = displaySources.map(source => {
-                const activeCount = Number(source.entries?.length || 0);
-                const totalCount = Number(source.totalEntries ?? activeCount);
-                const emptyText = activeCount ? '' : (totalCount > 0 ? '（无开启条目）' : '（读取失败或为空）');
-                const countText = totalCount > activeCount ? `${activeCount}/${totalCount} 条可注入` : `${activeCount} 条`;
-                return `
-                    <label class="wangxiang-worldbook-item">
-                        <input class="wangxiang-worldbook-choice" type="checkbox" value="${this._escapeHtml(source.id)}" ${isSelected(source) ? 'checked' : ''}>
-                        <span>
-                            <strong>${this._escapeHtml(source.name)}${this._escapeHtml(emptyText)}</strong>
-                            <small>${this._escapeHtml(source.sourceLabel || '世界书')} · ${this._escapeHtml(countText)}</small>
-                        </span>
-                    </label>
-                `;
-            }).join('');
-
-            container.querySelectorAll('.wangxiang-worldbook-choice').forEach(input => {
-                input.addEventListener('change', async () => {
-                    const ids = Array.from(container.querySelectorAll('.wangxiang-worldbook-choice:checked')).map(item => item.value);
-                    await manager.setSelection(appKey, ids);
-                    this.renderWangxiangWorldbookList(fold);
-                });
-            });
-        } catch (error) {
-            console.warn('[Wangxiang] 世界书列表渲染失败:', error);
-            container.innerHTML = '<p class="wangxiang-settings-message is-error">世界书读取失败，请稍后重试。</p>';
-        }
+        await manager.renderWorldbookSelector(container, appKey);
     }
 
     _bindSegmentedControl(root, selector) {
@@ -1717,15 +1680,6 @@ export class WangxiangView {
                 button.disabled = false;
                 this.app.phoneShell?.showNotification?.('联系失败', error?.message || '请稍后重试', '❌');
             }
-            return;
-        }
-        if (action === 'accept') {
-            this.app.phoneShell?.showNotification?.('请先联系发布者', '请通过“联系发布人”发送任务卡片并领取任务', 'ℹ️');
-            return;
-        }
-        if (action === 'track') {
-            const task = this.app.getTaskById?.(taskId);
-            this.app.phoneShell?.showNotification?.('已追踪任务', task?.title || '任务', '📍');
             return;
         }
         if (action === 'abandon' && !window.confirm('确定放弃这个任务？')) return;

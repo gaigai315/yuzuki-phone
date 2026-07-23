@@ -42,10 +42,6 @@ export class HoneyData {
         return (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
     }
 
-    async _buildWorldInfoMessage() {
-        return await window.VirtualPhone?.worldbookManager?.buildWorldbookMessage?.('honey');
-    }
-
     _isWechatLinkedHoneyHost(hostName = '') {
         const safeHostName = this._stripFollowStateSuffix(hostName);
         const hostKey = this._normalizeHostNameKey(safeHostName);
@@ -240,6 +236,11 @@ export class HoneyData {
             if (!cleaned || /^(?:无|暂无|等待|生成中|N\/A|null|undefined)$/i.test(cleaned)) return;
             candidates.push(cleaned.slice(0, 1200));
         };
+
+        const directScreenTagPattern = /(?:^|\n)\s*[\[【]\s*画面\s*[\]】]\s*[:：]\s*[\[【]\s*([^\]】\n]+?)\s*[\]】]\s*(?=$|\n)/ig;
+        for (const match of text.matchAll(directScreenTagPattern)) {
+            push(match?.[1] || '');
+        }
 
         const screenPromptPattern = /(?:^|\n)\s*[\[【]?\s*画面\s*[\]】]?\s*[:：]\s*/i;
         const screenPromptMatch = text.match(screenPromptPattern);
@@ -4163,8 +4164,7 @@ export class HoneyData {
                 isPhoneMessage: true
             });
         }
-        const worldInfoMessage = await this._buildWorldInfoMessage();
-        if (worldInfoMessage) messages.push(worldInfoMessage);
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'honey');
 
         if (mode === 'continue') {
             messages.push({
@@ -4483,8 +4483,7 @@ export class HoneyData {
         if (wechatLinkedCharacterContext) {
             messages.push({ role: 'system', content: wechatLinkedCharacterContext, isPhoneMessage: true });
         }
-        const worldInfoMessage = await this._buildWorldInfoMessage();
-        if (worldInfoMessage) messages.push(worldInfoMessage);
+        await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'honey');
         if (wechatHistoryContext) {
             messages.push({
                 role: 'system',

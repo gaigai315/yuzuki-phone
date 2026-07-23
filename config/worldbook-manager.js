@@ -8,7 +8,16 @@ let cachedCsrfToken = '';
 let cachedCsrfTokenAt = 0;
 
 function safeString(value) {
-    return String(value || '').trim();
+    return String(value ?? '').trim();
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function uniqueStrings(values = []) {
@@ -74,16 +83,27 @@ function safeStorageSegment(value) {
         .slice(0, 80);
 }
 
-function normalizeEntries(entries) {
+function normalizeEntries(entries, options = {}) {
+    const includeDisabled = options.includeDisabled === true;
     return getRawEntries(entries)
-        .filter(isWorldEntryEnabled)
-        .map((entry) => (typeof entry === 'string' ? { content: entry } : (entry || {})))
-        .map((entry, index) => ({
-            uid: safeString(entry.uid ?? entry.id ?? index),
-            comment: safeString(entry.comment || entry.name || entry.title || ''),
-            content: safeString(entry.content || entry.text || entry.value || '')
-        }))
-        .filter((entry) => entry.content);
+        .map((rawEntry, index) => {
+            const enabled = isWorldEntryEnabled(rawEntry);
+            const entry = typeof rawEntry === 'string' ? { content: rawEntry } : (rawEntry || {});
+            return {
+                uid: safeString(entry.uid ?? entry.id ?? index) || String(index),
+                comment: safeString(entry.comment || entry.name || entry.title || ''),
+                content: safeString(entry.content || entry.text || entry.value || ''),
+                enabled
+            };
+        })
+        .filter((entry) => entry.content && (includeDisabled || entry.enabled));
+}
+
+function normalizeEntrySelectionMap(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value)
+        .map(([sourceId, entryIds]) => [safeString(sourceId), uniqueStrings(Array.isArray(entryIds) ? entryIds : [])])
+        .filter(([sourceId]) => sourceId));
 }
 
 function normalizeWorldInfoData(data) {
@@ -446,7 +466,8 @@ export class WorldbookManager {
             if (!data) {
                 data = await fetchWorldInfoByName(name);
             }
-            const entries = normalizeEntries(data?.entries);
+            const allEntries = normalizeEntries(data?.entries, { includeDisabled: true });
+            const entries = allEntries.filter((entry) => entry.enabled);
             const rawEntries = getRawEntries(data?.entries);
             const totalEntries = rawEntries.length;
             const disabledEntries = rawEntries.filter((entry) => !isWorldEntryEnabled(entry)).length;
@@ -461,12 +482,13 @@ export class WorldbookManager {
             return {
                 ...book,
                 entries,
+                allEntries,
                 totalEntries,
                 disabledEntries
             };
         } catch (error) {
             console.warn(`[WorldbookManager] 读取世界书失败: ${name}`, error);
-            return { ...book, entries: [] };
+            return { ...book, entries: [], allEntries: [], totalEntries: 0, disabledEntries: 0 };
         }
     }
 
@@ -474,7 +496,7 @@ export class WorldbookManager {
         const force = options.force === true;
         const includeEntries = options.includeEntries === true;
         const now = Date.now();
-        if (!force && this._cache && now - this._cacheAt < 5000 && (!includeEntries || this._cache.every(book => Array.isArray(book.entries) && book.entries.length > 0))) {
+        if (!force && this._cache && now - this._cacheAt < 5000 && (!includeEntries || this._cache.every(book => Array.isArray(book.allEntries)))) {
             return this._cache;
         }
 
@@ -623,37 +645,35 @@ export class WorldbookManager {
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
             return {
                 initialized: raw.initialized === true,
-                ids: Array.isArray(raw.ids) ? raw.ids.map(String) : []
+                ids: Array.isArray(raw.ids) ? raw.ids.map(String) : [],
+                entryIdsBySource: normalizeEntrySelectionMap(raw.entryIdsBySource || raw.entrySelections)
             };
         }
-        if (Array.isArray(raw)) return { initialized: true, ids: raw.map(String) };
+        if (Array.isArray(raw)) return { initialized: true, ids: raw.map(String), entryIdsBySource: {} };
         if (typeof raw === 'string') {
             try {
                 const parsed = JSON.parse(raw);
                 if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
                     return {
                         initialized: parsed.initialized === true,
-                        ids: Array.isArray(parsed.ids) ? parsed.ids.map(String) : []
+                        ids: Array.isArray(parsed.ids) ? parsed.ids.map(String) : [],
+                        entryIdsBySource: normalizeEntrySelectionMap(parsed.entryIdsBySource || parsed.entrySelections)
                     };
                 }
                 return {
                     initialized: Array.isArray(parsed),
-                    ids: Array.isArray(parsed) ? parsed.map(String) : []
+                    ids: Array.isArray(parsed) ? parsed.map(String) : [],
+                    entryIdsBySource: {}
                 };
             } catch {
-                return { initialized: !!raw, ids: raw ? [raw] : [] };
+                return { initialized: !!raw, ids: raw ? [raw] : [], entryIdsBySource: {} };
             }
         }
-        return { initialized: false, ids: [] };
+        return { initialized: false, ids: [], entryIdsBySource: {} };
     }
 
-    async setSelection(appKey, ids = []) {
-        const unique = uniqueStrings(ids);
-        const selection = {
-            initialized: true,
-            ids: unique
-        };
-        const keys = this.isSessionIsolatedApp(appKey)
+    _getSelectionStorageKeys(appKey) {
+        return this.isSessionIsolatedApp(appKey)
             ? uniqueStrings([
                 this.getGlobalSelectionKey(appKey),
                 this.getPreviousChatScopedSelectionKey(appKey)
@@ -664,39 +684,326 @@ export class WorldbookManager {
                 this.getGlobalSelectionKey(appKey),
                 this.getAppSelectionKey(appKey)
             ]);
-        for (const key of keys) {
-            await this.storage?.set?.(key, selection);
-        }
-        return unique;
     }
 
-    async buildWorldbookMessage(appKey, options = {}) {
-        if (!this.getEnabled(appKey)) return null;
+    async _writeSelectionState(appKey, selection) {
+        const normalized = {
+            initialized: true,
+            ids: uniqueStrings(selection?.ids || []),
+            entryIdsBySource: normalizeEntrySelectionMap(selection?.entryIdsBySource)
+        };
+        for (const key of this._getSelectionStorageKeys(appKey)) {
+            await this.storage?.set?.(key, normalized);
+        }
+        return normalized;
+    }
+
+    _getSourceSelectionAliases(source) {
+        return uniqueStrings([source?.id, source?.name, ...(source?.legacyIds || [])]);
+    }
+
+    _findExplicitEntrySelection(selection, source) {
+        const map = selection?.entryIdsBySource || {};
+        for (const key of this._getSourceSelectionAliases(source)) {
+            if (Object.prototype.hasOwnProperty.call(map, key)) {
+                return { initialized: true, ids: uniqueStrings(map[key]) };
+            }
+        }
+        return { initialized: false, ids: [] };
+    }
+
+    _resolveSourceEntrySelection(selection, source) {
+        const allEntries = normalizeEntries(source?.allEntries ?? source?.entries, { includeDisabled: true });
+        const availableIds = new Set(allEntries.map((entry) => entry.uid));
+        const explicit = this._findExplicitEntrySelection(selection, source);
+        const configuredIds = (explicit.initialized ? explicit.ids : [])
+            .filter((entryId) => availableIds.has(entryId));
+        const configuredSet = new Set(configuredIds);
+        const sourceSelected = selection?.initialized === true && this.matchesSelection(source, selection.ids);
+        return {
+            sourceSelected,
+            explicit: explicit.initialized,
+            configuredIds,
+            selectedIds: sourceSelected ? configuredIds : [],
+            selectedEntries: sourceSelected ? allEntries.filter((entry) => configuredSet.has(entry.uid)) : [],
+            allEntries
+        };
+    }
+
+    getSourceEntrySelectionState(appKey, source) {
+        return this._resolveSourceEntrySelection(this.getSelectionState(appKey), source);
+    }
+
+    async setSelection(appKey, ids = []) {
+        const previous = this.getSelectionState(appKey);
+        const selection = await this._writeSelectionState(appKey, {
+            ids,
+            entryIdsBySource: previous.entryIdsBySource
+        });
+        return selection.ids;
+    }
+
+    async setSourceSelected(appKey, source, selected) {
+        const previous = this.getSelectionState(appKey);
+        const aliases = new Set(this._getSourceSelectionAliases(source));
+        const ids = previous.ids.filter((id) => !aliases.has(String(id)));
+        const sourceId = safeString(source?.id || source?.name);
+        if (selected && sourceId) ids.push(sourceId);
+        return this._writeSelectionState(appKey, {
+            ids,
+            entryIdsBySource: previous.entryIdsBySource
+        });
+    }
+
+    async setSourceEntrySelection(appKey, source, entryIds = []) {
+        const previous = this.getSelectionState(appKey);
+        const aliases = this._getSourceSelectionAliases(source);
+        const aliasSet = new Set(aliases);
+        const sourceId = safeString(source?.id || source?.name);
+        const selectedEntryIds = uniqueStrings(entryIds);
+        const ids = previous.ids.filter((id) => !aliasSet.has(String(id)));
+        if (sourceId && selectedEntryIds.length > 0) ids.push(sourceId);
+
+        const entryIdsBySource = { ...previous.entryIdsBySource };
+        aliases.forEach((alias) => { delete entryIdsBySource[alias]; });
+        if (sourceId) entryIdsBySource[sourceId] = selectedEntryIds;
+
+        return this._writeSelectionState(appKey, { ids, entryIdsBySource });
+    }
+
+    async setEntrySelection(appKey, sourceId, entryIds = []) {
+        const source = { id: safeString(sourceId), name: safeString(sourceId) };
+        const selection = await this.setSourceEntrySelection(appKey, source, entryIds);
+        return selection.ids;
+    }
+
+    async renderWorldbookSelector(container, appKey, options = {}) {
+        if (!container) return;
+        if (!this.getEnabled(appKey)) {
+            container.innerHTML = '<div class="phone-worldbook-status">世界书注入已关闭。</div>';
+            return;
+        }
+
+        try {
+            const sources = await this.listAvailableWorldbooks({
+                includeEntries: true,
+                force: options.force !== false
+            });
+            if (sources.length === 0) {
+                container.innerHTML = '<div class="phone-worldbook-status">未读取到酒馆世界书列表。</div>';
+                return;
+            }
+
+            const displaySources = [...sources].sort((a, b) => {
+                const aSelected = this.getSourceEntrySelectionState(appKey, a).sourceSelected ? 1 : 0;
+                const bSelected = this.getSourceEntrySelectionState(appKey, b).sourceSelected ? 1 : 0;
+                return (bSelected - aSelected) || String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN');
+            });
+            container.innerHTML = displaySources.map((source) => {
+                const entryState = this.getSourceEntrySelectionState(appKey, source);
+                const totalCount = entryState.allEntries.length;
+                const selectedCount = entryState.selectedIds.length;
+                const checked = entryState.sourceSelected && selectedCount > 0;
+                const unavailable = totalCount === 0;
+                const sourceId = escapeHtml(source.id);
+                const status = unavailable ? '读取失败或没有条目' : `${selectedCount}/${totalCount} 条已选`;
+                return `
+                    <div class="phone-worldbook-source-row${checked ? ' is-selected' : ''}">
+                        <input class="phone-worldbook-source-toggle" type="checkbox" value="${sourceId}" ${checked ? 'checked' : ''} ${unavailable ? 'disabled' : ''} aria-label="选择 ${escapeHtml(source.name)}">
+                        <div class="phone-worldbook-source-copy">
+                            <div class="phone-worldbook-source-name">${escapeHtml(source.name)}</div>
+                            <div class="phone-worldbook-source-meta">${escapeHtml(source.sourceLabel || '世界书')} · ${escapeHtml(status)}</div>
+                        </div>
+                        <button class="phone-worldbook-entry-trigger" type="button" data-source-id="${sourceId}" title="选择条目" aria-label="选择 ${escapeHtml(source.name)} 的条目" ${unavailable ? 'disabled' : ''}>
+                            <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+            const sourceById = new Map(displaySources.map((source) => [String(source.id), source]));
+            container.querySelectorAll('.phone-worldbook-source-toggle').forEach((input) => {
+                input.addEventListener('change', async () => {
+                    const source = sourceById.get(String(input.value));
+                    if (!source) return;
+                    if (input.checked) {
+                        await this.openEntrySelectionDialog(appKey, source);
+                    } else {
+                        await this.setSourceSelected(appKey, source, false);
+                    }
+                    await this.renderWorldbookSelector(container, appKey, options);
+                });
+            });
+            container.querySelectorAll('.phone-worldbook-entry-trigger').forEach((button) => {
+                button.addEventListener('click', async () => {
+                    const source = sourceById.get(String(button.dataset.sourceId || ''));
+                    if (!source) return;
+                    await this.openEntrySelectionDialog(appKey, source);
+                    await this.renderWorldbookSelector(container, appKey, options);
+                });
+            });
+        } catch (error) {
+            console.warn(`[WorldbookManager] ${appKey} 世界书列表渲染失败:`, error);
+            container.innerHTML = '<div class="phone-worldbook-status is-error">世界书读取失败，请稍后重试。</div>';
+        }
+    }
+
+    async openEntrySelectionDialog(appKey, source) {
+        const existing = document.querySelector('.phone-worldbook-entry-modal');
+        if (typeof existing?._phoneWorldbookClose === 'function') {
+            existing._phoneWorldbookClose({ saved: false, entryIds: [] });
+        } else {
+            existing?.remove?.();
+        }
+
+        const loadedSource = Array.isArray(source?.allEntries)
+            ? source
+            : await this._loadWorldContent(source);
+        const entryState = this.getSourceEntrySelectionState(appKey, loadedSource);
+        const entries = entryState.allEntries;
+        const configuredIds = new Set(entryState.configuredIds);
+        const modal = document.createElement('div');
+        modal.className = 'phone-worldbook-entry-modal';
+        modal.innerHTML = `
+            <button class="phone-worldbook-entry-backdrop" type="button" data-action="cancel" aria-label="关闭条目选择"></button>
+            <section class="phone-worldbook-entry-dialog" role="dialog" aria-modal="true" aria-label="${escapeHtml(loadedSource.name)} 条目选择">
+                <header class="phone-worldbook-entry-head">
+                    <div class="phone-worldbook-entry-heading">
+                        <h3>${escapeHtml(loadedSource.name)}</h3>
+                        <span class="phone-worldbook-entry-count"></span>
+                    </div>
+                    <button class="phone-worldbook-entry-close" type="button" data-action="cancel" title="关闭" aria-label="关闭">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </header>
+                <label class="phone-worldbook-entry-select-all">
+                    <input type="checkbox" class="phone-worldbook-entry-select-all-input">
+                    <span>全选</span>
+                </label>
+                <div class="phone-worldbook-entry-list">
+                    ${entries.length > 0 ? entries.map((entry, index) => {
+                        const title = entry.comment || `条目 ${index + 1}`;
+                        const preview = entry.content.replace(/\s+/g, ' ').slice(0, 180);
+                        return `
+                            <label class="phone-worldbook-entry-row">
+                                <input class="phone-worldbook-entry-choice" type="checkbox" value="${escapeHtml(entry.uid)}" ${configuredIds.has(entry.uid) ? 'checked' : ''}>
+                                <span class="phone-worldbook-entry-copy">
+                                    <span class="phone-worldbook-entry-title">${escapeHtml(title)}</span>
+                                    <span class="phone-worldbook-entry-origin ${entry.enabled ? 'is-enabled' : 'is-disabled'}">${entry.enabled ? '酒馆开启' : '酒馆关闭'}</span>
+                                    <span class="phone-worldbook-entry-preview">${escapeHtml(preview)}</span>
+                                </span>
+                            </label>
+                        `;
+                    }).join('') : '<div class="phone-worldbook-status">这个世界书没有可读取的条目。</div>'}
+                </div>
+                <footer class="phone-worldbook-entry-actions">
+                    <button type="button" class="phone-worldbook-entry-cancel" data-action="cancel">取消</button>
+                    <button type="button" class="phone-worldbook-entry-confirm" data-action="confirm" ${entries.length === 0 ? 'disabled' : ''}>确定</button>
+                </footer>
+            </section>
+        `;
+
+        const host = document.querySelector('#phone-panel-content .phone-screen');
+        if (!host) {
+            throw new Error('未找到小手机屏幕容器，无法打开世界书条目选择');
+        }
+        host.appendChild(modal);
+
+        return new Promise((resolve) => {
+            let settled = false;
+            const choices = Array.from(modal.querySelectorAll('.phone-worldbook-entry-choice'));
+            const selectAll = modal.querySelector('.phone-worldbook-entry-select-all-input');
+            const count = modal.querySelector('.phone-worldbook-entry-count');
+            const updateSelectionMeta = () => {
+                const selectedCount = choices.filter((input) => input.checked).length;
+                if (count) count.textContent = `${selectedCount}/${choices.length} 条已选`;
+                if (selectAll) {
+                    selectAll.checked = choices.length > 0 && selectedCount === choices.length;
+                    selectAll.indeterminate = selectedCount > 0 && selectedCount < choices.length;
+                    selectAll.disabled = choices.length === 0;
+                }
+            };
+            const close = (result) => {
+                if (settled) return;
+                settled = true;
+                document.removeEventListener('keydown', onKeyDown);
+                modal.remove();
+                resolve(result);
+            };
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') close({ saved: false, entryIds: [] });
+            };
+            modal._phoneWorldbookClose = close;
+            choices.forEach((input) => input.addEventListener('change', updateSelectionMeta));
+            selectAll?.addEventListener('change', () => {
+                choices.forEach((input) => { input.checked = selectAll.checked; });
+                updateSelectionMeta();
+            });
+            modal.querySelectorAll('[data-action="cancel"]').forEach((button) => {
+                button.addEventListener('click', () => close({ saved: false, entryIds: [] }));
+            });
+            modal.querySelector('[data-action="confirm"]')?.addEventListener('click', async () => {
+                const entryIds = choices.filter((input) => input.checked).map((input) => input.value);
+                await this.setSourceEntrySelection(appKey, loadedSource, entryIds);
+                close({ saved: true, entryIds });
+            });
+            document.addEventListener('keydown', onKeyDown);
+            updateSelectionMeta();
+            modal.querySelector('.phone-worldbook-entry-close')?.focus?.();
+        });
+    }
+
+    async _loadSelectedWorldbookSources(appKey, options = {}) {
+        if (!this.getEnabled(appKey)) return [];
 
         const sources = await this.listAvailableWorldbooks(options);
-        if (sources.length === 0) return null;
+        if (sources.length === 0) return [];
 
         const selection = this.getSelectionState(appKey);
         const selectedSources = selection.initialized
             ? sources.filter((source) => this.matchesSelection(source, selection.ids))
             : [];
-        if (selectedSources.length === 0) return null;
+        if (selectedSources.length === 0) return [];
 
-        const loadedSources = await Promise.all(selectedSources.map((source) => this._loadWorldContent(source)));
-        const blocks = loadedSources
-            .map((source) => {
-                const parts = normalizeEntries(source.entries)
-                    .map((entry) => entry.content)
-                    .filter(Boolean);
-                if (parts.length === 0) return '';
-                return `【${source.name}】\n${parts.join('\n---\n')}`;
-            })
+        return Promise.all(selectedSources.map((source) => this._loadWorldContent(source)));
+    }
+
+    async buildWorldbookMessages(appKey, options = {}) {
+        const loadedSources = await this._loadSelectedWorldbookSources(appKey, options);
+        const selection = this.getSelectionState(appKey);
+        return loadedSources.flatMap((source) => this._resolveSourceEntrySelection(selection, source)
+            .selectedEntries
+            .map((entry) => ({
+                role: 'system',
+                content: entry.content,
+                name: 'SYSTEM (世界书)',
+                isPhoneMessage: true
+            })));
+    }
+
+    async appendWorldbookMessages(messages, appKey, options = {}) {
+        if (!Array.isArray(messages)) {
+            throw new TypeError('世界书注入目标必须是消息数组');
+        }
+        const worldbookMessages = await this.buildWorldbookMessages(appKey, options);
+        if (worldbookMessages.length > 0) messages.push(...worldbookMessages);
+        return worldbookMessages;
+    }
+
+    async buildWorldbookMessage(appKey, options = {}) {
+        const loadedSources = await this._loadSelectedWorldbookSources(appKey, options);
+        const selection = this.getSelectionState(appKey);
+
+        const parts = loadedSources
+            .flatMap((source) => this._resolveSourceEntrySelection(selection, source)
+                .selectedEntries
+                .map((entry) => entry.content))
             .filter(Boolean);
-        if (blocks.length === 0) return null;
+        if (parts.length === 0) return null;
 
         return {
             role: 'system',
-            content: `【世界书/角色书信息】\n${blocks.join('\n\n')}`,
+            content: parts.join('\n\n'),
             name: 'SYSTEM (世界书)',
             isPhoneMessage: true
         };

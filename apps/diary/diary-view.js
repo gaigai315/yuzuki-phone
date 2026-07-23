@@ -1326,50 +1326,7 @@ export class DiaryView {
         const container = document.getElementById('diary-worldbook-list');
         const manager = window.VirtualPhone?.worldbookManager;
         if (!container || !manager) return;
-
-        try {
-            const sources = await manager.listAvailableWorldbooks({ includeEntries: true, force: true });
-            const selection = manager.getSelectionState('diary');
-            if (sources.length === 0) {
-                container.innerHTML = '<div class="diary-s-desc" style="padding: 8px 0;">未读取到酒馆世界书列表。</div>';
-                return;
-            }
-
-            const isSelectedSource = (source) => selection.initialized && manager.matchesSelection?.(source, selection.ids);
-            const displaySources = [...sources].sort((a, b) => {
-                const aSelected = isSelectedSource(a) ? 1 : 0;
-                const bSelected = isSelectedSource(b) ? 1 : 0;
-                return bSelected - aSelected;
-            });
-
-            container.innerHTML = displaySources.map(source => {
-                const checked = (selection.initialized && manager.matchesSelection?.(source, selection.ids)) ? 'checked' : '';
-                const activeCount = Number(source.entries?.length || 0);
-                const totalCount = Number(source.totalEntries ?? activeCount);
-                const disabledText = activeCount ? '' : (totalCount > 0 ? '（无开启条目）' : '（读取失败或为空）');
-                const countText = totalCount > activeCount ? `${activeCount}/${totalCount} 条可注入` : `${activeCount} 条`;
-                return `
-                    <label class="diary-worldbook-item">
-                        <input type="checkbox" class="diary-worldbook-choice" value="${this._escapeAttr(source.id)}" ${checked}>
-                        <span class="diary-worldbook-text">
-                            <span class="diary-worldbook-name">${this._escapeHtml(source.name)}${this._escapeHtml(disabledText)}</span>
-                            <span class="diary-worldbook-meta">${this._escapeHtml(source.sourceLabel || '世界书')} · ${this._escapeHtml(countText)}</span>
-                        </span>
-                    </label>
-                `;
-            }).join('');
-
-            container.querySelectorAll('.diary-worldbook-choice').forEach(input => {
-                input.addEventListener('change', async () => {
-                    const ids = Array.from(container.querySelectorAll('.diary-worldbook-choice:checked')).map(item => item.value);
-                    await manager.setSelection('diary', ids);
-                    this.renderDiaryWorldbookList();
-                });
-            });
-        } catch (error) {
-            console.warn('[Diary] 世界书列表渲染失败:', error);
-            container.innerHTML = '<div class="diary-s-desc" style="color:#d93025; padding: 8px 0;">世界书读取失败，请稍后重试。</div>';
-        }
+        await manager.renderWorldbookSelector(container, 'diary');
     }
 
     _getDiaryGenerationState() {

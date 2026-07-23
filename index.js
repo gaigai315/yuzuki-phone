@@ -17,11 +17,11 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.0';
+const ST_PHONE_VERSION = '1.4.1';
 const ST_PHONE_CSS_REVISION = '20260708-glass-fix';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
-const ST_PHONE_HONEY_CSS_URL = new URL('./apps/honey/honey.css?v=20260606-ticker-once', import.meta.url).href;
+const ST_PHONE_HONEY_CSS_URL = new URL(`./apps/honey/honey.css?v=${ST_PHONE_VERSION}`, import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
 const ST_PHONE_GAMES_CSS_URL = new URL('./apps/games/poker/poker.css?v=1.0.2', import.meta.url).href;
 const ST_PHONE_UPDATE_MANIFEST_URLS = [
@@ -46,12 +46,10 @@ const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-22',
+    date: '2026-07-23',
     items: [
-        '【修复】修复用户发言清洗关闭时，双方单聊被误判为同名二人群聊并导致微信消息为空的问题；群聊现在仅按 type:group 明确识别。',
-        '【修复】修复用户微博中的文字配图描述未传入后续互动的问题。',
-        '【修复】修复关闭并重开手机面板后，微信会话样式底栏图标可能空白的问题。',
-        '【优化】优化微信线上提示词，避免本轮用户消息在聊天记录与最新输入中重复出现。'
+        '【优化】世界书支持按条目勾选启用，各 App 独立保存所选条目。',
+        '【优化】微博清理支持选择仅清理内容或全部清理。'
     ]
 };
 
