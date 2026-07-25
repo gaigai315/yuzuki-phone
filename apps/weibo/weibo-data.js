@@ -763,22 +763,12 @@ export class WeiboData {
         return safeText;
     }
 
-    // 将当前粉丝数注入提示词；若模板未提供占位，也自动补充一行硬约束
+    // 只替换自定义提示词中的粉丝数占位符；账号状态已通过独立 system 消息注入
     _injectCurrentFollowersToPrompt(promptText) {
         const followers = this._getCurrentFollowersCount();
-        let prompt = (typeof promptText === 'string') ? promptText : '';
-
-        prompt = prompt
+        return ((typeof promptText === 'string') ? promptText : '')
             .replace(/\{\{currentFollowers\}\}/g, String(followers))
             .replace(/\{\{CURRENT_FOLLOWERS\}\}/g, String(followers));
-
-        if (/当前粉丝数量为[：:]/.test(prompt)) {
-            prompt = prompt.replace(/当前粉丝数量为[：:][^\n\r]*/g, `当前粉丝数量为：${followers}`);
-        } else {
-            prompt += `\n\n当前粉丝数量为：${followers}`;
-        }
-
-        return prompt;
     }
 
     _parseFollowerNumber(raw) {
@@ -790,12 +780,14 @@ export class WeiboData {
             .replace(/[,\s，]/g, '')
             .replace(/(人|位|名|个)$/u, '');
 
-        const match = text.match(/^(\d+(?:\.\d+)?)(万|[wW])?$/);
+        const match = text.match(/^(\d+(?:\.\d+)?)(万|千|[kKwW])?$/);
         if (!match) return null;
 
         let value = Number(match[1]);
         if (!Number.isFinite(value)) return null;
-        if (match[2]) value *= 10000;
+        const unit = String(match[2] || '').toLowerCase();
+        if (unit === 'k' || unit === '千') value *= 1000;
+        if (unit === 'w' || unit === '万') value *= 10000;
 
         return Math.max(0, Math.round(value));
     }
@@ -805,9 +797,9 @@ export class WeiboData {
 
         const candidates = [];
         const patterns = [
-            /当前粉丝(?:数量|数)?(?:为)?[：:]\s*([0-9][0-9,，]*(?:\.\d+)?(?:万|[wW])?(?:人|位|名|个)?)/gi,
-            /粉丝(?:数量|数)[：:]\s*([0-9][0-9,，]*(?:\.\d+)?(?:万|[wW])?(?:人|位|名|个)?)/gi,
-            /"followers"\s*:\s*"?([0-9][0-9,，]*(?:\.\d+)?(?:万|[wW])?)"?/gi
+            /当前粉丝(?:数量|数)?(?:为)?[：:]\s*[\[【]?\s*([0-9][0-9,，]*(?:\.\d+)?(?:万|千|[kKwW])?(?:人|位|名|个)?)\s*[\]】]?(?=\s*(?:["',，。；;|}\]\n\r<]|$))/gi,
+            /粉丝(?:数量|数)[：:]\s*[\[【]?\s*([0-9][0-9,，]*(?:\.\d+)?(?:万|千|[kKwW])?(?:人|位|名|个)?)\s*[\]】]?(?=\s*(?:["',，。；;|}\]\n\r<]|$))/gi,
+            /"followers"\s*:\s*"?([0-9][0-9,，]*(?:\.\d+)?(?:万|千|[kKwW])?)"?(?=\s*(?:[,，。；;|}\]\n\r]|$))/gi
         ];
 
         patterns.forEach((regex) => {
@@ -894,11 +886,17 @@ export class WeiboData {
     }
 
     _updateFollowersFromText(rawText) {
-        const parsedFollowers = this._extractFollowersCount(rawText);
-        if (parsedFollowers === null) return null;
-
         const profile = this.getProfile();
         const current = Math.max(0, parseInt(profile.followers, 10) || 0);
+        const parsedFollowers = this._extractFollowersCount(rawText);
+        if (parsedFollowers === null || parsedFollowers <= 0) return current;
+
+        const maxChange = Math.max(100, Math.ceil(current * 0.3));
+        if (Math.abs(parsedFollowers - current) > maxChange) {
+            console.warn(`[Weibo] 已忽略异常粉丝数跳变：${current} -> ${parsedFollowers}`);
+            return current;
+        }
+
         if (current !== parsedFollowers) {
             profile.followers = parsedFollowers;
             this.saveProfile(profile);
@@ -1119,11 +1117,11 @@ export class WeiboData {
     // ========================================
 
     parseWeiboContent(rawText) {
-        const result = { hotSearches: [], posts: [], followers: null };
+        const result = { hotSearches: [], posts: [], followers: this._getCurrentFollowersCount() };
 
         if (!rawText) return result;
 
-        // 支持从 AI 返回中解析粉丝数；如果没识别到则保持旧值不覆盖
+        // 支持从 AI 返回中解析粉丝数；缺失、0 或异常跳变时返回并保留当前值
         result.followers = this._updateFollowersFromText(rawText);
 
         // 去除 <think>...</think> 块
