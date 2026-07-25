@@ -283,7 +283,13 @@ export class CatboxData {
             this._persist();
             return this.state;
         }
-        wallet.wechatData.updateWalletBalance(-price);
+        wallet.wechatData.updateWalletBalance(-price, null, {
+            type: 'shopping',
+            title: `猫盒购买-${item.name}`,
+            detail: '微信支付',
+            source: 'catbox',
+            referenceId: `catbox:purchase:${Date.now()}:${id}`
+        });
         const inventory = { ...(this.state.inventory || {}) };
         inventory[id] = Math.max(0, Number(inventory[id] || 0) + 1);
         this.state = {

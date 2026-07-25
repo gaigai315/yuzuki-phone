@@ -9,8 +9,8 @@
  * 
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
-import { HoneyView } from './honey-view.js?v=20260506-nai-debug';
-import { HoneyData } from './honey-data.js?v=20260506-nai-debug';
+import { HoneyView } from './honey-view.js?v=1.4.2&r=20260726-settings-theme-background';
+import { HoneyData } from './honey-data.js?v=1.4.2&r=20260726-settings-theme-background';
 
 export class HoneyApp {
     constructor(phoneShell, storage) {

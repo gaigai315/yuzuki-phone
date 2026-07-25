@@ -511,7 +511,7 @@ export class ImageUploadManager {
 
         const filename = decodeURIComponent(match[1]);
         // 仅处理手机插件生成的文件，避免误删其他背景图
-        if (!/^phone_[\w-]+\.(png|jpg|jpeg|webp|gif)$/i.test(filename)) return null;
+        if (!/^phone_[\w-]+\.(png|jpg|jpeg|webp|gif|mp4|webm)$/i.test(filename)) return null;
         return filename;
     }
 

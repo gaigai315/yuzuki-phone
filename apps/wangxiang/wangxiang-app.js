@@ -472,7 +472,13 @@ export class WangxiangApp {
             const wechatBalance = this.getWechatWalletBalance();
             if (wechatBalance === null) throw new Error('微信零钱尚未初始化');
             if (wechatBalance < amount) throw new Error(`微信零钱不足，当前仅有 ¥${wechatBalance.toFixed(2)}`);
-            this._getWechatData()?.updateWalletBalance?.(-amount);
+            this._getWechatData()?.updateWalletBalance?.(-amount, null, {
+                type: 'shopping',
+                title: `万象购物-${order.name}`,
+                detail: `订单号：${order.id} · ${order.quantity}件`,
+                source: 'wangxiang',
+                referenceId: `wangxiang:order:${order.id}`
+            });
         }
 
         if (product && Number.isFinite(productStock)) {

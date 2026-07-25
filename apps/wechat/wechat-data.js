@@ -224,6 +224,7 @@ export class WechatData {
                     const legacyCustomEmojis = this._normalizeCustomEmojiList(data.customEmojis || []);
                     const globalCustomEmojis = this._loadGlobalCustomEmojis();
                     const mergedCustomEmojis = this._mergeCustomEmojiLists(globalCustomEmojis, legacyCustomEmojis);
+                    const walletTransactions = this._normalizeWalletTransactions(data.walletTransactions || []);
 
                     // 🔥 迁移：把旧的会话级 customEmojis 合并到全局存储
                     if (!this._isSameCustomEmojiList(globalCustomEmojis, mergedCustomEmojis)) {
@@ -245,6 +246,7 @@ export class WechatData {
                             contactAvatarGroupMap: data.contactAvatarGroupMap || {},
                             contactAutoAvatarMap: data.contactAutoAvatarMap || {},
                             walletByChat: data.walletByChat || {},
+                            walletTransactions,
                             honeyInviteLog: data.honeyInviteLog || []
                             // 🔥 不再包含 messages 字段
                         };
@@ -273,6 +275,7 @@ export class WechatData {
                         contactAvatarGroupMap: data.contactAvatarGroupMap || {},
                         contactAutoAvatarMap: data.contactAutoAvatarMap || {},
                         walletByChat: walletByChat,
+                        walletTransactions,
                         musicListening: data.musicListening || {},
                         honeyInviteLog: data.honeyInviteLog || []
                     };
@@ -297,6 +300,7 @@ export class WechatData {
             contactAvatarGroupMap: {},
             contactAutoAvatarMap: {},
             walletByChat: {},
+            walletTransactions: [],
             musicListening: {}
         };
     }
@@ -1274,6 +1278,7 @@ export class WechatData {
                 contactAvatarGroupMap: this.data.contactAvatarGroupMap || {},
                 contactAutoAvatarMap: this.data.contactAutoAvatarMap || {},
                 walletByChat: this.data.walletByChat || {},
+                walletTransactions: this.data.walletTransactions || [],
                 musicListening: this.data.musicListening || {},
                 honeyInviteLog: this.data.honeyInviteLog || []
                 // 🔥 messages 不再保存到主数据中
@@ -1331,6 +1336,7 @@ export class WechatData {
             contactAvatarGroupMap: {},
             contactAutoAvatarMap: {},
             walletByChat: {},
+            walletTransactions: [],
             musicListening: {}
         };
 
@@ -1353,6 +1359,7 @@ export class WechatData {
         this.data.chats = [];
         this.data.messages = {};
         this.data.walletByChat = {};
+        this.data.walletTransactions = [];
         this._messagesLoaded = {};
         this._messagesDirty = {};
 
@@ -1377,6 +1384,7 @@ export class WechatData {
         this.data.contactAvatarGroupMap = {};
         this.data.contactAutoAvatarMap = {};
         this.data.walletByChat = {};
+        this.data.walletTransactions = [];
         this.data.musicListening = {};
         this.data.honeyInviteLog = [];
         this._messagesLoaded = {};
@@ -1469,6 +1477,142 @@ export class WechatData {
         return withGlobalBg;
     }
 
+    _normalizeWalletTransactions(records = []) {
+        if (!Array.isArray(records)) return [];
+        const allowedTypes = new Set(['transfer', 'redpacket', 'honey', 'shopping', 'other']);
+        const seenIds = new Set();
+        return records.map((record, index) => {
+            if (!record || typeof record !== 'object') return null;
+            const delta = Number.parseFloat(record.delta);
+            if (!Number.isFinite(delta) || Math.abs(delta) < 0.000001) return null;
+            let id = String(record.id || '').trim();
+            if (!id || seenIds.has(id)) id = `wallet_tx_recovered_${index}_${Date.now().toString(36)}`;
+            seenIds.add(id);
+            const timestamp = Number(record.timestamp);
+            const realTimestamp = Number(record.realTimestamp);
+            const tavernMessageIndex = Number(record.tavernMessageIndex);
+            return {
+                ...record,
+                id,
+                delta: Math.round(delta * 100) / 100,
+                amount: Math.abs(Math.round(delta * 100) / 100),
+                type: allowedTypes.has(String(record.type || '')) ? String(record.type) : 'other',
+                title: String(record.title || (delta > 0 ? '零钱收入' : '零钱支出')).trim(),
+                detail: String(record.detail || '').trim(),
+                source: String(record.source || record.sourceApp || 'wechat').trim() || 'wechat',
+                sourceApp: String(record.sourceApp || record.source || 'wechat').trim() || 'wechat',
+                chatId: String(record.chatId || '').trim(),
+                referenceId: String(record.referenceId || '').trim(),
+                messageId: String(record.messageId || '').trim(),
+                walletKey: String(record.walletKey || this.walletDefaultKey).trim() || this.walletDefaultKey,
+                date: String(record.date || '').trim(),
+                time: String(record.time || '').trim(),
+                timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0,
+                realTimestamp: Number.isFinite(realTimestamp) && realTimestamp > 0 ? realTimestamp : Date.now(),
+                fromMainChatTag: record.fromMainChatTag === true,
+                tavernMessageIndex: Number.isFinite(tavernMessageIndex) ? tavernMessageIndex : undefined,
+                affectsBalance: record.affectsBalance !== false
+            };
+        }).filter(Boolean);
+    }
+
+    _findWalletTransactionDuplicate(meta = {}) {
+        if (!meta || typeof meta !== 'object') return null;
+        const records = Array.isArray(this.data.walletTransactions) ? this.data.walletTransactions : [];
+        const referenceId = String(meta.referenceId || '').trim();
+        const id = String(meta.id || '').trim();
+        if (referenceId) return records.find(record => String(record?.referenceId || '') === referenceId) || null;
+        if (id) return records.find(record => String(record?.id || '') === id) || null;
+        return null;
+    }
+
+    _appendWalletTransaction(delta, meta = {}, balanceState = {}) {
+        if (!this.data.walletTransactions) this.data.walletTransactions = [];
+        const parsedDelta = Number.parseFloat(delta);
+        if (!Number.isFinite(parsedDelta) || Math.abs(parsedDelta) < 0.000001) return null;
+        const duplicate = this._findWalletTransactionDuplicate(meta);
+        if (duplicate) return duplicate;
+
+        const storyTime = this._getStoryTimeFallback();
+        const timestamp = Number(meta.timestamp);
+        const tavernMessageIndex = Number(meta.tavernMessageIndex);
+        const safeDelta = Math.round(parsedDelta * 100) / 100;
+        const record = {
+            id: String(meta.id || '').trim() || `wallet_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            delta: safeDelta,
+            amount: Math.abs(safeDelta),
+            type: ['transfer', 'redpacket', 'honey', 'shopping', 'other'].includes(String(meta.type || '')) ? String(meta.type) : 'other',
+            title: String(meta.title || (safeDelta > 0 ? '零钱收入' : '零钱支出')).trim(),
+            detail: String(meta.detail || '').trim(),
+            source: String(meta.source || meta.sourceApp || 'wechat').trim() || 'wechat',
+            sourceApp: String(meta.sourceApp || meta.source || 'wechat').trim() || 'wechat',
+            chatId: String(meta.chatId || '').trim(),
+            counterparty: String(meta.counterparty || '').trim(),
+            referenceId: String(meta.referenceId || '').trim(),
+            messageId: String(meta.messageId || '').trim(),
+            walletKey: String(balanceState.walletKey || meta.walletKey || this.walletDefaultKey).trim() || this.walletDefaultKey,
+            date: String(meta.date || storyTime.date || '').trim(),
+            time: String(meta.time || storyTime.time || '').trim(),
+            weekday: String(meta.weekday || storyTime.weekday || '').trim(),
+            timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : (Number(storyTime.timestamp) || Date.now()),
+            realTimestamp: Number(meta.realTimestamp) || Date.now(),
+            balanceBefore: Number.isFinite(Number(balanceState.balanceBefore)) ? Number(balanceState.balanceBefore) : null,
+            balanceAfter: Number.isFinite(Number(balanceState.balanceAfter)) ? Number(balanceState.balanceAfter) : null,
+            affectsBalance: balanceState.affectsBalance === true,
+            fromMainChatTag: meta.fromMainChatTag === true,
+            tavernMessageIndex: Number.isFinite(tavernMessageIndex) ? tavernMessageIndex : undefined,
+            batchId: String(meta.batchId || '').trim()
+        };
+        this.data.walletTransactions.push(record);
+        return record;
+    }
+
+    getWalletTransactions() {
+        if (!Array.isArray(this.data.walletTransactions)) this.data.walletTransactions = [];
+        return [...this.data.walletTransactions].sort((a, b) => {
+            const aTime = Number(a?.timestamp || a?.realTimestamp || 0);
+            const bTime = Number(b?.timestamp || b?.realTimestamp || 0);
+            if (bTime !== aTime) return bTime - aTime;
+            return Number(b?.realTimestamp || 0) - Number(a?.realTimestamp || 0);
+        });
+    }
+
+    recordWalletTransaction(delta, meta = {}) {
+        const duplicate = this._findWalletTransactionDuplicate(meta);
+        if (duplicate) return duplicate;
+        const record = this._appendWalletTransaction(delta, meta, { affectsBalance: false });
+        if (record) this.saveData();
+        return record;
+    }
+
+    _removeWalletTransactionsForChat(chatId) {
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId || !Array.isArray(this.data.walletTransactions)) return false;
+        const originalLength = this.data.walletTransactions.length;
+        this.data.walletTransactions = this.data.walletTransactions.filter(record => String(record?.chatId || '') !== safeChatId);
+        return this.data.walletTransactions.length !== originalLength;
+    }
+
+    _rollbackWalletTransactions(predicate) {
+        if (!Array.isArray(this.data.walletTransactions) || typeof predicate !== 'function') return false;
+        const removed = this.data.walletTransactions.filter(predicate);
+        if (removed.length === 0) return false;
+        this.data.walletTransactions = this.data.walletTransactions.filter(record => !predicate(record));
+
+        const reversedByWallet = new Map();
+        removed.forEach(record => {
+            if (record?.affectsBalance !== true) return;
+            const key = String(record.walletKey || this.walletDefaultKey);
+            reversedByWallet.set(key, (reversedByWallet.get(key) || 0) + Number(record.delta || 0));
+        });
+        reversedByWallet.forEach((delta, key) => {
+            const current = Number(this.data.walletByChat?.[key]);
+            if (!Number.isFinite(current)) return;
+            this.data.walletByChat[key] = Math.max(0, Math.round((current - delta) * 100) / 100);
+        });
+        return true;
+    }
+
     getWalletBalance(chatId = null) {
         if (!this.data.walletByChat) this.data.walletByChat = {};
         const key = chatId || this.walletDefaultKey;
@@ -1489,10 +1633,31 @@ export class WechatData {
         this.saveData();
     }
 
+    // 重新评估资产时，以新余额重新开始并永久清空全部零钱流水
+    async resetWalletBalance(amount) {
+        const normalizedAmount = Number.parseFloat(amount);
+        if (!Number.isFinite(normalizedAmount) || normalizedAmount < 0) {
+            throw new Error('重置的零钱金额无效');
+        }
+
+        this.data.walletByChat = {
+            [this.walletDefaultKey]: normalizedAmount
+        };
+        this.data.walletTransactions = [];
+        if (this.data.userInfo) this.data.userInfo.walletBalance = null;
+        await this.saveData();
+        return normalizedAmount;
+    }
+
     // 变更钱包金额（收发红包/转账用，传入正数加钱，负数扣钱）
-    updateWalletBalance(delta, chatId = null) {
+    updateWalletBalance(delta, chatId = null, transaction = null) {
         if (!this.data.walletByChat) this.data.walletByChat = {};
         const key = chatId || this.walletDefaultKey;
+        const parsedDelta = Number.parseFloat(delta);
+        if (!Number.isFinite(parsedDelta)) return this.getWalletBalance(chatId);
+        if (transaction && this._findWalletTransactionDuplicate(transaction)) {
+            return this.getWalletBalance(chatId);
+        }
         let current = this.data.walletByChat[key];
 
         // chatId 首次使用时，若存在默认钱包则继承默认值
@@ -1507,8 +1672,19 @@ export class WechatData {
             current = 0; // 如果没初始化就强行收发，默认从0开始算
         }
 
-        this.data.walletByChat[key] = Math.max(0, current + parseFloat(delta));
+        const balanceBefore = Number(current);
+        const balanceAfter = Math.max(0, Math.round((balanceBefore + parsedDelta) * 100) / 100);
+        this.data.walletByChat[key] = balanceAfter;
+        if (transaction) {
+            this._appendWalletTransaction(balanceAfter - balanceBefore, transaction, {
+                affectsBalance: true,
+                balanceBefore,
+                balanceAfter,
+                walletKey: key
+            });
+        }
         this.saveData();
+        return balanceAfter;
     }
     
     updateUserInfo(info) {
@@ -3555,6 +3731,7 @@ parseAIResponse(text) {
 
             // 标记消息已修改
             this._messagesDirty[chatId] = true;
+            this._removeWalletTransactionsForChat(chatId);
 
             // 🔥 完全重置 TimeManager，让它重新从消息中计算最新时间
             window.VirtualPhone?.timeManager?.resetTime();
@@ -3612,6 +3789,12 @@ parseAIResponse(text) {
                 }
             }
         }
+
+        const walletDirty = this._rollbackWalletTransactions(record =>
+            record?.fromMainChatTag === true
+            && Number(record.tavernMessageIndex) === targetIndex
+        );
+        isDirty = isDirty || walletDirty;
 
         if (isDirty) {
             this._cleanupManagedImagesForDeletedMessages(deletedMessages);
@@ -3691,6 +3874,13 @@ parseAIResponse(text) {
             }
         }
 
+        const walletDirty = this._rollbackWalletTransactions(record =>
+            record?.fromMainChatTag === true
+            && Number.isFinite(Number(record.tavernMessageIndex))
+            && Number(record.tavernMessageIndex) >= Number(targetTavernIndex)
+        );
+        isDirty = isDirty || walletDirty;
+
         window.VirtualPhone?.wangxiangApp?.rollbackWechatAssignmentsToFloor?.(targetTavernIndex);
 
         // 如果真的发生了回滚，保存并重置时间锚点
@@ -3741,6 +3931,7 @@ parseAIResponse(text) {
         const deletedMessages = Array.isArray(this.data.messages[chatId]) ? [...this.data.messages[chatId]] : [];
         this.data.chats = this.data.chats.filter(c => c.id !== chatId);
         delete this.data.messages[chatId];
+        this._removeWalletTransactionsForChat(chatId);
         this._cleanupManagedImagesForDeletedMessages(deletedMessages);
 
         // 🔥 同时删除独立存储的消息

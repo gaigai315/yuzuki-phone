@@ -1145,13 +1145,13 @@ export class HoneyData {
         this._scheduleFlushChatPersistence();
     }
 
-    getRecommendBgVideo() {
+    getRecommendBgMedia() {
         const saved = this._getStored('global_honey_bg_video', '');
         const safe = typeof saved === 'string' ? saved.trim() : '';
         return safe || null;
     }
 
-    saveRecommendBgVideo(url) {
+    saveRecommendBgMedia(url) {
         const safe = String(url || '').trim();
         if (safe) {
             this._setStored('global_honey_bg_video', safe);
@@ -2760,9 +2760,15 @@ export class HoneyData {
         }
 
         const wechatData = this._getWechatDataForRecharge();
-        wechatData?.updateWalletBalance?.(-safeAmountYuan);
-
         const coinGain = Math.max(1, Math.round(safeAmountYuan * 10));
+        wechatData?.updateWalletBalance?.(-safeAmountYuan, null, {
+            type: 'honey',
+            title: '蜜语充值',
+            detail: `充值 ${coinGain} 蜜币`,
+            source: 'honey',
+            referenceId: `honey:recharge:${Date.now()}:${safeAmountYuan}`
+        });
+
         const balanceBefore = this.getHoneyCoinBalance();
         const balanceAfter = this.updateHoneyCoinBalance(coinGain);
 
@@ -2805,7 +2811,13 @@ export class HoneyData {
         }
         const amountYuan = Math.round((coins / 10) * 100) / 100;
         const balanceAfter = this.setHoneyCoinBalance(balanceBefore - coins);
-        wechatData.updateWalletBalance(amountYuan);
+        wechatData.updateWalletBalance(amountYuan, null, {
+            type: 'honey',
+            title: '蜜语提现',
+            detail: `提现 ${coins} 蜜币`,
+            source: 'honey',
+            referenceId: `honey:withdraw:${Date.now()}:${coins}`
+        });
         const walletAfterRaw = wechatData.getWalletBalance?.();
         const walletAfter = Number.isFinite(Number(walletAfterRaw)) ? Number(walletAfterRaw) : amountYuan;
 

@@ -6,20 +6,58 @@
  * ======================================================== */
 
 import { AlbumData } from './album-data.js';
-import { AlbumView } from './album-view.js';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js';
 
 export class AlbumApp {
     constructor(phoneShell, storage) {
         this.phoneShell = phoneShell;
         this.storage = storage;
+        this._cssRenderPending = false;
+        this._cssFallbackTimer = null;
+
+        this._preloadCSS();
+
         this.albumData = new AlbumData(storage);
         this.albumView = new AlbumView(this);
 
         window.addEventListener('phone:swipeBack', (e) => this.handleSwipeBack(e));
         window.addEventListener('phone:albumImageDeleted', () => this.refreshIfVisible());
+        window.addEventListener('phone:updateWallpaper', () => this.refreshIfVisible());
+    }
+
+    _preloadCSS() {
+        if (document.getElementById('album-css')) return;
+        const link = document.createElement('link');
+        link.id = 'album-css';
+        link.rel = 'stylesheet';
+        link.href = ALBUM_CSS_URL;
+        document.head.appendChild(link);
     }
 
     render() {
+        const cssLink = document.getElementById('album-css');
+        if (cssLink && !cssLink.sheet) {
+            if (this._cssRenderPending) return;
+            this._cssRenderPending = true;
+
+            const renderAfterCSS = () => {
+                if (!this._cssRenderPending) return;
+                this._cssRenderPending = false;
+                if (this._cssFallbackTimer) {
+                    clearTimeout(this._cssFallbackTimer);
+                    this._cssFallbackTimer = null;
+                }
+                this.albumView.render();
+            };
+
+            cssLink.addEventListener('load', renderAfterCSS, { once: true });
+            cssLink.addEventListener('error', () => {
+                console.error('Album CSS failed to load');
+                renderAfterCSS();
+            }, { once: true });
+            this._cssFallbackTimer = setTimeout(renderAfterCSS, 1500);
+            return;
+        }
         this.albumView.render();
     }
 
@@ -29,6 +67,24 @@ export class AlbumApp {
 
         if (this.albumView.previewOpen) {
             this.albumView.closePreview();
+            return;
+        }
+
+        if (this.albumView.sourceMenuOpen) {
+            this.albumView.closeSourceMenu();
+            return;
+        }
+
+        if (this.albumView.selectionMode) {
+            this.albumView.selectionMode = false;
+            this.albumView.selectedPaths.clear();
+            this.albumView.render();
+            return;
+        }
+
+        if (this.albumView.activeSource !== 'all') {
+            this.albumView.activeSource = 'all';
+            this.albumView.render();
             return;
         }
 

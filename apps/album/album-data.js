@@ -8,6 +8,21 @@
 const MANAGED_IMAGE_RE = /(https?:\/\/[^\s"'<>)]*\/backgrounds\/phone_[^\s"'<>)]*|\/backgrounds\/phone_[^\s"'<>)]*)/ig;
 const MEDIA_EXT_RE = /\.(?:mp4|webm|mov|m4v)$/i;
 
+const ALBUM_SOURCE_CATALOG = Object.freeze([
+    { key: 'honey', label: '蜜语', icon: 'fa-comment-dots' },
+    { key: 'wechat-chat', label: '微信聊天', icon: 'fa-comments' },
+    { key: 'wechat-custom', label: '微信自定义表情', icon: 'fa-face-smile' },
+    { key: 'diary', label: '日记', icon: 'fa-book-open' },
+    { key: 'weibo', label: '微博', icon: 'fa-eye' },
+    { key: 'wangxiang', label: '万象', icon: 'fa-bag-shopping' },
+    { key: 'mofo', label: '魔坊', icon: 'fa-wand-magic-sparkles' },
+    { key: 'wallpaper', label: '壁纸', icon: 'fa-mobile-screen' },
+    { key: 'avatar', label: '头像', icon: 'fa-user' },
+    { key: 'app-icon', label: 'App 图标', icon: 'fa-grip' },
+    { key: 'local-upload', label: '本地上传', icon: 'fa-cloud-arrow-up' },
+    { key: 'other', label: '其他图片', icon: 'fa-images' }
+]);
+
 export class AlbumData {
     constructor(storage) {
         this.storage = storage;
@@ -19,10 +34,12 @@ export class AlbumData {
         const deleted = this._getDeletedSet();
         let order = 0;
 
-        const addImage = (pathLike, sourceLabel = '小手机') => {
+        const addImage = (pathLike, sourceLabel = '小手机', meta = {}) => {
             const normalized = this.normalizePath(pathLike);
             if (!normalized || deleted.has(normalized)) return;
             if (!this.isManagedImagePath(normalized)) return;
+
+            const createdAt = Number(meta?.createdAt || 0);
 
             const existing = items.get(normalized);
             if (existing) {
@@ -30,6 +47,9 @@ export class AlbumData {
                     existing.sources.push(sourceLabel);
                 }
                 existing.refCount += 1;
+                if (Number.isFinite(createdAt) && createdAt > existing.createdAt) {
+                    existing.createdAt = createdAt;
+                }
                 return;
             }
 
@@ -40,6 +60,7 @@ export class AlbumData {
                 filename: this.getFilename(normalized),
                 sources: sourceLabel ? [sourceLabel] : [],
                 refCount: 1,
+                createdAt: Number.isFinite(createdAt) ? createdAt : 0,
                 order: order++
             });
         };
@@ -48,7 +69,67 @@ export class AlbumData {
         this._scanRuntimeData(addImage);
         this._scanLocalStorage(addImage);
 
-        return Array.from(items.values()).sort((a, b) => b.order - a.order);
+        return Array.from(items.values())
+            .sort((a, b) => {
+                const createdDiff = Number(b.createdAt || 0) - Number(a.createdAt || 0);
+                return createdDiff || (a.order - b.order);
+            })
+            .map(image => ({
+                ...image,
+                sourceKey: this.getImageSourceKey(image)
+            }));
+    }
+
+    getSourceCatalog() {
+        return ALBUM_SOURCE_CATALOG.map(source => ({ ...source }));
+    }
+
+    getSourceDefinition(sourceKey = 'other') {
+        return this.getSourceCatalog().find(source => source.key === sourceKey)
+            || this.getSourceCatalog().find(source => source.key === 'other');
+    }
+
+    getImageSourceKey(image = {}) {
+        const path = String(image?.path || image?.src || '').toLowerCase();
+        if (/\/phone_(?:[^/]*_)?emoji(?:_|\.)/i.test(path)) return 'wechat-custom';
+        if (/\/phone_wechat_(?:img|sticker)(?:_|\.)/i.test(path)) return 'wechat-chat';
+
+        const sourceKeys = new Set();
+        const sources = Array.isArray(image?.sources) ? image.sources : [];
+        for (const source of sources) {
+            const value = String(source || '').trim().toLowerCase();
+            if (!value) continue;
+            if (/微信自定义表情|自定义表情|表情包|custom.?emoji/.test(value)) sourceKeys.add('wechat-custom');
+            else if (/微信聊天|微信消息|^微信$|wechat/.test(value)) sourceKeys.add('wechat-chat');
+            else if (/蜜语|honey/.test(value)) sourceKeys.add('honey');
+            else if (/日记|diary/.test(value)) sourceKeys.add('diary');
+            else if (/微博|weibo/.test(value)) sourceKeys.add('weibo');
+            else if (/万象|wangxiang/.test(value)) sourceKeys.add('wangxiang');
+            else if (/魔坊|mofo/.test(value)) sourceKeys.add('mofo');
+            else if (/壁纸|wallpaper/.test(value)) sourceKeys.add('wallpaper');
+            else if (/头像|avatar/.test(value)) sourceKeys.add('avatar');
+            else if (/app\s*图标|app.?icon/.test(value)) sourceKeys.add('app-icon');
+            else if (/本地上传|本地备份|全局设置|聊天数据|小手机/.test(value)) sourceKeys.add('local-upload');
+        }
+        const priority = [
+            'wechat-custom', 'honey', 'wechat-chat', 'diary', 'weibo', 'wangxiang',
+            'mofo', 'wallpaper', 'avatar', 'app-icon', 'local-upload'
+        ];
+        return priority.find(key => sourceKeys.has(key)) || 'other';
+    }
+
+    getImageSourceLabel(image = {}) {
+        return this.getSourceDefinition(image?.sourceKey || this.getImageSourceKey(image))?.label || '其他图片';
+    }
+
+    groupImagesBySource(images = []) {
+        const groups = new Map(this.getSourceCatalog().map(source => [source.key, { ...source, images: [] }]));
+        (Array.isArray(images) ? images : []).forEach(image => {
+            const sourceKey = image?.sourceKey || this.getImageSourceKey(image);
+            const group = groups.get(sourceKey) || groups.get('other');
+            group.images.push(image);
+        });
+        return Array.from(groups.values()).filter(group => group.images.length > 0);
     }
 
     async deleteImage(pathLike) {
@@ -200,25 +281,40 @@ export class AlbumData {
             if (!Array.isArray(list)) return;
             list.forEach(item => {
                 const path = typeof item === 'string' ? item : item?.path;
-                addImage(path, this._labelFromUploadPrefix(item?.prefix));
+                addImage(path, this._labelFromUploadPrefix(item?.prefix), {
+                    createdAt: Number(item?.createdAt || 0)
+                });
             });
         } catch (e) { }
     }
 
     _scanRuntimeData(addImage) {
         const phone = window.VirtualPhone || {};
-        this._scanValue(phone.wechatApp?.wechatData?.data, '微信', addImage);
+        const wechatData = phone.wechatApp?.wechatData?.data;
+        this._scanValue(wechatData?.customEmojis, '微信自定义表情', addImage);
+        this._scanValue(wechatData?.userInfo, '头像', addImage);
+        this._scanValue(wechatData?.contacts, '头像', addImage);
+        this._scanValue(wechatData?.chats, '微信聊天', addImage);
+        this._scanValue(wechatData?.moments, '微信聊天', addImage);
         try {
-            const chats = phone.wechatApp?.wechatData?.data?.chats || [];
+            const chats = wechatData?.chats || [];
             chats.forEach(chat => {
                 const messages = phone.wechatApp.wechatData.getMessages?.(chat.id);
-                this._scanValue(messages, `微信消息:${chat.name || chat.id}`, addImage);
+                this._scanValue(messages, `微信聊天:${chat.name || chat.id}`, addImage);
             });
         } catch (e) { }
         this._scanValue(phone.weiboApp?.weiboData, '微博', addImage);
         this._scanValue(phone.honeyApp?.honeyData, '蜜语', addImage);
         this._scanValue(phone.diaryApp?.diaryData, '日记', addImage);
         this._scanValue(phone.mofoApp?.mofoData, '魔坊', addImage);
+        const wangxiangApp = phone.wangxiangApp;
+        this._scanValue({
+            marketplaceProducts: wangxiangApp?.marketplaceProducts,
+            marketplaceOrders: wangxiangApp?.marketplaceOrders,
+            inventoryItems: wangxiangApp?.inventoryItems,
+            generatedTasks: wangxiangApp?.generatedTasks,
+            managedTasks: wangxiangApp?.managedTasks
+        }, '万象', addImage);
     }
 
     _scanLocalStorage(addImage) {
@@ -254,11 +350,19 @@ export class AlbumData {
     }
 
     _labelFromKey(key, fallback) {
-        const value = String(key || '');
-        if (value.includes('wechat')) return '微信';
+        const value = String(key || '').toLowerCase();
+        if (['手机壁纸', '时间卡片背景', 'App图标', '头像', '微信自定义表情'].includes(fallback)) {
+            return fallback;
+        }
+        if (value.includes('customemoji') || value.includes('custom_emoji')) return '微信自定义表情';
+        if (value.includes('appicons') || value.includes('app_icons')) return 'App图标';
+        if (value.includes('avatar')) return '头像';
+        if (value.includes('wechat')) return '微信聊天';
         if (value.includes('weibo')) return '微博';
         if (value.includes('honey')) return '蜜语';
         if (value.includes('diary')) return '日记';
+        if (value.includes('wangxiang')) return '万象';
+        if (value.includes('mofo')) return '魔坊';
         if (value.includes('wallpaper')) return '手机壁纸';
         if (value.includes('card-time')) return '时间卡片背景';
         if (value.includes('phone_image_paths')) return '本地上传';
@@ -272,11 +376,14 @@ export class AlbumData {
         if (value.includes('card_time')) return '时间卡片背景';
         if (value.includes('icon_')) return 'App图标';
         if (value.includes('avatar')) return '头像';
-        if (value.includes('wechat')) return '微信';
+        if (value.includes('wechat_sticker') || value.includes('wechat_img')) return '微信聊天';
+        if (value.includes('emoji')) return '微信自定义表情';
+        if (value.includes('wechat')) return '微信聊天';
         if (value.includes('weibo')) return '微博';
         if (value.includes('honey')) return '蜜语';
         if (value.includes('diary')) return '日记';
-        if (value.includes('emoji')) return '表情包';
+        if (value.includes('wangxiang')) return '万象';
+        if (value.includes('mofo')) return '魔坊';
         return '本地上传';
     }
 

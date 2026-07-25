@@ -151,6 +151,30 @@ export class HoneyView {
         return /^\/backgrounds\/[^?#]+/i.test(String(value || '').trim());
     }
 
+    _isVideoBackgroundUrl(value) {
+        const safeUrl = String(value || '').trim();
+        return /^data:video\//i.test(safeUrl) || /\.(?:mp4|webm)(?:[?#]|$)/i.test(safeUrl);
+    }
+
+    _getHoneyThemeBackgroundMedia() {
+        const rawUrl = this.app?.honeyData?.getRecommendBgMedia?.();
+        const url = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+        return {
+            url,
+            isVideo: this._isVideoBackgroundUrl(url)
+        };
+    }
+
+    _buildHoneyThemeBackgroundHtml(media = null) {
+        const themeMedia = media || this._getHoneyThemeBackgroundMedia();
+        if (!themeMedia.url) return '';
+        const safeUrl = this._escapeHtml(themeMedia.url);
+        if (themeMedia.isVideo) {
+            return `<video src="${safeUrl}" class="honey-theme-background honey-bg-video" autoplay loop muted playsinline webkit-playsinline preload="metadata" aria-hidden="true"></video>`;
+        }
+        return `<img src="${safeUrl}" class="honey-theme-background honey-bg-image" alt="" aria-hidden="true">`;
+    }
+
     _collectUploadUrlCandidates(input, out = [], depth = 0) {
         if (input === null || input === undefined || depth > 2) return out;
         if (typeof input === 'string' || typeof input === 'number') {
@@ -248,34 +272,49 @@ export class HoneyView {
     }
 
     _loadCSS() {
-        const cssHref = this._getHoneyAssetUrl('honey.css?v=20260606-ticker-once');
-        const styleId = 'honey-css-inline';
+        const cssVersion = encodeURIComponent(String(window.VirtualPhone?.version || '1.4.2'));
+        const cssRevision = encodeURIComponent(String(window.VirtualPhone?.honeyAssetRevision || '20260726-settings-theme-background'));
+        const cssHref = this._getHoneyAssetUrl(`honey.css?v=${cssVersion}&r=${cssRevision}`);
         const linkId = 'honey-css-link';
         const existingLink = document.getElementById(linkId);
-        if (existingLink?.getAttribute('href') === cssHref) {
-            this.cssPromise = Promise.resolve();
+        if (existingLink?.href === cssHref) {
+            if (existingLink.dataset.loaded === 'true' || existingLink.dataset.settled === 'true' || existingLink.sheet) {
+                this.cssPromise = Promise.resolve();
+                return;
+            }
+            this.cssPromise = new Promise((resolve) => {
+                existingLink.addEventListener('load', () => {
+                    existingLink.dataset.loaded = 'true';
+                    existingLink.dataset.settled = 'true';
+                    resolve();
+                }, { once: true });
+                existingLink.addEventListener('error', () => {
+                    existingLink.dataset.settled = 'true';
+                    resolve();
+                }, { once: true });
+            });
             return;
         }
-        const existing = document.getElementById(styleId);
-        if (existing?.getAttribute('data-source') === cssHref) {
-            this.cssPromise = Promise.resolve();
-            return;
-        }
-
         existingLink?.remove();
+
         const linkEl = document.createElement('link');
         linkEl.id = linkId;
         linkEl.rel = 'stylesheet';
         linkEl.href = cssHref;
-        document.head.appendChild(linkEl);
 
         this.cssPromise = new Promise((resolve) => {
-            linkEl.addEventListener('load', resolve, { once: true });
+            linkEl.addEventListener('load', () => {
+                linkEl.dataset.loaded = 'true';
+                linkEl.dataset.settled = 'true';
+                resolve();
+            }, { once: true });
             linkEl.addEventListener('error', (err) => {
+                linkEl.dataset.settled = 'true';
                 console.error('❌ 蜜语CSS加载失败:', err);
                 resolve();
             }, { once: true });
         });
+        document.head.appendChild(linkEl);
     }
 
     render() {
@@ -442,21 +481,21 @@ export class HoneyView {
     }
 
     renderRecommendPage() {
-        const bgVideoUrlRaw = this.app.honeyData?.getRecommendBgVideo?.();
-        const bgVideoUrl = typeof bgVideoUrlRaw === 'string' ? bgVideoUrlRaw.trim() : '';
-        const hasBgVideo = !!bgVideoUrl;
-        const videoHtml = hasBgVideo
-            ? `<video id="honey-bg-video-el" src="${this._escapeHtml(bgVideoUrl)}" class="honey-bg-video" autoplay loop muted playsinline webkit-playsinline preload="metadata"></video>`
-            : '';
+        const themeMedia = this._getHoneyThemeBackgroundMedia();
+        const backgroundHtml = this._buildHoneyThemeBackgroundHtml(themeMedia);
+        const isBgVideo = themeMedia.isVideo;
         const listHtml = this.buildRecommendListHtml();
 
         const html = `
-            <div class="honey-app honey-page-recommend">
+            <div class="honey-app honey-page-recommend has-theme-background">
+                ${backgroundHtml}
                 <div class="honey-nav">
                     <button class="honey-back-btn" id="honey-back"><i class="fa-solid fa-chevron-left"></i></button>
-                    <div class="honey-nav-title">❤️</div>
+                    <div class="honey-nav-title honey-brand-title">
+                        <img class="honey-brand-logo" src="${this._escapeHtml(this._getHoneyAssetUrl('honey.png'))}" alt="蜜语">
+                    </div>
                     <div style="display: flex; gap: 8px; align-items: center;">
-                        ${hasBgVideo ? `<button class="honey-icon-btn" id="honey-bg-sound-btn" title="开启/关闭声音" style="font-size: 15px;"><i class="fa-solid fa-volume-xmark"></i></button>` : ''}
+                        ${isBgVideo ? `<button class="honey-icon-btn" id="honey-bg-sound-btn" title="开启/关闭声音" style="font-size: 15px;"><i class="fa-solid fa-volume-xmark"></i></button>` : ''}
                         <button class="honey-icon-btn" id="honey-recommend-search-btn" title="搜索推荐" aria-label="搜索推荐"><i class="fa-solid fa-magnifying-glass"></i></button>
                         <button class="honey-icon-btn" id="honey-settings-btn" title="蜜语设置"><i class="fa-solid fa-gear"></i></button>
                     </div>
@@ -469,9 +508,8 @@ export class HoneyView {
                     <div class="honey-tab" id="honey-tab-mine">私密</div>
                 </div>
 
-                <div class="honey-content ${hasBgVideo ? 'has-bg-video' : ''}">
-                    ${videoHtml}
-                    <div class="honey-recommend-wrap ${hasBgVideo ? 'has-bg-video' : ''}">
+                <div class="honey-content">
+                    <div class="honey-recommend-wrap">
                         <div class="honey-pull-refresh-indicator" id="honey-pull-refresh-indicator">
                             <div class="honey-pull-refresh-inner" id="honey-pull-refresh-inner"></div>
                         </div>
@@ -1410,7 +1448,8 @@ export class HoneyView {
             `;
 
         const html = `
-            <div class="honey-app honey-page-live is-scene-collapsed ${isUserLive ? 'is-user-live' : ''} ${this.isScenePanelOpen ? 'is-scene-modal-open' : ''}">
+            <div class="honey-app honey-page-live has-theme-background is-scene-collapsed ${isUserLive ? 'is-user-live' : ''} ${this.isScenePanelOpen ? 'is-scene-modal-open' : ''}">
+                ${this._buildHoneyThemeBackgroundHtml()}
                 <div class="honey-nav">
                     <button class="honey-back-btn" id="honey-back"><i class="fa-solid fa-chevron-left"></i></button>
                     <div class="honey-nav-title honey-meta-title honey-nav-title-live" id="honey-ui-title-top-wrap">
@@ -1434,6 +1473,12 @@ export class HoneyView {
                 </div>
 
                 <div class="honey-content">
+                    <div class="honey-nai-placeholder ${generatedImageUrl ? 'has-generated-image' : ''}" style="${liveVideoUrl ? 'background: #000;' : ''}">
+                        ${generatedImageHtml}
+                        ${liveVideoHtml}
+                        ${liveGlassHtml}
+                        ${imageStatusHtml}
+                    </div>
                     ${livePullRefreshHtml}
                     <div class="honey-live-room">
                         <div class="honey-meta-row">
@@ -1458,13 +1503,6 @@ export class HoneyView {
                                 </div>
                                 <div id="honey-ui-collab-wrap">${collabButtonHtml}</div>
                             </div>
-                        </div>
-
-                        <div class="honey-nai-placeholder ${generatedImageUrl ? 'has-generated-image' : ''}" style="${liveVideoUrl ? 'background: #000;' : ''}">
-                            ${generatedImageHtml}
-                            ${liveVideoHtml}
-                            ${liveGlassHtml}
-                            ${imageStatusHtml}
                         </div>
 
                         ${introHtml}
@@ -2547,10 +2585,13 @@ export class HoneyView {
             `;
 
         const html = `
-            <div class="honey-app honey-page-follow">
+            <div class="honey-app honey-page-follow has-theme-background">
+                ${this._buildHoneyThemeBackgroundHtml()}
                 <div class="honey-nav">
                     <button class="honey-back-btn" id="honey-back"><i class="fa-solid fa-chevron-left"></i></button>
-                    <div class="honey-nav-title">❤️</div>
+                    <div class="honey-nav-title honey-brand-title">
+                        <img class="honey-brand-logo" src="${this._escapeHtml(this._getHoneyAssetUrl('honey.png'))}" alt="蜜语">
+                    </div>
                     <button class="honey-icon-btn" id="honey-settings-btn" title="蜜语设置"><i class="fa-solid fa-gear"></i></button>
                 </div>
 
@@ -2631,7 +2672,8 @@ export class HoneyView {
         });
 
         const html = `
-            <div class="honey-app honey-page-history">
+            <div class="honey-app honey-page-history has-theme-background">
+                ${this._buildHoneyThemeBackgroundHtml()}
                 <!-- 顶部导航栏（严格复用原有类名，保证不被挤压） -->
                 <div class="honey-nav">
                     <button class="honey-back-btn" id="honey-back-from-history"><i class="fa-solid fa-chevron-left"></i></button>
@@ -2792,10 +2834,13 @@ export class HoneyView {
             : '<div class="honey-follow-empty-desc">还没有通过的好友，开播后陌生网友会向你发来申请。</div>';
 
         const html = `
-            <div class="honey-app honey-page-mine">
+            <div class="honey-app honey-page-mine has-theme-background">
+                ${this._buildHoneyThemeBackgroundHtml()}
                 <div class="honey-nav">
                     <button class="honey-back-btn" id="honey-back"><i class="fa-solid fa-chevron-left"></i></button>
-                    <div class="honey-nav-title">❤️</div>
+                    <div class="honey-nav-title honey-brand-title">
+                        <img class="honey-brand-logo" src="${this._escapeHtml(this._getHoneyAssetUrl('honey.png'))}" alt="蜜语">
+                    </div>
                     <button class="honey-icon-btn" id="honey-settings-btn" title="蜜语设置"><i class="fa-solid fa-gear"></i></button>
                 </div>
 
@@ -2870,25 +2915,29 @@ export class HoneyView {
         const promptConfig = this._getHoneyPromptConfig(promptManager);
         const overridePromptConfig = this._getHoneyOverridePromptConfig(promptManager);
         const userLivePromptConfig = this._getHoneyUserLivePromptConfig(promptManager);
-        const bgVideoUrl = this.app.honeyData?.getRecommendBgVideo?.() || '';
+        const themeMedia = this._getHoneyThemeBackgroundMedia();
+        const bgMediaUrl = themeMedia.url;
         const honeyNickname = this.app.honeyData?.getHoneyUserNickname?.() || '观众';
         const honeyCoinBalance = this.app.honeyData?.getHoneyCoinBalance?.() || 0;
         const walletInfo = this.app.honeyData?.getWechatWalletBalanceForRecharge?.() || { available: false, initialized: false, balance: 0 };
         const walletText = walletInfo.available
             ? (walletInfo.initialized ? `¥${this._formatMoneyDisplay(walletInfo.balance)}` : '未初始化')
             : '未加载微信';
-        const bgVideoStatus = bgVideoUrl
-            ? '背景已上传'
-            : '当前未设置动态背景。';
+        const bgMediaStatus = bgMediaUrl
+            ? `当前使用自定义${this._isVideoBackgroundUrl(bgMediaUrl) ? '视频' : '图片'}。`
+            : '当前使用默认主题背景。';
         const useHoneyWorldbook = window.VirtualPhone?.worldbookManager?.getEnabled?.('honey') ?? false;
         const honeyAutoImageRaw = this.app?.storage?.get?.('phone-image-honey-auto-generate');
         const useHoneyAutoImage = honeyAutoImageRaw === true || honeyAutoImageRaw === 'true';
 
         const html = `
-            <div class="honey-app honey-page-settings">
+            <div class="honey-app honey-page-settings has-theme-background">
+                ${this._buildHoneyThemeBackgroundHtml(themeMedia)}
                 <div class="honey-nav">
                     <button class="honey-back-btn" id="honey-back-from-settings"><i class="fa-solid fa-chevron-left"></i></button>
-                    <div class="honey-nav-title">❤️</div>
+                    <div class="honey-nav-title honey-brand-title">
+                        <img class="honey-brand-logo" src="${this._escapeHtml(this._getHoneyAssetUrl('honey.png'))}" alt="蜜语">
+                    </div>
                     <button class="honey-icon-btn" id="honey-settings-dummy" title="设置"><i class="fa-solid fa-gear"></i></button>
                 </div>
 
@@ -2914,15 +2963,15 @@ export class HoneyView {
                     </div>
 
                     <div class="honey-settings-card">
-                        <div class="honey-settings-card-title">动态背景 (推荐)</div>
-                        <div class="honey-settings-desc">上传短视频(MP4/WebM)作为推荐页动态壁纸，最大 20MB。</div>
-                        <div class="honey-settings-desc">${bgVideoStatus}</div>
-                        <input type="file" id="honey-bg-video-upload" accept="video/mp4,video/webm" style="display: none;">
+                        <div class="honey-settings-card-title">蜜语主题背景</div>
+                        <div class="honey-settings-desc">图片或短视频会用于蜜语所有页面；直播内容仍显示 AI 图片或直播视频。单文件最大 20MB。</div>
+                        <div class="honey-settings-desc">${bgMediaStatus}</div>
+                        <input type="file" id="honey-bg-media-upload" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm" style="display: none;">
                         <div class="honey-settings-actions">
-                            <label for="honey-bg-video-upload" class="honey-settings-btn honey-settings-btn-primary" style="display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                                <i class="fa-solid fa-video" style="margin-right: 6px;"></i> 上传视频
+                            <label for="honey-bg-media-upload" class="honey-settings-btn honey-settings-btn-primary" style="display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                                <i class="fa-solid fa-image" style="margin-right: 6px;"></i> 更换背景
                             </label>
-                            <button class="honey-settings-btn honey-settings-btn-muted" id="honey-delete-bg-video">恢复默认</button>
+                            <button class="honey-settings-btn honey-settings-btn-muted" id="honey-reset-bg-media">恢复默认</button>
                         </div>
                     </div>
 
@@ -3188,7 +3237,7 @@ export class HoneyView {
     bindRecommendEvents() {
         const root = document.querySelector('.phone-view-current .honey-page-recommend') || document.querySelector('.honey-page-recommend');
         if (!root) return;
-        const bgVideo = root.querySelector('#honey-bg-video-el');
+        const bgVideo = root.querySelector('.honey-theme-background.honey-bg-video');
         this._ensureRecommendVideoAutoplay(bgVideo);
         this._bindRecommendTopicEntries(root);
         this._bindRecommendPullRefresh();
@@ -4775,45 +4824,54 @@ export class HoneyView {
             notify: (title, message, icon) => this.app.phoneShell.showNotification(title, message, icon)
         });
 
-        const videoUploadInput = root.querySelector('#honey-bg-video-upload');
-        if (videoUploadInput) {
-            videoUploadInput.addEventListener('change', async (e) => {
+        const backgroundUploadInput = root.querySelector('#honey-bg-media-upload');
+        if (backgroundUploadInput) {
+            backgroundUploadInput.addEventListener('change', async (e) => {
                 const file = e?.target?.files?.[0];
                 if (!file) return;
                 e.target.value = '';
 
                 const mime = String(file.type || '').toLowerCase();
-                const ext = mime.includes('webm') ? 'webm' : (mime.includes('mp4') ? 'mp4' : '');
-                if (!ext) {
-                    this.app.phoneShell.showNotification('提示', '请选择 MP4 或 WebM 视频', '⚠️');
+                const isImage = mime.startsWith('image/');
+                const isVideo = mime === 'video/mp4' || mime === 'video/webm';
+                if (!isImage && !isVideo) {
+                    this.app.phoneShell.showNotification('提示', '请选择图片、MP4 或 WebM 视频', '⚠️');
                     return;
                 }
                 if (file.size > 20 * 1024 * 1024) {
-                    this.app.phoneShell.showNotification('提示', '视频大小不能超过 20MB', '⚠️');
+                    this.app.phoneShell.showNotification('提示', '背景文件不能超过 20MB', '⚠️');
                     return;
                 }
 
-                this.app.phoneShell.showNotification('处理中', '正在上传动态背景...', '⏳');
+                this.app.phoneShell.showNotification('处理中', '正在上传主题背景...', '⏳');
 
                 try {
-                    const finalUrl = await window.VirtualPhone?.imageManager?.uploadBlob?.(file, 'honey_bg');
+                    const oldUrl = this.app.honeyData?.getRecommendBgMedia?.() || '';
+                    const finalUrl = await window.VirtualPhone?.imageManager?.uploadBlob?.(file, 'honey_theme');
                     if (!finalUrl) throw new Error('图片上传管理器未初始化');
 
-                    this.app.honeyData?.saveRecommendBgVideo?.(finalUrl);
-                    this.app.phoneShell.showNotification('成功', '动态背景已更新', '✅');
+                    this.app.honeyData?.saveRecommendBgMedia?.(finalUrl);
+                    if (oldUrl && oldUrl !== finalUrl && this._isManagedBackgroundUrl(oldUrl)) {
+                        window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldUrl, { quiet: true, skipIfReferenced: true });
+                    }
+                    this.app.phoneShell.showNotification('成功', '主题背景已更新', '✅');
                     this.render();
                 } catch (err) {
-                    console.error('蜜语背景视频上传失败:', err);
+                    console.error('蜜语主题背景上传失败:', err);
                     const detail = String(err?.message || '').trim();
-                    const message = detail ? `视频上传失败：${detail}` : '视频上传失败，请稍后重试';
+                    const message = detail ? `背景上传失败：${detail}` : '背景上传失败，请稍后重试';
                     this.app.phoneShell.showNotification('错误', message, '❌');
                 }
             });
         }
 
-        root.querySelector('#honey-delete-bg-video')?.addEventListener('click', () => {
-            this.app.honeyData?.saveRecommendBgVideo?.(null);
-            this.app.phoneShell.showNotification('已恢复', '动态背景已清除', '✅');
+        root.querySelector('#honey-reset-bg-media')?.addEventListener('click', () => {
+            const oldUrl = this.app.honeyData?.getRecommendBgMedia?.() || '';
+            this.app.honeyData?.saveRecommendBgMedia?.(null);
+            if (oldUrl && this._isManagedBackgroundUrl(oldUrl)) {
+                window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldUrl, { quiet: true, skipIfReferenced: true });
+            }
+            this.app.phoneShell.showNotification('已恢复', '已恢复默认主题背景', '✅');
             this.render();
         });
 
@@ -5091,7 +5149,7 @@ export class HoneyView {
     _silenceRecommendSpeaker() {
         const recommendRoots = document.querySelectorAll('.honey-page-recommend');
         recommendRoots.forEach(root => {
-            const bgVideo = root.querySelector('#honey-bg-video-el');
+            const bgVideo = root.querySelector('.honey-theme-background.honey-bg-video');
             if (bgVideo) {
                 bgVideo.muted = true;
             }
@@ -8645,7 +8703,7 @@ export class HoneyView {
     }
 
     _pauseHoneyVideos() {
-        document.querySelectorAll('.honey-page-live #honey-live-video-el, .honey-page-recommend #honey-bg-video-el').forEach(video => {
+        document.querySelectorAll('.honey-page-live #honey-live-video-el, .honey-theme-background.honey-bg-video').forEach(video => {
             video.pause?.();
         });
     }

@@ -6824,7 +6824,7 @@ renderChatRoom(chat) {
         return matches;
     }
 
-    _applyWechatPaymentAction(chatId, action = {}, actorName = '') {
+    _applyWechatPaymentAction(chatId, action = {}, actorName = '', timelineSource = {}) {
         const safeChatId = String(chatId || '').trim();
         if (!safeChatId || !action || action.type !== 'payment_action') return null;
 
@@ -6857,7 +6857,25 @@ renderChatRoom(chat) {
         });
 
         if (isRefund && Number.isFinite(amount) && amount > 0) {
-            this.app.wechatData.updateWalletBalance(amount, safeChatId);
+            const paymentLabel = targetType === 'redpacket' ? '红包' : '转账';
+            this.app.wechatData.updateWalletBalance(amount, null, {
+                type: targetType,
+                title: `${paymentLabel}退款-${String(actorName || this.app.currentChat?.name || '微信好友')}`,
+                detail: `原${paymentLabel}已退回零钱`,
+                source: 'wechat',
+                chatId: safeChatId,
+                counterparty: String(actorName || ''),
+                messageId: String(target.id || ''),
+                referenceId: `wechat:${targetType}:refund:${target.id}`,
+                date: timelineSource?.date,
+                time: timelineSource?.time,
+                weekday: timelineSource?.weekday,
+                timestamp: timelineSource?.timestamp,
+                realTimestamp: timelineSource?.realTimestamp,
+                fromMainChatTag: timelineSource?.fromMainChatTag === true,
+                tavernMessageIndex: timelineSource?.tavernMessageIndex,
+                batchId: timelineSource?.batchId
+            });
         }
 
         if (updated) {
@@ -10039,7 +10057,7 @@ renderChatRoom(chat) {
                         );
                     }
                     if (special?.type === 'payment_action') {
-                        this._applyWechatPaymentAction(bgChat.id, special, m.sender);
+                        this._applyWechatPaymentAction(bgChat.id, special, m.sender, m);
                         continue;
                     }
                     if (special?.type === 'catbox_coadopt_response') {
@@ -10183,7 +10201,7 @@ renderChatRoom(chat) {
                     );
                 }
                 if (special?.type === 'payment_action') {
-                    this._applyWechatPaymentAction(savedChatId, special, msg.sender);
+                    this._applyWechatPaymentAction(savedChatId, special, msg.sender, msg);
                     if (isViewingThisChat) {
                         this.hideTypingStatus();
                         this._refreshVisibleChatMessages(savedChatId);
@@ -11639,12 +11657,27 @@ renderChatRoom(chat) {
                 this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${parseFloat(currentBalance).toFixed(2)} 啦`, '❌');
                 return;
             }
-            // 扣款
+            const transferAmount = parseFloat(amount);
+            const transferId = `transfer_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const transferTransaction = {
+                type: 'transfer',
+                title: `${this.app.currentChat?.type === 'group' ? '群聊转账' : '转账'}-${this.app.currentChat.name}`,
+                detail: desc,
+                source: 'wechat',
+                chatId: this.app.currentChat.id,
+                counterparty: this.app.currentChat.name,
+                messageId: transferId,
+                referenceId: `wechat:transfer:send:${transferId}`
+            };
+            // 扣款；未初始化零钱时仍保留流水，避免漏掉已发出的资金消息。
             if (currentBalance !== null) {
-                this.app.wechatData.updateWalletBalance(-parseFloat(amount));
+                this.app.wechatData.updateWalletBalance(-transferAmount, null, transferTransaction);
+            } else {
+                this.app.wechatData.recordWalletTransaction(-transferAmount, transferTransaction);
             }
 
             this.app.wechatData.addMessage(this.app.currentChat.id, {
+                id: transferId,
                 from: 'me',
                 type: 'transfer',
                 content: `[转账] ¥${amount} ${desc}`,
@@ -11930,7 +11963,7 @@ renderChatRoom(chat) {
 
         // 🔥 清空聊天记录按钮
         document.getElementById('clear-chat-btn')?.addEventListener('click', () => {
-            if (confirm('确定清空与「' + this.app.currentChat.name + '」的所有聊天记录？\n\n此操作不可恢复！')) {
+            if (confirm('确定清空与「' + this.app.currentChat.name + '」的所有聊天记录？\n\n相关零钱流水也会清除，此操作不可恢复！')) {
                 const chatId = this.app.currentChat.id;
 
                 // 🔥 改用底层封装好的 clearMessages 方法，它内置了清空时间缓存的逻辑
@@ -12930,7 +12963,7 @@ renderChatRoom(chat) {
                     <div style="background: #fff; border-radius: 12px; padding: 30px; text-align: center;">
                         <i class="fa-solid fa-trash" style="font-size: 48px; color: #ff3b30; margin-bottom: 20px;"></i>
                         <div style="font-size: 18px; font-weight: 600; color: #000; margin-bottom: 10px;">确定要删除这个聊天吗？</div>
-                        <div style="font-size: 14px; color: #999; margin-bottom: 30px;">删除后将清空所有聊天记录</div>
+                        <div style="font-size: 14px; color: #999; margin-bottom: 30px;">删除后将清空聊天记录与相关零钱流水</div>
                         
                         <button id="confirm-delete" style="
                             width: 100%;
@@ -15275,13 +15308,27 @@ ${callTranscript}`;
                 this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${parseFloat(currentBalance).toFixed(2)} 啦`, '❌');
                 return;
             }
-            // 扣款
+            const redpacketAmount = parseFloat(amount);
+            const redpacketId = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const redpacketTransaction = {
+                type: 'redpacket',
+                title: `${this.app.currentChat?.type === 'group' ? '群聊红包' : '红包支出'}-${this.app.currentChat.name}`,
+                detail: wish,
+                source: 'wechat',
+                chatId: this.app.currentChat.id,
+                counterparty: this.app.currentChat.name,
+                messageId: redpacketId,
+                referenceId: `wechat:redpacket:send:${redpacketId}`
+            };
+            // 扣款；未初始化零钱时仍保留流水，避免漏掉已发出的资金消息。
             if (currentBalance !== null) {
-                this.app.wechatData.updateWalletBalance(-parseFloat(amount));
+                this.app.wechatData.updateWalletBalance(-redpacketAmount, null, redpacketTransaction);
+            } else {
+                this.app.wechatData.recordWalletTransaction(-redpacketAmount, redpacketTransaction);
             }
 
             this.app.wechatData.addMessage(this.app.currentChat.id, {
-                id: `rp_${Date.now()}`,
+                id: redpacketId,
                 from: 'me',
                 type: 'redpacket',
                 content: `[红包] ¥${parseFloat(amount).toFixed(2)} ${wish}`,
@@ -15628,7 +15675,24 @@ ${callTranscript}`;
             isRefunded = resolvedStatus === 'refunded';
             // 收红包，加钱
             const rpAmount = parseFloat(message.amount) || 0;
-            this.app.wechatData.updateWalletBalance(rpAmount);
+            this.app.wechatData.updateWalletBalance(rpAmount, null, {
+                type: 'redpacket',
+                title: `红包收入-${String(message.from || this.app.currentChat?.name || '微信好友')}`,
+                detail: String(message.wish || '微信红包'),
+                source: 'wechat',
+                chatId,
+                counterparty: String(message.from || ''),
+                messageId,
+                referenceId: `wechat:redpacket:receive:${messageId}`,
+                date: message.date,
+                time: message.time,
+                weekday: message.weekday,
+                timestamp: message.timestamp,
+                realTimestamp: message.realTimestamp,
+                fromMainChatTag: message.fromMainChatTag === true,
+                tavernMessageIndex: message.tavernMessageIndex,
+                batchId: message.batchId
+            });
             this.app.phoneShell.showNotification('微信红包', `已存入零钱: ¥${rpAmount.toFixed(2)}`, '');
         }
 
@@ -15693,7 +15757,24 @@ ${callTranscript}`;
         if (!isMe && resolvedStatus !== 'received' && resolvedStatus !== 'refunded') {
             const updatedMessage = this.app.wechatData.updateMessageById(chatId, messageId, { status: 'received' });
             resolvedStatus = String(updatedMessage?.status || 'received').trim();
-            this.app.wechatData.updateWalletBalance(parseFloat(formattedAmount));
+            this.app.wechatData.updateWalletBalance(parseFloat(formattedAmount), null, {
+                type: 'transfer',
+                title: `转账收入-${String(message.from || this.app.currentChat?.name || '微信好友')}`,
+                detail: String(message.desc || '微信转账'),
+                source: 'wechat',
+                chatId,
+                counterparty: String(message.from || ''),
+                messageId,
+                referenceId: `wechat:transfer:receive:${messageId}`,
+                date: message.date,
+                time: message.time,
+                weekday: message.weekday,
+                timestamp: message.timestamp,
+                realTimestamp: message.realTimestamp,
+                fromMainChatTag: message.fromMainChatTag === true,
+                tavernMessageIndex: message.tavernMessageIndex,
+                batchId: message.batchId
+            });
             this.app.wechatData.addMessage(chatId, {
                 from: 'system',
                 type: 'system',

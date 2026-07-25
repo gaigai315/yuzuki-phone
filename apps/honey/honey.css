@@ -43,22 +43,55 @@
     position: relative;
 }
 
-/* 修复：拥有视频时清空父级渐变背景，使用纯黑打底 */
-.honey-page-recommend .honey-content.has-bg-video {
-    background: #050505 !important;
+/* 所有蜜语页面共用默认根背景，内容媒体仍由各页面自行覆盖 */
+#phone-panel-content .phone-screen .honey-app {
+    background: #080615 url('./honeyzt.png') center / cover no-repeat !important;
+    isolation: isolate;
 }
 
-/* 热门推荐动态视频背景 */
-.honey-bg-video {
+#phone-panel-content .phone-screen .honey-app .honey-nav {
+    background:
+        linear-gradient(180deg, rgba(54, 31, 50, 0.48), rgba(22, 13, 25, 0.3)) !important;
+    backdrop-filter: blur(9px) saturate(130%);
+    -webkit-backdrop-filter: blur(9px) saturate(130%);
+}
+
+#phone-panel-content .phone-screen .honey-app .honey-tabs {
+    position: relative;
+    z-index: 10;
+    background: rgba(18, 10, 21, 0.34) !important;
+    backdrop-filter: blur(7px) saturate(125%);
+    -webkit-backdrop-filter: blur(7px) saturate(125%);
+}
+
+#phone-panel-content .phone-screen .honey-app > .honey-content {
+    position: relative;
+    z-index: 1;
+}
+
+#phone-panel-content .phone-screen .honey-page-recommend .honey-content {
+    position: relative;
+    z-index: 1;
+    background: transparent !important;
+}
+
+#phone-panel-content .phone-screen .honey-app .honey-theme-background {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center;
     z-index: 0;
     pointer-events: none;
-    opacity: 0.85;
+}
+
+#phone-panel-content .phone-screen .honey-app .honey-bg-image {
+    display: block;
+}
+
+#phone-panel-content .phone-screen .honey-app .honey-bg-video {
+    opacity: 1;
     filter: saturate(110%);
 }
 
@@ -469,16 +502,24 @@
     }
 }
 
-/* 推荐/直播/关注/占位页共用毛玻璃底板 */
-.honey-page-recommend .honey-content,
-.honey-page-live .honey-content,
-.honey-page-mine .honey-content,
-.honey-page-follow .honey-content,
+/* 占位页保留独立底板；其余主题页直接透出统一背景 */
 .honey-page-placeholder .honey-content {
     background:
         radial-gradient(130% 90% at 12% -10%, rgba(255, 205, 224, 0.18), transparent 48%),
         radial-gradient(140% 100% at 100% 0%, rgba(163, 186, 219, 0.16), transparent 52%),
         linear-gradient(170deg, #1d161d 0%, #171217 46%, #120f14 100%);
+}
+
+#phone-panel-content .phone-screen .honey-page-follow .honey-content,
+#phone-panel-content .phone-screen .honey-page-mine .honey-content,
+#phone-panel-content .phone-screen .honey-page-live .honey-content {
+    background: transparent !important;
+}
+
+#phone-panel-content .phone-screen .honey-page-mine .honey-settings-card {
+    background: linear-gradient(150deg, rgba(38, 27, 38, 0.76), rgba(24, 16, 27, 0.68));
+    backdrop-filter: blur(7px) saturate(120%);
+    -webkit-backdrop-filter: blur(7px) saturate(120%);
 }
 
 /* 热门推荐列表（金属毛玻璃卡片） */
@@ -493,19 +534,8 @@
     position: relative;
     border-radius: 0;
     border: none;
-    background: linear-gradient(150deg, rgba(235, 229, 239, 0.08), rgba(39, 30, 41, 0.55));
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.12),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.28);
-    backdrop-filter: blur(12px) saturate(120%);
-    -webkit-backdrop-filter: blur(12px) saturate(120%);
-}
-
-.honey-page-recommend .honey-content.has-bg-video .honey-recommend-wrap {
     z-index: 1;
-    background: linear-gradient(150deg, rgba(20, 10, 15, 0.04), rgba(39, 30, 41, 0.22)) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    background: linear-gradient(150deg, rgba(20, 10, 15, 0.04), rgba(39, 30, 41, 0.22));
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.06),
         inset 0 -1px 0 rgba(0, 0, 0, 0.18);
@@ -516,12 +546,6 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 30%),
-        radial-gradient(110% 80% at 0% 0%, rgba(255, 255, 255, 0.12), transparent 65%);
-}
-
-.honey-page-recommend .honey-content.has-bg-video .honey-recommend-wrap::before {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 28%),
         radial-gradient(110% 80% at 0% 0%, rgba(255, 255, 255, 0.03), transparent 65%);
@@ -1695,7 +1719,7 @@
     transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-.honey-page-recommend .honey-content.has-bg-video .honey-hot-item {
+.honey-page-recommend .honey-hot-item {
     backdrop-filter: blur(2px) saturate(108%);
     -webkit-backdrop-filter: blur(2px) saturate(108%);
     background: linear-gradient(140deg, rgba(20, 16, 22, 0.28), rgba(44, 32, 48, 0.42));
@@ -2091,6 +2115,20 @@
     z-index: 1;
 }
 
+#phone-panel-content .phone-screen .honey-app .honey-nav-title.honey-brand-title {
+    width: 50px;
+    height: 26px;
+    padding: 0;
+}
+
+#phone-panel-content .phone-screen .honey-app .honey-brand-logo {
+    display: block;
+    width: 48px;
+    height: auto;
+    max-height: 26px;
+    object-fit: contain;
+}
+
 /* 直播页标题：强制几何居中 */
 .honey-nav .honey-nav-title.honey-nav-title-live {
     left: 50% !important;
@@ -2183,11 +2221,18 @@
     flex: 0 0 28%;
     min-height: 118px;
     position: relative;
-    background: #1a1217;
+    z-index: 1;
+    background: transparent;
     overflow: hidden;
     border: none;
     margin: 0;
     border-radius: 0;
+    pointer-events: none;
+}
+
+.honey-live-room .honey-meta-row,
+.honey-live-room .honey-live-gifts {
+    pointer-events: auto;
 }
 
 .honey-nai-placeholder {
@@ -2200,10 +2245,11 @@
     align-items: center;
     justify-content: center;
     flex-direction: column;
+    z-index: 0;
 }
 
 .honey-nai-placeholder:not(.has-generated-image) {
-    background: url('https://picsum.photos/800/1200?blur=10') center/cover;
+    background: transparent;
 }
 
 .honey-nai-placeholder.has-generated-image {
@@ -2830,7 +2876,7 @@
     position: relative;
     flex: 1;
     min-height: 0;
-    background: linear-gradient(180deg, rgba(45, 30, 40, 0.92), rgba(21, 14, 18, 0.97));
+    background: linear-gradient(180deg, rgba(28, 18, 26, 0.08), rgba(16, 10, 15, 0.32));
     padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
     z-index: 20;
     display: flex;
@@ -2913,6 +2959,60 @@ body.phone-input-active .honey-page-live .honey-input-bar {
 .honey-scene-toggle-btn:active {
     background: rgba(255, 255, 255, 0.24);
     transform: scale(0.97);
+}
+
+/* 直播画面明暗变化较大，底部工具按钮需要稳定的高对比底板 */
+#phone-panel-content .phone-screen .honey-page-live .honey-unlock-btn,
+#phone-panel-content .phone-screen .honey-page-live .honey-refresh-btn,
+#phone-panel-content .phone-screen .honey-page-live .honey-scene-toggle-btn,
+#phone-panel-content .phone-screen .honey-page-live .honey-gift-btn {
+    flex: 0 0 28px;
+    width: 28px !important;
+    min-width: 28px;
+    height: 28px !important;
+    padding: 0 !important;
+    background: rgba(18, 10, 18, 0.86) !important;
+    border: 1px solid rgba(255, 230, 242, 0.78) !important;
+    color: #fff7fb !important;
+    box-shadow:
+        0 3px 10px rgba(0, 0, 0, 0.58),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(6px) saturate(125%);
+    -webkit-backdrop-filter: blur(6px) saturate(125%);
+}
+
+#phone-panel-content .phone-screen .honey-page-live .honey-unlock-btn i,
+#phone-panel-content .phone-screen .honey-page-live .honey-refresh-btn i,
+#phone-panel-content .phone-screen .honey-page-live .honey-scene-toggle-btn i,
+#phone-panel-content .phone-screen .honey-page-live .honey-gift-btn i {
+    width: 12px;
+    height: 12px;
+    color: #fff7fb !important;
+    font-size: 12px !important;
+    line-height: 12px !important;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.72));
+}
+
+#phone-panel-content .phone-screen .honey-page-live .honey-unlock-btn:active,
+#phone-panel-content .phone-screen .honey-page-live .honey-refresh-btn:active,
+#phone-panel-content .phone-screen .honey-page-live .honey-scene-toggle-btn:active,
+#phone-panel-content .phone-screen .honey-page-live .honey-gift-btn:active,
+#phone-panel-content .phone-screen .honey-page-live.is-scene-modal-open .honey-scene-toggle-btn,
+#phone-panel-content .phone-screen .honey-page-live.is-gift-picker-open .honey-gift-btn {
+    background: rgba(212, 67, 126, 0.94) !important;
+    border-color: rgba(255, 244, 249, 0.96) !important;
+}
+
+#phone-panel-content .phone-screen .honey-page-live .honey-unlock-btn:focus-visible,
+#phone-panel-content .phone-screen .honey-page-live .honey-refresh-btn:focus-visible,
+#phone-panel-content .phone-screen .honey-page-live .honey-scene-toggle-btn:focus-visible,
+#phone-panel-content .phone-screen .honey-page-live .honey-gift-btn:focus-visible {
+    outline: 2px solid rgba(255, 128, 181, 0.94);
+    outline-offset: 2px;
+}
+
+#phone-panel-content .phone-screen .honey-page-live .honey-unlock-btn:disabled {
+    opacity: 0.82;
 }
 
 .honey-refresh-btn.is-loading i {
@@ -3810,6 +3910,18 @@ body.phone-input-active .honey-page-live .honey-input-bar {
     border-radius: 0;
     padding: 12px;
     box-shadow: none;
+}
+
+#phone-panel-content .phone-screen .honey-page-settings > .honey-content {
+    background: transparent !important;
+}
+
+#phone-panel-content .phone-screen .honey-page-settings .honey-settings-card {
+    background: linear-gradient(150deg, rgba(38, 27, 38, 0.76), rgba(22, 14, 25, 0.68)) !important;
+    border-top-color: rgba(255, 205, 229, 0.2);
+    border-bottom-color: rgba(255, 205, 229, 0.18);
+    backdrop-filter: blur(7px) saturate(120%);
+    -webkit-backdrop-filter: blur(7px) saturate(120%);
 }
 
 .honey-settings-card-title {

@@ -17,11 +17,14 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.1';
+const ST_PHONE_VERSION = '1.4.2';
 const ST_PHONE_CSS_REVISION = '20260708-glass-fix';
+const ST_PHONE_HONEY_ASSET_REVISION = '20260726-settings-theme-background';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
-const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`, import.meta.url).href;
-const ST_PHONE_HONEY_CSS_URL = new URL(`./apps/honey/honey.css?v=${ST_PHONE_VERSION}`, import.meta.url).href;
+const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
+const ST_PHONE_HONEY_CSS_URL = new URL(`./apps/honey/honey.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
+const ST_PHONE_HONEY_LOGO_URL = new URL('./apps/honey/honey.png', import.meta.url).href;
+const ST_PHONE_HONEY_THEME_URL = new URL('./apps/honey/honeyzt.png', import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
 const ST_PHONE_GAMES_CSS_URL = new URL('./apps/games/poker/poker.css?v=1.0.2', import.meta.url).href;
 const ST_PHONE_UPDATE_MANIFEST_URLS = [
@@ -46,10 +49,11 @@ const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-23',
+    date: '2026-07-26',
     items: [
-        '【优化】世界书支持按条目勾选启用，各 App 独立保存所选条目。',
-        '【优化】微博清理支持选择仅清理内容或全部清理。'
+        '【新增】微信零钱明细，微信转账、红包及蜜语、万象、猫箱等 App 的零钱收支都会自动记录，并随聊天清理或零钱重置同步清除。',
+        '【优化】相册 App 按来源分组展示，查找和管理各 App 图片更方便。',
+        '【优化】蜜语 App 背景图显示。'
     ]
 };
 
@@ -104,6 +108,7 @@ if (window.GGP_Loaded) {
     let _wechatMessageSoundLastAt = 0;
     let _honeyModulePromise = null;
     let _honeyCssPromise = null;
+    let _honeyThemePromise = null;
     let _gamesModulePromise = null;
     let _gamesCssPromise = null;
     let _pendingWechatOnlineToOfflineHint = null;
@@ -152,8 +157,8 @@ if (window.GGP_Loaded) {
         if (_honeyCssPromise) return _honeyCssPromise;
         _honeyCssPromise = new Promise(resolve => {
             const existing = document.getElementById('honey-css-link') || document.querySelector('link[href*="/apps/honey/honey.css"]');
-            if (existing) {
-                if (existing.dataset.loaded === 'true' || existing.sheet) resolve();
+            if (existing?.href === ST_PHONE_HONEY_CSS_URL) {
+                if (existing.dataset.loaded === 'true' || existing.dataset.settled === 'true' || existing.sheet) resolve();
                 else {
                     existing.addEventListener('load', resolve, { once: true });
                     existing.addEventListener('error', resolve, { once: true });
@@ -167,9 +172,13 @@ if (window.GGP_Loaded) {
             link.href = ST_PHONE_HONEY_CSS_URL;
             link.addEventListener('load', () => {
                 link.dataset.loaded = 'true';
+                link.dataset.settled = 'true';
                 resolve();
             }, { once: true });
-            link.addEventListener('error', resolve, { once: true });
+            link.addEventListener('error', () => {
+                link.dataset.settled = 'true';
+                resolve();
+            }, { once: true });
             document.head.appendChild(link);
         });
         return _honeyCssPromise;
@@ -185,6 +194,43 @@ if (window.GGP_Loaded) {
         return _honeyModulePromise;
     }
 
+    function ensureHoneyThemePreloaded() {
+        const storedBackground = storage?.get?.('global_honey_bg_video');
+        const customBackground = typeof storedBackground === 'string' ? storedBackground.trim() : '';
+        if (customBackground) return Promise.resolve();
+        if (_honeyThemePromise) return _honeyThemePromise;
+
+        _honeyThemePromise = new Promise(resolve => {
+            const existing = document.getElementById('honey-theme-preload');
+            if (existing) {
+                if (existing.dataset.settled === 'true') resolve();
+                else {
+                    existing.addEventListener('load', resolve, { once: true });
+                    existing.addEventListener('error', resolve, { once: true });
+                }
+                return;
+            }
+            existing?.remove();
+
+            const link = document.createElement('link');
+            link.id = 'honey-theme-preload';
+            link.rel = 'preload';
+            link.as = 'image';
+            link.href = ST_PHONE_HONEY_THEME_URL;
+            link.fetchPriority = 'high';
+            link.addEventListener('load', () => {
+                link.dataset.settled = 'true';
+                resolve();
+            }, { once: true });
+            link.addEventListener('error', () => {
+                link.dataset.settled = 'true';
+                resolve();
+            }, { once: true });
+            document.head.appendChild(link);
+        });
+        return _honeyThemePromise;
+    }
+
     function preloadHoneyAppAssets() {
         try {
             if (!document.getElementById('honey-module-preload')) {
@@ -194,6 +240,15 @@ if (window.GGP_Loaded) {
                 link.href = ST_PHONE_HONEY_MODULE_URL;
                 document.head.appendChild(link);
             }
+            if (!document.getElementById('honey-logo-preload')) {
+                const link = document.createElement('link');
+                link.id = 'honey-logo-preload';
+                link.rel = 'preload';
+                link.as = 'image';
+                link.href = ST_PHONE_HONEY_LOGO_URL;
+                document.head.appendChild(link);
+            }
+            ensureHoneyThemePreloaded();
             ensureHoneyCSSPreloaded();
             loadHoneyModule().catch(error => console.warn('⚠️ 蜜语模块预加载失败，点击时将重试:', error));
         } catch (error) {
@@ -1617,7 +1672,7 @@ if (window.GGP_Loaded) {
             window.VirtualPhone.honeyApp.attachRuntime?.(phoneShell, storage);
             return window.VirtualPhone.honeyApp;
         }
-        const module = await import(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}-nai-debug`);
+        const module = await import(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`);
         if (!window.VirtualPhone) window.VirtualPhone = {};
         if (!window.VirtualPhone.honeyApp) {
             window.VirtualPhone.honeyApp = new module.HoneyApp(phoneShell, storage);
@@ -8143,6 +8198,7 @@ if (window.GGP_Loaded) {
                 settings: settings,
                 extensionBaseUrl: ST_PHONE_BASE_URL,
                 version: ST_PHONE_VERSION,
+                honeyAssetRevision: ST_PHONE_HONEY_ASSET_REVISION,
                 updateInfo: ST_PHONE_CURRENT_UPDATE,
                 apiManager: new ApiManager(storage),
                 promptManager: null,
@@ -8531,12 +8587,13 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '微博模块加载失败', '❌');
                         });
                 } else if (appId === 'honey') {
-                    ensureHoneyCSSPreloaded();
+                    const honeyCssReady = ensureHoneyCSSPreloaded();
+                    const honeyThemeReady = ensureHoneyThemePreloaded();
                     if (!window.VirtualPhone.honeyApp) {
                         showHoneyLoadingView();
                     }
-                    loadHoneyModule()
-                        .then(module => {
+                    Promise.all([honeyCssReady, honeyThemeReady, loadHoneyModule()])
+                        .then(([, , module]) => {
                             try {
                                 if (!window.VirtualPhone.honeyApp) {
                                     window.VirtualPhone.honeyApp = new module.HoneyApp(phoneShell, storage);
