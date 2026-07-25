@@ -2173,7 +2173,6 @@ export class HoneyView {
             });
 
             const result = await apiManager.callAI(messages, {
-                max_tokens: 500,
                 preserve_roles: false,
                 appId: 'honey'
             });

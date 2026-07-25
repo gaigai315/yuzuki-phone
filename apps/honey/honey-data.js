@@ -223,18 +223,25 @@ export class HoneyData {
 
         const candidates = [];
         const push = (value) => {
-            let cleaned = String(value || '')
-                .replace(/^\s*[\[【（(]+/, '')
-                .replace(/[\]】）)]+\s*$/, '')
+            const unwrapSquareBrackets = (text) => {
+                const safeText = String(text || '').trim();
+                if ((safeText.startsWith('[') && safeText.endsWith(']'))
+                    || (safeText.startsWith('【') && safeText.endsWith('】'))) {
+                    return safeText.slice(1, -1).trim();
+                }
+                return safeText;
+            };
+            let cleaned = unwrapSquareBrackets(value)
                 .replace(/^\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)?\s*[:：]?\s*/i, '')
                 .replace(/^\s*[\[【]?\s*画面\s*[\]】]?\s*[:：]\s*/i, '')
                 .trim();
+            cleaned = unwrapSquareBrackets(cleaned);
             cleaned = cleaned
                 .replace(/\s*(?:供前端调用|其他推荐内容|好友申请|联播|榜单|打赏记录|直播剧情描写|评论区)[\s\S]*$/i, '')
                 .replace(/\s+/g, ' ')
                 .trim();
             if (!cleaned || /^(?:无|暂无|等待|生成中|N\/A|null|undefined)$/i.test(cleaned)) return;
-            candidates.push(cleaned.slice(0, 1200));
+            candidates.push(cleaned);
         };
 
         const directScreenTagPattern = /(?:^|\n)\s*[\[【]\s*画面\s*[\]】]\s*[:：]\s*[\[【]\s*([^\]】\n]+?)\s*[\]】]\s*(?=$|\n)/ig;
@@ -3224,11 +3231,12 @@ export class HoneyData {
         const next = this._stripInlineGeneratedImagesFromScene(this._deepCloneSceneData(scene));
         const keepArray = (value, max, itemMax = 180, options = {}) => (Array.isArray(value) ? value : [])
             .map(item => {
-                if (typeof item === 'string') return options.preserveLength ? String(item || '').trim() : this._trimText(item, itemMax);
+                const preserveItemLength = options.preserveLength === true || options.preserveItemLength === true;
+                if (typeof item === 'string') return preserveItemLength ? String(item || '').trim() : this._trimText(item, itemMax);
                 if (item && typeof item === 'object') {
                     const compact = {};
                     Object.entries(item).forEach(([key, val]) => {
-                        if (typeof val === 'string') compact[key] = options.preserveLength ? String(val || '').trim() : this._trimText(val, itemMax);
+                        if (typeof val === 'string') compact[key] = preserveItemLength ? String(val || '').trim() : this._trimText(val, itemMax);
                         else if (typeof val === 'number' || typeof val === 'boolean') compact[key] = val;
                     });
                     return compact;
@@ -3237,13 +3245,14 @@ export class HoneyData {
             })
             .filter(item => typeof item === 'string' ? !!item : Object.keys(item || {}).length > 0)
             .slice(options.preserveLength ? 0 : -Math.max(0, Number(max) || 0));
+        const keepFullTextArray = (value, max) => keepArray(value, max, undefined, { preserveItemLength: true });
 
         next.title = this._trimText(next.title, 80);
         next.host = this._trimText(next.host, 50);
         next.intro = this._trimText(next.intro, full ? 220 : 140);
         next.description = preservePromptTurnLength ? String(next.description || '').trim() : this._trimText(next.description, full ? 1200 : 520);
-        next.naiPrompt = this._trimText(next.naiPrompt, 900);
-        next.imageGenerationPrompt = this._trimText(next.imageGenerationPrompt, 900);
+        next.naiPrompt = String(next.naiPrompt || '').trim();
+        next.imageGenerationPrompt = String(next.imageGenerationPrompt || '').trim();
         next.comments = keepArray(next.comments, full ? this.maxStoredComments : 12, 180, { preserveLength: preservePromptTurnLength });
         next.gifts = keepArray(next.gifts, full ? this.maxStoredGifts : 10, 160, { preserveLength: preservePromptTurnLength });
         next.userChats = keepArray(next.userChats, full ? 60 : 16, 180);
@@ -3255,7 +3264,7 @@ export class HoneyData {
                 responseContext: preservePromptTurnLength ? String(turn.responseContext || '').trim() : this._trimText(turn.responseContext, full ? 1600 : 520)
             }))
             .filter(turn => turn.userMessage || turn.assistantContext || turn.responseContext);
-        next.naiTagHistory = keepArray(next.naiTagHistory, 8, 500);
+        next.naiTagHistory = keepFullTextArray(next.naiTagHistory, 8);
         next.friendRequests = keepArray(next.friendRequests, 8, 160);
         next.collabRequests = keepArray(next.collabRequests, 8, 160);
         next.interactionRecords = keepArray(next.interactionRecords, 12, 180);
