@@ -17,7 +17,7 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.2';
+const ST_PHONE_VERSION = '1.4.3';
 const ST_PHONE_CSS_REVISION = '20260726-video-visibility';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -49,12 +49,9 @@ const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-26',
+    date: '2026-07-27',
     items: [
-        '【新增】蜜语支持使用 ComfyUI 生成视频；视频工作流的正向提示词请使用 %video_prompt% 占位符。',
-        '【新增】微信零钱明细，微信转账、红包及蜜语、万象、猫箱等 App 的零钱收支都会自动记录，并随聊天清理或零钱重置同步清除。',
-        '【优化】相册 App 按来源分组展示，查找和管理各 App 图片更方便。',
-        '【优化】蜜语 App 背景图显示。'
+        '【优化】优化音乐播放器显示，新增包含单曲循环的三态播放模式，并支持单独调节音乐音量。'
     ]
 };
 

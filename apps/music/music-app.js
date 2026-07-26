@@ -131,6 +131,7 @@ export class MusicApp {
         // 2. 更新存储引用
         this.storage = newStorage;
         this.musicData.storage = newStorage;
+        this.musicData.syncVolume();
 
         // 3. 销毁旧悬浮窗
         this.view.destroyFloatingWidget();

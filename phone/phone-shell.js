@@ -469,18 +469,35 @@ export class PhoneShell {
         let isPointerDown = false;
         let pointerSlideTarget = null;
 
+        const clearPointerSwipeState = () => {
+            isPointerDown = false;
+            this.isSwiping = false;
+            this.swipeAction = null;
+            pointerSlideTarget = null;
+            activeSwipePointerId = null;
+        };
+        const cancelPointerSwipe = ({ animate = true } = {}) => {
+            if (pointerSlideTarget) {
+                this._resetSwipeLayer(pointerSlideTarget, {
+                    animate,
+                    resetOpacity: this.swipeAction === 'close'
+                });
+            }
+            clearPointerSwipeState();
+        };
+
         phoneBody.addEventListener('pointerdown', (e) => {
             if (e.pointerType && e.pointerType !== 'mouse') return;
             if (e.button !== undefined && e.button !== 0) return;
+            if (isPointerDown || pointerSlideTarget) {
+                cancelPointerSwipe({ animate: false });
+            }
             if (!e.target?.closest?.('.phone-screen')) {
-                isPointerDown = false;
-                pointerSlideTarget = null;
                 return;
             }
 
             const pointerEditableHost = resolveEditableHost(e.target);
             if (isTextEditableElement(pointerEditableHost) || resolveGestureControlHost(e.target) || resolveInteractiveHost(e.target)) {
-                isPointerDown = false;
                 return;
             }
 
@@ -496,12 +513,12 @@ export class PhoneShell {
 
         document.addEventListener('pointermove', (e) => {
             if (!isPointerDown || activeSwipePointerId !== e.pointerId) return;
+            if (e.pointerType === 'mouse' && e.buttons === 0) {
+                cancelPointerSwipe();
+                return;
+            }
             if (document.getElementById('phone-panel')?.classList?.contains('phone-panel-desktop-dragging')) {
-                isPointerDown = false;
-                this.isSwiping = false;
-                this.swipeAction = null;
-                pointerSlideTarget = null;
-                activeSwipePointerId = null;
+                cancelPointerSwipe();
                 return;
             }
             const deltaX = e.clientX - pointerStartX;
@@ -526,11 +543,7 @@ export class PhoneShell {
                 : (isHome ? phoneWidth / 3 : phoneWidth / 2);
 
             if (hasActiveSelection()) {
-                isPointerDown = false;
-                this.isSwiping = false;
-                this.swipeAction = null;
-                pointerSlideTarget = null;
-                activeSwipePointerId = null;
+                cancelPointerSwipe();
                 return;
             }
 
@@ -598,23 +611,15 @@ export class PhoneShell {
                 this._resetSwipeLayer(target, { animate: true, resetOpacity: action === 'close' });
             }
 
-            this.isSwiping = false;
-            this.swipeAction = null;
-            pointerSlideTarget = null;
-            activeSwipePointerId = null;
-        });
+            clearPointerSwipeState();
+        }, true);
 
         document.addEventListener('pointercancel', (e) => {
             if (!isPointerDown || activeSwipePointerId !== e.pointerId) return;
-            if (pointerSlideTarget) {
-                this._resetSwipeLayer(pointerSlideTarget, { animate: true, resetOpacity: this.swipeAction === 'close' });
-            }
-            isPointerDown = false;
-            this.isSwiping = false;
-            this.swipeAction = null;
-            pointerSlideTarget = null;
-            activeSwipePointerId = null;
-        });
+            cancelPointerSwipe();
+        }, true);
+
+        window.addEventListener('blur', () => cancelPointerSwipe());
     }
 
     _resetSwipeLayer(target, { animate = false, resetOpacity = true } = {}) {

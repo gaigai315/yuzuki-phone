@@ -19,6 +19,14 @@ const SVG_PAUSE = `<svg viewBox="0 0 24 24" width="22" height="22" fill="current
 const SVG_PREV = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>`;
 const SVG_NEXT = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>`;
 const MUSIC_NOTE_SVG = `<svg viewBox="0 0 24 24" width="22" height="22"><defs><linearGradient id="mfg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#a8d8ea"/><stop offset="100%" stop-color="#6db3d8"/></linearGradient></defs><path fill="url(#mfg)" d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>`;
+const renderVolumeIcon = (percent = 50) => {
+    const levelMark = percent <= 0
+        ? '<path d="m16 8 6 8m0-8-6 8"/>'
+        : percent < 50
+            ? '<path d="M15.5 7.5a6.5 6.5 0 0 1 0 9"/>'
+            : '<path d="M15.5 7.5a6.5 6.5 0 0 1 0 9"/><path d="M18.5 3.5a11.5 11.5 0 0 1 0 17"/>';
+    return `<svg class="music-volume-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3.5 6 8H2v8h4l5 4.5v-17Z"/>${levelMark}</svg>`;
+};
 const MUSIC_FLOATING_POSITION_KEY = 'global_music_floating_position';
 export class MusicView {
     constructor(musicApp) {
@@ -57,7 +65,7 @@ export class MusicView {
     // ========== CSS 注入 ==========
 
     _injectCSS() {
-        const cssHref = new URL('./music.css?v=1.0.4', import.meta.url).href;
+        const cssHref = new URL('./music.css?v=1.0.17', import.meta.url).href;
         let link = document.getElementById('music-app-style');
 
         if (link) {
@@ -559,6 +567,9 @@ export class MusicView {
     _openPanel() {
         if (this._floatingPanel) return;
         this._panelFace = 'front';
+        this._lyricsRenderKey = '';
+        this._lyricsActiveIndex = -1;
+        this._lyricsUserScrolling = false;
 
         const data = this.app.musicData;
         const card = data.getCardData();
@@ -603,8 +614,29 @@ export class MusicView {
                     <div class="song-name">${song ? this._escapeHtml(song.name) : '暂无播放'}</div>
                     <div class="song-artist">${song ? this._escapeHtml(song.artist) : '等待推荐中...'}</div>
                     <div class="music-lyrics-box" id="music-fp-lyrics"></div>
-                </div>
+                    </div>
                     <div class="progress-container">
+                        <div class="music-progress-side-actions">
+                            <div class="music-volume-control">
+                                <button type="button" class="music-volume-toggle" id="music-fp-volume-toggle"
+                                        title="音乐音量 50%" aria-label="调整音乐音量" aria-expanded="false">
+                                    ${renderVolumeIcon(50)}
+                                </button>
+                                <div class="music-volume-popover" id="music-fp-volume-popover" hidden>
+                                    <input type="range" class="music-volume-slider" id="music-fp-volume"
+                                           min="0" max="100" step="1" value="50" aria-label="音乐音量">
+                                    <output class="music-volume-value" id="music-fp-volume-value" for="music-fp-volume">50%</output>
+                                </div>
+                            </div>
+                            <button type="button" class="music-listen-share-btn" id="music-fp-share-listen" title="邀请微信好友一起听">
+                                <svg class="music-listen-share-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M8.6 10.8 15.4 7M8.6 13.2l6.8 3.8"/>
+                                    <circle cx="6" cy="12" r="2.4"/>
+                                    <circle cx="17.4" cy="5.9" r="2.4"/>
+                                    <circle cx="17.4" cy="18.1" r="2.4"/>
+                                </svg>
+                            </button>
+                        </div>
                         <div class="progress-bar" id="music-fp-progress">
                             <div class="progress-fill" id="music-fp-progress-bar"></div>
                         </div>
@@ -612,14 +644,6 @@ export class MusicView {
                             <span id="music-fp-time-current">0:00</span>
                             <span id="music-fp-time-total">0:00</span>
                         </div>
-                        <button type="button" class="music-listen-share-btn" id="music-fp-share-listen" title="邀请微信好友一起听">
-                            <svg class="music-listen-share-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M8.6 10.8 15.4 7M8.6 13.2l6.8 3.8"/>
-                                <circle cx="6" cy="12" r="2.4"/>
-                                <circle cx="17.4" cy="5.9" r="2.4"/>
-                                <circle cx="17.4" cy="18.1" r="2.4"/>
-                            </svg>
-                        </button>
                     </div>
                     <div class="controls-wrap">
                         <div class="controls controls-symmetric">
@@ -730,6 +754,63 @@ export class MusicView {
 
         const nextBtn = panel.querySelector('#music-fp-next');
         if (nextBtn) nextBtn.onclick = (e) => { e.stopPropagation(); data.next(); };
+
+        const volumeControl = panel.querySelector('.music-volume-control');
+        const volumeToggle = panel.querySelector('#music-fp-volume-toggle');
+        const volumePopover = panel.querySelector('#music-fp-volume-popover');
+        const volumeSlider = panel.querySelector('#music-fp-volume');
+        const closeVolumePopover = () => {
+            if (volumePopover) volumePopover.hidden = true;
+            if (volumeToggle) volumeToggle.setAttribute('aria-expanded', 'false');
+        };
+        if (volumeToggle && volumePopover) {
+            volumeToggle.onclick = (e) => {
+                e.stopPropagation();
+                const shouldOpen = volumePopover.hidden;
+                volumePopover.hidden = !shouldOpen;
+                volumeToggle.setAttribute('aria-expanded', String(shouldOpen));
+            };
+        }
+        if (volumeSlider) {
+            ['mousedown', 'touchstart', 'click'].forEach(eventName => {
+                volumeSlider.addEventListener(eventName, (e) => e.stopPropagation());
+            });
+            const setVolumeFromPointer = (e) => {
+                const rect = volumeSlider.getBoundingClientRect();
+                if (!rect.height) return;
+                const ratio = 1 - ((e.clientY - rect.top) / rect.height);
+                const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100);
+                volumeSlider.value = String(percent);
+                data.setVolume(percent / 100);
+            };
+            volumeSlider.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                volumeSlider.setPointerCapture?.(e.pointerId);
+                setVolumeFromPointer(e);
+            });
+            volumeSlider.addEventListener('pointermove', (e) => {
+                if (!volumeSlider.hasPointerCapture?.(e.pointerId)) return;
+                e.stopPropagation();
+                e.preventDefault();
+                setVolumeFromPointer(e);
+            });
+            const releaseVolumePointer = (e) => {
+                e.stopPropagation();
+                if (volumeSlider.hasPointerCapture?.(e.pointerId)) {
+                    volumeSlider.releasePointerCapture(e.pointerId);
+                }
+            };
+            volumeSlider.addEventListener('pointerup', releaseVolumePointer);
+            volumeSlider.addEventListener('pointercancel', releaseVolumePointer);
+            volumeSlider.addEventListener('input', (e) => {
+                e.stopPropagation();
+                data.setVolume(Number(e.currentTarget.value) / 100);
+            });
+        }
+        panel.addEventListener('click', (e) => {
+            if (!volumeControl || !volumeControl.contains(e.target)) closeVolumePopover();
+        });
 
         // 正反面切换（只切 UI，不影响音频播放状态）
         const flipBtn = panel.querySelector('#music-fp-flip');
@@ -1238,6 +1319,20 @@ export class MusicView {
         const song = data.getCurrentSong() || (playlist.length > 0 ? playlist[0] : null);
         const card = data.getCardData();
 
+        const volumePercent = Math.round(data.getVolume() * 100);
+        const volumeSlider = this._floatingPanel.querySelector('#music-fp-volume');
+        const volumeValue = this._floatingPanel.querySelector('#music-fp-volume-value');
+        const volumeToggle = this._floatingPanel.querySelector('#music-fp-volume-toggle');
+        if (volumeSlider) {
+            volumeSlider.value = String(volumePercent);
+            volumeSlider.style.setProperty('--music-volume-percent', `${volumePercent}%`);
+        }
+        if (volumeValue) volumeValue.textContent = `${volumePercent}%`;
+        if (volumeToggle) {
+            volumeToggle.innerHTML = renderVolumeIcon(volumePercent);
+            volumeToggle.title = `音乐音量 ${volumePercent}%`;
+        }
+
         // 1. 更新播放/暂停按钮 (SVG版)
         const playBtn = this._floatingPanel.querySelector('#music-fp-play');
         if (playBtn) playBtn.innerHTML = data.isPlaying ? SVG_PAUSE : SVG_PLAY;
@@ -1359,6 +1454,12 @@ export class MusicView {
         if (playlistSection) {
             const currentList = this._currentTab === 'favorites' ? data.getFavorites() : data.getPlaylist();
             const clearLabel = this._currentTab === 'favorites' ? '清空收藏' : '清空歌单';
+            const playbackMode = data.getPlaybackMode();
+            const playbackModeMeta = playbackMode === 'repeat-one'
+                ? { icon: 'fa-rotate-right', title: '当前：单曲循环；点击切换为列表循环', active: true, showOne: true }
+                : playbackMode === 'repeat-all'
+                    ? { icon: 'fa-rotate-right', title: '当前：列表循环；点击切换为播完停止', active: true, showOne: false }
+                    : { icon: 'fa-music', title: '当前：播完停止；点击切换为单曲循环', active: false, showOne: false };
             const headerEl = playlistSection.querySelector('.playlist-header');
             const listEl = playlistSection.querySelector('.playlist-list');
             if (!headerEl || !listEl) return;
@@ -1369,9 +1470,15 @@ export class MusicView {
                     <span class="tab-item ${this._currentTab === 'favorites' ? 'active' : ''}" data-tab="favorites">收藏 (${data.getFavorites().length})</span>
                 </div>
                 <div class="actions">
-                    <span class="action-btn icon-only music-fp-autoplay-btn ${data.getAutoPlay() ? 'active' : ''}" title="连播开关">
-                        <i class="fa-solid fa-rotate-right"></i>
-                    </span>
+                    <button type="button"
+                            class="action-btn icon-only music-fp-playback-mode-btn mode-${playbackMode} ${playbackModeMeta.active ? 'active' : ''}"
+                            title="${playbackModeMeta.title}"
+                            aria-label="${playbackModeMeta.title}">
+                        <span class="music-playback-mode-icon" aria-hidden="true">
+                            <i class="fa-solid ${playbackModeMeta.icon}"></i>
+                            ${playbackModeMeta.showOne ? '<span class="music-playback-mode-one">1</span>' : ''}
+                        </span>
+                    </button>
                     <span class="action-btn icon-only danger music-fp-clear-btn" title="${clearLabel}">
                         <i class="fa-solid fa-trash"></i>
                     </span>
@@ -1466,9 +1573,14 @@ export class MusicView {
                 };
             }
             
-            // 绑定连播
-            const autoplayBtn = headerEl.querySelector('.music-fp-autoplay-btn');
-            if (autoplayBtn) autoplayBtn.onclick = (e) => { e.stopPropagation(); data.setAutoPlay(!data.getAutoPlay()); this.updateDisplay(); };
+            // 绑定三态播放模式：播完停止 → 单曲循环 → 列表循环
+            const playbackModeBtn = headerEl.querySelector('.music-fp-playback-mode-btn');
+            if (playbackModeBtn) {
+                playbackModeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    data.cyclePlaybackMode();
+                };
+            }
 
             // 绑定折叠按钮事件 (点击头部空白和箭头都可收起/展开)
             const collapseToggle = headerEl.querySelector('.playlist-collapse');
@@ -1481,7 +1593,7 @@ export class MusicView {
             }
             headerEl.onclick = (e) => {
                 e.stopPropagation();
-                if (e.target.closest('.tab-item') || e.target.closest('.music-fp-autoplay-btn') ||
+                if (e.target.closest('.tab-item') || e.target.closest('.music-fp-playback-mode-btn') ||
                     e.target.closest('.music-fp-clear-btn') || e.target.closest('.playlist-collapse')) {
                     return;
                 }

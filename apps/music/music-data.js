@@ -15,11 +15,14 @@
 
 const MUSIC_EXTERNAL_SOURCE_URL = 'https://drive.baibai.cv/f/ZKEBuW/Music.js';
 const MUSIC_EXTERNAL_SOURCE_ID = 'st-phone-baibai-music-source';
+const MUSIC_VOLUME_STORAGE_KEY = 'global_music_volume';
 
 export class MusicData {
     constructor(storage) {
         this.storage = storage;
         this.audioPlayer = new Audio();
+        this.syncVolume();
+        this.audioPlayer.loop = this.getPlaybackMode() === 'repeat-one';
         this._playlist = null;     // lazy load，存储键 music_playlist
         this._favorites = null;    // 收藏夹列表
         this._favoritesGlobalKey = 'global_music_favorites'; // 全局共享（跨会话）
@@ -413,6 +416,7 @@ export class MusicData {
             await this._preferMetingSource(song, listType);
             if (generation !== this._playGeneration) return false;
 
+            this.audioPlayer.loop = this.getPlaybackMode() === 'repeat-one';
             this.audioPlayer.src = song.url;
             await this.audioPlayer.play();
             this.isPlaying = true;
@@ -590,6 +594,8 @@ export class MusicData {
 
     resume() {
         if (this.audioPlayer.src) {
+            this.syncVolume();
+            this.audioPlayer.loop = this.getPlaybackMode() === 'repeat-one';
             this.audioPlayer.play().then(() => {
                 this.isPlaying = true;
                 this._userPaused = false; // 🔥 新增：用户主动恢复播放，解除暂停标记
@@ -735,7 +741,23 @@ export class MusicData {
     // ========== 自动连播 ==========
 
     _onTrackEnded() {
-        if (this.getAutoPlay()) {
+        const playbackMode = this.getPlaybackMode();
+        if (playbackMode === 'repeat-one') {
+            this.audioPlayer.currentTime = 0;
+            this.audioPlayer.play().then(() => {
+                this.isPlaying = true;
+                this._userPaused = false;
+                this._notifyStateChange();
+            }).catch((e) => {
+                console.warn('🎵 [音乐] 单曲循环重播失败:', e);
+                this.isPlaying = false;
+                this._notifyStateChange();
+                this._notifyPlaybackStopped('ended');
+            });
+            return;
+        }
+
+        if (playbackMode === 'repeat-all') {
             this.next();
         } else {
             this.isPlaying = false;
@@ -751,6 +773,66 @@ export class MusicData {
 
     setAutoPlay(enabled) {
         this.storage.set('music_auto_play', enabled);
+    }
+
+    getVolume() {
+        const savedVolume = Number(this.storage.get(MUSIC_VOLUME_STORAGE_KEY, 0.5));
+        if (!Number.isFinite(savedVolume)) return 0.5;
+        return Math.min(1, Math.max(0, savedVolume));
+    }
+
+    setVolume(value) {
+        const numericValue = Number(value);
+        const volume = Number.isFinite(numericValue)
+            ? Math.min(1, Math.max(0, numericValue))
+            : 0.5;
+        this.storage.set(MUSIC_VOLUME_STORAGE_KEY, volume);
+        this.audioPlayer.volume = volume;
+        this._notifyStateChange();
+        return volume;
+    }
+
+    syncVolume() {
+        const volume = this.getVolume();
+        this.audioPlayer.volume = volume;
+        return volume;
+    }
+
+    getPlaybackMode() {
+        const savedMode = String(this.storage.get('music_playback_mode', '') || '').trim();
+        if (['once', 'repeat-one', 'repeat-all'].includes(savedMode)) return savedMode;
+
+        const legacyRepeatOne = this.storage.get('music_repeat_one', null);
+        if (legacyRepeatOne === true || legacyRepeatOne === 'true') return 'repeat-one';
+
+        const legacyAutoPlay = this.storage.get('music_auto_play', null);
+        if (legacyAutoPlay === true || legacyAutoPlay === 'true') return 'repeat-all';
+        return 'once';
+    }
+
+    setPlaybackMode(mode) {
+        const nextMode = ['once', 'repeat-one', 'repeat-all'].includes(mode) ? mode : 'once';
+        this.storage.set('music_playback_mode', nextMode);
+        this.storage.set('music_repeat_one', nextMode === 'repeat-one');
+        this.audioPlayer.loop = nextMode === 'repeat-one';
+        this._notifyStateChange();
+        return nextMode;
+    }
+
+    cyclePlaybackMode() {
+        const currentMode = this.getPlaybackMode();
+        const nextMode = currentMode === 'once'
+            ? 'repeat-one'
+            : currentMode === 'repeat-one' ? 'repeat-all' : 'once';
+        return this.setPlaybackMode(nextMode);
+    }
+
+    getRepeatOne() {
+        return this.getPlaybackMode() === 'repeat-one';
+    }
+
+    setRepeatOne(enabled) {
+        return this.setPlaybackMode(enabled === true || enabled === 'true' ? 'repeat-one' : 'repeat-all');
     }
 
     // ========== Music API ==========
