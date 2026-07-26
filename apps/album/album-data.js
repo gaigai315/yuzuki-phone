@@ -5,8 +5,8 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 
-const MANAGED_IMAGE_RE = /(https?:\/\/[^\s"'<>)]*\/backgrounds\/phone_[^\s"'<>)]*|\/backgrounds\/phone_[^\s"'<>)]*)/ig;
-const MEDIA_EXT_RE = /\.(?:mp4|webm|mov|m4v)$/i;
+const MANAGED_MEDIA_RE = /(https?:\/\/[^\s"'<>)]*\/backgrounds\/phone_[^\s"'<>)]*|\/backgrounds\/phone_[^\s"'<>)]*)/ig;
+const VIDEO_EXT_RE = /\.(?:mp4|webm|mov|m4v)$/i;
 
 const ALBUM_SOURCE_CATALOG = Object.freeze([
     { key: 'honey', label: '蜜语', icon: 'fa-comment-dots' },
@@ -20,7 +20,7 @@ const ALBUM_SOURCE_CATALOG = Object.freeze([
     { key: 'avatar', label: '头像', icon: 'fa-user' },
     { key: 'app-icon', label: 'App 图标', icon: 'fa-grip' },
     { key: 'local-upload', label: '本地上传', icon: 'fa-cloud-arrow-up' },
-    { key: 'other', label: '其他图片', icon: 'fa-images' }
+    { key: 'other', label: '其他媒体', icon: 'fa-images' }
 ]);
 
 export class AlbumData {
@@ -29,7 +29,7 @@ export class AlbumData {
         this.deletedKey = 'phone_album_deleted_paths';
     }
 
-    getImages() {
+    getMedia() {
         const items = new Map();
         const deleted = this._getDeletedSet();
         let order = 0;
@@ -37,7 +37,7 @@ export class AlbumData {
         const addImage = (pathLike, sourceLabel = '小手机', meta = {}) => {
             const normalized = this.normalizePath(pathLike);
             if (!normalized || deleted.has(normalized)) return;
-            if (!this.isManagedImagePath(normalized)) return;
+            if (!this.isManagedMediaPath(normalized)) return;
 
             const createdAt = Number(meta?.createdAt || 0);
 
@@ -58,6 +58,7 @@ export class AlbumData {
                 src: this.toDisplayPath(pathLike),
                 path: normalized,
                 filename: this.getFilename(normalized),
+                mediaType: this.isVideoPath(normalized) ? 'video' : 'image',
                 sources: sourceLabel ? [sourceLabel] : [],
                 refCount: 1,
                 createdAt: Number.isFinite(createdAt) ? createdAt : 0,
@@ -78,6 +79,10 @@ export class AlbumData {
                 ...image,
                 sourceKey: this.getImageSourceKey(image)
             }));
+    }
+
+    getImages() {
+        return this.getMedia().filter(item => item.mediaType !== 'video');
     }
 
     getSourceCatalog() {
@@ -119,7 +124,7 @@ export class AlbumData {
     }
 
     getImageSourceLabel(image = {}) {
-        return this.getSourceDefinition(image?.sourceKey || this.getImageSourceKey(image))?.label || '其他图片';
+        return this.getSourceDefinition(image?.sourceKey || this.getImageSourceKey(image))?.label || '其他媒体';
     }
 
     groupImagesBySource(images = []) {
@@ -134,7 +139,7 @@ export class AlbumData {
 
     async deleteImage(pathLike) {
         const normalized = this.normalizePath(pathLike);
-        if (!normalized) return { success: false, message: '图片路径无效' };
+        if (!normalized) return { success: false, message: '媒体路径无效' };
 
         const imageManager = window.VirtualPhone?.imageManager;
         let deleteResult = { attempted: false, success: false };
@@ -150,7 +155,7 @@ export class AlbumData {
             success: true,
             fileDeleted: !!deleteResult.success,
             attempted: !!deleteResult.attempted,
-            message: deleteResult.success ? '图片已删除' : '图片记录已删除'
+            message: deleteResult.success ? '文件已删除' : '媒体记录已删除'
         };
     }
 
@@ -191,7 +196,7 @@ export class AlbumData {
 
     async markMissingImage(pathLike) {
         const normalized = this.normalizePath(pathLike);
-        if (!normalized || !this.isManagedImagePath(normalized)) return false;
+        if (!normalized || !this.isManagedMediaPath(normalized)) return false;
         await this._markDeleted(normalized);
         await this._removeUploadIndexPath(normalized);
         return true;
@@ -234,6 +239,43 @@ export class AlbumData {
 
         this._cleanupStorageStore(this.storage?._getChatMetadataStore?.(), target, 'chat');
         this._cleanupStorageStore(this.storage?._getExtensionSettingsStore?.(), target, 'settings');
+        this._cleanupHoneyRuntimeReferences(target);
+    }
+
+    _cleanupHoneyRuntimeReferences(target) {
+        const honeyApp = window.VirtualPhone?.honeyApp;
+        const honeyData = honeyApp?.honeyData;
+        const honeyView = honeyApp?.honeyView;
+        if (!honeyData && !honeyView) return;
+
+        const clean = value => this._removePathFromValue(value, target, new Set());
+
+        const recommendTopics = honeyData?.getRecommendTopics?.();
+        const recommendResult = clean(recommendTopics);
+        if (recommendResult.changed) honeyData?.saveRecommendTopics?.(recommendResult.value);
+
+        const topicScenes = honeyData?.getTopicScenes?.();
+        const topicScenesResult = clean(topicScenes);
+        if (topicScenesResult.changed) honeyData?.saveTopicScenes?.(topicScenesResult.value);
+
+        const lastScene = honeyData?.getLastSceneData?.();
+        const lastSceneResult = clean(lastScene);
+        if (lastSceneResult.changed) honeyData?.saveLastSceneData?.(lastSceneResult.value);
+
+        const viewTopicsResult = clean(honeyView?.recommendTopics);
+        if (viewTopicsResult.changed) {
+            honeyView.recommendTopics = viewTopicsResult.value;
+            honeyData?.saveRecommendTopics?.(viewTopicsResult.value);
+        }
+
+        const selectedTopicResult = clean(honeyView?.selectedTopic);
+        if (selectedTopicResult.changed) honeyView.selectedTopic = selectedTopicResult.value;
+
+        const currentSceneResult = clean(honeyView?.currentSceneData);
+        if (currentSceneResult.changed) {
+            honeyView.currentSceneData = currentSceneResult.value;
+            honeyView._persistCurrentScene?.();
+        }
     }
 
     normalizePath(pathLike) {
@@ -257,7 +299,16 @@ export class AlbumData {
 
     isManagedImagePath(pathLike) {
         const value = this.normalizePath(pathLike);
-        return /\/backgrounds\/phone_[^/]+/i.test(value) && !MEDIA_EXT_RE.test(value);
+        return this.isManagedMediaPath(value) && !this.isVideoPath(value);
+    }
+
+    isManagedMediaPath(pathLike) {
+        const value = this.normalizePath(pathLike);
+        return /\/backgrounds\/phone_[^/]+/i.test(value);
+    }
+
+    isVideoPath(pathLike) {
+        return VIDEO_EXT_RE.test(this.normalizePath(pathLike));
     }
 
     getFilename(pathLike) {
@@ -331,8 +382,8 @@ export class AlbumData {
         if (value === null || value === undefined) return;
         if (typeof value === 'string') {
             let match;
-            MANAGED_IMAGE_RE.lastIndex = 0;
-            while ((match = MANAGED_IMAGE_RE.exec(value)) !== null) {
+            MANAGED_MEDIA_RE.lastIndex = 0;
+            while ((match = MANAGED_MEDIA_RE.exec(value)) !== null) {
                 addImage(match[1], sourceLabel);
             }
             return;

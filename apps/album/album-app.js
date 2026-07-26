@@ -5,8 +5,8 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 
-import { AlbumData } from './album-data.js';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js';
+import { AlbumData } from './album-data.js?v=1.4.2&r=20260726-album-media';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.2&r=20260726-album-media';
 
 export class AlbumApp {
     constructor(phoneShell, storage) {
@@ -23,6 +23,12 @@ export class AlbumApp {
         window.addEventListener('phone:swipeBack', (e) => this.handleSwipeBack(e));
         window.addEventListener('phone:albumImageDeleted', () => this.refreshIfVisible());
         window.addEventListener('phone:updateWallpaper', () => this.refreshIfVisible());
+        window.addEventListener('phone:panelVisibility', event => {
+            if (event?.detail?.open === false) this.albumView?.pausePreview?.();
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) this.albumView?.pausePreview?.();
+        });
     }
 
     _preloadCSS() {
@@ -96,5 +102,9 @@ export class AlbumApp {
         const domCurrentView = document.querySelector('.phone-view-current');
         if (!domCurrentView?.querySelector?.('.album-app')) return;
         this.albumView.render();
+    }
+
+    deactivate() {
+        this.albumView?.closePreview?.();
     }
 }

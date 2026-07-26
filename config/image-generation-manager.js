@@ -644,6 +644,72 @@ export class ImageGenerationManager {
         return this._getProviderAppBindings()[appKey] || '';
     }
 
+    _getStoredComfyUIWorkflows() {
+        let workflows = [];
+        try {
+            const raw = this._get('phone-image-comfyui-workflows', '[]');
+            workflows = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+        } catch (e) {
+            workflows = [];
+        }
+        if (!Array.isArray(workflows)) return [];
+
+        return workflows.map((item) => {
+            const id = String(item?.id || '').trim();
+            const name = String(item?.name || '').trim();
+            const workflow = typeof item?.workflow === 'string'
+                ? String(item.workflow || '').trim()
+                : (item?.workflow && typeof item.workflow === 'object' ? JSON.stringify(item.workflow) : '');
+            if (!id || !name || !workflow) return null;
+            return {
+                ...item,
+                id,
+                name,
+                workflow,
+                nodeMapping: typeof item?.nodeMapping === 'string'
+                    ? String(item.nodeMapping || '').trim()
+                    : (item?.nodeMapping && typeof item.nodeMapping === 'object' ? JSON.stringify(item.nodeMapping) : ''),
+                comfyuiModel: String(item?.comfyuiModel || item?.model || '').trim(),
+                comfyuiSampler: String(item?.comfyuiSampler || item?.sampler || 'euler').trim() || 'euler',
+                comfyuiScheduler: String(item?.comfyuiScheduler || item?.scheduler || 'normal').trim() || 'normal',
+                comfyuiVae: String(item?.comfyuiVae || item?.vae || '').trim(),
+                comfyuiClip: String(item?.comfyuiClip || item?.clip || '').trim()
+            };
+        }).filter(Boolean);
+    }
+
+    getComfyUIWorkflowChoices({ videoOnly = false, imageToVideoOnly = false, app = 'honey' } = {}) {
+        return this._getStoredComfyUIWorkflows().map((item) => {
+            try {
+                const parsed = this._parseComfyUIWorkflow(item.workflow);
+                const nodes = Object.values(parsed || {});
+                const isVideoWorkflow = nodes.some(node => String(node?.class_type || '').trim() === 'VHS_VideoCombine');
+                const workflowText = JSON.stringify(parsed);
+                const hasReferencePlaceholder = workflowText.includes('%reference_image%')
+                    || workflowText.includes('%reference_image_filename%')
+                    || workflowText.includes('%comfyui_reference_image%')
+                    || workflowText.includes('%comfyuicankaoImage%')
+                    || workflowText.includes('%comfyuicankaotupian%');
+                const acceptsReferenceImage = hasReferencePlaceholder
+                    || this._canInjectComfyUIWanReferenceImage(parsed, app);
+                return {
+                    ...item,
+                    isVideoWorkflow,
+                    acceptsReferenceImage,
+                    fingerprint: this._buildComfyUIWorkflowFingerprint(item.workflow)
+                };
+            } catch (error) {
+                console.warn(`[ComfyUI] 工作流“${item.name}”无法用于选择:`, error);
+                return null;
+            }
+        }).filter((item) => {
+            if (!item) return false;
+            if ((videoOnly || imageToVideoOnly) && !item.isVideoWorkflow) return false;
+            if (imageToVideoOnly && !item.acceptsReferenceImage) return false;
+            return true;
+        });
+    }
+
     _normalizeImagePresetScope(app = '') {
         const appKey = String(app || '').trim().toLowerCase();
         if (appKey === 'diary') return 'wechat';
@@ -654,14 +720,7 @@ export class ImageGenerationManager {
     _getComfyUIWorkflowForApp(app = '') {
         const activeId = String(this._get('phone-image-comfyui-active-workflow', '') || '').trim();
         if (!activeId) return null;
-        let workflows = [];
-        try {
-            const raw = this._get('phone-image-comfyui-workflows', '[]');
-            workflows = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
-        } catch (e) {
-            workflows = [];
-        }
-        if (!Array.isArray(workflows)) return null;
+        const workflows = this._getStoredComfyUIWorkflows();
         const workflow = workflows.find(item => String(item?.id || '').trim() === activeId) || null;
         if (!workflow) return null;
         const workflowText = String(workflow.workflow || '').trim();
@@ -2481,7 +2540,7 @@ export class ImageGenerationManager {
         if (Object.prototype.hasOwnProperty.call(replacements, value)) {
             return replacements[value];
         }
-        return value.replace(/%[A-Za-z0-9_]+%/g, token => {
+        return value.replace(/%[A-Za-z0-9_\u3400-\u9fff]+%/g, token => {
             if (!Object.prototype.hasOwnProperty.call(replacements, token)) return token;
             const replacement = replacements[token];
             return replacement === null || replacement === undefined ? '' : String(replacement);
@@ -2501,6 +2560,140 @@ export class ImageGenerationManager {
         } catch (err) {
             throw new Error(`ComfyUI 节点映射 JSON 解析失败：${err?.message || err}`);
         }
+    }
+
+    _normalizeComfyUIVideoOutputsForApp(workflow, appKey = '') {
+        const normalizedApp = String(appKey || '').trim().toLowerCase();
+        let videoOutputCount = 0;
+        let adjustedOutputCount = 0;
+
+        Object.values(workflow || {}).forEach((node) => {
+            if (String(node?.class_type || '').trim() !== 'VHS_VideoCombine') return;
+            const inputs = node?.inputs;
+            if (!inputs || typeof inputs !== 'object') return;
+
+            videoOutputCount += 1;
+            if (normalizedApp !== 'honey') return;
+
+            const format = String(inputs.format || '').trim().toLowerCase();
+            let changed = false;
+            if (format === 'video/h265-mp4' || format === 'video/hevc-mp4') {
+                inputs.format = 'video/h264-mp4';
+                changed = true;
+            }
+            if (String(inputs.format || '').trim().toLowerCase() === 'video/h264-mp4'
+                && String(inputs.pix_fmt || '').trim().toLowerCase() !== 'yuv420p') {
+                inputs.pix_fmt = 'yuv420p';
+                changed = true;
+            }
+            if (changed) adjustedOutputCount += 1;
+        });
+
+        return {
+            workflow,
+            videoOutputCount,
+            adjustedOutputCount
+        };
+    }
+
+    _canInjectComfyUIWanReferenceImage(workflow, appKey = '') {
+        if (String(appKey || '').trim().toLowerCase() !== 'honey') return false;
+        const visited = new Set();
+        const reachesLoadImage = (value) => {
+            if (!Array.isArray(value) || value.length < 2) return false;
+            const nodeId = String(value[0] || '').trim();
+            if (!nodeId || visited.has(nodeId)) return false;
+            visited.add(nodeId);
+            const node = workflow?.[nodeId];
+            if (!node || typeof node !== 'object') return false;
+            if (String(node.class_type || '').trim() === 'LoadImage') return true;
+            return Object.values(node.inputs || {}).some(reachesLoadImage);
+        };
+
+        return Object.values(workflow || {}).some((node) => (
+            String(node?.class_type || '').trim() === 'WanImageToVideo'
+            && reachesLoadImage(node?.inputs?.start_image)
+        ));
+    }
+
+    _injectComfyUIWanReferenceImage(workflow, referenceImage, appKey = '') {
+        const filename = String(referenceImage?.filename || '').trim();
+        if (!filename || !this._canInjectComfyUIWanReferenceImage(workflow, appKey)) return 0;
+
+        const visited = new Set();
+        let injectedCount = 0;
+        const visitUpstream = (value) => {
+            if (!Array.isArray(value) || value.length < 2) return;
+            const nodeId = String(value[0] || '').trim();
+            if (!nodeId || visited.has(nodeId)) return;
+            visited.add(nodeId);
+            const node = workflow?.[nodeId];
+            if (!node || typeof node !== 'object') return;
+
+            if (String(node.class_type || '').trim() === 'LoadImage' && node.inputs && typeof node.inputs === 'object') {
+                node.inputs.image = filename;
+                injectedCount += 1;
+            }
+            Object.values(node.inputs || {}).forEach(visitUpstream);
+        };
+
+        Object.values(workflow || {}).forEach((node) => {
+            if (String(node?.class_type || '').trim() !== 'WanImageToVideo') return;
+            visitUpstream(node?.inputs?.start_image);
+        });
+        return injectedCount;
+    }
+
+    _injectComfyUIEverywhereVae(workflow) {
+        const graph = workflow && typeof workflow === 'object' ? workflow : {};
+        const vaeEverywhere = Object.values(graph).find((node) => (
+            String(node?.class_type || '').trim() === 'Anything Everywhere'
+            && /vae/i.test(String(node?._meta?.title || ''))
+            && Array.isArray(node?.inputs?.anything)
+        ));
+        const vaeLink = vaeEverywhere?.inputs?.anything;
+        if (!Array.isArray(vaeLink) || vaeLink.length < 2 || !graph[String(vaeLink[0])]) return 0;
+
+        let injectedCount = 0;
+        Object.values(graph).forEach((node) => {
+            const classType = String(node?.class_type || '').trim();
+            if (classType !== 'WanImageToVideo' && !/^VAEDecode(?:Tiled)?$/i.test(classType)) return;
+            if (!node.inputs || typeof node.inputs !== 'object' || node.inputs.vae !== undefined) return;
+            node.inputs.vae = [...vaeLink];
+            injectedCount += 1;
+        });
+        return injectedCount;
+    }
+
+    _injectComfyUIHoneyRuntimeInputs(workflow, { appKey = '', positivePrompt = '', seed = 0 } = {}) {
+        if (String(appKey || '').trim().toLowerCase() !== 'honey') {
+            return { promptInjected: 0, seedInjected: 0 };
+        }
+
+        let promptInjected = 0;
+        let seedInjected = 0;
+        Object.values(workflow || {}).forEach((node) => {
+            const inputs = node?.inputs;
+            if (!inputs || typeof inputs !== 'object') return;
+            const classType = String(node.class_type || '').trim();
+            const title = String(node?._meta?.title || '').trim();
+
+            if (/^(?:positive|video|motion) prompt$/i.test(title)) {
+                if (Object.prototype.hasOwnProperty.call(inputs, 'value')) {
+                    inputs.value = positivePrompt;
+                    promptInjected += 1;
+                } else if (typeof inputs.text === 'string') {
+                    inputs.text = positivePrompt;
+                    promptInjected += 1;
+                }
+            }
+            if (/^Seed(?: \(rgthree\))?$/i.test(classType)
+                && Object.prototype.hasOwnProperty.call(inputs, 'seed')) {
+                inputs.seed = seed;
+                seedInjected += 1;
+            }
+        });
+        return { promptInjected, seedInjected };
     }
 
     _buildComfyUIWorkflow(options, config, referenceImage = null) {
@@ -2535,11 +2728,20 @@ export class ImageGenerationManager {
             seed = Math.floor(seed);
         }
 
-        const positivePrompt = this._joinPrompt([config.fixedPrompt, prompt, config.fixedPromptEnd]);
+        const isVideoPrompt = String(options.comfyuiPromptKind || '').trim().toLowerCase() === 'video';
+        const positivePrompt = isVideoPrompt
+            ? prompt
+            : this._joinPrompt([config.fixedPrompt, prompt, config.fixedPromptEnd]);
         const negativePrompt = this._joinPrompt([config.negativePrompt, options.negativePrompt]);
         const replacements = {
             '%prompt%': positivePrompt,
             '%positive_prompt%': positivePrompt,
+            '%video_prompt%': prompt,
+            '%VIDEO_PROMPT%': prompt,
+            '%motion_prompt%': prompt,
+            '%MOTION_PROMPT%': prompt,
+            '%honey_video_prompt%': prompt,
+            '%视频提示词%': prompt,
             '%negative_prompt%': negativePrompt,
             '%width%': width,
             '%height%': height,
@@ -2582,51 +2784,79 @@ export class ImageGenerationManager {
             || JSON.stringify(workflowTemplate).includes('%comfyuicankaoImage%')
             || JSON.stringify(workflowTemplate).includes('%comfyuicankaotupian%');
         const workflow = this._replaceComfyUIPlaceholders(workflowTemplate, replacements);
-        return { workflow, positivePrompt, negativePrompt, width, height, steps, scale, cfgRescale, seed, requiresModel, requiresReferenceImage };
+        const vaeInjectedCount = this._injectComfyUIEverywhereVae(workflow);
+        const runtimeInputs = this._injectComfyUIHoneyRuntimeInputs(workflow, {
+            appKey,
+            positivePrompt,
+            seed
+        });
+        const referenceImageInjectedCount = this._injectComfyUIWanReferenceImage(workflow, referenceImage, appKey);
+        const videoCompatibility = this._normalizeComfyUIVideoOutputsForApp(workflow, appKey);
+        return {
+            workflow: videoCompatibility.workflow,
+            positivePrompt,
+            negativePrompt,
+            width,
+            height,
+            steps,
+            scale,
+            cfgRescale,
+            seed,
+            requiresModel,
+            requiresReferenceImage,
+            isVideoWorkflow: videoCompatibility.videoOutputCount > 0,
+            videoCompatibilityAdjusted: videoCompatibility.adjustedOutputCount > 0,
+            referenceImageInjected: referenceImageInjectedCount > 0,
+            vaeInjected: vaeInjectedCount > 0,
+            promptInjected: runtimeInputs.promptInjected > 0,
+            seedInjected: runtimeInputs.seedInjected > 0
+        };
     }
 
-    _extractComfyUIImage(historyPayload, promptId) {
+    _extractComfyUIMedia(historyPayload, promptId) {
         const root = promptId && historyPayload?.[promptId] ? historyPayload[promptId] : historyPayload;
         const outputs = root?.outputs || historyPayload?.outputs || {};
-        for (const output of Object.values(outputs || {})) {
-            const images = Array.isArray(output?.images) ? output.images : [];
-            if (images.length > 0) {
-                const image = images[0] || {};
-                return {
-                    filename: String(image.filename || '').trim(),
-                    subfolder: String(image.subfolder || '').trim(),
-                    type: String(image.type || 'output').trim() || 'output',
-                    mediaType: 'image'
-                };
-            }
-            const videos = Array.isArray(output?.videos) ? output.videos : [];
-            if (videos.length > 0) {
-                const video = videos[0] || {};
-                return {
-                    filename: String(video.filename || '').trim(),
-                    subfolder: String(video.subfolder || '').trim(),
-                    type: String(video.type || 'output').trim() || 'output',
-                    mediaType: 'video'
-                };
-            }
-            const gifs = Array.isArray(output?.gifs) ? output.gifs : [];
-            if (gifs.length > 0) {
-                const gif = gifs[0] || {};
-                return {
-                    filename: String(gif.filename || '').trim(),
-                    subfolder: String(gif.subfolder || '').trim(),
-                    type: String(gif.type || 'output').trim() || 'output',
-                    mediaType: 'image'
-                };
-            }
-        }
-        return null;
+        const candidates = [];
+        const videoExtensionPattern = /\.(?:mp4|webm|mov|mkv)(?:[?#].*)?$/i;
+
+        Object.entries(outputs || {}).forEach(([outputNodeId, output]) => {
+            [
+                ['images', 'image'],
+                ['videos', 'video'],
+                ['gifs', 'image']
+            ].forEach(([bucket, defaultMediaType]) => {
+                const items = Array.isArray(output?.[bucket]) ? output[bucket] : [];
+                items.forEach((item) => {
+                    const filename = String(item?.filename || '');
+                    if (!filename.trim()) return;
+                    const mediaType = defaultMediaType === 'video' || videoExtensionPattern.test(filename)
+                        ? 'video'
+                        : 'image';
+                    const lowerName = filename.toLowerCase();
+                    let priority = mediaType === 'video' ? 1000 : 100;
+                    if (lowerName.includes('final')) priority += 200;
+                    else if (lowerName.includes('combined')) priority += 100;
+                    if (String(item?.type || '').trim().toLowerCase() === 'output') priority += 10;
+                    candidates.push({
+                        filename,
+                        subfolder: String(item?.subfolder || '').trim(),
+                        type: String(item?.type || 'output').trim() || 'output',
+                        mediaType,
+                        outputNodeId: String(outputNodeId || '').trim(),
+                        priority
+                    });
+                });
+            });
+        });
+
+        candidates.sort((a, b) => b.priority - a.priority);
+        return candidates[0] || null;
     }
 
-    async _waitForComfyUIHistory(baseUrl, promptId, signal = null) {
+    async _waitForComfyUIHistory(baseUrl, promptId, signal = null, timeoutMs = 300000) {
         const startedAt = Date.now();
-        const timeoutMs = 300000;
-        while (Date.now() - startedAt < timeoutMs) {
+        const safeTimeoutMs = Math.max(30000, Math.min(30 * 60 * 1000, Number(timeoutMs) || 300000));
+        while (Date.now() - startedAt < safeTimeoutMs) {
             if (signal?.aborted) throw new Error('ComfyUI 请求已取消');
             const response = await fetch(`${baseUrl}/history/${encodeURIComponent(promptId)}`, {
                 method: 'GET',
@@ -2635,8 +2865,8 @@ export class ImageGenerationManager {
             });
             if (response.ok) {
                 const payload = await response.json().catch(() => null);
-                const image = this._extractComfyUIImage(payload, promptId);
-                if (image?.filename) return image;
+                const media = this._extractComfyUIMedia(payload, promptId);
+                if (media?.filename) return media;
                 const status = payload?.[promptId]?.status || payload?.status || {};
                 const messages = Array.isArray(status?.messages) ? status.messages : [];
                 const errorMessage = messages
@@ -2655,21 +2885,37 @@ export class ImageGenerationManager {
             subfolder: output.subfolder || '',
             type: output.type || 'output'
         });
-        const response = await fetch(`${baseUrl}/view?${params.toString()}`, {
-            method: 'GET',
-            signal
-        });
-        if (!response.ok) {
-            const text = await response.text().catch(() => '');
-            throw new Error(`ComfyUI 输出读取失败：HTTP ${response.status}${text ? ` ${text.slice(0, 120)}` : ''}`);
+        const isVideoOutput = /\.(?:mp4|webm|mov|mkv)(?:[?#].*)?$/i.test(String(output.filename || ''));
+        const maxAttempts = isVideoOutput ? 12 : 3;
+        let lastStatus = 0;
+        let lastText = '';
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            if (signal?.aborted) throw new Error('ComfyUI 请求已取消');
+            const response = await fetch(`${baseUrl}/view?${params.toString()}`, {
+                method: 'GET',
+                signal
+            });
+            lastStatus = response.status;
+            if (response.ok) {
+                const blob = await response.blob();
+                if (blob && blob.size > 0) return blob;
+                lastText = 'ComfyUI 返回空输出';
+            } else {
+                lastText = await response.text().catch(() => '');
+                if (![404, 425, 503].includes(response.status)) break;
+            }
+            if (attempt < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, isVideoOutput ? 1000 : 350));
+            }
         }
-        const blob = await response.blob();
-        if (!blob || blob.size <= 0) throw new Error('ComfyUI 返回空输出');
-        return await this._blobToDataUrl(blob);
+
+        throw new Error(`ComfyUI 输出读取失败：HTTP ${lastStatus || '-'}${lastText ? ` ${lastText.slice(0, 120)}` : ''}`);
     }
 
     async _readComfyUIImage(baseUrl, image, signal = null) {
-        return this._readComfyUIOutput(baseUrl, image, signal);
+        const blob = await this._readComfyUIOutput(baseUrl, image, signal);
+        return this._blobToDataUrl(blob);
     }
 
     async _uploadComfyUIReferenceImage(baseUrl, imageData, signal = null) {
@@ -3339,11 +3585,14 @@ export class ImageGenerationManager {
         const referenceImages = this._normalizeComfyUIReferenceImages(options);
         const workflowTemplate = this._parseComfyUIWorkflow(config.comfyuiWorkflow);
         const workflowTemplateText = JSON.stringify(workflowTemplate);
-        const needsReferenceUpload = workflowTemplateText.includes('%reference_image%')
+        const hasReferencePlaceholder = workflowTemplateText.includes('%reference_image%')
             || workflowTemplateText.includes('%reference_image_filename%')
             || workflowTemplateText.includes('%comfyui_reference_image%')
             || workflowTemplateText.includes('%comfyuicankaoImage%')
             || workflowTemplateText.includes('%comfyuicankaotupian%');
+        const canInjectWanReference = referenceImages.length > 0
+            && this._canInjectComfyUIWanReferenceImage(workflowTemplate, options.app);
+        const needsReferenceUpload = hasReferencePlaceholder || canInjectWanReference;
         let uploadedReferenceImage = null;
         if (needsReferenceUpload && referenceImages.length > 0) {
             uploadedReferenceImage = await this._uploadComfyUIReferenceImage(baseUrl, referenceImages[0], options.signal);
@@ -3357,7 +3606,7 @@ export class ImageGenerationManager {
             throw new Error('请先选择 ComfyUI 模型，或在工作流中去掉 %MODEL_NAME% 占位符');
         }
         if (built.requiresReferenceImage && !uploadedReferenceImage) {
-            throw new Error('当前 ComfyUI 工作流需要参考图，但本次没有可用的微信联系人参考图');
+            throw new Error('当前 ComfyUI 工作流需要参考图，但本次没有可用的参考图');
         }
 
         const endpoint = `${baseUrl}/prompt`;
@@ -3406,8 +3655,45 @@ export class ImageGenerationManager {
             promptId
         });
 
-        const imageRef = await this._waitForComfyUIHistory(baseUrl, promptId, options.signal);
-        const imageData = await this._readComfyUIImage(baseUrl, imageRef, options.signal);
+        const mediaRef = await this._waitForComfyUIHistory(
+            baseUrl,
+            promptId,
+            options.signal,
+            built.isVideoWorkflow ? 20 * 60 * 1000 : 300000
+        );
+        if (mediaRef.mediaType === 'video') {
+            const rawVideoBlob = await this._readComfyUIOutput(baseUrl, mediaRef, options.signal);
+            const extension = String(mediaRef.filename || '').split('.').pop()?.toLowerCase() || '';
+            const expectedMimeType = extension === 'webm' ? 'video/webm' : 'video/mp4';
+            const videoBlob = /^video\//i.test(String(rawVideoBlob.type || ''))
+                ? rawVideoBlob
+                : rawVideoBlob.slice(0, rawVideoBlob.size, expectedMimeType);
+            return {
+                provider: 'comfyui',
+                model: config.comfyuiModel,
+                prompt,
+                mediaType: 'video',
+                width: built.width,
+                height: built.height,
+                requestedWidth: built.width,
+                requestedHeight: built.height,
+                steps: built.steps,
+                sampler: config.comfyuiSampler,
+                scheduler: config.comfyuiScheduler,
+                scale: built.scale,
+                seed: built.seed,
+                promptId,
+                positivePrompt: built.positivePrompt,
+                negativePrompt: built.negativePrompt,
+                nodeMapping: null,
+                videoBlob,
+                videoFilename: mediaRef.filename,
+                videoSubfolder: mediaRef.subfolder,
+                videoCompatibilityAdjusted: built.videoCompatibilityAdjusted
+            };
+        }
+
+        const imageData = await this._readComfyUIImage(baseUrl, mediaRef, options.signal);
         const imageInfo = await this._waitForImageDecode(imageData).catch((err) => {
             throw new Error(`ComfyUI 返回图片不可用: ${err?.message || err}`);
         });
@@ -3416,6 +3702,7 @@ export class ImageGenerationManager {
             provider: 'comfyui',
             model: config.comfyuiModel,
             prompt,
+            mediaType: 'image',
             width: imageInfo.width || built.width,
             height: imageInfo.height || built.height,
             requestedWidth: built.width,

@@ -2285,6 +2285,39 @@
     pointer-events: none;
 }
 
+#phone-panel-content .phone-screen .honey-app .honey-generated-video-replay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    min-height: 52px;
+    padding: 0;
+    margin: auto;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 50%;
+    background: rgba(10, 10, 14, 0.68);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+#phone-panel-content .phone-screen .honey-app .honey-generated-video-replay[hidden] {
+    display: none !important;
+}
+
+#phone-panel-content .phone-screen .honey-app .honey-generated-video-replay i {
+    font-size: 20px;
+    line-height: 1;
+    transform: translateX(1px);
+}
+
 .honey-nai-glass {
     position: absolute;
     top: 0;

@@ -7,7 +7,7 @@
 
 import { PHONE_CONFIG } from '../../config/apps.js';
 
-export const ALBUM_CSS_URL = new URL('./album.css?v=1.1.3', import.meta.url).href;
+export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.0&r=20260726-album-media', import.meta.url).href;
 
 export class AlbumView {
     constructor(app) {
@@ -40,7 +40,7 @@ export class AlbumView {
 
     render() {
         this.loadCSS();
-        this.images = this.app.albumData.getImages();
+        this.images = this.app.albumData.getMedia();
         const sourceGroups = this.app.albumData.groupImagesBySource(this.images);
         if (this.activeSource !== 'all' && !sourceGroups.some(group => group.key === this.activeSource)) {
             this.activeSource = 'all';
@@ -64,7 +64,7 @@ export class AlbumView {
                         <i class="fa-solid ${this.selectionMode ? 'fa-xmark' : 'fa-chevron-left'}"></i>
                     </button>
                     <div class="album-title-wrap">
-                        <div class="album-title">${this.selectionMode ? `已选 ${selectedCount} 张` : '相册'}</div>
+                        <div class="album-title">${this.selectionMode ? `已选 ${selectedCount} 项` : '相册'}</div>
                     </div>
                     <div class="album-header-actions">
                         ${this.selectionMode ? `
@@ -84,11 +84,11 @@ export class AlbumView {
                 <main class="album-body">
                     ${this.images.length ? `
                         <div class="album-body-toolbar">
-                            <span>${this.escapeHtml(activeSourceLabel)} · ${visibleImages.length} 张</span>
+                            <span>${this.escapeHtml(activeSourceLabel)} · ${visibleImages.length} 项</span>
                             <button type="button" id="album-select-toggle">选择</button>
                         </div>
                         ${this.renderSourceSections(visibleImages)}
-                        <div class="album-total-count">共 ${this.images.length} 张照片</div>
+                        <div class="album-total-count">共 ${this.images.length} 个项目</div>
                     ` : this.renderEmpty()}
                 </main>
             </div>
@@ -166,7 +166,7 @@ export class AlbumView {
                                 <span class="album-source-badge is-${this.escapeAttr(group.key)}"><i class="fa-solid ${this.escapeAttr(group.icon)}" aria-hidden="true"></i></span>
                                 <span class="album-source-heading-copy">
                                     <strong>${this.escapeHtml(group.label)}</strong>
-                                    <small>${group.images.length} 张</small>
+                                    <small>${group.images.length} 项</small>
                                 </span>
                                 ${canFocus ? '<i class="fa-solid fa-chevron-right album-source-heading-arrow" aria-hidden="true"></i>' : ''}
                             </button>
@@ -182,10 +182,14 @@ export class AlbumView {
 
     renderTile(image) {
         const index = this.images.indexOf(image);
+        const isVideo = image?.mediaType === 'video';
+        const mediaHtml = isVideo
+            ? `<video src="${this.escapeAttr(image.src)}" muted playsinline webkit-playsinline preload="metadata" aria-hidden="true"></video><span class="album-video-indicator" aria-hidden="true"><i class="fa-solid fa-play"></i></span>`
+            : `<img src="${this.escapeAttr(image.src)}" alt="">`;
         return `
-            <div class="album-tile${this.selectedPaths.has(image.path) ? ' selected' : ''}" data-index="${index}" title="${this.escapeHtml(image.filename)}">
-                <button type="button" class="album-tile-main" data-index="${index}" aria-label="${this.selectionMode ? '选择' : '查看'}图片">
-                    <img src="${this.escapeAttr(image.src)}" alt="">
+            <div class="album-tile${isVideo ? ' is-video' : ''}${this.selectedPaths.has(image.path) ? ' selected' : ''}" data-index="${index}" title="${this.escapeHtml(image.filename)}">
+                <button type="button" class="album-tile-main" data-index="${index}" aria-label="${this.selectionMode ? '选择' : '查看'}${isVideo ? '视频' : '图片'}">
+                    ${mediaHtml}
                     <span class="album-checkmark"><i class="fa-solid fa-check"></i></span>
                 </button>
             </div>
@@ -196,8 +200,8 @@ export class AlbumView {
         return `
             <div class="album-empty">
                 <div class="album-empty-icon"><i class="fa-regular fa-images"></i></div>
-                <div class="album-empty-title">还没有上传图片</div>
-                <div class="album-empty-copy">微信、微博、蜜语、日记、壁纸和图标里保存过的图片会显示在这里。</div>
+                <div class="album-empty-title">还没有图片或视频</div>
+                <div class="album-empty-copy">各个 App 保存过的图片和视频会按来源显示在这里。</div>
             </div>
         `;
     }
@@ -264,6 +268,12 @@ export class AlbumView {
                 await this.handleMissingImage(image);
             }, { once: true });
         });
+        root.querySelectorAll('.album-tile video').forEach(video => {
+            video.pause?.();
+            video.addEventListener('error', () => {
+                video.closest('.album-tile')?.classList.add('is-broken');
+            }, { once: true });
+        });
     }
 
     closeSourceMenu(root = null) {
@@ -280,7 +290,7 @@ export class AlbumView {
         const allSelected = visibleImages.length > 0 && visibleImages.every(image => this.selectedPaths.has(image.path));
         const root = (document.querySelector('.phone-view-current') || document).querySelector('.album-app');
         const title = root?.querySelector('.album-title');
-        if (title) title.textContent = this.selectionMode ? `已选 ${selectedCount} 张` : '相册';
+        if (title) title.textContent = this.selectionMode ? `已选 ${selectedCount} 项` : '相册';
 
         const selectAllBtn = root?.querySelector('#album-select-all');
         if (selectAllBtn) selectAllBtn.textContent = allSelected ? '取消全选' : '全选';
@@ -335,6 +345,7 @@ export class AlbumView {
     openPreview(index) {
         const image = this.images[index];
         if (!image) return;
+        const isVideo = image.mediaType === 'video';
         this.previewOpen = true;
         const root = (document.querySelector('.phone-view-current') || document).querySelector('.album-app');
         root?.querySelector('.album-preview')?.remove();
@@ -351,8 +362,10 @@ export class AlbumView {
                         <i class="fa-regular fa-trash-can"></i>
                     </button>
                 </div>
-                <div class="album-preview-image-wrap">
-                    <img class="album-preview-image" src="${this.escapeAttr(image.src)}" alt="">
+                <div class="album-preview-image-wrap${isVideo ? ' is-video' : ''}">
+                    ${isVideo
+                        ? `<video class="album-preview-video" src="${this.escapeAttr(image.src)}" playsinline webkit-playsinline preload="auto"></video><button type="button" class="album-preview-video-replay" aria-label="重新播放视频" title="重新播放视频" hidden><i class="fa-solid fa-play"></i></button>`
+                        : `<img class="album-preview-image" src="${this.escapeAttr(image.src)}" alt="">`}
                 </div>
                 <div class="album-preview-meta">
                     <div class="album-preview-name">${this.escapeHtml(image.filename)}</div>
@@ -370,17 +383,56 @@ export class AlbumView {
         });
         overlay.querySelector('.album-preview-close')?.addEventListener('click', () => this.closePreview());
         overlay.querySelector('.album-preview-delete')?.addEventListener('click', () => this.deleteImage(image));
+
+        if (isVideo) {
+            const video = overlay.querySelector('.album-preview-video');
+            const replayBtn = overlay.querySelector('.album-preview-video-replay');
+            const setReplayVisible = visible => {
+                if (!replayBtn) return;
+                replayBtn.hidden = !visible;
+            };
+            const playOnce = () => {
+                if (!video) return;
+                video.loop = false;
+                try {
+                    video.currentTime = 0;
+                } catch (e) { }
+                setReplayVisible(false);
+                const playPromise = video.play?.();
+                if (playPromise && typeof playPromise.catch === 'function') {
+                    playPromise.catch(() => setReplayVisible(true));
+                }
+            };
+            video?.addEventListener('playing', () => setReplayVisible(false));
+            video?.addEventListener('ended', () => setReplayVisible(true));
+            video?.addEventListener('error', () => setReplayVisible(true));
+            replayBtn?.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                playOnce();
+            });
+            playOnce();
+        }
     }
 
     closePreview() {
         this.previewOpen = false;
-        (document.querySelector('.phone-view-current') || document).querySelector('.album-preview')?.remove();
+        this.pausePreview();
+        document.querySelectorAll('.album-preview').forEach(preview => preview.remove());
+    }
+
+    pausePreview() {
+        document.querySelectorAll('.album-preview-video').forEach(video => video.pause?.());
+        document.querySelectorAll('.album-preview-video-replay').forEach(button => {
+            button.hidden = false;
+        });
     }
 
     async deleteImage(image) {
         if (!image || this.isDeleting || this.isBulkDeleting) return;
         this.isDeleting = true;
-        const ok = window.confirm('删除这张图片吗？引用它的壁纸、图标或记录也会清空。');
+        const isVideo = image.mediaType === 'video';
+        const ok = window.confirm(`删除这个${isVideo ? '视频' : '图片'}吗？引用它的页面或记录也会清空。`);
         if (!ok) {
             this.isDeleting = false;
             return;
@@ -390,9 +442,9 @@ export class AlbumView {
         if (deleteBtn) deleteBtn.disabled = true;
         try {
             const result = await this.app.albumData.deleteImage(image.path);
-            this.app.phoneShell?.showNotification?.('相册', result.message || '图片已删除', '🖼️');
+            this.app.phoneShell?.showNotification?.('相册', result.message || `${isVideo ? '视频' : '图片'}已删除`, isVideo ? '🎬' : '🖼️');
         } catch (e) {
-            console.error('删除相册图片失败:', e);
+            console.error('删除相册媒体失败:', e);
             this.app.phoneShell?.showNotification?.('相册', '删除失败', '⚠️');
         } finally {
             this.isDeleting = false;
@@ -405,7 +457,7 @@ export class AlbumView {
         if (this.isBulkDeleting || this.isDeleting) return;
         const selected = this.images.filter(image => this.selectedPaths.has(image.path));
         if (selected.length === 0) return;
-        const ok = window.confirm(`删除选中的 ${selected.length} 张图片吗？引用它们的壁纸、图标或记录也会清空。`);
+        const ok = window.confirm(`删除选中的 ${selected.length} 个项目吗？引用它们的页面或记录也会清空。`);
         if (!ok) return;
 
         const deleteBtn = (document.querySelector('.phone-view-current') || document).querySelector('#album-delete-selected');
@@ -413,9 +465,9 @@ export class AlbumView {
         this.isBulkDeleting = true;
         try {
             const result = await this.app.albumData.deleteImages(selected.map(image => image.path));
-            this.app.phoneShell?.showNotification?.('相册', `已删除 ${result.successCount} 张图片`, '🖼️');
+            this.app.phoneShell?.showNotification?.('相册', `已删除 ${result.successCount} 个项目`, '🗑️');
         } catch (e) {
-            console.error('批量删除相册图片失败:', e);
+            console.error('批量删除相册媒体失败:', e);
             this.app.phoneShell?.showNotification?.('相册', '批量删除失败', '⚠️');
         } finally {
             this.isBulkDeleting = false;

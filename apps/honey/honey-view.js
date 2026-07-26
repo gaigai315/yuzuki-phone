@@ -271,9 +271,27 @@ export class HoneyView {
         return uploadedUrl;
     }
 
+    async _uploadHoneyGeneratedVideoBlob(videoBlob, { hostName = '', seed = '', oldMediaUrl = '' } = {}) {
+        if (!videoBlob || Number(videoBlob.size || 0) <= 0) throw new Error('生成视频为空，无法保存');
+        const safeHost = `h${this._simpleHash(String(hostName || 'live')).toString(36)}`;
+        const uniqueSeed = seed === '' || seed == null || String(seed) === '-1'
+            ? `gen_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+            : seed;
+        const safeSeed = String(uniqueSeed).replace(/[^\w-]+/g, '').slice(0, 48);
+        const uploadedUrl = await window.VirtualPhone?.imageManager?.uploadBlob?.(
+            videoBlob,
+            `honey_nai_video_${safeHost}_${safeSeed}`
+        );
+        if (!uploadedUrl) throw new Error('视频上传管理器未初始化');
+        if (oldMediaUrl && oldMediaUrl !== uploadedUrl && this._isManagedBackgroundUrl(oldMediaUrl)) {
+            window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldMediaUrl, { quiet: true, skipIfReferenced: true });
+        }
+        return uploadedUrl;
+    }
+
     _loadCSS() {
         const cssVersion = encodeURIComponent(String(window.VirtualPhone?.version || '1.4.2'));
-        const cssRevision = encodeURIComponent(String(window.VirtualPhone?.honeyAssetRevision || '20260726-settings-theme-background'));
+        const cssRevision = encodeURIComponent(String(window.VirtualPhone?.honeyAssetRevision || '20260726-video-visibility'));
         const cssHref = this._getHoneyAssetUrl(`honey.css?v=${cssVersion}&r=${cssRevision}`);
         const linkId = 'honey-css-link';
         const existingLink = document.getElementById(linkId);
@@ -321,6 +339,7 @@ export class HoneyView {
         this._cleanupTransient();
         this._syncSessionState();
         if (this.currentPage !== 'live') {
+            this._pauseHoneyVideos();
             if (this._liveBatchTimer) {
                 clearTimeout(this._liveBatchTimer);
                 this._liveBatchTimer = null;
@@ -349,6 +368,9 @@ export class HoneyView {
         const liveRoot = root || document.querySelector('.phone-view-current .honey-page-live');
         if (!liveRoot || !liveRoot.isConnected) return false;
         if (this.currentPage !== 'live') return false;
+        if (document.hidden) return false;
+        const phonePanel = liveRoot.closest?.('#phone-panel') || document.getElementById('phone-panel');
+        if (phonePanel && !phonePanel.classList.contains('phone-panel-open')) return false;
         return !!liveRoot.closest?.('.phone-view-current');
     }
 
@@ -357,16 +379,31 @@ export class HoneyView {
         const liveRoot = root || liveVideo.closest?.('.honey-page-live');
         if (!this._isCurrentLiveRoot(liveRoot)) {
             liveVideo.pause?.();
+            if (liveVideo.dataset.honeyGeneratedVideo === '1') {
+                this._setHoneyGeneratedVideoReplayVisible(liveVideo, true);
+            }
             return false;
         }
         const playPromise = liveVideo.play?.();
         if (playPromise && typeof playPromise.catch === 'function') {
             playPromise.catch(error => {
                 if (!liveVideo.isConnected || !this._isCurrentLiveRoot(liveRoot)) return;
+                if (liveVideo.dataset.honeyGeneratedVideo === '1') {
+                    this._setHoneyGeneratedVideoReplayVisible(liveVideo, true);
+                }
                 console.warn('直播视频自动播放被浏览器拦截:', error);
             });
         }
         return true;
+    }
+
+    _setHoneyGeneratedVideoReplayVisible(liveVideo, visible) {
+        if (!liveVideo || liveVideo.dataset.honeyGeneratedVideo !== '1') return;
+        const liveRoot = liveVideo.closest?.('.honey-page-live');
+        const replayBtn = liveRoot?.querySelector?.('.honey-generated-video-replay');
+        if (!replayBtn) return;
+        replayBtn.hidden = !visible;
+        replayBtn.setAttribute('aria-hidden', visible ? 'false' : 'true');
     }
 
     _refreshHoneyImageGenerationView(sourceRoot = null) {
@@ -1283,10 +1320,22 @@ export class HoneyView {
             : liveTitleText;
         const naiPrompt = this._resolveSceneNaiPrompt(data);
         const imageStatus = String(data.imageGenerationStatus || '').trim();
-        const generatedImageUrl = String(data.naiImageUrl || data.generatedImageUrl || data.imageUrl || '').trim();
-        const liveVideoUrl = generatedImageUrl ? '' : this._buildLiveVideoUrl(data);
+        const videoStatus = String(data.videoGenerationStatus || '').trim();
+        const isImageGenerating = imageStatus === 'loading';
+        const isVideoGenerating = videoStatus === 'loading';
+        const isMediaGenerating = isImageGenerating || isVideoGenerating;
+        const generatedVideoUrl = String(data.generatedVideoUrl || '').trim();
+        const generatedImageUrl = generatedVideoUrl
+            ? ''
+            : String(data.naiImageUrl || data.generatedImageUrl || data.imageUrl || '').trim();
+        const hasGeneratedMedia = !!(generatedImageUrl || generatedVideoUrl);
+        const liveVideoUrl = generatedVideoUrl || (generatedImageUrl ? '' : this._buildLiveVideoUrl(data));
+        const isGeneratedVideoPlayback = !!generatedVideoUrl;
         const liveVideoHtml = liveVideoUrl
-            ? `<video id="honey-live-video-el" src="${this._escapeHtml(liveVideoUrl)}" class="honey-live-video" loop muted playsinline webkit-playsinline preload="metadata"></video>`
+            ? `<video id="honey-live-video-el" src="${this._escapeHtml(liveVideoUrl)}" class="honey-live-video${isGeneratedVideoPlayback ? ' is-generated-video' : ''}" ${isGeneratedVideoPlayback ? 'data-honey-generated-video="1"' : 'loop'} muted playsinline webkit-playsinline preload="metadata"></video>`
+            : '';
+        const generatedVideoReplayHtml = isGeneratedVideoPlayback
+            ? `<button class="honey-generated-video-replay" type="button" title="重新播放视频" aria-label="重新播放视频" aria-hidden="true" hidden><i class="fa-solid fa-play"></i></button>`
             : '';
         const liveGlassHtml = generatedImageUrl
             ? ''
@@ -1294,15 +1343,24 @@ export class HoneyView {
         const generatedImageHtml = generatedImageUrl
             ? `<img class="honey-nai-generated-image" src="${this._escapeHtml(generatedImageUrl)}" alt="">`
             : '';
-        const imageButtonLabel = imageStatus === 'loading'
-            ? '生成中...'
-            : (generatedImageUrl ? '重新生成图片' : (naiPrompt ? '生成直播图片' : '等待 NAI 提示词'));
-        const imageButtonIcon = imageStatus === 'loading'
+        const imageButtonLabel = isVideoGenerating
+            ? '视频生成中...'
+            : (isImageGenerating
+                ? '图片生成中...'
+                : (hasGeneratedMedia ? '重新生成直播画面' : (naiPrompt ? '生成直播画面' : '等待 NAI 提示词')));
+        const imageButtonIcon = isMediaGenerating
             ? 'fa-spinner fa-spin'
-            : (generatedImageUrl ? 'fa-rotate' : (naiPrompt ? 'fa-wand-magic-sparkles' : 'fa-lock'));
-        const imageButtonDisabled = imageStatus === 'loading' || !naiPrompt;
-        const imageStatusHtml = imageStatus === 'failed' && data.imageGenerationError
-            ? `<div class="honey-nai-status is-error">${this._escapeHtml(data.imageGenerationError)}</div>`
+            : (hasGeneratedMedia ? 'fa-rotate' : (naiPrompt ? 'fa-wand-magic-sparkles' : 'fa-lock'));
+        const imageButtonDisabled = isMediaGenerating || !naiPrompt;
+        const mediaGenerationError = !isMediaGenerating
+            ? String(
+                (videoStatus === 'failed' && data.videoGenerationError)
+                    || (imageStatus === 'failed' && data.imageGenerationError)
+                    || ''
+            ).trim()
+            : '';
+        const imageStatusHtml = mediaGenerationError
+            ? `<div class="honey-nai-status is-error">${this._escapeHtml(mediaGenerationError)}</div>`
             : '';
         const collabNick = this._normalizeLiveCollabName(data.collab);
         const collabCost = Math.max(0, Number.parseInt(String(data.collabCost ?? 0), 10) || 0);
@@ -1422,7 +1480,7 @@ export class HoneyView {
         const unlockButtonHtml = isUserLive
             ? ''
             : `
-                <button class="honey-unlock-btn ${generatedImageUrl ? 'is-regenerate' : ''}" id="honey-test-nai-btn" title="${this._escapeHtml(imageButtonLabel)}" ${imageButtonDisabled ? 'disabled' : ''}>
+                <button class="honey-unlock-btn ${hasGeneratedMedia ? 'is-regenerate' : ''}" id="honey-test-nai-btn" title="${this._escapeHtml(imageButtonLabel)}" ${imageButtonDisabled ? 'disabled' : ''}>
                     <i class="fa-solid ${imageButtonIcon}"></i><span class="honey-unlock-label">${this._escapeHtml(imageButtonLabel)}</span>
                 </button>
             `;
@@ -1473,10 +1531,11 @@ export class HoneyView {
                 </div>
 
                 <div class="honey-content">
-                    <div class="honey-nai-placeholder ${generatedImageUrl ? 'has-generated-image' : ''}" style="${liveVideoUrl ? 'background: #000;' : ''}">
+                    <div class="honey-nai-placeholder ${hasGeneratedMedia ? 'has-generated-image' : ''}" style="${liveVideoUrl ? 'background: #000;' : ''}">
                         ${generatedImageHtml}
                         ${liveVideoHtml}
                         ${liveGlassHtml}
+                        ${generatedVideoReplayHtml}
                         ${imageStatusHtml}
                     </div>
                     ${livePullRefreshHtml}
@@ -1759,14 +1818,32 @@ export class HoneyView {
         const { introInnerHtml, hasIntro, giftListHtml } = this._buildLiveTickerMarkup(data);
         const naiPrompt = this._resolveSceneNaiPrompt(data);
         const imageStatus = String(data.imageGenerationStatus || '').trim();
-        const generatedImageUrl = String(data.naiImageUrl || data.generatedImageUrl || data.imageUrl || '').trim();
-        const liveVideoUrl = generatedImageUrl ? '' : this._buildLiveVideoUrl(data);
-        const imageButtonLabel = imageStatus === 'loading'
-            ? '生成中...'
-            : (generatedImageUrl ? '重新生成图片' : (naiPrompt ? '生成直播图片' : '等待 NAI 提示词'));
-        const imageButtonIcon = imageStatus === 'loading'
+        const videoStatus = String(data.videoGenerationStatus || '').trim();
+        const isImageGenerating = imageStatus === 'loading';
+        const isVideoGenerating = videoStatus === 'loading';
+        const isMediaGenerating = isImageGenerating || isVideoGenerating;
+        const generatedVideoUrl = String(data.generatedVideoUrl || '').trim();
+        const generatedImageUrl = generatedVideoUrl
+            ? ''
+            : String(data.naiImageUrl || data.generatedImageUrl || data.imageUrl || '').trim();
+        const hasGeneratedMedia = !!(generatedImageUrl || generatedVideoUrl);
+        const liveVideoUrl = generatedVideoUrl || (generatedImageUrl ? '' : this._buildLiveVideoUrl(data));
+        const isGeneratedVideoPlayback = !!generatedVideoUrl;
+        const imageButtonLabel = isVideoGenerating
+            ? '视频生成中...'
+            : (isImageGenerating
+                ? '图片生成中...'
+                : (hasGeneratedMedia ? '重新生成直播画面' : (naiPrompt ? '生成直播画面' : '等待 NAI 提示词')));
+        const imageButtonIcon = isMediaGenerating
             ? 'fa-spinner fa-spin'
-            : (generatedImageUrl ? 'fa-rotate' : (naiPrompt ? 'fa-wand-magic-sparkles' : 'fa-lock'));
+            : (hasGeneratedMedia ? 'fa-rotate' : (naiPrompt ? 'fa-wand-magic-sparkles' : 'fa-lock'));
+        const mediaGenerationError = !isMediaGenerating
+            ? String(
+                (videoStatus === 'failed' && data.videoGenerationError)
+                    || (imageStatus === 'failed' && data.imageGenerationError)
+                    || ''
+            ).trim()
+            : '';
 
         const titleEl = root.querySelector('#honey-ui-title-top');
         if (titleEl) titleEl.textContent = liveTitleText;
@@ -1813,7 +1890,7 @@ export class HoneyView {
 
         const naiPlaceholder = root.querySelector('.honey-nai-placeholder');
         if (naiPlaceholder) {
-            naiPlaceholder.classList.toggle('has-generated-image', !!generatedImageUrl);
+            naiPlaceholder.classList.toggle('has-generated-image', hasGeneratedMedia);
             naiPlaceholder.style.background = liveVideoUrl ? '#000' : '';
 
             let generatedImg = naiPlaceholder.querySelector('.honey-nai-generated-image');
@@ -1836,18 +1913,25 @@ export class HoneyView {
                     liveVideo = document.createElement('video');
                     liveVideo.id = 'honey-live-video-el';
                     liveVideo.className = 'honey-live-video';
-                    liveVideo.loop = true;
                     liveVideo.muted = true;
                     liveVideo.playsInline = true;
                     liveVideo.setAttribute('webkit-playsinline', '');
                     liveVideo.preload = 'metadata';
                     naiPlaceholder.prepend(liveVideo);
                 }
+                liveVideo.classList.toggle('is-generated-video', isGeneratedVideoPlayback);
+                liveVideo.loop = !isGeneratedVideoPlayback;
+                if (isGeneratedVideoPlayback) {
+                    liveVideo.dataset.honeyGeneratedVideo = '1';
+                } else {
+                    delete liveVideo.dataset.honeyGeneratedVideo;
+                    delete liveVideo.dataset.honeyAutoplayStarted;
+                }
                 if (liveVideo.getAttribute('src') !== liveVideoUrl) {
+                    liveVideo.dataset.honeyAutoplayStarted = '0';
                     liveVideo.setAttribute('src', liveVideoUrl);
                     liveVideo.load?.();
                 }
-                this._playLiveVideoIfCurrent(liveVideo, root);
             } else if (liveVideo) {
                 liveVideo.pause?.();
                 liveVideo.remove();
@@ -1867,17 +1951,34 @@ export class HoneyView {
             } else if (glassEl) {
                 glassEl.remove();
             }
+
+            let replayBtn = naiPlaceholder.querySelector('.honey-generated-video-replay');
+            if (isGeneratedVideoPlayback) {
+                if (!replayBtn) {
+                    replayBtn = document.createElement('button');
+                    replayBtn.className = 'honey-generated-video-replay';
+                    replayBtn.type = 'button';
+                    replayBtn.title = '重新播放视频';
+                    replayBtn.setAttribute('aria-label', '重新播放视频');
+                    replayBtn.setAttribute('aria-hidden', 'true');
+                    replayBtn.hidden = true;
+                    replayBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+                    naiPlaceholder.appendChild(replayBtn);
+                }
+            } else if (replayBtn) {
+                replayBtn.remove();
+            }
             this._bindGeneratedImageViewer(root);
 
             const statusEl = naiPlaceholder.querySelector('.honey-nai-status');
-            if (imageStatus === 'failed' && data.imageGenerationError) {
+            if (mediaGenerationError) {
                 if (statusEl) {
-                    statusEl.textContent = String(data.imageGenerationError || '').trim();
+                    statusEl.textContent = mediaGenerationError;
                     statusEl.classList.add('is-error');
                 } else {
                     const nextStatus = document.createElement('div');
                     nextStatus.className = 'honey-nai-status is-error';
-                    nextStatus.textContent = String(data.imageGenerationError || '').trim();
+                    nextStatus.textContent = mediaGenerationError;
                     naiPlaceholder.appendChild(nextStatus);
                 }
             } else if (statusEl) {
@@ -1885,11 +1986,28 @@ export class HoneyView {
             }
         }
 
+        const settingsBtn = root.querySelector('#honey-settings-btn');
+        let liveSoundBtn = root.querySelector('#honey-live-sound-btn');
+        if (liveVideoUrl) {
+            if (!liveSoundBtn && settingsBtn?.parentElement) {
+                liveSoundBtn = document.createElement('button');
+                liveSoundBtn.className = 'honey-icon-btn';
+                liveSoundBtn.id = 'honey-live-sound-btn';
+                liveSoundBtn.title = '开启/关闭声音';
+                liveSoundBtn.style.fontSize = '15px';
+                liveSoundBtn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
+                settingsBtn.parentElement.insertBefore(liveSoundBtn, settingsBtn);
+            }
+        } else if (liveSoundBtn) {
+            liveSoundBtn.remove();
+        }
+        this._bindHoneyLiveVideoPlayback(root);
+
         const naiBtn = root.querySelector('#honey-test-nai-btn');
         if (naiBtn) {
-            naiBtn.disabled = imageStatus === 'loading' || !naiPrompt;
+            naiBtn.disabled = isMediaGenerating || !naiPrompt;
             naiBtn.title = imageButtonLabel;
-            naiBtn.classList.toggle('is-regenerate', !!generatedImageUrl);
+            naiBtn.classList.toggle('is-regenerate', hasGeneratedMedia);
             const iconEl = naiBtn.querySelector('i');
             if (iconEl) {
                 iconEl.className = `fa-solid ${imageButtonIcon}`;
@@ -2168,7 +2286,7 @@ export class HoneyView {
             '1. 严格根据生图tag的所有提示词，只写剧情画面 tag。',
             '2. 必须结合前文当前直播剧情、主播、标题、评论/弹幕互动，生成更贴合这一帧的英文逗号分隔 NAI tags。',
             '3. 禁止输出中文句子，禁止续写剧情，禁止输出解释、 Markdown，禁止输出除生图tag的格式的任何其他多余内容。',
-            '4. 只输出生图tag格式：[画面]：[tag1, tag2, tag3]'
+            '4. 只输出生图tag格式：[图片]：[tag1, tag2, tag3]'
         ].join('\n');
     }
 
@@ -2217,7 +2335,7 @@ export class HoneyView {
             if (!result?.success) throw new Error(result?.error || 'AI 返回为空');
             const rawText = String(result.summary || result.content || result.text || '').trim();
             const nextPrompt = String(this.app?.honeyData?._extractNaiPrompt?.(rawText) || '').trim();
-            if (!nextPrompt) throw new Error('AI 未返回有效的 [画面] NAI tag');
+            if (!nextPrompt) throw new Error('AI 未返回有效的 [图片] NAI tag');
 
             const topicKey = this._getActiveTopicKey();
             const topicTitle = this._getActiveTopicTitle();
@@ -3303,10 +3421,19 @@ export class HoneyView {
                 if (!imageUrl) return;
                 const hostName = String(this.currentSceneData?.host || 'honey').trim() || 'honey';
                 const seed = String(this.currentSceneData?.imageGenerationSeed || Date.now()).trim();
+                const videoWorkflows = this._getHoneyImageToVideoWorkflows();
                 this.app?.phoneShell?.showImageViewer?.(imageUrl, {
                     alt: '蜜语直播图片',
                     download: true,
-                    filename: `honey_${hostName}_${seed}.png`
+                    filename: `honey_${hostName}_${seed}.png`,
+                    videoGeneration: {
+                        workflows: videoWorkflows,
+                        onGenerate: (workflow, context = {}) => this._generateHoneyVideoFromImage({
+                            imageUrl,
+                            workflow,
+                            setProgress: context.setProgress
+                        })
+                    }
                 });
             };
             img.addEventListener('click', (e) => {
@@ -3329,6 +3456,138 @@ export class HoneyView {
                 }
             });
         });
+    }
+
+    _getHoneyImageToVideoWorkflows() {
+        const imageManager = window.VirtualPhone?.imageGenerationManager;
+        if (!imageManager || typeof imageManager.getComfyUIWorkflowChoices !== 'function') return [];
+        return imageManager.getComfyUIWorkflowChoices({
+            app: 'honey',
+            videoOnly: true,
+            imageToVideoOnly: true
+        });
+    }
+
+    async _generateHoneyVideoFromImage({ imageUrl = '', workflow = null, setProgress = null } = {}) {
+        const safeImageUrl = String(imageUrl || '').trim();
+        if (!safeImageUrl) throw new Error('当前图片地址为空');
+        if (!workflow?.workflow) throw new Error('所选视频工作流无效');
+
+        const imageManager = window.VirtualPhone?.imageGenerationManager;
+        if (!imageManager || typeof imageManager.generate !== 'function') {
+            throw new Error('生图管理器未初始化');
+        }
+
+        const sceneSnapshot = this._cloneLiveSceneData(this.currentSceneData || {});
+        const topicKey = String(sceneSnapshot?._topicKey || this._getActiveTopicKey() || '').trim();
+        const topicTitle = String(sceneSnapshot?._topicTitle || sceneSnapshot?.title || this._getActiveTopicTitle() || '直播间').trim();
+        const prompt = this._resolveSceneVideoPrompt(sceneSnapshot)
+            || 'subtle natural motion, smooth subject movement, gentle camera movement, temporal consistency';
+        const size = imageManager.getSizeForApp?.('honey') || { width: 832, height: 1216 };
+        const width = Number(sceneSnapshot?.imageGenerationWidth || size.width || 832) || 832;
+        const height = Number(sceneSnapshot?.imageGenerationHeight || size.height || 1216) || 1216;
+        const persistedSourceImageUrl = /^data:image\//i.test(safeImageUrl) ? '' : safeImageUrl;
+
+        const applyScenePatch = (patch = {}) => {
+            const currentKey = String(this.currentSceneData?._topicKey || this._getActiveTopicKey() || '').trim();
+            const currentTitle = String(this.currentSceneData?._topicTitle || this.currentSceneData?.title || this._getActiveTopicTitle() || '').trim();
+            const isCurrentScene = (topicKey && currentKey === topicKey) || (!topicKey && topicTitle && currentTitle === topicTitle);
+            if (isCurrentScene) {
+                this.currentSceneData = { ...(this.currentSceneData || sceneSnapshot), ...patch };
+                this._persistCurrentScene();
+                if (this.currentPage === 'live') {
+                    const liveRoot = this._getLiveRoot();
+                    this._refreshLivePageDom({ sourceRoot: liveRoot, scene: this.currentSceneData });
+                }
+                return;
+            }
+
+            const storedScene = this.app?.honeyData?.getTopicScene?.(topicKey || topicTitle, topicTitle) || sceneSnapshot;
+            this.app?.honeyData?.saveTopicScene?.(
+                topicKey || topicTitle,
+                { ...storedScene, ...patch, _topicKey: topicKey, _topicTitle: topicTitle },
+                topicTitle
+            );
+        };
+
+        applyScenePatch({
+            videoGenerationStatus: 'loading',
+            videoGenerationWorkflowId: String(workflow.id || '').trim(),
+            videoGenerationWorkflowName: String(workflow.name || '').trim(),
+            videoGenerationError: ''
+        });
+
+        try {
+            setProgress?.('正在读取首帧图片');
+            const sourceImageDataUrl = await this._imageUrlToDataUrl(safeImageUrl);
+            if (!/^data:image\//i.test(sourceImageDataUrl)) {
+                throw new Error('首帧图片读取失败');
+            }
+
+            setProgress?.(`正在生成 · ${String(workflow.name || '视频工作流')}`);
+            const result = await imageManager.generate({
+                app: 'honey',
+                provider: 'comfyui',
+                ignoreEnabled: true,
+                comfyuiPromptKind: 'video',
+                prompt,
+                width,
+                height,
+                novelAIReferences: [{ image: sourceImageDataUrl }],
+                comfyuiWorkflowId: String(workflow.id || '').trim(),
+                comfyuiWorkflowName: String(workflow.name || '').trim(),
+                comfyuiWorkflowFingerprint: String(workflow.fingerprint || '').trim(),
+                comfyuiWorkflow: String(workflow.workflow || '').trim(),
+                comfyuiNodeMapping: String(workflow.nodeMapping || '').trim(),
+                comfyuiModel: String(workflow.comfyuiModel || '').trim(),
+                comfyuiSampler: String(workflow.comfyuiSampler || 'euler').trim() || 'euler',
+                comfyuiScheduler: String(workflow.comfyuiScheduler || 'normal').trim() || 'normal',
+                comfyuiVae: String(workflow.comfyuiVae || '').trim(),
+                comfyuiClip: String(workflow.comfyuiClip || '').trim()
+            });
+            if (result?.mediaType !== 'video' || !result.videoBlob || Number(result.videoBlob.size || 0) <= 0) {
+                throw new Error('所选工作流没有返回视频');
+            }
+
+            setProgress?.('正在保存视频');
+            const persistedVideoUrl = await this._uploadHoneyGeneratedVideoBlob(result.videoBlob, {
+                hostName: String(sceneSnapshot?.host || '').trim(),
+                seed: result.seed,
+                oldMediaUrl: String(sceneSnapshot?.generatedVideoUrl || '').trim()
+            });
+            result.videoUrl = persistedVideoUrl;
+
+            applyScenePatch({
+                naiImageUrl: '',
+                generatedImageUrl: '',
+                imageUrl: '',
+                generatedVideoUrl: persistedVideoUrl,
+                videoSourceImageUrl: persistedSourceImageUrl,
+                videoGenerationStatus: 'done',
+                videoGenerationWorkflowId: String(workflow.id || '').trim(),
+                videoGenerationWorkflowName: String(workflow.name || '').trim(),
+                videoGenerationError: '',
+                imageGenerationProvider: result.provider || 'comfyui',
+                imageGenerationModel: result.model || String(workflow.comfyuiModel || '').trim(),
+                imageGenerationWidth: Number(result.width || width) || width,
+                imageGenerationHeight: Number(result.height || height) || height,
+                imageGenerationSeed: Number(result.seed ?? sceneSnapshot?.imageGenerationSeed ?? -1),
+                imageGenerationSampler: String(result.sampler || workflow.comfyuiSampler || '').trim(),
+                imageGenerationSchedule: String(result.scheduler || workflow.comfyuiScheduler || '').trim(),
+                imageGenerationError: ''
+            });
+            this.app?.phoneShell?.showNotification?.('蜜语', '图片已生成视频', '🎬');
+            return result;
+        } catch (err) {
+            const message = String(err?.message || err || '视频生成失败').trim();
+            applyScenePatch({
+                videoGenerationStatus: 'failed',
+                videoGenerationWorkflowId: String(workflow.id || '').trim(),
+                videoGenerationWorkflowName: String(workflow.name || '').trim(),
+                videoGenerationError: message
+            });
+            throw err;
+        }
     }
 
     _bindHoneyGeneratedImageError(img) {
@@ -3363,9 +3622,140 @@ export class HoneyView {
                 liveVideo.preload = 'metadata';
                 liveVideo.src = liveVideoUrl;
                 placeholder.prepend(liveVideo);
-                this._playLiveVideoIfCurrent(liveVideo, placeholder.closest?.('.honey-page-live'));
+                this._bindHoneyLiveVideoPlayback(placeholder.closest?.('.honey-page-live'));
             }
         });
+    }
+
+    _bindHoneyLiveVideoPlayback(root) {
+        const liveVideo = root?.querySelector?.('#honey-live-video-el');
+        if (!liveVideo) return;
+        const isGeneratedVideo = liveVideo.dataset.honeyGeneratedVideo === '1';
+        liveVideo.loop = !isGeneratedVideo;
+        let liveSoundBtn = root?.querySelector?.('#honey-live-sound-btn');
+        const settingsBtn = root?.querySelector?.('#honey-settings-btn');
+        if (!liveSoundBtn && settingsBtn?.parentElement) {
+            liveSoundBtn = document.createElement('button');
+            liveSoundBtn.className = 'honey-icon-btn';
+            liveSoundBtn.id = 'honey-live-sound-btn';
+            liveSoundBtn.title = '开启/关闭声音';
+            liveSoundBtn.style.fontSize = '15px';
+            settingsBtn.parentElement.insertBefore(liveSoundBtn, settingsBtn);
+        }
+
+        if (liveVideo.dataset.honeyLiveVideoBound !== '1') {
+            liveVideo.dataset.honeyLiveVideoBound = '1';
+            liveVideo.muted = true;
+            liveVideo.dataset.retryCount = '0';
+            liveVideo.addEventListener('loadeddata', () => {
+                liveVideo.dataset.retryCount = '0';
+            });
+            liveVideo.addEventListener('play', () => {
+                this._setHoneyGeneratedVideoReplayVisible(liveVideo, false);
+            });
+            liveVideo.addEventListener('ended', () => {
+                this._setHoneyGeneratedVideoReplayVisible(liveVideo, true);
+            });
+            liveVideo.addEventListener('pause', () => {
+                if (liveVideo.ended || (Number(liveVideo.currentTime) > 0 && liveVideo.dataset.honeyAutoplayStarted === '1')) {
+                    this._setHoneyGeneratedVideoReplayVisible(liveVideo, true);
+                }
+            });
+            liveVideo.addEventListener('error', () => {
+                const failedSrc = String(liveVideo.currentSrc || liveVideo.src || '').trim();
+                if (liveVideo.dataset.honeyGeneratedVideo === '1') {
+                    this._setHoneyGeneratedVideoReplayVisible(liveVideo, true);
+                    console.warn('蜜语生成视频加载失败:', failedSrc || '(empty src)');
+                    this.app?.phoneShell?.showNotification?.('蜜语', '视频无法解码，请检查浏览器是否支持该视频编码', '⚠️');
+                    return;
+                }
+                const retryCount = Math.max(0, Number.parseInt(String(liveVideo.dataset.retryCount || '0'), 10) || 0);
+                const data = this.currentSceneData || {};
+                const rawPool = this.app?.honeyData?.getCustomLiveVideos?.() || [];
+                const pool = [];
+                const seen = new Set();
+                rawPool.forEach((item) => {
+                    const normalized = this._normalizeUploadedBackgroundUrl(item);
+                    if (!normalized || seen.has(normalized)) return;
+                    seen.add(normalized);
+                    pool.push(normalized);
+                });
+
+                const normalizedCurrent = this._normalizeUploadedBackgroundUrl(failedSrc);
+                const currentIndex = normalizedCurrent ? pool.indexOf(normalizedCurrent) : -1;
+                const canRetry = pool.length > 1 && retryCount < (pool.length - 1);
+
+                if (canRetry) {
+                    const nextIndex = currentIndex >= 0
+                        ? (currentIndex + 1) % pool.length
+                        : (retryCount % pool.length);
+                    const nextUrl = pool[nextIndex] || '';
+                    if (nextUrl && nextUrl !== normalizedCurrent) {
+                        liveVideo.dataset.retryCount = String(retryCount + 1);
+                        liveVideo.src = nextUrl;
+                        liveVideo.load();
+                        this._playLiveVideoIfCurrent(liveVideo, root);
+                        console.warn('蜜语直播视频加载失败，已切换候选源:', failedSrc || '(empty src)', '=>', nextUrl);
+                        return;
+                    }
+                }
+
+                const repickedUrl = this._buildLiveVideoUrl(data);
+                if (repickedUrl && repickedUrl !== normalizedCurrent && retryCount < pool.length + 1) {
+                    liveVideo.dataset.retryCount = String(retryCount + 1);
+                    liveVideo.src = repickedUrl;
+                    liveVideo.load();
+                    this._playLiveVideoIfCurrent(liveVideo, root);
+                    console.warn('蜜语直播视频加载失败，已重新挑选视频源:', failedSrc || '(empty src)', '=>', repickedUrl);
+                    return;
+                }
+
+                console.warn('蜜语直播视频加载失败:', failedSrc || '(empty src)');
+                this.app?.phoneShell?.showNotification?.('蜜语', '视频无法解码或地址失效，请重新生成 H.264 MP4', '⚠️');
+            });
+        }
+
+        const replayBtn = root.querySelector('.honey-generated-video-replay');
+        if (isGeneratedVideo && replayBtn && replayBtn.dataset.honeyVideoReplayBound !== '1') {
+            replayBtn.dataset.honeyVideoReplayBound = '1';
+            replayBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    liveVideo.currentTime = 0;
+                } catch (error) {
+                    console.warn('蜜语生成视频无法回到开头:', error);
+                }
+                this._setHoneyGeneratedVideoReplayVisible(liveVideo, false);
+                this._playLiveVideoIfCurrent(liveVideo, root);
+            });
+        }
+
+        if (liveSoundBtn && liveSoundBtn.dataset.honeyLiveSoundBound !== '1') {
+            liveSoundBtn.dataset.honeyLiveSoundBound = '1';
+            liveSoundBtn.innerHTML = liveVideo.muted
+                ? '<i class="fa-solid fa-volume-xmark"></i>'
+                : '<i class="fa-solid fa-volume-high" style="color: #ff4785;"></i>';
+            liveSoundBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                liveVideo.muted = !liveVideo.muted;
+                if (!liveVideo.muted) liveVideo.volume = 0.6;
+                liveSoundBtn.innerHTML = liveVideo.muted
+                    ? '<i class="fa-solid fa-volume-xmark"></i>'
+                    : '<i class="fa-solid fa-volume-high" style="color: #ff4785;"></i>';
+            });
+        }
+
+        if (isGeneratedVideo) {
+            if (liveVideo.dataset.honeyAutoplayStarted !== '1') {
+                liveVideo.dataset.honeyAutoplayStarted = '1';
+                this._playLiveVideoIfCurrent(liveVideo, root);
+            } else if (liveVideo.ended || liveVideo.paused) {
+                this._setHoneyGeneratedVideoReplayVisible(liveVideo, true);
+            }
+        } else {
+            this._playLiveVideoIfCurrent(liveVideo, root);
+        }
     }
 
     bindLiveEvents() {
@@ -3893,6 +4283,10 @@ export class HoneyView {
 
         root.querySelector('#honey-test-nai-btn')?.addEventListener('click', async () => {
             const scene = this.currentSceneData || {};
+            if (String(scene.videoGenerationStatus || '').trim() === 'loading') {
+                this.app.phoneShell.showNotification('蜜语', '视频正在后台生成，请稍候', '⏳');
+                return;
+            }
             const prompt = this._resolveSceneNaiPrompt(scene);
             if (!prompt) {
                 this.app.phoneShell.showNotification('蜜语', '当前直播没有可用的 NAI 提示词', '⚠️');
@@ -3900,80 +4294,7 @@ export class HoneyView {
             }
             this._generateSceneImageFromPrompt({ scene, prompt, auto: false });
         });
-
-        const liveVideo = root.querySelector('#honey-live-video-el');
-        const liveSoundBtn = root.querySelector('#honey-live-sound-btn');
-        if (liveVideo) {
-            liveVideo.muted = true;
-            liveVideo.dataset.retryCount = '0';
-            if (liveSoundBtn) {
-                liveSoundBtn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
-            }
-            liveVideo.addEventListener('loadeddata', () => {
-                liveVideo.dataset.retryCount = '0';
-            });
-            liveVideo.addEventListener('error', () => {
-                const failedSrc = String(liveVideo.currentSrc || liveVideo.src || '').trim();
-                const retryCount = Math.max(0, Number.parseInt(String(liveVideo.dataset.retryCount || '0'), 10) || 0);
-                const data = this.currentSceneData || {};
-                const rawPool = this.app?.honeyData?.getCustomLiveVideos?.() || [];
-                const pool = [];
-                const seen = new Set();
-                rawPool.forEach((item) => {
-                    const normalized = this._normalizeUploadedBackgroundUrl(item);
-                    if (!normalized || seen.has(normalized)) return;
-                    seen.add(normalized);
-                    pool.push(normalized);
-                });
-
-                const normalizedCurrent = this._normalizeUploadedBackgroundUrl(failedSrc);
-                const currentIndex = normalizedCurrent ? pool.indexOf(normalizedCurrent) : -1;
-                const canRetry = pool.length > 1 && retryCount < (pool.length - 1);
-
-                if (canRetry) {
-                    const nextIndex = currentIndex >= 0
-                        ? (currentIndex + 1) % pool.length
-                        : (retryCount % pool.length);
-                    const nextUrl = pool[nextIndex] || '';
-                    if (nextUrl && nextUrl !== normalizedCurrent) {
-                        liveVideo.dataset.retryCount = String(retryCount + 1);
-                        liveVideo.src = nextUrl;
-                        liveVideo.load();
-                        this._playLiveVideoIfCurrent(liveVideo, root);
-                        console.warn('蜜语直播视频加载失败，已切换候选源:', failedSrc || '(empty src)', '=>', nextUrl);
-                        return;
-                    }
-                }
-
-                // 最终仍失败：尝试根据当前场景重新挑选一次，再不行就提示重传
-                const repickedUrl = this._buildLiveVideoUrl(data);
-                if (repickedUrl && repickedUrl !== normalizedCurrent && retryCount < pool.length + 1) {
-                    liveVideo.dataset.retryCount = String(retryCount + 1);
-                    liveVideo.src = repickedUrl;
-                    liveVideo.load();
-                    this._playLiveVideoIfCurrent(liveVideo, root);
-                    console.warn('蜜语直播视频加载失败，已重新挑选视频源:', failedSrc || '(empty src)', '=>', repickedUrl);
-                    return;
-                }
-
-                console.warn('蜜语直播视频加载失败:', failedSrc || '(empty src)');
-                this.app?.phoneShell?.showNotification?.('蜜语', '视频无法解码或地址失效，请重传 H.264 MP4', '⚠️');
-            });
-            this._playLiveVideoIfCurrent(liveVideo, root);
-        }
-        if (liveSoundBtn && liveVideo) {
-            liveSoundBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (liveVideo.muted) {
-                    liveVideo.muted = false;
-                    liveVideo.volume = 0.6;
-                    liveSoundBtn.innerHTML = '<i class="fa-solid fa-volume-high" style="color: #ff4785;"></i>';
-                } else {
-                    liveVideo.muted = true;
-                    liveSoundBtn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
-                }
-            });
-        }
+        this._bindHoneyLiveVideoPlayback(root);
     }
 
     bindMineEvents() {
@@ -4341,8 +4662,15 @@ export class HoneyView {
                         avatarUrl: onlineTopic.avatarUrl || (cachedStableScene || latestScene).avatarUrl,
                         naiPrompt: onlineTopic.naiPrompt || (cachedStableScene || latestScene).naiPrompt,
                         imageGenerationPrompt: onlineTopic.imageGenerationPrompt || (cachedStableScene || latestScene).imageGenerationPrompt,
+                        videoPrompt: onlineTopic.videoPrompt || (cachedStableScene || latestScene).videoPrompt,
                         naiImageUrl: onlineTopic.naiImageUrl || (cachedStableScene || latestScene).naiImageUrl,
                         generatedImageUrl: onlineTopic.generatedImageUrl || (cachedStableScene || latestScene).generatedImageUrl,
+                        generatedVideoUrl: onlineTopic.generatedVideoUrl || (cachedStableScene || latestScene).generatedVideoUrl,
+                        videoSourceImageUrl: onlineTopic.videoSourceImageUrl || (cachedStableScene || latestScene).videoSourceImageUrl,
+                        videoGenerationStatus: onlineTopic.videoGenerationStatus || (cachedStableScene || latestScene).videoGenerationStatus,
+                        videoGenerationWorkflowId: onlineTopic.videoGenerationWorkflowId || (cachedStableScene || latestScene).videoGenerationWorkflowId,
+                        videoGenerationWorkflowName: onlineTopic.videoGenerationWorkflowName || (cachedStableScene || latestScene).videoGenerationWorkflowName,
+                        videoGenerationError: onlineTopic.videoGenerationError || (cachedStableScene || latestScene).videoGenerationError,
                         imageUrl: onlineTopic.imageUrl || (cachedStableScene || latestScene).imageUrl,
                         promptTurns: this.app?.honeyData?._normalizeContinuePromptTurns?.(
                             (cachedStableScene || latestScene).promptTurns,
@@ -7475,6 +7803,9 @@ export class HoneyView {
         const aiNaiPrompt = this._resolveSceneNaiPrompt(aiData);
         const currentNaiPrompt = this._resolveSceneNaiPrompt(currentScene);
         const hasNaiPromptDelta = !!aiNaiPrompt && aiNaiPrompt !== currentNaiPrompt;
+        const aiVideoPrompt = this._resolveSceneVideoPrompt(aiData);
+        const currentVideoPrompt = this._resolveSceneVideoPrompt(currentScene);
+        const hasVideoPromptDelta = !!aiVideoPrompt && aiVideoPrompt !== currentVideoPrompt;
 
         const currentDescription = String(currentScene?.description || '').trim();
         const hasMeaningfulDescription = this._hasMeaningfulSceneDescription(aiDescription)
@@ -7511,6 +7842,7 @@ export class HoneyView {
             || hasCollabRequests
             || hasFavorability
             || hasNaiPromptDelta
+            || hasVideoPromptDelta
             || hasMetaDelta
             || hasHostOrTitleDelta
             || hasIntroDelta;
@@ -7616,9 +7948,14 @@ export class HoneyView {
                 seed: requestSeed
             })
             : promptPreview;
-        const hostNaiReference = ['novelai', 'sd'].includes(provider)
-            ? this.app?.honeyData?.getHostNaiReference?.(sceneHostName)
-            : null;
+        const comfySceneReferenceImage = provider === 'comfyui'
+            ? String(baseScene?.naiImageUrl || baseScene?.generatedImageUrl || baseScene?.imageUrl || '').trim()
+            : '';
+        const hostNaiReference = comfySceneReferenceImage
+            ? { image: comfySceneReferenceImage }
+            : (['novelai', 'sd', 'comfyui'].includes(provider)
+                ? this.app?.honeyData?.getHostNaiReference?.(sceneHostName)
+                : null);
         let novelAIReferences = [];
         if (hostNaiReference?.image) {
             try {
@@ -7673,6 +8010,12 @@ export class HoneyView {
             naiPrompt: normalizedPrompt,
             naiImageUrl: '',
             generatedImageUrl: '',
+            generatedVideoUrl: '',
+            videoSourceImageUrl: '',
+            videoGenerationStatus: '',
+            videoGenerationWorkflowId: '',
+            videoGenerationWorkflowName: '',
+            videoGenerationError: '',
             imageUrl: '',
             imageGenerationStatus: 'loading',
             imageGenerationProvider: provider,
@@ -7700,26 +8043,54 @@ export class HoneyView {
                 seed: requestSeed,
                 novelAIReferences
             });
-            const rawImageUrl = String(result.imageUrl || result.imageData || '').trim();
-            const previousManagedImageUrl = String(baseScene?.naiImageUrl || baseScene?.generatedImageUrl || baseScene?.imageUrl || '').trim();
-            const persistedImageUrl = rawImageUrl.startsWith('data:image/')
-                ? await this._uploadHoneyGeneratedImageDataUrl(rawImageUrl, {
+            if (!result) throw new Error('生成完成但未返回媒体结果');
+
+            const isVideoResult = result.mediaType === 'video' || !!result.videoBlob;
+            const previousManagedMediaUrl = String(
+                baseScene?.generatedVideoUrl
+                || baseScene?.naiImageUrl
+                || baseScene?.generatedImageUrl
+                || baseScene?.imageUrl
+                || ''
+            ).trim();
+            let persistedImageUrl = '';
+            let persistedVideoUrl = '';
+
+            if (isVideoResult) {
+                persistedVideoUrl = await this._uploadHoneyGeneratedVideoBlob(result.videoBlob, {
                     hostName: sceneHostName,
                     seed: result.seed ?? requestSeed,
-                    oldImageUrl: previousManagedImageUrl
-                })
-                : rawImageUrl;
-            if (!persistedImageUrl) throw new Error('生图成功但未返回可保存的图片');
-            if (!rawImageUrl.startsWith('data:image/')
-                && previousManagedImageUrl
-                && previousManagedImageUrl !== persistedImageUrl
-                && this._isManagedBackgroundUrl(previousManagedImageUrl)) {
-                window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(previousManagedImageUrl, { quiet: true });
+                    oldMediaUrl: previousManagedMediaUrl
+                });
+                result.videoUrl = persistedVideoUrl;
+            } else {
+                const rawImageUrl = String(result.imageUrl || result.imageData || '').trim();
+                persistedImageUrl = rawImageUrl.startsWith('data:image/')
+                    ? await this._uploadHoneyGeneratedImageDataUrl(rawImageUrl, {
+                        hostName: sceneHostName,
+                        seed: result.seed ?? requestSeed,
+                        oldImageUrl: previousManagedMediaUrl
+                    })
+                    : rawImageUrl;
+                if (!persistedImageUrl) throw new Error('生图成功但未返回可保存的图片');
+                if (!rawImageUrl.startsWith('data:image/')
+                    && previousManagedMediaUrl
+                    && previousManagedMediaUrl !== persistedImageUrl
+                    && this._isManagedBackgroundUrl(previousManagedMediaUrl)) {
+                    window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(previousManagedMediaUrl, { quiet: true });
+                }
             }
+
             this.currentSceneData = {
                 ...(this.currentSceneData || baseScene),
                 naiImageUrl: persistedImageUrl,
                 generatedImageUrl: persistedImageUrl,
+                generatedVideoUrl: persistedVideoUrl,
+                videoSourceImageUrl: '',
+                videoGenerationStatus: '',
+                videoGenerationWorkflowId: '',
+                videoGenerationWorkflowName: '',
+                videoGenerationError: '',
                 imageUrl: persistedImageUrl,
                 naiPrompt: normalizedPrompt,
                 imageGenerationStatus: 'done',
@@ -7731,13 +8102,19 @@ export class HoneyView {
                 imageGenerationSteps: Number(result.steps || 0) || '',
                 imageGenerationSeed: Number(result.seed ?? requestSeed),
                 imageGenerationSampler: String(result.sampler || '').trim(),
-                imageGenerationSchedule: String(result.schedule || '').trim(),
+                imageGenerationSchedule: String(result.scheduler || result.schedule || '').trim(),
                 imageGenerationScale: Number(result.scale || 0) || '',
                 imageGenerationError: ''
             };
             this._persistCurrentScene();
             this._refreshHoneyImageGenerationView(sourceRoot);
-            this.app?.phoneShell?.showNotification?.('蜜语', auto ? '新剧情图片已自动生成' : '直播图片已生成', '🖼️');
+            this.app?.phoneShell?.showNotification?.(
+                '蜜语',
+                isVideoResult
+                    ? (auto ? '新剧情视频已自动生成' : '直播视频已生成')
+                    : (auto ? '新剧情图片已自动生成' : '直播图片已生成'),
+                isVideoResult ? '🎬' : '🖼️'
+            );
             return result;
         } catch (err) {
             const message = err?.message || String(err || '生成失败');
@@ -7746,6 +8123,12 @@ export class HoneyView {
                 naiPrompt: normalizedPrompt,
                 naiImageUrl: '',
                 generatedImageUrl: '',
+                generatedVideoUrl: '',
+                videoSourceImageUrl: '',
+                videoGenerationStatus: '',
+                videoGenerationWorkflowId: '',
+                videoGenerationWorkflowName: '',
+                videoGenerationError: '',
                 imageUrl: '',
                 imageGenerationStatus: 'failed',
                 imageGenerationProvider: provider,
@@ -7894,6 +8277,18 @@ export class HoneyView {
         return this.app?.honeyData?._extractNaiPrompt?.(sourceText) || '';
     }
 
+    _resolveSceneVideoPrompt(sceneLike) {
+        const scene = sceneLike || {};
+        const direct = String(
+            scene.videoPrompt
+            || scene.motionPrompt
+            || scene.videoGenerationPrompt
+            || ''
+        ).trim();
+        if (direct) return direct;
+        return '';
+    }
+
     _buildBaseScene(topicLike, topicTitle, topicKey = '') {
         const source = topicLike || this._getFallbackTopic();
         const safeTitle = String(topicTitle || source._topicTitle || source.title || '直播间').trim();
@@ -7925,8 +8320,15 @@ export class HoneyView {
             intro: source.intro || '',
             naiPrompt: this._resolveSceneNaiPrompt(source),
             imageGenerationPrompt: String(source.imageGenerationPrompt || '').trim(),
+            videoPrompt: this._resolveSceneVideoPrompt(source),
             naiImageUrl: String(source.naiImageUrl || '').trim(),
             generatedImageUrl: String(source.generatedImageUrl || source.imageUrl || '').trim(),
+            generatedVideoUrl: String(source.generatedVideoUrl || '').trim(),
+            videoSourceImageUrl: String(source.videoSourceImageUrl || '').trim(),
+            videoGenerationStatus: String(source.videoGenerationStatus || '').trim(),
+            videoGenerationWorkflowId: String(source.videoGenerationWorkflowId || '').trim(),
+            videoGenerationWorkflowName: String(source.videoGenerationWorkflowName || '').trim(),
+            videoGenerationError: String(source.videoGenerationError || '').trim(),
             imageGenerationStatus: String(source.imageGenerationStatus || '').trim(),
             imageGenerationProvider: String(source.imageGenerationProvider || '').trim(),
             imageGenerationModel: String(source.imageGenerationModel || '').trim(),
@@ -8015,45 +8417,56 @@ export class HoneyView {
                 return (topicKey && itemKey && itemKey === topicKey) || itemTitle === topicTitle;
             });
             if (idx >= 0) {
+                const existingTopic = this.recommendTopics[idx];
+                const resolveSceneField = (key) => Object.prototype.hasOwnProperty.call(scene, key)
+                    ? scene[key]
+                    : existingTopic[key];
                 this.recommendTopics[idx] = {
-                    ...this.recommendTopics[idx],
-                    _topicKey: this.recommendTopics[idx]._topicKey || topicKey,
+                    ...existingTopic,
+                    _topicKey: existingTopic._topicKey || topicKey,
                     _topicTitle: scene._topicTitle || topicTitle,
-                    title: scene.title || this.recommendTopics[idx].title,
-                    tag: scene.tag || this.recommendTopics[idx].tag,
-                    category: scene.category || this.recommendTopics[idx].category,
-                    recommendCategory: scene.recommendCategory || this.recommendTopics[idx].recommendCategory,
-                    host: scene.host || this.recommendTopics[idx].host,
-                    viewers: scene.viewers || this.recommendTopics[idx].viewers,
-                    playCount: scene.playCount || this.recommendTopics[idx].playCount,
-                    fans: scene.fans || this.recommendTopics[idx].fans,
-                    collab: scene.collab || this.recommendTopics[idx].collab,
-                    collabCost: scene.collabCost ?? this.recommendTopics[idx].collabCost,
-                    intro: scene.intro || this.recommendTopics[idx].intro,
-                    naiPrompt: scene.naiPrompt || this.recommendTopics[idx].naiPrompt,
-                    imageGenerationPrompt: scene.imageGenerationPrompt || this.recommendTopics[idx].imageGenerationPrompt,
-                    naiImageUrl: scene.naiImageUrl || this.recommendTopics[idx].naiImageUrl,
-                    generatedImageUrl: scene.generatedImageUrl || this.recommendTopics[idx].generatedImageUrl,
-                    imageUrl: scene.imageUrl || this.recommendTopics[idx].imageUrl,
-                    imageGenerationStatus: scene.imageGenerationStatus || this.recommendTopics[idx].imageGenerationStatus,
-                    imageGenerationProvider: scene.imageGenerationProvider || this.recommendTopics[idx].imageGenerationProvider,
-                    imageGenerationModel: scene.imageGenerationModel || this.recommendTopics[idx].imageGenerationModel,
-                    imageGenerationWidth: scene.imageGenerationWidth || this.recommendTopics[idx].imageGenerationWidth,
-                    imageGenerationHeight: scene.imageGenerationHeight || this.recommendTopics[idx].imageGenerationHeight,
-                    imageGenerationSteps: scene.imageGenerationSteps || this.recommendTopics[idx].imageGenerationSteps,
-                    imageGenerationSeed: scene.imageGenerationSeed || this.recommendTopics[idx].imageGenerationSeed,
-                    imageGenerationSampler: scene.imageGenerationSampler || this.recommendTopics[idx].imageGenerationSampler,
-                    imageGenerationSchedule: scene.imageGenerationSchedule || this.recommendTopics[idx].imageGenerationSchedule,
-                    imageGenerationScale: scene.imageGenerationScale || this.recommendTopics[idx].imageGenerationScale,
-                    imageGenerationError: scene.imageGenerationError || this.recommendTopics[idx].imageGenerationError,
-                    description: scene.description || this.recommendTopics[idx].description,
-                    comments: Array.isArray(scene.comments) ? scene.comments : this.recommendTopics[idx].comments,
-                    lastUserComment: scene.lastUserComment || this.recommendTopics[idx].lastUserComment,
-                    userChats: Array.isArray(scene.userChats) ? scene.userChats : this.recommendTopics[idx].userChats,
-                    promptTurns: Array.isArray(scene.promptTurns) ? scene.promptTurns : this.recommendTopics[idx].promptTurns,
-                    naiTagHistory: Array.isArray(scene.naiTagHistory) ? scene.naiTagHistory : this.recommendTopics[idx].naiTagHistory,
-                    gifts: Array.isArray(scene.gifts) ? scene.gifts : this.recommendTopics[idx].gifts,
-                    leaderboard: Array.isArray(scene.leaderboard) ? scene.leaderboard : this.recommendTopics[idx].leaderboard,
+                    title: scene.title || existingTopic.title,
+                    tag: scene.tag || existingTopic.tag,
+                    category: scene.category || existingTopic.category,
+                    recommendCategory: scene.recommendCategory || existingTopic.recommendCategory,
+                    host: scene.host || existingTopic.host,
+                    viewers: scene.viewers || existingTopic.viewers,
+                    playCount: scene.playCount || existingTopic.playCount,
+                    fans: scene.fans || existingTopic.fans,
+                    collab: scene.collab || existingTopic.collab,
+                    collabCost: scene.collabCost ?? existingTopic.collabCost,
+                    intro: scene.intro || existingTopic.intro,
+                    naiPrompt: scene.naiPrompt || existingTopic.naiPrompt,
+                    imageGenerationPrompt: scene.imageGenerationPrompt || existingTopic.imageGenerationPrompt,
+                    videoPrompt: resolveSceneField('videoPrompt'),
+                    naiImageUrl: resolveSceneField('naiImageUrl'),
+                    generatedImageUrl: resolveSceneField('generatedImageUrl'),
+                    generatedVideoUrl: resolveSceneField('generatedVideoUrl'),
+                    videoSourceImageUrl: resolveSceneField('videoSourceImageUrl'),
+                    imageUrl: resolveSceneField('imageUrl'),
+                    imageGenerationStatus: scene.imageGenerationStatus || existingTopic.imageGenerationStatus,
+                    imageGenerationProvider: scene.imageGenerationProvider || existingTopic.imageGenerationProvider,
+                    imageGenerationModel: scene.imageGenerationModel || existingTopic.imageGenerationModel,
+                    imageGenerationWidth: scene.imageGenerationWidth || existingTopic.imageGenerationWidth,
+                    imageGenerationHeight: scene.imageGenerationHeight || existingTopic.imageGenerationHeight,
+                    imageGenerationSteps: scene.imageGenerationSteps || existingTopic.imageGenerationSteps,
+                    imageGenerationSeed: scene.imageGenerationSeed || existingTopic.imageGenerationSeed,
+                    imageGenerationSampler: scene.imageGenerationSampler || existingTopic.imageGenerationSampler,
+                    imageGenerationSchedule: scene.imageGenerationSchedule || existingTopic.imageGenerationSchedule,
+                    imageGenerationScale: scene.imageGenerationScale || existingTopic.imageGenerationScale,
+                    imageGenerationError: scene.imageGenerationError || existingTopic.imageGenerationError,
+                    videoGenerationStatus: resolveSceneField('videoGenerationStatus'),
+                    videoGenerationWorkflowId: resolveSceneField('videoGenerationWorkflowId'),
+                    videoGenerationWorkflowName: resolveSceneField('videoGenerationWorkflowName'),
+                    videoGenerationError: resolveSceneField('videoGenerationError'),
+                    description: scene.description || existingTopic.description,
+                    comments: Array.isArray(scene.comments) ? scene.comments : existingTopic.comments,
+                    lastUserComment: scene.lastUserComment || existingTopic.lastUserComment,
+                    userChats: Array.isArray(scene.userChats) ? scene.userChats : existingTopic.userChats,
+                    promptTurns: Array.isArray(scene.promptTurns) ? scene.promptTurns : existingTopic.promptTurns,
+                    naiTagHistory: Array.isArray(scene.naiTagHistory) ? scene.naiTagHistory : existingTopic.naiTagHistory,
+                    gifts: Array.isArray(scene.gifts) ? scene.gifts : existingTopic.gifts,
+                    leaderboard: Array.isArray(scene.leaderboard) ? scene.leaderboard : existingTopic.leaderboard,
                     audienceGiftTotals: scene.audienceGiftTotals && typeof scene.audienceGiftTotals === 'object'
                         ? scene.audienceGiftTotals
                         : this.recommendTopics[idx].audienceGiftTotals,
@@ -8147,8 +8560,15 @@ export class HoneyView {
                     intro: restoredScene.intro,
                     naiPrompt: restoredScene.naiPrompt,
                     imageGenerationPrompt: restoredScene.imageGenerationPrompt,
+                    videoPrompt: restoredScene.videoPrompt,
                     naiImageUrl: restoredScene.naiImageUrl,
                     generatedImageUrl: restoredScene.generatedImageUrl,
+                    generatedVideoUrl: restoredScene.generatedVideoUrl,
+                    videoSourceImageUrl: restoredScene.videoSourceImageUrl,
+                    videoGenerationStatus: restoredScene.videoGenerationStatus,
+                    videoGenerationWorkflowId: restoredScene.videoGenerationWorkflowId,
+                    videoGenerationWorkflowName: restoredScene.videoGenerationWorkflowName,
+                    videoGenerationError: restoredScene.videoGenerationError,
                     imageGenerationStatus: restoredScene.imageGenerationStatus,
                     imageGenerationProvider: restoredScene.imageGenerationProvider,
                     imageGenerationModel: restoredScene.imageGenerationModel,
@@ -8419,10 +8839,18 @@ export class HoneyView {
             const previousGeneratedImageUrls = [
                 workingScene?.naiImageUrl,
                 workingScene?.generatedImageUrl,
+                workingScene?.generatedVideoUrl,
+                workingScene?.videoSourceImageUrl,
                 workingScene?.imageUrl
             ].map(item => String(item || '').trim()).filter(Boolean);
             nextScene.naiImageUrl = '';
             nextScene.generatedImageUrl = '';
+            nextScene.generatedVideoUrl = '';
+            nextScene.videoSourceImageUrl = '';
+            nextScene.videoGenerationStatus = '';
+            nextScene.videoGenerationWorkflowId = '';
+            nextScene.videoGenerationWorkflowName = '';
+            nextScene.videoGenerationError = '';
             nextScene.imageUrl = '';
             nextScene.imageGenerationStatus = '';
             nextScene.imageGenerationProvider = '';
@@ -8522,8 +8950,15 @@ export class HoneyView {
                     intro: this.currentSceneData.intro,
                     naiPrompt: this.currentSceneData.naiPrompt,
                     imageGenerationPrompt: this.currentSceneData.imageGenerationPrompt,
+                    videoPrompt: this.currentSceneData.videoPrompt,
                     naiImageUrl: this.currentSceneData.naiImageUrl,
                     generatedImageUrl: this.currentSceneData.generatedImageUrl,
+                    generatedVideoUrl: this.currentSceneData.generatedVideoUrl,
+                    videoSourceImageUrl: this.currentSceneData.videoSourceImageUrl,
+                    videoGenerationStatus: this.currentSceneData.videoGenerationStatus,
+                    videoGenerationWorkflowId: this.currentSceneData.videoGenerationWorkflowId,
+                    videoGenerationWorkflowName: this.currentSceneData.videoGenerationWorkflowName,
+                    videoGenerationError: this.currentSceneData.videoGenerationError,
                     imageGenerationStatus: this.currentSceneData.imageGenerationStatus,
                     imageGenerationProvider: this.currentSceneData.imageGenerationProvider,
                     imageGenerationModel: this.currentSceneData.imageGenerationModel,

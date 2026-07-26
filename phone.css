@@ -5111,6 +5111,199 @@ input:checked + .toggle-slider:before {
     line-height: 1 !important;
 }
 
+.phone-image-viewer-video {
+    position: absolute !important;
+    top: 32px !important;
+    z-index: 5 !important;
+    width: 34px !important;
+    height: 34px !important;
+    border: none !important;
+    border-radius: 50% !important;
+    background: rgba(255, 255, 255, 0.13) !important;
+    color: #fff !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    font-size: 14px !important;
+    cursor: pointer !important;
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+}
+
+.phone-image-viewer-video:disabled {
+    cursor: wait !important;
+    opacity: 0.68 !important;
+}
+
+.phone-image-viewer-video i {
+    color: #fff !important;
+    line-height: 1 !important;
+}
+
+.phone-image-viewer-video-progress {
+    position: absolute !important;
+    left: 14px !important;
+    bottom: 16px !important;
+    z-index: 6 !important;
+    min-height: 34px !important;
+    max-width: calc(100% - 28px) !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 0 12px !important;
+    box-sizing: border-box !important;
+    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    border-radius: 8px !important;
+    background: rgba(16, 16, 18, 0.82) !important;
+    color: #fff !important;
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0 !important;
+    pointer-events: none !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+}
+
+.phone-image-viewer-video-progress[hidden] {
+    display: none !important;
+}
+
+.phone-image-viewer-video-progress.is-success {
+    border-color: rgba(52, 211, 153, 0.45) !important;
+}
+
+.phone-image-viewer-video-progress.is-error {
+    border-color: rgba(248, 113, 113, 0.52) !important;
+}
+
+.phone-image-viewer-video-progress i {
+    flex: 0 0 auto !important;
+    color: #fff !important;
+    font-size: 14px !important;
+}
+
+.phone-image-viewer-video-progress-label {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.phone-image-viewer-workflow-picker {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 20 !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+    padding: 16px !important;
+    box-sizing: border-box !important;
+    background: rgba(0, 0, 0, 0.56) !important;
+    touch-action: none !important;
+}
+
+.phone-image-viewer-workflow-dialog {
+    width: 100% !important;
+    max-height: 58% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    border-radius: 8px !important;
+    background: rgba(24, 24, 27, 0.98) !important;
+    color: #fff !important;
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.46) !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+}
+
+.phone-image-viewer-workflow-header {
+    min-height: 46px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    padding: 0 10px 0 14px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-sizing: border-box !important;
+    font-size: 14px !important;
+    font-weight: 650 !important;
+    letter-spacing: 0 !important;
+}
+
+.phone-image-viewer-workflow-close {
+    width: 32px !important;
+    height: 32px !important;
+    flex: 0 0 32px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 50% !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #fff !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+}
+
+.phone-image-viewer-workflow-list {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+}
+
+.phone-image-viewer-workflow-item {
+    width: 100% !important;
+    min-height: 48px !important;
+    display: grid !important;
+    grid-template-columns: 22px minmax(0, 1fr) 14px !important;
+    align-items: center !important;
+    gap: 9px !important;
+    padding: 0 14px !important;
+    border: none !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #fff !important;
+    text-align: left !important;
+    font-size: 13px !important;
+    letter-spacing: 0 !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+}
+
+.phone-image-viewer-workflow-item:last-child {
+    border-bottom: none !important;
+}
+
+.phone-image-viewer-workflow-item:hover,
+.phone-image-viewer-workflow-item:active {
+    background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.phone-image-viewer-workflow-item span {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.phone-image-viewer-workflow-item > i:first-child {
+    color: #f472b6 !important;
+}
+
+.phone-image-viewer-workflow-item > i:last-child {
+    color: rgba(255, 255, 255, 0.46) !important;
+    font-size: 11px !important;
+}
+
 .honey-nai-generated-image,
 .message-image,
 .message-image-prompt-front-panel img,

@@ -3852,9 +3852,9 @@ export class SettingsApp {
 
                 <div class="setting-item">
                     <button id="phone-image-test-comfyui" class="phone-image-test-btn" style="width: 100%; height: 34px; border: none; border-radius: 8px; background: #10b981 !important; color: #fff !important; font-size: 13px; font-weight: 600; cursor: pointer;">
-                        测试 ComfyUI 生图连接
+                        测试 ComfyUI 工作流连接
                     </button>
-                    <div class="setting-desc" id="phone-image-test-comfyui-result" style="margin-top: 6px;">使用当前 ComfyUI 工作流和蜜语尺寸生成一张测试图。</div>
+                    <div class="setting-desc" id="phone-image-test-comfyui-result" style="margin-top: 6px;">使用当前 ComfyUI 工作流和蜜语尺寸生成测试媒体。</div>
                 </div>
             </div>
 
@@ -7412,6 +7412,7 @@ export class SettingsApp {
                     '普通工作流会自动转换，并自动识别提示词、尺寸、seed 和采样器节点。',
                     '简单工作流也可继续使用占位符：',
                     '%prompt%、%negative_prompt%、%width%、%height%、%MODEL_NAME%、%reference_image%。',
+                    '视频工作流还可使用 %video_prompt%、%motion_prompt% 或 %视频提示词%；发起图生视频时，%prompt% 也会替换为视频提示词。',
                     '如提示缺少节点，请在 ComfyUI Manager 安装对应自定义节点。'
                 ].join('\n'),
                 mode: 'export'
@@ -7485,7 +7486,7 @@ export class SettingsApp {
                     resultEl.style.color = color;
                 }
             };
-            const oldText = btn?.textContent || '测试 ComfyUI 生图连接';
+            const oldText = btn?.textContent || '测试 ComfyUI 工作流连接';
             try {
                 await this.storage.set('phone-image-provider', 'comfyui');
                 await this.storage.set('phone-image-enabled', true);
@@ -7511,7 +7512,9 @@ export class SettingsApp {
                     negativePrompt: String(document.getElementById('phone-image-negative-prompt')?.value || '').trim(),
                     ignoreEnabled: true
                 });
-                if (!result?.imageUrl && !result?.imageData) throw new Error('ComfyUI 未返回图片');
+                const receivedVideo = result?.mediaType === 'video' && Number(result?.videoBlob?.size || 0) > 0;
+                const receivedImage = !!(result?.imageUrl || result?.imageData);
+                if (!receivedVideo && !receivedImage) throw new Error('ComfyUI 未返回可用媒体');
                 const detail = [
                     result.width && result.height ? `${result.width}x${result.height}` : '',
                     result.steps ? `${result.steps} steps` : '',
@@ -7522,12 +7525,13 @@ export class SettingsApp {
                 const debugHint = this.storage.get('phone-image-debug-payload') === true || this.storage.get('phone-image-debug-payload') === 'true'
                     ? '；调试信息见控制台 window.__lastComfyUIRequest'
                     : '';
-                setResult(`ComfyUI 连接成功，已收到图片数据${detail ? `：${detail}` : ''}${debugHint}。`, '#0f9f6e');
-                this.phoneShell?.showNotification?.('生图测试', detail ? `ComfyUI 连接成功 ${detail}` : 'ComfyUI 连接成功', '✓');
+                const mediaLabel = receivedVideo ? '视频' : '图片';
+                setResult(`ComfyUI 连接成功，已收到${mediaLabel}数据${detail ? `：${detail}` : ''}${debugHint}。`, '#0f9f6e');
+                this.phoneShell?.showNotification?.('工作流测试', detail ? `ComfyUI ${mediaLabel}连接成功 ${detail}` : `ComfyUI ${mediaLabel}连接成功`, '✓');
             } catch (err) {
                 const message = err?.message || String(err || '测试失败');
                 setResult(`测试失败：${message}`, '#d33');
-                this.phoneShell?.showNotification?.('ComfyUI 生图测试失败', message, '⚠️');
+                this.phoneShell?.showNotification?.('ComfyUI 工作流测试失败', message, '⚠️');
             } finally {
                 if (btn) {
                     btn.disabled = false;

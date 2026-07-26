@@ -274,6 +274,7 @@ export class PhoneShell {
                 '#wechat-undercover-preview-modal', '#wechat-undercover-preview-modal > div', '.wechat-undercover-preview-body',
                 '.wechat-call-transcript-overlay', '.wechat-call-transcript-panel', '.wechat-call-transcript-body',
                 '.phone-image-viewer-overlay', '.phone-image-viewer-stage',
+                '.phone-image-viewer-workflow-picker', '.phone-image-viewer-workflow-dialog', '.phone-image-viewer-workflow-list',
                 '#st-phone-update-modal', '.st-phone-update-dialog', '.st-phone-update-content', '.st-phone-update-list',
                 '#phone-image-preset-share-modal', '#phone-image-preset-share-modal > div', '#phone-image-preset-share-text',
                 '#phone-image-preset-export-chooser', '.phone-image-preset-export-dialog', '.phone-image-preset-export-list',
@@ -425,6 +426,7 @@ export class PhoneShell {
                             drawerPanel.classList.remove('openDrawer', 'phone-panel-open', 'drawer-content', 'fillRight');
                             drawerPanel.classList.add('phone-panel-hidden');
                             drawerPanel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
+                            window.dispatchEvent(new CustomEvent('phone:panelVisibility', { detail: { open: false } }));
                         }
                         // 重置样式
                         if (target) {
@@ -576,6 +578,7 @@ export class PhoneShell {
                             drawerPanel.classList.remove('openDrawer', 'phone-panel-open', 'drawer-content', 'fillRight');
                             drawerPanel.classList.add('phone-panel-hidden');
                             drawerPanel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
+                            window.dispatchEvent(new CustomEvent('phone:panelVisibility', { detail: { open: false } }));
                         }
                         if (target) {
                             target.style.transition = '';
@@ -812,6 +815,12 @@ export class PhoneShell {
         if (!safeUrl || !this.container) return;
         const allowDownload = options.download !== false;
         const downloadName = this._buildImageViewerDownloadName(options.filename || options.downloadName || 'phone-image');
+        const videoGeneration = options?.videoGeneration && typeof options.videoGeneration === 'object'
+            ? options.videoGeneration
+            : null;
+        const allowVideoGeneration = typeof videoGeneration?.onGenerate === 'function';
+        const videoWorkflows = (Array.isArray(videoGeneration?.workflows) ? videoGeneration.workflows : [])
+            .filter(item => item && String(item.id || '').trim() && String(item.name || '').trim());
 
         const phoneBody = this.container.querySelector('.phone-body-panel') || this.container;
         phoneBody.querySelector('#phone-image-viewer-overlay')?.remove();
@@ -829,6 +838,15 @@ export class PhoneShell {
                 <button class="phone-image-viewer-download" type="button" aria-label="下载图片">
                     <i class="fa-solid fa-download"></i>
                 </button>
+            ` : ''}
+            ${allowVideoGeneration ? `
+                <button class="phone-image-viewer-video" type="button" aria-label="生成视频" title="生成视频" style="right: ${allowDownload ? '54px' : '12px'};">
+                    <i class="fa-solid fa-video"></i>
+                </button>
+                <div class="phone-image-viewer-video-progress" role="status" aria-live="polite" hidden>
+                    <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+                    <span class="phone-image-viewer-video-progress-label">视频生成中</span>
+                </div>
             ` : ''}
             <div class="phone-image-viewer-stage">
                 <img class="phone-image-viewer-img" alt="">
@@ -875,6 +893,121 @@ export class PhoneShell {
             }
         };
         downloadBtn?.addEventListener('click', downloadFromControl);
+
+        const videoBtn = overlay.querySelector('.phone-image-viewer-video');
+        const videoProgress = overlay.querySelector('.phone-image-viewer-video-progress');
+        let videoGenerationInFlight = false;
+        let videoProgressTimer = null;
+        const setVideoProgress = (state = 'idle', label = '') => {
+            if (!videoProgress?.isConnected) return;
+            clearTimeout(videoProgressTimer);
+            videoProgress.classList.remove('is-success', 'is-error');
+            const icon = videoProgress.querySelector('i');
+            const text = videoProgress.querySelector('.phone-image-viewer-video-progress-label');
+            if (state === 'idle') {
+                videoProgress.hidden = true;
+                return;
+            }
+            videoProgress.hidden = false;
+            if (state === 'success') {
+                videoProgress.classList.add('is-success');
+                if (icon) icon.className = 'fa-solid fa-check';
+                if (text) text.textContent = label || '视频已生成';
+                videoProgressTimer = setTimeout(() => setVideoProgress('idle'), 1800);
+                return;
+            }
+            if (state === 'error') {
+                videoProgress.classList.add('is-error');
+                if (icon) icon.className = 'fa-solid fa-triangle-exclamation';
+                if (text) text.textContent = label || '生成失败';
+                videoProgressTimer = setTimeout(() => setVideoProgress('idle'), 2800);
+                return;
+            }
+            if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
+            if (text) text.textContent = label || '视频生成中';
+        };
+        const runVideoGeneration = async (workflow) => {
+            if (videoGenerationInFlight || !workflow) return;
+            videoGenerationInFlight = true;
+            if (videoBtn) {
+                videoBtn.disabled = true;
+                videoBtn.setAttribute('aria-busy', 'true');
+                videoBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            }
+            setVideoProgress('loading', `正在生成 · ${String(workflow.name || '视频工作流')}`);
+            try {
+                await videoGeneration.onGenerate(workflow, {
+                    imageUrl: safeUrl,
+                    overlay,
+                    setProgress: (label) => setVideoProgress('loading', label)
+                });
+                setVideoProgress('success', '视频已生成');
+                videoProgressTimer = setTimeout(() => {
+                    if (overlay.isConnected) close();
+                }, 900);
+            } catch (err) {
+                const message = String(err?.message || err || '视频生成失败').trim();
+                setVideoProgress('error', '视频生成失败');
+                this.showNotification?.('视频生成失败', message, '⚠️');
+            } finally {
+                videoGenerationInFlight = false;
+                if (videoBtn?.isConnected) {
+                    videoBtn.disabled = false;
+                    videoBtn.removeAttribute('aria-busy');
+                    videoBtn.innerHTML = '<i class="fa-solid fa-video"></i>';
+                }
+            }
+        };
+        const openVideoWorkflowPicker = (e) => {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+            if (videoGenerationInFlight) return;
+            if (videoWorkflows.length === 0) {
+                this.showNotification?.('生成视频', '请先在生图设置中保存可接收首帧的视频工作流', '⚠️');
+                return;
+            }
+
+            overlay.querySelector('.phone-image-viewer-workflow-picker')?.remove();
+            const picker = document.createElement('div');
+            picker.className = 'phone-image-viewer-workflow-picker';
+            picker.setAttribute('role', 'presentation');
+            picker.innerHTML = `
+                <div class="phone-image-viewer-workflow-dialog" role="dialog" aria-modal="true" aria-label="选择视频工作流">
+                    <div class="phone-image-viewer-workflow-header">
+                        <span>选择视频工作流</span>
+                        <button class="phone-image-viewer-workflow-close" type="button" aria-label="关闭">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <div class="phone-image-viewer-workflow-list"></div>
+                </div>
+            `;
+            const list = picker.querySelector('.phone-image-viewer-workflow-list');
+            videoWorkflows.forEach((workflow) => {
+                const item = document.createElement('button');
+                item.className = 'phone-image-viewer-workflow-item';
+                item.type = 'button';
+                item.innerHTML = '<i class="fa-solid fa-clapperboard" aria-hidden="true"></i><span></span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i>';
+                const name = item.querySelector('span');
+                if (name) name.textContent = String(workflow.name || '视频工作流');
+                item.addEventListener('click', () => {
+                    picker.remove();
+                    runVideoGeneration(workflow);
+                });
+                list?.appendChild(item);
+            });
+            const closePicker = (event) => {
+                event?.preventDefault?.();
+                event?.stopPropagation?.();
+                picker.remove();
+            };
+            picker.querySelector('.phone-image-viewer-workflow-close')?.addEventListener('click', closePicker);
+            picker.addEventListener('click', (event) => {
+                if (event.target === picker) closePicker(event);
+            });
+            overlay.appendChild(picker);
+        };
+        videoBtn?.addEventListener('click', openVideoWorkflowPicker);
         overlay.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
         overlay.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
 
@@ -1070,6 +1203,7 @@ export class PhoneShell {
                         drawerPanel.classList.remove('openDrawer', 'phone-panel-open', 'drawer-content', 'fillRight');
                         drawerPanel.classList.add('phone-panel-hidden');
                         drawerPanel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
+                        window.dispatchEvent(new CustomEvent('phone:panelVisibility', { detail: { open: false } }));
                     }
                 } else {
                     this.goHome();

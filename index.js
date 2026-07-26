@@ -18,8 +18,8 @@ import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parse
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.4.2';
-const ST_PHONE_CSS_REVISION = '20260708-glass-fix';
-const ST_PHONE_HONEY_ASSET_REVISION = '20260726-settings-theme-background';
+const ST_PHONE_CSS_REVISION = '20260726-video-visibility';
+const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_CSS_URL = new URL(`./apps/honey/honey.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
@@ -51,6 +51,7 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-07-26',
     items: [
+        '【新增】蜜语支持使用 ComfyUI 生成视频；视频工作流的正向提示词请使用 %video_prompt% 占位符。',
         '【新增】微信零钱明细，微信转账、红包及蜜语、万象、猫箱等 App 的零钱收支都会自动记录，并随聊天清理或零钱重置同步清除。',
         '【优化】相册 App 按来源分组展示，查找和管理各 App 图片更方便。',
         '【优化】蜜语 App 背景图显示。'
@@ -1045,9 +1046,9 @@ if (window.GGP_Loaded) {
             import('./config/storage.js'),
             import('./config/api-manager.js'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-            import('./config/prompt-manager.js'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20260726-video-background'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
-            import('./config/image-generation-manager.js?v=20260701-comfyui-workflow-source'),
+        import('./config/image-generation-manager.js?v=20260726-video-background'),
             import('./config/worldbook-manager.js')
         ]);
 
@@ -1093,7 +1094,7 @@ if (window.GGP_Loaded) {
             homeScreenModule,
             imageUploadModule
         ] = await Promise.all([
-            import('./phone/phone-shell.js'),
+            import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
             import('./phone/home-screen.js'),
             import('./apps/settings/image-upload.js')
         ]);
@@ -1123,7 +1124,7 @@ if (window.GGP_Loaded) {
     // 🔥 按需加载设置模块
     async function loadSettingsModule() {
         if (!SettingsApp) {
-            const module = await import('./apps/settings/settings-app.js');
+            const module = await import('./apps/settings/settings-app.js?v=20260726-image-to-video');
             SettingsApp = module.SettingsApp;
         }
         return SettingsApp;
@@ -8677,7 +8678,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '游戏模块加载失败', '❌');
                         });
                 } else if (appId === 'album') {
-                    import('./apps/album/album-app.js')
+                    import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=20260726-album-media`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.albumApp) {

@@ -233,44 +233,71 @@ export class HoneyData {
             };
             let cleaned = unwrapSquareBrackets(value)
                 .replace(/^\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)?\s*[:：]?\s*/i, '')
-                .replace(/^\s*[\[【]?\s*画面\s*[\]】]?\s*[:：]\s*/i, '')
+                .replace(/^\s*[\[【]?\s*(?:图片|画面)\s*[\]】]?\s*[:：]\s*/i, '')
                 .trim();
             cleaned = unwrapSquareBrackets(cleaned);
             cleaned = cleaned
-                .replace(/\s*(?:供前端调用|其他推荐内容|好友申请|联播|榜单|打赏记录|直播剧情描写|评论区)[\s\S]*$/i, '')
+                .replace(/\s*(?:供前端调用|其他推荐内容|好友申请|联播|榜单|打赏记录|直播剧情描写|评论区|[\[【]?\s*视频\s*[\]】]?\s*[:：])[\s\S]*$/i, '')
                 .replace(/\s+/g, ' ')
                 .trim();
             if (!cleaned || /^(?:无|暂无|等待|生成中|N\/A|null|undefined)$/i.test(cleaned)) return;
             candidates.push(cleaned);
         };
 
-        const directScreenTagPattern = /(?:^|\n)\s*[\[【]\s*画面\s*[\]】]\s*[:：]\s*[\[【]\s*([^\]】\n]+?)\s*[\]】]\s*(?=$|\n)/ig;
+        const directScreenTagPattern = /(?:^|\n)\s*[\[【]\s*(?:图片|画面)\s*[\]】]\s*[:：]\s*[\[【]\s*([^\]】\n]+?)\s*[\]】]\s*(?=$|\n)/ig;
         for (const match of text.matchAll(directScreenTagPattern)) {
             push(match?.[1] || '');
         }
 
-        const screenPromptPattern = /(?:^|\n)\s*[\[【]?\s*画面\s*[\]】]?\s*[:：]\s*/i;
+        const screenPromptPattern = /(?:^|\n)\s*[\[【]?\s*(?:图片|画面)\s*[\]】]?\s*[:：]\s*/i;
         const screenPromptMatch = text.match(screenPromptPattern);
         if (screenPromptMatch && typeof screenPromptMatch.index === 'number') {
             const rest = text.slice(screenPromptMatch.index + screenPromptMatch[0].length);
-            const endPattern = /(?:^|\n)\s*(?:\[\s*评论区\s*\]|评论区|好友申请|互动记录|榜单|打赏记录|直播剧情描写|剧情面板|直播实况|---\s*热门推荐\s*---|---\s*当前\s*激情直播\s*---)\s*[：:]?/i;
+            const endPattern = /(?:^|\n)\s*(?:[\[【]?\s*视频\s*[\]】]?|\[\s*评论区\s*\]|评论区|好友申请|互动记录|榜单|打赏记录|直播剧情描写|剧情面板|直播实况|---\s*热门推荐\s*---|---\s*当前\s*激情直播\s*---)\s*[：:]?/i;
             const endMatch = rest.match(endPattern);
             const section = rest.slice(0, endMatch && typeof endMatch.index === 'number' ? endMatch.index : rest.length);
             push(section);
         }
 
         [
-            /(?:^|\n)\s*[\[【]?\s*画面\s*[\]】]?\s*[:：]\s*[\[【]\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)?\s*[\]】]\s*([^\n]+)/ig,
+            /(?:^|\n)\s*[\[【]?\s*(?:图片|画面)\s*[\]】]?\s*[:：]\s*[\[【]\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)?\s*[\]】]\s*([^\n]+)/ig,
             /\[\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)\s*[:：]\s*([^\]\n]+)/ig,
             /(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)\s*[:：]\s*([^\]\n]+)/ig,
-            /(?:^|\n)\s*[\[【]?\s*画面\s*[\]】]?\s*[:：]\s*\[\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)?\s*[:：]?\s*([^\]\n]+)/ig,
-            /(?:^|\n)\s*[\[【]?\s*画面\s*[\]】]?\s*[:：]\s*([^\n]+)/ig
+            /(?:^|\n)\s*[\[【]?\s*(?:图片|画面)\s*[\]】]?\s*[:：]\s*\[\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)?\s*[:：]?\s*([^\]\n]+)/ig,
+            /(?:^|\n)\s*[\[【]?\s*(?:图片|画面)\s*[\]】]?\s*[:：]\s*([^\n]+)/ig
         ].forEach((pattern) => {
             for (const match of text.matchAll(pattern)) {
                 push(match?.[1] || '');
             }
         });
 
+        return candidates[0] || '';
+    }
+
+    _extractVideoPrompt(source, { allowPlain = false } = {}) {
+        const text = String(source || '').replace(/\r/g, '').trim();
+        if (!text) return '';
+
+        const candidates = [];
+        const push = (value) => {
+            let cleaned = String(value || '').trim();
+            if ((cleaned.startsWith('[') && cleaned.endsWith(']'))
+                || (cleaned.startsWith('【') && cleaned.endsWith('】'))) {
+                cleaned = cleaned.slice(1, -1).trim();
+            }
+            cleaned = cleaned
+                .replace(/^\s*(?:英文\s*)?(?:视频(?:提示词)?|video\s*prompt|motion\s*prompt)\s*[:：]?\s*/i, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (!cleaned || /^(?:无|暂无|等待|生成中|N\/A|null|undefined)$/i.test(cleaned)) return;
+            candidates.push(cleaned);
+        };
+
+        const videoPromptPattern = /(?:^|\n)\s*[\[【]?\s*(?:视频(?:提示词)?|video\s*prompt|motion\s*prompt)\s*[\]】]?\s*[:：]\s*(?:[\[【]\s*)?([^\]】\n]+?)(?:\s*[\]】])?\s*(?=$|\n)/ig;
+        for (const match of text.matchAll(videoPromptPattern)) {
+            push(match?.[1] || '');
+        }
+        if (allowPlain && candidates.length === 0 && !text.includes('\n')) push(text);
         return candidates[0] || '';
     }
 
@@ -3224,8 +3251,8 @@ export class HoneyData {
     _stripInlineGeneratedImagesFromScene(scene = {}) {
         if (!scene || typeof scene !== 'object') return scene;
         const next = { ...scene };
-        ['naiImageUrl', 'generatedImageUrl', 'imageUrl'].forEach((key) => {
-            if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(String(next[key] || '').trim())) {
+        ['naiImageUrl', 'generatedImageUrl', 'generatedVideoUrl', 'videoSourceImageUrl', 'imageUrl'].forEach((key) => {
+            if (/^data:(?:image|video)\/[a-z0-9.+-]+;base64,/i.test(String(next[key] || '').trim())) {
                 next[key] = '';
             }
         });
@@ -3265,6 +3292,7 @@ export class HoneyData {
         next.description = preservePromptTurnLength ? String(next.description || '').trim() : this._trimText(next.description, full ? 1200 : 520);
         next.naiPrompt = String(next.naiPrompt || '').trim();
         next.imageGenerationPrompt = String(next.imageGenerationPrompt || '').trim();
+        next.videoPrompt = String(next.videoPrompt || '').trim();
         next.comments = keepArray(next.comments, full ? this.maxStoredComments : 12, 180, { preserveLength: preservePromptTurnLength });
         next.gifts = keepArray(next.gifts, full ? this.maxStoredGifts : 10, 160, { preserveLength: preservePromptTurnLength });
         next.userChats = keepArray(next.userChats, full ? 60 : 16, 180);
@@ -3630,7 +3658,7 @@ export class HoneyData {
 
         if (typeof value !== 'object') return out;
 
-        ['naiImageUrl', 'generatedImageUrl', 'imageUrl'].forEach((key) => {
+        ['naiImageUrl', 'generatedImageUrl', 'generatedVideoUrl', 'videoSourceImageUrl', 'imageUrl'].forEach((key) => {
             const safe = String(value?.[key] || '').trim();
             if (/^\/backgrounds\/(?:phone_)?honey_nai_/i.test(safe)) out.add(safe);
         });
@@ -3688,7 +3716,7 @@ export class HoneyData {
                 success += 1;
             } catch (e) {
                 failed += 1;
-                console.warn('[HoneyData] 清理蜜语生成图片失败:', url, e);
+                console.warn('[HoneyData] 清理蜜语生成媒体失败:', url, e);
             }
         }
 
@@ -3745,8 +3773,11 @@ export class HoneyData {
             'lastUserComment',
             'naiPrompt',
             'imageGenerationPrompt',
+            'videoPrompt',
             'naiImageUrl',
             'generatedImageUrl',
+            'generatedVideoUrl',
+            'videoSourceImageUrl',
             'imageUrl',
             'imageGenerationStatus',
             'imageGenerationProvider',
@@ -3759,7 +3790,11 @@ export class HoneyData {
             'imageGenerationSchedule',
             'imageGenerationScale',
             'imageGenerationError',
-            'imageGenerationStartedAt'
+            'imageGenerationStartedAt',
+            'videoGenerationStatus',
+            'videoGenerationWorkflowId',
+            'videoGenerationWorkflowName',
+            'videoGenerationError'
         ].forEach((key) => {
             const currentValue = current[key];
             const topicValue = topic[key];
@@ -3989,6 +4024,10 @@ export class HoneyData {
                 leaderboard: [],
                 intro: this._sanitizeInlineText(live?.intro || profile.intro || '', 120) || profile.intro || '',
                 naiPrompt: this._extractNaiPrompt(live?.naiPrompt || live?.imageGenerationPrompt || live?.imagePrompt || payload?.naiPrompt || payload?.imageGenerationPrompt || ''),
+                videoPrompt: this._extractVideoPrompt(
+                    live?.videoPrompt || live?.motionPrompt || payload?.videoPrompt || payload?.motionPrompt || '',
+                    { allowPlain: true }
+                ),
                 description: String(live?.description || live?.scene || live?.story || '')
                     .split('\n')
                     .map(line => this._normalizeHoneyStoryLine(line))
@@ -4018,7 +4057,7 @@ export class HoneyData {
         let collab = '无';
         let collabCost = 0;
 
-        const sectionEndPattern = /(?:^|\n)\s*(?:在线人数|在线|粉丝数|粉丝|[\[【]?\s*画面\s*[\]】]?|榜单|打赏记录(?:（[^）]*）|\([^\)]*\))?|评论区|直播剧情描写|剧情面板|直播实况|好友申请|互动记录)\s*[：:]/i;
+        const sectionEndPattern = /(?:^|\n)\s*(?:在线人数|在线|粉丝数|粉丝|[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?|榜单|打赏记录(?:（[^）]*）|\([^\)]*\))?|评论区|直播剧情描写|剧情面板|直播实况|好友申请|互动记录)\s*[：:]/i;
         const explicitCollabValues = Array.from(text.matchAll(/联播\s*(?:[（(]\s*金币\s*[：:]\s*(\d+)\s*[)）])?\s*[：:]\s*([^\]】\n]+)/ig))
             .map(match => ({
                 name: String(match?.[2] || '').trim(),
@@ -4033,17 +4072,17 @@ export class HoneyData {
             }
         }
         const leaderboardSection = this._extractSectionByPatternPairs(text, [
-            { start: /(?:^|\n)\s*榜单\s*[：:]\s*/i, end: /(?:^|\n)\s*(?:[\[【]?\s*画面\s*[\]】]?|打赏记录(?:（[^）]*）|\([^\)]*\))?|评论区|直播剧情描写|剧情面板|直播实况|好友申请)\s*[：:]/i }
+            { start: /(?:^|\n)\s*榜单\s*[：:]\s*/i, end: /(?:^|\n)\s*(?:[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?|打赏记录(?:（[^）]*）|\([^\)]*\))?|评论区|直播剧情描写|剧情面板|直播实况|好友申请)\s*[：:]/i }
         ]);
         const giftsSection = this._extractSectionByPatternPairs(text, [
-            { start: /(?:^|\n)\s*(?:\[\s*打赏记录\s*\]|打赏记录)(?:（[^）]*）|\([^\)]*\))?\s*[：:]?\s*(?:\n|$)?/i, end: /(?:^|\n)\s*(?:[\[【]?\s*画面\s*[\]】]?|\[\s*评论区\s*\]|评论区|\[\s*直播剧情描写\s*\]|直播剧情描写|剧情面板|直播实况|好友申请)\s*[：:]?/i }
+            { start: /(?:^|\n)\s*(?:\[\s*打赏记录\s*\]|打赏记录)(?:（[^）]*）|\([^\)]*\))?\s*[：:]?\s*(?:\n|$)?/i, end: /(?:^|\n)\s*(?:[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?|\[\s*评论区\s*\]|评论区|\[\s*直播剧情描写\s*\]|直播剧情描写|剧情面板|直播实况|好友申请)\s*[：:]?/i }
         ]);
         const commentsSection = this._extractSectionByPatternPairs(text, [
             { start: /(?:^|\n)\s*(?:\[\s*评论区\s*\]|评论区)\s*[：:]?\s*(?:\n|$)?/i, end: /(?:^|\n)\s*(?:\[\s*直播剧情描写\s*\]|直播剧情描写|剧情面板|直播实况|好友申请)\s*[：:]?/i }
         ]);
         const storySection = this._extractSectionByPatternPairs(text, [
-            { start: /(?:^|\n)\s*(?:\[\s*直播剧情描写\s*\]|直播剧情描写|剧情面板|直播实况)\s*[：:]?\s*(?:\n|$)?/i, end: /(?:^|\n)\s*(?:[\[【]?\s*画面\s*[\]】]?|好友申请|互动记录)\s*[：:]?/i },
-            { start: /(?:^|\n)\s*(?:\[\s*直播剧情描写\s*\]|直播剧情描写|剧情面板|直播实况)\s*(?:\n|$)/i, end: /(?:^|\n)\s*(?:[\[【]?\s*画面\s*[\]】]?|好友申请|互动记录)\s*[：:]?/i }
+            { start: /(?:^|\n)\s*(?:\[\s*直播剧情描写\s*\]|直播剧情描写|剧情面板|直播实况)\s*[：:]?\s*(?:\n|$)?/i, end: /(?:^|\n)\s*(?:[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?|好友申请|互动记录)\s*[：:]?/i },
+            { start: /(?:^|\n)\s*(?:\[\s*直播剧情描写\s*\]|直播剧情描写|剧情面板|直播实况)\s*(?:\n|$)/i, end: /(?:^|\n)\s*(?:[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?|好友申请|互动记录)\s*[：:]?/i }
         ]);
         const friendRequestSection = this._extractSectionByPatternPairs(text, [
             { start: /(?:^|\n)\s*好友申请\s*[：:]\s*/i, end: /(?:^|\n)\s*互动记录\s*[：:]/i },
@@ -4099,6 +4138,7 @@ export class HoneyData {
             leaderboard: [],
             intro: this._sanitizeInlineText(introMatch?.[1] || profile.intro || '', 120) || profile.intro || '',
             naiPrompt: this._extractNaiPrompt(text),
+            videoPrompt: this._extractVideoPrompt(text),
             description: cleanedStory
                 || (collab !== '无'
                     ? '联播已接通，互动正在持续推进。'
@@ -4191,8 +4231,7 @@ export class HoneyData {
             messages.push({
                 role: 'system',
                 content: [
-                    '这是同一场用户自己的直播，必须在已有直播状态上续写，不得重置世界线。',
-                    '本轮必须根据最新直播画面重新输出一行：画面：[NAI英文tag提示词: ...]，用于支持当前剧情生成新图片。'
+                    '这是同一场用户自己的直播，必须在已有直播状态上续写，不得重置世界线。'
                 ].join('\n'),
                 isPhoneMessage: true
             });
@@ -4229,6 +4268,7 @@ export class HoneyData {
                 leaderboard: [],
                 intro: profile.intro || '',
                 naiPrompt: '',
+                videoPrompt: '',
                 description: '输入开场白后回车开播。未点击结束直播前，这场直播会一直保留。',
                 comments: [],
                 gifts: [],
@@ -4411,7 +4451,6 @@ export class HoneyData {
             instructionUserPrompt = '';
             instructionSystemPrompt = [
                 '这是同一场直播的持续观看，不要重置世界线。请在已有内容上推进剧情并更新评论区。',
-                '本轮必须根据最新直播剧情重新输出一行：画面：[NAI英文tag提示词: ...]，用于支持当前剧情生成新图片。',
                 '【好感度规则】请在“--- 当前激情直播 ---”区块中显式输出一行：好感度：N%。',
                 'N 必须是 0-100 的数字（可保留 1 位小数）。',
                 '若本轮没有用户送礼（包括仅普通聊天或无互动），好感度必须保持不变，不得上涨。',
@@ -4604,6 +4643,7 @@ export class HoneyData {
             leaderboard: [],
             intro: '',
             naiPrompt: '',
+            videoPrompt: '',
             description: '回推荐页下拉刷新生成剧情。',
             comments: [],
             gifts: [],
@@ -4673,7 +4713,7 @@ export class HoneyData {
         const leaderboardSection = this._extractSectionByPatternPairs(liveSection, [
             {
                 start: /(?:^|\n)\s*(?:榜单|打榜榜单)\s*[：:]\s*/i,
-                end: /(?:^|\n)\s*(?:[\[【]?\s*画面\s*[\]】]?|\[\s*打赏记录\s*\]|打赏记录|\[\s*直播剧情描写\s*\]|直播剧情描写|\[\s*评论区\s*\]|评论区)\s*(?:[：:]|\]|\n|$)/i
+                end: /(?:^|\n)\s*(?:[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?|\[\s*打赏记录\s*\]|打赏记录|\[\s*直播剧情描写\s*\]|直播剧情描写|\[\s*评论区\s*\]|评论区)\s*(?:[：:]|\]|\n|$)/i
             }
         ]);
         if (leaderboardSection) {
@@ -4682,6 +4722,7 @@ export class HoneyData {
 
         const naiPrompt = this._extractNaiPrompt(liveSection);
         if (naiPrompt) data.naiPrompt = naiPrompt;
+        data.videoPrompt = this._extractVideoPrompt(liveSection);
 
         const introMatch = liveSection.match(/(?:^|\n)\s*简介\s*[：:]\s*([^\n]+)\s*(?:\n|$)/i);
         if (introMatch) data.intro = introMatch[1].trim();
@@ -4689,11 +4730,11 @@ export class HoneyData {
         const giftsSection = this._extractSectionByPatternPairs(liveSection, [
             {
                 start: /(?:^|\n)\s*\[\s*打赏记录\s*\]\s*[：:]?\s*(?:\n|$)?/i,
-                end: /(?:^|\n)\s*(?:[\[【]?\s*画面\s*[\]】]?\s*[：:]?|\[\s*(?:直播剧情描写|评论区)\s*\]\s*[：:]?|直播剧情描写\s*[：:]|评论区\s*[：:]|\[\s*评论区\s*\]\s*[：:]?)\s*/i
+                end: /(?:^|\n)\s*(?:[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?\s*[：:]?|\[\s*(?:直播剧情描写|评论区)\s*\]\s*[：:]?|直播剧情描写\s*[：:]|评论区\s*[：:]|\[\s*评论区\s*\]\s*[：:]?)\s*/i
             },
             {
                 start: /(?:^|\n)\s*打赏记录\s*[：:]\s*/i,
-                end: /(?:^|\n)\s*(?:[\[【]?\s*画面\s*[\]】]?\s*[：:]?|\[\s*(?:直播剧情描写|评论区)\s*\]\s*[：:]?|直播剧情描写\s*[：:]|评论区\s*[：:]|\[\s*评论区\s*\]\s*[：:]?)\s*/i
+                end: /(?:^|\n)\s*(?:[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?\s*[：:]?|\[\s*(?:直播剧情描写|评论区)\s*\]\s*[：:]?|直播剧情描写\s*[：:]|评论区\s*[：:]|\[\s*评论区\s*\]\s*[：:]?)\s*/i
             }
         ]);
         if (giftsSection) {
@@ -4707,8 +4748,8 @@ export class HoneyData {
         const commentHeaderPattern = /(?:^|\n)\s*(?:\[\s*评论区\s*\]\s*[：:]?[^\n]*|评论区\s*[：:][^\n]*)(?:\n|$)/i;
 
         const storySection = this._extractSectionByPatternPairs(liveSection, [
-            { start: /(?:^|\n)\s*\[\s*直播剧情描写\s*\]\s*[：:]?\s*(?:\n|$)?/i, end: /(?:^|\n)\s*(?:[\[【]?\s*画面\s*[\]】]?\s*[：:]?|\[\s*评论区\s*\]|评论区\s*[：:])/i },
-            { start: /(?:^|\n)\s*直播剧情描写\s*[：:]\s*/i, end: /(?:^|\n)\s*(?:[\[【]?\s*画面\s*[\]】]?\s*[：:]?|\[\s*评论区\s*\]|评论区\s*[：:])/i }
+            { start: /(?:^|\n)\s*\[\s*直播剧情描写\s*\]\s*[：:]?\s*(?:\n|$)?/i, end: /(?:^|\n)\s*(?:[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?\s*[：:]?|\[\s*评论区\s*\]|评论区\s*[：:])/i },
+            { start: /(?:^|\n)\s*直播剧情描写\s*[：:]\s*/i, end: /(?:^|\n)\s*(?:[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?\s*[：:]?|\[\s*评论区\s*\]|评论区\s*[：:])/i }
         ]);
         if (storySection) {
             const cleanedStory = storySection
@@ -4821,7 +4862,7 @@ export class HoneyData {
 
         if (/^\s*(?:\(|（).*(?:\)|）)\s*$/.test(text)) return '';
         if (/^(?:---+|===+)$/.test(text)) return '';
-        if (/^(?:互动区|打赏记录|直播剧情描写|[\[【]?\s*画面\s*[\]】]?|简介|主播|标题|在线人数|粉丝)[：:]/.test(text)) return '';
+        if (/^(?:互动区|打赏记录|直播剧情描写|[\[【]?\s*(?:图片|画面|视频)\s*[\]】]?|简介|主播|标题|在线人数|粉丝)[：:]/.test(text)) return '';
         if (/^\[\s*评论区\s*\]/i.test(text)) return '';
         if (/^\[\s*(?:联播请求|其他直播间请求联播)\s*[：:]/i.test(text)) return '';
         if (/^(?:生成|不少于|至少)\d*条/.test(text)) return '';
@@ -5002,7 +5043,7 @@ export class HoneyData {
                 .map(m => cleanValue(m[1] || '', 180))
                 .filter(Boolean);
 
-            const mapped = { title: '', host: '', viewers: '', tag: '', naiPrompt: '' };
+            const mapped = { title: '', host: '', viewers: '', tag: '', naiPrompt: '', videoPrompt: '' };
             const unnamed = [];
             segments.forEach(seg => {
                 const kv = seg.match(/^([^：:]{1,20})[：:]\s*(.+)$/);
@@ -5017,7 +5058,10 @@ export class HoneyData {
                 else if (/^(主播昵称|主播)$/i.test(field)) mapped.host = val;
                 else if (/^(在线人数|在线)$/i.test(field)) mapped.viewers = val;
                 else if (/^(tag|标签)$/i.test(field)) mapped.tag = val;
-                else if (/^(?:[\[【]?\s*画面\s*[\]】]?|NAI英文tag提示词|NAI提示词|NovelAI提示词|imagePrompt)$/i.test(field)) mapped.naiPrompt = this._extractNaiPrompt(val);
+                else if (/^(?:[\[【]?\s*(?:图片|画面)\s*[\]】]?|NAI英文tag提示词|NAI提示词|NovelAI提示词|imagePrompt)$/i.test(field)) mapped.naiPrompt = this._extractNaiPrompt(val);
+                else if (/^(?:[\[【]?\s*视频\s*[\]】]?|videoPrompt|motionPrompt)$/i.test(field)) {
+                    mapped.videoPrompt = this._extractVideoPrompt(val, { allowPlain: true });
+                }
             });
 
             const hostFromDash = body.match(/(?:主播昵称|主播)\s*[：:]?\s*([^－—\-|]+)\s*(?:(?:[-－—|])|$)/i);
@@ -5057,7 +5101,8 @@ export class HoneyData {
                 host: this._stripFollowStateSuffix(cleanValue(mapped.host, 40)),
                 viewers: cleanValue(mapped.viewers, 24),
                 intro: '',
-                naiPrompt: mapped.naiPrompt || this._extractNaiPrompt(body)
+                naiPrompt: mapped.naiPrompt || this._extractNaiPrompt(body),
+                videoPrompt: mapped.videoPrompt || this._extractVideoPrompt(body)
             };
         };
 

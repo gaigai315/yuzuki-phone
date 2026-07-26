@@ -9,8 +9,8 @@
  * 
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
-import { HoneyView } from './honey-view.js?v=1.4.2&r=20260726-settings-theme-background';
-import { HoneyData } from './honey-data.js?v=1.4.2&r=20260726-settings-theme-background';
+import { HoneyView } from './honey-view.js?v=1.4.2&r=20260726-video-visibility';
+import { HoneyData } from './honey-data.js?v=1.4.2&r=20260726-video-visibility';
 
 export class HoneyApp {
     constructor(phoneShell, storage) {
@@ -28,6 +28,22 @@ export class HoneyApp {
                 if (honeyApp && typeof honeyApp.handleSwipeBack === 'function') {
                     honeyApp.handleSwipeBack();
                 }
+            });
+        }
+
+        if (!window._honeyPanelVisibilityBound) {
+            window._honeyPanelVisibilityBound = true;
+            window.addEventListener('phone:panelVisibility', (event) => {
+                if (event?.detail?.open !== false) return;
+                window.VirtualPhone?.honeyApp?.honeyView?._pauseHoneyVideos?.();
+            });
+        }
+
+        if (!window._honeyDocumentVisibilityBound) {
+            window._honeyDocumentVisibilityBound = true;
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) return;
+                window.VirtualPhone?.honeyApp?.honeyView?._pauseHoneyVideos?.();
             });
         }
     }

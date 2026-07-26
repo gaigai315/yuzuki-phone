@@ -397,6 +397,10 @@
     box-sizing: border-box;
 }
 
+#phone-panel-content .phone-screen .album-tile.is-video {
+    background: #111318;
+}
+
 #phone-panel-content .phone-screen .album-tile-main {
     position: absolute !important;
     inset: 0 !important;
@@ -413,12 +417,37 @@
     cursor: pointer;
 }
 
-#phone-panel-content .phone-screen .album-tile img {
+#phone-panel-content .phone-screen .album-tile img,
+#phone-panel-content .phone-screen .album-tile video {
     width: 100% !important;
     height: 100% !important;
     display: block !important;
     object-fit: cover !important;
     object-position: center !important;
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .album-video-indicator {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 28px;
+    height: 28px;
+    margin: auto;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    background: rgba(10, 12, 16, 0.6);
+    color: #fff;
+    font-size: 10px;
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .album-video-indicator i {
+    transform: translateX(1px);
 }
 
 #phone-panel-content .phone-screen .album-tile.is-broken .album-tile-main::before {
@@ -434,6 +463,13 @@
     background: #edf1f4;
     color: #aeb5bc;
     font-size: 20px;
+}
+
+#phone-panel-content .phone-screen .album-tile.is-video.is-broken .album-tile-main::before {
+    content: "\f03d";
+    font-weight: 900;
+    background: #242932;
+    color: #9ea7b3;
 }
 
 #phone-panel-content .phone-screen .album-checkmark {
@@ -469,7 +505,8 @@
     color: #fff;
 }
 
-#phone-panel-content .phone-screen .album-selecting .album-tile.selected img {
+#phone-panel-content .phone-screen .album-selecting .album-tile.selected img,
+#phone-panel-content .phone-screen .album-selecting .album-tile.selected video {
     filter: brightness(0.82);
 }
 
@@ -564,6 +601,7 @@
 }
 
 #phone-panel-content .phone-screen .album-preview-image-wrap {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
@@ -573,12 +611,44 @@
     box-sizing: border-box;
 }
 
-#phone-panel-content .phone-screen .album-preview-image {
+#phone-panel-content .phone-screen .album-preview-image,
+#phone-panel-content .phone-screen .album-preview-video {
     display: block;
     max-width: 100%;
     max-height: 100%;
     border-radius: 8px;
     object-fit: contain;
+}
+
+#phone-panel-content .phone-screen .album-preview-video-replay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    min-height: 52px;
+    margin: auto;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 12, 16, 0.72);
+    color: #fff;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+#phone-panel-content .phone-screen .album-preview-video-replay[hidden] {
+    display: none !important;
+}
+
+#phone-panel-content .phone-screen .album-preview-video-replay i {
+    font-size: 19px;
+    transform: translateX(1px);
 }
 
 #phone-panel-content .phone-screen .album-preview-meta {
