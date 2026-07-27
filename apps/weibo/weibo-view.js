@@ -437,6 +437,7 @@ export class WeiboView {
                             const imageStr = String(img || '').trim();
                             const parsedMedia = this._parseWeiboMediaItem(imageStr);
                             const mediaType = parsedMedia.mediaType;
+                            const displayMediaType = mediaType === '视频' ? '视频' : '图片';
                             const realUrl = parsedMedia.realUrl;
                             const isVideoProcessed = parsedMedia.isVideoProcessed;
                             const isDirectImage = parsedMedia.isDirectImage;
@@ -445,7 +446,7 @@ export class WeiboView {
                             // 获取文字描述
                             let promptText = parsedMedia.promptText || String(imageState?.prompt || '').trim();
                             if (!promptText || promptText.length < 2) {
-                                promptText = "分享" + mediaType;
+                                promptText = "分享" + displayMediaType;
                             }
                             const descriptionText = parsedMedia.descriptionText || String(imageState?.description || '').trim() || promptText;
                             const safePromptText = this._escapeHtml(descriptionText);
@@ -464,14 +465,14 @@ export class WeiboView {
                                         <img src="${realUrl}" class="weibo-post-img-real" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px; background: #f9f9f9;">
                                         ${isVideoProcessed ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none;"><div style="width:32px; height:32px; border-radius:50%; background:rgba(0,0,0,0.5); border:1.5px solid #fff; display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; padding-left:3px;"><i class="fa-solid fa-play"></i></div></div>` : ''}
                                         ${canRegenerateMedia ? `
-                                            <div class="weibo-image-prompt-regenerate" data-post-id="${post.id}" data-index="${index}" data-prompt="${this._escapeAttr(promptText)}" data-description="${this._escapeAttr(descriptionText)}" data-type="${mediaType}" title="重新生成${mediaType}" style="
+                                            <div class="weibo-image-prompt-regenerate" data-post-id="${post.id}" data-index="${index}" data-prompt="${this._escapeAttr(promptText)}" data-description="${this._escapeAttr(descriptionText)}" data-type="${this._escapeAttr(mediaType)}" title="重新生成${displayMediaType}" style="
                                                 position:absolute; left:4px; bottom:4px; background:transparent; color:#fff;
                                                 width:22px; height:22px; border:none; border-radius:4px; padding:0; font-size:10px; font-weight:400; line-height:1; cursor:pointer;
                                                 display:flex; align-items:center; justify-content:center;
                                                 box-shadow:none; text-shadow:0 1px 3px rgba(0,0,0,0.55);
                                             "><i class="fa-solid fa-rotate"></i></div>
                                         ` : ''}
-                                        <div class="weibo-image-prompt-show-back" title="查看${mediaType}描述" style="
+                                        <div class="weibo-image-prompt-show-back" title="查看${displayMediaType}描述" style="
                                             position:absolute; right:4px; bottom:4px; background:rgba(0,0,0,0.55); color:#fff;
                                             border-radius:999px; padding:3px 7px; font-size:11px; line-height:1; cursor:pointer;
                                             box-shadow:0 2px 8px rgba(0,0,0,0.18);
@@ -498,7 +499,7 @@ export class WeiboView {
                                 </div>`;
                             } else {
                                 // 🔥 待生成的生图卡片
-                                const isVideo = mediaType === '视频';
+                                const isVideo = displayMediaType === '视频';
                                 const actionText = isVideo ? '生成视频封面' : '生成图片';
                                 const defaultIcon = isVideo ? '<i class="fa-solid fa-video"></i>' : '<i class="fa-regular fa-image"></i>';
                                 const previewSeed = encodeURIComponent(`${post.id || 'weibo'}_${index}_${promptText}`);
@@ -521,7 +522,7 @@ export class WeiboView {
                                     ">
                                         <img src="${previewUrl}" alt="${safePromptText}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; filter:${generationStatus === 'failed' ? 'grayscale(0.12) saturate(0.88)' : 'none'};">
                                         <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.48));"></div>
-                                        <div class="weibo-image-prompt-generate" data-post-id="${post.id}" data-index="${index}" data-prompt="${this._escapeAttr(promptText)}" data-description="${this._escapeAttr(descriptionText)}" data-type="${mediaType}" title="${generationStatus === 'failed' ? '点击重试' : `点击${actionText}`}" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:12px; box-sizing:border-box;">
+                                        <div class="weibo-image-prompt-generate" data-post-id="${post.id}" data-index="${index}" data-prompt="${this._escapeAttr(promptText)}" data-description="${this._escapeAttr(descriptionText)}" data-type="${this._escapeAttr(mediaType)}" title="${generationStatus === 'failed' ? '点击重试' : `点击${actionText}`}" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:12px; box-sizing:border-box;">
                                             <div class="generate-icon-container" style="
                                                 width:36px; height:36px; border-radius:10px;
                                                 display:flex; align-items:center; justify-content:center;
@@ -535,7 +536,7 @@ export class WeiboView {
                                                 </div>
                                             ` : ''}
                                         </div>
-                                        <div class="weibo-image-prompt-show-back" title="查看${mediaType}描述" style="
+                                        <div class="weibo-image-prompt-show-back" title="查看${displayMediaType}描述" style="
                                             position:absolute; right:4px; bottom:4px; background:rgba(0,0,0,0.55); color:#fff;
                                             border-radius:999px; padding:3px 7px; font-size:11px; line-height:1; cursor:pointer;
                                         ">描述</div>
@@ -2535,7 +2536,9 @@ export class WeiboView {
         const imageStorage = this.app?.storage || window.VirtualPhone?.storage || null;
         const parsedMedia = this._parseWeiboMediaItem(Array.isArray(post.images) ? post.images[index] : '');
         const effectiveMediaType = String(parsedMedia.mediaType || mediaType || '').trim();
-        const safeMediaType = effectiveMediaType === '视频' ? '视频' : (effectiveMediaType === '用户照片' ? '用户照片' : '图片');
+        const safeMediaType = /^(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)$/.test(effectiveMediaType)
+            ? effectiveMediaType
+            : '图片';
         const slotPromptText = String(parsedMedia.promptText || promptText || '').trim();
         if (!slotPromptText) return;
         const displayDescription = String(descriptionText || parsedMedia.descriptionText || slotPromptText || '').trim();
@@ -2560,7 +2563,7 @@ export class WeiboView {
         }
         const resolvedImageProvider = String(imageManager.resolveProvider?.({ app: 'weibo' }) || imageStorage?.get?.('phone-image-provider') || '').trim();
 
-        const pendingTag = safeMediaType === '视频' ? '[视频]' : (safeMediaType === '用户照片' ? '[用户照片]' : '[图片]');
+        const pendingTag = `[${safeMediaType}]`;
         const previousImageUrl = this._getManagedWeiboGeneratedImageUrl(post, index);
         const generationId = `weibo_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         if (clearPreviousImage && Array.isArray(post.images)) {
@@ -2586,9 +2589,10 @@ export class WeiboView {
         this._refreshPostMediaUI(postId);
 
         try {
+            const generationPrompt = await this._buildWeiboImagePromptWithIdentityTags(parsedMedia, slotPromptText);
             const result = await imageManager.generate({
                 app: 'weibo',
-                prompt: this._buildWeiboImagePromptWithUserTags(parsedMedia, slotPromptText)
+                prompt: generationPrompt
             });
             const rawImageUrl = String(result?.imageUrl || result?.imageData || '').trim();
             const imageUrl = await this._persistWeiboGeneratedImage(rawImageUrl, {
@@ -2600,7 +2604,7 @@ export class WeiboView {
             if (!imageUrl) throw new Error('生图成功但未返回图片URL');
 
             // 替换原有的图片数组中的 prompt 为真实 URL，保留图片/视频前缀。
-            const finalTag = safeMediaType === '视频' ? '[视频]' : (safeMediaType === '用户照片' ? '[用户照片]' : '[图片]');
+            const finalTag = `[${safeMediaType}]`;
             post.images[index] = `${finalTag}${imageUrl}`;
             this._setWeiboPostImageState(post, index, {
                 status: 'done',
@@ -3953,10 +3957,15 @@ export class WeiboView {
         let mediaType = '图片';
         let body = imageStr;
 
-        const taggedMatch = imageStr.match(/^\[(用户照片|个人图片|图片|视频)\]\s*([\s\S]*)$/);
+        const taggedMatch = imageStr.match(/^\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*([\s\S]*)$/);
         if (taggedMatch) {
             mediaType = taggedMatch[1];
             body = String(taggedMatch[2] || '').trim();
+        }
+        const namedImageMatch = /^图片-(.+)$/.exec(mediaType);
+        const referenceNames = this._normalizeWeiboReferenceNames(namedImageMatch?.[1] || '');
+        if (namedImageMatch) {
+            mediaType = referenceNames.length > 0 ? `图片-${referenceNames.join(',')}` : '图片';
         }
 
         const unwrappedBody = body.replace(/^[（(]\s*|\s*[)）]$/g, '').trim();
@@ -3982,33 +3991,79 @@ export class WeiboView {
             isDirectImage: !!directUrl,
             isVideoProcessed: mediaType === '视频' && !!directUrl,
             useUserReference: mediaType === '用户照片',
+            referenceNames,
             promptText: promptText.trim(),
             descriptionText: descriptionText.trim()
         };
     }
 
-    _buildWeiboImagePromptWithUserTags(parsedMedia = {}, promptText = '') {
-        const parsedPrompt = this._parsePromptDescriptionPair(promptText);
-        const basePrompt = String(parsedPrompt.prompt || promptText || '').trim();
-        if (String(parsedMedia?.mediaType || '').trim() !== '用户照片' && parsedMedia?.useUserReference !== true) {
-            return basePrompt;
-        }
-        const userInfo = window.VirtualPhone?.wechatApp?.wechatData?.getUserInfo?.()
-            || window.VirtualPhone?.cachedWechatData?.getUserInfo?.()
-            || {};
-        const userTags = String(userInfo?.naiPromptTags || userInfo?.imageTags || '')
+    _normalizeWeiboReferenceNames(value = '') {
+        const seen = new Set();
+        return String(value || '')
+            .split(/[,，、]+/)
+            .map(name => name.trim().replace(/[<>"'`]/g, '').slice(0, 80))
+            .filter(name => {
+                if (!name || seen.has(name)) return false;
+                seen.add(name);
+                return true;
+            });
+    }
+
+    _normalizeWeiboImageTags(value = '') {
+        return String(value || '')
             .split(/[,，\n]+/)
             .map(tag => tag.trim())
-            .filter(Boolean)
+            .filter(Boolean);
+    }
+
+    _mergeWeiboImageTags(...tagGroups) {
+        const seen = new Set();
+        return tagGroups
+            .flatMap(group => this._normalizeWeiboImageTags(group))
+            .filter(tag => {
+                if (seen.has(tag)) return false;
+                seen.add(tag);
+                return true;
+            })
             .join(', ');
-        if (!userTags) return basePrompt;
-        if (!basePrompt) return userTags;
-        return `${userTags}, ${basePrompt}`;
+    }
+
+    async _buildWeiboImagePromptWithIdentityTags(parsedMedia = {}, promptText = '') {
+        const parsedPrompt = this._parsePromptDescriptionPair(promptText);
+        const basePrompt = String(parsedPrompt.prompt || promptText || '').trim();
+        const referenceNames = Array.isArray(parsedMedia?.referenceNames)
+            ? parsedMedia.referenceNames
+            : [];
+        const useUserTags = String(parsedMedia?.mediaType || '').trim() === '用户照片'
+            || parsedMedia?.useUserReference === true
+            || referenceNames.length > 1;
+        if (!useUserTags && referenceNames.length === 0) {
+            return basePrompt;
+        }
+
+        const wechatData = await this.app?.weiboData?.getWechatDataAsync?.();
+        const contacts = wechatData?.getContacts?.() || [];
+        const identityTagGroups = [];
+
+        referenceNames.forEach(name => {
+            const contact = wechatData?.findContactByNameLoose?.(name, { includeChats: false })
+                || contacts.find(item => String(item?.name || '').trim() === name);
+            const contactTags = String(contact?.naiPromptTags || contact?.imageTags || '').trim();
+            if (contactTags) identityTagGroups.push(contactTags);
+        });
+
+        if (useUserTags) {
+            const userInfo = wechatData?.getUserInfo?.() || {};
+            const userTags = String(userInfo?.naiPromptTags || userInfo?.imageTags || '').trim();
+            if (userTags) identityTagGroups.push(userTags);
+        }
+
+        return this._mergeWeiboImageTags(...identityTagGroups, basePrompt);
     }
 
     _parsePromptDescriptionPair(rawValue = '') {
         const raw = String(rawValue || '').trim()
-            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '');
+            .replace(/^\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*/i, '');
         const parts = [];
         const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
         let match;

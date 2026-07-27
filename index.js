@@ -1121,7 +1121,7 @@ if (window.GGP_Loaded) {
     // 🔥 按需加载设置模块
     async function loadSettingsModule() {
         if (!SettingsApp) {
-            const module = await import('./apps/settings/settings-app.js?v=20260726-image-to-video');
+            const module = await import('./apps/settings/settings-app.js?v=20260728-nai-only-visibility');
             SettingsApp = module.SettingsApp;
         }
         return SettingsApp;

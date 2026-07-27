@@ -5788,7 +5788,7 @@ input:checked + .toggle-slider:before {
 }
 
 /* 3. 拯救滑块和复选框 (对抗主题对 input[type="range"] 和 checkbox 的魔改) */
-#phone-panel-content input[type="range"]:not(#phone-shell-scale-slider)::-webkit-slider-thumb {
+#phone-panel-content input[type="range"]:not(#phone-shell-scale-slider):not(.phone-theme-range)::-webkit-slider-thumb {
     background: #07c160 !important;
     background-image: none !important;
     box-shadow: none !important;

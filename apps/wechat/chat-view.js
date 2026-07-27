@@ -4053,7 +4053,10 @@ renderChatRoom(chat) {
         if (!message) return;
 
         const status = String(message.imageGenStatus || '').trim();
-        if (status === 'loading') return;
+        if (
+            status === 'loading'
+            && String(message.imageGenerationRuntimeId || '').trim() === String(this.app.wechatData.imageGenerationRuntimeId || '').trim()
+        ) return;
         this._imagePromptGenerationLocks.add(generationLockKey);
 
         const rawPromptText = String(message.imagePrompt || message.content || '').trim();
@@ -4084,6 +4087,7 @@ renderChatRoom(chat) {
         this.app.wechatData.updateMessageById(chatId, safeMessageId, {
             imageGenStatus: 'loading',
             imageGenerationId: generationId,
+            imageGenerationRuntimeId: this.app.wechatData.imageGenerationRuntimeId,
             imageGenError: '',
             imagePrompt: promptText,
             imageDescription: descriptionText,
@@ -4121,6 +4125,7 @@ renderChatRoom(chat) {
                 imageDescription: descriptionText,
                 generatedImageUrl: imageUrl,
                 imageGenStatus: 'done',
+                imageGenerationRuntimeId: '',
                 imageGenError: '',
                 imageModel: String(result?.model || '').trim(),
                 imageProvider: String(result?.provider || '').trim(),
@@ -4147,6 +4152,7 @@ renderChatRoom(chat) {
                 imagePrompt: promptText,
                 imageDescription: descriptionText,
                 imageGenStatus: 'failed',
+                imageGenerationRuntimeId: '',
                 imageGenError: friendlyMessage
             });
             this._refreshVisibleChatMessages(chatId);

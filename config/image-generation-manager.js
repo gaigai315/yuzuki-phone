@@ -678,6 +678,28 @@ export class ImageGenerationManager {
         }).filter(Boolean);
     }
 
+    _getActiveOpenAIImagePromptPreset() {
+        const activeId = String(this._get('phone-image-openai-active-preset', '') || '').trim();
+        if (!activeId) return null;
+        try {
+            const raw = this._get('phone-image-openai-presets', '[]');
+            const presets = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+            if (!Array.isArray(presets)) return null;
+            const preset = presets.find(item => String(item?.id || '').trim() === activeId);
+            if (!preset || typeof preset !== 'object') return null;
+            return {
+                id: activeId,
+                name: String(preset.name || '').trim(),
+                fixedPrompt: String(preset.fixedPrompt || ''),
+                fixedPromptEnd: String(preset.fixedPromptEnd || ''),
+                negativePrompt: String(preset.negativePrompt || '')
+            };
+        } catch (e) {
+            console.warn('[GPT Image] 读取当前 GPT 生图预设失败，已回退到 App 提示词设置:', e);
+            return null;
+        }
+    }
+
     getComfyUIWorkflowChoices({ videoOnly = false, imageToVideoOnly = false, app = 'honey' } = {}) {
         return this._getStoredComfyUIWorkflows().map((item) => {
             try {
@@ -771,6 +793,13 @@ export class ImageGenerationManager {
         const rawSteps = this._getNumber('phone-image-steps', 28, 1, 50);
         const promptAppKey = this._normalizeImagePresetScope(appKey);
         const comfyuiAppWorkflow = this._getComfyUIWorkflowForApp(appKey);
+        const openaiPromptPreset = provider === 'openai' ? this._getActiveOpenAIImagePromptPreset() : null;
+        const resolvePromptSetting = (overrideValue, presetKey, storageSuffix) => {
+            const storedValue = promptAppKey
+                ? this._get(`phone-image-${promptAppKey}-${storageSuffix}`, '')
+                : '';
+            return String(overrideValue ?? (openaiPromptPreset ? openaiPromptPreset[presetKey] : storedValue) ?? '').trim();
+        };
 
         const site = String(overrides.site || this._get('phone-image-novelai-site', 'official')).trim() || 'official';
         const openaiSite = String(overrides.openaiSite || this._get('phone-image-openai-site', 'official')).trim() || 'official';
@@ -834,9 +863,9 @@ export class ImageGenerationManager {
             scale: this._getNumber('phone-image-scale', 6, 0, 50),
             cfgRescale: this._getNumber('phone-image-cfg-rescale', 0.2, 0, 1),
             seed: this._getNumber('phone-image-seed', -1, -1, 4294967295),
-            fixedPrompt: String(overrides.fixedPrompt ?? (promptAppKey ? this._get(`phone-image-${promptAppKey}-fixed-prompt`, '') : '')).trim(),
-            fixedPromptEnd: String(overrides.fixedPromptEnd ?? (promptAppKey ? this._get(`phone-image-${promptAppKey}-fixed-prompt-end`, '') : '')).trim(),
-            negativePrompt: String(overrides.negativePrompt ?? (promptAppKey ? this._get(`phone-image-${promptAppKey}-negative-prompt`, '') : '')).trim(),
+            fixedPrompt: resolvePromptSetting(overrides.fixedPrompt, 'fixedPrompt', 'fixed-prompt'),
+            fixedPromptEnd: resolvePromptSetting(overrides.fixedPromptEnd, 'fixedPromptEnd', 'fixed-prompt-end'),
+            negativePrompt: resolvePromptSetting(overrides.negativePrompt, 'negativePrompt', 'negative-prompt'),
             debugPayload: this._getBool('phone-image-debug-payload', false),
             novelAISkipCfgCompat: this._getBoolDefaultTrue('phone-image-novelai-skip-cfg-compat'),
             saveToBackgrounds: this._getBool('phone-image-save-backgrounds', false)
@@ -1113,6 +1142,117 @@ export class ImageGenerationManager {
             console.info('negative prompt', debugInfo.negativePrompt);
             console.info('workflow', debugInfo.workflow);
             console.info('copy helper', 'copy(JSON.stringify(window.__lastComfyUIRequest, null, 2))');
+            console.groupEnd();
+        } catch (e) {}
+    }
+
+    _redactOpenAIDebugPayload(payload) {
+        try {
+            const clone = JSON.parse(JSON.stringify(payload || {}));
+            const redactImages = (value) => {
+                if (Array.isArray(value)) {
+                    return value.map(redactImages);
+                }
+                if (value && typeof value === 'object') {
+                    Object.entries(value).forEach(([key, item]) => {
+                        value[key] = redactImages(item);
+                    });
+                    return value;
+                }
+                if (typeof value !== 'string') return value;
+                if (/^data:image\//i.test(value) || /^[A-Za-z0-9+/=\s]{500,}$/.test(value)) {
+                    return `[BASE64_IMAGE:${value.length}]`;
+                }
+                return value;
+            };
+            return redactImages(clone);
+        } catch (e) {
+            return payload;
+        }
+    }
+
+    _debugOpenAIRequest({
+        endpoint,
+        targetEndpoint = '',
+        payload,
+        config,
+        options,
+        requestMode = 'images/generations',
+        positivePrompt = '',
+        negativePrompt = '',
+        requestedSize = '',
+        quality = '',
+        attempt = 1
+    }) {
+        if (!config?.debugPayload) return;
+        const debugInfo = {
+            endpoint,
+            targetEndpoint: targetEndpoint || endpoint,
+            provider: 'openai',
+            app: String(options?.app || '').trim(),
+            model: String(payload?.model || config?.model || '').trim(),
+            requestMode,
+            requestedSize,
+            quality,
+            attempt,
+            originalPrompt: String(options?.rawPrompt || options?.prompt || '').trim(),
+            positivePrompt: String(positivePrompt || '').trim(),
+            negativePrompt: String(negativePrompt || '').trim(),
+            sentPrompt: String(
+                requestMode === 'chat/completions'
+                    ? payload?.messages?.[0]?.content
+                    : payload?.prompt
+            ).trim(),
+            payload: this._redactOpenAIDebugPayload(payload)
+        };
+        try {
+            if (typeof window !== 'undefined') {
+                window.__lastGPTImageRequest = debugInfo;
+                window.__lastOpenAIRequest = debugInfo;
+            }
+        } catch (e) {}
+        try {
+            const plainText = [
+                '[GPT Image Debug] 本次生图参数',
+                `App: ${debugInfo.app || '-'}`,
+                `接口: ${debugInfo.requestMode}`,
+                `模型: ${debugInfo.model || '-'}`,
+                `尺寸: ${debugInfo.requestedSize || '-'}`,
+                `质量: ${debugInfo.quality || '-'}`,
+                `请求尝试: ${debugInfo.attempt}`,
+                '',
+                'AI 画面 tag（原样）:',
+                debugInfo.originalPrompt || '(空)',
+                '',
+                '拼接固定词后的正向提示词:',
+                debugInfo.positivePrompt || '(空)',
+                '',
+                '负面提示词:',
+                debugInfo.negativePrompt || '(空)',
+                '',
+                '最终发送给 GPT 的 prompt:',
+                debugInfo.sentPrompt || '(空)',
+                '',
+                '调试 payload 已保存到 window.__lastGPTImageRequest（图片 base64 已脱敏）',
+                '复制完整调试信息: copy(JSON.stringify(window.__lastGPTImageRequest, null, 2))'
+            ].join('\n');
+            console.log(plainText);
+            console.groupCollapsed(`[GPT Image Debug] ${debugInfo.requestMode} payload`);
+            console.info('summary', {
+                endpoint: debugInfo.endpoint,
+                targetEndpoint: debugInfo.targetEndpoint,
+                app: debugInfo.app,
+                model: debugInfo.model,
+                size: debugInfo.requestedSize,
+                quality: debugInfo.quality,
+                attempt: debugInfo.attempt
+            });
+            console.info('AI 画面 tag（原样）', debugInfo.originalPrompt);
+            console.info('positive prompt', debugInfo.positivePrompt);
+            console.info('negative prompt', debugInfo.negativePrompt);
+            console.info('sent prompt', debugInfo.sentPrompt);
+            console.info('full payload', debugInfo.payload);
+            console.info('copy helper', 'copy(JSON.stringify(window.__lastGPTImageRequest, null, 2))');
             console.groupEnd();
         } catch (e) {}
     }
@@ -3317,6 +3457,17 @@ export class ImageGenerationManager {
             mode: 'chat',
             instruction_mode: 'chat'
         };
+        this._debugOpenAIRequest({
+            endpoint,
+            payload,
+            config,
+            options,
+            requestMode: 'chat/completions',
+            positivePrompt: fullPrompt,
+            negativePrompt,
+            requestedSize,
+            quality: 'chat'
+        });
         const result = await this._fetchOpenAIViaSillyTavernProxy(config, endpoint, payload, {
             signal: options.signal
         });
@@ -3830,9 +3981,10 @@ export class ImageGenerationManager {
         const requestedSize = this._getOpenAIImageSize(model, width, height);
         const targetEndpoint = this._resolveOpenAIEndpoint(config);
         const endpoint = this._resolveOpenAIRelayEndpoint(config, targetEndpoint);
+        const positivePrompt = this._joinPrompt([config.fixedPrompt, prompt, config.fixedPromptEnd], '\n');
         const payload = {
             model,
-            prompt: this._joinPrompt([config.fixedPrompt, prompt, config.fixedPromptEnd], '\n'),
+            prompt: positivePrompt,
             size: requestedSize,
             n: 1
         };
@@ -3852,6 +4004,19 @@ export class ImageGenerationManager {
         for (let i = 0; i < requestPayloads.length; i++) {
             const requestPayload = requestPayloads[i];
             let response = null;
+            this._debugOpenAIRequest({
+                endpoint,
+                targetEndpoint,
+                payload: requestPayload,
+                config,
+                options,
+                requestMode: 'images/generations',
+                positivePrompt,
+                negativePrompt,
+                requestedSize,
+                quality: normalizedQuality || config.openaiQuality || 'auto',
+                attempt: i + 1
+            });
             try {
                 response = await fetch(endpoint, {
                     method: 'POST',

@@ -457,12 +457,15 @@ export class SettingsApp {
                 'transform': 'none'
             });
         });
-        lockAll('.setting-item.setting-toggle', {
-            'display': 'flex',
-            'flex-direction': 'row',
-            'align-items': 'center',
-            'justify-content': 'space-between',
-            'gap': '14px'
+        root.querySelectorAll('.setting-item.setting-toggle').forEach((item) => {
+            if (item.style.getPropertyValue('display').trim() === 'none') return;
+            lock(item, {
+                'display': 'flex',
+                'flex-direction': 'row',
+                'align-items': 'center',
+                'justify-content': 'space-between',
+                'gap': '14px'
+            });
         });
         lock(root.querySelector('.yzp-settings-current-context'), {
             'display': 'block',
@@ -3273,7 +3276,7 @@ export class SettingsApp {
         const siliconflowDisplay = provider === 'siliconflow' ? '' : 'display: none;';
         const sdDisplay = provider === 'sd' ? '' : 'display: none;';
         const comfyuiDisplay = provider === 'comfyui' ? '' : 'display: none;';
-        const novelaiOnlyDisplay = provider === 'novelai' ? '' : 'display: none;';
+        const novelaiOnlyDisplay = provider === 'novelai' ? '' : 'display: none !important;';
 
         return `
             <div class="setting-section">
@@ -5339,9 +5342,11 @@ export class SettingsApp {
             setSectionVisible(imageSdSection, provider === 'sd');
             setSectionVisible(imageComfyUISection, provider === 'comfyui');
             imageNovelaiOnlyRows.forEach(row => {
-                row.style.display = provider === 'novelai' ? '' : 'none';
+                const visibleDisplay = row.classList.contains('setting-toggle') ? 'flex' : 'block';
+                row.style.setProperty('display', provider === 'novelai' ? visibleDisplay : 'none', 'important');
             });
         };
+        setImageProviderVisibility();
         const getImageProviderAppBindings = () => this._getImageProviderAppBindings();
         const saveImageProviderAppBindings = async (bindings) => {
             await this.storage.set('phone-image-provider-app-bindings', JSON.stringify(bindings || {}));

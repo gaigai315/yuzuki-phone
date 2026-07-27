@@ -35,6 +35,7 @@ export class WechatData {
         // 🔥 懒加载机制：分离轻量数据和消息内容
         this._messagesLoaded = {};  // 记录哪些聊天的消息已加载
         this._messagesDirty = {};   // 记录哪些聊天的消息需要保存
+        this.imageGenerationRuntimeId = `wechat_runtime_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
         this.data = this.loadData();
     }
@@ -1931,6 +1932,8 @@ export class WechatData {
      * 🔥 懒加载：只在需要时才从单独存储加载该聊天的消息
      */
     getMessages(chatId) {
+        const isFirstRuntimeLoad = !this._messagesLoaded[chatId];
+
         // 🔥 如果内存中还没有这个数组，先初始化
         if (!this.data.messages[chatId]) {
             this.data.messages[chatId] = [];
@@ -1967,13 +1970,31 @@ export class WechatData {
 
         // 🔥 给没有id的旧消息补上id
         let patched = false;
+        let recoveredInterruptedGeneration = false;
         this.data.messages[chatId].forEach((m, i) => {
             if (!m.id) {
                 m.id = `msg_legacy_${chatId}_${i}`;
                 patched = true;
             }
+            if (
+                isFirstRuntimeLoad
+                && String(m?.imageGenStatus || '').trim() === 'loading'
+                && String(m?.imageGenerationRuntimeId || '').trim() !== this.imageGenerationRuntimeId
+            ) {
+                m.imageGenStatus = 'failed';
+                m.imageGenError = '页面刷新后，之前的生成任务已中断，请点击重试';
+                m.imageGenerationId = '';
+                m.imageGenerationRuntimeId = '';
+                patched = true;
+                recoveredInterruptedGeneration = true;
+            }
         });
-        if (patched) this._messagesDirty[chatId] = true;
+        if (patched) {
+            this._messagesDirty[chatId] = true;
+            if (recoveredInterruptedGeneration) {
+                this._saveMessages(chatId);
+            }
+        }
         return this.data.messages[chatId];
     }
 

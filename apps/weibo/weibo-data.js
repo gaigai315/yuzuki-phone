@@ -1311,8 +1311,8 @@ export class WeiboData {
             if (trimmed.startsWith('配图：') || trimmed.startsWith('配图:')) {
                 if (inContent) { post.content = contentLines.join('\n'); contentLines = []; inContent = false; }
                 const imgText = trimmed.replace(/^配图[：:]/, '').trim();
-                // 支持格式：[图片]（中文描述）（English tags）、[图片]（描述）、[xxx]
-                const pairMatches = [...imgText.matchAll(/\[(?:用户照片|个人图片|图片)\]\s*[（(]([^）)]+)[）)](?:\s*[（(]([^）)]+)[）)])?/g)];
+                // 支持格式：[图片] / [用户照片] / [图片-姓名,姓名]（中文描述）（English tags）
+                const pairMatches = [...imgText.matchAll(/\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]([^）)]+)[）)](?:\s*[（(]([^）)]+)[）)])?/g)];
                 if (pairMatches.length > 0) {
                     post.images = pairMatches.map(m => m[0]);
                 } else {
@@ -1568,7 +1568,7 @@ export class WeiboData {
         const parsedImages = [...(images || [])];
 
         // 🔥 提取用户输入在正文里的 [图片]（描述） 或 [图片]（描述）（英文tag）
-        const mediaRegex = /\[(用户照片|个人图片|图片|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
+        const mediaRegex = /\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
         let match;
         while ((match = mediaRegex.exec(processedText)) !== null) {
             parsedImages.push(match[0]); // 将完整的 [图片/视频]（描述） 存入配图数组
@@ -1587,7 +1587,7 @@ export class WeiboData {
             // 处理附加图片
             images: parsedImages.map(img => {
                 if (img.startsWith('data:') || img.startsWith('/') || img.startsWith('http')) return img;
-                if (/^\[(用户照片|个人图片|图片|视频)\]/.test(img)) return img;
+                if (/^\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]/.test(img)) return img;
                 return `[${img}]`;
             }),
             forward: 0,
@@ -2186,9 +2186,10 @@ export class WeiboData {
         const stateDescription = String(imageState?.description || imageState?.prompt || '').trim();
         if (!raw && !stateDescription) return '';
 
-        const taggedMatch = raw.match(/^\[(用户照片|个人图片|图片|视频)\]\s*([\s\S]*)$/);
-        const rawTag = taggedMatch?.[1] || (String(imageState?.mediaType || '').trim() === '视频' ? '视频' : '图片');
-        const tag = ['用户照片', '个人图片', '图片', '视频'].includes(rawTag) ? rawTag : '图片';
+        const taggedMatch = raw.match(/^\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*([\s\S]*)$/);
+        const stateTag = String(imageState?.mediaType || '').trim();
+        const rawTag = taggedMatch?.[1] || stateTag || '图片';
+        const tag = /^(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)$/.test(rawTag) ? rawTag : '图片';
         const body = taggedMatch ? String(taggedMatch[2] || '').trim() : raw;
         const parts = [];
         const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
@@ -2207,8 +2208,8 @@ export class WeiboData {
         return `[${tag}]（${description}）`;
     }
 
-    // 获取微信好友列表（异步静默加载）
-    async getWechatContactsAsync() {
+    // 获取微信数据（异步静默加载，微信未打开时也从存储恢复）
+    async getWechatDataAsync() {
         let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
         if (!wechatData) {
             try {
@@ -2217,10 +2218,16 @@ export class WeiboData {
                 if (window.VirtualPhone) window.VirtualPhone.cachedWechatData = wechatData;
             } catch (e) {
                 console.error('加载微信数据库失败:', e);
-                return [];
+                return null;
             }
         }
-        return wechatData.getContacts() || [];
+        return wechatData;
+    }
+
+    // 获取微信好友列表（异步静默加载）
+    async getWechatContactsAsync() {
+        const wechatData = await this.getWechatDataAsync();
+        return wechatData?.getContacts?.() || [];
     }
 
     // ========================================

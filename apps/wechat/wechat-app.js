@@ -16,6 +16,11 @@ import { MomentsView } from './moments-view.js?v=20260714-moments-phone-time';
 import { WechatData } from './wechat-data.js';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
+import {
+    DEFAULT_WECHAT_CHAT_STYLE_ID,
+    WECHAT_NATIVE_CHAT_STYLE_ID,
+    getBuiltinWechatChatStyleProfiles
+} from './chat-style-presets.js?v=20260728-wechat-chat-styles';
 
 const CHAT_CSS_VALUE_KEY = 'phone_global_chat_css';
 const CHAT_CSS_PROFILES_KEY = 'phone_chat_css_profiles';
@@ -46,6 +51,7 @@ export class WechatApp {
         this._ensureWechatAvatarPoolLoaded();
 
         // 加载样式
+        this._ensureChatCssPresetState();
         this.loadStyles();
         // 应用用户自定义会话样式（气泡/头像框）
         this._applyCustomChatStyle(this._getUserCustomChatCss());
@@ -169,6 +175,13 @@ export class WechatApp {
         return this.storage?.set(CHAT_CSS_PROFILES_KEY, JSON.stringify(safeProfiles));
     }
 
+    _getAllChatCssProfiles() {
+        return [
+            ...getBuiltinWechatChatStyleProfiles(),
+            ...this._loadChatCssProfiles()
+        ];
+    }
+
     _getActiveChatCssProfileId() {
         return String(this.storage?.get(CHAT_CSS_ACTIVE_PROFILE_KEY) || '').trim();
     }
@@ -178,16 +191,20 @@ export class WechatApp {
     }
 
     _ensureChatCssPresetState() {
-        const profiles = this._loadChatCssProfiles();
+        const customProfiles = this._loadChatCssProfiles();
+        const profiles = [
+            ...getBuiltinWechatChatStyleProfiles(),
+            ...customProfiles
+        ];
         let activeId = this._getActiveChatCssProfileId();
         let activeProfile = profiles.find(profile => profile.id === activeId) || null;
         const appliedCss = this._getUserCustomChatCss();
 
         // 旧版只有“已应用 CSS”而没有当前预设。升级时自动收纳，避免丢失用户样式。
         if (!activeProfile && appliedCss) {
-            activeProfile = profiles.find(profile => profile.css === appliedCss) || null;
+            activeProfile = customProfiles.find(profile => profile.css === appliedCss) || null;
             if (!activeProfile) {
-                const usedIds = new Set(profiles.map(profile => profile.id));
+                const usedIds = new Set(customProfiles.map(profile => profile.id));
                 activeProfile = {
                     id: this._createChatCssProfileId(usedIds),
                     name: '现有会话样式',
@@ -195,14 +212,20 @@ export class WechatApp {
                     createdAt: Date.now(),
                     updatedAt: Date.now()
                 };
+                customProfiles.push(activeProfile);
                 profiles.push(activeProfile);
-                this._saveChatCssProfiles(profiles);
+                this._saveChatCssProfiles(customProfiles);
             }
             activeId = activeProfile.id;
             this._setActiveChatCssProfileId(activeId);
-        } else if (activeId && !activeProfile) {
-            activeId = '';
-            this._setActiveChatCssProfileId('');
+        } else if (!activeProfile) {
+            activeProfile = profiles.find(profile => profile.id === DEFAULT_WECHAT_CHAT_STYLE_ID) || null;
+            activeId = activeProfile?.id || '';
+            this._setActiveChatCssProfileId(activeId);
+            this.storage?.set(CHAT_CSS_VALUE_KEY, activeProfile?.css || '');
+        } else if (activeProfile.builtin && appliedCss !== activeProfile.css) {
+            // 内置样式每次从代码生成，确保升级后立即使用最新本地素材路径。
+            this.storage?.set(CHAT_CSS_VALUE_KEY, activeProfile.css);
         }
 
         return { profiles, activeId, activeProfile };
@@ -6201,9 +6224,11 @@ export class WechatApp {
             .replace(/'/g, '&#39;');
         const safeCustomCss = escapeChatCssHtml(chatCssState.activeProfile?.css || '');
         const chatCssProfileOptions = chatCssState.profiles.map(profile => `
-            <option value="${escapeChatCssHtml(profile.id)}" ${profile.id === chatCssState.activeId ? 'selected' : ''}>${escapeChatCssHtml(profile.name)}</option>
+            <option value="${escapeChatCssHtml(profile.id)}" ${profile.id === chatCssState.activeId ? 'selected' : ''}>${escapeChatCssHtml(profile.name)}${profile.builtin ? '（内置）' : ''}</option>
         `).join('');
         const hasActiveChatCssProfile = !!chatCssState.activeProfile;
+        const isActiveChatCssProfileBuiltin = chatCssState.activeProfile?.builtin === true;
+        const canEditActiveChatCssProfile = hasActiveChatCssProfile && !isActiveChatCssProfileBuiltin;
         const momentsBackgroundPreview = momentsBackground
             ? `background-image:url('${momentsBackground}');background-size:cover;background-position:center;`
             : 'background:linear-gradient(135deg,#f3f4f6,#e9edf2);';
@@ -6662,24 +6687,24 @@ export class WechatApp {
                             min-width: 0; padding: 8px 6px; background: #fff; color: #333;
                             border: 1px solid #e7e7e7; border-radius: 8px; font-size: 12px; cursor: pointer;
                         "><i class="fa-solid fa-file-import" style="margin-right: 4px;"></i>导入 TXT</button>
-                        <button id="save-css-profile-btn" ${hasActiveChatCssProfile ? '' : 'disabled'} style="
+                        <button id="save-css-profile-btn" ${canEditActiveChatCssProfile ? '' : 'disabled'} style="
                             min-width: 0; padding: 8px 6px; background: #07c160; color: #fff;
-                            border: none; border-radius: 8px; font-size: 12px; cursor: ${hasActiveChatCssProfile ? 'pointer' : 'default'};
-                            opacity: ${hasActiveChatCssProfile ? '1' : '0.45'};
+                            border: none; border-radius: 8px; font-size: 12px; cursor: ${canEditActiveChatCssProfile ? 'pointer' : 'default'};
+                            opacity: ${canEditActiveChatCssProfile ? '1' : '0.45'};
                         ">保存当前</button>
-                        <button id="delete-css-profile-btn" ${hasActiveChatCssProfile ? '' : 'disabled'} style="
+                        <button id="delete-css-profile-btn" ${canEditActiveChatCssProfile ? '' : 'disabled'} style="
                             min-width: 0; padding: 8px 6px; background: #fff; color: #ff3b30;
-                            border: 1px solid #f1c6c2; border-radius: 8px; font-size: 12px; cursor: pointer;
-                            opacity: ${hasActiveChatCssProfile ? '1' : '0.45'};
+                            border: 1px solid #f1c6c2; border-radius: 8px; font-size: 12px; cursor: ${canEditActiveChatCssProfile ? 'pointer' : 'default'};
+                            opacity: ${canEditActiveChatCssProfile ? '1' : '0.45'};
                         ">删除预设</button>
                     </div>
                     <input id="import-css-profile-file" type="file" accept=".txt,text/plain,text/css" style="display: none;">
                     <div style="font-size: 11px; color: #999; margin-bottom: 6px; line-height: 1.45;">
                         可覆盖类名：.message-avatar、.message-text 等
                     </div>
-                    <textarea id="wechat-chat-custom-css" ${hasActiveChatCssProfile ? '' : 'disabled'} placeholder="${hasActiveChatCssProfile ? '.message-right .message-text { border-radius: 14px; background: #c9f7b9; }' : '请先新增或选择一个会话样式预设'}" style="
+                    <textarea id="wechat-chat-custom-css" ${hasActiveChatCssProfile ? '' : 'disabled'} ${isActiveChatCssProfileBuiltin ? 'readonly' : ''} placeholder="${hasActiveChatCssProfile ? '.message-right .message-text { border-radius: 14px; background: #c9f7b9; }' : '请先新增或选择一个会话样式预设'}" style="
                         width: 100%; min-height: 120px; padding: 10px; border: 1px solid #e7e7e7; border-radius: 8px;
-                        background: ${hasActiveChatCssProfile ? '#fbfbfb' : '#f3f3f3'}; font-size: 12px; color: #333; line-height: 1.45;
+                        background: ${canEditActiveChatCssProfile ? '#fbfbfb' : '#f3f3f3'}; font-size: 12px; color: #333; line-height: 1.45;
                         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
                         resize: vertical; outline: none; box-sizing: border-box; touch-action: pan-y; overscroll-behavior: contain;
                     ">${safeCustomCss}</textarea>
@@ -6839,22 +6864,25 @@ export class WechatApp {
         const saveProfileBtn = document.getElementById('save-css-profile-btn');
         const deleteProfileBtn = document.getElementById('delete-css-profile-btn');
         const cssTextarea = document.getElementById('wechat-chat-custom-css');
-        let cssProfiles = this._loadChatCssProfiles();
+        let cssProfiles = this._getAllChatCssProfiles();
 
         const setCssProfileControlsState = (profile) => {
             const hasProfile = !!profile;
+            const isBuiltin = profile?.builtin === true;
+            const canEdit = hasProfile && !isBuiltin;
             if (cssTextarea) {
                 cssTextarea.disabled = !hasProfile;
+                cssTextarea.readOnly = isBuiltin;
                 cssTextarea.placeholder = hasProfile
                     ? '.message-right .message-text { border-radius: 14px; background: #c9f7b9; }'
                     : '请先新增或选择一个会话样式预设';
-                cssTextarea.style.background = hasProfile ? '#fbfbfb' : '#f3f3f3';
+                cssTextarea.style.background = canEdit ? '#fbfbfb' : '#f3f3f3';
             }
             [saveProfileBtn, deleteProfileBtn].forEach((button) => {
                 if (!button) return;
-                button.disabled = !hasProfile;
-                button.style.opacity = hasProfile ? '1' : '0.45';
-                button.style.cursor = hasProfile ? 'pointer' : 'default';
+                button.disabled = !canEdit;
+                button.style.opacity = canEdit ? '1' : '0.45';
+                button.style.cursor = canEdit ? 'pointer' : 'default';
             });
         };
 
@@ -6866,7 +6894,7 @@ export class WechatApp {
 
         const renderCssSelect = (selectedId = this._getActiveChatCssProfileId()) => {
             if (!profileSelect) return;
-            cssProfiles = this._loadChatCssProfiles();
+            cssProfiles = this._getAllChatCssProfiles();
             profileSelect.replaceChildren();
 
             const placeholder = document.createElement('option');
@@ -6878,7 +6906,7 @@ export class WechatApp {
             cssProfiles.forEach((profile) => {
                 const option = document.createElement('option');
                 option.value = profile.id;
-                option.textContent = profile.name;
+                option.textContent = profile.builtin ? `${profile.name}（内置）` : profile.name;
                 profileSelect.appendChild(option);
             });
 
@@ -6904,7 +6932,7 @@ export class WechatApp {
             const name = String(window.prompt('请输入会话样式预设名称', '') || '').trim();
             if (!name) return;
             const profiles = this._loadChatCssProfiles();
-            if (profiles.some(profile => profile.name === name)) {
+            if (this._getAllChatCssProfiles().some(profile => profile.name === name)) {
                 this.phoneShell.showNotification('新增失败', `预设「${name}」已存在`, '⚠️');
                 return;
             }
@@ -6958,6 +6986,10 @@ export class WechatApp {
                 }
 
                 const name = fileName.replace(/\.txt$/i, '').trim() || '导入会话样式';
+                if (getBuiltinWechatChatStyleProfiles().some(profile => profile.name === name)) {
+                    this.phoneShell.showNotification('导入失败', `「${name}」是内置样式，请修改 TXT 文件名后再导入`, '⚠️');
+                    return;
+                }
                 const profiles = this._loadChatCssProfiles();
                 let profile = profiles.find(item => item.name === name) || null;
                 const now = Date.now();
@@ -6991,6 +7023,11 @@ export class WechatApp {
 
         saveProfileBtn?.addEventListener('click', async () => {
             const activeId = String(profileSelect?.value || '').trim();
+            const selectedProfile = this._getAllChatCssProfiles().find(item => item.id === activeId) || null;
+            if (selectedProfile?.builtin) {
+                this.phoneShell.showNotification('保存失败', '内置样式不能覆盖，请新增自定义预设', '⚠️');
+                return;
+            }
             const profiles = this._loadChatCssProfiles();
             const profile = profiles.find(item => item.id === activeId) || null;
             if (!profile) {
@@ -7007,6 +7044,11 @@ export class WechatApp {
 
         deleteProfileBtn?.addEventListener('click', async () => {
             const activeId = String(profileSelect?.value || '').trim();
+            const selectedProfile = this._getAllChatCssProfiles().find(item => item.id === activeId) || null;
+            if (selectedProfile?.builtin) {
+                this.phoneShell.showNotification('删除失败', '内置样式不能删除', '⚠️');
+                return;
+            }
             const profiles = this._loadChatCssProfiles();
             const profileIndex = profiles.findIndex(item => item.id === activeId);
             const profile = profileIndex >= 0 ? profiles[profileIndex] : null;
@@ -7019,10 +7061,12 @@ export class WechatApp {
 
             profiles.splice(profileIndex, 1);
             await this._saveChatCssProfiles(profiles);
-            await this._setActiveChatCssProfileId('');
-            await applyChatCssValue('');
-            if (cssTextarea) cssTextarea.value = '';
-            renderCssSelect('');
+            const fallbackProfile = getBuiltinWechatChatStyleProfiles()
+                .find(item => item.id === WECHAT_NATIVE_CHAT_STYLE_ID) || null;
+            await this._setActiveChatCssProfileId(fallbackProfile?.id || '');
+            await applyChatCssValue(fallbackProfile?.css || '');
+            if (cssTextarea) cssTextarea.value = fallbackProfile?.css || '';
+            renderCssSelect(fallbackProfile?.id || '');
             this.phoneShell.showNotification('已删除预设', profile.name, '✅');
         });
 

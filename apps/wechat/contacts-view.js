@@ -733,7 +733,7 @@ export class ContactsView {
                             </label>
                             <label style="display: block; margin-top: 8px;">
                                 <div style="font-size: 11px; color: #666; margin-bottom: 3px;">参考强度：<span id="edit-contact-reference-strength-text">${referenceStrength.toFixed(2)}</span></div>
-                                <input type="range" id="edit-contact-reference-strength" min="0" max="1" step="0.05" value="${referenceStrength}" ${referenceImage ? '' : 'disabled'} style="width: 100%;">
+                                <input type="range" id="edit-contact-reference-strength" class="phone-theme-range" min="0" max="1" step="0.05" value="${referenceStrength}" ${referenceImage ? '' : 'disabled'} style="width: 100%;">
                             </label>
                             <label style="display: block; margin-top: 10px;">
                                 <div style="font-size: 11px; color: #666; margin-bottom: 3px;">专属生图Tag</div>

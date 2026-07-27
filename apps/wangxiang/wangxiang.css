@@ -615,6 +615,44 @@
     border-top: 1px solid rgba(74, 182, 228, 0.2);
 }
 
+/* The shared worldbook manager renders phone-worldbook-* classes. Keep its
+   light default palette from disappearing against Wanxiang's dark panels. */
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-worldbook-list .phone-worldbook-source-row {
+    border-bottom-color: rgba(74, 182, 228, 0.13) !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-worldbook-list .phone-worldbook-source-row.is-selected {
+    border-left-color: #38c9ff !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-worldbook-list .phone-worldbook-source-name {
+    color: #ddecf3 !important;
+    -webkit-text-fill-color: #ddecf3 !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-worldbook-list .phone-worldbook-source-meta,
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-worldbook-list .phone-worldbook-status {
+    color: #87a6b5 !important;
+    -webkit-text-fill-color: #87a6b5 !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-worldbook-list .phone-worldbook-status.is-error {
+    color: #ff8b95 !important;
+    -webkit-text-fill-color: #ff8b95 !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-worldbook-list .phone-worldbook-entry-trigger {
+    border-color: rgba(93, 196, 235, 0.28) !important;
+    background: rgba(11, 46, 64, 0.82) !important;
+    color: #8ee5ff !important;
+    -webkit-text-fill-color: #8ee5ff !important;
+}
+
+#phone-panel-content .phone-screen .wangxiang-app .wangxiang-worldbook-list .phone-worldbook-entry-trigger i {
+    color: inherit !important;
+    -webkit-text-fill-color: inherit !important;
+}
+
 #phone-panel-content .phone-screen .wangxiang-worldbook-item {
     display: flex;
     align-items: flex-start;
