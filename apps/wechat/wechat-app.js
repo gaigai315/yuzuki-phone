@@ -20,7 +20,7 @@ import {
     DEFAULT_WECHAT_CHAT_STYLE_ID,
     WECHAT_NATIVE_CHAT_STYLE_ID,
     getBuiltinWechatChatStyleProfiles
-} from './chat-style-presets.js?v=20260728-wechat-chat-styles';
+} from './chat-style-presets.js?v=20260728-clear-floral-avatar-clip';
 
 const CHAT_CSS_VALUE_KEY = 'phone_global_chat_css';
 const CHAT_CSS_PROFILES_KEY = 'phone_chat_css_profiles';

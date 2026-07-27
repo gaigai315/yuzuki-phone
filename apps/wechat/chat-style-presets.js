@@ -5,6 +5,7 @@ const YUZUKI_CLEAR_FLORAL_ASSETS = Object.freeze({
     more: new URL('./themes/yuzuki-clear-floral/more.png', import.meta.url).href,
     send: new URL('./themes/yuzuki-clear-floral/send.png', import.meta.url).href,
     stop: new URL('./themes/yuzuki-clear-floral/stop.png', import.meta.url).href,
+    avatarFrame: new URL('./themes/yuzuki-clear-floral/avatar-frame.png', import.meta.url).href,
     leftBubbleDecoration: new URL('./themes/yuzuki-clear-floral/left-bubble-decoration.png', import.meta.url).href,
     rightBubble: new URL('./themes/yuzuki-clear-floral/right-bubble.png', import.meta.url).href
 });
@@ -59,16 +60,43 @@ const YUZUKI_CLEAR_FLORAL_CHAT_CSS = `
 #phone-panel-content .phone-screen .wechat-app .chat-room .message-avatar {
     width: 36px !important;
     height: 36px !important;
-    border: 1.5px solid rgba(255, 255, 255, 0.92) !important;
+    position: relative !important;
+    overflow: visible !important;
+    border: 0 !important;
     border-radius: 50% !important;
-    background: rgba(255, 255, 255, 0.56) !important;
-    box-shadow:
-        0 2px 7px rgba(69, 99, 126, 0.16),
-        0 0 0 1px rgba(164, 197, 222, 0.16) !important;
+    background: transparent !important;
+    box-shadow: none !important;
 }
 
 #phone-panel-content .phone-screen .wechat-app .chat-room .message-avatar img {
     border-radius: 50% !important;
+}
+
+#phone-panel-content .phone-screen .wechat-app .chat-room .message-avatar > span,
+#phone-panel-content .phone-screen .wechat-app .chat-room .message-avatar > div {
+    width: 100% !important;
+    height: 100% !important;
+    position: relative !important;
+    overflow: hidden !important;
+    border-radius: 50% !important;
+    z-index: 1;
+}
+
+#phone-panel-content .phone-screen .wechat-app .chat-room .message-avatar::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 48px;
+    height: 40px;
+    transform: translate(-50%, -50%);
+    background-image: url("${YUZUKI_CLEAR_FLORAL_ASSETS.avatarFrame}");
+    background-color: transparent !important;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    pointer-events: none;
+    z-index: 2;
 }
 
 #phone-panel-content .phone-screen .wechat-app .chat-room .message-left .message-avatar {
