@@ -6334,6 +6334,24 @@ export class SettingsApp {
                 await applyComfyUIWorkflowSettings(activeWorkflow);
             }
         };
+        const refreshImagePromptFormForProvider = async (providerKey) => {
+            const provider = String(providerKey || imageProvider?.value || 'novelai').trim().toLowerCase() || 'novelai';
+            if (provider === 'openai') {
+                const activeId = String(imageOpenaiPresetSelect?.value || this.storage.get('phone-image-openai-active-preset') || '').trim();
+                const activePreset = this._getOpenAIImagePresets().find(item => item.id === activeId) || null;
+                const draft = activePreset || this._getImagePromptDraft(getActiveImagePromptApp());
+                if (imageFixedPromptInput) imageFixedPromptInput.value = String(draft.fixedPrompt || '');
+                if (imageFixedPromptEndInput) imageFixedPromptEndInput.value = String(draft.fixedPromptEnd || '');
+                if (imageNegativePromptInput) imageNegativePromptInput.value = String(draft.negativePrompt || '');
+                return;
+            }
+
+            await refreshImagePromptAppPanel(getActiveImagePromptApp(), { applyGenerationSettings: false });
+        };
+
+        refreshImagePromptFormForProvider(imageProvider?.value).catch((err) => {
+            console.warn('初始化生图提示词表单失败:', err);
+        });
 
         imagePromptAppSelect?.addEventListener('change', async (e) => {
             const previousApp = currentImagePromptApp;
@@ -6359,6 +6377,7 @@ export class SettingsApp {
             const provider = String(e.target.value || 'novelai').trim() || 'novelai';
             await this.storage.set('phone-image-provider', provider);
             setImageProviderVisibility();
+            await refreshImagePromptFormForProvider(provider);
         });
 
         imageProviderAppBindInputs.forEach((input) => {

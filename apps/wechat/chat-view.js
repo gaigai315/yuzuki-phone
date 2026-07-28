@@ -11371,8 +11371,8 @@ renderChatRoom(chat) {
             finalUserContent += '\n- 消息时间必须承接当前窗口最后一条已存在消息的时间并向后推进。';
         }
 
-        // 🔥 把所有待发送的图片代币附加到 user 消息末尾（多模态只能在 user 消息中生效）
-        if (aiImageTokenIds.length > 0 && aiImageNotes.length > 0) {
+        // 非通话模式把图片代币附加到 user 消息末尾；通话模式已在微信记录中提供图片说明。
+        if (!callMode && aiImageTokenIds.length > 0 && aiImageNotes.length > 0) {
             finalUserContent += '\n\n[以下是聊天记录中标注的图片，请结合上方时间线理解图片内容]\n';
             aiImageNotes.forEach(note => {
                 finalUserContent += `${note}\n`;
@@ -14579,7 +14579,7 @@ ${groupParticipants.join('、') || '暂无成员'}
             const callTranscript = recentCallHistory
                 .map(h => `${h.from === 'me' ? userName : (isGroupCall ? h.from : contactName)}: ${h.text}`)
                 .join('\n') || '暂无通话记录';
-            const prompt = `【手机通话中】
+            const prompt = `【微信${callTypeName}通话中】
 通话记录：
 ${callTranscript}`;
 
