@@ -516,7 +516,17 @@ export class ImageGenerationManager {
     }
 
     _normalizeComfyUIReferenceImages(options = {}) {
-        return this._normalizeSdReferenceImages(options);
+        const rawList = Array.isArray(options.novelAIReferences)
+            ? options.novelAIReferences
+            : (Array.isArray(options.referenceImages) ? options.referenceImages : []);
+        return rawList
+            .map((item) => {
+                const image = typeof item === 'string'
+                    ? this._normalizeNovelAIReferenceImage(item)
+                    : this._normalizeNovelAIReferenceImage(item?.image || item?.imageData || item?.dataUrl || item?.base64);
+                return image || '';
+            })
+            .filter(Boolean);
     }
 
     _containsCjk(text) {
@@ -700,24 +710,60 @@ export class ImageGenerationManager {
         }
     }
 
+    _getComfyUIReferencePlaceholderInfo(workflow = '') {
+        const workflowText = typeof workflow === 'string'
+            ? workflow
+            : JSON.stringify(workflow || {});
+        const legacyTokens = [
+            '%reference_image%',
+            '%reference_image_filename%',
+            '%reference_image_subfolder%',
+            '%reference_image_type%',
+            '%comfyui_reference_image%',
+            '%comfyuicankaoImage%',
+            '%comfyuicankaotupian%'
+        ];
+        const hasLegacy = legacyTokens.some(token => workflowText.includes(token));
+        const numberedIndexes = new Set();
+        const patterns = [
+            /%(?:reference_image(?:_(?:filename|subfolder|type))?|comfyui_reference_image|comfyuicankaoImage|comfyuicankaotupian)_(\d+)%/gi,
+            /%reference_image_(\d+)_(?:filename|subfolder|type)%/gi
+        ];
+        patterns.forEach((pattern) => {
+            let match;
+            while ((match = pattern.exec(workflowText)) !== null) {
+                const index = Number(match[1]);
+                if (Number.isInteger(index) && index > 0) numberedIndexes.add(index);
+            }
+        });
+        const indexes = [...numberedIndexes].sort((a, b) => a - b);
+        const highestNumberedIndex = indexes[indexes.length - 1] || 0;
+        if (highestNumberedIndex > 32) {
+            throw new Error('ComfyUI 编号参考图槽位最多支持 32 个');
+        }
+        const slotCount = Math.max(hasLegacy ? 1 : 0, highestNumberedIndex);
+        return {
+            hasLegacy,
+            numberedIndexes: indexes,
+            hasAny: hasLegacy || indexes.length > 0,
+            slotCount
+        };
+    }
+
     getComfyUIWorkflowChoices({ videoOnly = false, imageToVideoOnly = false, app = 'honey' } = {}) {
         return this._getStoredComfyUIWorkflows().map((item) => {
             try {
                 const parsed = this._parseComfyUIWorkflow(item.workflow);
                 const nodes = Object.values(parsed || {});
                 const isVideoWorkflow = nodes.some(node => String(node?.class_type || '').trim() === 'VHS_VideoCombine');
-                const workflowText = JSON.stringify(parsed);
-                const hasReferencePlaceholder = workflowText.includes('%reference_image%')
-                    || workflowText.includes('%reference_image_filename%')
-                    || workflowText.includes('%comfyui_reference_image%')
-                    || workflowText.includes('%comfyuicankaoImage%')
-                    || workflowText.includes('%comfyuicankaotupian%');
-                const acceptsReferenceImage = hasReferencePlaceholder
+                const referencePlaceholderInfo = this._getComfyUIReferencePlaceholderInfo(parsed);
+                const acceptsReferenceImage = referencePlaceholderInfo.hasAny
                     || this._canInjectComfyUIWanReferenceImage(parsed, app);
                 return {
                     ...item,
                     isVideoWorkflow,
                     acceptsReferenceImage,
+                    referenceImageSlotCount: referencePlaceholderInfo.slotCount,
                     fingerprint: this._buildComfyUIWorkflowFingerprint(item.workflow)
                 };
             } catch (error) {
@@ -1058,8 +1104,20 @@ export class ImageGenerationManager {
         }
     }
 
-    _debugComfyUIRequest({ endpoint, built, workflow, config, options, referenceImages = [], uploadedReferenceImage = null, promptId = '' }) {
+    _debugComfyUIRequest({
+        endpoint,
+        built,
+        workflow,
+        config,
+        options,
+        referenceImages = [],
+        uploadedReferenceImages = [],
+        promptId = ''
+    }) {
         if (!config?.debugPayload) return;
+        const normalizedUploadedReferences = Array.isArray(uploadedReferenceImages)
+            ? uploadedReferenceImages.filter(Boolean)
+            : (uploadedReferenceImages ? [uploadedReferenceImages] : []);
         const debugInfo = {
             endpoint,
             provider: 'comfyui',
@@ -1077,7 +1135,10 @@ export class ImageGenerationManager {
             positivePrompt: built.positivePrompt || '',
             negativePrompt: built.negativePrompt || '',
             referenceCount: referenceImages.length,
-            uploadedReferenceImage,
+            uploadedReferenceCount: normalizedUploadedReferences.length,
+            uploadedReferenceImage: normalizedUploadedReferences[0] || null,
+            uploadedReferenceImages: normalizedUploadedReferences,
+            missingReferenceSubmitted: built.missingReferenceSubmitted === true,
             promptId,
             workflowId: config.comfyuiWorkflowId,
             workflowName: config.comfyuiWorkflowName,
@@ -1103,7 +1164,9 @@ export class ImageGenerationManager {
                 `Scale: ${debugInfo.scale}`,
                 `CFG Rescale: ${debugInfo.cfgRescale}`,
                 `Seed: ${debugInfo.seed}`,
-                `参考图: ${debugInfo.referenceCount} 张`,
+                `可用参考图: ${debugInfo.referenceCount} 张`,
+                `实际上传参考图: ${debugInfo.uploadedReferenceCount} 张`,
+                `无参考图按原工作流提交: ${debugInfo.missingReferenceSubmitted ? '是' : '否'}`,
                 `Prompt ID: ${debugInfo.promptId || '(提交前)'}`,
                 '',
                 'AI 画面 tag（原样）:',
@@ -2836,9 +2899,12 @@ export class ImageGenerationManager {
         return { promptInjected, seedInjected };
     }
 
-    _buildComfyUIWorkflow(options, config, referenceImage = null) {
+    _buildComfyUIWorkflow(options, config, referenceImages = []) {
         const prompt = String(options.prompt || '').trim();
         if (!prompt) throw new Error('缺少生图提示词');
+        const normalizedReferenceImages = (Array.isArray(referenceImages) ? referenceImages : [referenceImages])
+            .filter(Boolean);
+        const primaryReferenceImage = normalizedReferenceImages[0] || null;
 
         const appKey = String(options.app || '').trim().toLowerCase();
         const appDefaults = this._getAppDefaultSize(appKey);
@@ -2906,23 +2972,39 @@ export class ImageGenerationManager {
             '%c_idquanzhong%': scale,
             '%c_xijie%': scale,
             '%c_fenwei%': scale,
-            '%reference_image%': referenceImage?.filename || '',
-            '%reference_image_filename%': referenceImage?.filename || '',
-            '%reference_image_subfolder%': referenceImage?.subfolder || '',
-            '%reference_image_type%': referenceImage?.type || 'input',
-            '%comfyui_reference_image%': referenceImage?.filename || '',
-            '%comfyuicankaoImage%': referenceImage?.filename || '',
-            '%comfyuicankaotupian%': referenceImage?.filename || ''
+            '%reference_image%': primaryReferenceImage?.filename || '',
+            '%reference_image_filename%': primaryReferenceImage?.filename || '',
+            '%reference_image_subfolder%': primaryReferenceImage?.subfolder || '',
+            '%reference_image_type%': primaryReferenceImage?.type || 'input',
+            '%comfyui_reference_image%': primaryReferenceImage?.filename || '',
+            '%comfyuicankaoImage%': primaryReferenceImage?.filename || '',
+            '%comfyuicankaotupian%': primaryReferenceImage?.filename || ''
         };
         const workflowTemplate = this._parseComfyUIWorkflow(config.comfyuiWorkflow);
+        const referencePlaceholderInfo = this._getComfyUIReferencePlaceholderInfo(workflowTemplate);
+        for (let index = 1; index <= referencePlaceholderInfo.slotCount; index++) {
+            const fallbackIndex = Math.min(index - 1, Math.max(0, normalizedReferenceImages.length - 1));
+            const referenceImage = normalizedReferenceImages[fallbackIndex] || null;
+            const filename = referenceImage?.filename || '';
+            const subfolder = referenceImage?.subfolder || '';
+            const type = referenceImage?.type || 'input';
+            Object.assign(replacements, {
+                [`%reference_image_${index}%`]: filename,
+                [`%reference_image_filename_${index}%`]: filename,
+                [`%reference_image_${index}_filename%`]: filename,
+                [`%reference_image_subfolder_${index}%`]: subfolder,
+                [`%reference_image_${index}_subfolder%`]: subfolder,
+                [`%reference_image_type_${index}%`]: type,
+                [`%reference_image_${index}_type%`]: type,
+                [`%comfyui_reference_image_${index}%`]: filename,
+                [`%comfyuicankaoImage_${index}%`]: filename,
+                [`%comfyuicankaotupian_${index}%`]: filename
+            });
+        }
         const requiresModel = !String(config.comfyuiWorkflow || '').trim()
             || JSON.stringify(workflowTemplate).includes('%MODEL_NAME%')
             || JSON.stringify(workflowTemplate).includes('%model%');
-        const requiresReferenceImage = JSON.stringify(workflowTemplate).includes('%reference_image%')
-            || JSON.stringify(workflowTemplate).includes('%reference_image_filename%')
-            || JSON.stringify(workflowTemplate).includes('%comfyui_reference_image%')
-            || JSON.stringify(workflowTemplate).includes('%comfyuicankaoImage%')
-            || JSON.stringify(workflowTemplate).includes('%comfyuicankaotupian%');
+        const requiresReferenceImage = referencePlaceholderInfo.hasAny;
         const workflow = this._replaceComfyUIPlaceholders(workflowTemplate, replacements);
         const vaeInjectedCount = this._injectComfyUIEverywhereVae(workflow);
         const runtimeInputs = this._injectComfyUIHoneyRuntimeInputs(workflow, {
@@ -2930,7 +3012,7 @@ export class ImageGenerationManager {
             positivePrompt,
             seed
         });
-        const referenceImageInjectedCount = this._injectComfyUIWanReferenceImage(workflow, referenceImage, appKey);
+        const referenceImageInjectedCount = this._injectComfyUIWanReferenceImage(workflow, primaryReferenceImage, appKey);
         const videoCompatibility = this._normalizeComfyUIVideoOutputsForApp(workflow, appKey);
         return {
             workflow: videoCompatibility.workflow,
@@ -2944,6 +3026,8 @@ export class ImageGenerationManager {
             seed,
             requiresModel,
             requiresReferenceImage,
+            referenceImageCount: normalizedReferenceImages.length,
+            referenceImageSlotCount: referencePlaceholderInfo.slotCount,
             isVideoWorkflow: videoCompatibility.videoOutputCount > 0,
             videoCompatibilityAdjusted: videoCompatibility.adjustedOutputCount > 0,
             referenceImageInjected: referenceImageInjectedCount > 0,
@@ -3735,28 +3819,36 @@ export class ImageGenerationManager {
 
         const referenceImages = this._normalizeComfyUIReferenceImages(options);
         const workflowTemplate = this._parseComfyUIWorkflow(config.comfyuiWorkflow);
-        const workflowTemplateText = JSON.stringify(workflowTemplate);
-        const hasReferencePlaceholder = workflowTemplateText.includes('%reference_image%')
-            || workflowTemplateText.includes('%reference_image_filename%')
-            || workflowTemplateText.includes('%comfyui_reference_image%')
-            || workflowTemplateText.includes('%comfyuicankaoImage%')
-            || workflowTemplateText.includes('%comfyuicankaotupian%');
+        const isVideoPrompt = String(options.comfyuiPromptKind || '').trim().toLowerCase() === 'video';
+        const referencePlaceholderInfo = this._getComfyUIReferencePlaceholderInfo(workflowTemplate);
+        const hasReferencePlaceholder = referencePlaceholderInfo.hasAny;
         const canInjectWanReference = referenceImages.length > 0
             && this._canInjectComfyUIWanReferenceImage(workflowTemplate, options.app);
         const needsReferenceUpload = hasReferencePlaceholder || canInjectWanReference;
-        let uploadedReferenceImage = null;
+        const referenceSlotCount = hasReferencePlaceholder
+            ? referencePlaceholderInfo.slotCount
+            : (canInjectWanReference ? 1 : 0);
+        let uploadedReferenceImages = [];
         if (needsReferenceUpload && referenceImages.length > 0) {
-            uploadedReferenceImage = await this._uploadComfyUIReferenceImage(baseUrl, referenceImages[0], options.signal);
+            uploadedReferenceImages = await Promise.all(
+                referenceImages
+                    .slice(0, Math.max(1, referenceSlotCount))
+                    .map(image => this._uploadComfyUIReferenceImage(baseUrl, image, options.signal))
+            );
+            uploadedReferenceImages = uploadedReferenceImages.filter(Boolean);
         }
 
         const built = this._buildComfyUIWorkflow(options, {
             ...config,
             comfyuiWorkflow: JSON.stringify(workflowTemplate)
-        }, uploadedReferenceImage);
+        }, uploadedReferenceImages);
+        built.missingReferenceSubmitted = built.requiresReferenceImage
+            && uploadedReferenceImages.length === 0
+            && !isVideoPrompt;
         if (built.requiresModel && !config.comfyuiModel) {
             throw new Error('请先选择 ComfyUI 模型，或在工作流中去掉 %MODEL_NAME% 占位符');
         }
-        if (built.requiresReferenceImage && !uploadedReferenceImage) {
+        if (built.requiresReferenceImage && uploadedReferenceImages.length === 0 && isVideoPrompt) {
             throw new Error('当前 ComfyUI 工作流需要参考图，但本次没有可用的参考图');
         }
 
@@ -3768,7 +3860,7 @@ export class ImageGenerationManager {
             config,
             options,
             referenceImages,
-            uploadedReferenceImage
+            uploadedReferenceImages
         });
         const response = await fetch(`${baseUrl}/prompt`, {
             method: 'POST',
@@ -3802,7 +3894,7 @@ export class ImageGenerationManager {
             config,
             options,
             referenceImages,
-            uploadedReferenceImage,
+            uploadedReferenceImages,
             promptId
         });
 
@@ -3840,7 +3932,8 @@ export class ImageGenerationManager {
                 videoBlob,
                 videoFilename: mediaRef.filename,
                 videoSubfolder: mediaRef.subfolder,
-                videoCompatibilityAdjusted: built.videoCompatibilityAdjusted
+                videoCompatibilityAdjusted: built.videoCompatibilityAdjusted,
+                missingReferenceSubmitted: built.missingReferenceSubmitted
             };
         }
 
@@ -3867,6 +3960,7 @@ export class ImageGenerationManager {
             positivePrompt: built.positivePrompt,
             negativePrompt: built.negativePrompt,
             nodeMapping: null,
+            missingReferenceSubmitted: built.missingReferenceSubmitted,
             imageData,
             imageUrl: imageData
         };

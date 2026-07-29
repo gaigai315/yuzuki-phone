@@ -2589,10 +2589,12 @@ export class WeiboView {
         this._refreshPostMediaUI(postId);
 
         try {
-            const generationPrompt = await this._buildWeiboImagePromptWithIdentityTags(parsedMedia, slotPromptText);
+            const generationContext = await this._buildWeiboImageGenerationContext(parsedMedia, slotPromptText);
             const result = await imageManager.generate({
                 app: 'weibo',
-                prompt: generationPrompt
+                prompt: generationContext.prompt,
+                novelAIReferences: generationContext.references,
+                referenceImages: generationContext.references
             });
             const rawImageUrl = String(result?.imageUrl || result?.imageData || '').trim();
             const imageUrl = await this._persistWeiboGeneratedImage(rawImageUrl, {
@@ -4028,28 +4030,126 @@ export class WeiboView {
             .join(', ');
     }
 
-    async _buildWeiboImagePromptWithIdentityTags(parsedMedia = {}, promptText = '') {
+    _normalizeWeiboIdentityName(value = '') {
+        return String(value || '')
+            .trim()
+            .replace(/^@+/, '')
+            .replace(/\s+/g, '')
+            .replace(/[（(][^（）()]*[）)]/g, '')
+            .toLowerCase();
+    }
+
+    _isWeiboUserReferenceName(name = '', wechatData = null) {
+        const lookupName = this._normalizeWeiboIdentityName(name);
+        if (!lookupName) return false;
+        const userInfo = wechatData?.getUserInfo?.() || {};
+        const context = this.app?.weiboData?._getContext?.() || {};
+        const profile = this.app?.weiboData?.getProfile?.() || {};
+        const aliases = [
+            userInfo?.name,
+            context?.name1,
+            profile?.nickname,
+            this.app?.weiboData?._getCurrentWeiboNickname?.()
+        ];
+        return aliases.some(alias => this._normalizeWeiboIdentityName(alias) === lookupName);
+    }
+
+    _resolveWeiboReferenceContact(name = '', wechatData = null, contacts = []) {
+        const safeName = String(name || '').trim();
+        if (!safeName || !wechatData) return null;
+        return wechatData.findContactByNameLoose?.(safeName, { includeChats: false })
+            || contacts.find(item => String(item?.name || '').trim() === safeName)
+            || null;
+    }
+
+    async _imageUrlToWeiboReferenceDataUrl(url = '') {
+        const safeUrl = String(url || '').trim();
+        if (!safeUrl) return '';
+        if (safeUrl.startsWith('data:image/')) return safeUrl;
+        const response = await fetch(safeUrl, {
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        if (!response.ok) {
+            throw new Error(`好友参考图读取失败 (${response.status})`);
+        }
+        const blob = await response.blob();
+        const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('好友参考图读取失败'));
+            reader.readAsDataURL(blob);
+        });
+        return dataUrl.startsWith('data:image/') ? dataUrl : '';
+    }
+
+    async _buildWeiboImageGenerationContext(parsedMedia = {}, promptText = '') {
         const parsedPrompt = this._parsePromptDescriptionPair(promptText);
         const basePrompt = String(parsedPrompt.prompt || promptText || '').trim();
         const referenceNames = Array.isArray(parsedMedia?.referenceNames)
             ? parsedMedia.referenceNames
             : [];
-        const useUserTags = String(parsedMedia?.mediaType || '').trim() === '用户照片'
-            || parsedMedia?.useUserReference === true
-            || referenceNames.length > 1;
-        if (!useUserTags && referenceNames.length === 0) {
-            return basePrompt;
+        const explicitUserReference = String(parsedMedia?.mediaType || '').trim() === '用户照片'
+            || parsedMedia?.useUserReference === true;
+        if (!explicitUserReference && referenceNames.length === 0) {
+            return { prompt: basePrompt, references: [] };
         }
 
         const wechatData = await this.app?.weiboData?.getWechatDataAsync?.();
+        if (!wechatData) {
+            return { prompt: basePrompt, references: [] };
+        }
         const contacts = wechatData?.getContacts?.() || [];
         const identityTagGroups = [];
+        const referenceTasks = [];
+        const skippedNames = [];
+        const seenContacts = new Set();
+        let useUserTags = explicitUserReference;
 
-        referenceNames.forEach(name => {
-            const contact = wechatData?.findContactByNameLoose?.(name, { includeChats: false })
-                || contacts.find(item => String(item?.name || '').trim() === name);
+        referenceNames.forEach((name) => {
+            if (this._isWeiboUserReferenceName(name, wechatData)) {
+                useUserTags = true;
+                return;
+            }
+            const contact = this._resolveWeiboReferenceContact(name, wechatData, contacts);
+            if (!contact) {
+                skippedNames.push(name);
+                return;
+            }
+            const contactKey = String(contact?.id || '').trim()
+                || this._normalizeWeiboIdentityName(contact?.name || name);
+            if (contactKey && seenContacts.has(contactKey)) return;
+            if (contactKey) seenContacts.add(contactKey);
+
             const contactTags = String(contact?.naiPromptTags || contact?.imageTags || '').trim();
             if (contactTags) identityTagGroups.push(contactTags);
+
+            const referenceImage = String(contact?.naiReferenceImage || contact?.referenceImage || '').trim();
+            const referenceEnabled = contact?.naiReferenceEnabled !== false
+                && contact?.naiReferenceEnabled !== 'false';
+            if (!referenceImage || !referenceEnabled) return;
+
+            referenceTasks.push((async () => {
+                try {
+                    const image = await this._imageUrlToWeiboReferenceDataUrl(referenceImage);
+                    if (!image) throw new Error('好友参考图不是可用图片');
+                    const rawStrength = Number(contact?.naiReferenceStrength ?? 0.7);
+                    const rawInformation = Number(contact?.naiReferenceInformationExtracted ?? 1);
+                    return {
+                        name: String(contact?.name || name).trim(),
+                        reference: {
+                            image,
+                            strength: Math.max(0, Math.min(1, Number.isFinite(rawStrength) ? rawStrength : 0.7)),
+                            informationExtracted: Math.max(0, Math.min(1, Number.isFinite(rawInformation) ? rawInformation : 1))
+                        }
+                    };
+                } catch (error) {
+                    return {
+                        name: String(contact?.name || name).trim(),
+                        error
+                    };
+                }
+            })());
         });
 
         if (useUserTags) {
@@ -4058,7 +4158,36 @@ export class WeiboView {
             if (userTags) identityTagGroups.push(userTags);
         }
 
-        return this._mergeWeiboImageTags(...identityTagGroups, basePrompt);
+        const referenceResults = await Promise.all(referenceTasks);
+        const references = referenceResults
+            .map(item => item?.reference || null)
+            .filter(Boolean);
+        const failedNames = referenceResults
+            .filter(item => item?.error)
+            .map(item => item.name)
+            .filter(Boolean);
+
+        if (skippedNames.length > 0) {
+            console.warn('[Weibo Image] 未找到对应微信好友，已跳过参考图:', skippedNames);
+        }
+        if (failedNames.length > 0) {
+            console.warn('[Weibo Image] 好友参考图读取失败，已跳过:', failedNames);
+            this.app?.phoneShell?.showNotification?.(
+                '微博',
+                `参考图读取失败：${failedNames.join('、')}`,
+                '⚠️'
+            );
+        }
+
+        return {
+            prompt: this._mergeWeiboImageTags(...identityTagGroups, basePrompt),
+            references
+        };
+    }
+
+    async _buildWeiboImagePromptWithIdentityTags(parsedMedia = {}, promptText = '') {
+        const generationContext = await this._buildWeiboImageGenerationContext(parsedMedia, promptText);
+        return generationContext.prompt;
     }
 
     _parsePromptDescriptionPair(rawValue = '') {

@@ -7436,6 +7436,8 @@ export class SettingsApp {
                     '普通工作流会自动转换，并自动识别提示词、尺寸、seed 和采样器节点。',
                     '简单工作流也可继续使用占位符：',
                     '%prompt%、%negative_prompt%、%width%、%height%、%MODEL_NAME%、%reference_image%。',
+                    '单参考图使用 %reference_image%；多参考图按槽位使用 %reference_image_1%、%reference_image_2%……，也支持对应的 filename、subfolder、type 编号占位符。',
+                    '系统检测的是参考图占位符，不会因为工作流里存在普通 LoadImage 节点就强制传图；普通生图没有可用参考图时仍提交当前工作流，并将动态参考图输入留空，请由工作流自身处理可选参考图分支。',
                     '视频工作流还可使用 %video_prompt%、%motion_prompt% 或 %视频提示词%；发起图生视频时，%prompt% 也会替换为视频提示词。',
                     '如提示缺少节点，请在 ComfyUI Manager 安装对应自定义节点。'
                 ].join('\n'),
