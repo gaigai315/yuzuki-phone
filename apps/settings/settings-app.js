@@ -2494,14 +2494,20 @@ export class SettingsApp {
                                         <div class="setting-desc" style="margin-top: 6px;">IndexTTS 本地请先启动「启动api服务.bat」，接口为 http://127.0.0.1:7880/v1/audio/speech；音色文件放在整合包 api/ckyp 目录。</div>
                                     </div>
 
-                                    <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                                    <div id="phone-tts-main-key-setting" class="setting-item" style="display: ${currentTtsProvider === 'volcengine' ? 'none' : 'flex'} !important; align-items: center; justify-content: space-between;">
                                         <span style="font-size: 14px; color: #000;">API Key</span>
-                                        <input type="password" id="phone-tts-key"
-                                               value="${currentTtsKey}"
-                                               placeholder="MiniMax/OpenAI/MiMo API Key"
-                                               style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                                        <div style="width: 140px; height: 30px; display: flex; align-items: center; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; box-sizing: border-box; overflow: hidden;">
+                                            <input type="password" id="phone-tts-key"
+                                                   value="${currentTtsKey}"
+                                                   placeholder="MiniMax/OpenAI/MiMo API Key"
+                                                   style="flex: 1; min-width: 0; height: 100%; padding: 0 2px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
+                                            <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-tts-key" aria-label="显示或隐藏 TTS API Key" style="width: 30px; height: 100%; border: none; background: transparent; color: #777; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0;">
+                                                <i class="fa-solid fa-eye"></i>
+                                            </button>
+                                        </div>
                                     </div>
 
+                                    <div id="phone-tts-main-provider-options" style="display: ${currentTtsProvider === 'volcengine' ? 'none' : 'block'} !important;">
                                     <div class="setting-item">
                                         <div style="display: flex; align-items: center; justify-content: space-between;">
                                             <span style="font-size: 14px; color: #000;">语音模型</span>
@@ -2516,10 +2522,10 @@ export class SettingsApp {
                                                value="${currentTtsModel}"
                                                placeholder="选择预设或手动输入模型名"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                                        <div id="phone-tts-models-result" class="setting-desc" style="margin-top: 6px;">MiMo 公益站可从当前站点 /v1/models 拉取可用模型。</div>
+                                        <div id="phone-tts-models-result" class="setting-desc" style="margin-top: 6px; display: ${['nimo', 'indextts'].includes(currentTtsProvider) ? 'block' : 'none'} !important;">${currentTtsProvider === 'indextts' ? 'IndexTTS 本地可从当前接口 /v1/models 拉取可用模型与音色。' : (currentTtsProvider === 'nimo' ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。' : '')}</div>
                                     </div>
 
-                                    <div class="setting-item">
+                                    <div id="phone-tts-nimo-relay-setting" class="setting-item" style="display: ${currentTtsProvider === 'nimo' ? 'block' : 'none'} !important;">
                                         <div style="display: flex; align-items: center; justify-content: space-between;">
                                             <span style="font-size: 14px; color: #000;">MiMo Worker 中转</span>
                                         </div>
@@ -2547,6 +2553,7 @@ export class SettingsApp {
                                         </div>
                                     </div>
 
+                                    <div id="phone-tts-nimo-clone-setting" style="display: ${currentTtsProvider === 'nimo' ? 'block' : 'none'} !important;">
                                     <div style="height: 1px; background: #ececec; margin: 10px 0;"></div>
 
                                     <div class="setting-item">
@@ -2565,6 +2572,8 @@ export class SettingsApp {
                                         <button id="phone-tts-nimo-clone-save" style="width: 100%; height: 30px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; color: #222; font-size: 12px; cursor: pointer;">上传并设为 MiMo 复刻音色</button>
                                         <div id="phone-tts-nimo-clone-result" class="setting-desc" style="margin-top: 8px; min-height: 16px;"></div>
                                     </div>
+                                    </div>
+                                    </div>
                                 </div>
                             </details>
 
@@ -2576,10 +2585,15 @@ export class SettingsApp {
                                 <div style="padding: 10px 10px 4px;">
                                     <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                                         <span style="font-size: 14px; color: #000;">Access Token</span>
-                                        <input type="password" id="phone-tts-volc-key"
-                                               value="${volcTtsKey}"
-                                               placeholder="豆包 Access Token"
-                                               style="width: 140px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                                        <div style="width: 140px; height: 30px; display: flex; align-items: center; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; box-sizing: border-box; overflow: hidden;">
+                                            <input type="password" id="phone-tts-volc-key"
+                                                   value="${volcTtsKey}"
+                                                   placeholder="豆包 Access Token"
+                                                   style="flex: 1; min-width: 0; height: 100%; padding: 0 2px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
+                                            <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-tts-volc-key" aria-label="显示或隐藏豆包 Access Token" style="width: 30px; height: 100%; border: none; background: transparent; color: #777; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0;">
+                                                <i class="fa-solid fa-eye"></i>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
@@ -7854,6 +7868,8 @@ export class SettingsApp {
         const ttsUrl = document.getElementById('phone-tts-url');
         const ttsUrlPreset = document.getElementById('phone-tts-url-preset');
         const ttsKey = document.getElementById('phone-tts-key');
+        const ttsMainKeySetting = document.getElementById('phone-tts-main-key-setting');
+        const ttsMainProviderOptions = document.getElementById('phone-tts-main-provider-options');
         const ttsVolcKey = document.getElementById('phone-tts-volc-key');
         const ttsVolcAppId = document.getElementById('phone-tts-volc-app-id');
         const ttsVolcResourceId = document.getElementById('phone-tts-volc-resource-id');
@@ -7861,7 +7877,9 @@ export class SettingsApp {
         const ttsModelPreset = document.getElementById('phone-tts-model-preset');
         const ttsFetchModelsBtn = document.getElementById('phone-tts-fetch-models');
         const ttsModelsResult = document.getElementById('phone-tts-models-result');
+        const ttsNimoRelaySetting = document.getElementById('phone-tts-nimo-relay-setting');
         const ttsNimoRelayUrl = document.getElementById('phone-tts-nimo-relay-url');
+        const ttsNimoCloneSetting = document.getElementById('phone-tts-nimo-clone-setting');
         const ttsVoice = document.getElementById('phone-tts-voice');
         const ttsVoicePreset = document.getElementById('phone-tts-voice-preset');
         const ttsVolcVoice = document.getElementById('phone-tts-volc-voice');
@@ -7987,6 +8005,22 @@ export class SettingsApp {
         const getCurrentMainProviderFromForm = () => getSelectedMainTtsProvider();
         const refreshTtsPresetOptions = () => {
             const provider = getCurrentMainProviderFromForm();
+            const setProviderFieldVisible = (element, visible, display = 'block') => {
+                if (!element) return;
+                element.style.setProperty('display', visible ? display : 'none', 'important');
+            };
+            setProviderFieldVisible(ttsMainKeySetting, provider !== 'volcengine', 'flex');
+            setProviderFieldVisible(ttsMainProviderOptions, provider !== 'volcengine');
+            setProviderFieldVisible(ttsNimoRelaySetting, provider === 'nimo');
+            setProviderFieldVisible(ttsNimoCloneSetting, provider === 'nimo');
+            if (ttsModelsResult) {
+                const supportsModelFetch = provider === 'nimo' || provider === 'indextts';
+                setProviderFieldVisible(ttsModelsResult, supportsModelFetch);
+                ttsModelsResult.textContent = provider === 'indextts'
+                    ? 'IndexTTS 本地可从当前接口 /v1/models 拉取可用模型与音色。'
+                    : (provider === 'nimo' ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。' : '');
+                ttsModelsResult.style.color = '#666';
+            }
             if (ttsModelPreset) {
                 const models = ttsModelPresetOptions[provider] || [];
                 ttsModelPreset.innerHTML = '<option value="">-- 快速选择 --</option>' + models
@@ -8521,6 +8555,7 @@ export class SettingsApp {
                 }
                 await this.storage.set('phone-tts-provider', 'volcengine');
                 if (ttsProvider) ttsProvider.value = 'volcengine';
+                refreshTtsPresetOptions();
                 if (ttsVolcResourceId) {
                     ttsVolcResourceId.value = 'seed-icl-2.0';
                     await setVolcTtsField('resource-id', 'seed-icl-2.0', 'phone-tts-volc-resource-id');
