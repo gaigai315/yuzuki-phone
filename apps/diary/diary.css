@@ -499,6 +499,23 @@
     transform: rotate(5deg) scale(0.97);
 }
 
+.diary-bujo-page-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.diary-bujo-content-edit-btn {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+    transform: rotate(-2deg);
+}
+
+.diary-bujo-content-edit-btn:active {
+    transform: rotate(-2deg) scale(0.97);
+}
+
 @media (max-width: 420px) {
     .diary-bujo-nav-btn {
         min-width: 44px;
@@ -506,6 +523,12 @@
         padding: 0 7px;
         font-size: 11px;
         border-width: 1.2px;
+    }
+
+    .diary-bujo-content-edit-btn {
+        width: 27px;
+        min-width: 27px;
+        padding: 0;
     }
 
     .diary-bujo-page-actions {
@@ -1462,6 +1485,66 @@
     flex-direction: column;
     background-color: rgba(245, 242, 238, 0.95);
     overflow: hidden;
+}
+
+.diary-edit-header {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 40px 12px 0;
+    box-sizing: border-box;
+}
+
+.diary-edit-title {
+    width: 100%;
+    min-width: 0;
+    min-height: 22px;
+    color: #5a4a3a;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 22px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.diary-edit-actions {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.diary-edit-actions .diary-edit-cancel-btn,
+.diary-edit-actions .diary-edit-save-btn {
+    position: static;
+    flex: 0 0 36px;
+    width: 36px;
+    min-width: 36px;
+    max-width: 36px;
+    height: 22px;
+    min-height: 22px;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transform: none;
+}
+
+.diary-edit-actions .diary-edit-cancel-btn {
+    border: 1px solid #cfc5b8;
+    background: rgba(255, 255, 255, 0.72);
+    color: #685a4d;
 }
 
 .diary-edit-body {

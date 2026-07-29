@@ -150,7 +150,6 @@ export class DiaryView {
                             <div class="diary-toc-item-preview">${preview || '...'}</div>
                         </div>
                         <div class="diary-toc-item-actions" style="display:none;">
-                            <button class="diary-toc-item-hide" data-id="${entry.id}">${isHidden ? '显示' : '隐藏'}</button>
                             <button class="diary-toc-item-edit" data-id="${entry.id}">✏️</button>
                             <button class="diary-toc-item-delete" data-id="${entry.id}">🗑️</button>
                         </div>
@@ -302,6 +301,16 @@ export class DiaryView {
             this.tocManageMode = true;
             this.render();
         };
+        const enterManageModeForItem = (entryId) => {
+            const safeId = String(entryId || '');
+            if (!safeId) return;
+            this.tocSelectedIds.add(safeId);
+            enterManageMode();
+            const liveItem = Array.from(document.querySelectorAll('.phone-view-current .diary-toc-item'))
+                .find(element => String(element.dataset.id || '') === safeId);
+            const liveActions = liveItem?.querySelector('.diary-toc-item-actions');
+            if (liveActions) liveActions.style.display = 'flex';
+        };
         const selectedIds = () => Array.from(this.tocSelectedIds);
         const ensureSelection = () => {
             if (this.tocSelectedIds.size > 0) return true;
@@ -344,7 +353,6 @@ export class DiaryView {
             const actionsDiv = item.querySelector('.diary-toc-item-actions');
             const editBtn = item.querySelector('.diary-toc-item-edit');
             const deleteBtn = item.querySelector('.diary-toc-item-delete');
-            const hideBtn = item.querySelector('.diary-toc-item-hide');
             const selectInput = item.querySelector('.diary-toc-select');
 
             if (selectInput) {
@@ -364,20 +372,14 @@ export class DiaryView {
             item.addEventListener('mousedown', (e) => {
                 if (e.target.closest('.diary-toc-item-actions') || e.target.closest('.diary-toc-select')) return;
                 longPressTimer = setTimeout(() => {
-                    this.tocSelectedIds.add(String(item.dataset.id || ''));
-                    enterManageMode();
-                    actionsDiv.style.display = 'flex';
-                    if (deleteAllBtn) deleteAllBtn.style.display = 'flex';
+                    enterManageModeForItem(item.dataset.id);
                 }, 1000); 
             });
 
             item.addEventListener('touchstart', (e) => {
                 if (e.target.closest('.diary-toc-item-actions') || e.target.closest('.diary-toc-select')) return;
                 longPressTimer = setTimeout(() => {
-                    this.tocSelectedIds.add(String(item.dataset.id || ''));
-                    enterManageMode();
-                    actionsDiv.style.display = 'flex';
-                    if (deleteAllBtn) deleteAllBtn.style.display = 'flex';
+                    enterManageModeForItem(item.dataset.id);
                 }, 500); 
             });
 
@@ -389,8 +391,7 @@ export class DiaryView {
 
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                this.tocSelectedIds.add(String(item.dataset.id || ''));
-                enterManageMode();
+                enterManageModeForItem(item.dataset.id);
             });
 
             // 🔥 核心：点击事件改为 onclick
@@ -412,13 +413,6 @@ export class DiaryView {
                 this.currentEntryId = item.dataset.id;
                 this.currentView = 'page';
                 this.settingsPanelOpen = false;
-                this.render();
-            };
-
-            if (hideBtn) hideBtn.onclick = (e) => {
-                e.stopPropagation();
-                const entry = this.app.diaryData.getEntry(hideBtn.dataset.id);
-                this.app.diaryData.setEntryOfflineHidden(hideBtn.dataset.id, entry?.offlineHidden !== true);
                 this.render();
             };
 
@@ -484,6 +478,9 @@ export class DiaryView {
             this.isBackNav = true;
             this.render();
         };
+
+        const contentEditBtn = document.getElementById('diary-page-content-edit');
+        if (contentEditBtn) contentEditBtn.onclick = () => this._openEditDialog(this.currentEntryId);
 
         const settingsBtn = document.getElementById('diary-page-settings');
         if (settingsBtn) settingsBtn.onclick = () => {
@@ -714,7 +711,12 @@ export class DiaryView {
             <div class="diary-bujo-wrapper">
                 <div class="diary-bujo-page-actions">
                     <button class="diary-page-back diary-bujo-nav-btn diary-bujo-back-btn" id="diary-page-back">Back</button>
-                    <button class="diary-page-settings-btn diary-bujo-nav-btn diary-bujo-edit-btn" id="diary-page-settings">Edit</button>
+                    <div class="diary-bujo-page-tools">
+                        <button class="diary-bujo-nav-btn diary-bujo-content-edit-btn" id="diary-page-content-edit" title="编辑日记正文" aria-label="编辑日记正文">
+                            <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                        </button>
+                        <button class="diary-page-settings-btn diary-bujo-nav-btn diary-bujo-edit-btn" id="diary-page-settings">Edit</button>
+                    </div>
                 </div>
                 <div class="diary-bujo-header">
                     <div class="diary-bujo-calendar">
@@ -813,11 +815,11 @@ export class DiaryView {
                             <div class="diary-s-section-title">正文样式</div>
                             <div class="diary-s-row">
                                 <span class="diary-s-label">字体大小: <span id="diary-fs-value">${globalFontSize}</span>px</span>
-                                <input type="range" id="diary-fs-slider" min="12" max="24" step="1" value="${globalFontSize}" class="diary-s-slider">
+                                <input type="range" id="diary-fs-slider" min="12" max="24" step="1" value="${globalFontSize}" class="diary-s-slider phone-theme-range">
                             </div>
                             <div class="diary-s-row">
                                 <span class="diary-s-label">行间距: <span id="diary-lh-value">${globalLineHeight}</span></span>
-                                <input type="range" id="diary-lh-slider" min="1.2" max="3" step="0.1" value="${globalLineHeight}" class="diary-s-slider">
+                                <input type="range" id="diary-lh-slider" min="1.2" max="3" step="0.1" value="${globalLineHeight}" class="diary-s-slider phone-theme-range">
                             </div>
                         </div>
 
@@ -1450,10 +1452,12 @@ export class DiaryView {
         const html = `
             <div class="diary-app">
                 <div class="diary-edit-view">
-                    <div class="diary-page-header">
-                        <button class="diary-page-back" id="diary-edit-cancel" title="取消">✕</button>
-                        <div class="diary-page-date">${diaryTitle}</div>
-                        <button class="diary-edit-save-btn" id="diary-edit-save">保存</button>
+                    <div class="diary-edit-header">
+                        <div class="diary-edit-title">${this._escapeHtml(diaryTitle)}</div>
+                        <div class="diary-edit-actions">
+                            <button class="diary-edit-cancel-btn" id="diary-edit-cancel">取消</button>
+                            <button class="diary-edit-save-btn" id="diary-edit-save">保存</button>
+                        </div>
                     </div>
                     <div class="diary-edit-body">
                         <textarea class="diary-edit-textarea" id="diary-edit-text">${this._escapeTextarea(entry.content || '')}</textarea>
@@ -1467,13 +1471,16 @@ export class DiaryView {
     }
 
     _bindEditEvents() {
-        const cancelBtn = document.getElementById('diary-edit-cancel');
-        if (cancelBtn) cancelBtn.onclick = () => {
-            this.currentView = 'toc';
+        const closeEditor = () => {
+            const returnToPage = this._previousView === 'page' && !!this.currentEntryId;
+            this.currentView = returnToPage ? 'page' : 'toc';
+            this._previousView = 'cover';
             this._editingEntryId = null;
             this.isBackNav = true;
             this.render();
         };
+        const cancelBtn = document.getElementById('diary-edit-cancel');
+        if (cancelBtn) cancelBtn.onclick = closeEditor;
 
         const saveBtn = document.getElementById('diary-edit-save');
         if (saveBtn) saveBtn.onclick = () => {
@@ -1481,10 +1488,7 @@ export class DiaryView {
             if (textarea && this._editingEntryId) {
                 this.app.diaryData.updateEntryContent(this._editingEntryId, textarea.value);
             }
-            this.currentView = 'toc';
-            this._editingEntryId = null;
-            this.isBackNav = true;
-            this.render();
+            closeEditor();
         };
     }
 

@@ -688,12 +688,25 @@ export class ImageGenerationManager {
         }).filter(Boolean);
     }
 
-    _getActiveOpenAIImagePromptPreset() {
-        const activeId = String(this._get('phone-image-openai-active-preset', '') || '').trim();
+    _getActiveOpenAIImagePromptPreset(app = '') {
+        const scope = this._normalizeImagePresetScope(app);
+        if (!scope) return null;
+        const activeId = String(
+            this._get(`phone-image-openai-${scope}-active-preset`, '')
+            || (scope === 'honey' ? this._get('phone-image-openai-active-preset', '') : '')
+            || ''
+        ).trim();
         if (!activeId) return null;
         try {
-            const raw = this._get('phone-image-openai-presets', '[]');
-            const presets = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+            const rawMap = this._get('phone-image-openai-presets-by-app', '{}');
+            const presetMap = typeof rawMap === 'string' ? JSON.parse(rawMap || '{}') : rawMap;
+            let presets = presetMap && typeof presetMap === 'object' && Array.isArray(presetMap[scope])
+                ? presetMap[scope]
+                : null;
+            if (!presets && scope === 'honey') {
+                const raw = this._get('phone-image-openai-presets', '[]');
+                presets = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+            }
             if (!Array.isArray(presets)) return null;
             const preset = presets.find(item => String(item?.id || '').trim() === activeId);
             if (!preset || typeof preset !== 'object') return null;
@@ -702,7 +715,19 @@ export class ImageGenerationManager {
                 name: String(preset.name || '').trim(),
                 fixedPrompt: String(preset.fixedPrompt || ''),
                 fixedPromptEnd: String(preset.fixedPromptEnd || ''),
-                negativePrompt: String(preset.negativePrompt || '')
+                negativePrompt: String(preset.negativePrompt || ''),
+                openaiModel: String(preset.openaiModel || preset.model || '').trim(),
+                openaiQuality: String(preset.openaiQuality || preset.quality || 'auto').trim() || 'auto',
+                honeyWidth: preset.honeyWidth,
+                honeyHeight: preset.honeyHeight,
+                wechatWidth: preset.wechatWidth,
+                wechatHeight: preset.wechatHeight,
+                weiboWidth: preset.weiboWidth,
+                weiboHeight: preset.weiboHeight,
+                diaryWidth: preset.diaryWidth,
+                diaryHeight: preset.diaryHeight,
+                width: preset.width,
+                height: preset.height
             };
         } catch (e) {
             console.warn('[GPT Image] 读取当前 GPT 生图预设失败，已回退到 App 提示词设置:', e);
@@ -839,10 +864,24 @@ export class ImageGenerationManager {
         const rawSteps = this._getNumber('phone-image-steps', 28, 1, 50);
         const promptAppKey = this._normalizeImagePresetScope(appKey);
         const comfyuiAppWorkflow = this._getComfyUIWorkflowForApp(appKey);
-        const openaiPromptPreset = provider === 'openai' ? this._getActiveOpenAIImagePromptPreset() : null;
+        const openaiPromptPreset = provider === 'openai' ? this._getActiveOpenAIImagePromptPreset(appKey) : null;
+        const openaiPromptDraftInitialized = provider === 'openai' && promptAppKey
+            ? this._getBool(`phone-image-openai-${promptAppKey}-prompt-draft-initialized`, false)
+            : false;
+        if (openaiPromptPreset) {
+            const presetWidth = Number(openaiPromptPreset[`${appKey}Width`] ?? openaiPromptPreset.width);
+            const presetHeight = Number(openaiPromptPreset[`${appKey}Height`] ?? openaiPromptPreset.height);
+            if (Number.isFinite(presetWidth) && presetWidth >= 64) size.width = presetWidth;
+            if (Number.isFinite(presetHeight) && presetHeight >= 64) size.height = presetHeight;
+        }
         const resolvePromptSetting = (overrideValue, presetKey, storageSuffix) => {
             const storedValue = promptAppKey
-                ? this._get(`phone-image-${promptAppKey}-${storageSuffix}`, '')
+                ? this._get(
+                    openaiPromptDraftInitialized
+                        ? `phone-image-openai-${promptAppKey}-${storageSuffix}`
+                        : `phone-image-${promptAppKey}-${storageSuffix}`,
+                    ''
+                )
                 : '';
             return String(overrideValue ?? (openaiPromptPreset ? openaiPromptPreset[presetKey] : storedValue) ?? '').trim();
         };
@@ -866,7 +905,7 @@ export class ImageGenerationManager {
             openaiPublicUrl: String(overrides.openaiPublicUrl || this._get('phone-image-openai-public-url', '')).trim(),
             openaiPublicRelayUrl: String(overrides.openaiPublicRelayUrl || this._get('phone-image-openai-public-relay-url', '')).trim(),
             openaiMode: 'images',
-            openaiQuality: String(overrides.openaiQuality || this._get('phone-image-openai-quality', 'auto')).trim() || 'auto',
+            openaiQuality: String(overrides.openaiQuality || openaiPromptPreset?.openaiQuality || this._get('phone-image-openai-quality', 'auto')).trim() || 'auto',
             comfyuiMode: this._normalizeComfyUIMode(overrides.comfyuiMode || this._get('phone-image-comfyui-mode', 'local')),
             comfyuiUrl: this._getComfyUIEndpointUrl(overrides),
             comfyuiLocalUrl: this._normalizeComfyUIBaseUrl(overrides.comfyuiUrl || this._get('phone-image-comfyui-url', 'http://127.0.0.1:8188')),
@@ -898,7 +937,7 @@ export class ImageGenerationManager {
             publicKey: String(overrides.publicKey || this._get('phone-image-novelai-public-key', '')).trim(),
             publicUrl: String(overrides.publicUrl || this._get('phone-image-novelai-public-url', '')).trim(),
             queueUrl: site === 'public' ? '' : String(overrides.queueUrl || this._get('phone-image-novelai-queue-url', '')).trim(),
-            model: String(overrides.model || this._get(`phone-image-${provider}-model`, '') || (provider === 'novelai' ? 'nai-diffusion-4-5-full' : (provider === 'siliconflow' ? legacySiliconflowModel || 'Kwai-Kolors/Kolors' : (provider === 'openai' ? 'gpt-image-2' : '')))).trim(),
+            model: String(overrides.model || openaiPromptPreset?.openaiModel || this._get(`phone-image-${provider}-model`, '') || (provider === 'novelai' ? 'nai-diffusion-4-5-full' : (provider === 'siliconflow' ? legacySiliconflowModel || 'Kwai-Kolors/Kolors' : (provider === 'openai' ? 'gpt-image-2' : '')))).trim(),
             sampler: provider === 'sd'
                 ? String(overrides.sampler || this._get('phone-image-sd-sampler', 'Euler a')).trim() || 'Euler a'
                 : this._normalizeNovelAISampler(overrides.sampler || this._get('phone-image-novelai-sampler', 'k_euler')),

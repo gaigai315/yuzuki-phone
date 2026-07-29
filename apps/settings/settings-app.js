@@ -999,7 +999,7 @@ export class SettingsApp {
         const isWechatOnlineProactiveEnabled = isWechatOnlineOnlyMode && this._isStorageTruthy(wechatOnlineProactiveEnabledKey);
         const isWechatOnlineOnlyRealTimeEnabled = isWechatOnlineOnlyMode && this._isStorageEnabledByDefault(wechatOnlineOnlyRealTimeKey);
         const wechatOnlineProactiveInterval = readNonNegativeStorageNumber(this.storage, wechatOnlineProactiveIntervalKey, 10, 9999) || 10;
-        const currentTtsProvider = this._getCurrentMainTtsProvider();
+        const currentTtsProvider = this._getCurrentTtsProvider();
         const currentTtsDefaults = this._getTtsProviderDefaults(currentTtsProvider);
         const currentTtsUrl = this._getTtsProviderValue(currentTtsProvider, 'url', 'phone-tts-url') || currentTtsDefaults.url || '';
         const currentTtsKey = this._getTtsProviderValue(currentTtsProvider, 'key', 'phone-tts-key');
@@ -1020,7 +1020,6 @@ export class SettingsApp {
         const currentTtsVolcCloneAccessToken = this._getTtsProviderValue('volcengine', 'clone-access-token', 'phone-tts-volc-clone-access-token');
         const currentTtsVolcCloneAppId = this._getTtsProviderValue('volcengine', 'clone-app-id', 'phone-tts-volc-clone-app-id');
         const isTtsMiniMaxSectionOpen = this.storage.get('phone-tts-minimax-section-open') === true;
-        const isTtsVolcSectionOpen = this.storage.get('phone-tts-volc-section-open') === true;
         const isTtsFallbackSectionOpen = this.storage.get('phone-tts-fallback-section-open') === true;
         const isTtsWechatSectionOpen = this.storage.get('phone-tts-wechat-section-open') === true;
         const isTtsHoneySectionOpen = this.storage.get('phone-tts-honey-section-open') === true;
@@ -1032,7 +1031,7 @@ export class SettingsApp {
             { id: 'nimo', label: 'MiMo-V2.5-TTS' },
             { id: 'volcengine', label: '豆包 / 火山引擎' }
         ];
-        const currentGlobalTtsProvider = this._getCurrentTtsProvider();
+        const currentGlobalTtsProvider = currentTtsProvider;
         const fallbackMaleProvider = String(this.storage.get('phone-tts-fallback-male-provider') || currentGlobalTtsProvider || 'minimax_cn').trim() || 'minimax_cn';
         const fallbackFemaleProvider = String(this.storage.get('phone-tts-fallback-female-provider') || currentGlobalTtsProvider || 'minimax_cn').trim() || 'minimax_cn';
         const fallbackMaleVoice = String(this.storage.get('phone-tts-fallback-male-voice') || '').trim();
@@ -2420,10 +2419,10 @@ export class SettingsApp {
 
                                 <div style="margin-bottom: 12px;">
                                     <div style="font-size: 12px; color: #666; margin-bottom: 4px;">API 密钥 (Key)</div>
-                                    <div style="display: flex; align-items: center; width: 100%; border: 1px solid #e0e0e0; border-radius: 6px; background: #fff; box-sizing: border-box; overflow: hidden;">
-                                        <input type="password" id="phone-api-key" placeholder="sk-..." style="flex: 1; min-width: 0; padding: 8px 4px 8px 8px; border: none; outline: none; font-size: 13px; background: transparent; box-sizing: border-box;">
-                                        <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-api-key" aria-label="显示或隐藏 API Key" style="width: 32px; align-self: stretch; border: none; background: transparent; color: #777; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0;">
-                                            <i class="fa-solid fa-eye"></i>
+                                    <div class="phone-secret-field" style="width: 100%; border: 1px solid #e0e0e0; border-radius: 6px; background: #fff;">
+                                        <input type="text" class="phone-secret-input phone-secret-masked" id="phone-api-key" placeholder="sk-..." style="width: 100%; min-width: 0; padding: 8px 36px 8px 8px; border: none; outline: none; font-size: 13px; background: transparent; box-sizing: border-box;">
+                                        <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-api-key" aria-label="显示 API Key" title="显示 API Key">
+                                            <i class="fa-regular fa-eye"></i>
                                         </button>
                                     </div>
                                 </div>
@@ -2462,7 +2461,7 @@ export class SettingsApp {
                         <div class="tts-section-list">
                             <details data-tts-fold-key="phone-tts-minimax-section-open" ${isTtsMiniMaxSectionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                                 <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                    <span>通用 TTS / MiMo</span>
+                                    <span>TTS</span>
                                     ${SETTINGS_FOLD_ARROW_HTML}
                                 </summary>
                                 <div style="padding: 10px 10px 4px;">
@@ -2473,6 +2472,7 @@ export class SettingsApp {
                                         </select>
                                     </div>
 
+                                    <div id="phone-tts-standard-config" style="display: ${currentTtsProvider === 'volcengine' ? 'none' : 'block'};">
                                     <div class="setting-item">
                                         <div style="display: flex; align-items: center; justify-content: space-between;">
                                             <span style="font-size: 14px; color: #000;">API 接口地址</span>
@@ -2496,13 +2496,13 @@ export class SettingsApp {
 
                                     <div id="phone-tts-main-key-setting" class="setting-item" style="display: ${currentTtsProvider === 'volcengine' ? 'none' : 'flex'} !important; align-items: center; justify-content: space-between;">
                                         <span style="font-size: 14px; color: #000;">API Key</span>
-                                        <div style="width: 140px; height: 30px; display: flex; align-items: center; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; box-sizing: border-box; overflow: hidden;">
-                                            <input type="password" id="phone-tts-key"
+                                        <div class="phone-secret-field" style="width: 140px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;">
+                                            <input type="text" class="phone-secret-input phone-secret-masked" id="phone-tts-key"
                                                    value="${currentTtsKey}"
                                                    placeholder="MiniMax/OpenAI/MiMo API Key"
-                                                   style="flex: 1; min-width: 0; height: 100%; padding: 0 2px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
-                                            <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-tts-key" aria-label="显示或隐藏 TTS API Key" style="width: 30px; height: 100%; border: none; background: transparent; color: #777; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0;">
-                                                <i class="fa-solid fa-eye"></i>
+                                                   style="width: 100%; min-width: 0; height: 100%; padding: 0 34px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
+                                            <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-tts-key" aria-label="显示 TTS API Key" title="显示 TTS API Key">
+                                                <i class="fa-regular fa-eye"></i>
                                             </button>
                                         </div>
                                     </div>
@@ -2574,24 +2574,17 @@ export class SettingsApp {
                                     </div>
                                     </div>
                                     </div>
-                                </div>
-                            </details>
-
-                            <details data-tts-fold-key="phone-tts-volc-section-open" ${isTtsVolcSectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
-                                <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                    <span>火山引擎（豆包）</span>
-                                    ${SETTINGS_FOLD_ARROW_HTML}
-                                </summary>
-                                <div style="padding: 10px 10px 4px;">
+                                    </div>
+                                    <div id="phone-tts-volc-config" style="display: ${currentTtsProvider === 'volcengine' ? 'block' : 'none'};">
                                     <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                                         <span style="font-size: 14px; color: #000;">Access Token</span>
-                                        <div style="width: 140px; height: 30px; display: flex; align-items: center; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; box-sizing: border-box; overflow: hidden;">
-                                            <input type="password" id="phone-tts-volc-key"
+                                        <div class="phone-secret-field" style="width: 140px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;">
+                                            <input type="text" class="phone-secret-input phone-secret-masked" id="phone-tts-volc-key"
                                                    value="${volcTtsKey}"
                                                    placeholder="豆包 Access Token"
-                                                   style="flex: 1; min-width: 0; height: 100%; padding: 0 2px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
-                                            <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-tts-volc-key" aria-label="显示或隐藏豆包 Access Token" style="width: 30px; height: 100%; border: none; background: transparent; color: #777; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0;">
-                                                <i class="fa-solid fa-eye"></i>
+                                                   style="width: 100%; min-width: 0; height: 100%; padding: 0 34px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
+                                            <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-tts-volc-key" aria-label="显示豆包 Access Token" title="显示豆包 Access Token">
+                                                <i class="fa-regular fa-eye"></i>
                                             </button>
                                         </div>
                                     </div>
@@ -2648,10 +2641,15 @@ export class SettingsApp {
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-bottom: 8px;">
                                         <div class="setting-desc" style="margin-bottom: 8px;">建议填写自己搭建的 Worker 地址。</div>
 
-                                        <input type="password" id="phone-tts-volc-clone-access-token"
-                                               value="${currentTtsVolcCloneAccessToken}"
-                                               placeholder="复刻 Access Token，空着则使用上方豆包 Token"
-                                               style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-bottom: 8px;">
+                                        <div class="phone-secret-field" style="width: 100%; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; margin-bottom: 8px;">
+                                            <input type="text" class="phone-secret-input phone-secret-masked" id="phone-tts-volc-clone-access-token"
+                                                   value="${currentTtsVolcCloneAccessToken}"
+                                                   placeholder="复刻 Access Token，空着则使用上方豆包 Token"
+                                                   style="width: 100%; height: 100%; padding: 0 34px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
+                                            <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-tts-volc-clone-access-token" aria-label="显示复刻 Access Token" title="显示复刻 Access Token">
+                                                <i class="fa-regular fa-eye"></i>
+                                            </button>
+                                        </div>
 
                                         <input type="text" id="phone-tts-volc-clone-app-id"
                                                value="${currentTtsVolcCloneAppId}"
@@ -2690,6 +2688,7 @@ export class SettingsApp {
                                         <button id="phone-tts-volc-clone-use" style="width: 100%; height: 30px; margin-top: 8px; border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; color: #222; font-size: 12px; cursor: pointer;">设为当前音色</button>
                                         <div id="phone-tts-volc-clone-result" class="setting-desc" style="margin-top: 8px; min-height: 16px;"></div>
                                     </div>
+                                </div>
                                 </div>
                             </details>
 
@@ -2869,6 +2868,18 @@ export class SettingsApp {
         };
     }
 
+    _getOpenAIImagePromptDraft(app) {
+        const appKey = this._normalizeImagePresetScope(app);
+        const initialized = this.storage.get(`phone-image-openai-${appKey}-prompt-draft-initialized`) === true
+            || this.storage.get(`phone-image-openai-${appKey}-prompt-draft-initialized`) === 'true';
+        if (!initialized) return this._getImagePromptDraft(appKey);
+        return {
+            fixedPrompt: String(this.storage.get(`phone-image-openai-${appKey}-fixed-prompt`) || ''),
+            fixedPromptEnd: String(this.storage.get(`phone-image-openai-${appKey}-fixed-prompt-end`) || ''),
+            negativePrompt: String(this.storage.get(`phone-image-openai-${appKey}-negative-prompt`) || '')
+        };
+    }
+
     _getImagePromptPresetMap() {
         const raw = this.storage.get('phone-image-prompt-presets-by-app');
         let parsed = {};
@@ -2978,7 +2989,24 @@ export class SettingsApp {
         }).filter(Boolean);
     }
 
-    _getOpenAIImagePresets() {
+    _getOpenAIImagePresetMap() {
+        const raw = this.storage.get('phone-image-openai-presets-by-app');
+        let parsed = {};
+        try {
+            parsed = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw;
+        } catch (e) {
+            parsed = {};
+        }
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    }
+
+    _getOpenAIImagePresets(app = 'honey') {
+        const appKey = this._normalizeImagePresetScope(app);
+        const presetMap = this._getOpenAIImagePresetMap();
+        if (Array.isArray(presetMap[appKey])) {
+            return this._normalizeOpenAIImagePresets(presetMap[appKey]);
+        }
+
         const raw = this.storage.get('phone-image-openai-presets');
         let presets = [];
         try {
@@ -2986,11 +3014,18 @@ export class SettingsApp {
         } catch (e) {
             presets = [];
         }
-        return this._normalizeOpenAIImagePresets(presets);
+        return appKey === 'honey' ? this._normalizeOpenAIImagePresets(presets) : [];
     }
 
-    async _saveOpenAIImagePresets(presets) {
-        await this.storage.set('phone-image-openai-presets', JSON.stringify(this._normalizeOpenAIImagePresets(presets)));
+    async _saveOpenAIImagePresets(app, presets) {
+        const appKey = this._normalizeImagePresetScope(app);
+        const normalized = this._normalizeOpenAIImagePresets(presets);
+        const presetMap = this._getOpenAIImagePresetMap();
+        presetMap[appKey] = normalized;
+        await this.storage.set('phone-image-openai-presets-by-app', JSON.stringify(presetMap));
+        if (appKey === 'honey') {
+            await this.storage.set('phone-image-openai-presets', JSON.stringify(normalized));
+        }
     }
 
     _normalizeComfyUIWorkflows(workflows = []) {
@@ -3236,8 +3271,12 @@ export class SettingsApp {
             const safeName = this._escapeHtml(preset.name);
             return `<option value="${safeId}" ${preset.id === activeImagePromptPresetId ? 'selected' : ''}>${safeName}</option>`;
         }).join('');
-        const openaiImagePresets = this._getOpenAIImagePresets();
-        const activeOpenaiImagePresetId = String(this.storage.get('phone-image-openai-active-preset') || '').trim();
+        const openaiImagePresets = this._getOpenAIImagePresets(activeImagePresetScope);
+        const activeOpenaiImagePresetId = String(
+            this.storage.get(`phone-image-openai-${activeImagePresetScope}-active-preset`)
+            || (activeImagePresetScope === 'honey' ? this.storage.get('phone-image-openai-active-preset') : '')
+            || ''
+        ).trim();
         const activeOpenaiImagePreset = openaiImagePresets.find(preset => preset.id === activeOpenaiImagePresetId) || null;
         const activeOpenaiImagePresetName = this._escapeHtml(activeOpenaiImagePreset?.name || '');
         const openaiImagePresetOptions = openaiImagePresets.map((preset) => {
@@ -3363,13 +3402,13 @@ export class SettingsApp {
 
                 <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                     <span id="phone-image-novelai-key-label" style="font-size: 14px; color: #000;">${novelaiSite === 'public' ? '公益站 Key' : 'API Key'}</span>
-                    <div style="display: flex; align-items: center; width: 150px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; overflow: hidden;">
-                        <input type="password" id="phone-image-novelai-key"
+                    <div class="phone-secret-field" style="width: 150px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;">
+                        <input type="text" class="phone-secret-input phone-secret-masked" id="phone-image-novelai-key"
                                value="${this._escapeHtml(novelaiSite === 'public' ? novelaiPublicKey : novelaiKey)}"
                                placeholder="${novelaiSite === 'public' ? '公益站 API Key' : 'NovelAI API Key'}"
-                               style="flex: 1; min-width: 0; height: 100%; padding: 0 4px 0 8px; border: none; outline: none; font-size: 12px; background: transparent;">
-                        <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-image-novelai-key" aria-label="显示或隐藏 API Key" style="width: 30px; height: 100%; border: none; background: transparent; color: #777; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;">
-                            <i class="fa-solid fa-eye"></i>
+                               style="width: 100%; min-width: 0; height: 100%; padding: 0 34px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
+                        <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-image-novelai-key" aria-label="显示 API Key" title="显示 API Key">
+                            <i class="fa-regular fa-eye"></i>
                         </button>
                     </div>
                 </div>
@@ -3508,13 +3547,13 @@ export class SettingsApp {
 
                 <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                     <span id="phone-image-openai-key-label" style="font-size: 14px; color: #000;">${openaiSite === 'public' ? '公益站 Key' : 'API Key'}</span>
-                    <div style="display: flex; align-items: center; width: 150px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; overflow: hidden;">
-                        <input type="password" id="phone-image-openai-key"
+                    <div class="phone-secret-field" style="width: 150px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;">
+                        <input type="text" class="phone-secret-input phone-secret-masked" id="phone-image-openai-key"
                                value="${this._escapeHtml(openaiSite === 'public' ? openaiPublicKey : openaiKey)}"
                                placeholder="${openaiSite === 'public' ? '公益站 API Key' : 'OpenAI API Key'}"
-                               style="flex: 1; min-width: 0; height: 100%; padding: 0 4px 0 8px; border: none; outline: none; font-size: 12px; background: transparent;">
-                        <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-image-openai-key" aria-label="显示或隐藏 API Key" style="width: 30px; height: 100%; border: none; background: transparent; color: #777; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;">
-                            <i class="fa-solid fa-eye"></i>
+                               style="width: 100%; min-width: 0; height: 100%; padding: 0 34px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
+                        <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-image-openai-key" aria-label="显示 API Key" title="显示 API Key">
+                            <i class="fa-regular fa-eye"></i>
                         </button>
                     </div>
                 </div>
@@ -3559,7 +3598,9 @@ export class SettingsApp {
 
                 <div class="setting-item">
                     <div class="setting-label">GPT 生图预设</div>
-                    <div class="setting-desc">GPT 单独保存模型、质量、尺寸和提示词；不与 NAI 预设混用。</div>
+                    <select id="phone-image-openai-preset-app-select" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                        ${imagePromptAppOptions}
+                    </select>
                     <select id="phone-image-openai-preset-select" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
                         <option value="">未选择 GPT 预设</option>
                         ${openaiImagePresetOptions}
@@ -3573,6 +3614,12 @@ export class SettingsApp {
                         <button id="phone-image-openai-preset-new" class="setting-btn" style="height: 30px; padding: 0 8px; font-size: 12px; background: #f2f2f2; color: #222; border: 1px solid #d8d8d8; border-radius: 8px; cursor: pointer;">新建</button>
                         <button id="phone-image-openai-preset-delete" class="setting-btn" style="height: 30px; padding: 0 8px; font-size: 12px; background: #fff; color: #d33; border: 1px solid rgba(211,51,51,0.28); border-radius: 8px; cursor: pointer;">删除</button>
                     </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                        <button id="phone-image-openai-preset-export" class="setting-btn" style="height: 30px; padding: 0 8px; font-size: 12px; background: #eef6ff; color: #1d4f91; border: 1px solid #b9d6fb; border-radius: 8px; cursor: pointer;">导出预设</button>
+                        <button id="phone-image-openai-preset-import" class="setting-btn" style="height: 30px; padding: 0 8px; font-size: 12px; background: #fff7ed; color: #8a4d16; border: 1px solid #f1c38c; border-radius: 8px; cursor: pointer;">导入预设</button>
+                    </div>
+                    <button id="phone-image-openai-preset-clear-all" class="setting-btn" style="width: 100%; height: 30px; margin-top: 8px; padding: 0 8px; font-size: 12px; background: #fff; color: #d33; border: 1px solid rgba(211,51,51,0.28); border-radius: 8px; cursor: pointer;">一键删除所有 GPT 预设</button>
+                    <input type="file" id="phone-image-openai-preset-import-file" accept=".json,application/json,text/json" style="display: none;">
                 </div>
 
                 <input type="hidden" id="phone-image-openai-mode" value="images">
@@ -3595,13 +3642,13 @@ export class SettingsApp {
 
                 <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                     <span style="font-size: 14px; color: #000;">API Key</span>
-                    <div style="display: flex; align-items: center; width: 150px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; overflow: hidden;">
-                        <input type="password" id="siliconflow-api-key"
+                    <div class="phone-secret-field" style="width: 150px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;">
+                        <input type="text" class="phone-secret-input phone-secret-masked" id="siliconflow-api-key"
                                value="${this._escapeHtml(siliconflowKey)}"
                                placeholder="SiliconFlow API Key"
-                               style="flex: 1; min-width: 0; height: 100%; padding: 0 4px 0 8px; border: none; outline: none; font-size: 12px; background: transparent;">
-                        <button type="button" class="phone-password-toggle" data-toggle-password-target="siliconflow-api-key" aria-label="显示或隐藏 API Key" style="width: 30px; height: 100%; border: none; background: transparent; color: #777; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;">
-                            <i class="fa-solid fa-eye"></i>
+                               style="width: 100%; min-width: 0; height: 100%; padding: 0 34px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
+                        <button type="button" class="phone-password-toggle" data-toggle-password-target="siliconflow-api-key" aria-label="显示 API Key" title="显示 API Key">
+                            <i class="fa-regular fa-eye"></i>
                         </button>
                     </div>
                 </div>
@@ -5301,11 +5348,16 @@ export class SettingsApp {
         const imageOpenaiModel = document.getElementById('phone-image-openai-model');
         const imageOpenaiModelPreset = document.getElementById('phone-image-openai-model-preset');
         const imageOpenaiQuality = document.getElementById('phone-image-openai-quality');
+        const imageOpenaiPresetAppSelect = document.getElementById('phone-image-openai-preset-app-select');
         const imageOpenaiPresetSelect = document.getElementById('phone-image-openai-preset-select');
         const imageOpenaiPresetName = document.getElementById('phone-image-openai-preset-name');
         const imageOpenaiPresetSaveBtn = document.getElementById('phone-image-openai-preset-save');
         const imageOpenaiPresetNewBtn = document.getElementById('phone-image-openai-preset-new');
         const imageOpenaiPresetDeleteBtn = document.getElementById('phone-image-openai-preset-delete');
+        const imageOpenaiPresetClearAllBtn = document.getElementById('phone-image-openai-preset-clear-all');
+        const imageOpenaiPresetExportBtn = document.getElementById('phone-image-openai-preset-export');
+        const imageOpenaiPresetImportBtn = document.getElementById('phone-image-openai-preset-import');
+        const imageOpenaiPresetImportFile = document.getElementById('phone-image-openai-preset-import-file');
         const imageNovelAIVibeGroupSelect = document.getElementById('phone-image-novelai-vibe-group-select');
         const imageNovelAIVibeGroupName = document.getElementById('phone-image-novelai-vibe-group-name');
         const imageNovelAIVibeUploadBtn = document.getElementById('phone-image-novelai-vibe-upload');
@@ -5552,7 +5604,7 @@ export class SettingsApp {
             if (imageFixedPromptInput) imageFixedPromptInput.value = fixedPromptValue;
             if (imageFixedPromptEndInput) imageFixedPromptEndInput.value = fixedPromptEndValue;
             if (imageNegativePromptInput) imageNegativePromptInput.value = negativePromptValue;
-            await saveImagePromptDraft(appKey, {
+            await saveOpenAIImagePromptDraft(appKey, {
                 fixedPrompt: fixedPromptValue,
                 fixedPromptEnd: fixedPromptEndValue,
                 negativePrompt: negativePromptValue
@@ -5643,6 +5695,22 @@ export class SettingsApp {
         };
         let currentImagePromptApp = this._normalizeImagePromptApp(this.storage.get('phone-image-active-prompt-app') || imagePromptAppSelect?.value || 'honey');
         const getActiveImagePromptApp = () => this._normalizeImagePromptApp(currentImagePromptApp || imagePromptAppSelect?.value || this.storage.get('phone-image-active-prompt-app') || 'honey');
+        const getOpenAIActivePresetId = (app = getActiveImagePromptApp()) => {
+            const scope = this._normalizeImagePresetScope(app);
+            return String(
+                this.storage.get(`phone-image-openai-${scope}-active-preset`)
+                || (scope === 'honey' ? this.storage.get('phone-image-openai-active-preset') : '')
+                || ''
+            ).trim();
+        };
+        const setOpenAIActivePresetId = async (app, presetId) => {
+            const scope = this._normalizeImagePresetScope(app);
+            const safeId = String(presetId || '').trim();
+            await this.storage.set(`phone-image-openai-${scope}-active-preset`, safeId);
+            if (scope === 'honey') {
+                await this.storage.set('phone-image-openai-active-preset', safeId);
+            }
+        };
         let currentComfyUIApp = this._normalizeImagePromptApp(this.storage.get('phone-image-active-comfyui-app') || imageComfyUIAppSelect?.value || getActiveImagePromptApp());
         const getComfyUIPresetScope = () => this._normalizeImagePresetScope(currentComfyUIApp || imageComfyUIAppSelect?.value || getActiveImagePromptApp());
         const getComfyUIActiveWorkflowId = () => String(this.storage.get('phone-image-comfyui-active-workflow') || '').trim();
@@ -5665,6 +5733,13 @@ export class SettingsApp {
             await this.storage.set(`phone-image-${appKey}-fixed-prompt`, String(form.fixedPrompt || '').trim());
             await this.storage.set(`phone-image-${appKey}-fixed-prompt-end`, String(form.fixedPromptEnd || '').trim());
             await this.storage.set(`phone-image-${appKey}-negative-prompt`, String(form.negativePrompt || '').trim());
+        };
+        const saveOpenAIImagePromptDraft = async (app, form = getImagePromptForm()) => {
+            const appKey = this._normalizeImagePresetScope(app);
+            await this.storage.set(`phone-image-openai-${appKey}-fixed-prompt`, String(form.fixedPrompt || '').trim());
+            await this.storage.set(`phone-image-openai-${appKey}-fixed-prompt-end`, String(form.fixedPromptEnd || '').trim());
+            await this.storage.set(`phone-image-openai-${appKey}-negative-prompt`, String(form.negativePrompt || '').trim());
+            await this.storage.set(`phone-image-openai-${appKey}-prompt-draft-initialized`, true);
         };
         const setImagePromptForm = async (preset) => {
             const fixedPromptValue = String(preset?.fixedPrompt || '');
@@ -5789,6 +5864,31 @@ export class SettingsApp {
                 seed: preset?.seed
             })).filter(preset => preset.name)
         });
+        const buildOpenAIImagePresetSharePayload = (appKey, presets = []) => ({
+            type: 'yuzuki-phone-gpt-presets',
+            version: 1,
+            app: this._normalizeImagePromptApp(appKey),
+            exportedAt: new Date().toISOString(),
+            presets: (Array.isArray(presets) ? presets : []).map(preset => ({
+                name: String(preset?.name || '').trim(),
+                fixedPrompt: String(preset?.fixedPrompt || ''),
+                fixedPromptEnd: String(preset?.fixedPromptEnd || ''),
+                negativePrompt: String(preset?.negativePrompt || ''),
+                openaiModel: String(preset?.openaiModel || ''),
+                openaiMode: 'images',
+                openaiQuality: String(preset?.openaiQuality || 'auto').trim() || 'auto',
+                honeyWidth: preset?.honeyWidth,
+                honeyHeight: preset?.honeyHeight,
+                wechatWidth: preset?.wechatWidth,
+                wechatHeight: preset?.wechatHeight,
+                weiboWidth: preset?.weiboWidth,
+                weiboHeight: preset?.weiboHeight,
+                diaryWidth: preset?.diaryWidth,
+                diaryHeight: preset?.diaryHeight,
+                width: preset?.width,
+                height: preset?.height
+            })).filter(preset => preset.name)
+        });
         const readImportedNegativePrompt = (preset = {}) => {
             const direct = [
                 preset?.negativePrompt,
@@ -5893,6 +5993,50 @@ export class SettingsApp {
                 .map((preset, index) => normalizeImportedImagePreset(preset, `导入预设 ${index + 1}`))
                 .filter(Boolean);
         };
+        const normalizeImportedOpenAIImagePreset = (preset, fallbackName = '') => {
+            const name = String(preset?.name || preset?.title || fallbackName || '').trim();
+            if (!name) return null;
+            return {
+                id: createImagePromptPresetId(),
+                name,
+                fixedPrompt: String(preset?.fixedPrompt || ''),
+                fixedPromptEnd: String(preset?.fixedPromptEnd || ''),
+                negativePrompt: readImportedNegativePrompt(preset),
+                openaiModel: String(preset?.openaiModel || preset?.model || '').trim(),
+                openaiMode: 'images',
+                openaiQuality: String(preset?.openaiQuality || preset?.quality || 'auto').trim() || 'auto',
+                honeyWidth: preset?.honeyWidth,
+                honeyHeight: preset?.honeyHeight,
+                wechatWidth: preset?.wechatWidth,
+                wechatHeight: preset?.wechatHeight,
+                weiboWidth: preset?.weiboWidth,
+                weiboHeight: preset?.weiboHeight,
+                diaryWidth: preset?.diaryWidth,
+                diaryHeight: preset?.diaryHeight,
+                width: preset?.width,
+                height: preset?.height,
+                updatedAt: Date.now()
+            };
+        };
+        const parseOpenAIImagePresetImportText = (rawText = '') => {
+            const text = String(rawText || '').trim();
+            if (!text) return [];
+            let payload = null;
+            try {
+                payload = JSON.parse(text);
+            } catch (err) {
+                throw new Error('导入内容不是有效 JSON');
+            }
+
+            const candidates = Array.isArray(payload)
+                ? payload
+                : (Array.isArray(payload?.presets)
+                    ? payload.presets
+                    : (Array.isArray(payload?.items) ? payload.items : []));
+            return candidates
+                .map((preset, index) => normalizeImportedOpenAIImagePreset(preset, `导入 GPT 预设 ${index + 1}`))
+                .filter(Boolean);
+        };
         const readJsonImportFile = async (file) => {
             if (!file) throw new Error('未选择文件');
             const text = await file.text();
@@ -5919,9 +6063,9 @@ export class SettingsApp {
                 link.remove();
             }, 0);
         };
-        const buildImagePresetExportFilename = (presets = []) => {
+        const buildImagePresetExportFilename = (presets = [], fallbackName = 'NAI预设') => {
             const list = Array.isArray(presets) ? presets : [];
-            const firstName = String(list[0]?.name || 'NAI预设').trim() || 'NAI预设';
+            const firstName = String(list[0]?.name || fallbackName).trim() || fallbackName;
             if (list.length <= 1) return `${firstName}.json`;
             return `${firstName}等${list.length}个文件.json`;
         };
@@ -6348,15 +6492,29 @@ export class SettingsApp {
                 await applyComfyUIWorkflowSettings(activeWorkflow);
             }
         };
+        const refreshOpenAIImagePresetAppPanel = async (appKey, options = {}) => {
+            const normalizedApp = this._normalizeImagePromptApp(appKey);
+            const presets = this._getOpenAIImagePresets(normalizedApp);
+            let activeId = getOpenAIActivePresetId(normalizedApp);
+            const activePreset = presets.find(item => item.id === activeId);
+            if (!activePreset) activeId = '';
+            fillOpenAIImagePresetSelect(presets, activeId);
+            if (imageOpenaiPresetSelect) imageOpenaiPresetSelect.value = activeId;
+            if (imageOpenaiPresetAppSelect) imageOpenaiPresetAppSelect.value = normalizedApp;
+
+            const draft = activePreset || this._getOpenAIImagePromptDraft(normalizedApp);
+            if (imageOpenaiPresetName) imageOpenaiPresetName.value = activePreset?.name || '';
+            if (imageFixedPromptInput) imageFixedPromptInput.value = String(draft.fixedPrompt || '');
+            if (imageFixedPromptEndInput) imageFixedPromptEndInput.value = String(draft.fixedPromptEnd || '');
+            if (imageNegativePromptInput) imageNegativePromptInput.value = String(draft.negativePrompt || '');
+            if (activePreset && options.applyGenerationSettings !== false) {
+                await applyOpenAIImagePresetSettings(activePreset);
+            }
+        };
         const refreshImagePromptFormForProvider = async (providerKey) => {
             const provider = String(providerKey || imageProvider?.value || 'novelai').trim().toLowerCase() || 'novelai';
             if (provider === 'openai') {
-                const activeId = String(imageOpenaiPresetSelect?.value || this.storage.get('phone-image-openai-active-preset') || '').trim();
-                const activePreset = this._getOpenAIImagePresets().find(item => item.id === activeId) || null;
-                const draft = activePreset || this._getImagePromptDraft(getActiveImagePromptApp());
-                if (imageFixedPromptInput) imageFixedPromptInput.value = String(draft.fixedPrompt || '');
-                if (imageFixedPromptEndInput) imageFixedPromptEndInput.value = String(draft.fixedPromptEnd || '');
-                if (imageNegativePromptInput) imageNegativePromptInput.value = String(draft.negativePrompt || '');
+                await refreshOpenAIImagePresetAppPanel(getActiveImagePromptApp(), { applyGenerationSettings: false });
                 return;
             }
 
@@ -6373,7 +6531,18 @@ export class SettingsApp {
             await saveImagePromptDraft(previousApp);
             currentImagePromptApp = appKey;
             await this.storage.set('phone-image-active-prompt-app', appKey);
+            if (imageOpenaiPresetAppSelect) imageOpenaiPresetAppSelect.value = appKey;
             await refreshImagePromptAppPanel(appKey);
+        });
+
+        imageOpenaiPresetAppSelect?.addEventListener('change', async (e) => {
+            const previousApp = currentImagePromptApp;
+            const appKey = this._normalizeImagePromptApp(e.target.value);
+            await saveOpenAIImagePromptDraft(previousApp);
+            currentImagePromptApp = appKey;
+            await this.storage.set('phone-image-active-prompt-app', appKey);
+            if (imagePromptAppSelect) imagePromptAppSelect.value = appKey;
+            await refreshOpenAIImagePresetAppPanel(appKey);
         });
 
         imageComfyUIAppSelect?.addEventListener('change', async (e) => {
@@ -6426,11 +6595,15 @@ export class SettingsApp {
                 const targetId = String(button.dataset.togglePasswordTarget || '').trim();
                 const input = targetId ? document.getElementById(targetId) : null;
                 if (!input) return;
-                const nextVisible = input.type === 'password';
-                input.type = nextVisible ? 'text' : 'password';
+                const isMasked = input.classList.toggle('phone-secret-masked');
+                const label = String(button.getAttribute('aria-label') || '显示密钥')
+                    .replace(/^(显示|隐藏)/, '');
+                const nextAction = isMasked ? '显示' : '隐藏';
+                button.setAttribute('aria-label', `${nextAction}${label}`);
+                button.setAttribute('title', `${nextAction}${label}`);
                 const icon = button.querySelector('i');
                 if (icon) {
-                    icon.className = nextVisible ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+                    icon.className = isMasked ? 'fa-regular fa-eye' : 'fa-regular fa-eye-slash';
                 }
             });
         });
@@ -6835,8 +7008,9 @@ export class SettingsApp {
 
         imageOpenaiPresetSelect?.addEventListener('change', async (e) => {
             const presetId = String(e.target.value || '').trim();
-            await this.storage.set('phone-image-openai-active-preset', presetId);
-            const presets = this._getOpenAIImagePresets();
+            const appKey = getActiveImagePromptApp();
+            await setOpenAIActivePresetId(appKey, presetId);
+            const presets = this._getOpenAIImagePresets(appKey);
             const preset = presets.find(item => item.id === presetId);
             if (!preset) {
                 if (imageOpenaiPresetName) imageOpenaiPresetName.value = '';
@@ -6855,9 +7029,10 @@ export class SettingsApp {
                 return;
             }
 
+            const appKey = getActiveImagePromptApp();
             const now = Date.now();
-            const presets = this._getOpenAIImagePresets();
-            let activeId = String(imageOpenaiPresetSelect?.value || this.storage.get('phone-image-openai-active-preset') || '').trim();
+            const presets = this._getOpenAIImagePresets(appKey);
+            let activeId = String(imageOpenaiPresetSelect?.value || getOpenAIActivePresetId(appKey) || '').trim();
             let target = presets.find(preset => preset.id === activeId);
             if (!target) {
                 activeId = createImagePromptPresetId();
@@ -6866,45 +7041,144 @@ export class SettingsApp {
             }
 
             Object.assign(target, getOpenAIImagePresetSettings(), { name, updatedAt: now });
-            await saveImagePromptDraft(getActiveImagePromptApp(), {
+            await saveOpenAIImagePromptDraft(getActiveImagePromptApp(), {
                 fixedPrompt: target.fixedPrompt,
                 fixedPromptEnd: target.fixedPromptEnd,
                 negativePrompt: target.negativePrompt
             });
-            await this._saveOpenAIImagePresets(presets);
-            await this.storage.set('phone-image-openai-active-preset', activeId);
+            await this._saveOpenAIImagePresets(appKey, presets);
+            await setOpenAIActivePresetId(appKey, activeId);
             fillOpenAIImagePresetSelect(presets, activeId);
             if (imageOpenaiPresetSelect) imageOpenaiPresetSelect.value = activeId;
             this.phoneShell?.showNotification?.('已保存 GPT 预设', name, '✅');
         });
 
         imageOpenaiPresetNewBtn?.addEventListener('click', async () => {
+            const appKey = getActiveImagePromptApp();
             if (imageOpenaiPresetSelect) imageOpenaiPresetSelect.value = '';
             if (imageOpenaiPresetName) {
                 imageOpenaiPresetName.value = '';
                 imageOpenaiPresetName.focus();
             }
-            await this.storage.set('phone-image-openai-active-preset', '');
+            await setOpenAIActivePresetId(appKey, '');
             this.phoneShell?.showNotification?.('新建 GPT 预设', '填写名称后点击保存', '✏️');
         });
 
         imageOpenaiPresetDeleteBtn?.addEventListener('click', async () => {
-            const activeId = String(imageOpenaiPresetSelect?.value || this.storage.get('phone-image-openai-active-preset') || '').trim();
+            const appKey = getActiveImagePromptApp();
+            const activeId = String(imageOpenaiPresetSelect?.value || getOpenAIActivePresetId(appKey) || '').trim();
             if (!activeId) {
                 this.phoneShell?.showNotification?.('删除失败', '请先选择要删除的 GPT 预设', '⚠️');
                 return;
             }
-            const presets = this._getOpenAIImagePresets();
+            const presets = this._getOpenAIImagePresets(appKey);
             const target = presets.find(preset => preset.id === activeId);
             if (!target) return;
             if (!confirm(`删除 GPT 生图预设「${target.name}」？`)) return;
 
             const nextPresets = presets.filter(preset => preset.id !== activeId);
-            await this._saveOpenAIImagePresets(nextPresets);
-            await this.storage.set('phone-image-openai-active-preset', '');
+            await this._saveOpenAIImagePresets(appKey, nextPresets);
+            await setOpenAIActivePresetId(appKey, '');
             fillOpenAIImagePresetSelect(nextPresets, '');
             if (imageOpenaiPresetName) imageOpenaiPresetName.value = '';
             this.phoneShell?.showNotification?.('已删除 GPT 预设', target.name, '🗑️');
+        });
+
+        imageOpenaiPresetClearAllBtn?.addEventListener('click', async () => {
+            const presetMap = this._getOpenAIImagePresetMap();
+            const scopes = Array.from(new Set(this._getImagePromptAppDefs().map(def => this._normalizeImagePresetScope(def.id))));
+            const totalCount = scopes.reduce((sum, scope) => sum + this._getOpenAIImagePresets(scope).length, 0);
+            if (totalCount > 0 && !confirm(`确定删除全部 ${totalCount} 套 GPT 生图预设吗？\n\n会清空蜜语、微信/日记、微博的 GPT 预设和当前选择；NAI 预设、API Key、模型和连接设置不会删除。`)) return;
+
+            scopes.forEach(scope => {
+                presetMap[scope] = [];
+            });
+            await this.storage.set('phone-image-openai-presets-by-app', JSON.stringify(presetMap));
+            await this.storage.set('phone-image-openai-presets', JSON.stringify([]));
+            await this.storage.set('phone-image-openai-active-preset', '');
+            for (const scope of scopes) {
+                await this.storage.set(`phone-image-openai-${scope}-active-preset`, '');
+                await this.storage.set(`phone-image-openai-${scope}-fixed-prompt`, '');
+                await this.storage.set(`phone-image-openai-${scope}-fixed-prompt-end`, '');
+                await this.storage.set(`phone-image-openai-${scope}-negative-prompt`, '');
+                await this.storage.set(`phone-image-openai-${scope}-prompt-draft-initialized`, true);
+            }
+
+            fillOpenAIImagePresetSelect([], '');
+            if (imageOpenaiPresetSelect) imageOpenaiPresetSelect.value = '';
+            if (imageOpenaiPresetName) imageOpenaiPresetName.value = '';
+            await refreshOpenAIImagePresetAppPanel(getActiveImagePromptApp(), { applyGenerationSettings: false });
+            this.phoneShell?.showNotification?.(
+                totalCount > 0 ? '已清空 GPT 预设' : 'GPT 预设',
+                totalCount > 0 ? `已删除 ${totalCount} 套 GPT 预设` : '没有可删除的 GPT 预设',
+                totalCount > 0 ? '🗑️' : '✅'
+            );
+        });
+
+        imageOpenaiPresetExportBtn?.addEventListener('click', async () => {
+            const appKey = getActiveImagePromptApp();
+            const presets = this._getOpenAIImagePresets(appKey);
+            if (!presets.length) {
+                this.phoneShell?.showNotification?.('导出失败', '当前 App 还没有可导出的 GPT 生图预设', '⚠️');
+                return;
+            }
+            const activeId = String(imageOpenaiPresetSelect?.value || getOpenAIActivePresetId(appKey) || '').trim();
+            showImagePresetExportChooser({
+                title: '导出 GPT 预设',
+                desc: '选择要写入 JSON 文件的预设。',
+                presets,
+                selectedIds: activeId ? [activeId] : presets.map(preset => preset.id),
+                onConfirm: async (selectedIds) => {
+                    const selectedSet = new Set(selectedIds);
+                    const exportPresets = presets.filter(preset => selectedSet.has(preset.id));
+                    const payload = buildOpenAIImagePresetSharePayload(appKey, exportPresets);
+                    downloadJsonFile(payload, buildImagePresetExportFilename(exportPresets, 'GPT预设'));
+                    this.phoneShell?.showNotification?.('导出完成', `已导出 ${payload.presets.length} 套 GPT 预设文件`, '✅');
+                }
+            });
+        });
+
+        imageOpenaiPresetImportBtn?.addEventListener('click', async () => {
+            if (!imageOpenaiPresetImportFile) {
+                this.phoneShell?.showNotification?.('导入失败', '当前环境不支持文件选择', '⚠️');
+                return;
+            }
+            imageOpenaiPresetImportFile.value = '';
+            imageOpenaiPresetImportFile.click();
+        });
+
+        imageOpenaiPresetImportFile?.addEventListener('change', async () => {
+            const appKey = getActiveImagePromptApp();
+            try {
+                const rawText = await readJsonImportFile(imageOpenaiPresetImportFile.files?.[0]);
+                const imported = parseOpenAIImagePresetImportText(rawText);
+                if (!imported.length) throw new Error('没有识别到可导入的 GPT 预设');
+                const existing = this._getOpenAIImagePresets(appKey);
+                const usedNames = new Set(existing.map(preset => String(preset.name || '').trim()).filter(Boolean));
+                const nextPresets = [...existing];
+                let firstImportedId = '';
+                imported.forEach((preset) => {
+                    preset.id = createImagePromptPresetId();
+                    if (!firstImportedId) firstImportedId = preset.id;
+                    preset.name = makeUniqueImagePresetName(preset.name, usedNames);
+                    preset.updatedAt = Date.now();
+                    nextPresets.push(preset);
+                });
+                await this._saveOpenAIImagePresets(appKey, nextPresets);
+                await setOpenAIActivePresetId(appKey, firstImportedId);
+                fillOpenAIImagePresetSelect(nextPresets, firstImportedId);
+                if (imageOpenaiPresetSelect) imageOpenaiPresetSelect.value = firstImportedId;
+                const activePreset = nextPresets.find(preset => preset.id === firstImportedId) || imported[0];
+                if (activePreset) {
+                    if (imageOpenaiPresetName) imageOpenaiPresetName.value = activePreset.name;
+                    await applyOpenAIImagePresetSettings(activePreset);
+                }
+                this.phoneShell?.showNotification?.('导入完成', `已导入 ${imported.length} 套 GPT 预设`, '✅');
+            } catch (err) {
+                this.phoneShell?.showNotification?.('导入失败', err?.message || String(err || '失败'), '⚠️');
+            } finally {
+                imageOpenaiPresetImportFile.value = '';
+            }
         });
 
         imageNovelaiModel?.addEventListener('change', async (e) => {
@@ -7856,6 +8130,11 @@ export class SettingsApp {
             const input = document.getElementById(id);
             if (!input) return;
             const saveTextInput = async () => {
+                const provider = String(imageProvider?.value || 'novelai').trim().toLowerCase();
+                if (provider === 'openai') {
+                    await saveOpenAIImagePromptDraft(getActiveImagePromptApp());
+                    return;
+                }
                 await saveImagePromptDraft(getActiveImagePromptApp());
             };
             input.addEventListener('input', saveTextInput);
@@ -7865,6 +8144,8 @@ export class SettingsApp {
 
         // 🔊 TTS 设置事件绑定
         const ttsProvider = document.getElementById('phone-tts-provider');
+        const ttsStandardConfig = document.getElementById('phone-tts-standard-config');
+        const ttsVolcConfig = document.getElementById('phone-tts-volc-config');
         const ttsUrl = document.getElementById('phone-tts-url');
         const ttsUrlPreset = document.getElementById('phone-tts-url-preset');
         const ttsKey = document.getElementById('phone-tts-key');
@@ -8009,6 +8290,8 @@ export class SettingsApp {
                 if (!element) return;
                 element.style.setProperty('display', visible ? display : 'none', 'important');
             };
+            setProviderFieldVisible(ttsStandardConfig, provider !== 'volcengine');
+            setProviderFieldVisible(ttsVolcConfig, provider === 'volcengine');
             setProviderFieldVisible(ttsMainKeySetting, provider !== 'volcengine', 'flex');
             setProviderFieldVisible(ttsMainProviderOptions, provider !== 'volcengine');
             setProviderFieldVisible(ttsNimoRelaySetting, provider === 'nimo');

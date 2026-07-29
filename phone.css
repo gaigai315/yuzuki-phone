@@ -4122,6 +4122,68 @@ input:checked + .toggle-slider:before {
     caret-color: auto;
 }
 
+/* 密钥输入框：使用文本遮罩避免 Edge/WebView2 叠加原生密码眼睛。 */
+#phone-panel-content .phone-screen .phone-secret-field {
+    position: relative;
+    display: block;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+#phone-panel-content .phone-screen .phone-secret-field .phone-secret-input {
+    display: block;
+    padding-right: 44px !important;
+}
+
+#phone-panel-content .phone-screen .phone-secret-field .phone-secret-masked {
+    -webkit-text-security: disc;
+    text-security: disc;
+}
+
+#phone-panel-content .phone-screen .phone-secret-field .phone-password-toggle {
+    position: absolute !important;
+    top: 50% !important;
+    right: 3px !important;
+    z-index: 2;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    max-width: 28px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    max-height: 28px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 6px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #6f7fab !important;
+    line-height: 1 !important;
+    cursor: pointer;
+    transform: translateY(-50%) !important;
+}
+
+#phone-panel-content .phone-screen .phone-secret-field .phone-password-toggle:active {
+    background: rgba(100, 116, 139, 0.12) !important;
+}
+
+#phone-panel-content .phone-screen .phone-secret-field .phone-password-toggle i {
+    color: inherit !important;
+    font-size: 12px;
+    line-height: 1;
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .phone-secret-field input::-ms-reveal,
+#phone-panel-content .phone-screen .phone-secret-field input::-ms-clear {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
 /* 特殊元素保持原有颜色（避免影响背景色等） */
 .phone-body-panel .app-icon-bg,
 .phone-body-panel .dock-app,
@@ -5758,7 +5820,7 @@ input:checked + .toggle-slider:before {
 }
 
 /* 2. 拯救所有表单控件 (对抗主题对裸标签 input, textarea, select 的 !important 劫持) */
-#phone-panel-content input:not(.honey-app *):not(.wangxiang-app *):not(.wechat-app .chat-input):not([type="checkbox"]):not([type="range"]):not([type="color"]):not(#honey-chat-input):not(#video-chat-input):not(#voice-chat-input):not(#phone-call-input),
+#phone-panel-content input:not(.phone-secret-input):not(.honey-app *):not(.wangxiang-app *):not(.wechat-app .chat-input):not([type="checkbox"]):not([type="range"]):not([type="color"]):not(#honey-chat-input):not(#video-chat-input):not(#voice-chat-input):not(#phone-call-input),
 #phone-panel-content textarea:not(.honey-app *):not(.wangxiang-app *) {
     background: #ffffff !important;
     background-image: none !important;
