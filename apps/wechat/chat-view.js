@@ -1869,10 +1869,19 @@ export class ChatView {
         const moments = this.app.wechatData?.getMoments?.();
         if (!Array.isArray(moments) || moments.length === 0) return '';
 
+        const targetViewer = contactById || contactByName || targetChat;
+        const userViewer = this.app.wechatData?.getUserInfo?.() || { name: userName };
         const relevantMoments = moments
             .filter((moment) => {
                 const authorKey = this._normalizeLookupName(moment?.name);
-                return !!authorKey && (targetKeys.has(authorKey) || userKeys.has(authorKey));
+                if (!authorKey) return false;
+                if (userKeys.has(authorKey)) {
+                    return this.app.wechatData?.canContactViewMoment?.(moment, targetViewer) !== false;
+                }
+                if (targetKeys.has(authorKey)) {
+                    return this.app.wechatData?.canContactViewMoment?.(moment, userViewer) !== false;
+                }
+                return false;
             })
             .slice(0, limit);
         if (relevantMoments.length === 0) return '';
@@ -1901,7 +1910,7 @@ export class ChatView {
 
         const lines = [
             '【当前单聊双方朋友圈】',
-            `以下是当前微信好友“${targetChat.name || contactById?.name || contactByName?.name || '当前好友'}”与手机用户本人近期已发布的朋友圈及其真实互动。评论和回复属于对应动态，只作为双方已知的社交背景，不要将其误当成本轮新微信消息。`
+            `以下仅包含当前微信好友“${targetChat.name || contactById?.name || contactByName?.name || '当前好友'}”有权查看的双方近期朋友圈及其真实互动。未向该好友开放的动态已被系统剔除，禁止猜测、提及、回应或暗示其内容。评论和回复属于对应动态，只作为双方已知的社交背景，不要将其误当成本轮新微信消息。`
         ];
 
         relevantMoments.forEach((moment, index) => {

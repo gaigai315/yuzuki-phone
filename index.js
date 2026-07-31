@@ -17,8 +17,8 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.3';
-const ST_PHONE_CSS_REVISION = '20260726-video-visibility';
+const ST_PHONE_VERSION = '1.4.4';
+const ST_PHONE_CSS_REVISION = '20260731-moments-visibility';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
@@ -49,9 +49,10 @@ const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-27',
+    date: '2026-07-31',
     items: [
-        '【优化】优化音乐播放器显示，新增包含单曲循环的三态播放模式，并支持单独调节音乐音量。'
+        '【优化】优化用户发布朋友圈，支持设置仅指定好友可见或不可见。',
+        '【优化】优化万象任务刷新逻辑，刷新时会避开已经接取的任务类型。'
     ]
 };
 

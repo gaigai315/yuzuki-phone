@@ -70,6 +70,38 @@ export function buildWangxiangTaskInjectionContent(tasks) {
     return `【万象当前已接任务】\n以下内容是用户已经接取且尚未完成的任务事实。续写剧情时应保持任务信息与进度一致，不要把未接取任务视为已接取。\n\n${blocks.join('\n\n')}`;
 }
 
+export function buildWangxiangTaskHallExclusionContent(tasks) {
+    const managedTasks = (Array.isArray(tasks) ? tasks : [])
+        .filter(task => task?.status === 'active' || task?.status === 'submit' || task?.status === 'completed');
+    if (!managedTasks.length) return '';
+
+    const clean = (value, fallback = '未注明') => {
+        const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+        return text || fallback;
+    };
+    const statusLabels = {
+        active: '已接取（进行中）',
+        submit: '已接取（待提交）',
+        completed: '已完成'
+    };
+    const blocks = managedTasks.map((task, index) => {
+        const objectives = (Array.isArray(task?.objectives) ? task.objectives : [])
+            .map(item => clean(item?.title, '未命名目标'));
+        return [
+            `--- 我的任务 ${index + 1} ---`,
+            `状态：${statusLabels[task?.status] || '已接取'}`,
+            `任务标题：${clean(task?.title, '未命名任务')}`,
+            `发布者：${clean(task?.publisher)}`,
+            `发布者组织：${clean(task?.publisherOrg)}`,
+            `任务地点：${clean(task?.location)}`,
+            `任务内容：${clean(task?.description, '暂无任务描述')}`,
+            `任务目标：${objectives.length ? objectives.join('；') : '未注明'}`
+        ].join('\n');
+    });
+
+    return `【我的任务去重清单】\n以下任务已经被用户接取或完成。刷新任务大厅时，严禁再次生成相同或实质相同的任务，也不得仅通过改写标题、替换措辞或微调数值来重复发布；新任务必须在任务背景、核心目标和事件内容上与清单内任务明显不同。\n\n${blocks.join('\n\n')}`;
+}
+
 export function buildWangxiangOrderInjectionContent(orders, userName = '用户') {
     const deliveryOrders = (Array.isArray(orders) ? orders : [])
         .filter(order => order?.status === 'shipping');
@@ -676,6 +708,12 @@ export class WangxiangApp {
 
     _normalizeTaskTitle(value) {
         return String(value || '').trim().replace(/\s+/g, '');
+    }
+
+    _getTaskDeduplicationKey(value) {
+        return this._normalizeTaskTitle(value)
+            .toLocaleLowerCase()
+            .replace(/[\s　·•:：,，。.!！?？、'"“”‘’()（）\[\]【】《》<>_-]+/g, '');
     }
 
     _syncGeneratedTaskProgress(task) {
@@ -1332,7 +1370,19 @@ export class WangxiangApp {
                 .filter(task => task.status === 'active' || task.status === 'submit')
                 .map(task => ({ ...task }));
             const preservedIds = new Set(preservedTasks.map(task => String(task?.id || '')));
-            const freshTasks = tasks.filter(task => !preservedIds.has(String(task?.id || '')));
+            const seenTitleKeys = new Set(this.managedTasks
+                .map(task => this._getTaskDeduplicationKey(task?.title))
+                .filter(Boolean));
+            const freshTasks = tasks.filter(task => {
+                if (preservedIds.has(String(task?.id || ''))) return false;
+                const titleKey = this._getTaskDeduplicationKey(task?.title);
+                if (titleKey && seenTitleKeys.has(titleKey)) return false;
+                if (titleKey) seenTitleKeys.add(titleKey);
+                return true;
+            });
+            if (!freshTasks.length) {
+                throw new Error('本次生成的任务均与“我的任务”重复，请重新下拉生成');
+            }
             this.generatedTasks = [...freshTasks, ...preservedTasks];
             await this._saveGeneratedTasks();
             return this.generatedTasks;
@@ -1462,6 +1512,16 @@ export class WangxiangApp {
         ].filter(Boolean);
 
         await window.VirtualPhone?.worldbookManager?.appendWorldbookMessages?.(messages, 'wangxiang');
+
+        const taskExclusionContent = buildWangxiangTaskHallExclusionContent(this.managedTasks);
+        if (taskExclusionContent) {
+            messages.push({
+                role: 'system',
+                content: taskExclusionContent,
+                name: 'SYSTEM (我的任务去重清单)',
+                isPhoneMessage: true
+            });
+        }
 
         const promptManager = window.VirtualPhone?.promptManager;
         promptManager?.ensureLoaded?.();

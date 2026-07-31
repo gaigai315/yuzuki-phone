@@ -6362,3 +6362,282 @@ input:checked + .toggle-slider:before {
     background: #c8ccd1 !important;
     cursor: not-allowed;
 }
+
+/* 微信朋友圈可见范围 */
+#phone-panel-content .phone-screen .wechat-moment-visibility-trigger {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    width: 100% !important;
+    min-height: 50px !important;
+    margin-top: 15px;
+    padding: 0 15px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: #f7f7f7 !important;
+    box-shadow: none !important;
+    color: #242424 !important;
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    line-height: 1.4 !important;
+    letter-spacing: 0 !important;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-left: 12px;
+    color: #8a8a8a;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-value > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-value i {
+    flex: 0 0 auto;
+    font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    background: rgba(0, 0, 0, 0.28);
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-dialog {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    margin-top: 38px;
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+    background: #f4f4f4;
+    box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.14);
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-header {
+    position: relative;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 58px;
+    align-items: center;
+    flex: 0 0 50px;
+    min-height: 50px;
+    padding: 0 8px;
+    border-bottom: 1px solid #dedede;
+    background: #ededed;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-title {
+    min-width: 0;
+    color: #171717;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: 0;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-close,
+#phone-panel-content .phone-screen .wechat-moment-visibility-done {
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 4px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-size: 14px !important;
+    line-height: 36px !important;
+    letter-spacing: 0 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-close {
+    width: 36px !important;
+    color: #292929 !important;
+    font-size: 18px !important;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-done {
+    width: 50px !important;
+    color: #078a45 !important;
+    font-weight: 600 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-modes {
+    flex: 0 0 auto;
+    margin-top: 10px;
+    border-top: 1px solid #e2e2e2;
+    border-bottom: 1px solid #e2e2e2;
+    background: #ffffff;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-mode {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 18px;
+    align-items: center;
+    width: 100% !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    padding: 0 16px !important;
+    border: 0 !important;
+    border-bottom: 1px solid #eeeeee !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    color: #252525 !important;
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    line-height: 1.3 !important;
+    letter-spacing: 0 !important;
+    text-align: left;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-mode:last-child {
+    border-bottom: 0 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-mode i {
+    color: #a3a3a3;
+    font-size: 11px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-mode.is-active i {
+    color: #078a45;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-picker {
+    display: none;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    margin-top: 10px;
+    border-top: 1px solid #e2e2e2;
+    background: #ffffff;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-picker.is-visible {
+    display: flex;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-selection-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 0 0 38px;
+    min-height: 38px;
+    padding: 0 16px;
+    border-bottom: 1px solid #e6e6e6;
+    color: #555555;
+    font-size: 12px;
+    line-height: 1.3;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-count {
+    color: #078a45;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-contact {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) 24px;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+    padding: 5px 16px;
+    border-bottom: 1px solid #eeeeee;
+    background: #ffffff;
+    box-sizing: border-box;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-contact input {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-avatar {
+    display: block;
+    grid-column: 1;
+    width: 38px;
+    height: 38px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: #e8e8e8;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-avatar img,
+#phone-panel-content .phone-screen .wechat-moment-visibility-avatar .wechat-avatar {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-name {
+    grid-column: 2;
+    min-width: 0;
+    overflow: hidden;
+    color: #252525;
+    font-size: 14px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-check {
+    display: flex;
+    grid-column: 3;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #b9b9b9;
+    border-radius: 50%;
+    color: transparent;
+    font-size: 10px;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-contact input:checked ~ .wechat-moment-visibility-check {
+    border-color: #078a45;
+    background: #078a45;
+    color: #ffffff;
+}
+
+#phone-panel-content .phone-screen .wechat-moment-visibility-empty {
+    padding: 36px 16px;
+    color: #888888;
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: center;
+}

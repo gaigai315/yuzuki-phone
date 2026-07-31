@@ -2894,6 +2894,68 @@ getWeekday(date) {
     getMoment(momentId) {
         return this.data.moments.find(m => m.id === momentId);
     }
+
+    normalizeMomentVisibility(moment) {
+        const rawVisibility = moment?.visibility && typeof moment.visibility === 'object'
+            ? moment.visibility
+            : {};
+        const rawType = String(
+            rawVisibility.type
+            || moment?.visibilityType
+            || 'public'
+        ).trim().toLowerCase();
+        const type = ['exclude', 'hidden', 'deny'].includes(rawType)
+            ? 'exclude'
+            : (['include', 'only', 'allow'].includes(rawType) ? 'include' : 'public');
+        const normalizeList = (value) => (Array.isArray(value) ? value : [])
+            .map(item => String(item || '').trim())
+            .filter(Boolean);
+
+        return {
+            type,
+            contactIds: [...new Set(normalizeList(
+                rawVisibility.contactIds
+                || rawVisibility.ids
+                || moment?.visibilityContactIds
+            ))],
+            contactNames: [...new Set(normalizeList(
+                rawVisibility.contactNames
+                || rawVisibility.names
+                || moment?.visibilityContactNames
+            ))]
+        };
+    }
+
+    canContactViewMoment(moment, contactOrName) {
+        const visibility = this.normalizeMomentVisibility(moment);
+        if (visibility.type === 'public') return true;
+
+        const contact = typeof contactOrName === 'object' && contactOrName
+            ? contactOrName
+            : (
+                this.getContact(String(contactOrName || '').trim())
+                || this.findContactByNameLoose(contactOrName, { includeChats: false })
+            );
+        const candidateIds = new Set([
+            contact?.id
+        ].map(value => String(value || '').trim()).filter(Boolean));
+        const candidateNameKeys = new Set([
+            contact?.name,
+            contact?.remark,
+            contact?.nickname,
+            typeof contactOrName === 'string' ? contactOrName : ''
+        ].map(value => this._normalizeLookupName(value)).filter(Boolean));
+        const canUseStableIds = visibility.contactIds.length > 0 && candidateIds.size > 0;
+        const isSelected = canUseStableIds
+            ? visibility.contactIds.some(id => candidateIds.has(id))
+            : visibility.contactNames.some(name => candidateNameKeys.has(this._normalizeLookupName(name)));
+
+        return visibility.type === 'include' ? isSelected : !isSelected;
+    }
+
+    getMomentVisibleContacts(moment) {
+        return (this.getContacts() || []).filter(contact => this.canContactViewMoment(moment, contact));
+    }
     
     addMoment(moment) {
         this.data.moments.unshift(moment);

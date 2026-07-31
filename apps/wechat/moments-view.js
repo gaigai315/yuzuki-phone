@@ -22,6 +22,11 @@ export class MomentsView {
         this.currentCommentMomentId = null;
         this.currentReplyTo = null;
         this.pendingMomentImages = [];
+        this.pendingMomentVisibility = {
+            type: 'public',
+            contactIds: [],
+            contactNames: []
+        };
         this._postMomentDraftActive = false;
         this._postMomentDraftCommitted = false;
         this._postMomentDraftObserver = null;
@@ -769,6 +774,11 @@ export class MomentsView {
         this._postMomentDraftActive = true;
         this._postMomentDraftCommitted = false;
         this.pendingMomentImages = [];
+        this.pendingMomentVisibility = {
+            type: 'public',
+            contactIds: [],
+            contactNames: []
+        };
         this._mountPostDraftObserver();
     }
 
@@ -1403,10 +1413,32 @@ export class MomentsView {
                 aiImageNotes.push(`- 图片${i + 1}：${imageLabel}`);
             }
         }
-        const contactNames = (this.app.wechatData.getContacts() || [])
-            .map(c => (c?.name || '').trim())
+        const visibleContacts = this.app.wechatData.getMomentVisibleContacts?.(moment)
+            || (this.app.wechatData.getContacts() || []);
+        const contactNames = visibleContacts
+            .map(c => String(c?.name || '').trim())
             .filter(Boolean);
         const allowedContactSet = new Set(contactNames);
+        if (allowedContactSet.size === 0) {
+            console.info('ℹ️ [朋友圈] 当前动态没有可互动的可见好友，跳过AI互动');
+            return;
+        }
+
+        const visibility = this.app.wechatData.normalizeMomentVisibility?.(moment)
+            || { type: 'public', contactNames: [] };
+        const visibilityRule = visibility.type === 'exclude'
+            ? `仅允许以下可见好友互动；被设为“不给谁看”的好友完全不知道此动态，绝对不能点赞、评论或被写进回复：${contactNames.join('、') || '无'}`
+            : (visibility.type === 'include'
+                ? `本动态仅向以下好友开放，名单外任何人都完全不知道此动态，绝对不能点赞、评论或被写进回复：${contactNames.join('、') || '无'}`
+                : `本动态公开，但互动者仍只能从以下通讯录好友中选择：${contactNames.join('、') || '无'}`);
+        const currentLikes = (Array.isArray(moment.likeList) ? moment.likeList : [])
+            .map(name => String(name || '').trim())
+            .filter(name => name && allowedContactSet.has(name));
+        const currentComments = (Array.isArray(moment.commentList) ? moment.commentList : [])
+            .filter(comment => {
+                const name = String(comment?.name || '').trim();
+                return name === String(userInfo.name || '').trim() || allowedContactSet.has(name);
+            });
 
         const promptManager = window.VirtualPhone?.promptManager;
         const interactionTemplate = promptManager?.getPromptForFeature?.('wechat', 'momentsInteraction') || '';
@@ -1415,9 +1447,10 @@ export class MomentsView {
             '{{userName}}': userInfo.name || '用户',
             '{{momentAuthor}}': moment.name || '未知',
             '{{momentContent}}': moment.text || '[图片]',
-            '{{currentLikes}}': moment.likeList?.join('、') || '无',
-            '{{currentComments}}': moment.commentList?.map(c => `${c.name}${c.replyTo ? '回复' + c.replyTo : ''}：${c.text}`).join('\n') || '无',
+            '{{currentLikes}}': currentLikes.join('、') || '无',
+            '{{currentComments}}': currentComments.map(c => `${c.name}${c.replyTo ? '回复' + c.replyTo : ''}：${c.text}`).join('\n') || '无',
             '{{contactNames}}': contactNames.join('、') || '无',
+            '{{visibilityRule}}': visibilityRule,
             '{{imageNotes}}': aiImageNotes.length > 0 ? `\n- 图片内容参考（含多模态图片数据）：\n${aiImageNotes.join('\n')}` : '',
             '{{actionType}}': actionTypeText,
             '{{userCommentLine}}': actionType === 'comment' ? `- 评论内容：${userComment}` : '',
@@ -1438,9 +1471,10 @@ export class MomentsView {
 朋友圈信息：
 - 发布者：${moment.name}
 - 内容：${moment.text || '[图片]'}
-- 现有点赞：${moment.likeList?.join('、') || '无'}
-- 现有评论：${moment.commentList?.map(c => `${c.name}${c.replyTo ? '回复' + c.replyTo : ''}：${c.text}`).join('\n') || '无'}
+- 现有点赞：${currentLikes.join('、') || '无'}
+- 现有评论：${currentComments.map(c => `${c.name}${c.replyTo ? '回复' + c.replyTo : ''}：${c.text}`).join('\n') || '无'}
 - 可用通讯录好友（仅可从这里选择回复者/点赞者）：${contactNames.join('、') || '无'}
+- 隐私硬约束：${visibilityRule}
 ${aiImageNotes.length > 0 ? `\n- 图片内容参考（含多模态图片数据）：\n${aiImageNotes.join('\n')}` : ''}
 用户行为：
 - 类型：${actionTypeText}
@@ -1475,6 +1509,14 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
                     if (!liveMoment) {
                         console.warn('⚠️ [朋友圈] 目标动态已不存在，停止写入互动:', momentId);
                         break;
+                    }
+                    const liveContact = this.app.wechatData.findContactByNameLoose?.(
+                        reactionName,
+                        { includeChats: false }
+                    ) || reactionName;
+                    if (this.app.wechatData.canContactViewMoment?.(liveMoment, liveContact) === false) {
+                        console.warn('⚠️ [朋友圈] 已拦截无权查看动态的好友互动:', reactionName);
+                        continue;
                     }
 
                     if (reaction.type === 'comment' && reaction.text) {
@@ -1530,7 +1572,8 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
             if (authorAliases.has(raw)) {
                 // 发布者就是用户本人时，禁止自动代替用户发言
                 if (momentAuthor && userName && momentAuthor === userName) return '';
-                if (momentAuthor) return momentAuthor;
+                if (momentAuthor && allowedContactSet.has(momentAuthor)) return momentAuthor;
+                return '';
             }
             if (raw === '我' || raw === '自己' || raw === '{{user}}') {
                 return '';
@@ -1543,8 +1586,12 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
         const ensureReplyTo = (replyTo) => {
             const cleaned = normalizeName(replyTo || '');
             if (!cleaned) return String(defaultReplyTo || '').trim() || null;
-            if (authorAliases.has(cleaned)) return momentAuthor || String(defaultReplyTo || '').trim() || null;
-            return cleaned;
+            if (authorAliases.has(cleaned)) {
+                if (momentAuthor === userName || allowedContactSet.has(momentAuthor)) return momentAuthor;
+                return String(defaultReplyTo || '').trim() || null;
+            }
+            if (cleaned === userName || allowedContactSet.has(cleaned)) return cleaned;
+            return String(defaultReplyTo || '').trim() || null;
         };
 
         const parseXmlLike = (rawText) => {
@@ -2193,6 +2240,184 @@ ${momentsPrompt}
     // 📝 发朋友圈功能
     // ========================================
 
+    _getPendingMomentVisibilitySummary() {
+        const visibility = this.pendingMomentVisibility || {};
+        const selectedCount = Math.max(
+            Array.isArray(visibility.contactIds) ? visibility.contactIds.length : 0,
+            Array.isArray(visibility.contactNames) ? visibility.contactNames.length : 0
+        );
+        if (visibility.type === 'exclude') return `不给${selectedCount}人看`;
+        if (visibility.type === 'include') return `仅${selectedCount}人可看`;
+        return '公开';
+    }
+
+    _updatePendingMomentVisibilitySummary() {
+        const summary = document.getElementById('wechat-moment-visibility-summary');
+        if (summary) summary.textContent = this._getPendingMomentVisibilitySummary();
+    }
+
+    showMomentVisibilityPicker() {
+        document.querySelector('.wechat-moment-visibility-overlay')?.remove();
+
+        const contacts = (this.app.wechatData.getContacts() || [])
+            .filter(contact => String(contact?.name || '').trim());
+        const current = this.pendingMomentVisibility || {
+            type: 'public',
+            contactIds: [],
+            contactNames: []
+        };
+        let draftType = ['exclude', 'include'].includes(current.type) ? current.type : 'public';
+        const currentIds = new Set(Array.isArray(current.contactIds) ? current.contactIds : []);
+        const currentNames = new Set(Array.isArray(current.contactNames) ? current.contactNames : []);
+        const getContactKey = (contact) => {
+            const id = String(contact?.id || '').trim();
+            const name = String(contact?.name || '').trim();
+            return id ? `id:${id}` : `name:${name}`;
+        };
+        const selectedContactKeys = new Set(
+            contacts
+                .filter(contact => {
+                    const id = String(contact?.id || '').trim();
+                    const name = String(contact?.name || '').trim();
+                    return (id && currentIds.has(id)) || (name && currentNames.has(name));
+                })
+                .map(getContactKey)
+        );
+
+        const overlay = document.createElement('div');
+        overlay.className = 'wechat-moment-visibility-overlay';
+        overlay.innerHTML = `
+            <div class="wechat-moment-visibility-dialog" role="dialog" aria-modal="true" aria-label="谁可以看">
+                <div class="wechat-moment-visibility-header">
+                    <button type="button" class="wechat-moment-visibility-close" aria-label="关闭" title="关闭">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <div class="wechat-moment-visibility-title">谁可以看</div>
+                    <button type="button" class="wechat-moment-visibility-done">完成</button>
+                </div>
+                <div class="wechat-moment-visibility-modes">
+                    <button type="button" class="wechat-moment-visibility-mode" data-mode="public">
+                        <span>公开</span>
+                        <i class="fa-solid fa-check"></i>
+                    </button>
+                    <button type="button" class="wechat-moment-visibility-mode" data-mode="exclude">
+                        <span>不给谁看</span>
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                    <button type="button" class="wechat-moment-visibility-mode" data-mode="include">
+                        <span>仅给谁看</span>
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
+                <div class="wechat-moment-visibility-picker"></div>
+            </div>
+        `;
+
+        const dialog = overlay.querySelector('.wechat-moment-visibility-dialog');
+        const picker = overlay.querySelector('.wechat-moment-visibility-picker');
+        const doneButton = overlay.querySelector('.wechat-moment-visibility-done');
+        const close = () => overlay.remove();
+        const isContactSelected = (contact) => selectedContactKeys.has(getContactKey(contact));
+        const updateModeState = () => {
+            overlay.querySelectorAll('.wechat-moment-visibility-mode').forEach(button => {
+                const active = button.dataset.mode === draftType;
+                button.classList.toggle('is-active', active);
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+            doneButton.style.visibility = draftType === 'public' ? 'hidden' : 'visible';
+        };
+        const renderContactPicker = () => {
+            if (draftType === 'public') {
+                picker.innerHTML = '';
+                picker.classList.remove('is-visible');
+                updateModeState();
+                return;
+            }
+
+            picker.classList.add('is-visible');
+            picker.innerHTML = contacts.length > 0
+                ? `
+                    <div class="wechat-moment-visibility-selection-bar">
+                        <span>${draftType === 'exclude' ? '不给谁看' : '仅给谁看'}</span>
+                        <span class="wechat-moment-visibility-count">已选 0 人</span>
+                    </div>
+                    <div class="wechat-moment-visibility-list">
+                        ${contacts.map((contact, index) => `
+                            <label class="wechat-moment-visibility-contact">
+                                <input type="checkbox" data-contact-index="${index}" ${isContactSelected(contact) ? 'checked' : ''}>
+                                <span class="wechat-moment-visibility-avatar">
+                                    ${this.app.renderAvatar(contact.avatar, '👤', contact.name)}
+                                </span>
+                                <span class="wechat-moment-visibility-name">${this._escapeHtml(contact.name)}</span>
+                                <span class="wechat-moment-visibility-check"><i class="fa-solid fa-check"></i></span>
+                            </label>
+                        `).join('')}
+                    </div>
+                `
+                : '<div class="wechat-moment-visibility-empty">通讯录暂无好友</div>';
+
+            const updateCount = () => {
+                const count = picker.querySelectorAll('input[type="checkbox"]:checked').length;
+                const countNode = picker.querySelector('.wechat-moment-visibility-count');
+                if (countNode) countNode.textContent = `已选 ${count} 人`;
+            };
+            picker.querySelectorAll('input[data-contact-index]').forEach(input => {
+                input.addEventListener('change', () => {
+                    const contact = contacts[Number(input.dataset.contactIndex)];
+                    if (!contact) return;
+                    const key = getContactKey(contact);
+                    if (input.checked) {
+                        selectedContactKeys.add(key);
+                    } else {
+                        selectedContactKeys.delete(key);
+                    }
+                    updateCount();
+                });
+            });
+            updateCount();
+            updateModeState();
+        };
+
+        overlay.querySelectorAll('.wechat-moment-visibility-mode').forEach(button => {
+            button.addEventListener('click', () => {
+                draftType = button.dataset.mode || 'public';
+                if (draftType === 'public') {
+                    this.pendingMomentVisibility = {
+                        type: 'public',
+                        contactIds: [],
+                        contactNames: []
+                    };
+                    this._updatePendingMomentVisibilitySummary();
+                    close();
+                    return;
+                }
+                renderContactPicker();
+            });
+        });
+        doneButton.addEventListener('click', () => {
+            const selectedContacts = contacts.filter(isContactSelected);
+            if (draftType !== 'public' && selectedContacts.length === 0) {
+                this.app.phoneShell.showNotification('提示', '请至少选择一位好友', '⚠️');
+                return;
+            }
+            this.pendingMomentVisibility = {
+                type: draftType,
+                contactIds: selectedContacts.map(contact => String(contact.id || '').trim()).filter(Boolean),
+                contactNames: selectedContacts.map(contact => String(contact.name || '').trim()).filter(Boolean)
+            };
+            this._updatePendingMomentVisibilitySummary();
+            close();
+        });
+        overlay.querySelector('.wechat-moment-visibility-close')?.addEventListener('click', close);
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) close();
+        });
+        dialog?.addEventListener('click', event => event.stopPropagation());
+
+        document.querySelector('#phone-panel-content .phone-screen')?.appendChild(overlay);
+        renderContactPicker();
+    }
+
     // 显示发朋友圈页面
     showPostMomentPage() {
         this._startPostMomentDraft();
@@ -2262,15 +2487,13 @@ ${momentsPrompt}
                         </label>
                     </div>
 
-                    <!-- 可见范围（简化版） -->
-                    <div style="margin-top: 15px; padding: 12px 15px; background: #f7f7f7; border-radius: 8px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <span style="font-size: 14px; color: #333;">谁可以看</span>
-                            <span style="font-size: 14px; color: #999;">
-                                公开 <i class="fa-solid fa-chevron-right" style="font-size: 12px; margin-left: 5px;"></i>
-                            </span>
-                        </div>
-                    </div>
+                    <button type="button" class="wechat-moment-visibility-trigger" id="wechat-moment-visibility-trigger">
+                        <span>谁可以看</span>
+                        <span class="wechat-moment-visibility-value">
+                            <span id="wechat-moment-visibility-summary">${this._getPendingMomentVisibilitySummary()}</span>
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </span>
+                    </button>
                 </div>
             </div>
         `;
@@ -2300,6 +2523,10 @@ ${momentsPrompt}
             e.target.value = ''; 
             
             this.handleImageUpload(fileArray);
+        });
+
+        document.getElementById('wechat-moment-visibility-trigger')?.addEventListener('click', () => {
+            this.showMomentVisibilityPicker();
         });
 
         // 发表按钮
@@ -2411,6 +2638,17 @@ ${momentsPrompt}
         // 获取用户信息
         const userInfo = this.app.wechatData.getUserInfo();
         const currentPhoneTime = this._getCurrentPhoneTimeSnapshot();
+        const visibility = this.pendingMomentVisibility || {
+            type: 'public',
+            contactIds: [],
+            contactNames: []
+        };
+        if (visibility.type !== 'public'
+            && (!Array.isArray(visibility.contactIds) || visibility.contactIds.length === 0)
+            && (!Array.isArray(visibility.contactNames) || visibility.contactNames.length === 0)) {
+            this.app.phoneShell.showNotification('提示', '请先设置朋友圈可见好友', '⚠️');
+            return;
+        }
 
         // 创建朋友圈
         const moment = {
@@ -2426,7 +2664,12 @@ ${momentsPrompt}
             likes: 0,
             likeList: [],
             comments: 0,
-            commentList: []
+            commentList: [],
+            visibility: {
+                type: visibility.type,
+                contactIds: Array.isArray(visibility.contactIds) ? [...visibility.contactIds] : [],
+                contactNames: Array.isArray(visibility.contactNames) ? [...visibility.contactNames] : []
+            }
         };
 
         // 添加到数据
