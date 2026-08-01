@@ -7,7 +7,7 @@
 
 import { PHONE_CONFIG } from '../../config/apps.js';
 
-export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.0&r=20260726-album-media', import.meta.url).href;
+export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.1&r=20260802-album-toolbar', import.meta.url).href;
 
 export class AlbumView {
     constructor(app) {
@@ -72,12 +72,7 @@ export class AlbumView {
                             <button type="button" class="album-icon-btn album-danger-btn" id="album-delete-selected" aria-label="删除所选" ${selectedCount ? '' : 'disabled'}>
                                 <i class="fa-regular fa-trash-can"></i>
                             </button>
-                        ` : `
-                            <button type="button" class="album-source-filter" id="album-source-filter" aria-haspopup="menu" aria-expanded="false">
-                                <span>分类</span>
-                                <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
-                            </button>
-                        `}
+                        ` : ''}
                     </div>
                 </header>
                 ${this.selectionMode ? '' : this.renderSourceMenu(sourceGroups)}
@@ -85,7 +80,13 @@ export class AlbumView {
                     ${this.images.length ? `
                         <div class="album-body-toolbar">
                             <span>${this.escapeHtml(activeSourceLabel)} · ${visibleImages.length} 项</span>
-                            <button type="button" id="album-select-toggle">选择</button>
+                            <div class="album-body-toolbar-actions">
+                                <button type="button" class="album-source-filter" id="album-source-filter" aria-haspopup="menu" aria-expanded="false">
+                                    <span>分类</span>
+                                    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                                </button>
+                                <button type="button" id="album-select-toggle">选择</button>
+                            </div>
                         </div>
                         ${this.renderSourceSections(visibleImages)}
                         <div class="album-total-count">共 ${this.images.length} 个项目</div>

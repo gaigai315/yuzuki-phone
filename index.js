@@ -1044,7 +1044,7 @@ if (window.GGP_Loaded) {
             import('./config/storage.js'),
             import('./config/api-manager.js'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20260726-video-background'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20260802-moments-named-images'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
         import('./config/image-generation-manager.js?v=20260726-video-background'),
             import('./config/worldbook-manager.js')
@@ -4759,6 +4759,8 @@ if (window.GGP_Loaded) {
     // 🎵 解析 <Music> 卡片内容 (增强防呆版)
     function parseMusicCard(content) {
         const safe = String(content || '').replace(/｜/g, '|');
+        const fieldNames = ['Char', 'Meta', 'Stats', 'Thought', 'Modules', 'Replies', 'Media', 'Likes'];
+        const normalizedFieldNames = new Set(fieldNames.map(name => name.toLowerCase()));
 
         const get = (tag) => {
             // 🔥 使用全局匹配 /gi，兼容字段名两侧空格
@@ -4799,7 +4801,7 @@ if (window.GGP_Loaded) {
             return normalized;
         };
 
-        return {
+        const parsed = {
             char: get('Char'),
             meta: get('Meta'),
             stats: get('Stats'),
@@ -4809,6 +4811,52 @@ if (window.GGP_Loaded) {
             media: get('Media'),
             likes: get('Likes')
         };
+
+        // 兼容 AI 偶尔漏掉字段名的旧式七行格式。严格要求七个独立方括号行，
+        // 避免将正文中的普通 [图片]、[红包] 等内容误识别成音乐卡片。
+        const positionalLines = [...safe.matchAll(/^\s*\[([^\]\r\n]+)\]\s*$/gm)]
+            .map(match => String(match[1] || '').split('|').map(part => part.trim()));
+        if (positionalLines.length !== 7) return parsed;
+        const isFullyUnlabeledLegacy = positionalLines.every(line => {
+            const firstPart = String(line[0] || '').toLowerCase();
+            return !normalizedFieldNames.has(firstPart);
+        });
+
+        const positionalFields = [
+            ['char', 'Char'],
+            ['meta', 'Meta'],
+            ['stats', 'Stats'],
+            ['thought', 'Thought'],
+            ['replies', 'Replies'],
+            ['media', 'Media'],
+            ['likes', 'Likes']
+        ];
+
+        positionalFields.forEach(([key, expectedField], index) => {
+            if (parsed[key].length > 0) return;
+
+            const line = positionalLines[index] || [];
+            const firstPart = String(line[0] || '').toLowerCase();
+            const hasFieldPrefix = normalizedFieldNames.has(firstPart);
+            if (hasFieldPrefix && firstPart !== expectedField.toLowerCase()) return;
+
+            let values = (hasFieldPrefix ? line.slice(1) : line).filter(Boolean);
+            if (!hasFieldPrefix && key === 'char' && values.length > 2) {
+                const handle = values.slice(1).find(value => value.startsWith('@'));
+                values = [values[0], handle || values[1]].filter(Boolean);
+            }
+            if (isFullyUnlabeledLegacy && key === 'media' && values.length >= 2) {
+                const songFirst = [];
+                for (let i = 0; i + 1 < values.length; i += 2) {
+                    songFirst.push(values[i + 1], values[i]);
+                }
+                values = songFirst;
+            }
+
+            parsed[key] = values;
+        });
+
+        return parsed;
     }
 
     function parsePhoneCommands(text) {
@@ -5063,7 +5111,7 @@ if (window.GGP_Loaded) {
 
     async function ensureWechatAppForBackground() {
         try {
-            const module = await import('./apps/wechat/wechat-app.js');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260802-chat-moments-feed');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             if (!window.VirtualPhone.wechatApp) {
                 window.VirtualPhone.wechatApp = new module.WechatApp(phoneShell, storage);
@@ -6345,7 +6393,7 @@ if (window.GGP_Loaded) {
         const chatId = context?.chatId || 'default';
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20260802-chat-moments-feed').then(module => {
             let wechatData;
 
             // 🔥🔥🔥 关键修复：确保 VirtualPhone 对象存在！🔥🔥🔥
@@ -7032,7 +7080,7 @@ if (window.GGP_Loaded) {
             const content = rawContent.trim();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20260802-chat-moments-feed').then(async module => {
                 let wechatData;
                 const context = getContext();
                 const chatId = context?.chatId || 'default';
@@ -7302,6 +7350,52 @@ if (window.GGP_Loaded) {
         }
     }
 
+    async function processWechatMomentsPayloads(text, metadata = {}) {
+        const sourceText = String(text || '');
+        if (!/"moments"\s*:/.test(sourceText)) return null;
+
+        try {
+            const module = await import('./apps/wechat/wechat-data.js?v=20260802-chat-moments-feed');
+            if (!window.VirtualPhone) window.VirtualPhone = {};
+
+            const context = getContext();
+            const chatId = context?.chatId || 'default';
+            if (_lastWechatChatId && _lastWechatChatId !== chatId) {
+                window.VirtualPhone.wechatApp = null;
+                window.VirtualPhone.cachedWechatData = null;
+                window.currentWechatApp = null;
+                window.ggp_currentWechatApp = null;
+            }
+            _lastWechatChatId = chatId;
+
+            const existingWechatData = window.VirtualPhone.cachedWechatData
+                || window.VirtualPhone.wechatApp?.wechatData
+                || null;
+            if (!window.VirtualPhone.cachedWechatData) {
+                window.VirtualPhone.cachedWechatData = existingWechatData
+                    || new module.WechatData(storage);
+            }
+            if (window.VirtualPhone.wechatApp
+                && window.VirtualPhone.wechatApp.wechatData !== window.VirtualPhone.cachedWechatData) {
+                window.VirtualPhone.wechatApp.wechatData = window.VirtualPhone.cachedWechatData;
+            }
+
+            const wechatData = window.VirtualPhone.cachedWechatData;
+            const floor = Number(metadata.tavernMessageIndex);
+            if (!existingWechatData && metadata.fromMainChatTag === true && Number.isFinite(floor)) {
+                if (metadata.exactReplayForMessage === true) {
+                    wechatData.removeMainChatTagMessagesAtFloor?.(floor);
+                } else {
+                    wechatData.rollbackToFloor?.(floor);
+                }
+            }
+            return wechatData.ingestMomentsFromChatResponse?.(sourceText, metadata) || null;
+        } catch (error) {
+            console.warn('⚠️ [朋友圈] 微信并行动态解析失败:', error);
+            return null;
+        }
+    }
+
     function processWechatLikeTagsInSourceOrder(text, tavernIndex, batchId, isHistoryReplay = false, exactReplayForMessage = false) {
         const sourceText = String(text || '');
         if (!sourceText) return;
@@ -7538,6 +7632,13 @@ if (window.GGP_Loaded) {
 
                 // 🔥 新增：让 AI 也能使用 <回复xx> 标签替用户发消息
                 if (!isHistoryReplay) {
+                    processWechatMomentsPayloads(text, {
+                        tavernMessageIndex: index,
+                        batchId: currentBatchId,
+                        fromMainChatTag: true,
+                        exactReplayForMessage,
+                        markUnread: true
+                    });
                     processWechatLikeTagsInSourceOrder(text, index, currentBatchId, isHistoryReplay, exactReplayForMessage);
                     processMofoTags(text, { source: 'assistant', messageIndex: index }).then(updates => {
                         // 只要有魔坊条目匹配到更新，优先弹 changed 的；否则弹第一个匹配项
@@ -7805,7 +7906,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            const module = await import('./apps/wechat/wechat-app.js');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260802-chat-moments-feed');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             // 单例复用
@@ -8461,7 +8562,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.settingsApp.render();
                     });
                 } else if (appId === 'wechat') {
-                    import('./apps/wechat/wechat-app.js')
+                    import('./apps/wechat/wechat-app.js?v=20260802-chat-moments-feed')
                         .then(module => {
                             try {
                                 // 🔥 单例模式：只在第一次打开时创建微信实例，拒绝重复绑定事件
@@ -8676,7 +8777,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '游戏模块加载失败', '❌');
                         });
                 } else if (appId === 'album') {
-                    import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=20260726-album-media`)
+                    import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=20260802-album-toolbar`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.albumApp) {
@@ -8794,7 +8895,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20260802-chat-moments-feed');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -9193,7 +9294,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20260802-chat-moments-feed');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;

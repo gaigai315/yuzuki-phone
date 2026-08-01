@@ -10,10 +10,10 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20260731-moments-visibility';
+import { ChatView } from './chat-view.js?v=20260802-chat-moments-feed';
 import { ContactsView } from './contacts-view.js';
-import { MomentsView } from './moments-view.js?v=20260731-moments-visibility';
-import { WechatData } from './wechat-data.js?v=20260731-moments-visibility';
+import { MomentsView } from './moments-view.js?v=20260802-chat-moments-feed';
+import { WechatData } from './wechat-data.js?v=20260802-chat-moments-feed';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
 import {
@@ -507,9 +507,17 @@ export class WechatApp {
     color: #07c160;
 }
 
-.wechat-tab i {
+.wechat-tab i,
+.wechat-tab svg {
     font-size: 16px;
     margin-bottom: 1px;
+}
+
+.wechat-tab svg {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 17px;
+    stroke: currentColor;
 }
 
 .tab-badge {
@@ -524,6 +532,19 @@ export class WechatApp {
     border-radius: 10px;
     min-width: 16px;
     text-align: center;
+}
+
+.wechat-tab .wechat-moments-unread-dot {
+    position: absolute;
+    top: 2px;
+    left: calc(50% + 7px);
+    width: 7px;
+    height: 7px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.92);
+    border-radius: 50%;
+    background: #fa5151;
+    pointer-events: none;
 }
 
 /* ========================================
@@ -4403,8 +4424,17 @@ export class WechatApp {
                             <span>通讯录</span>
                         </div>
                         <div class="wechat-tab ${this.currentView === 'discover' ? 'active' : ''}" data-view="discover">
-                            <i class="fa-solid fa-circle-nodes"></i>
+                            <svg class="wechat-moments-tab-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="m14.31 8 5.74 9.94"></path>
+                                <path d="M9.69 8h11.48"></path>
+                                <path d="m7.38 12 5.74-9.94"></path>
+                                <path d="M9.69 16 3.95 6.06"></path>
+                                <path d="M14.31 16H2.83"></path>
+                                <path d="m16.62 12-5.74 9.94"></path>
+                            </svg>
                             <span>朋友圈</span>
+                            ${this.wechatData.hasUnreadMoments?.() ? '<span class="wechat-moments-unread-dot" aria-label="有未查看的朋友圈"></span>' : ''}
                         </div>
                         <div class="wechat-tab ${this.currentView === 'me' ? 'active' : ''}" data-view="me">
                             <i class="fa-solid fa-user"></i>
@@ -5093,6 +5123,23 @@ export class WechatApp {
             </div>
         </div>
     `;
+    }
+
+    syncMomentsUnreadIndicator() {
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const momentsTab = currentView.querySelector?.('.wechat-app .wechat-tab[data-view="discover"]');
+        if (!momentsTab) return;
+
+        const shouldShow = this.wechatData.hasUnreadMoments?.() === true;
+        const existingDot = momentsTab.querySelector('.wechat-moments-unread-dot');
+        if (shouldShow && !existingDot) {
+            const dot = document.createElement('span');
+            dot.className = 'wechat-moments-unread-dot';
+            dot.setAttribute('aria-label', '有未查看的朋友圈');
+            momentsTab.appendChild(dot);
+        } else if (!shouldShow && existingDot) {
+            existingDot.remove();
+        }
     }
 
     bindEvents() {

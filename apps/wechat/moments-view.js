@@ -34,6 +34,7 @@ export class MomentsView {
 
     // 在wechat-app的renderDiscover中调用
     renderMomentsPage() {
+        this.app.wechatData.markAllMomentsRead?.();
         const moments = this.app.wechatData.getMoments();
         const userInfo = this.app.wechatData.getUserInfo();
         const bgImage = userInfo.momentsBackground;
@@ -646,12 +647,48 @@ export class MomentsView {
         return /^(data:image\/|data:application\/octet-stream;base64,|https?:\/\/|\/backgrounds\/)/i.test(text);
     }
 
+    _normalizeMomentReferenceNames(value = '') {
+        const seen = new Set();
+        return String(value || '')
+            .split(/[,，、]+/)
+            .map(name => name.trim().replace(/[<>"'`]/g, '').slice(0, 80))
+            .filter(name => {
+                if (!name || seen.has(name)) return false;
+                seen.add(name);
+                return true;
+            });
+    }
+
+    _normalizeMomentImageTags(value = '') {
+        return String(value || '')
+            .split(/[,，\n]+/)
+            .map(tag => tag.trim())
+            .filter(Boolean);
+    }
+
+    _mergeMomentImageTags(...tagGroups) {
+        const seen = new Set();
+        return tagGroups
+            .flatMap(group => this._normalizeMomentImageTags(group))
+            .filter(tag => {
+                if (seen.has(tag)) return false;
+                seen.add(tag);
+                return true;
+            })
+            .join(', ');
+    }
+
     _parseMomentImageItem(rawValue) {
         const imageStr = String(rawValue || '').trim();
         let body = imageStr;
-        const taggedMatch = imageStr.match(/^\[(用户照片|个人图片|图片|视频)\]\s*([\s\S]*)$/);
-        const mediaType = taggedMatch ? String(taggedMatch[1] || '').trim() : '图片';
+        const taggedMatch = imageStr.match(/^\[(用户照片|图片(?:-[^\]\r\n]+)?|视频)\]\s*([\s\S]*)$/);
+        let mediaType = taggedMatch ? String(taggedMatch[1] || '').trim() : '图片';
         if (taggedMatch) body = String(taggedMatch[2] || '').trim();
+        const namedImageMatch = /^图片-(.+)$/.exec(mediaType);
+        const referenceNames = this._normalizeMomentReferenceNames(namedImageMatch?.[1] || '');
+        if (namedImageMatch) {
+            mediaType = referenceNames.length > 0 ? `图片-${referenceNames.join(',')}` : '图片';
+        }
         const unwrappedBody = body.replace(/^[（(]\s*|\s*[)）]$/g, '').trim();
         const directUrl = this._isDirectMomentImageUrl(body)
             ? body
@@ -675,14 +712,14 @@ export class MomentsView {
             promptText: promptText.trim(),
             descriptionText: descriptionText.trim(),
             mediaType,
-            usePersonalReference: mediaType === '个人图片',
-            useUserReference: mediaType === '用户照片'
+            useUserReference: mediaType === '用户照片',
+            referenceNames
         };
     }
 
     _parsePromptDescriptionPair(rawValue = '') {
         const raw = String(rawValue || '').trim()
-            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '');
+            .replace(/^\[(?:用户照片|图片(?:-[^\]\r\n]+)?|视频)\]\s*/i, '');
         const parts = [];
         const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
         let match;
@@ -849,15 +886,16 @@ export class MomentsView {
         const parsedImage = this._parseMomentImageItem(Array.isArray(moment.images) ? moment.images[index] : '');
         const mediaType = parsedImage.mediaType || '图片';
         const displayDescription = String(descriptionText || parsedImage.descriptionText || promptText || '').trim();
-        const usePersonalReference = parsedImage.usePersonalReference === true;
-        const useUserReference = parsedImage.useUserReference === true;
         if (clearPreviousImage && Array.isArray(moment.images)) {
             moment.images[index] = displayDescription && displayDescription !== promptText
                 ? `[${mediaType}]（${displayDescription}）（${promptText}）`
                 : `[${mediaType}]（${promptText}）`;
         }
-        const novelAIReferences = await this._buildMomentPersonalImageReferences(moment, index);
-        const generationPrompt = this._buildMomentImagePromptWithContactTags(moment, index, promptText);
+        const generationContext = await this._buildMomentImageGenerationContext(moment, index, promptText);
+        const generationPrompt = generationContext.prompt;
+        const novelAIReferences = generationContext.references;
+        const referenceNames = generationContext.referenceNames;
+        const useUserReference = generationContext.useUserReference;
         const generationId = `moment_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
         this._setMomentImageState(moment, index, {
@@ -867,8 +905,8 @@ export class MomentsView {
             description: displayDescription,
             generationId,
             mediaType,
-            usePersonalReference,
             useUserReference,
+            referenceNames,
             generatedImageUrl: '',
             imageProvider: resolvedImageProvider
         });
@@ -899,8 +937,8 @@ export class MomentsView {
                 prompt: promptText,
                 description: displayDescription,
                 mediaType,
-                usePersonalReference,
                 useUserReference,
+                referenceNames,
                 generatedImageUrl: imageUrl,
                 imageModel: String(result?.model || '').trim(),
                 imageProvider: String(result?.provider || '').trim(),
@@ -920,8 +958,8 @@ export class MomentsView {
                 prompt: promptText,
                 description: displayDescription,
                 mediaType,
-                usePersonalReference,
                 useUserReference,
+                referenceNames,
                 generatedImageUrl: '',
                 imageProvider: resolvedImageProvider
             });
@@ -1041,73 +1079,139 @@ export class MomentsView {
         return dataUrl;
     }
 
-    _resolveMomentPersonalReferenceContact(moment = null, index = 0) {
-        const parsed = this._parseMomentImageItem(Array.isArray(moment?.images) ? moment.images[index] : '');
-        const state = this._getMomentImageState(moment, index);
-        const usePersonalReference = parsed.usePersonalReference === true
-            || state?.usePersonalReference === true
-            || String(state?.mediaType || '').trim() === '个人图片';
-        if (!usePersonalReference || parsed.mediaType === '视频') return null;
+    _normalizeMomentIdentityName(value = '') {
+        return String(value || '')
+            .trim()
+            .replace(/^@+/, '')
+            .replace(/\s+/g, '')
+            .replace(/[（(][^（）()]*[）)]/g, '')
+            .toLowerCase();
+    }
 
-        const senderName = String(moment?.name || '').trim();
-        if (!senderName) return null;
-        const userName = String(this.app?.wechatData?.getUserInfo?.()?.name || '').trim();
-        if (userName && senderName === userName) return null;
+    _isMomentUserReferenceName(name = '') {
+        const lookupName = this._normalizeMomentIdentityName(name);
+        if (!lookupName) return false;
+        const userInfo = this.app?.wechatData?.getUserInfo?.() || {};
+        let storyUserName = '';
+        try {
+            const context = typeof SillyTavern !== 'undefined' && SillyTavern.getContext
+                ? SillyTavern.getContext()
+                : null;
+            storyUserName = String(context?.name1 || '').trim();
+        } catch (e) {
+            storyUserName = '';
+        }
+        return [userInfo?.name, storyUserName, '{{user}}']
+            .some(alias => this._normalizeMomentIdentityName(alias) === lookupName);
+    }
 
-        const contacts = this.app?.wechatData?.getContacts?.() || [];
-        return contacts.find(contact => this.app.wechatData._isSameLookupName?.(contact.name, senderName))
-            || contacts.find(contact => String(contact?.name || '').trim() === senderName)
+    _resolveMomentReferenceContact(name = '', contacts = []) {
+        const safeName = String(name || '').trim();
+        if (!safeName) return null;
+        return this.app?.wechatData?.findContactByNameLoose?.(safeName, { includeChats: false })
+            || contacts.find(contact => this.app?.wechatData?._isSameLookupName?.(contact?.name, safeName))
+            || contacts.find(contact => String(contact?.name || '').trim() === safeName)
             || null;
     }
 
-    _buildMomentImagePromptWithContactTags(moment = null, index = 0, promptText = '') {
+    async _buildMomentImageGenerationContext(moment = null, index = 0, promptText = '') {
         const parsedPrompt = this._parsePromptDescriptionPair(promptText);
         const basePrompt = String(parsedPrompt.prompt || promptText || '').trim();
         const parsed = this._parseMomentImageItem(Array.isArray(moment?.images) ? moment.images[index] : '');
         const state = this._getMomentImageState(moment, index);
-        const useUserReference = parsed.useUserReference === true
+        const referenceNames = parsed.referenceNames.length > 0
+            ? parsed.referenceNames
+            : this._normalizeMomentReferenceNames(state?.referenceNames || '');
+        let useUserReference = parsed.useUserReference === true
             || state?.useUserReference === true
             || String(state?.mediaType || '').trim() === '用户照片';
-        if (useUserReference) {
-            const userInfo = this.app?.wechatData?.getUserInfo?.() || {};
-            const userTags = String(userInfo?.naiPromptTags || userInfo?.imageTags || '')
-                .split(/[,，\n]+/)
-                .map(tag => tag.trim())
-                .filter(Boolean)
-                .join(', ');
-            if (!userTags) return basePrompt;
-            if (!basePrompt) return userTags;
-            return `${userTags}, ${basePrompt}`;
-        }
-        const contact = this._resolveMomentPersonalReferenceContact(moment, index);
-        const contactTags = String(contact?.naiPromptTags || contact?.imageTags || '')
-            .split(',')
-            .map(tag => tag.trim())
-            .filter(Boolean)
-            .join(', ');
-        if (!contactTags) return basePrompt;
-        if (!basePrompt) return contactTags;
-        return `${contactTags}, ${basePrompt}`;
-    }
 
-    async _buildMomentPersonalImageReferences(moment = null, index = 0) {
-        const contact = this._resolveMomentPersonalReferenceContact(moment, index);
-        if (!contact) return [];
-        const referenceImage = String(contact.naiReferenceImage || contact.referenceImage || '').trim();
-        if (!referenceImage || contact.naiReferenceEnabled === false || contact.naiReferenceEnabled === 'false') return [];
-        try {
-            const image = await this._imageUrlToMomentReferenceDataUrl(referenceImage);
-            if (!image) return [];
-            const rawStrength = Number(contact.naiReferenceStrength ?? 0.7);
-            const strength = Math.max(0, Math.min(1, Number.isFinite(rawStrength) ? rawStrength : 0.7));
-            const rawInfo = Number(contact.naiReferenceInformationExtracted ?? 1);
-            const informationExtracted = Math.max(0, Math.min(1, Number.isFinite(rawInfo) ? rawInfo : 1));
-            return [{ image, strength, informationExtracted }];
-        } catch (err) {
-            console.warn('[Moments NAI] 个人形象参考图读取失败，已跳过:', err);
-            this.app?.phoneShell?.showNotification?.('朋友圈', '个人形象参考图读取失败，本次将不使用参考图', '⚠️');
-            return [];
+        if (!useUserReference && referenceNames.length === 0) {
+            return { prompt: basePrompt, references: [], referenceNames: [], useUserReference: false };
         }
+
+        const contacts = this.app?.wechatData?.getContacts?.() || [];
+        const identityTagGroups = [];
+        const referenceTasks = [];
+        const skippedNames = [];
+        const seenEntities = new Set();
+
+        const addEntity = (entity, fallbackName = '') => {
+            if (!entity) return;
+            const entityName = String(entity?.name || fallbackName || '').trim();
+            const entityKey = String(entity?.id || '').trim()
+                || this._normalizeMomentIdentityName(entityName);
+            if (entityKey && seenEntities.has(entityKey)) return;
+            if (entityKey) seenEntities.add(entityKey);
+
+            const tags = String(entity?.naiPromptTags || entity?.imageTags || '').trim();
+            if (tags) identityTagGroups.push(tags);
+
+            const referenceImage = String(entity?.naiReferenceImage || entity?.referenceImage || '').trim();
+            const referenceEnabled = entity?.naiReferenceEnabled !== false
+                && entity?.naiReferenceEnabled !== 'false';
+            if (!referenceImage || !referenceEnabled) return;
+
+            referenceTasks.push((async () => {
+                try {
+                    const image = await this._imageUrlToMomentReferenceDataUrl(referenceImage);
+                    if (!image) throw new Error('参考图不是可用图片');
+                    const rawStrength = Number(entity?.naiReferenceStrength ?? 0.7);
+                    const rawInformation = Number(entity?.naiReferenceInformationExtracted ?? 1);
+                    return {
+                        name: entityName || fallbackName,
+                        reference: {
+                            image,
+                            strength: Math.max(0, Math.min(1, Number.isFinite(rawStrength) ? rawStrength : 0.7)),
+                            informationExtracted: Math.max(0, Math.min(1, Number.isFinite(rawInformation) ? rawInformation : 1))
+                        }
+                    };
+                } catch (error) {
+                    return { name: entityName || fallbackName, error };
+                }
+            })());
+        };
+
+        referenceNames.forEach(name => {
+            if (this._isMomentUserReferenceName(name)) {
+                useUserReference = true;
+                return;
+            }
+            const contact = this._resolveMomentReferenceContact(name, contacts);
+            if (!contact) {
+                skippedNames.push(name);
+                return;
+            }
+            addEntity(contact, name);
+        });
+
+        if (useUserReference) {
+            addEntity(this.app?.wechatData?.getUserInfo?.() || {}, '{{user}}');
+        }
+
+        const referenceResults = await Promise.all(referenceTasks);
+        const references = referenceResults
+            .map(item => item?.reference || null)
+            .filter(Boolean);
+        const failedNames = referenceResults
+            .filter(item => item?.error)
+            .map(item => item.name)
+            .filter(Boolean);
+
+        if (skippedNames.length > 0) {
+            console.warn('[Moments Image] 未找到对应微信好友，已跳过固定Tag与参考图:', skippedNames);
+        }
+        if (failedNames.length > 0) {
+            console.warn('[Moments Image] 参考图读取失败，已跳过:', failedNames);
+            this.app?.phoneShell?.showNotification?.('朋友圈', `参考图读取失败：${failedNames.join('、')}`, '⚠️');
+        }
+
+        return {
+            prompt: this._mergeMomentImageTags(...identityTagGroups, basePrompt),
+            references,
+            referenceNames,
+            useUserReference
+        };
     }
 
     // 显示操作弹窗
@@ -1734,28 +1838,6 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
         return normalized;
     }
 
-    _formatMomentPersonalImageTagInfo(contacts = []) {
-        const rows = (Array.isArray(contacts) ? contacts : [])
-            .map((contact) => {
-                const name = String(contact?.name || '').trim();
-                const tags = String(contact?.naiPromptTags || contact?.imageTags || '')
-                    .split(/[,，\n]+/)
-                    .map(tag => tag.trim())
-                    .filter(Boolean)
-                    .join(', ');
-                return name && tags ? `${name}：${tags}` : '';
-            })
-            .filter(Boolean);
-        const userInfo = this.app?.wechatData?.getUserInfo?.() || {};
-        const userTags = String(userInfo?.naiPromptTags || userInfo?.imageTags || '')
-            .split(/[,，\n]+/)
-            .map(tag => tag.trim())
-            .filter(Boolean)
-            .join(', ');
-        if (userTags) rows.unshift(`{{user}}：${userTags}`);
-        return rows.length > 0 ? rows.join('\n') : '暂无';
-    }
-
     _isHoneyMomentContact(contact = {}) {
         const sourceApp = String(contact?.sourceApp || contact?.extra?.sourceApp || '').trim().toLowerCase();
         const sourceLabel = String(contact?.sourceLabel || contact?.extra?.sourceLabel || '').trim();
@@ -1798,14 +1880,7 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
         if (!name) return '';
 
         const relation = String(contact?.relation || '好友').trim() || '好友';
-        const naiTags = String(contact?.naiPromptTags || contact?.imageTags || '').trim();
-        const hasReferenceImage = !!String(contact?.naiReferenceImage || contact?.referenceImage || '').trim()
-            && contact?.naiReferenceEnabled !== false
-            && contact?.naiReferenceEnabled !== 'false';
-
         const notes = [];
-        if (naiTags) notes.push(`专属生图Tag: ${this._trimMomentPromptText(naiTags, 180)}`);
-        if (hasReferenceImage) notes.push('已设置个人形象参考图');
 
         if (this._isHoneyMomentContact(contact)) {
             const sourceLabel = String(contact?.sourceLabel || '').trim();
@@ -1842,7 +1917,9 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
 
             // 获取朋友圈提示词
             const promptManager = window.VirtualPhone?.promptManager;
-            let momentsPrompt = promptManager?.getPromptForFeature('wechat', 'moments') || '';
+            if (!promptManager?.renderPromptForFeature) {
+                throw new Error('朋友圈提示词管理器未初始化');
+            }
 
             // 获取时间
             const timeManager = window.VirtualPhone?.timeManager;
@@ -1873,56 +1950,14 @@ ${memoryLines.slice(0, 10).join('\n')}
             const contactsInfo = (await Promise.all(contacts.map(c => this._buildMomentContactInfo(c))))
                 .filter(Boolean)
                 .join('、');
-            const personalImageTagInfo = this._formatMomentPersonalImageTagInfo(contacts);
-            momentsPrompt = String(momentsPrompt || '').replace(/\{\{personalImageTagInfo\}\}/g, personalImageTagInfo);
-
-            // 构建完整提示词
-            const prompt = `【朋友圈生成任务】
-
-当前剧情时间：${currentTime.date} ${currentTime.time}
-
-${memoryInfo}
-
-可用联系人列表：
-${contactsInfo}
-
-请根据已注入的角色卡、用户信息、世界书和最近剧情对话，为联系人生成符合当前故事情境的朋友圈动态。
-带有“蜜语资料”的联系人也是微信通讯录好友；生成朋友圈时应参考其蜜语来源、对外话术、隐藏设定和互动摘要，不要忽略这类联系人。朋友圈是公开/半公开动态，请把私密设定转化为适合朋友圈可见范围的生活化表达，不要直接泄露隐私细节。
-
-要求：
-1. 每个联系人生成0-1条朋友圈（根据角色性格决定是否发）
-2. 内容要符合角色性格、当前剧情和世界观设定
-3. 可以包含其他联系人的点赞和评论互动
-4. 时间要在当前剧情时间之前（几分钟到几小时前）
-5. 朋友圈内容要反映角色的日常生活、情感状态或与剧情相关的事件
-6. 要参考最近的剧情对话，体现角色当前的状态
-7. 如果朋友圈需要配图，images 数组只能写 [图片]（中文图片描述）（English NovelAI tags）、[个人图片]（中文图片描述）（English NovelAI tags）或 [用户照片]（中文图片描述）（English NovelAI tags）。
-8. [个人图片] 只用于画面包含发布者本人脸、自拍、全身照、试衣照、生活照等自身形象；[用户照片] 只用于画面包含{{user}}本人，标签名不要写用户姓名；风景、食物、宠物、截图、物品、别人或无人物画面必须用 [图片]。
-9. 第一个括号必须写中文图片描述，供朋友圈卡片背面展示；第二个括号只能写英文逗号分隔的 NAI 生图 tag，不要写中文、解释或完整句子，专门供生图使用。
-
-输出格式（只返回JSON）：
-\`\`\`json
-{
-  "moments": [
-    {
-      "name": "联系人名字",
-      "avatar": "表情符号",
-      "text": "朋友圈文字内容",
-      "images": ["[图片]（午后的咖啡杯放在靠窗桌边，阳光照着桌面）（coffee cup, window table, afternoon sunlight, phone photo, anime illustration）"],
-      "time": "几分钟前/几小时前",
-      "likeList": ["点赞的人名"],
-      "commentList": [
-        {"name": "评论者", "text": "评论内容"},
-        {"name": "回复者", "text": "回复内容", "replyTo": "被回复者"}
-      ]
-    }
-  ]
-}
-\`\`\`
-
-${momentsPrompt}
-
-请生成朋友圈：`;
+            const prompt = promptManager.renderPromptForFeature('wechat', 'moments', {
+                currentStoryTime: `${currentTime.date} ${currentTime.time}`,
+                memoryInfo,
+                contactsInfo
+            });
+            if (!String(prompt || '').trim()) {
+                throw new Error('朋友圈提示词为空，请在微信设置中恢复默认提示词');
+            }
 
 
             // 调用AI

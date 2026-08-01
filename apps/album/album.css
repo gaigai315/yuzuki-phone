@@ -177,10 +177,10 @@
 
 #phone-panel-content .phone-screen .album-source-menu {
     position: absolute;
-    top: 69px;
+    top: 108px;
     right: 12px;
     width: min(230px, calc(100% - 24px));
-    max-height: calc(100% - 84px);
+    max-height: calc(100% - 123px);
     overflow-y: auto;
     padding: 6px;
     box-sizing: border-box;
@@ -304,7 +304,17 @@
     line-height: 1.2;
 }
 
+#phone-panel-content .phone-screen .album-body-toolbar-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
 #phone-panel-content .phone-screen .album-body-toolbar button {
+    width: 48px !important;
+    min-width: 48px !important;
+    max-width: 48px;
     height: 26px !important;
     min-height: 26px !important;
     padding: 0 9px !important;
@@ -312,6 +322,11 @@
     background: transparent !important;
     color: #327ec5 !important;
     font-size: 11px !important;
+}
+
+#phone-panel-content .phone-screen .album-body-toolbar .album-source-filter {
+    gap: 3px;
+    padding: 0 6px !important;
 }
 
 #phone-panel-content .phone-screen .album-source-sections {

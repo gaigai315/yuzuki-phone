@@ -116,23 +116,32 @@ export class PromptManager {
                 ? builtIns.find(preset => String(preset?.id || '') === activeId)
                 : builtIns[0];
 
+            let content = '';
             if (builtInPreset) {
-                target.content = String(builtInPreset.content || '');
-                return;
+                content = String(builtInPreset.content || '');
+            } else {
+                const presets = Array.isArray(presetStore?.[app]?.[feature]) ? presetStore[app][feature] : [];
+                const activePreset = activeId ? presets.find(preset => String(preset?.id || '') === activeId) : null;
+                content = activePreset
+                    ? String(activePreset.content || '')
+                    : String((builtIns[0]?.content ?? defaultPrompt.content) || '');
             }
-
-            const presets = Array.isArray(presetStore?.[app]?.[feature]) ? presetStore[app][feature] : [];
-            const activePreset = activeId ? presets.find(preset => String(preset?.id || '') === activeId) : null;
-            target.content = activePreset
-                ? String(activePreset.content || '')
-                : String((builtIns[0]?.content ?? defaultPrompt.content) || '');
+            target.content = this._normalizePromptContent(app, feature, content);
         });
     }
 
     _setPromptContentInMemory(app, feature, content) {
         this.ensureLoaded();
         const target = this._getPromptNode(this.prompts, app, feature);
-        if (target) target.content = String(content || '');
+        if (target) target.content = this._normalizePromptContent(app, feature, content);
+    }
+
+    _normalizePromptContent(app, feature, content) {
+        const text = String(content || '');
+        if (app !== 'wechat' || feature !== 'moments') return text;
+        if (text.includes('{{currentStoryTime}}') || text.includes('【朋友圈生成任务】')) return text;
+        if (text.includes('【朋友圈生成规则】')) return this._getDefaultMomentsPrompt();
+        return text;
     }
 
     _getDefaultBuiltInPresetId(app, feature) {
@@ -520,6 +529,60 @@ date:{{STORY_DATE}}
         ].join('\n');
     }
 
+    _getDefaultMomentsPrompt() {
+        return `【朋友圈生成任务】
+
+请根据已注入的角色卡、用户信息、世界书、最近剧情对话以及上述信息，为联系人生成符合当前故事情境的朋友圈动态。
+当前剧情时间：{{currentStoryTime}}
+记忆信息：{{memoryInfo}}
+可用联系人列表：{{contactsInfo}}
+
+【核心生成规则】
+发布机制
+只为通讯录联系人生成朋友圈（每个联系人生成 0-1 条，视角色性格与发圈习惯而定）。
+绝对不要替用户（{{user}}）生成动态、点赞或评论。
+时间分布要合理错落（如“几分钟前”、“2小时前”等），须在当前剧情时间之前，不要全部集中在同一时间。
+内容与风格
+自然真实：文案必须像真人随手发的，符合角色性格、日常语气和世界观。严禁写成剧情总结、旁白或设定说明。
+内容多样：可以包含日常分享、心情感悟、美食风景、工作学习、兴趣爱好等，并合理反映角色近期的情感状态或剧情事件。
+隐私转化（关键）：带有“蜜语资料”的联系人也是微信好友。切勿在朋友圈直接泄露其私密设定或真实面目；必须将其隐藏设定巧妙转化为适合朋友圈可见范围的“生活化表达”。
+社交互动规则
+互动逻辑：关系亲密的好友更容易点赞和评论；评论内容和语气必须严格符合评论者的性格；可以有多人参与同一条朋友圈的互动。
+可见性限制：若朋友圈设定了“仅XX可看 / 仅XX不可看”，必须严格遵守该设定，只有拥有可见权限的好友才能点赞或回复。
+头像由系统根据联系人姓名自动匹配，无需在 JSON 中输出头像字段。
+
+【配图生成规则】
+① 当公开图片画面里不含②、③、④的情况下可使用通用配图格式：[图片]（中文图片描述）（English tags）。
+示例：[图片]（两个女生穿着便装并肩走在街边，背景是虚化的城市灯光）（2girls, adult character, street snapshot, casual outfits, walking side by side, blurred city background, anime illustration）
+
+② 当公开图片画面里角色仅含{{user}}本人时使用格式：[用户照片]（中文图片描述）（English tags），标签名禁止写用户姓名。
+
+③ 当公开图片画面里确实包含具体的有名有姓的主角或NPC时使用格式：[图片-姓名]（中文图片描述）（English tags）。
+
+④ 当公开图片画面里包括主角、NPC、用户{{user}}多人时使用格式：[图片-姓名,姓名,姓名]（中文图片描述）（English tags）。
+
+以上①-④配图格式，第一个括号写中文图片描述供朋友圈卡片背面展示，第二个括号只能写英文逗号分隔的英文生图 tag，不要写中文、解释或完整句子；少写第二个括号会被系统判定为格式错误，图片不会生成。系统会根据[用户照片]或[图片-姓名,姓名]中的身份，在实际生图时自动拼接已设置的固定外貌 Tag 和参考图；第二个括号只写本次动态需要的动作、表情、服装变化、构图、场景、光线和镜头，不要重复固定外貌 Tag。
+【输出格式】
+请仅输出纯 JSON 格式数据，不要包含任何多余的思考过程或说明文字：
+{
+  "moments": [
+    {
+      "name": "联系人名字",
+      "text": "朋友圈文字内容",
+      "images": [
+        "[图片]（午后的咖啡杯放在靠窗桌边，阳光照着桌面）（coffee cup, window table, afternoon sunlight, phone photo, anime illustration）"
+      ],
+      "time": "几分钟前/几小时前",
+      "likeList": ["点赞的人名1", "点赞的人名2"],
+      "commentList": [
+        {"name": "评论者", "text": "评论内容"},
+        {"name": "回复者", "text": "回复内容", "replyTo": "被回复者"}
+      ]
+    }
+  ]
+}`;
+    }
+
    // 默认提示词
  getDefaultPrompts() {
     return {
@@ -728,30 +791,8 @@ from:林晓雨: 在呢
                 moments: {
         enabled: true,
         name: '📸 朋友圈',
-        description: '朋友圈动态生成规则',
-        content: `【朋友圈生成规则】
-
-要求：
-1. 只为通讯录联系人生成朋友圈，不要替用户生成动态。
-2. 内容要符合已注入的角色性格、关系、当前剧情氛围和世界观。
-3. 朋友圈风格要真实自然，像真人随手发的，不要写成剧情总结、旁白或设定说明。
-4. 可以包含日常分享、心情感悟、美食、风景、自拍、工作/学习/直播等内容。
-5. 点赞和评论要符合联系人之间的关系和语气，不得代替用户点赞或评论。
-6. 时间分布要合理，不要全部集中在同一时间。
-
-互动规则：
-- 关系亲密的人更容易点赞评论
-- 评论内容要符合评论者的性格
-- 可以有多人参与同一条朋友圈的互动
-
-图片处理：
-【联系人个人图片固定tag】
-{{personalImageTagInfo}}
-
-- 如果需要配图，images 数组只能写 [图片]（中文图片描述）（English NovelAI tags）、[个人图片]（中文图片描述）（English NovelAI tags）或 [用户照片]（中文图片描述）（English NovelAI tags）。
-- [图片] 用于风景、食物、宠物、截图、物品、别人或无人物画面；[个人图片] 用于包含发布者本人脸、自拍、全身照、试衣照、生活照等自身形象的画面；[用户照片] 用于包含{{user}}本人被拍到的画面，标签名不要写用户姓名。
-- 第一个括号必须写中文图片描述，供朋友圈卡片背面展示；第二个括号只能写英文逗号分隔 NAI 生图 tag，不要写中文、解释或完整句子，专门供生图使用；少写第二个括号会被系统判定为格式错误，图片不会生成；如果上方列出了对应对象的专属生图Tag/固定tag，系统会在实际生图时自动拼接这些固定外观tag，生成 [个人图片]/[用户照片] 时不要重复固定外貌、发色、眼睛、体型等tag，只写本次动态需要的动作、表情、服装变化、构图、场景、光线、镜头等画面tag。
-- 例如：["[图片]（傍晚街口的落日把路面照成金色）（sunset sky, city street, warm light, phone photo, anime illustration）", "[个人图片]（她在卧室镜前随手拍了一张自拍）（1girl, selfie, casual outfit, bedroom mirror, phone photo, anime illustration）", "[用户照片]（她拍到用户站在门口回头）（1boy, looking back, doorway, casual outfit, phone photo, anime illustration）"]`,
+        description: '朋友圈完整生成任务、输出格式与内容规则',
+        content: this._getDefaultMomentsPrompt(),
         order: 3
     },
 
@@ -2330,16 +2371,18 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
 
         const builtInPreset = this.getBuiltInPromptPresets(app, feature).find(item => String(item.id) === safeId);
         if (builtInPreset) {
+            const content = this._normalizePromptContent(app, feature, builtInPreset.content);
             this._setActivePromptPresetId(app, feature, builtInPreset.id);
-            this._setPromptContentInMemory(app, feature, builtInPreset.content);
-            return builtInPreset;
+            this._setPromptContentInMemory(app, feature, content);
+            return { ...builtInPreset, content };
         }
 
         const preset = this.getPromptUserPresets(app, feature).find(item => String(item.id) === safeId);
         if (!preset) throw new Error('找不到该提示词预设');
+        const content = this._normalizePromptContent(app, feature, preset.content);
         this._setActivePromptPresetId(app, feature, preset.id);
-        this._setPromptContentInMemory(app, feature, preset.content);
-        return preset;
+        this._setPromptContentInMemory(app, feature, content);
+        return { ...preset, content };
     }
 
     deletePromptUserPreset(app, feature, presetId) {
@@ -2483,11 +2526,6 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
             sections.push(this.getPromptForFeature('wechat', 'offline'));
         }
 
-        // 3. 朋友圈（如果启用）
-        if (this.isEnabled('wechat', 'moments')) {
-            sections.push(this.getPromptForFeature('wechat', 'moments'));
-        }
-
         return sections.join('\n\n');
     }
     
@@ -2498,6 +2536,14 @@ IP属地：根据故事背景，生成虚拟的命名城市的IP市区
             return this.prompts.core.content;
         }
         return this.prompts[app]?.[feature]?.content || '';
+    }
+
+    renderPromptForFeature(app, feature, variables = {}) {
+        let content = this.getPromptForFeature(app, feature);
+        Object.entries(variables || {}).forEach(([key, value]) => {
+            content = content.split(`{{${key}}}`).join(String(value ?? ''));
+        });
+        return content;
     }
 
     _buildPromptSettingsForStorage() {

@@ -6,7 +6,7 @@
  * ======================================================== */
 
 import { AlbumData } from './album-data.js?v=1.4.2&r=20260726-album-media';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.2&r=20260726-album-media';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.2&r=20260802-album-toolbar';
 
 export class AlbumApp {
     constructor(phoneShell, storage) {

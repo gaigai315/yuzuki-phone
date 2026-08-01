@@ -9462,12 +9462,19 @@ renderChatRoom(chat) {
                 }
             }
 
+            const momentsIngestResult = this.app.wechatData.ingestMomentsFromChatResponse?.(aiResponse, {
+                batchId: responseBatchId,
+                sourceChatId: savedChatId,
+                markUnread: true
+            }) || { cleanedText: String(aiResponse || ''), addedCount: 0 };
+            const aiResponseWithoutMoments = momentsIngestResult.cleanedText;
+
             // 5️⃣ 解析AI回复（支持多窗口路由分发）
             let parsedMessages = []; // 属于当前打开窗口的消息
             let backgroundMessages = {}; // 属于后台其他窗口的消息 { "窗口名": [消息数组] }
             let backgroundGroupHints = {}; // 后台窗口的群聊提示 { "窗口名": true/false }
 
-            let aiRawText = this._extractWechatTagPayloadOrSelf(aiResponse);
+            let aiRawText = this._extractWechatTagPayloadOrSelf(aiResponseWithoutMoments);
             const wangxiangTaskTokens = tokenizeWangxiangTaskTags(aiRawText, {
                 tokenPrefix: 'ST_PHONE_ONLINE_WANGXIANG_TASK',
                 idPrefix: 'wechat-invitation',
@@ -11356,6 +11363,7 @@ renderChatRoom(chat) {
                     : `\n\n【用户最新输入】\n${formattedLatestUserInput ? latestUserInput : `${userName}: ${latestUserInput}`}`;
             }
             finalUserContent += '\n\n【本轮约束】';
+            finalUserContent += '\n- 输出可以由两个并行数据块组成：标准 <wechat>...</wechat> 微信回复，以及已注入世界书要求的独立 {"moments":[...]} 朋友圈 JSON。朋友圈 JSON 必须放在 </wechat> 之后，不得写进聊天窗口；没有朋友圈动态时可省略该 JSON。';
             if (isProactive) {
                 const elapsedMinutes = Math.max(0, Number.parseInt(proactiveMeta.elapsedMinutes, 10) || 0);
                 const intervalMinutes = Math.max(1, Number.parseInt(proactiveMeta.intervalMinutes, 10) || 1);
@@ -11363,7 +11371,7 @@ renderChatRoom(chat) {
                     ? `\n- 【现实时间】当前现实时间为 ${currentDateTimeText}；距离上次线上主动触发约 ${elapsedMinutes} 分钟，用户设置的触发间隔为 ${intervalMinutes} 分钟。`
                     : `\n- 【剧情时间】当前剧情时间为 ${currentDateTimeText || currentTime}；现实距离上次线上主动触发约 ${elapsedMinutes} 分钟，用户设置的触发间隔为 ${intervalMinutes} 分钟。`;
                 finalUserContent += '\n- 本轮不是用户刚刚发消息，而是线上模式定时主动触发；你必须让合适的微信好友或微信群主动联系用户。';
-                finalUserContent += '\n- 必须只输出一个 <wechat>...</wechat> 标签，禁止返回空，禁止解释，禁止输出标签外文字。';
+                finalUserContent += '\n- 微信消息部分必须只包含一个 <wechat>...</wechat> 标签；允许按上一条并行输出协议在标签后追加独立 moments JSON，除此之外禁止解释或输出其他标签外文字。';
                 finalUserContent += '\n- 必须同时审视【手机微信已有消息】里的单聊窗口和群聊窗口；可以选择一个最合理的单聊、一个最合理的群聊，或在同一个 <wechat> 中输出多个合理窗口。';
                 finalUserContent += '\n- 窗口名必须来自已有微信聊天记录窗口，且格式沿用现有微信线上单聊/群聊规则。';
                 finalUserContent += `\n- 所有新增消息都必须是发给手机主人“${userName}”的线上微信消息；禁止替${userName}发言。`;

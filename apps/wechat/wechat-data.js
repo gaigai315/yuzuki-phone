@@ -17,6 +17,162 @@ const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const GLOBAL_WECHAT_CHATLIST_BACKGROUND_KEY = 'global_wechat_chatlist_background';
 const GLOBAL_WECHAT_CHATLIST_BACKGROUND_NONE = '__none__';
 
+export function extractMomentsJsonPayloads(rawText = '') {
+    const source = String(rawText || '');
+    if (!source) return { payloads: [], cleanedText: '' };
+
+    const structuralSource = source.replace(/[｛｝［］：，“”]/g, char => ({
+        '｛': '{',
+        '｝': '}',
+        '［': '[',
+        '］': ']',
+        '：': ':',
+        '，': ',',
+        '“': '"',
+        '”': '"'
+    })[char]);
+
+    const removeTrailingCommas = (value) => {
+        let result = '';
+        let quote = '';
+        let escaped = false;
+        for (let index = 0; index < value.length; index++) {
+            const char = value[index];
+            if (quote) {
+                result += char;
+                if (escaped) {
+                    escaped = false;
+                } else if (char === '\\') {
+                    escaped = true;
+                } else if (char === quote) {
+                    quote = '';
+                }
+                continue;
+            }
+            if (char === '"' || char === "'") {
+                quote = char;
+                result += char;
+                continue;
+            }
+            if (char === ',') {
+                let nextIndex = index + 1;
+                while (nextIndex < value.length && /\s/.test(value[nextIndex])) nextIndex++;
+                if (value[nextIndex] === '}' || value[nextIndex] === ']') continue;
+            }
+            result += char;
+        }
+        return result;
+    };
+
+    const normalizeSingleQuotedStrings = (value) => {
+        let result = '';
+        let quote = '';
+        let escaped = false;
+        for (let index = 0; index < value.length; index++) {
+            const char = value[index];
+            if (!quote) {
+                if (char === '"' || char === "'") {
+                    quote = char;
+                    result += '"';
+                } else {
+                    result += char;
+                }
+                continue;
+            }
+            if (escaped) {
+                result += char;
+                escaped = false;
+                continue;
+            }
+            if (char === '\\') {
+                result += char;
+                escaped = true;
+                continue;
+            }
+            if (char === quote) {
+                quote = '';
+                result += '"';
+                continue;
+            }
+            if (quote === "'" && char === '"') {
+                result += '\\"';
+                continue;
+            }
+            result += char;
+        }
+        return result;
+    };
+
+    const parseMomentsCandidate = (candidate) => {
+        const attempts = [
+            candidate,
+            removeTrailingCommas(candidate),
+            normalizeSingleQuotedStrings(candidate),
+            removeTrailingCommas(normalizeSingleQuotedStrings(candidate))
+        ];
+        for (const attempt of [...new Set(attempts)]) {
+            try {
+                const parsed = JSON.parse(attempt);
+                if (parsed && Array.isArray(parsed.moments)) return parsed;
+            } catch (error) {
+                // 继续尝试下一种常见 JSON 容错格式。
+            }
+        }
+        return null;
+    };
+
+    const findObjectEnd = (startIndex) => {
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+        for (let index = startIndex; index < structuralSource.length; index++) {
+            const char = structuralSource[index];
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (char === '\\') {
+                    escaped = true;
+                } else if (char === '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (char === '"') {
+                inString = true;
+            } else if (char === '{') {
+                depth++;
+            } else if (char === '}') {
+                depth--;
+                if (depth === 0) return index;
+            }
+        }
+        return -1;
+    };
+
+    const payloads = [];
+    const ranges = [];
+    for (let start = structuralSource.indexOf('{'); start >= 0; start = structuralSource.indexOf('{', start + 1)) {
+        const end = findObjectEnd(start);
+        if (end < 0) continue;
+        const parsed = parseMomentsCandidate(structuralSource.slice(start, end + 1));
+        if (!parsed) continue;
+        payloads.push(parsed);
+        ranges.push([start, end + 1]);
+        start = end;
+    }
+
+    let cleanedText = source;
+    ranges.slice().reverse().forEach(([start, end]) => {
+        cleanedText = `${cleanedText.slice(0, start)}${cleanedText.slice(end)}`;
+    });
+    cleanedText = cleanedText
+        .replace(/```(?:json)?\s*```/gi, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+    return { payloads, cleanedText };
+}
+
 export class WechatData {
     constructor(storage) {
         this.storage = storage;
@@ -2890,6 +3046,26 @@ getWeekday(date) {
     getMoments() {
         return this.data.moments;
     }
+
+    hasUnreadMoments() {
+        return Array.isArray(this.data.moments)
+            && this.data.moments.some(moment => moment?.isUnread === true);
+    }
+
+    markAllMomentsRead() {
+        if (!Array.isArray(this.data.moments)) return false;
+        let changed = false;
+        this.data.moments.forEach(moment => {
+            if (moment?.isUnread !== true) return;
+            moment.isUnread = false;
+            changed = true;
+        });
+        if (changed) {
+            this.saveData();
+            globalThis.window?.VirtualPhone?.wechatApp?.syncMomentsUnreadIndicator?.();
+        }
+        return changed;
+    }
     
     getMoment(momentId) {
         return this.data.moments.find(m => m.id === momentId);
@@ -2955,6 +3131,160 @@ getWeekday(date) {
 
     getMomentVisibleContacts(moment) {
         return (this.getContacts() || []).filter(contact => this.canContactViewMoment(moment, contact));
+    }
+
+    _getMomentStoryTimeSnapshot() {
+        const timeManager = globalThis.window?.VirtualPhone?.timeManager;
+        const storyTime = timeManager?.getCurrentStoryTime?.() || {};
+        const now = new Date();
+        const time = String(storyTime.time || '').trim()
+            || now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const date = String(storyTime.date || '').trim();
+        const weekday = String(storyTime.weekday || '').trim();
+        const parsedTimestamp = date && typeof timeManager?.parseTimeToTimestamp === 'function'
+            ? Number(timeManager.parseTimeToTimestamp({ time, date, weekday }))
+            : Number(storyTime.timestamp || 0);
+        return {
+            time,
+            date,
+            weekday,
+            timestamp: Number.isFinite(parsedTimestamp) && parsedTimestamp > 0 ? parsedTimestamp : Date.now()
+        };
+    }
+
+    _resolveChatMomentStoryTime(rawTime = '') {
+        const timeManager = globalThis.window?.VirtualPhone?.timeManager;
+        const base = this._getMomentStoryTimeSnapshot();
+        const label = String(rawTime || '').trim();
+        let minutesOffset = 0;
+        const minuteMatch = label.match(/(\d+)\s*分钟前/);
+        const hourMatch = label.match(/(\d+(?:\.\d+)?)\s*小时前/);
+        if (minuteMatch) {
+            minutesOffset = -Math.max(0, Number.parseInt(minuteMatch[1], 10) || 0);
+        } else if (hourMatch) {
+            minutesOffset = -Math.max(0, Math.round((Number.parseFloat(hourMatch[1]) || 0) * 60));
+        } else if (/半小时前/.test(label)) {
+            minutesOffset = -30;
+        }
+
+        if (minutesOffset < 0 && base.date && typeof timeManager?.addMinutesToStoryTime === 'function') {
+            return timeManager.addMinutesToStoryTime(base, minutesOffset);
+        }
+
+        const clockMatch = label.match(/^(\d{1,2})[:：](\d{2})$/);
+        if (clockMatch && base.date) {
+            const time = `${String(Number.parseInt(clockMatch[1], 10) || 0).padStart(2, '0')}:${clockMatch[2]}`;
+            const timestamp = typeof timeManager?.parseTimeToTimestamp === 'function'
+                ? Number(timeManager.parseTimeToTimestamp({ ...base, time }))
+                : base.timestamp;
+            return { ...base, time, timestamp };
+        }
+
+        return base;
+    }
+
+    _normalizeChatMoment(item, metadata = {}, itemIndex = 0) {
+        if (!item || typeof item !== 'object') return null;
+        const rawName = String(item.name || item.author || '').trim();
+        if (!rawName) return null;
+
+        const userInfo = this.data.userInfo || {};
+        if (this._isSameLookupName(rawName, userInfo.name) || rawName.toLowerCase() === 'me') return null;
+
+        const identity = this.getContactByName(rawName);
+        if (!identity || identity === userInfo || identity.type === 'group') return null;
+
+        const name = String(identity.name || rawName).trim();
+        const text = String(item.text || item.content || '').trim();
+        const images = (Array.isArray(item.images) ? item.images : [])
+            .map(value => String(value || '').trim())
+            .filter(Boolean);
+        if (!text && images.length === 0) return null;
+
+        const isUserName = (value) => this._isSameLookupName(value, userInfo.name)
+            || String(value || '').trim().toLowerCase() === 'me';
+        const likeList = (Array.isArray(item.likeList) ? item.likeList : (Array.isArray(item.likes) ? item.likes : []))
+            .map(value => String(value || '').trim())
+            .filter(value => value && !isUserName(value));
+        const rawComments = Array.isArray(item.commentList)
+            ? item.commentList
+            : (Array.isArray(item.comments) ? item.comments : []);
+        const commentList = rawComments
+            .map(comment => ({
+                name: String(comment?.name || comment?.user || '').trim(),
+                text: String(comment?.text || comment?.content || '').trim(),
+                replyTo: String(comment?.replyTo || comment?.reply_to || '').trim() || null
+            }))
+            .filter(comment => comment.name && comment.text && !isUserName(comment.name));
+        const momentStoryTime = this._resolveChatMomentStoryTime(item.time);
+        const batchId = String(metadata.batchId || '').trim();
+        const tavernMessageIndex = Number(metadata.tavernMessageIndex);
+
+        return {
+            id: `moment_chat_${Date.now().toString(36)}_${itemIndex.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+            name,
+            avatar: String(identity.avatar || '').trim() || '👤',
+            text,
+            images,
+            time: momentStoryTime.time,
+            date: momentStoryTime.date,
+            weekday: momentStoryTime.weekday,
+            timestamp: momentStoryTime.timestamp,
+            likes: likeList.length,
+            likeList: [...new Set(likeList)],
+            comments: commentList.length,
+            commentList,
+            isUnread: metadata.markUnread !== false,
+            fromWechatChatResponse: true,
+            fromMainChatTag: metadata.fromMainChatTag === true,
+            tavernMessageIndex: Number.isFinite(tavernMessageIndex) ? tavernMessageIndex : undefined,
+            batchId,
+            sourceChatId: String(metadata.sourceChatId || '').trim(),
+            sourceTimeLabel: String(item.time || '').trim()
+        };
+    }
+
+    ingestMomentsFromChatResponse(rawText = '', metadata = {}) {
+        const extraction = extractMomentsJsonPayloads(rawText);
+        const rows = extraction.payloads.flatMap(payload => payload.moments || []);
+        if (rows.length === 0) {
+            if (/["'“”]?moments["'“”]?\s*[：:]/i.test(String(rawText || ''))) {
+                console.warn('⚠️ [朋友圈] 检测到 moments 数据，但未能解析为有效 JSON:', String(rawText || '').slice(0, 800));
+            }
+            return { cleanedText: extraction.cleanedText, moments: [], addedCount: 0 };
+        }
+
+        if (!Array.isArray(this.data.moments)) this.data.moments = [];
+        const batchId = String(metadata.batchId || '').trim();
+        if (batchId && this.data.moments.some(moment =>
+            moment?.fromWechatChatResponse === true
+            && String(moment.batchId || '').trim() === batchId
+        )) {
+            return { cleanedText: extraction.cleanedText, moments: [], addedCount: 0 };
+        }
+
+        const seenAuthors = new Set();
+        const moments = [];
+        rows.forEach((item, itemIndex) => {
+            const moment = this._normalizeChatMoment(item, metadata, itemIndex);
+            if (!moment) return;
+            const authorKey = this._normalizeLookupName(moment.name);
+            if (!authorKey || seenAuthors.has(authorKey)) return;
+            seenAuthors.add(authorKey);
+            moments.push(moment);
+        });
+
+        if (rows.length > 0 && moments.length === 0) {
+            console.warn('⚠️ [朋友圈] moments JSON 已解析，但发布者未匹配到通讯录好友或动态内容为空:', rows.map(item => item?.name || item?.author || '').filter(Boolean));
+        }
+
+        if (moments.length > 0) {
+            this.data.moments.unshift(...moments);
+            this.saveData();
+            globalThis.window?.VirtualPhone?.wechatApp?.syncMomentsUnreadIndicator?.();
+        }
+
+        return { cleanedText: extraction.cleanedText, moments, addedCount: moments.length };
     }
     
     addMoment(moment) {
@@ -3873,6 +4203,17 @@ parseAIResponse(text) {
             }
         }
 
+        if (Array.isArray(this.data.moments)) {
+            const originalMomentsLength = this.data.moments.length;
+            this.data.moments = this.data.moments.filter(moment => !(
+                moment?.fromMainChatTag === true
+                && Number(moment.tavernMessageIndex) === targetIndex
+            ));
+            if (this.data.moments.length !== originalMomentsLength) {
+                isDirty = true;
+            }
+        }
+
         const walletDirty = this._rollbackWalletTransactions(record =>
             record?.fromMainChatTag === true
             && Number(record.tavernMessageIndex) === targetIndex
@@ -3887,6 +4228,7 @@ parseAIResponse(text) {
                 }
             }
             this.saveData();
+            globalThis.window?.VirtualPhone?.wechatApp?.syncMomentsUnreadIndicator?.();
             window.VirtualPhone?.timeManager?.resetTime?.();
         }
 
@@ -3957,6 +4299,18 @@ parseAIResponse(text) {
             }
         }
 
+        if (Array.isArray(this.data.moments)) {
+            const originalMomentsLength = this.data.moments.length;
+            this.data.moments = this.data.moments.filter(moment => {
+                if (moment?.fromMainChatTag !== true) return true;
+                const floor = Number(moment.tavernMessageIndex);
+                return !Number.isFinite(floor) || floor < Number(targetTavernIndex);
+            });
+            if (this.data.moments.length !== originalMomentsLength) {
+                isDirty = true;
+            }
+        }
+
         const walletDirty = this._rollbackWalletTransactions(record =>
             record?.fromMainChatTag === true
             && Number.isFinite(Number(record.tavernMessageIndex))
@@ -3976,6 +4330,7 @@ parseAIResponse(text) {
                 }
             }
             this.saveData();
+            globalThis.window?.VirtualPhone?.wechatApp?.syncMomentsUnreadIndicator?.();
             if (window.VirtualPhone?.timeManager) {
                 window.VirtualPhone.timeManager.resetTime();
             }
