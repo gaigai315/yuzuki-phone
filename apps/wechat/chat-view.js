@@ -11059,6 +11059,7 @@ renderChatRoom(chat) {
         const appendWechatChatTranscript = async (chat, messagesForChat, formatOptions = {}) => {
             const includeHeader = formatOptions.includeHeader !== false;
             const includeDates = formatOptions.includeDates !== false;
+            const includeVisionImages = formatOptions.includeVisionImages === true;
             let text = includeHeader ? `━━━ ${chat.name} 的聊天记录 ━━━\n` : '';
             let lastDate = null;
             const chatIsGroup = chat?.type === 'group';
@@ -11086,9 +11087,11 @@ renderChatRoom(chat) {
                 } else if (msg.type === 'call_record') {
                     text += this._formatCallRecordForPrompt(msg, userName, timeStr);
                 } else if (msg.type === 'image') {
-                    const resolvedImageData = await this._resolveWechatImageForAi(msg.content, aiImageDataCache);
                     const imageText = this._formatMessageContentForPrompt(msg, chat) || '[图片]';
-                    if (resolvedImageData && resolvedImageData.startsWith('data:image')) {
+                    const resolvedImageData = includeVisionImages
+                        ? await this._resolveWechatImageForAi(msg.content, aiImageDataCache)
+                        : '';
+                    if (includeVisionImages && resolvedImageData && resolvedImageData.startsWith('data:image')) {
                         const imgId = `__ST_PHONE_IMAGE_${Date.now()}_${Math.random().toString(36).substr(2, 5)}__`;
                         if (!window.VirtualPhone._pendingImages) {
                             window.VirtualPhone._pendingImages = {};
@@ -11163,7 +11166,8 @@ renderChatRoom(chat) {
         const formattedLatestUserInput = !isProactive && !callMode && latestUserMessages.length > 0
             ? await appendWechatChatTranscript(targetChat, latestUserMessages, {
                 includeHeader: false,
-                includeDates: false
+                includeDates: false,
+                includeVisionImages: true
             })
             : '';
         const phoneCallHistoryContext = !isGroupChat
@@ -11380,9 +11384,9 @@ renderChatRoom(chat) {
             finalUserContent += '\n- 消息时间必须承接当前窗口最后一条已存在消息的时间并向后推进。';
         }
 
-        // 非通话模式把图片代币附加到 user 消息末尾；通话模式已在微信记录中提供图片说明。
+        // 只把本轮最新用户输入中的图片附加到 user 消息末尾；历史图片仅保留文字说明。
         if (!callMode && aiImageTokenIds.length > 0 && aiImageNotes.length > 0) {
-            finalUserContent += '\n\n[以下是聊天记录中标注的图片，请结合上方时间线理解图片内容]\n';
+            finalUserContent += '\n\n[以下是本轮用户最新输入中的图片，请结合上方时间线理解图片内容]\n';
             aiImageNotes.forEach(note => {
                 finalUserContent += `${note}\n`;
             });
