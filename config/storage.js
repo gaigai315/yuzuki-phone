@@ -53,6 +53,7 @@ export class PhoneStorage {
         // 用于聊天数据的物理写入，防止短时间内频繁调用导致 IO 卡死
         this._saveChatTimer = null;
         this._saveChatDelay = 3000; // 3000ms 防抖延迟
+        this._chatSaveQueue = Promise.resolve();
 
         // ==================== 队列锁：全局配置保存 ====================
         // 使用 Promise 链实现 Mutex，防止并发写入导致数据覆盖
@@ -145,7 +146,7 @@ export class PhoneStorage {
 
     /**
      * 防抖保存聊天数据到后端
-     * 延迟 500ms 执行，期间的多次调用会被合并
+     * 延迟执行，期间的多次调用会被合并
      */
     _debouncedSaveChat() {
         // 清除之前的定时器
@@ -166,8 +167,35 @@ export class PhoneStorage {
 
                 if (typeof window.saveChatDebounced === 'function') {
                     window.saveChatDebounced();
+                } else if (typeof context.saveChatDebounced === 'function') {
+                    context.saveChatDebounced();
                 } else if (typeof context.saveChat === 'function') {
-                    await context.saveChat();
+                    // Windows 下多个保存请求同时替换同一 jsonl 会触发 EPERM rename。
+                    // 将插件自己的直连保存串行化，并对短暂文件占用做有限退避重试。
+                    this._chatSaveQueue = this._chatSaveQueue
+                        .catch(() => undefined)
+                        .then(async () => {
+                            const retryDelays = [0, 350, 900, 1800];
+                            let lastError = null;
+                            for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+                                if (retryDelays[attempt] > 0) {
+                                    await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
+                                }
+                                const latestContext = this.getContext();
+                                if (!latestContext || this.currentChatId !== queuedChatId) return;
+                                try {
+                                    await latestContext.saveChat();
+                                    return;
+                                } catch (error) {
+                                    lastError = error;
+                                    if (attempt < retryDelays.length - 1) {
+                                        console.warn(`[PhoneStorage] saveChat 暂时失败，准备第 ${attempt + 1} 次重试:`, error);
+                                    }
+                                }
+                            }
+                            throw lastError || new Error('saveChat failed');
+                        });
+                    await this._chatSaveQueue;
                 }
             } catch (e) {
                 console.error('[PhoneStorage] saveChat 失败:', e);

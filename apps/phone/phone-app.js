@@ -19,7 +19,13 @@ export class PhoneApp {
     constructor(phoneShell, storage) {
         this.phoneShell = phoneShell;
         this.storage = storage;
-        this.phoneCallData = new PhoneCallData(storage);
+        const cachedPhoneCallData = window.VirtualPhone?.cachedPhoneCallData;
+        this.phoneCallData = cachedPhoneCallData?.storage === storage
+            ? cachedPhoneCallData
+            : new PhoneCallData(storage);
+        if (window.VirtualPhone) {
+            window.VirtualPhone.cachedPhoneCallData = this.phoneCallData;
+        }
         this.phoneCallView = new PhoneCallView(this);
 
         // 监听来电事件
@@ -47,6 +53,8 @@ export class PhoneApp {
         // 2. 领地保护：确认当前视图属于通话APP
         const domCurrentView = document.querySelector('.phone-view-current');
         if (!domCurrentView || (!domCurrentView.querySelector('.phone-call-main') &&
+            !domCurrentView.querySelector('.phone-sms-main') &&
+            !domCurrentView.querySelector('.phone-sms-thread') &&
             !domCurrentView.querySelector('.phone-call-contacts') &&
             !domCurrentView.querySelector('.phone-call-transcript') &&
             !domCurrentView.querySelector('.phone-call-settings') &&
@@ -65,6 +73,11 @@ export class PhoneApp {
         } else if (view === 'settings') {
             const btn = domCurrentView.querySelector('#phone-call-settings-back');
             if (btn) btn.click();
+        } else if (view === 'sms-thread') {
+            const btn = domCurrentView.querySelector('#phone-sms-thread-back');
+            if (btn) btn.click();
+        } else if (view === 'sms') {
+            window.dispatchEvent(new CustomEvent('phone:goHome'));
         } else if (view === 'main') {
             window.dispatchEvent(new CustomEvent('phone:goHome'));
         } else if (view === 'dialing') {
@@ -89,6 +102,7 @@ export class PhoneApp {
     }
 
     clearCache() {
+        this.phoneCallView.clearSmsRuntime?.();
         this.phoneCallData.clearCache();
         this.phoneCallView.currentView = 'main';
         this.phoneCallView.currentCaller = '';

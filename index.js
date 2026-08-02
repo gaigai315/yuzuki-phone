@@ -15,9 +15,10 @@
 // ========================================
 
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
+import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.4';
+const ST_PHONE_VERSION = '1.4.5';
 const ST_PHONE_CSS_REVISION = '20260731-moments-visibility';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -49,10 +50,9 @@ const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-07-31',
+    date: '2026-08-02',
     items: [
-        '【优化】优化用户发布朋友圈，支持设置仅指定好友可见或不可见。',
-        '【优化】优化万象任务刷新逻辑，刷新时会避开已经接取的任务类型。'
+        '【新增】通话 APP 新增短信功能。'
     ]
 };
 
@@ -5548,6 +5548,105 @@ if (window.GGP_Loaded) {
         return messages;
     }
 
+    function getOrCreatePhoneCallData() {
+        if (!window.VirtualPhone) window.VirtualPhone = {};
+        const appData = window.VirtualPhone.phoneApp?.phoneCallData;
+        if (appData) {
+            window.VirtualPhone.cachedPhoneCallData = appData;
+            return appData;
+        }
+        if (!window.VirtualPhone.cachedPhoneCallData) {
+            window.VirtualPhone.cachedPhoneCallData = new PhoneCallData(storage);
+        }
+        return window.VirtualPhone.cachedPhoneCallData;
+    }
+
+    function refreshVisibleSmsView(results = [], { afterRollback = false } = {}) {
+        const phoneView = window.VirtualPhone?.phoneApp?.phoneCallView;
+        if (!phoneView) return;
+
+        if (phoneView.currentView === 'sms-thread') {
+            const activeInput = document.querySelector('.phone-view-current #phone-sms-composer-input');
+            if (afterRollback) {
+                if (document.activeElement !== activeInput) {
+                    phoneView.renderSmsThread(phoneView.currentSmsContact);
+                }
+                return;
+            }
+
+            const visibleName = phoneView._normalizeSmsContactName?.(phoneView.currentSmsContact);
+            results.forEach(result => {
+                if (phoneView._normalizeSmsContactName?.(result?.conversation?.name) === visibleName) {
+                    phoneView._appendSmsMessageBubble?.(result.message);
+                }
+            });
+            return;
+        }
+
+        if (phoneView.currentView === 'sms') {
+            const searchInput = document.querySelector('.phone-view-current #phone-sms-search');
+            if (document.activeElement !== searchInput) phoneView.renderSmsList();
+        }
+    }
+
+    function rollbackPhoneSmsToFloor(tavernIndex, exact = false) {
+        const phoneData = getOrCreatePhoneCallData();
+        const changed = exact
+            ? phoneData.removeMainChatSmsAtFloor?.(tavernIndex)
+            : phoneData.rollbackSmsToFloor?.(tavernIndex);
+        if (changed) refreshVisibleSmsView([], { afterRollback: true });
+        return !!changed;
+    }
+
+    const SMS_PARSER_VERSION = '2';
+
+    function processSmsTags(text, tavernIndex, batchId, { isHistoryReplay = false } = {}) {
+        const parsedMessages = parseSmsMessagesFromText(text);
+        if (parsedMessages.length === 0) return [];
+
+        const phoneData = getOrCreatePhoneCallData();
+        const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.()
+            || extractWechatStoryTimeFallback(text)
+            || {};
+        const floor = Number.isInteger(tavernIndex) ? tavernIndex : null;
+        const safeBatchId = String(batchId || '');
+        if (isHistoryReplay && phoneData.hasProcessedSmsBatch?.(safeBatchId, SMS_PARSER_VERSION)) {
+            return [];
+        }
+        const existingMessages = phoneData.getSmsConversations()
+            .flatMap(conversation => Array.isArray(conversation?.messages) ? conversation.messages : []);
+
+        const results = parsedMessages.flatMap(message => {
+            const senderKey = String(message.sender || '').trim().toLocaleLowerCase('zh-CN');
+            const alreadyStored = existingMessages.some(existing => {
+                if (existing?.fromMainChatTag !== true || existing?.tavernMessageIndex !== floor) return false;
+                const sameSource = existing?.batchId === safeBatchId
+                    && existing?.sourceIndex === message.sourceIndex;
+                const samePayload = String(existing?.from || '').trim().toLocaleLowerCase('zh-CN') === senderKey
+                    && String(existing?.text || '').trim() === message.text
+                    && String(existing?.time || '') === message.time;
+                return sameSource || samePayload;
+            });
+            if (alreadyStored) return [];
+
+            const result = phoneData.addIncomingSmsMessage(message.sender, message.text, {
+                date: String(storyTime?.date || ''),
+                weekday: String(storyTime?.weekday || ''),
+                time: message.time || String(storyTime?.time || '')
+            }, {
+                batchId: safeBatchId,
+                tavernMessageIndex: floor,
+                sourceIndex: message.sourceIndex,
+                fromMainChatTag: true
+            });
+            return result ? [result] : [];
+        });
+
+        phoneData.markSmsBatchProcessed?.(safeBatchId, floor, SMS_PARSER_VERSION);
+        if (results.length > 0) refreshVisibleSmsView(results);
+        return results;
+    }
+
     function normalizeWechatRecipientKey(value) {
         return String(value || '')
             .trim()
@@ -7005,7 +7104,7 @@ if (window.GGP_Loaded) {
     function hidePhoneTags() {
         // 1. 注入 CSS (保证底线隐藏，防止闪烁)
         if (!document.getElementById('st-phone-hide-style')) {
-            $('<style id="st-phone-hide-style">phone, wechat, music, weibo, 任务进度 { display: none !important; }</style>').appendTo('head');
+            $('<style id="st-phone-hide-style">phone, wechat, music, weibo, 短信, 任务进度 { display: none !important; }</style>').appendTo('head');
         }
 
         // 2. 遍历页面上的消息气泡
@@ -7014,19 +7113,19 @@ if (window.GGP_Loaded) {
             let html = root.innerHTML;
 
             // 快速跳过，提升性能
-            if (!html || !/phone|wechat|music|weibo|任务进度|手机来电通话|PHONE_CHAT_MODE/i.test(html)) {
+            if (!html || !/phone|wechat|music|weibo|短信|任务进度|手机来电通话|PHONE_CHAT_MODE/i.test(html)) {
                 return;
             }
 
             // 隐藏那些被解析为真实 DOM 元素的孤立标签
-            $(root).find('phone, wechat, music, weibo, 任务进度').hide();
+            $(root).find('phone, wechat, music, weibo, 短信, 任务进度').hide();
 
             let changed = false;
 
             // 策略 A: 尝试完整匹配并替换 (适用于格式完美，没有被浏览器截断的情况)
-            const tags = ['music', 'phone', 'wechat', 'weibo', '任务进度'];
+            const tags = ['music', 'phone', 'wechat', 'weibo', '短信', '任务进度'];
             tags.forEach(tag => {
-                const rx = new RegExp(`(?:<p>|<br>\\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)${tag}(?:>|&gt;)[\\s\\S]*?(?:<|&lt;)\\/${tag}(?:>|&gt;)(?:<\\/code><\\/pre>)?(?:<\\/p>)?`, 'gi');
+                const rx = new RegExp(`(?:<p>|<br>\\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)\\s*${tag}\\s*(?:>|&gt;)[\\s\\S]*?(?:<|&lt;)\\s*\\/\\s*${tag}\\s*(?:>|&gt;)(?:<\\/code><\\/pre>)?(?:<\\/p>)?`, 'gi');
                 const replaced = html.replace(rx, '');
                 if (replaced !== html) {
                     html = replaced;
@@ -7623,6 +7722,7 @@ if (window.GGP_Loaded) {
                             // 回滚当前楼层（含）及之后的数据，为新内容腾出空间
                             wechatDataInstance.rollbackToFloor(index);
                         }
+                        rollbackPhoneSmsToFloor(index, exactReplayForMessage);
                         rollbackWangxiangTaskProgress(index, exactReplayForMessage)
                             .catch(error => console.warn('[Wangxiang] 正文应用前任务进度回滚失败:', error));
                     } catch (e) {
@@ -7656,6 +7756,8 @@ if (window.GGP_Loaded) {
                         .then(() => processWangxiangMarketplaceDeliveries())
                         .catch(e => console.warn('Wangxiang marketplace delivery check error:', e));
                 }
+                // 历史重绘也做幂等补录，用于修复旧解析器漏掉的同楼层短信。
+                processSmsTags(text, index, currentBatchId, { isHistoryReplay });
                 // 兼容旧版 <Phone> 标签
                 const commands = parsePhoneCommands(text);
                 commands.forEach(cmd => executePhoneCommand(cmd));
@@ -8020,6 +8122,7 @@ if (window.GGP_Loaded) {
             if (window.VirtualPhone.phoneApp) {
                 window.VirtualPhone.phoneApp.clearCache();
             }
+            window.VirtualPhone.cachedPhoneCallData?.clearCache?.();
             // 📱 清空微博缓存
             if (window.VirtualPhone.weiboApp) {
                 window.VirtualPhone.weiboApp.clearCache();
@@ -8937,6 +9040,7 @@ if (window.GGP_Loaded) {
                     if (window.VirtualPhone.diaryApp) window.VirtualPhone.diaryApp.clearCache();
                     if (window.VirtualPhone.calendarApp) window.VirtualPhone.calendarApp.clearCache();
                     if (window.VirtualPhone.phoneApp) window.VirtualPhone.phoneApp.clearCache();
+                    window.VirtualPhone.cachedPhoneCallData?.clearCache?.();
                     if (window.VirtualPhone.weiboApp) window.VirtualPhone.weiboApp.clearCache();
                     if (window.VirtualPhone.mofoApp) {
                         window.VirtualPhone.mofoApp.clearCache();
@@ -8969,7 +9073,8 @@ if (window.GGP_Loaded) {
                 // 🔥 联动擦除聊天记录源文件中的标签
                 await scrubTagsFromChatHistory([
                     /<Weibo>[\s\S]*?<\/Weibo>/gi,
-                    /<Honey>[\s\S]*?<\/Honey>/gi
+                    /<Honey>[\s\S]*?<\/Honey>/gi,
+                    /<\s*短信\s*>[\s\S]*?<\s*\/\s*短信\s*>/gi
                 ]);
             });
 
@@ -9003,6 +9108,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.calendarApp = null;
                     }
                     if (window.VirtualPhone.phoneApp) window.VirtualPhone.phoneApp.clearCache();
+                    window.VirtualPhone.cachedPhoneCallData?.clearCache?.();
                     if (window.VirtualPhone.weiboApp) {
                         window.VirtualPhone.weiboApp.clearCache();
                         window.VirtualPhone.weiboApp = null;
@@ -9037,7 +9143,8 @@ if (window.GGP_Loaded) {
                 // 🔥 联动擦除聊天记录源文件中的标签
                 await scrubTagsFromChatHistory([
                     /<Weibo>[\s\S]*?<\/Weibo>/gi,
-                    /<Honey>[\s\S]*?<\/Honey>/gi
+                    /<Honey>[\s\S]*?<\/Honey>/gi,
+                    /<\s*短信\s*>[\s\S]*?<\s*\/\s*短信\s*>/gi
                 ]);
             });
 
@@ -9054,6 +9161,13 @@ if (window.GGP_Loaded) {
                         context.event_types.USER_MESSAGE_RENDERED,
                         onMessageReceived
                     );
+                }
+
+                if (context.event_types.MESSAGE_DELETED) {
+                    context.eventSource.on(context.event_types.MESSAGE_DELETED, (eventData) => {
+                        const deletedFloor = Number(eventData?.messageId ?? eventData?.id ?? eventData);
+                        if (Number.isFinite(deletedFloor)) rollbackPhoneSmsToFloor(deletedFloor, false);
+                    });
                 }
 
                 context.eventSource.on(
@@ -9076,6 +9190,7 @@ if (window.GGP_Loaded) {
                             } else if (wechatDataInstance && typeof wechatDataInstance.rollbackToFloor === 'function') {
                                 hasRolledBack = wechatDataInstance.rollbackToFloor(id);
                             }
+                            hasRolledBack = rollbackPhoneSmsToFloor(id, true) || hasRolledBack;
                             rollbackWangxiangTaskProgress(id, true)
                                 .catch(error => console.warn('[Wangxiang] 滑动任务进度回滚失败:', error));
                             // 🔥 终极防闪退保护
@@ -9169,6 +9284,7 @@ if (window.GGP_Loaded) {
                                         }
                                     }
                                 }
+                                hasRolledBack = rollbackPhoneSmsToFloor(mesId, false) || hasRolledBack;
                                 rollbackWangxiangTaskProgress(mesId, false)
                                     .catch(error => console.warn('[Wangxiang] 重新生成任务进度回滚失败:', error));
                             } catch(e) {}
@@ -9323,6 +9439,7 @@ if (window.GGP_Loaded) {
                                             }
                                         }
                                     }
+                                    hasRolledBack = rollbackPhoneSmsToFloor(targetFloor, false) || hasRolledBack;
                                     hasRolledBack = await rollbackWangxiangTaskProgress(targetFloor, false) || hasRolledBack;
                                 }
                             } catch(e) {
