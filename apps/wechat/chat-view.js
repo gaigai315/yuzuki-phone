@@ -2022,6 +2022,98 @@ export class ChatView {
         return text.trim();
     }
 
+    _buildPhoneSmsHistoryContextForSingleChat(chat = null, userName = '用户') {
+        const targetChat = chat || this.app.currentChat;
+        if (!targetChat || targetChat.type === 'group') return '';
+
+        const contactById = targetChat.contactId
+            ? this.app.wechatData?.getContact?.(targetChat.contactId)
+            : null;
+        const contactByName = this.app.wechatData?.findContactByNameLoose?.(targetChat.name, { includeChats: false });
+        const aliasKeys = new Set([
+            targetChat.name,
+            targetChat.remark,
+            targetChat.nickname,
+            contactById?.name,
+            contactById?.remark,
+            contactById?.nickname,
+            contactByName?.name,
+            contactByName?.remark,
+            contactByName?.nickname
+        ].map(name => this._normalizeLookupName(name)).filter(Boolean));
+        if (aliasKeys.size === 0) return '';
+
+        let conversations = null;
+        try {
+            const phoneCallData = window.VirtualPhone?.phoneApp?.phoneCallData;
+            if (phoneCallData?.getSmsConversations) {
+                conversations = phoneCallData.getSmsConversations();
+            } else {
+                const storage = window.VirtualPhone?.storage || this.app?.storage;
+                const saved = storage?.get?.('phone_call_sms_conversations', null);
+                if (saved) {
+                    conversations = typeof saved === 'string' ? JSON.parse(saved) : saved;
+                }
+            }
+        } catch (e) {
+            console.warn('[微信] 读取通话 App 短信记录失败:', e);
+            return '';
+        }
+
+        if (!Array.isArray(conversations) || conversations.length === 0) return '';
+
+        const matchedConversations = conversations.filter(conversation => {
+            const contactKey = this._normalizeLookupName(conversation?.name);
+            return contactKey
+                && aliasKeys.has(contactKey)
+                && Array.isArray(conversation?.messages)
+                && conversation.messages.length > 0;
+        });
+        if (matchedConversations.length === 0) return '';
+
+        const smsLimit = this._readNonNegativeLimit('phone-sms-limit', 20);
+        if (smsLimit <= 0) return '';
+
+        const recentMessages = matchedConversations
+            .flatMap((conversation, conversationIndex) => conversation.messages.map((message, messageIndex) => ({
+                message,
+                order: conversationIndex * 100000 + messageIndex
+            })))
+            .filter(item => String(item.message?.text || item.message?.content || '').trim())
+            .sort((left, right) => {
+                const leftCreatedAt = Number(left.message?.createdAt || 0);
+                const rightCreatedAt = Number(right.message?.createdAt || 0);
+                if (leftCreatedAt > 0 && rightCreatedAt > 0 && leftCreatedAt !== rightCreatedAt) {
+                    return leftCreatedAt - rightCreatedAt;
+                }
+                return left.order - right.order;
+            })
+            .slice(-smsLimit)
+            .map(item => item.message);
+        if (recentMessages.length === 0) return '';
+
+        const contactName = String(targetChat.name || matchedConversations[0]?.name || '当前好友').trim();
+        let text = `【💬 与 ${contactName} 的短信 App 历史记录】\n`;
+        text += '以下内容来自独立“通话”App，仅作为你们已经发生过的短信时间线和对话背景；不要逐字复述。\n\n';
+        let lastDate = '';
+
+        recentMessages.forEach(message => {
+            const date = String(message?.date || '').trim();
+            if (date && date !== lastDate) {
+                text += `━━━ ${date} ━━━\n`;
+                lastDate = date;
+            }
+            const time = message?.time ? `[${message.time}] ` : '';
+            const speaker = message?.direction === 'outgoing' || message?.from === 'me'
+                ? userName
+                : contactName;
+            const content = String(message?.text || message?.content || '').trim();
+            if (content) text += `${time}${speaker}: ${content}\n`;
+        });
+
+        return text.trim();
+    }
+
     _getCallPromptFeature(callMode, targetChat = null) {
         const chat = targetChat || this.app.currentChat;
         if (chat?.type === 'group') {
@@ -11180,6 +11272,9 @@ renderChatRoom(chat) {
         const phoneCallHistoryContext = !isGroupChat
             ? this._buildPhoneCallHistoryContextForSingleChat(targetChat, userName)
             : '';
+        const phoneSmsHistoryContext = !isGroupChat
+            ? this._buildPhoneSmsHistoryContextForSingleChat(targetChat, userName)
+            : '';
         const singleChatMomentsContext = !isGroupChat
             ? this._buildSingleChatMomentsContext(targetChat, userName)
             : '';
@@ -11269,6 +11364,15 @@ renderChatRoom(chat) {
                 });
             }
 
+            if (phoneSmsHistoryContext) {
+                messages.push({
+                    role: 'system',
+                    content: phoneSmsHistoryContext,
+                    name: 'SYSTEM (短信 App 记录)',
+                    isPhoneMessage: true
+                });
+            }
+
             if (singleChatMomentsContext) {
                 messages.push({
                     role: 'system',
@@ -11311,6 +11415,14 @@ renderChatRoom(chat) {
                     role: 'system',
                     content: phoneCallHistoryContext,
                     name: 'SYSTEM (通话 App 记录)',
+                    isPhoneMessage: true
+                });
+            }
+            if (phoneSmsHistoryContext) {
+                messages.push({
+                    role: 'system',
+                    content: phoneSmsHistoryContext,
+                    name: 'SYSTEM (短信 App 记录)',
                     isPhoneMessage: true
                 });
             }

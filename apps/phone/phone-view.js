@@ -387,7 +387,8 @@ export class PhoneCallView {
         };
         const syncEditingState = () => {
             const hasDraft = Boolean(String(input?.value || '').trim());
-            if (hasDraft) {
+            const isFocused = document.activeElement === input;
+            if (hasDraft || isFocused) {
                 this._pauseSmsBatch(safeName);
             } else {
                 this._resumeSmsBatch(safeName);
@@ -408,6 +409,12 @@ export class PhoneCallView {
         };
 
         input?.addEventListener('input', syncEditingState);
+        input?.addEventListener('focus', () => this._pauseSmsBatch(safeName));
+        input?.addEventListener('blur', () => {
+            setTimeout(() => {
+                if (document.activeElement !== input) this._resumeSmsBatch(safeName);
+            }, 100);
+        });
         input?.addEventListener('keydown', event => {
             if (event.key !== 'Enter' || event.isComposing) return;
             event.preventDefault();
@@ -602,8 +609,17 @@ export class PhoneCallView {
         const requestKey = this._normalizeSmsContactName(contactName);
         if (!requestKey) return 'green';
         if (this._smsPendingRequests.has(requestKey)) return 'red';
+        if (this._isSmsInputFocused(requestKey)) return 'green';
         if ((this._smsPendingBatches.get(requestKey) || []).length > 0) return 'yellow';
         return 'green';
+    }
+
+    _isSmsInputFocused(contactName = '') {
+        const requestKey = this._normalizeSmsContactName(contactName);
+        if (!requestKey || this.currentView !== 'sms-thread'
+            || this._normalizeSmsContactName(this.currentSmsContact) !== requestKey) return false;
+        const input = document.querySelector('.phone-view-current .phone-sms-thread #phone-sms-composer-input');
+        return Boolean(input && document.activeElement === input);
     }
 
     _setSmsStatusDot(contactName = '') {
@@ -639,7 +655,7 @@ export class PhoneCallView {
         const requestKey = this._normalizeSmsContactName(contactName);
         const pending = this._smsPendingBatches.get(requestKey) || [];
         if (!requestKey || pending.length === 0 || this._smsPendingRequests.has(requestKey)
-            || this._smsBatchTimers.has(requestKey)) {
+            || this._smsBatchTimers.has(requestKey) || this._isSmsInputFocused(requestKey)) {
             this._setSmsStatusDot(contactName);
             return;
         }
@@ -656,11 +672,7 @@ export class PhoneCallView {
         pending.push(outgoingMessage);
         this._smsPendingBatches.set(requestKey, pending);
         this._clearSmsBatchTimer(requestKey);
-        if (!this._smsPendingRequests.has(requestKey)) {
-            const timer = setTimeout(() => this._flushSmsBatch(safeName), 6000);
-            this._smsBatchTimers.set(requestKey, timer);
-        }
-        this._setSmsStatusDot(safeName);
+        this._resumeSmsBatch(safeName);
     }
 
     _flushSmsBatch(contactName = '') {
@@ -1252,18 +1264,27 @@ export class PhoneCallView {
             });
         }
 
+        const phoneCallHistoryContext = this._buildPhoneCallHistoryContextForContact(smsRoleName, userName);
+        if (phoneCallHistoryContext) {
+            messages.push({
+                role: 'system',
+                content: phoneCallHistoryContext,
+                name: 'SYSTEM (通话 App 历史记录)',
+                isPhoneMessage: true
+            });
+        }
+
         const pm = this._getPromptManager();
         const smsPrompt = pm?.getPromptForFeature('phone', 'sms') || '';
-        if (smsPrompt) {
-            const processedPrompt = smsPrompt
+        const processedSmsPrompt = smsPrompt
+            ? smsPrompt
                 .replace(/\{\{char\}\}/gi, smsRoleName)
                 .replace(/\{\{callerName\}\}/gi, smsRoleName)
                 .replace(/\{\{caller\}\}/gi, smsRoleName)
                 .replace(/\{\{roleName\}\}/gi, smsRoleName)
                 .replace(/\{\{recipientName\}\}/gi, smsRoleName)
-                .replace(/\{\{user\}\}/gi, userName);
-            messages.push({ role: 'system', content: processedPrompt, isPhoneMessage: true });
-        }
+                .replace(/\{\{user\}\}/gi, userName)
+            : '';
 
         const smsLimit = Math.max(1, Number.parseInt(storage?.get?.('phone-sms-limit'), 10) || 20);
         const recentSms = smsMessages.slice(-smsLimit);
@@ -1276,12 +1297,15 @@ export class PhoneCallView {
                 const time = item?.time ? `[${item.time}] ` : '';
                 historyText += `${time}${sender}: ${String(item?.text || item?.content || '').trim()}\n`;
             });
-            messages.push({ role: 'system', content: historyText.trim(), isPhoneMessage: true });
+            messages.push({ role: 'assistant', content: historyText.trim(), isPhoneMessage: true });
         }
 
+        const smsUserInstruction = `现在${userName}与${smsRoleName}正在短信内联系。遵守短信回复格式，遵守人设，请严格按短信提示词格式生成回复。`;
         messages.push({
             role: 'user',
-            content: `${userName}刚刚向${smsRoleName}发送短信：\n${String(message || '').trim()}\n\n请严格按短信提示词格式生成回复。`,
+            content: processedSmsPrompt
+                ? `${smsUserInstruction}\n\n${processedSmsPrompt}`
+                : smsUserInstruction,
             isPhoneMessage: true
         });
 
@@ -3397,6 +3421,55 @@ export class PhoneCallView {
             console.warn('📞 [通话] 注入微信单聊记录失败:', error);
             return '';
         }
+    }
+
+    _buildPhoneCallHistoryContextForContact(contactName, userName = '用户') {
+        const contactKey = this._normalizeWechatLookupName(contactName);
+        if (!contactKey) return '';
+
+        const aliasKeys = new Set([contactKey]);
+        const wechatContact = this._resolveWechatContact(contactName);
+        [wechatContact?.name, wechatContact?.remark, wechatContact?.nickname]
+            .map(value => this._normalizeWechatLookupName(value))
+            .filter(Boolean)
+            .forEach(value => aliasKeys.add(value));
+
+        const history = this.app?.phoneCallData?.getCallHistory?.() || [];
+        if (!Array.isArray(history) || history.length === 0) return '';
+
+        const matchedCalls = history.filter(record => {
+            const callerKey = this._normalizeWechatLookupName(record?.caller);
+            return callerKey
+                && aliasKeys.has(callerKey)
+                && record?.status === 'answered'
+                && Array.isArray(record?.transcript)
+                && record.transcript.some(item => String(item?.text || '').trim());
+        });
+        if (matchedCalls.length === 0) return '';
+
+        const storage = window.VirtualPhone?.storage || this.app?.storage;
+        const callLimit = Math.max(1, Number.parseInt(storage?.get?.('phone-call-limit'), 10) || 10);
+        const displayName = String(contactName || matchedCalls[0]?.caller || '当前联系人').trim();
+        let text = `【📞 与 ${displayName} 的通话 App 历史记录】\n`;
+        text += '以下内容来自同一联系人的既往电话，仅作为本次短信交流的对话背景；不要逐字复述。\n\n';
+
+        matchedCalls.forEach(record => {
+            const dateTime = `${record?.date || ''} ${record?.time || ''}`.trim();
+            const durationSeconds = Number(record?.duration || 0);
+            const duration = durationSeconds > 0
+                ? `，时长 ${Math.floor(durationSeconds / 60)}分${durationSeconds % 60}秒`
+                : '';
+            text += `━━━ ${dateTime || '历史通话'}${duration} ━━━\n`;
+            record.transcript.slice(-callLimit).forEach(item => {
+                const content = String(item?.text || '').trim();
+                if (!content) return;
+                const speaker = item?.from === 'me' ? userName : displayName;
+                text += `${speaker}: ${content}\n`;
+            });
+            text += '\n';
+        });
+
+        return text.trim();
     }
 
     _getPhoneWechatData() {
