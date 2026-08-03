@@ -7645,3 +7645,200 @@ input:checked + .toggle-slider:before {
     line-height: 1.4;
     text-align: center;
 }
+
+/* 全局悬浮入口：独立安全根节点，避免被酒馆 transform 容器影响。 */
+#phone-floating-entry-root {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 98000 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    overflow: visible !important;
+    pointer-events: none !important;
+    transform: none !important;
+    contain: none !important;
+}
+
+#phone-floating-entry-root .phone-floating-entry-button {
+    position: fixed !important;
+    left: auto;
+    top: auto;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 52px !important;
+    min-width: 52px !important;
+    max-width: 52px !important;
+    height: 52px !important;
+    min-height: 52px !important;
+    max-height: 52px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: transparent !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+    box-sizing: border-box !important;
+    cursor: pointer !important;
+    filter: drop-shadow(0 6px 13px rgba(33, 53, 76, 0.24));
+    opacity: 0.94;
+    pointer-events: auto !important;
+    touch-action: none !important;
+    user-select: none !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-drag: none;
+    transition: opacity 160ms ease, filter 160ms ease, transform 160ms ease;
+}
+
+#phone-floating-entry-root .phone-floating-entry-button[hidden] {
+    display: none !important;
+}
+
+#phone-floating-entry-root .phone-floating-entry-button:hover,
+#phone-floating-entry-root .phone-floating-entry-button:focus-visible {
+    filter: drop-shadow(0 8px 18px rgba(33, 53, 76, 0.38));
+    opacity: 1;
+    transform: translateY(-1px);
+}
+
+#phone-floating-entry-root .phone-floating-entry-button.phone-floating-entry-dragging {
+    filter: drop-shadow(0 10px 22px rgba(33, 53, 76, 0.42));
+    opacity: 1;
+    transform: scale(1.04);
+    transition: none;
+}
+
+#phone-floating-entry-root .phone-floating-entry-image {
+    display: block !important;
+    width: 52px !important;
+    height: 52px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    object-fit: contain !important;
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-drag: none;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-picker {
+    min-width: 0;
+    margin: 10px 0 4px;
+    padding: 12px 0 4px;
+    border: 0;
+    border-top: 1px solid rgba(60, 60, 67, 0.12);
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-picker > legend {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    letter-spacing: 0;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    margin-top: 10px;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 82px;
+    margin: 0;
+    padding: 5px 3px 4px;
+    border: 1px solid rgba(60, 60, 67, 0.14);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.48);
+    box-sizing: border-box;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-option input {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 58px;
+    flex: 0 0 54px;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-preview img {
+    display: block;
+    width: 54px;
+    height: 58px;
+    margin: 0;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-name {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    left: 3px;
+    overflow: hidden;
+    color: var(--settings-muted-text-color, #666);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: 0;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-option:has(input:checked) {
+    border-color: #1d1d1f;
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 0 0 1px #1d1d1f inset;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-option:has(input:focus-visible) {
+    outline: 2px solid #0a84ff;
+    outline-offset: 1px;
+}
+
+#phone-panel-content .phone-screen .phone-floating-entry-style-option:has(input:checked) .phone-floating-entry-style-name {
+    color: var(--settings-text-color, #111);
+    font-weight: 700;
+}
+
+@media (max-width: 600px), (pointer: coarse) {
+    #phone-floating-entry-root .phone-floating-entry-button,
+    #phone-floating-entry-root .phone-floating-entry-image {
+        width: 46px !important;
+        min-width: 46px !important;
+        max-width: 46px !important;
+        height: 46px !important;
+        min-height: 46px !important;
+        max-height: 46px !important;
+    }
+}

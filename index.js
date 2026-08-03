@@ -17,10 +17,11 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data.js';
 import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
+import { PhoneFloatingEntry } from './phone/floating-entry.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.5';
-const ST_PHONE_CSS_REVISION = '20260803-sms-popup';
+const ST_PHONE_VERSION = '1.4.6';
+const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
@@ -51,9 +52,10 @@ const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-08-02',
+    date: '2026-08-03',
     items: [
-        '【新增】通话 APP 新增短信功能。'
+        '【优化】优化短信弹窗提醒。',
+        '【新增】新增小手机悬浮图标。'
     ]
 };
 
@@ -96,6 +98,7 @@ if (window.GGP_Loaded) {
     let ttsManager = null;
     let imageGenerationManager = null;
     let worldbookManager = null;
+    let phoneFloatingEntry = null;
     let modulesLoaded = false;
     let _lastWechatChatId = null; // 🔥 防串味：记录上一次处理微信数据的 chatId
     let _globalCssLoadingPromise = null;
@@ -4620,18 +4623,46 @@ if (window.GGP_Loaded) {
         }
     }
 
+    async function activatePhoneFromFloatingEntry() {
+        const drawerIcon = document.getElementById('phoneDrawerIcon');
+        const drawerPanel = document.getElementById('phone-panel');
+        if (!drawerIcon || !drawerPanel) {
+            showUnifiedPhoneNotification('提示', '手机入口尚未初始化，请稍后重试', '⚠️');
+            return;
+        }
+        if (!isPhoneFeatureEnabled()) {
+            showUnifiedPhoneNotification('提示', '手机已休眠，请从魔法棒长按开启', '⚠️');
+            return;
+        }
+        if (!drawerPanel.classList.contains('phone-panel-open') && !checkBetaLock()) return;
+        await toggleDrawer(drawerIcon, drawerPanel);
+    }
+
+    function syncPhoneFloatingEntry() {
+        if (!storage) return;
+        if (!phoneFloatingEntry) {
+            phoneFloatingEntry = new PhoneFloatingEntry({
+                storage,
+                baseUrl: ST_PHONE_BASE_URL,
+                onActivate: activatePhoneFromFloatingEntry,
+                isPanelOpen: () => document.getElementById('phone-panel')?.classList?.contains('phone-panel-open') === true
+            });
+        }
+        phoneFloatingEntry.sync();
+    }
+
     // 切换抽屉
     async function toggleDrawer(icon, panel) {
         const isOpen = panel.classList.contains('phone-panel-open');
 
         if (isOpen) {
             // 关闭
-            window.dispatchEvent(new CustomEvent('phone:panelVisibility', { detail: { open: false } }));
             panel.classList.remove('phone-panel-open');
             panel.classList.remove('phone-keyboard-open');
             panel.classList.add('phone-panel-hidden');
             // 🔥 关闭时添加强力隐藏样式
             panel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
+            window.dispatchEvent(new CustomEvent('phone:panelVisibility', { detail: { open: false } }));
         } else {
             await ensureGlobalPhoneCSS();
             initColors();
@@ -8425,6 +8456,7 @@ if (window.GGP_Loaded) {
                 applyPhoneShellScale: applyPhoneShellScale,
                 applyGlobalTextColor: applyGlobalTextColor,
                 refreshGlobalTextColorStyle: ensureGlobalTextColorOverrideStyle,
+                syncFloatingEntry: syncPhoneFloatingEntry,
                 home: null,
                 wechatApp: null,
                 mofoApp: null,
@@ -8479,6 +8511,7 @@ if (window.GGP_Loaded) {
                     bindPhonePanelViewportGuards();
                     bindNewChatPhoneDataMigration();
                     createTopPanel();
+                    syncPhoneFloatingEntry();
                     createInlineReplyButton();
                     schedulePhoneUpdateNotices();
                     startWechatOnlineProactiveScheduler();

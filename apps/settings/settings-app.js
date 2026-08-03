@@ -15,6 +15,12 @@ import { ImageCropper } from './image-cropper.js';
 import { DEFAULT_APP_ICONS, PHONE_CONFIG } from '../../config/apps.js';
 import * as PhoneTagFilter from '../../config/tag-filter.js';
 import {
+    PHONE_FLOATING_ENTRY_DEFAULT_STYLE,
+    PHONE_FLOATING_ENTRY_ENABLED_KEY,
+    PHONE_FLOATING_ENTRY_STYLES,
+    PHONE_FLOATING_ENTRY_STYLE_KEY
+} from '../../phone/floating-entry.js';
+import {
     PHONE_CONTEXT_LIMIT_KEY,
     PHONE_CONTEXT_LIMIT_INITIAL_VALUE,
     ensurePhoneContextLimitSetting,
@@ -1101,6 +1107,12 @@ export class SettingsApp {
         const isGeneralDataOpen = this.storage.get('phone-settings-general-data-open') === true;
         const isWechatMessageSoundEnabled = this._isStorageTruthy(WECHAT_MESSAGE_SOUND_ENABLED_KEY);
         const isPhoneTripleTapEnabled = this._isStorageEnabledByDefault(PHONE_TRIPLE_TAP_ENABLED_KEY);
+        const isPhoneFloatingEntryEnabled = this._isStorageTruthy(PHONE_FLOATING_ENTRY_ENABLED_KEY);
+        const storedFloatingEntryStyle = String(this.storage.get(PHONE_FLOATING_ENTRY_STYLE_KEY) || '');
+        const phoneFloatingEntryStyle = PHONE_FLOATING_ENTRY_STYLES.some(item => item.id === storedFloatingEntryStyle)
+            ? storedFloatingEntryStyle
+            : PHONE_FLOATING_ENTRY_DEFAULT_STYLE;
+        const phoneExtensionBaseUrl = window.VirtualPhone?.extensionBaseUrl || new URL('../../', import.meta.url).href;
         const homeLayoutRaw = String(this.storage.get('phone-home-layout') || 'icons');
         const homeLayout = homeLayoutRaw === 'cards' ? 'cards' : 'icons';
         const cardLayoutCustomCss = String(this.storage.get(CARD_LAYOUT_CUSTOM_CSS_KEY) || '');
@@ -1894,6 +1906,39 @@ export class SettingsApp {
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
+
+                            <div class="setting-item setting-toggle phone-floating-entry-toggle" style="margin-top: 10px;">
+                                <div>
+                                    <div class="setting-label">使用悬浮图标</div>
+                                    <div class="setting-desc">在酒馆页面显示可拖动的手机入口；点击即可打开手机</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="setting-phone-floating-entry-enabled" ${isPhoneFloatingEntryEnabled ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <fieldset class="phone-floating-entry-style-picker">
+                                <legend class="setting-label">悬浮图标样式</legend>
+                                <div class="setting-desc">选择后立即应用，拖动图标可调整位置</div>
+                                <div class="phone-floating-entry-style-grid">
+                                    ${PHONE_FLOATING_ENTRY_STYLES.map(item => {
+                                        const imageUrl = new URL(item.file, phoneExtensionBaseUrl).href;
+                                        return `
+                                            <label class="phone-floating-entry-style-option" title="${this._escapeHtml(item.label)}">
+                                                <input type="radio"
+                                                       name="phone-floating-entry-style"
+                                                       value="${this._escapeHtml(item.id)}"
+                                                       ${phoneFloatingEntryStyle === item.id ? 'checked' : ''}>
+                                                <span class="phone-floating-entry-style-preview">
+                                                    <img src="${this._escapeHtml(imageUrl)}" alt="" draggable="false">
+                                                </span>
+                                                <span class="phone-floating-entry-style-name">${this._escapeHtml(item.label)}</span>
+                                            </label>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </fieldset>
 
                             <div class="setting-info">
                                 <strong>使用说明：</strong><br>
@@ -5137,6 +5182,21 @@ export class SettingsApp {
 
         document.getElementById('setting-phone-triple-tap-enabled')?.addEventListener('change', async (e) => {
             await this.storage.set(PHONE_TRIPLE_TAP_ENABLED_KEY, !!e.target.checked);
+        });
+
+        document.getElementById('setting-phone-floating-entry-enabled')?.addEventListener('change', async (e) => {
+            await this.storage.set(PHONE_FLOATING_ENTRY_ENABLED_KEY, !!e.target.checked);
+            window.VirtualPhone?.syncFloatingEntry?.();
+            window.dispatchEvent(new CustomEvent('phone:floatingEntrySettingsChanged'));
+        });
+
+        document.querySelectorAll('input[name="phone-floating-entry-style"]').forEach(input => {
+            input.addEventListener('change', async (e) => {
+                if (!e.target.checked) return;
+                await this.storage.set(PHONE_FLOATING_ENTRY_STYLE_KEY, e.target.value);
+                window.VirtualPhone?.syncFloatingEntry?.();
+                window.dispatchEvent(new CustomEvent('phone:floatingEntrySettingsChanged'));
+            });
         });
 
         // 一键更新所有提示词（恢复默认）
