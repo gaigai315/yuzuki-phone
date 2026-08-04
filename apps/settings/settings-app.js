@@ -2109,8 +2109,8 @@ export class SettingsApp {
 
                             <div class="setting-item setting-toggle">
                                 <div>
-                                    <div class="setting-label">电话通话记录注入线下</div>
-                                    <div class="setting-desc">关闭后，电话通话记录不会注入酒馆正文</div>
+                                    <div class="setting-label">通话APP记录注入线下</div>
+                                    <div class="setting-desc">通过 <code>{{PHONE_APP_HISTORY}}</code> 注入通话APP内的电话通话记录和短信聊天记录；关闭后两类记录都不会注入酒馆正文</div>
                                 </div>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="offline-phone-call-history-enabled" ${(this.storage.get('offline-phone-call-history-enabled') === true || this.storage.get('offline-phone-call-history-enabled') === 'true') ? 'checked' : ''}>
@@ -2120,8 +2120,8 @@ export class SettingsApp {
 
                             <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                                 <div>
-                                    <div class="setting-label">电话通话记录条数</div>
-                                    <div class="setting-desc">控制已接通电话的通话记录注入酒馆正文的最近条数</div>
+                                    <div class="setting-label">通话APP记录条数</div>
+                                    <div class="setting-desc">控制每段电话通话及每个短信会话注入酒馆正文的最近消息条数</div>
                                 </div>
                                 <input type="number" id="phone-call-limit" min="1" max="9999"
                                        value="${this.storage.get('phone-call-limit') || 10}"
@@ -5422,12 +5422,12 @@ export class SettingsApp {
             await this.storage.set('offline-diary-history-limit', validLimit);
         });
 
-        // 📞 线下通话记录注入开关
+        // 📞 线下通话 APP 记录注入开关
         document.getElementById('offline-phone-call-history-enabled')?.addEventListener('change', async (e) => {
             await this.storage.set('offline-phone-call-history-enabled', !!e.target.checked);
         });
 
-        // 📞 通话发送条数设置
+        // 📞 通话 APP 历史消息条数设置
         document.getElementById('phone-call-limit')?.addEventListener('change', async (e) => {
             const limit = parseInt(e.target.value) || 10;
             const validLimit = Math.max(1, Math.min(9999, limit));

@@ -8601,7 +8601,7 @@ if (window.GGP_Loaded) {
             await loadCoreModules();
             let phonePromptHandler = async () => {};
             let phonePromptRunTail = Promise.resolve();
-            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i;
+            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|PHONE_APP_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i;
             const runPhonePromptHandler = (eventData, source = 'unknown') => {
                 const run = phonePromptRunTail
                     .catch(() => undefined)
@@ -9531,7 +9531,7 @@ if (window.GGP_Loaded) {
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{MOMENTS_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}', '{{WANGXIANG_TASKS}}', '{{WANGXIANG_ORDERS}}'];
+                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{PHONE_APP_HISTORY}}', '{{MOMENTS_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}', '{{WANGXIANG_TASKS}}', '{{WANGXIANG_ORDERS}}'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
                                 let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
@@ -9544,8 +9544,8 @@ if (window.GGP_Loaded) {
                                         }
                                     });
                                     // 兼容 {{ XXX }}（含空格）
-                                    if (/\{\{\s*(MOMENTS_HISTORY|HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i.test(c)) {
-                                        c = c.replace(/\{\{\s*(MOMENTS_HISTORY|HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/gi, '').trim();
+                                    if (/\{\{\s*(PHONE_APP_HISTORY|MOMENTS_HISTORY|HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i.test(c)) {
+                                        c = c.replace(/\{\{\s*(PHONE_APP_HISTORY|MOMENTS_HISTORY|HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/gi, '').trim();
                                         modified = true;
                                     }
                                     if (modified) {
@@ -10290,6 +10290,7 @@ if (window.GGP_Loaded) {
                                     // 将规则与聊天记录分离为多个变量
                                     let phoneRulesContent = '';
                                     let phoneHistoryContent = '';
+                                    let phoneAppHistoryContent = '';
                                     let momentsHistoryContent = '';
                                     let honeyHistoryContent = '';
                                     let weiboHistoryContent = '';
@@ -10674,25 +10675,36 @@ if (window.GGP_Loaded) {
                                         }
                                     }
 
-                                    // 3.5️⃣ 添加通话记录
+                                    // 3.5️⃣ 添加通话 APP 记录（通话与短信共用 {{PHONE_APP_HISTORY}}）
                                     try {
                                         const callHistoryEnabledRaw = storage?.get('offline-phone-call-history-enabled');
                                         const callHistoryEnabled = callHistoryEnabledRaw === true || callHistoryEnabledRaw === 'true';
 
                                         if (callHistoryEnabled) {
-                                            let callHistory = null;
-                                            if (window.VirtualPhone?.phoneApp?.phoneCallData) {
-                                                callHistory = window.VirtualPhone.phoneApp.phoneCallData.getCallHistory();
+                                            const phoneCallData = window.VirtualPhone?.phoneApp?.phoneCallData;
+                                            const historyLimitRaw = parseInt(storage?.get('phone-call-limit'));
+                                            const historyLimit = Math.max(1, Math.min(9999, Number.isFinite(historyLimitRaw) ? historyLimitRaw : 10));
+                                            const userName = context?.name1 || '用户';
+                                            let callHistory = [];
+                                            let smsConversations = [];
+
+                                            if (phoneCallData) {
+                                                callHistory = phoneCallData.getCallHistory();
+                                                smsConversations = phoneCallData.getSmsConversations();
                                             } else {
                                                 const savedCallHistory = storage?.get('phone_call_history', null);
                                                 if (savedCallHistory) {
                                                     callHistory = typeof savedCallHistory === 'string' ? JSON.parse(savedCallHistory) : savedCallHistory;
                                                 }
+                                                const savedSmsConversations = storage?.get('phone_call_sms_conversations', null);
+                                                if (savedSmsConversations) {
+                                                    smsConversations = typeof savedSmsConversations === 'string'
+                                                        ? JSON.parse(savedSmsConversations)
+                                                        : savedSmsConversations;
+                                                }
                                             }
 
-                                            if (callHistory && callHistory.length > 0) {
-                                                const callLimit = storage ? (parseInt(storage.get('phone-call-limit')) || 10) : 10;
-                                                const userName = context?.name1 || '用户';
+                                            if (Array.isArray(callHistory) && callHistory.length > 0) {
                                                 const parseCallDateTimeToTs = (dateText, timeText) => {
                                                     const dateRaw = String(dateText || '').trim();
                                                     const timeRaw = String(timeText || '').trim().replace('：', ':');
@@ -10725,22 +10737,65 @@ if (window.GGP_Loaded) {
                                                     .map(item => item.record);
 
                                                 if (answeredCalls.length > 0) {
-                                                    phoneHistoryContent += `【 手机通话记录】\n`;
+                                                    phoneAppHistoryContent += `【手机通话记录】\n`;
                                                     answeredCalls.forEach(record => {
-                                                        const recentTranscript = record.transcript.slice(-callLimit);
-                                                        phoneHistoryContent += `━━━ 与 ${record.caller} 的通话 ━━━\n`;
-                                                        if (record.date || record.time) phoneHistoryContent += `${record.date || ''} ${record.time || ''}\n`;
+                                                        const callerName = String(record?.caller || '未知联系人').trim();
+                                                        const recentTranscript = record.transcript.slice(-historyLimit);
+                                                        phoneAppHistoryContent += `━━━ 与 ${callerName} 的通话 ━━━\n`;
+                                                        if (record.date || record.time) phoneAppHistoryContent += `${record.date || ''} ${record.time || ''}\n`;
                                                         recentTranscript.forEach(msg => {
-                                                            const speaker = msg.from === 'me' ? userName : record.caller;
-                                                            phoneHistoryContent += `${speaker}: ${msg.text}\n`;
+                                                            const text = String(msg?.text || '').trim();
+                                                            if (!text) return;
+                                                            const speaker = msg.from === 'me' ? userName : callerName;
+                                                            phoneAppHistoryContent += `${speaker}: ${text}\n`;
                                                         });
-                                                        phoneHistoryContent += `\n`;
+                                                        phoneAppHistoryContent += `\n`;
+                                                    });
+                                                }
+                                            }
+
+                                            if (Array.isArray(smsConversations) && smsConversations.length > 0) {
+                                                const normalizedSmsConversations = smsConversations
+                                                    .map((conversation, index) => {
+                                                        const messages = Array.isArray(conversation?.messages)
+                                                            ? conversation.messages.filter(message => String(message?.text || message?.content || '').trim())
+                                                            : [];
+                                                        const latestMessage = messages[messages.length - 1];
+                                                        const sortTs = Number(conversation?.updatedAt || latestMessage?.createdAt || conversation?.createdAt || index);
+                                                        return { conversation, messages, index, sortTs: Number.isFinite(sortTs) ? sortTs : index };
+                                                    })
+                                                    .filter(item => item.messages.length > 0)
+                                                    .sort((a, b) => {
+                                                        if (a.sortTs !== b.sortTs) return a.sortTs - b.sortTs;
+                                                        return a.index - b.index;
+                                                    });
+
+                                                if (normalizedSmsConversations.length > 0) {
+                                                    phoneAppHistoryContent += `【手机短信记录】\n`;
+                                                    normalizedSmsConversations.forEach(({ conversation, messages: smsMessages }) => {
+                                                        const contactName = String(conversation?.name || '未知联系人').trim();
+                                                        phoneAppHistoryContent += `━━━ 与 ${contactName} 的短信 ━━━\n`;
+                                                        let lastDate = '';
+                                                        smsMessages.slice(-historyLimit).forEach(message => {
+                                                            const date = String(message?.date || '').trim();
+                                                            const weekday = String(message?.weekday || '').trim();
+                                                            if (date && date !== lastDate) {
+                                                                phoneAppHistoryContent += `--- ${date}${weekday ? ` ${weekday}` : ''} ---\n`;
+                                                                lastDate = date;
+                                                            }
+                                                            const time = String(message?.time || '').trim();
+                                                            const text = String(message?.text || message?.content || '').trim();
+                                                            const isOutgoing = message?.direction === 'outgoing' || message?.from === 'me';
+                                                            const speaker = isOutgoing ? userName : contactName;
+                                                            phoneAppHistoryContent += `${time ? `[${time}] ` : ''}${speaker}: ${text}\n`;
+                                                        });
+                                                        phoneAppHistoryContent += `\n`;
                                                     });
                                                 }
                                             }
                                         }
                                     } catch (e) {
-                                        console.warn('⚠️ [手机] 注入通话记录失败:', e);
+                                        console.warn('⚠️ [手机] 注入通话 APP 记录失败:', e);
                                     }
 
                                     // 3.6️⃣ 添加微博记录（可选：支持变量 {{WEIBO_HISTORY}} 控制注入位置）
@@ -10970,6 +11025,7 @@ if (window.GGP_Loaded) {
                                         const resolveInjectedSystemName = (id, text) => {
                                             if (id === 'weibo_system_history') return 'SYSTEM (微博)';
                                             if (id === 'phone_system_history') return 'SYSTEM (微信历史)';
+                                            if (id === 'phone_app_system_history') return 'SYSTEM (通话APP记录)';
                                             if (id === 'moments_system_history') return 'SYSTEM (朋友圈记录)';
                                             if (id === 'honey_system_history') return 'SYSTEM (蜜语)';
                                             if (id === 'mofo_system_prompt') return 'SYSTEM (魔坊)';
@@ -11049,6 +11105,7 @@ if (window.GGP_Loaded) {
                                     injectIntoMessages('{{PHONE_PROMPT}}', phoneRulesContent, 'phone_system_rules');
                                     injectIntoMessages('{{MOMENTS_HISTORY}}', momentsHistoryContent, 'moments_system_history');
                                     injectIntoMessages('{{PHONE_HISTORY}}', phoneHistoryContent, 'phone_system_history');
+                                    injectIntoMessages('{{PHONE_APP_HISTORY}}', phoneAppHistoryContent, 'phone_app_system_history');
                                     injectIntoMessages('{{HONEY_HISTORY}}', honeyHistoryContent, 'honey_system_history');
                                     if (weiboInjectEnabled) {
                                         injectIntoMessages('{{WEIBO_HISTORY}}', weiboHistoryContent, 'weibo_system_history');
@@ -11294,6 +11351,7 @@ if (window.GGP_Loaded) {
                                             // 1. 清洗占位符变量残骸
                                             const TARGET_VAR = '{{PHONE_PROMPT}}';
                                             const HISTORY_VAR = '{{PHONE_HISTORY}}';
+                                            const PHONE_APP_HISTORY_VAR = '{{PHONE_APP_HISTORY}}';
                                             const HONEY_VAR = '{{HONEY_HISTORY}}';
                                             const WEIBO_VAR = '{{WEIBO_HISTORY}}';
                                             const MUSIC_VAR = '{{MUSIC_PROMPT}}';
@@ -11304,6 +11362,7 @@ if (window.GGP_Loaded) {
                                             const WANGXIANG_ORDERS_VAR = '{{WANGXIANG_ORDERS}}';
                                             const PHONE_PROMPT_SPACED_REGEX = /\{\{\s*PHONE_PROMPT\s*\}\}/gi;
                                             const PHONE_HISTORY_SPACED_REGEX = /\{\{\s*PHONE_HISTORY\s*\}\}/gi;
+                                            const PHONE_APP_HISTORY_SPACED_REGEX = /\{\{\s*PHONE_APP_HISTORY\s*\}\}/gi;
                                             const HONEY_HISTORY_SPACED_REGEX = /\{\{\s*HONEY_HISTORY\s*\}\}/gi;
                                             const WEIBO_HISTORY_SPACED_REGEX = /\{\{\s*WEIBO_HISTORY\s*\}\}/gi;
                                             const MUSIC_PROMPT_SPACED_REGEX = /\{\{\s*MUSIC_PROMPT\s*\}\}/gi;
@@ -11326,6 +11385,14 @@ if (window.GGP_Loaded) {
                                             }
                                             if (PHONE_HISTORY_SPACED_REGEX.test(c)) {
                                                 c = c.replace(PHONE_HISTORY_SPACED_REGEX, '');
+                                                modified = true;
+                                            }
+                                            if (c.includes(PHONE_APP_HISTORY_VAR)) {
+                                                c = c.split(PHONE_APP_HISTORY_VAR).join('');
+                                                modified = true;
+                                            }
+                                            if (PHONE_APP_HISTORY_SPACED_REGEX.test(c)) {
+                                                c = c.replace(PHONE_APP_HISTORY_SPACED_REGEX, '');
                                                 modified = true;
                                             }
                                             if (c.includes(HONEY_VAR)) {
