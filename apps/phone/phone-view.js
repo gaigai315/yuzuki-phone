@@ -383,7 +383,7 @@ export class PhoneCallView {
         const input = threadRoot?.querySelector('#phone-sms-composer-input');
         const sendButton = threadRoot?.querySelector('.phone-sms-send');
         const refreshSendState = () => {
-            if (sendButton) sendButton.disabled = !String(input?.value || '').trim();
+            this._syncActiveSmsSendButton(safeName);
         };
         const syncEditingState = () => {
             const hasDraft = Boolean(String(input?.value || '').trim());
@@ -397,7 +397,27 @@ export class PhoneCallView {
         };
         const sendCurrentMessage = () => {
             const text = String(input?.value || '').trim();
-            if (!text) return;
+            if (!text) {
+                const requestKey = this._normalizeSmsContactName(safeName);
+                if (!requestKey || this._smsPendingRequests.has(requestKey)) return;
+
+                const pending = this._smsPendingBatches.get(requestKey) || [];
+                if (pending.length > 0) {
+                    this._flushSmsBatch(safeName);
+                    refreshSendState();
+                    input?.focus();
+                    return;
+                }
+
+                const unansweredMessages = this._getUnansweredOutgoingSmsMessages(safeName);
+                if (unansweredMessages.length === 0) return;
+                this._requestSmsReply(safeName, unansweredMessages).catch(error => {
+                    console.error('❌ 短信重新请求失败:', error);
+                });
+                refreshSendState();
+                input?.focus();
+                return;
+            }
             const result = this._storeOutgoingSms(safeName, text);
             if (!result?.message) return;
 
@@ -595,6 +615,45 @@ export class PhoneCallView {
         return String(name || '').trim().toLocaleLowerCase('zh-CN');
     }
 
+    _getUnansweredOutgoingSmsMessages(contactName = '') {
+        const conversation = this.app.phoneCallData.getSmsConversationByName?.(contactName);
+        const messages = Array.isArray(conversation?.messages) ? conversation.messages : [];
+        const unanswered = [];
+
+        for (let index = messages.length - 1; index >= 0; index--) {
+            const message = messages[index];
+            const text = String(message?.text || message?.content || '').trim();
+            if (!text) continue;
+            const isOutgoing = message?.direction === 'outgoing' || message?.from === 'me';
+            if (!isOutgoing) break;
+            unanswered.unshift(message);
+        }
+
+        return unanswered;
+    }
+
+    _syncActiveSmsSendButton(contactName = '') {
+        const requestKey = this._normalizeSmsContactName(contactName);
+        if (!requestKey || this.currentView !== 'sms-thread'
+            || this._normalizeSmsContactName(this.currentSmsContact) !== requestKey) return;
+
+        const threadRoot = document.querySelector('.phone-view-current .phone-sms-thread');
+        const input = threadRoot?.querySelector('#phone-sms-composer-input');
+        const sendButton = threadRoot?.querySelector('.phone-sms-send');
+        if (!sendButton) return;
+
+        const hasDraft = Boolean(String(input?.value || '').trim());
+        const hasPendingBatch = (this._smsPendingBatches.get(requestKey) || []).length > 0;
+        const hasUnansweredMessages = this._getUnansweredOutgoingSmsMessages(contactName).length > 0;
+        const canRetry = !this._smsPendingRequests.has(requestKey)
+            && !hasDraft
+            && (hasPendingBatch || hasUnansweredMessages);
+
+        sendButton.disabled = !hasDraft && !canRetry;
+        sendButton.setAttribute('aria-label', canRetry ? '重新请求回复' : '发送');
+        sendButton.title = canRetry ? '重新请求回复' : '';
+    }
+
     _storeOutgoingSms(contactName, text) {
         const timeManager = window.VirtualPhone?.timeManager;
         const now = timeManager?.getCurrentStoryTime?.() || {
@@ -631,6 +690,7 @@ export class PhoneCallView {
         const color = this._getSmsStatusColor(contactName);
         dot.classList.remove('phone-dot-green', 'phone-dot-yellow', 'phone-dot-red');
         dot.classList.add(`phone-dot-${color}`);
+        this._syncActiveSmsSendButton(contactName);
     }
 
     _clearSmsBatchTimer(contactName = '') {

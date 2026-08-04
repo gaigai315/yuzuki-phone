@@ -1190,6 +1190,7 @@ export class PhoneShell {
             }
         });
         window.VirtualPhone?.refreshGlobalTextColorStyle?.();
+        window.VirtualPhone?.refreshGlobalFontScale?.();
     }
 
     syncHomeLayoutChromeClass() {

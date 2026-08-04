@@ -54,8 +54,11 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-08-03',
     items: [
-        '【优化】优化短信弹窗提醒。',
-        '【新增】新增小手机悬浮图标。'
+        '【新增】设置个性化新增字号调节功能。',
+        '【新增】微信好友支持独立补充设定，可在单聊及该好友所在群聊中按联系人注入。',
+        '【新增】APP线上勾选世界书功能新增搜索功能。',
+        '【新增】新增小手机悬浮图标。',
+        '【优化】优化短信弹窗提醒。'
     ]
 };
 
@@ -8293,6 +8296,180 @@ if (window.GGP_Loaded) {
         return percent;
     }
 
+    const PHONE_FONT_SCALE_MIN = 70;
+    const PHONE_FONT_SCALE_MAX = 130;
+    const PHONE_FONT_SCALE_DEFAULT = 100;
+    const globalFontScaleState = {
+        percent: PHONE_FONT_SCALE_DEFAULT,
+        root: null,
+        observer: null,
+        entries: new Map(),
+        needsRescan: true,
+        frameId: null
+    };
+
+    function normalizePhoneFontScalePercent(value) {
+        const raw = Number.parseFloat(value);
+        if (!Number.isFinite(raw)) return PHONE_FONT_SCALE_DEFAULT;
+        return Math.max(PHONE_FONT_SCALE_MIN, Math.min(PHONE_FONT_SCALE_MAX, Math.round(raw)));
+    }
+
+    function isProtectedPhoneFontElement(element) {
+        if (!(element instanceof HTMLElement)) return true;
+        if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'PATH', 'IMG', 'PICTURE', 'VIDEO', 'AUDIO', 'CANVAS', 'SOURCE', 'I'].includes(element.tagName)) {
+            return true;
+        }
+        if (element.matches('[aria-hidden=true], [role=img], .app-icon-emoji, .emoji-icon, .material-icons, .material-symbols-outlined, .fa, .fas, .far, .fab, .fal, .fad, .fa-solid, .fa-regular, .fa-brands')) {
+            return true;
+        }
+        return Array.from(element.classList).some((className) => /^fa-/.test(className));
+    }
+
+    function hasDirectPhoneText(element) {
+        return Array.from(element.childNodes).some((node) => (
+            node.nodeType === Node.TEXT_NODE && String(node.nodeValue || '').trim()
+        ));
+    }
+
+    function shouldScalePhoneFontElement(element) {
+        if (!(element instanceof HTMLElement) || isProtectedPhoneFontElement(element)) return false;
+        if (element.matches('input, textarea, select, button, option, [contenteditable=true], [contenteditable=plaintext-only]')) {
+            return true;
+        }
+        return hasDirectPhoneText(element);
+    }
+
+    function restorePhoneFontEntry(entry) {
+        const { element, inlineFontSize, inlineFontSizePriority, inlineLineHeight, inlineLineHeightPriority } = entry;
+        if (!element?.style) return;
+        if (inlineFontSize) element.style.setProperty('font-size', inlineFontSize, inlineFontSizePriority);
+        else element.style.removeProperty('font-size');
+        if (inlineLineHeight) element.style.setProperty('line-height', inlineLineHeight, inlineLineHeightPriority);
+        else element.style.removeProperty('line-height');
+    }
+
+    function capturePhoneFontEntry(element, mode = 'scale') {
+        const computed = window.getComputedStyle(element);
+        const baseFontSize = Number.parseFloat(computed.fontSize);
+        if (!Number.isFinite(baseFontSize) || baseFontSize <= 0) return null;
+
+        const computedLineHeight = Number.parseFloat(computed.lineHeight);
+        const lineHeightRatio = computedLineHeight / baseFontSize;
+        return {
+            element,
+            mode,
+            baseFontSize,
+            baseLineHeight: Number.isFinite(computedLineHeight) && lineHeightRatio >= 1 && lineHeightRatio <= 2.2
+                ? computedLineHeight
+                : null,
+            inlineFontSize: element.style.getPropertyValue('font-size'),
+            inlineFontSizePriority: element.style.getPropertyPriority('font-size'),
+            inlineLineHeight: element.style.getPropertyValue('line-height'),
+            inlineLineHeightPriority: element.style.getPropertyPriority('line-height')
+        };
+    }
+
+    function rescanGlobalPhoneFonts(root) {
+        globalFontScaleState.entries.forEach(restorePhoneFontEntry);
+
+        const elements = [root, ...root.querySelectorAll('*')];
+        const activeElements = new Set();
+        elements.forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const mode = isProtectedPhoneFontElement(element)
+                ? 'protect'
+                : (shouldScalePhoneFontElement(element) ? 'scale' : null);
+            if (!mode) return;
+            activeElements.add(element);
+            const existing = globalFontScaleState.entries.get(element);
+            if (!existing || existing.mode !== mode) {
+                const entry = capturePhoneFontEntry(element, mode);
+                if (entry) globalFontScaleState.entries.set(element, entry);
+            }
+        });
+
+        globalFontScaleState.entries.forEach((entry, element) => {
+            if (!element.isConnected || !root.contains(element) || !activeElements.has(element)) {
+                restorePhoneFontEntry(entry);
+                globalFontScaleState.entries.delete(element);
+            }
+        });
+    }
+
+    function renderGlobalPhoneFontScale() {
+        globalFontScaleState.frameId = null;
+        const root = document.getElementById('phone-panel-content');
+        if (!root) return;
+
+        if (globalFontScaleState.root !== root) {
+            globalFontScaleState.observer?.disconnect();
+            globalFontScaleState.entries.forEach(restorePhoneFontEntry);
+            globalFontScaleState.entries.clear();
+            globalFontScaleState.root = root;
+            globalFontScaleState.needsRescan = true;
+            globalFontScaleState.observer = new MutationObserver((mutations) => {
+                const needsRescan = mutations.some((mutation) => {
+                    if (mutation.type === 'characterData') {
+                        return !globalFontScaleState.entries.has(mutation.target.parentElement);
+                    }
+                    const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
+                    if (changedNodes.some((node) => node.nodeType === Node.ELEMENT_NODE)) return true;
+                    return !globalFontScaleState.entries.has(mutation.target);
+                });
+                if (!needsRescan) return;
+                globalFontScaleState.needsRescan = true;
+                requestGlobalPhoneFontScaleRender();
+            });
+            globalFontScaleState.observer.observe(root, {
+                childList: true,
+                subtree: true,
+                characterData: true
+            });
+        }
+
+        if (globalFontScaleState.needsRescan) {
+            rescanGlobalPhoneFonts(root);
+            globalFontScaleState.needsRescan = false;
+        }
+
+        const scale = globalFontScaleState.percent / 100;
+        globalFontScaleState.entries.forEach((entry, element) => {
+            if (!element.isConnected || !root.contains(element)) return;
+            if (globalFontScaleState.percent === PHONE_FONT_SCALE_DEFAULT) {
+                restorePhoneFontEntry(entry);
+                return;
+            }
+
+            const fontSize = entry.mode === 'protect' ? entry.baseFontSize : entry.baseFontSize * scale;
+            element.style.setProperty('font-size', `${fontSize.toFixed(2)}px`, 'important');
+            if (entry.mode === 'scale' && entry.baseLineHeight) {
+                element.style.setProperty('line-height', `${(entry.baseLineHeight * scale).toFixed(2)}px`, 'important');
+            } else if (entry.inlineLineHeight) {
+                element.style.setProperty('line-height', entry.inlineLineHeight, entry.inlineLineHeightPriority);
+            } else {
+                element.style.removeProperty('line-height');
+            }
+        });
+    }
+
+    function requestGlobalPhoneFontScaleRender() {
+        if (globalFontScaleState.frameId !== null) return;
+        globalFontScaleState.frameId = window.requestAnimationFrame(renderGlobalPhoneFontScale);
+    }
+
+    function applyGlobalFontScale(value) {
+        const percent = normalizePhoneFontScalePercent(value);
+        globalFontScaleState.percent = percent;
+        document.documentElement.style.setProperty('--phone-font-scale', (percent / 100).toFixed(4));
+        requestGlobalPhoneFontScaleRender();
+        return percent;
+    }
+
+    function refreshGlobalFontScale() {
+        globalFontScaleState.needsRescan = true;
+        requestGlobalPhoneFontScaleRender();
+    }
+
     function ensureGlobalTextColorOverrideStyle(color = null) {
         const safeColor = String(color || storage.get('phone-global-text') || '#000000').trim() || '#000000';
         const styleId = 'st-phone-global-text-color-override';
@@ -8359,11 +8536,13 @@ if (window.GGP_Loaded) {
         const globalTextColor = storage.get('phone-global-text') || '#000000';
         const phoneFrameColor = storage.get('phone-frame-color') || '#1a1a1a';
         const phoneShellScale = storage.get('phone-shell-scale') || 100;
+        const phoneFontScale = storage.get('phone-font-scale') || PHONE_FONT_SCALE_DEFAULT;
 
         // 设置CSS变量
         applyGlobalTextColor(globalTextColor);
         document.documentElement.style.setProperty('--phone-frame-color', phoneFrameColor);
         applyPhoneShellScale(phoneShellScale);
+        applyGlobalFontScale(phoneFontScale);
 
     }
 
@@ -8454,6 +8633,8 @@ if (window.GGP_Loaded) {
                 imageGenerationManager: imageGenerationManager,
                 worldbookManager: worldbookManager,
                 applyPhoneShellScale: applyPhoneShellScale,
+                applyGlobalFontScale: applyGlobalFontScale,
+                refreshGlobalFontScale: refreshGlobalFontScale,
                 applyGlobalTextColor: applyGlobalTextColor,
                 refreshGlobalTextColorStyle: ensureGlobalTextColorOverrideStyle,
                 syncFloatingEntry: syncPhoneFloatingEntry,

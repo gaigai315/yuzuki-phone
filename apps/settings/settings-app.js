@@ -33,6 +33,9 @@ const SETTINGS_FOLD_ARROW_HTML = '<span class="settings-fold-arrow" aria-hidden=
 const PHONE_SHELL_SCALE_MIN = 80;
 const PHONE_SHELL_SCALE_MAX = 120;
 const PHONE_SHELL_SCALE_DEFAULT = 100;
+const PHONE_FONT_SCALE_MIN = 70;
+const PHONE_FONT_SCALE_MAX = 130;
+const PHONE_FONT_SCALE_DEFAULT = 100;
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const CARD_LAYOUT_CUSTOM_CSS_KEY = 'phone-card-layout-custom-css';
@@ -73,6 +76,12 @@ function normalizePhoneShellScalePercent(value) {
     return Math.max(PHONE_SHELL_SCALE_MIN, Math.min(PHONE_SHELL_SCALE_MAX, Math.round(raw)));
 }
 
+function normalizePhoneFontScalePercent(value) {
+    const raw = Number.parseFloat(value);
+    if (!Number.isFinite(raw)) return PHONE_FONT_SCALE_DEFAULT;
+    return Math.max(PHONE_FONT_SCALE_MIN, Math.min(PHONE_FONT_SCALE_MAX, Math.round(raw)));
+}
+
 function readNonNegativeStorageNumber(storage, key, defaultValue = 0, maxValue = 9999) {
     const raw = storage?.get?.(key);
     if (raw === undefined || raw === null || raw === '') return defaultValue;
@@ -90,6 +99,15 @@ function applyPhoneShellScale(value) {
     const heightScale = widthScale * 0.95;
     document.documentElement.style.setProperty('--phone-shell-width-scale', widthScale.toFixed(4));
     document.documentElement.style.setProperty('--phone-shell-height-scale', heightScale.toFixed(4));
+    return percent;
+}
+
+function applyGlobalFontScale(value) {
+    if (typeof window.VirtualPhone?.applyGlobalFontScale === 'function') {
+        return window.VirtualPhone.applyGlobalFontScale(value);
+    }
+    const percent = normalizePhoneFontScalePercent(value);
+    document.documentElement.style.setProperty('--phone-font-scale', (percent / 100).toFixed(4));
     return percent;
 }
 
@@ -1129,6 +1147,7 @@ export class SettingsApp {
         const globalTextColor = this.storage.get('phone-global-text') || '#000000';
         const phoneFrameColor = this.storage.get('phone-frame-color') || '#1a1a1a';
         const phoneShellScale = normalizePhoneShellScalePercent(this.storage.get('phone-shell-scale') || PHONE_SHELL_SCALE_DEFAULT);
+        const phoneFontScale = normalizePhoneFontScalePercent(this.storage.get('phone-font-scale') || PHONE_FONT_SCALE_DEFAULT);
         const html = `
             <div id="yzp-settings-app" class="settings-app yzp-settings-app ${useSettingsWallpaper ? 'settings-has-wallpaper' : ''} ${useSafeRenderMode ? 'yzp-settings-safe-render' : ''}" style="${wallpaperStyle}">
                 <style>
@@ -2183,6 +2202,22 @@ export class SettingsApp {
                                            value="${phoneShellScale}">
                                     <span id="phone-shell-scale-value" class="phone-shell-scale-value">${phoneShellScale}%</span>
                                     <button type="button" id="phone-shell-scale-reset" class="setting-btn" style="padding: 4px 10px; min-height: 30px; background: #f8fafc; border: 1px solid rgba(18,24,38,0.12); color: #374151; border-radius: 9px;">默认</button>
+                                </div>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-label">全局字号大小</div>
+                                <div class="setting-desc">调整所有 APP 的文字大小，不改变手机外壳和图标尺寸</div>
+                                <div class="phone-shell-scale-control">
+                                    <input type="range"
+                                           class="phone-gesture-control phone-theme-range"
+                                           id="phone-font-scale-slider"
+                                           min="${PHONE_FONT_SCALE_MIN}"
+                                           max="${PHONE_FONT_SCALE_MAX}"
+                                           step="1"
+                                           value="${phoneFontScale}">
+                                    <span id="phone-font-scale-value" class="phone-shell-scale-value">${phoneFontScale}%</span>
+                                    <button type="button" id="phone-font-scale-reset" class="setting-btn" style="padding: 4px 10px; min-height: 30px; background: #f8fafc; border: 1px solid rgba(18,24,38,0.12); color: #374151; border-radius: 9px;">默认</button>
                                 </div>
                             </div>
 
@@ -4908,6 +4943,36 @@ export class SettingsApp {
         document.getElementById('phone-shell-scale-reset')?.addEventListener('click', async () => {
             const percent = syncPhoneShellScaleDisplay(PHONE_SHELL_SCALE_DEFAULT);
             await this.storage.set('phone-shell-scale', percent);
+        });
+
+        const phoneFontScaleSlider = document.getElementById('phone-font-scale-slider');
+        const phoneFontScaleValue = document.getElementById('phone-font-scale-value');
+        const syncPhoneFontScaleDisplay = (value) => {
+            const percent = normalizePhoneFontScalePercent(value);
+            if (phoneFontScaleSlider) phoneFontScaleSlider.value = String(percent);
+            if (phoneFontScaleValue) phoneFontScaleValue.textContent = `${percent}%`;
+            applyGlobalFontScale(percent);
+            return percent;
+        };
+
+        phoneFontScaleSlider?.addEventListener('input', (e) => {
+            syncPhoneFontScaleDisplay(e.target.value);
+        });
+
+        ['pointerdown', 'touchstart', 'touchmove'].forEach((eventName) => {
+            phoneFontScaleSlider?.addEventListener(eventName, (e) => {
+                e.stopPropagation();
+            }, { passive: true });
+        });
+
+        phoneFontScaleSlider?.addEventListener('change', async (e) => {
+            const percent = syncPhoneFontScaleDisplay(e.target.value);
+            await this.storage.set('phone-font-scale', percent);
+        });
+
+        document.getElementById('phone-font-scale-reset')?.addEventListener('click', async () => {
+            const percent = syncPhoneFontScaleDisplay(PHONE_FONT_SCALE_DEFAULT);
+            await this.storage.set('phone-font-scale', percent);
         });
 
         document.getElementById('phone-frame-color-picker')?.addEventListener('input', (e) => {

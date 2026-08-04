@@ -5234,9 +5234,13 @@ input:checked + .toggle-slider:before {
     display: inline-flex;
     width: 48px;
     height: 30px;
+    min-height: 30px;
+    flex: 0 0 30px;
+    align-self: flex-start;
     align-items: center;
     justify-content: center;
     gap: 4px;
+    box-sizing: border-box;
     border: 1px solid rgba(255, 255, 255, 0.48);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.68);
@@ -6824,7 +6828,7 @@ input:checked + .toggle-slider:before {
 }
 
 /* 2. 拯救所有表单控件 (对抗主题对裸标签 input, textarea, select 的 !important 劫持) */
-#phone-panel-content input:not(.phone-secret-input):not(.honey-app *):not(.wangxiang-app *):not(.wechat-app .chat-input):not([type="checkbox"]):not([type="range"]):not([type="color"]):not(#honey-chat-input):not(#video-chat-input):not(#voice-chat-input):not(#phone-call-input),
+#phone-panel-content input:not(.phone-secret-input):not(.phone-worldbook-search-input):not(.honey-app *):not(.wangxiang-app *):not(.wechat-app .chat-input):not([type="checkbox"]):not([type="range"]):not([type="color"]):not(#honey-chat-input):not(#video-chat-input):not(#voice-chat-input):not(#phone-call-input),
 #phone-panel-content textarea:not(.honey-app *):not(.wangxiang-app *) {
     background: #ffffff !important;
     background-image: none !important;
@@ -7097,6 +7101,97 @@ input:checked + .toggle-slider:before {
 
 #phone-panel-content .phone-worldbook-status.is-error {
     color: #c83b45;
+}
+
+#phone-panel-content .phone-worldbook-search {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) 30px;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    min-height: 38px;
+    margin: 2px 0 5px;
+    padding: 3px 4px 3px 10px;
+    border: 1px solid rgba(127, 134, 144, 0.24);
+    border-radius: 7px;
+    background: rgba(127, 134, 144, 0.09);
+    color: inherit;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-worldbook-search-icon {
+    color: currentColor !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-worldbook-search-input {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    margin: 0 !important;
+    padding: 0 2px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: inherit !important;
+    -webkit-text-fill-color: currentColor !important;
+    caret-color: currentColor !important;
+    font-size: 12px !important;
+    line-height: 30px !important;
+    letter-spacing: 0 !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+}
+
+#phone-panel-content .phone-worldbook-search-input::placeholder {
+    color: currentColor !important;
+    -webkit-text-fill-color: currentColor !important;
+    opacity: 0.5;
+}
+
+#phone-panel-content .phone-worldbook-search-input::-webkit-search-cancel-button {
+    display: none;
+}
+
+#phone-panel-content .phone-worldbook-search-clear {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 30px !important;
+    min-width: 30px !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 5px !important;
+    background: transparent !important;
+    color: inherit !important;
+    box-shadow: none !important;
+    font-size: 13px !important;
+    line-height: 1 !important;
+    opacity: 0.62;
+}
+
+#phone-panel-content .phone-worldbook-search-clear[hidden],
+#phone-panel-content .phone-worldbook-search-result[hidden],
+#phone-panel-content .phone-worldbook-source-row[hidden] {
+    display: none !important;
+}
+
+#phone-panel-content .phone-worldbook-search-result {
+    min-height: 17px;
+    padding: 0 4px 3px;
+    color: currentColor;
+    font-size: 11px;
+    line-height: 1.35;
+    opacity: 0.62;
 }
 
 #phone-panel-content .phone-worldbook-source-row {

@@ -32,6 +32,22 @@ function uniqueStrings(values = []) {
     return result;
 }
 
+function normalizeSearchText(value) {
+    return safeString(value)
+        .normalize('NFKC')
+        .toLocaleLowerCase('zh-CN')
+        .replace(/\s+/g, ' ');
+}
+
+function getWorldbookSearchText(source) {
+    const entries = Array.isArray(source?.allEntries) ? source.allEntries : [];
+    return normalizeSearchText([
+        source?.name,
+        source?.sourceLabel,
+        ...entries.flatMap((entry) => [entry?.comment, entry?.content])
+    ].join('\n'));
+}
+
 function parseBooleanSetting(value, fallback = false) {
     if (value === true || value === 'true' || value === 1 || value === '1') return true;
     if (value === false || value === 'false' || value === 0 || value === '0') return false;
@@ -799,7 +815,8 @@ export class WorldbookManager {
                 const bSelected = this.getSourceEntrySelectionState(appKey, b).sourceSelected ? 1 : 0;
                 return (bSelected - aSelected) || String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN');
             });
-            container.innerHTML = displaySources.map((source) => {
+            const savedQuery = safeString(container.dataset.phoneWorldbookSearchQuery);
+            const sourceRows = displaySources.map((source) => {
                 const entryState = this.getSourceEntrySelectionState(appKey, source);
                 const totalCount = entryState.allEntries.length;
                 const selectedCount = entryState.selectedIds.length;
@@ -808,7 +825,7 @@ export class WorldbookManager {
                 const sourceId = escapeHtml(source.id);
                 const status = unavailable ? '读取失败或没有条目' : `${selectedCount}/${totalCount} 条已选`;
                 return `
-                    <div class="phone-worldbook-source-row${checked ? ' is-selected' : ''}">
+                    <div class="phone-worldbook-source-row${checked ? ' is-selected' : ''}" data-source-id="${sourceId}">
                         <input class="phone-worldbook-source-toggle" type="checkbox" value="${sourceId}" ${checked ? 'checked' : ''} ${unavailable ? 'disabled' : ''} aria-label="选择 ${escapeHtml(source.name)}">
                         <div class="phone-worldbook-source-copy">
                             <div class="phone-worldbook-source-name">${escapeHtml(source.name)}</div>
@@ -820,8 +837,63 @@ export class WorldbookManager {
                     </div>
                 `;
             }).join('');
+            container.innerHTML = `
+                <div class="phone-worldbook-search" role="search">
+                    <i class="fa-solid fa-magnifying-glass phone-worldbook-search-icon" aria-hidden="true"></i>
+                    <input class="phone-worldbook-search-input" type="search" value="${escapeHtml(savedQuery)}" placeholder="搜索世界书名称或内容" aria-label="搜索世界书名称或内容" autocomplete="off" spellcheck="false">
+                    <button class="phone-worldbook-search-clear" type="button" title="清除搜索" aria-label="清除搜索" ${savedQuery ? '' : 'hidden'}>
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="phone-worldbook-search-result" aria-live="polite" ${savedQuery ? '' : 'hidden'}></div>
+                <div class="phone-worldbook-source-list">${sourceRows}</div>
+            `;
 
             const sourceById = new Map(displaySources.map((source) => [String(source.id), source]));
+            const searchTextBySourceId = new Map(displaySources.map((source) => [
+                String(source.id),
+                getWorldbookSearchText(source)
+            ]));
+            const searchInput = container.querySelector('.phone-worldbook-search-input');
+            const searchClear = container.querySelector('.phone-worldbook-search-clear');
+            const searchResult = container.querySelector('.phone-worldbook-search-result');
+            const sourceRowsElements = Array.from(container.querySelectorAll('.phone-worldbook-source-row'));
+            const applySearch = () => {
+                const query = safeString(searchInput?.value);
+                const tokens = normalizeSearchText(query).split(' ').filter(Boolean);
+                let visibleCount = 0;
+
+                sourceRowsElements.forEach((row) => {
+                    const searchText = searchTextBySourceId.get(String(row.dataset.sourceId || '')) || '';
+                    const matches = tokens.every((token) => searchText.includes(token));
+                    row.hidden = !matches;
+                    if (matches) visibleCount += 1;
+                });
+
+                container.dataset.phoneWorldbookSearchQuery = query;
+                if (searchClear) searchClear.hidden = !query;
+                if (searchResult) {
+                    searchResult.hidden = !query;
+                    searchResult.textContent = visibleCount > 0
+                        ? `找到 ${visibleCount} 本世界书`
+                        : '没有找到匹配的世界书';
+                }
+            };
+            searchInput?.addEventListener('input', applySearch);
+            searchInput?.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape' || !searchInput.value) return;
+                event.stopPropagation();
+                searchInput.value = '';
+                applySearch();
+            });
+            searchClear?.addEventListener('click', () => {
+                if (!searchInput) return;
+                searchInput.value = '';
+                applySearch();
+                searchInput.focus();
+            });
+            applySearch();
+
             container.querySelectorAll('.phone-worldbook-source-toggle').forEach((input) => {
                 input.addEventListener('change', async () => {
                     const source = sourceById.get(String(input.value));

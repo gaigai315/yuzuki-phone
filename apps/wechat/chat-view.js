@@ -1504,6 +1504,56 @@ export class ChatView {
         return names;
     }
 
+    _getWechatSupplementalSetting(contact = {}) {
+        return String(contact?.wechatSupplementalSetting || '').trim();
+    }
+
+    _buildGroupSupplementalContactProfileMessage(targetChat = null) {
+        if (!targetChat || targetChat.type !== 'group') return null;
+
+        const contacts = this.app.wechatData.getContacts?.() || [];
+        if (!Array.isArray(contacts) || contacts.length === 0) return null;
+
+        const explicitMembers = Array.isArray(targetChat.members)
+            ? targetChat.members.map(name => String(name || '').trim()).filter(Boolean)
+            : [];
+        const memberNames = explicitMembers.length > 0
+            ? explicitMembers
+            : this._getGroupChatParticipants(targetChat);
+        const seenContacts = new Set();
+        const memberProfiles = [];
+
+        memberNames.forEach((memberName) => {
+            const contact = this.app.wechatData.findContactByNameLoose?.(memberName, { includeChats: false });
+            if (!contact) return;
+
+            const isWechatContact = contacts.some((item) => item === contact
+                || (item?.id && contact?.id && String(item.id) === String(contact.id)));
+            if (!isWechatContact) return;
+
+            const contactKey = String(contact.id || contact.name || memberName).trim();
+            if (!contactKey || seenContacts.has(contactKey)) return;
+
+            const supplementalSetting = this._getWechatSupplementalSetting(contact);
+            if (!supplementalSetting) return;
+
+            seenContacts.add(contactKey);
+            memberProfiles.push(`【${contact.name || memberName}】\n${supplementalSetting}`);
+        });
+
+        if (memberProfiles.length === 0) return null;
+        return {
+            role: 'system',
+            content: [
+                '【当前群聊成员补充档案】',
+                '以下设定只适用于对应的当前群成员：',
+                ...memberProfiles
+            ].join('\n\n'),
+            name: 'SYSTEM (群成员设定)',
+            isPhoneMessage: true
+        };
+    }
+
     async _getHoneyHostSummaryForWechatContact(contact = {}) {
         const hostName = String(contact?.honeyHostName || contact?.honeySource || contact?.name || '').trim();
         if (!hostName) return '';
@@ -10237,24 +10287,26 @@ renderChatRoom(chat) {
                 const isViewingThisChat = !!document.querySelector('.phone-view-current .wechat-app') &&
                     this.app.currentChat && this.app.currentChat.id === savedChatId;
 
-                const baseDelay = 800;
-                const typingDelay = String(msg.content || '').length * 50;
-                const totalDelay = baseDelay + typingDelay;
+                if (msgIndex > 0) {
+                    const baseDelay = 800;
+                    const typingDelay = String(msg.content || '').length * 50;
+                    const totalDelay = baseDelay + typingDelay;
 
-                if (isViewingThisChat) {
-                    this.showTypingStatus('正在输入');
-                }
-
-                // 等待打字延迟
-                await new Promise((resolve, reject) => {
-                    const timer = setTimeout(resolve, totalDelay);
-                    if (this.abortController) {
-                        this.abortController.signal.addEventListener('abort', () => {
-                            clearTimeout(timer);
-                            reject(new Error('已中断发送'));
-                        });
+                    if (isViewingThisChat) {
+                        this.showTypingStatus('正在输入');
                     }
-                });
+
+                    // 首条回复立即显示，仅后续消息保留模拟打字延迟
+                    await new Promise((resolve, reject) => {
+                        const timer = setTimeout(resolve, totalDelay);
+                        if (this.abortController) {
+                            this.abortController.signal.addEventListener('abort', () => {
+                                clearTimeout(timer);
+                                reject(new Error('已中断发送'));
+                            });
+                        }
+                    });
+                }
 
                 // 存入数据库
                 const senderContact = this.app.wechatData.getContactByName(msg.sender);
@@ -10769,6 +10821,10 @@ renderChatRoom(chat) {
                 if (currentContact.relation) {
                     contactNotes.push(`关系：${currentContact.relation}`);
                 }
+                const supplementalSetting = this._getWechatSupplementalSetting(currentContact);
+                if (supplementalSetting) {
+                    contactNotes.push(`补充微信设定：\n${supplementalSetting}`);
+                }
                 if (currentContact.sourceApp === 'honey' || currentContact.sourceLabel === '蜜语' || currentContact.sourceLabel === '主播') {
                     contactNotes.push(`来源应用：蜜语`);
                     if (currentContact.sourceLabel === '主播' || String(currentContact.relation || '').includes('主播')) {
@@ -10802,6 +10858,8 @@ renderChatRoom(chat) {
                     isPhoneMessage: true
                 };
             }
+        } else {
+            contactProfileMessage = this._buildGroupSupplementalContactProfileMessage(targetChat);
         }
 
         // ========================================

@@ -585,6 +585,7 @@ export class ContactsView {
         const legacyTtsVoice = String(contact.ttsVoice || '').trim();
         const contactGender = String(this.app.wechatData?.getContactGender?.(safeContactId) || 'unknown').trim();
         const contactAvatarGroup = String(this.app.wechatData?.getContactAvatarGroup?.(safeContactId) || '').trim();
+        const wechatSupplementalSetting = String(contact.wechatSupplementalSetting || '').trim();
         const ttsHistoryOptions = this._getTtsVoiceHistoryOptions();
         const referenceImage = this._normalizeWechatReferenceImage(contact.naiReferenceImage || contact.referenceImage || '');
         const referenceEnabled = !!referenceImage && contact.naiReferenceEnabled !== false && contact.naiReferenceEnabled !== 'false';
@@ -701,6 +702,26 @@ export class ContactsView {
                             </select>
                         </div>
 
+                        <div style="margin-bottom: 10px;">
+                            <div style="font-size: 11px; color: #999; margin-bottom: 4px;">补充微信设定（仅该好友）</div>
+                            <textarea id="edit-contact-wechat-supplemental-setting"
+                                      placeholder="填写只属于该好友的身份、关系或剧情设定"
+                                      style="
+                                width: 100%;
+                                min-height: 78px;
+                                max-height: 180px;
+                                padding: 8px 10px;
+                                ${fieldStyle}
+                                border-radius: 6px;
+                                font-size: 12px;
+                                line-height: 1.45;
+                                resize: vertical;
+                                box-sizing: border-box;
+                                font-family: inherit;
+                            ">${this._escapeHtml(wechatSupplementalSetting)}</textarea>
+                            <div style="font-size: 10px; color: #999; line-height: 1.35; margin-top: 4px;">仅在该好友的单聊，或该好友所在的当前群聊中注入。</div>
+                        </div>
+
                         <div style="margin-top: 15px; border-top: 1px solid #f0f0f0; padding-top: 15px;">
                             <div style="font-size: 12px; color: #000; font-weight: 500; margin-bottom: 8px;">🖼️ 个人形象参考图</div>
                             <div style="display: flex; gap: 10px; align-items: flex-start;">
@@ -719,7 +740,6 @@ export class ContactsView {
                                     ${referencePreviewStyle}
                                 ">${referenceImage ? '' : '<i class="fa-regular fa-image"></i>'}</button>
                                 <div style="flex: 1; min-width: 0;">
-                                    <div style="font-size: 11px; color: #666; line-height: 1.45;">仅当 AI 回复 <b>[个人图片]（描述）</b> 时，NovelAI 生图才会使用这张参考图；普通 <b>[图片]（描述）</b> 不会使用参考图。</div>
                                     <input type="file" id="edit-contact-reference-upload" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display: none;">
                                     <div style="display: flex; gap: 6px; margin-top: 8px;">
                                         <button id="upload-edit-contact-reference" type="button" style="padding: 5px 9px; ${buttonStyle} border-radius: 5px; font-size: 11px; cursor: pointer;">${referenceImage ? '替换形象' : '上传形象'}</button>
@@ -753,57 +773,67 @@ export class ContactsView {
                             </label>
                         </div>
 
-                        <!-- 🔥 新增：专属音色绑定 -->
-                        <div style="margin-top: 15px; border-top: 1px solid #f0f0f0; padding-top: 15px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <div style="font-size: 12px; color: #000; font-weight: 500;">🎙️ 专属语音音色</div>
-                                <select id="edit-contact-tts-select" style="${softFieldStyle} border-radius:4px; font-size:11px; padding:2px 4px; outline:none; max-width: 100px;">
-                                    <option value="">-- 历史音色 --</option>
-                                    ${ttsHistoryOptions}
-                                </select>
+                        <!-- 专属音色绑定：默认折叠，节省联系人编辑页空间 -->
+                        <div class="phone-prompt-fold wechat-contact-tts-fold" data-default-open="false" style="margin-top: 15px;">
+                            <div class="phone-prompt-fold-header" id="edit-contact-tts-fold-header" role="button" tabindex="0"
+                                 aria-expanded="false" aria-controls="edit-contact-tts-fold-content">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">🎙️ 专属语音音色</div>
+                                    <div class="phone-prompt-fold-desc">点击展开查看各服务商音色</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow" aria-hidden="true"></i>
                             </div>
-                            <label style="display: block; margin-bottom: 7px;">
-                                <div style="font-size: 11px; color: #666; margin-bottom: 3px;">该角色默认语音服务商</div>
-                                <select id="edit-contact-tts-provider-select" style="
-                                    width: 100%;
-                                    height: 30px;
-                                    padding: 0 8px;
-                                    ${softFieldStyle}
-                                    border-radius: 6px;
-                                    font-size: 12px;
-                                    box-sizing: border-box;
-                                ">
-                                    <option value="" ${!contactTtsProvider ? 'selected' : ''}>跟随全局设置</option>
-                                    ${this._getTtsProviderOptions().map(option => `
-                                        <option value="${option.id}" ${contactTtsProvider === option.id ? 'selected' : ''}>${option.label}</option>
-                                    `).join('')}
-                                </select>
-                            </label>
-                            <div style="display: flex; flex-direction: column; gap: 7px;">
-                                ${this._getTtsProviderOptions().map(option => {
-                                    const providerVoice = String(contactTtsVoices?.[option.id] || '').trim();
-                                    const value = providerVoice || (option.id === currentTtsProvider ? legacyTtsVoice : '');
-                                    const activeText = option.id === currentTtsProvider ? '当前' : '';
-                                    return `
-                                        <label style="display: block;">
-                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
-                                                <span style="font-size: 11px; color: #666;">${option.label}</span>
-                                                ${activeText ? '<span style="font-size: 10px; color: #07c160;">当前</span>' : ''}
-                                            </div>
-                                            <input type="text" class="edit-contact-tts-provider-input" data-provider="${option.id}" placeholder="${option.placeholder}"
-                                                   value="${this._escapeAttr(value)}" style="
-                                                width: 100%;
-                                                padding: 8px 10px;
-                                                ${fieldStyle}
-                                                border-radius: 6px;
-                                                font-size: 12px;
-                                                box-sizing: border-box;
-                                            ">
-                                        </label>
-                                    `;
-                                }).join('')}
+                            <div class="phone-prompt-fold-content" id="edit-contact-tts-fold-content" aria-hidden="true">
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                    <div style="font-size: 11px; color: #666;">历史音色快速填入</div>
+                                    <select id="edit-contact-tts-select" style="${softFieldStyle} border-radius:4px; font-size:11px; padding:2px 4px; outline:none; max-width: 128px;">
+                                        <option value="">-- 历史音色 --</option>
+                                        ${ttsHistoryOptions}
+                                    </select>
+                                </div>
+                                <label style="display: block; margin-bottom: 7px;">
+                                    <div style="font-size: 11px; color: #666; margin-bottom: 3px;">该角色默认语音服务商</div>
+                                    <select id="edit-contact-tts-provider-select" style="
+                                        width: 100%;
+                                        height: 30px;
+                                        padding: 0 8px;
+                                        ${softFieldStyle}
+                                        border-radius: 6px;
+                                        font-size: 12px;
+                                        box-sizing: border-box;
+                                    ">
+                                        <option value="" ${!contactTtsProvider ? 'selected' : ''}>跟随全局设置</option>
+                                        ${this._getTtsProviderOptions().map(option => `
+                                            <option value="${option.id}" ${contactTtsProvider === option.id ? 'selected' : ''}>${option.label}</option>
+                                        `).join('')}
+                                    </select>
+                                </label>
+                                <div style="display: flex; flex-direction: column; gap: 7px;">
+                                    ${this._getTtsProviderOptions().map(option => {
+                                        const providerVoice = String(contactTtsVoices?.[option.id] || '').trim();
+                                        const value = providerVoice || (option.id === currentTtsProvider ? legacyTtsVoice : '');
+                                        const activeText = option.id === currentTtsProvider ? '当前' : '';
+                                        return `
+                                            <label style="display: block;">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                                                    <span style="font-size: 11px; color: #666;">${option.label}</span>
+                                                    ${activeText ? '<span style="font-size: 10px; color: #07c160;">当前</span>' : ''}
+                                                </div>
+                                                <input type="text" class="edit-contact-tts-provider-input" data-provider="${option.id}" placeholder="${option.placeholder}"
+                                                       value="${this._escapeAttr(value)}" style="
+                                                    width: 100%;
+                                                    padding: 8px 10px;
+                                                    ${fieldStyle}
+                                                    border-radius: 6px;
+                                                    font-size: 12px;
+                                                    box-sizing: border-box;
+                                                ">
+                                            </label>
+                                        `;
+                                    }).join('')}
+                                </div>
+                                <div style="font-size: 10px; color: #ff3b30; margin-top: 5px;">群聊自动播放会按发送者的默认服务商和对应音色逐条合成；未指定服务商则跟随全局设置。</div>
                             </div>
-                            <div style="font-size: 10px; color: #ff3b30; margin-top: 5px;">群聊自动播放会按发送者的默认服务商和对应音色逐条合成；未指定服务商则跟随全局设置。</div>
                         </div>
 
                     </div>
@@ -913,7 +943,27 @@ export class ContactsView {
             returnFromEditContact();
         });
 
-        // 🔥 下拉框选择后，自动把选中的音色填入输入框
+        const ttsFold = query('.wechat-contact-tts-fold');
+        const ttsFoldHeader = query('#edit-contact-tts-fold-header');
+        const ttsFoldContent = query('#edit-contact-tts-fold-content');
+        const setTtsFoldExpanded = (expanded) => {
+            const isExpanded = expanded === true;
+            ttsFold?.classList.toggle('is-open', isExpanded);
+            ttsFoldHeader?.setAttribute('aria-expanded', String(isExpanded));
+            ttsFoldContent?.setAttribute('aria-hidden', String(!isExpanded));
+        };
+        const toggleTtsFold = () => {
+            setTtsFoldExpanded(!ttsFold?.classList.contains('is-open'));
+        };
+        ttsFoldHeader?.addEventListener('click', toggleTtsFold);
+        ttsFoldHeader?.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            toggleTtsFold();
+        });
+        setTtsFoldExpanded(false);
+
+        // 下拉框选择后，自动把选中的音色填入输入框
         query('#edit-contact-tts-select')?.addEventListener('change', (e) => {
             const selectedVoice = e.target.value;
             if (selectedVoice) {
@@ -1139,6 +1189,7 @@ export class ContactsView {
             const oldReferenceImage = String(contact.naiReferenceImage || contact.referenceImage || '').trim();
             const referenceStrengthValue = Math.max(0, Math.min(1, Number(query('#edit-contact-reference-strength')?.value) || 0.7));
             const naiPromptTagsValue = String(query('#edit-contact-nai-prompt-tags')?.value || '').trim();
+            const wechatSupplementalSettingValue = String(query('#edit-contact-wechat-supplemental-setting')?.value || '').trim();
 
             this.app.wechatData.updateContact(safeContactId, {
                 name: name,
@@ -1151,7 +1202,8 @@ export class ContactsView {
                 naiReferenceEnabled: !!selectedReferenceImage && !!query('#edit-contact-reference-enabled')?.checked,
                 naiReferenceStrength: referenceStrengthValue,
                 naiReferenceInformationExtracted: 1,
-                naiPromptTags: naiPromptTagsValue
+                naiPromptTags: naiPromptTagsValue,
+                wechatSupplementalSetting: wechatSupplementalSettingValue
             });
             this.app.wechatData.setContactGender?.(
                 safeContactId,
