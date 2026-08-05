@@ -5177,7 +5177,7 @@ if (window.GGP_Loaded) {
 
     async function ensureWechatAppForBackground() {
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260805-chat-photo-bounds');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260805-avatar-elder-pool');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             if (!window.VirtualPhone.wechatApp) {
                 window.VirtualPhone.wechatApp = new module.WechatApp(phoneShell, storage);
@@ -8087,7 +8087,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260805-chat-photo-bounds');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260805-avatar-elder-pool');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             // 单例复用
@@ -8925,7 +8925,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.settingsApp.render();
                     });
                 } else if (appId === 'wechat') {
-                    import('./apps/wechat/wechat-app.js?v=20260805-chat-photo-bounds')
+                    import('./apps/wechat/wechat-app.js?v=20260805-avatar-elder-pool')
                         .then(module => {
                             try {
                                 // 🔥 单例模式：只在第一次打开时创建微信实例，拒绝重复绑定事件

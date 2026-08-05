@@ -4748,7 +4748,7 @@ export class WechatApp {
     _ensureWechatAvatarPoolLoaded() {
         if (this._avatarPoolLoaded || this._avatarPoolLoading) return this._avatarPoolPromise;
         this._avatarPoolLoading = true;
-        const manifestUrl = this._getWechatAssetUrl('avatars/manifest.json?v=20260409-01');
+        const manifestUrl = this._getWechatAssetUrl(`avatars/manifest.json?t=${Date.now()}`);
 
         const finalize = (pool) => {
             this._avatarPool = this._normalizeWechatAvatarPool(pool);
@@ -4769,7 +4769,7 @@ export class WechatApp {
             }
         };
 
-        this._avatarPoolPromise = fetch(manifestUrl, { cache: 'no-cache' })
+        this._avatarPoolPromise = fetch(manifestUrl, { cache: 'no-store' })
             .then(resp => (resp.ok ? resp.text() : ''))
             .then(async (rawText) => {
                 let payload = null;
@@ -4781,13 +4781,24 @@ export class WechatApp {
                 }
 
                 let pool = this._normalizeWechatAvatarPool(payload);
-                if (pool.male.length === 0 && pool.female.length === 0 && pool.all.length === 0) {
-                    const [male, female] = await Promise.all([
-                        this._discoverWechatAvatarSeries('male', 200),
-                        this._discoverWechatAvatarSeries('female', 200)
-                    ]);
-                    pool = this._normalizeWechatAvatarPool({ male, female });
-                }
+                const groups = [
+                    ['male', 'male'],
+                    ['female', 'female'],
+                    ['male_elder', 'male_elder'],
+                    ['female_elder', 'female_elder']
+                ];
+                const discovered = await Promise.all(groups.map(([key, prefix]) => (
+                    pool[key].length > 0
+                        ? Promise.resolve([])
+                        : this._discoverWechatAvatarSeries(prefix, 200)
+                )));
+                pool = this._normalizeWechatAvatarPool({
+                    all: pool.all,
+                    male: pool.male.length > 0 ? pool.male : discovered[0],
+                    female: pool.female.length > 0 ? pool.female : discovered[1],
+                    male_elder: pool.male_elder.length > 0 ? pool.male_elder : discovered[2],
+                    female_elder: pool.female_elder.length > 0 ? pool.female_elder : discovered[3]
+                });
                 finalize(pool);
             })
             .catch(() => finalize(null));
@@ -7231,7 +7242,7 @@ export class WechatApp {
                         <div style="font-size:13px; color:#333; font-weight:600;">默认头像池与性别标记</div>
                         <div style="font-size:11px; color:#888; margin-top:4px; line-height:1.45;">
                             素材目录：\`apps/wechat/avatars/\`<br>
-                            普通头像：\`male001.png\`、\`female001.jpg\`；年长组请写入 manifest 的 \`male_elder\` / \`female_elder\`<br>
+                            普通头像：\`male001.png\`、\`female001.jpg\`；年长头像：\`male_elder001.png\`、\`female_elder001.jpg\`<br>
                             当前已识别：男 ${maleCount} 张，女 ${femaleCount} 张，年长男 ${maleElderCount} 张，年长女 ${femaleElderCount} 张<br>
                             通讯录联系人：${contacts.length} 人（显示姓名与头像类型）
                         </div>
