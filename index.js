@@ -49,12 +49,18 @@ const LOBBY_WECHAT_ONLINE_PROACTIVE_LAST_AT_KEY = 'phone_lobby_wechat_online_pro
 const LOBBY_WECHAT_ONLINE_PROACTIVE_PENDING_KEY = 'phone_lobby_wechat_online_proactive_pending_at';
 const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
+const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
+    'offline-wechat-prompt-enabled',
+    'offline-single-chat-enabled',
+    'offline-group-chat-enabled'
+];
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-08-05',
     items: [
-        '【优化】优化微信聊天相册图片显示：大图按比例缩小至图片占位框范围，小图保持原始尺寸。'
+        '【优化】优化微信聊天相册图片显示：大图按比例缩小至图片占位框范围，小图保持原始尺寸。',
+        '【新增】微信聊天设置新增会话级“注入正文聊天记录”开关，可单独关闭指定会话的正文注入；关闭后即使全局开启互通模式与线下注入，该会话记录也会被排除。'
     ]
 };
 
@@ -1065,6 +1071,7 @@ if (window.GGP_Loaded) {
         // 初始化核心对象
         currentApps = JSON.parse(JSON.stringify(APPS));
         storage = new PhoneStorage();
+        ensureWechatInteractionDefaults();
         settings = storage.loadSettings();
 
         // 🔥 立即实例化时间和提示词，拔除任何延迟隐患！
@@ -5083,6 +5090,34 @@ if (window.GGP_Loaded) {
         }
     }
 
+    function ensureWechatInteractionDefaults(ctx = null) {
+        try {
+            if (!storage) return;
+            const context = ctx || getContext();
+            if (!context) return;
+
+            const isLobby = isLobbyModeContext(context);
+            const interopKey = isLobby ? 'phone_lobby_wechat_online_mode' : 'wechat_online_mode';
+            const onlineOnlyKey = isLobby ? 'phone_lobby_wechat_online_only_mode' : 'wechat_online_only_mode';
+            const hasStoredValue = (value) => value !== undefined && value !== null && value !== '';
+            const isEnabled = (value) => value === true || value === 'true' || value === 1 || value === '1';
+
+            const interopRaw = storage.get(interopKey);
+            if (!hasStoredValue(interopRaw)) {
+                const onlineOnlyRaw = storage.get(onlineOnlyKey);
+                void storage.set(interopKey, !isEnabled(onlineOnlyRaw));
+            }
+
+            WECHAT_INITIAL_ENABLED_OFFLINE_KEYS.forEach((key) => {
+                if (!hasStoredValue(storage.get(key))) {
+                    void storage.set(key, true);
+                }
+            });
+        } catch (error) {
+            console.warn('[Wechat] 初始化互动模式默认设置失败:', error);
+        }
+    }
+
     function getWechatOnlineProactiveKeys(ctx = null) {
         const isLobby = isLobbyModeContext(ctx);
         return {
@@ -8151,6 +8186,7 @@ if (window.GGP_Loaded) {
     function onChatChanged() {
         // 🔄 切换会话时清空自动微博队列，避免旧会话任务串入新会话
         resetAutoWeiboQueue('chat_changed');
+        ensureWechatInteractionDefaults();
         window.VirtualPhone?.hideMofoUpdateBubble?.();
 
         // 🔥 切换会话时彻底清空微信单例缓存，防止数据串味
@@ -9988,6 +10024,14 @@ if (window.GGP_Loaded) {
 
                                         // 🔥 线下模式：使用线下专属的条数限制
                                         for (const chat of allChats) {
+                                            const offlineHistoryInjectRaw = chat?.injectOfflineHistoryEnabled;
+                                            const shouldInjectOfflineHistory = offlineHistoryInjectRaw !== false
+                                                && offlineHistoryInjectRaw !== 'false'
+                                                && offlineHistoryInjectRaw !== 0
+                                                && offlineHistoryInjectRaw !== '0';
+                                            if (!shouldInjectOfflineHistory) {
+                                                continue;
+                                            }
                                             const linkedContact = chat?.contactId
                                                 ? contactMap.get(String(chat.contactId))
                                                 : null;

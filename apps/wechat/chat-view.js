@@ -12047,6 +12047,7 @@ renderChatRoom(chat) {
     showChatMenu() {
         const currentChat = this.app.currentChat || {};
         const isGroupChat = currentChat.type === 'group';
+        const offlineHistoryInjectEnabled = this.app.wechatData.isOfflineHistoryInjectionEnabledForChat?.(currentChat.id) !== false;
         const honeyInjectEnabled = !isGroupChat && this.app.wechatData.isHoneyHistoryInjectionEnabledForChat?.(currentChat.id);
         const profileContextEnabled = isGroupChat || this.app.wechatData.isProfileContextInjectionEnabledForChat?.(currentChat.id) !== false;
         const isBlocked = this._isBlockedSingleChat(currentChat);
@@ -12088,7 +12089,22 @@ renderChatRoom(chat) {
                             </label>
                         </div>
                     </div>
+                    ` : ''}
 
+                    <div style="background: #fff; padding: 15px 20px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div style="min-width: 0;">
+                                <div style="font-size: 16px; color: #000;">注入正文聊天记录</div>
+                                <div style="font-size: 12px; color: #999; margin-top: 3px; line-height: 1.35;">关闭后，当前会话的微信聊天记录不会注入酒馆正文，不影响本窗口内保存和查看</div>
+                            </div>
+                            <label class="toggle-switch" style="flex: 0 0 auto;">
+                                <input type="checkbox" id="wechat-offline-history-toggle" ${offlineHistoryInjectEnabled ? 'checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    ${!isGroupChat ? `
                     <div style="background: #fff; padding: 15px 20px; margin-bottom: 10px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
                             <div style="min-width: 0;">
@@ -12135,6 +12151,14 @@ renderChatRoom(chat) {
         // 设置背景按钮
         document.getElementById('set-bg-btn')?.addEventListener('click', () => {
             this.showBackgroundPicker();
+        });
+
+        document.getElementById('wechat-offline-history-toggle')?.addEventListener('change', (e) => {
+            const enabled = !!e.target.checked;
+            const ok = this.app.wechatData.setOfflineHistoryInjectionForChat?.(this.app.currentChat?.id, enabled);
+            if (ok) {
+                this.app.phoneShell.showNotification('微信', enabled ? '已允许当前会话聊天记录注入正文' : '已禁止当前会话聊天记录注入正文', '💬');
+            }
         });
 
         document.getElementById('wechat-profile-context-toggle')?.addEventListener('change', (e) => {

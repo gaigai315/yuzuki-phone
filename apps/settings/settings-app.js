@@ -2421,8 +2421,7 @@ export class SettingsApp {
                                 </div>
                             </div>
                             <div class="setting-desc" style="margin-top: 8px;">
-                                每个聊天会话窗口独立存储<br>
-                                蜜语数据全局共享
+                                每个聊天会话窗口独立存储
                             </div>
                         </div>
                     </div>
@@ -2571,7 +2570,6 @@ export class SettingsApp {
                                                value="${currentTtsUrl}"
                                                placeholder="本地 IndexTTS 例如 http://127.0.0.1:7880/v1/audio/speech"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                                        <div class="setting-desc" style="margin-top: 6px;">IndexTTS 本地请先启动「启动api服务.bat」，接口为 http://127.0.0.1:7880/v1/audio/speech；音色文件放在整合包 api/ckyp 目录。</div>
                                     </div>
 
                                     <div id="phone-tts-main-key-setting" class="setting-item" style="display: ${currentTtsProvider === 'volcengine' ? 'none' : 'flex'} !important; align-items: center; justify-content: space-between;">
@@ -2625,7 +2623,6 @@ export class SettingsApp {
                                         </div>
                                         <input type="text" id="phone-tts-voice"
                                                value="${currentTtsVoice}"
-                                               placeholder="IndexTTS 填 api/ckyp 下的文件名，例如 default.wav"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
                                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
                                             <button id="phone-tts-preview" style="padding: 2px 8px; border: none; background: none; color: #1677ff; font-size: 10px; cursor: pointer;">试听当前音色</button>

@@ -279,6 +279,20 @@ export class WechatData {
             .filter(Boolean);
     }
 
+    isOfflineHistoryInjectionEnabledForChat(chatId) {
+        const chat = this.getChat(chatId);
+        if (!chat) return true;
+        return this._normalizeBooleanValue(chat.injectOfflineHistoryEnabled, true);
+    }
+
+    setOfflineHistoryInjectionForChat(chatId, enabled) {
+        const chat = this.getChat(chatId);
+        if (!chat) return false;
+        chat.injectOfflineHistoryEnabled = !!enabled;
+        this.saveData();
+        return true;
+    }
+
     isHoneyHistoryInjectionEnabledForChat(chatId) {
         const chat = this.getChat(chatId);
         if (!chat || chat.type === 'group') return false;
