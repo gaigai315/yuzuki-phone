@@ -20,7 +20,7 @@ import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
 import { PhoneFloatingEntry } from './phone/floating-entry.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.6';
+const ST_PHONE_VERSION = '1.4.7';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -52,13 +52,9 @@ const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-08-03',
+    date: '2026-08-05',
     items: [
-        '【新增】设置个性化新增字号调节功能。',
-        '【新增】微信好友支持独立补充设定，可在单聊及该好友所在群聊中按联系人注入。',
-        '【新增】APP线上勾选世界书功能新增搜索功能。',
-        '【新增】新增小手机悬浮图标。',
-        '【优化】优化短信弹窗提醒。'
+        '【优化】优化微信聊天相册图片显示：大图按比例缩小至图片占位框范围，小图保持原始尺寸。'
     ]
 };
 
@@ -5146,7 +5142,7 @@ if (window.GGP_Loaded) {
 
     async function ensureWechatAppForBackground() {
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260802-chat-moments-feed');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260805-chat-photo-bounds');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             if (!window.VirtualPhone.wechatApp) {
                 window.VirtualPhone.wechatApp = new module.WechatApp(phoneShell, storage);
@@ -8056,7 +8052,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260802-chat-moments-feed');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260805-chat-photo-bounds');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             // 单例复用
@@ -8893,7 +8889,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.settingsApp.render();
                     });
                 } else if (appId === 'wechat') {
-                    import('./apps/wechat/wechat-app.js?v=20260802-chat-moments-feed')
+                    import('./apps/wechat/wechat-app.js?v=20260805-chat-photo-bounds')
                         .then(module => {
                             try {
                                 // 🔥 单例模式：只在第一次打开时创建微信实例，拒绝重复绑定事件

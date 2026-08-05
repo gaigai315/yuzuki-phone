@@ -3326,7 +3326,11 @@ renderChatRoom(chat) {
                     const customEmojiImgStyle = isCustomEmojiImage
                         ? 'display: block; max-width:100%; max-height:156px; width:auto; height:auto; object-fit:contain;'
                         : '';
-                    messageBody = `<div class="message-image-box ${isCustomEmojiImage ? 'message-image-box-custom-emoji' : ''}" style="position: relative; display: inline-block; line-height: 0; ${customEmojiBoxStyle}"><img src="${safeImageContent}" class="message-image" style="${customEmojiImgStyle}"></div>`;
+                    const photoBoxClass = isCustomEmojiImage
+                        ? 'message-image-box-custom-emoji'
+                        : 'wechat-chat-photo-box';
+                    const photoClass = isCustomEmojiImage ? '' : 'wechat-chat-photo';
+                    messageBody = `<div class="message-image-box ${photoBoxClass}" style="position: relative; display: inline-block; line-height: 0; ${customEmojiBoxStyle}"><img src="${safeImageContent}" class="message-image ${photoClass}" style="${customEmojiImgStyle}"></div>`;
                 }
                 break;
             case 'image_prompt':

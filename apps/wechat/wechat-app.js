@@ -10,7 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20260802-chat-moments-feed';
+import { ChatView } from './chat-view.js?v=20260805-chat-photo-bounds';
 import { ContactsView } from './contacts-view.js';
 import { MomentsView } from './moments-view.js?v=20260802-chat-moments-feed';
 import { WechatData } from './wechat-data.js?v=20260802-chat-moments-feed';
@@ -1624,6 +1624,23 @@ export class WechatApp {
     border-radius: 12px;
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* 相册原图只缩小到图片占位框上限，小图保持原始尺寸。 */
+#phone-panel-content .phone-screen .wechat-app .chat-room .wechat-chat-photo-box {
+    width: fit-content;
+    height: fit-content;
+    max-width: min(156px, 100%);
+    max-height: 156px;
+}
+
+#phone-panel-content .phone-screen .wechat-app .chat-room .wechat-chat-photo {
+    display: block;
+    width: auto !important;
+    height: auto !important;
+    max-width: min(156px, 100%) !important;
+    max-height: 156px !important;
+    object-fit: contain;
 }
 
 /* 定位卡片：横向紧凑极简版 */
