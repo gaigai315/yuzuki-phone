@@ -303,6 +303,97 @@ export class PhoneCallView {
         this._bindSmsConversationDeleteEvents(root.querySelector('#phone-sms-conversation-list'));
     }
 
+    _getSmsMessageDateKey(message = {}) {
+        const rawDate = String(message?.date || '').trim();
+        const dateMatch = rawDate.match(/(-?\d{1,6})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/);
+        if (dateMatch) {
+            return `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`;
+        }
+
+        const createdAt = Number(message?.createdAt || 0);
+        if (Number.isFinite(createdAt) && createdAt > 0) {
+            const date = new Date(createdAt);
+            if (!Number.isNaN(date.getTime())) {
+                return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            }
+        }
+
+        return rawDate;
+    }
+
+    _getSmsDateDividerText(message = {}) {
+        const rawDate = String(message?.date || '').trim();
+        const dateMatch = rawDate.match(/(-?\d{1,6})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/);
+        let dateText = rawDate;
+        if (dateMatch) {
+            dateText = `${dateMatch[1]}年${Number(dateMatch[2])}月${Number(dateMatch[3])}日`;
+        } else if (!dateText) {
+            const createdAt = Number(message?.createdAt || 0);
+            const date = Number.isFinite(createdAt) && createdAt > 0 ? new Date(createdAt) : null;
+            if (date && !Number.isNaN(date.getTime())) {
+                dateText = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+            }
+        }
+
+        return [dateText, String(message?.weekday || '').trim(), String(message?.time || '').trim()]
+            .filter(Boolean)
+            .join(' ');
+    }
+
+    _renderSmsDateDivider(dateKey = '', label = '') {
+        const safeDateKey = String(dateKey || '').trim();
+        const safeLabel = String(label || '').trim();
+        if (!safeDateKey || !safeLabel) return '';
+        return `
+            <div class="phone-sms-date-divider" data-sms-date-divider="${this._escapeAttr(safeDateKey)}" role="separator" aria-label="${this._escapeAttr(safeLabel)}">
+                <span>${this._escapeHtml(safeLabel)}</span>
+            </div>
+        `;
+    }
+
+    _renderSmsMessageBubble(message = {}, previousDateKey = '') {
+        const isOutgoing = message?.direction === 'outgoing' || message?.from === 'me';
+        const text = String(message?.text || message?.content || '').trim();
+        const dateKey = this._getSmsMessageDateKey(message);
+        const dateLabel = this._getSmsDateDividerText(message);
+        const dividerHtml = dateKey && dateKey !== previousDateKey
+            ? this._renderSmsDateDivider(dateKey, dateLabel)
+            : '';
+
+        return `${dividerHtml}
+            <div class="phone-sms-bubble-row ${isOutgoing ? 'is-outgoing' : 'is-incoming'}" data-sms-message-id="${this._escapeAttr(message?.id || '')}" data-sms-date-key="${this._escapeAttr(dateKey)}" data-sms-date-label="${this._escapeAttr(dateLabel)}">
+                <div class="phone-sms-bubble-stack">
+                    <div class="phone-sms-bubble">${this._escapeHtml(text)}</div>
+                    <div class="phone-sms-bubble-time">${this._escapeHtml(message?.time || '')}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderSmsMessages(messages = []) {
+        let previousDateKey = '';
+        return messages.map(message => {
+            const html = this._renderSmsMessageBubble(message, previousDateKey);
+            const dateKey = this._getSmsMessageDateKey(message);
+            if (dateKey) previousDateKey = dateKey;
+            return html;
+        }).join('');
+    }
+
+    _syncSmsDateDividers(messagesRoot) {
+        if (!messagesRoot) return;
+        messagesRoot.querySelectorAll('.phone-sms-date-divider').forEach(divider => divider.remove());
+        let previousDateKey = '';
+        messagesRoot.querySelectorAll('.phone-sms-bubble-row').forEach(row => {
+            const dateKey = String(row.dataset.smsDateKey || '').trim();
+            const dateLabel = String(row.dataset.smsDateLabel || '').trim();
+            if (dateKey && dateLabel && dateKey !== previousDateKey) {
+                row.insertAdjacentHTML('beforebegin', this._renderSmsDateDivider(dateKey, dateLabel));
+            }
+            if (dateKey) previousDateKey = dateKey;
+        });
+    }
+
     renderSmsThread(contactName = '') {
         const safeName = String(contactName || '').trim();
         if (!safeName) {
@@ -317,18 +408,7 @@ export class PhoneCallView {
             ? conversation.messages.filter(message => String(message?.text || message?.content || '').trim())
             : [];
         const messagesHtml = messages.length > 0
-            ? messages.map(message => {
-                const isOutgoing = message?.direction === 'outgoing' || message?.from === 'me';
-                const text = String(message?.text || message?.content || '').trim();
-                return `
-                    <div class="phone-sms-bubble-row ${isOutgoing ? 'is-outgoing' : 'is-incoming'}" data-sms-message-id="${this._escapeAttr(message?.id || '')}">
-                        <div class="phone-sms-bubble-stack">
-                            <div class="phone-sms-bubble">${this._escapeHtml(text)}</div>
-                            <div class="phone-sms-bubble-time">${this._escapeHtml(message?.time || '')}</div>
-                        </div>
-                    </div>
-                `;
-            }).join('')
+            ? this._renderSmsMessages(messages)
             : `
                 <div class="phone-sms-empty phone-sms-thread-empty">
                     <div class="phone-sms-empty-icon"><i class="fa-regular fa-message"></i></div>
@@ -755,15 +835,12 @@ export class PhoneCallView {
         const messagesRoot = document.querySelector('.phone-view-current .phone-sms-thread-messages');
         if (!messagesRoot || !message) return;
         messagesRoot.querySelector('.phone-sms-thread-empty')?.remove();
-        const isOutgoing = message?.direction === 'outgoing' || message?.from === 'me';
-        messagesRoot.insertAdjacentHTML('beforeend', `
-            <div class="phone-sms-bubble-row ${isOutgoing ? 'is-outgoing' : 'is-incoming'}" data-sms-message-id="${this._escapeAttr(message?.id || '')}">
-                <div class="phone-sms-bubble-stack">
-                    <div class="phone-sms-bubble">${this._escapeHtml(message?.text || message?.content || '')}</div>
-                    <div class="phone-sms-bubble-time">${this._escapeHtml(message?.time || '')}</div>
-                </div>
-            </div>
-        `);
+        const messageRows = messagesRoot.querySelectorAll('.phone-sms-bubble-row');
+        const previousDateKey = String(messageRows[messageRows.length - 1]?.dataset?.smsDateKey || '').trim();
+        const messageHtml = this._renderSmsMessageBubble(message, previousDateKey);
+        const typingIndicator = messagesRoot.querySelector('.phone-sms-typing');
+        if (typingIndicator) typingIndicator.insertAdjacentHTML('beforebegin', messageHtml);
+        else messagesRoot.insertAdjacentHTML('beforeend', messageHtml);
         messagesRoot.scrollTop = messagesRoot.scrollHeight;
     }
 
@@ -1024,6 +1101,7 @@ export class PhoneCallView {
             cleanup();
             messageRow.remove();
             const messagesRoot = threadRoot.querySelector('.phone-sms-thread-messages');
+            this._syncSmsDateDividers(messagesRoot);
             if (messagesRoot && !messagesRoot.querySelector('.phone-sms-bubble-row')) {
                 messagesRoot.insertAdjacentHTML('beforeend', `
                     <div class="phone-sms-empty phone-sms-thread-empty">

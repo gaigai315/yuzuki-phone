@@ -5149,6 +5149,24 @@ input:checked + .toggle-slider:before {
     min-height: 0;
 }
 
+#phone-panel-content .phone-screen .phone-sms-date-divider {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin: 6px 0 4px;
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .phone-sms-date-divider span {
+    color: rgba(74, 84, 99, 0.56);
+    font-size: 9px;
+    font-weight: 500;
+    line-height: 1.4;
+    text-align: center;
+}
+
 #phone-panel-content .phone-screen .phone-sms-bubble-row {
     display: flex;
     width: 100%;

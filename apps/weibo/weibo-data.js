@@ -1725,6 +1725,42 @@ export class WeiboData {
     // 🤖 AI互动：陌生网友对用户微博的反应
     // ========================================
 
+    _normalizeUserPostReactionResult(rawResult = {}, post = {}, currentFollowers = 0) {
+        const result = rawResult && typeof rawResult === 'object' ? rawResult : {};
+        const comments = Array.isArray(result.comments) ? result.comments : [];
+        const likes = Array.from(new Set((Array.isArray(result.likes) ? result.likes : [])
+            .map(name => String(name || '').trim())
+            .filter(Boolean)));
+        const readMetric = (...values) => {
+            for (const value of values) {
+                const parsed = Number.parseInt(value, 10);
+                if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+            }
+            return null;
+        };
+
+        const seedText = `${post?.id || ''}|${post?.content || ''}|${post?.time || ''}`;
+        const seed = Number.parseInt(this._simpleHash(seedText || String(Date.now())), 36) || 1;
+        const followerCount = Math.max(0, Number.parseInt(currentFollowers, 10) || 0);
+        const engagementRange = Math.max(5, Math.min(120, Math.round(Math.sqrt(followerCount + 1) * 2) + 7));
+        const fallbackLikeCount = likes.length + 1 + (seed % engagementRange);
+        const explicitLikeCount = readMetric(result.likeCount, result.likesCount, result.totalLikes);
+        const likeCount = Math.max(likes.length, explicitLikeCount ?? fallbackLikeCount);
+
+        const forwardRange = Math.max(1, Math.min(40, Math.floor(likeCount / 4) + 1));
+        const fallbackForwardCount = Math.floor(seed / 97) % (forwardRange + 1);
+        const explicitForwardCount = readMetric(result.forwardCount, result.forwards, result.forward);
+        const forwardCount = explicitForwardCount ?? fallbackForwardCount;
+
+        return {
+            ...result,
+            comments,
+            likes,
+            likeCount,
+            forwardCount
+        };
+    }
+
     async generateReactionForPost(post) {
         return this.queueApiCall(async () => {
             const userName = this._getCurrentWeiboNickname();
@@ -1765,6 +1801,7 @@ export class WeiboData {
                 .replace(/\{\{currentFollowers\}\}/g, String(currentFollowers))
                 .replace(/\{\{postContentDisplay\}\}/g, postContentDisplay);
             prompt += `\n\n【微博身份约束】当前手机主人的微博昵称是「${userName}」。生成陌生网友评论/点赞时，禁止把「${userName}」当作网友昵称或评论作者；只有描述博主/原微博主人时才可指代此人。`;
+            prompt += `\n\n【互动数据规则】必须在 JSON 顶层额外返回 likeCount 和 forwardCount。likeCount 是这条微博的总点赞数，forwardCount 是总转发数，两者必须结合微博内容吸引力与当前粉丝数合理变化，禁止每条微博固定为相同数字。likes 数组只列出 2-6 个代表性点赞者昵称，不代表总点赞人数；likeCount 必须大于或等于 likes 数组长度。普通内容允许 forwardCount 为 0，但不同微博不能永远都是 0。`;
             prompt = this._injectCurrentFollowersToPrompt(prompt);
 
             const response = await this._callAI(prompt, contextMessages);
@@ -1789,7 +1826,7 @@ export class WeiboData {
                 try {
                     // 🔥 自动修复 AI 常见的格式错误
                     jsonStr = jsonStr.replace(/,\s*([\]}])/g, '$1');
-                    return JSON.parse(jsonStr);
+                    return this._normalizeUserPostReactionResult(JSON.parse(jsonStr), post, currentFollowers);
                 } catch (err) {
                     console.error('🔥 AI返回数据解析失败，已拦截卡死:', err);
                     return { comments: [], likes: [] };

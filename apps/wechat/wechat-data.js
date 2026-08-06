@@ -1796,6 +1796,34 @@ export class WechatData {
         return balance === undefined ? null : balance;
     }
 
+    spendWalletBalance(amount, chatId = null, transaction = null) {
+        const parsedAmount = Number.parseFloat(amount);
+        const spendAmount = Number.isFinite(parsedAmount) ? Math.round(parsedAmount * 100) / 100 : 0;
+        const rawBalance = this.getWalletBalance(chatId);
+        const parsedBalance = Number.parseFloat(rawBalance);
+        const balanceBefore = Number.isFinite(parsedBalance) && parsedBalance > 0
+            ? Math.round(parsedBalance * 100) / 100
+            : 0;
+
+        if (spendAmount <= 0) {
+            return { success: false, balanceBefore, balanceAfter: balanceBefore, reason: 'invalid_amount' };
+        }
+        if (balanceBefore < spendAmount) {
+            return { success: false, balanceBefore, balanceAfter: balanceBefore, reason: 'insufficient_balance' };
+        }
+
+        const expectedBalance = Math.round((balanceBefore - spendAmount) * 100) / 100;
+        const updatedBalance = Number.parseFloat(this.updateWalletBalance(-spendAmount, chatId, transaction));
+        const balanceAfter = Number.isFinite(updatedBalance) ? Math.round(updatedBalance * 100) / 100 : balanceBefore;
+        const success = Math.abs(balanceAfter - expectedBalance) < 0.001;
+        return {
+            success,
+            balanceBefore,
+            balanceAfter,
+            reason: success ? '' : 'deduction_failed'
+        };
+    }
+
     // 设置钱包金额（初始化用）
     setWalletBalance(amount, chatId = null) {
         if (!this.data.walletByChat) this.data.walletByChat = {};

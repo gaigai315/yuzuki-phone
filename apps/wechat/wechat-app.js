@@ -1634,6 +1634,20 @@ export class WechatApp {
     max-height: 156px;
 }
 
+#phone-panel-content .phone-screen .wechat-app .chat-room .message-right .message-image-box {
+    display: block !important;
+    width: fit-content;
+    margin-left: auto !important;
+    margin-right: 0 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-app .chat-room .message-left .message-image-box {
+    display: block !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: auto !important;
+}
+
 #phone-panel-content .phone-screen .wechat-app .chat-room .wechat-chat-photo {
     display: block;
     width: auto !important;

@@ -1490,7 +1490,9 @@ export class WeiboView {
 
             const result = await this.app.weiboData.generateReactionForPost(post);
 
-            if (result && (result.comments?.length > 0 || result.likes?.length > 0)) {
+            const hasReactionMetrics = Number.isFinite(Number.parseInt(result?.likeCount, 10))
+                || Number.isFinite(Number.parseInt(result?.forwardCount, 10));
+            if (result && (result.comments?.length > 0 || result.likes?.length > 0 || hasReactionMetrics)) {
                 // 延迟逐条添加
                 for (let i = 0; i < (result.comments || []).length; i++) {
                     const c = result.comments[i];
@@ -1500,18 +1502,26 @@ export class WeiboView {
                     this.app.weiboData.addComment(post.id, c.text, aiReplyTo || null, 'user', c.name, c.location || '');
                 }
 
-                for (const likeName of (result.likes || [])) {
-                    const posts = this.app.weiboData.getUserPosts();
-                    const updatedPost = posts.find(p => p.id === post.id);
-                    if (updatedPost) {
-                        if (!updatedPost.likeList) updatedPost.likeList = [];
+                const posts = this.app.weiboData.getUserPosts();
+                const updatedPost = posts.find(p => p.id === post.id);
+                if (updatedPost) {
+                    if (!updatedPost.likeList) updatedPost.likeList = [];
+                    for (const likeName of (result.likes || [])) {
                         if (!updatedPost.likeList.includes(likeName)) {
                             updatedPost.likeList.push(likeName);
-                            updatedPost.likes = updatedPost.likeList.length;
                         }
-                        this.app.weiboData.saveUserPosts(posts);
-                        this.app.weiboData._syncUserPostMirror(updatedPost);
                     }
+                    const generatedLikeCount = Number.parseInt(result.likeCount, 10);
+                    const generatedForwardCount = Number.parseInt(result.forwardCount, 10);
+                    updatedPost.likes = Math.max(
+                        updatedPost.likeList.length,
+                        Number.isFinite(generatedLikeCount) ? generatedLikeCount : Number(updatedPost.likes || 0)
+                    );
+                    if (Number.isFinite(generatedForwardCount) && generatedForwardCount >= 0) {
+                        updatedPost.forward = generatedForwardCount;
+                    }
+                    this.app.weiboData.saveUserPosts(posts);
+                    this.app.weiboData._syncUserPostMirror(updatedPost);
                 }
 
                 this.app.phoneShell.showNotification('微博', '收到新互动', '💬');

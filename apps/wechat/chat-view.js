@@ -3525,12 +3525,27 @@ renderChatRoom(chat) {
                 break;
             }
 
-            case 'redpacket':
+            case 'redpacket': {
+                const packetMode = String(msg.packetMode || '').trim();
+                const isGroupPacket = isGroupChat && (msg.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average');
+                const recipientName = String(msg.recipientName || msg.targetName || '').trim();
+                const isTargetedGroupPacket = isGroupChat && !isGroupPacket && !!recipientName;
+                const packetFooter = isGroupPacket
+                    ? '群红包'
+                    : (isTargetedGroupPacket ? `给${recipientName}的红包` : '微信红包');
+                const claims = Array.isArray(msg.claims) ? msg.claims : [];
+                const claimSummary = claims.length > 0
+                    ? `<div class="rp-subtitle">${claims.length}人已领取</div>`
+                    : '';
+                const statusSummary = isPaymentRefunded
+                    ? '<div class="rp-subtitle">已退回</div>'
+                    : (isRedPacketOpened
+                        ? `<div class="rp-subtitle">${isMe ? '已被领取' : '已领取'}</div>`
+                        : claimSummary);
                 messageBody = `
                 <div class="message-redpacket ${(isRedPacketOpened || isPaymentRefunded) ? 'opened' : ''}" data-msg-id="${this._escapeHtml(msg.id || '')}">
                     <div class="rp-main">
                         <div class="rp-icon">
-                            <!-- 微信经典红包图标 -->
                             <svg viewBox="0 0 24 24" fill="none">
                                 <rect x="2" y="4" width="20" height="16" rx="2" fill="#F45448"/>
                                 <path d="M2 6 C 2 6, 12 14, 22 6 L 22 4 C 22 4, 2 4, 2 4 Z" fill="#FBD878"/>
@@ -3540,15 +3555,14 @@ renderChatRoom(chat) {
                         </div>
                         <div class="rp-content">
                             <div class="rp-title">${this._escapeHtml(msg.wish || '恭喜发财，大吉大利')}</div>
-                            <!-- 没被领取时不显示副标题，对齐原生 -->
-                            ${isPaymentRefunded ? `<div class="rp-subtitle">已退回</div>` : (isRedPacketOpened ? `<div class="rp-subtitle">${isMe ? '已被领取' : '已领取'}</div>` : '')}
+                            ${statusSummary}
                         </div>
                     </div>
-                    <div class="rp-footer">微信红包</div>
+                    <div class="rp-footer">${this._escapeHtml(packetFooter)}</div>
                 </div>
             `;
                 break;
-
+            }
             // 表情包消息：本地自定义表情优先，其次 ALAPI，最后关键词占位卡片
            case 'sticker':
                 const stickerKeyword = String(msg.keyword || '发呆');
@@ -4242,6 +4256,56 @@ renderChatRoom(chat) {
         back.style.display = showBack ? 'block' : 'none';
     }
 
+    async _resolveWechatImageGenerationPrompt(rawPrompt = '') {
+        const sourcePrompt = String(rawPrompt || '').trim();
+        if (!sourcePrompt || !this._hasCjkText(sourcePrompt)) return sourcePrompt;
+
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager || typeof apiManager.callAI !== 'function') {
+            throw new Error('小手机 API 未初始化，无法生成英文 TAG');
+        }
+
+        const result = await apiManager.callAI([
+            {
+                role: 'system',
+                content: [
+                    'You convert Chinese image descriptions into English image-generation prompt tags.',
+                    'Output only concise English comma-separated tags.',
+                    'Do not output explanations, Markdown, Chinese, labels, or complete sentences.',
+                    'Preserve subject, gender, count, appearance, pose, expression, clothing, setting, camera distance, angle, lighting, atmosphere, and illustration style.',
+                    'Do not add unrelated content.'
+                ].join('\n')
+            },
+            {
+                role: 'user',
+                content: `Chinese image description:\n${sourcePrompt}\n\nEnglish comma-separated tags only:`
+            }
+        ], {
+            appId: 'wechat',
+            max_tokens: 360,
+            stream: false
+        });
+        if (!result?.success) {
+            throw new Error(result?.error || '小手机 API 未能生成英文 TAG');
+        }
+
+        const translatedPrompt = String(result?.summary || result?.content || result?.text || '')
+            .replace(/<think>[\s\S]*?<\/think>/gi, '')
+            .replace(/```[a-z]*|```/gi, '')
+            .replace(/^\s*(?:prompt|positive prompt|tags?|english tags?|提示词|正面提示词)\s*[:：]/i, '')
+            .replace(/[\r\n;；]+/g, ', ')
+            .replace(/[，、]/g, ', ')
+            .replace(/[。！？]/g, '')
+            .replace(/\s*,\s*/g, ', ')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '')
+            .trim();
+        if (!translatedPrompt || this._hasCjkText(translatedPrompt)) {
+            throw new Error('小手机 API 返回的英文 TAG 无效');
+        }
+        return translatedPrompt;
+    }
+
     async generateImagePromptMessage(messageId) {
         const chatId = String(this.app.currentChat?.id || '').trim();
         const safeMessageId = String(messageId || '').trim();
@@ -4262,14 +4326,14 @@ renderChatRoom(chat) {
 
         const rawPromptText = String(message.imagePrompt || message.content || '').trim();
         const parsedRawPrompt = this._parseImagePromptText(rawPromptText);
-        const promptText = String(parsedRawPrompt.prompt || rawPromptText).trim();
-        if (!promptText) {
+        const sourcePromptText = String(parsedRawPrompt.prompt || rawPromptText).trim();
+        if (!sourcePromptText) {
             this._imagePromptGenerationLocks.delete(generationLockKey);
             this.app.phoneShell?.showNotification('提示', '这条图片消息缺少描述，无法生成', '⚠️');
             return;
         }
         const parsedCurrentPrompt = this._parseImagePromptText(String(message.content || rawPromptText || ''));
-        const descriptionText = String(message.imageDescription || parsedRawPrompt.description || parsedCurrentPrompt.description || promptText).trim();
+        const descriptionText = String(message.imageDescription || parsedRawPrompt.description || parsedCurrentPrompt.description || sourcePromptText).trim();
         const imageManager = window.VirtualPhone?.imageGenerationManager;
         if (!imageManager || typeof imageManager.generate !== 'function') {
             this._imagePromptGenerationLocks.delete(generationLockKey);
@@ -4280,8 +4344,6 @@ renderChatRoom(chat) {
         if (storage && imageManager.storage !== storage) {
             imageManager.storage = storage;
         }
-        const novelAIReferences = await this._buildWechatPersonalImageReferences(message);
-        const generationPrompt = this._buildWechatImagePromptWithContactTags(message, promptText);
         const generationId = `wechat_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const previousImageUrl = String(message.generatedImageUrl || '').trim();
 
@@ -4290,7 +4352,7 @@ renderChatRoom(chat) {
             imageGenerationId: generationId,
             imageGenerationRuntimeId: this.app.wechatData.imageGenerationRuntimeId,
             imageGenError: '',
-            imagePrompt: promptText,
+            imagePrompt: sourcePromptText,
             imageDescription: descriptionText,
             generatedImageUrl: '',
             imageModel: '',
@@ -4299,6 +4361,41 @@ renderChatRoom(chat) {
             imageGenerationHeight: ''
         });
         this._refreshVisibleChatMessages(chatId);
+
+        let promptText = '';
+        try {
+            promptText = await this._resolveWechatImageGenerationPrompt(sourcePromptText);
+        } catch (error) {
+            const promptError = String(error?.message || '英文 TAG 生成失败').trim();
+            this.app.wechatData.updateMessageById(chatId, safeMessageId, {
+                imagePrompt: sourcePromptText,
+                imageDescription: descriptionText,
+                imageGenStatus: 'failed',
+                imageGenerationRuntimeId: '',
+                imageGenError: promptError
+            });
+            this._refreshVisibleChatMessages(chatId);
+            this._imagePromptGenerationLocks.delete(generationLockKey);
+            this.app.phoneShell?.showNotification('英文 TAG 生成失败', promptError, '❌');
+            return;
+        }
+        const latestBeforeGeneration = this.app.wechatData.getMessages(chatId)
+            .find((item) => String(item?.id || '').trim() === safeMessageId);
+        if (String(latestBeforeGeneration?.imageGenerationId || '') !== generationId) {
+            this._imagePromptGenerationLocks.delete(generationLockKey);
+            return;
+        }
+        if (promptText !== sourcePromptText) {
+            this.app.wechatData.updateMessageById(chatId, safeMessageId, {
+                imagePrompt: promptText,
+                imageDescription: descriptionText,
+                content: promptText
+            });
+            this._refreshVisibleChatMessages(chatId);
+        }
+
+        const novelAIReferences = await this._buildWechatPersonalImageReferences(message);
+        const generationPrompt = this._buildWechatImagePromptWithContactTags(message, promptText);
 
         try {
             const result = await imageManager.generate({
@@ -4947,7 +5044,17 @@ renderChatRoom(chat) {
         }
         if (msg.type === 'redpacket') {
             const rawStatus = String(msg.status || '').trim();
-            const status = rawStatus === 'opened' ? '已领取' : (rawStatus === 'refunded' ? '已退回' : '未领取');
+            const claims = Array.isArray(msg.claims) ? msg.claims : [];
+            const status = rawStatus === 'opened' ? '已领取' : (rawStatus === 'refunded' ? '已退回' : (claims.length > 0 ? '部分领取' : '未领取'));
+            const isGroupChat = targetChat?.type === 'group';
+            const packetMode = String(msg.packetMode || '').trim();
+            const isGroupPacket = isGroupChat && (msg.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average');
+            const recipientName = String(msg.recipientName || msg.targetName || '').trim();
+            const claimText = claims.length > 0
+                ? `；已领取：${claims.map(claim => `${claim.name || '群成员'} ¥${claim.amount || '0.00'}`).join('、')}`
+                : '';
+            if (isGroupPacket) return `[群红包]（状态：${status}${claimText}）`;
+            if (isGroupChat && recipientName) return `[给${recipientName}的红包 ¥${msg.amount}]（状态：${status}）`;
             return `[红包 ¥${msg.amount}]（状态：${status}）`;
         }
         return `[${msg.type}]`;
@@ -5268,30 +5375,24 @@ renderChatRoom(chat) {
                 <!-- 第二排：转账、红包 -->
                 <div class="more-item" data-action="transfer">
                     <div class="more-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="7,4 3,8 7,12"/>
-                            <line x1="3" y1="8" x2="21" y2="8"/>
-                            <polyline points="17,12 21,16 17,20"/>
-                            <line x1="21" y1="16" x2="3" y2="16"/>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M3 8l5-5v3h13v4H8v3L3 8Z"/>
+                            <path d="M21 16l-5 5v-3H3v-4h13v-3l5 5Z"/>
                         </svg>
                     </div>
                     <div class="more-name">转账</div>
                 </div>
-
                 <div class="more-item" data-action="redpacket">
                     <div class="more-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <g fill="currentColor">
-                                <path d="M5 5 C5 3, 8 2, 12 2 S 19 3, 19 5 L19 8.5 Q12 13, 5 8.5 Z"/>
-                                <path d="M5 9.5 Q12 14, 19 9.5 L19 21 A1 1 0 0 1 18 22 L6 22 A1 1 0 0 1 5 21 Z"/>
-                            </g>
-                            <circle cx="12" cy="13" r="2.5" fill="white"/>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M5 8V6.5C5 4.6 6.6 3 8.5 3h7C17.4 3 19 4.6 19 6.5V8l-7 4.6L5 8Z"/>
+                            <path d="M5 9.2 12 14l7-4.8V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V9.2Z"/>
+                            <circle cx="12" cy="13.2" r="1.7" fill="#fff"/>
                         </svg>
                     </div>
                     <div class="more-name">红包</div>
                 </div>
             </div>
-
             <!-- 隐藏的文件上传input（相册用，不带capture） -->
             <input type="file" id="photo-upload-input" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display: none;">
             <!-- 隐藏的拍照input（带capture调用摄像头） -->
@@ -6493,12 +6594,13 @@ renderChatRoom(chat) {
         return normalized;
     }
 
-    _buildWechatPaymentStatusContext(messages = [], userName = '用户') {
+    _buildWechatPaymentStatusContext(messages = [], userName = '用户', targetChat = null) {
         const recentPayments = (Array.isArray(messages) ? messages : [])
             .filter(msg => msg && (msg.type === 'transfer' || msg.type === 'redpacket'))
             .slice(-8);
         if (recentPayments.length === 0) return '';
 
+        const isGroupChat = targetChat?.type === 'group';
         const lines = ['【最近资金状态】'];
         recentPayments.forEach((msg, index) => {
             const isMe = msg.from === 'me' || msg.from === userName;
@@ -6518,18 +6620,43 @@ renderChatRoom(chat) {
                 return;
             }
 
-            const redpacketStatus = String(msg.status || '').trim() === 'opened'
+            const packetMode = String(msg.packetMode || '').trim();
+            const isGroupPacket = isGroupChat && (msg.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average');
+            const claims = Array.isArray(msg.claims) ? msg.claims : [];
+            const packetCount = Math.max(0, Number.parseInt(msg.count || msg.packetCount || 0, 10) || 0);
+            const rawStatus = String(msg.status || '').trim();
+            const redpacketStatus = rawStatus === 'opened'
+                ? '已领完'
+                : rawStatus === 'refunded'
+                    ? '已退回'
+                    : (claims.length > 0 ? '部分领取' : '未领取');
+
+            if (isGroupPacket) {
+                const packetType = packetMode === 'group_average' ? '均分红包' : '拼手气红包';
+                const claimText = claims.length > 0
+                    ? claims.map(claim => `${claim.name || '群成员'} ${claim.amount || '0.00'}元`).join('、')
+                    : '暂无';
+                lines.push(`${prefix}群红包｜类型：${packetType}｜总金额：${amountText}｜红包个数：${packetCount || '未记录'}｜已领取：${claimText}｜状态：${redpacketStatus}`);
+                return;
+            }
+
+            const recipientName = String(msg.recipientName || msg.targetName || '').trim();
+            if (isGroupChat && recipientName) {
+                lines.push(`${prefix}给${recipientName}的红包 ${amountText}｜发送方：${sender}｜状态：${redpacketStatus}`);
+                return;
+            }
+
+            const singleStatus = rawStatus === 'opened'
                 ? (isMe ? '已被领取' : '你已领取')
-                : String(msg.status || '').trim() === 'refunded'
+                : rawStatus === 'refunded'
                     ? (isMe ? '已退回给你' : '你已退回')
-                : (isMe ? '待对方领取' : '待你领取');
-            lines.push(`${prefix}红包 ${amountText}｜发送方：${sender}｜状态：${redpacketStatus}`);
+                    : (isMe ? '待对方领取' : '待你领取');
+            lines.push(`${prefix}红包 ${amountText}｜发送方：${sender}｜状态：${singleStatus}`);
         });
 
         lines.push('以上资金状态是系统真实记录，必须视为当前有效事实，不得擅自篡改已领取/已收款状态。');
         return lines.join('\n');
     }
-
     _parseWeiboCommentLine(line) {
         if (!line) return null;
         const cleaned = String(line || '').trim();
@@ -6786,15 +6913,78 @@ renderChatRoom(chat) {
             };
         }
 
-        const paymentActionMatch = trimmedContent.match(/^\[(收款|领取红包|退回转账|退回红包)\](?:\s*[（(]\s*([^）)]*)\s*[）)])?$/);
+        const paymentActionMatch = trimmedContent.match(/^\[(收款|领取(?:拼手气|均分|平均|群)?红包|退回转账|退回红包)\s*(?:[¥￥]\s*(\d+(?:\.\d+)?))?\](?:\s*[（(]\s*([^）)]*)\s*[）)])?$/);
         if (paymentActionMatch) {
             const marker = String(paymentActionMatch[1] || '').trim();
+            const claimMode = marker.includes('拼手气')
+                ? 'lucky'
+                : (marker.includes('均分') || marker.includes('平均') || marker.includes('群') ? 'average' : 'single');
             return {
                 type: 'payment_action',
                 action: marker.includes('退回') ? 'refund' : 'accept',
                 targetType: marker.includes('红包') ? 'redpacket' : 'transfer',
-                note: String(paymentActionMatch[2] || '').trim(),
-                content: `[${marker}]`
+                claimMode,
+                amount: paymentActionMatch[2] ? parseFloat(paymentActionMatch[2]).toFixed(2) : '',
+                note: String(paymentActionMatch[3] || '').trim(),
+                content: `[${marker}${paymentActionMatch[2] ? `¥${parseFloat(paymentActionMatch[2]).toFixed(2)}` : ''}]`
+            };
+        }
+
+        // 群聊定向红包：只发给指定群成员。
+        const targetedGroupRedPacketMatch = content.match(/\[给\s*([^\[\]：:]+?)的红包\s*[¥￥]\s*(\d+(?:\.\d+)?)\]/);
+        if (targetedGroupRedPacketMatch) {
+            const recipientName = String(targetedGroupRedPacketMatch[1] || '').trim();
+            const amount = parseFloat(targetedGroupRedPacketMatch[2] || 0);
+            return {
+                type: 'redpacket',
+                packetMode: 'single',
+                recipientName,
+                amount: Number.isFinite(amount) ? amount.toFixed(2) : '0.00',
+                wish: '恭喜发财，大吉大利',
+                status: 'sent',
+                content: `[给${recipientName}的红包 ¥${Number.isFinite(amount) ? amount.toFixed(2) : '0.00'}]`
+            };
+        }
+
+        const detailedGroupRedPacketMatch = content.match(/\[群红包\s*[｜|]\s*类型[：:]\s*(拼手气红包|均分红包|平均分红包)\s*[｜|]\s*总金额[：:]\s*[¥￥]?\s*(\d+(?:\.\d+)?)\s*[｜|]\s*红包个数[：:]\s*(\d+)\s*\](?:\s*[（(]\s*状态[：:]\s*(未领取|部分领取|已领取|已领完|已退回)[^）)]*[）)])?/);
+        if (detailedGroupRedPacketMatch) {
+            const packetType = String(detailedGroupRedPacketMatch[1] || '').trim();
+            const amount = Number.parseFloat(detailedGroupRedPacketMatch[2] || 0);
+            const packetCount = Math.max(0, Number.parseInt(detailedGroupRedPacketMatch[3] || 0, 10) || 0);
+            const statusText = String(detailedGroupRedPacketMatch[4] || '').trim();
+            const status = statusText === '已退回'
+                ? 'refunded'
+                : (statusText === '已领取' || statusText === '已领完' ? 'opened' : 'sent');
+            return {
+                type: 'redpacket',
+                isGroupPacket: true,
+                packetMode: packetType === '拼手气红包' ? 'group_lucky' : 'group_average',
+                amount: Number.isFinite(amount) ? amount.toFixed(2) : '0.00',
+                count: packetCount,
+                packetCount,
+                claims: [],
+                packetClaimCount: 0,
+                wish: '恭喜发财，大吉大利',
+                status,
+                content: '[群红包]'
+            };
+        }
+
+        // 兼容旧的简写群红包；新生成的群红包应携带类型、总金额和红包个数。
+        const groupRedPacketMatch = content.match(/\[群红包\]/);
+        if (groupRedPacketMatch) {
+            return {
+                type: 'redpacket',
+                isGroupPacket: true,
+                packetMode: 'group_lucky',
+                amount: '0.00',
+                count: 0,
+                packetCount: 0,
+                claims: [],
+                packetClaimCount: 0,
+                wish: '恭喜发财，大吉大利',
+                status: 'sent',
+                content: '[群红包]'
             };
         }
 
@@ -6944,7 +7134,7 @@ renderChatRoom(chat) {
             }];
         }
 
-        const inlineSpecialRegex = /\[确认派发任务[：:]\s*[^\]\r\n]+\]|\[(?:同意收养|拒绝收养)\]|\[使用[：:]\s*[^x×\]\s]+\s*[x×]\s*\d+\]\s*(?:[（(][\s\S]*?[）)])?|\[(?:收款|领取红包|退回转账|退回红包)\](?:\s*[（(]\s*[^）)]*\s*[）)])?|\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*蜜语\s*\]|【\s*蜜语\s*】)\s*(?:[（(]\s*[^）)]*\s*[）)])?|(?:\[\s*音乐\s*\]|【\s*音乐\s*】)\s*[（(]\s*[^，,）)]+?(?:\s*[，,]\s*[^）)]+?)?\s*[）)]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
+        const inlineSpecialRegex = /\[确认派发任务[：:]\s*[^\]\r\n]+\]|\[(?:同意收养|拒绝收养)\]|\[使用[：:]\s*[^x×\]\s]+\s*[x×]\s*\d+\]\s*(?:[（(][\s\S]*?[）)])?|\[(?:收款|领取(?:拼手气|均分|平均|群)?红包|退回转账|退回红包)\s*(?:[¥￥]\s*\d+(?:\.\d+)?)?\](?:\s*[（(]\s*[^）)]*\s*[）)])?|\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[给[^\[\]\r\n]+?的红包\s*[¥￥]\s*\d+(?:\.\d+)?\]|\[群红包\s*[｜|]\s*类型[：:]\s*(?:拼手气红包|均分红包|平均分红包)\s*[｜|]\s*总金额[：:]\s*[¥￥]?\s*\d+(?:\.\d+)?\s*[｜|]\s*红包个数[：:]\s*\d+\s*\](?:\s*[（(]\s*状态[：:]\s*(?:未领取|部分领取|已领取|已领完|已退回)[^）)]*[）)])?|\[群红包\]|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*蜜语\s*\]|【\s*蜜语\s*】)\s*(?:[（(]\s*[^）)]*\s*[）)])?|(?:\[\s*音乐\s*\]|【\s*音乐\s*】)\s*[（(]\s*[^，,）)]+?(?:\s*[，,]\s*[^）)]+?)?\s*[）)]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
         const inlineMatches = [];
         this._collectInlineImagePromptMatches(rawContent).forEach(item => inlineMatches.push(item));
         let regexMatch;
@@ -7031,23 +7221,83 @@ renderChatRoom(chat) {
         return matches;
     }
 
+    _calculateGroupRedPacketClaimAmount(target = {}, previousClaims = [], requestedAmount = '') {
+        const totalAmount = Number.parseFloat(target.amount || 0);
+        const packetCount = Math.max(0, Number.parseInt(target.count || target.packetCount || 0, 10) || 0);
+        if (!Number.isFinite(totalAmount) || totalAmount <= 0 || packetCount <= 0 || previousClaims.length >= packetCount) return 0;
+
+        const totalCents = Math.max(0, Math.round(totalAmount * 100));
+        const claimedCents = previousClaims.reduce((sum, claim) => {
+            const amount = Number.parseFloat(claim?.amount || 0);
+            return sum + (Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) : 0);
+        }, 0);
+        const remainingCents = Math.max(0, totalCents - claimedCents);
+        const remainingPacketCount = packetCount - previousClaims.length;
+        if (remainingCents <= 0 || remainingPacketCount <= 0) return 0;
+        if (remainingPacketCount === 1) return remainingCents / 100;
+
+        const minimumReservedCents = remainingPacketCount - 1;
+        const maximumClaimCents = remainingCents - minimumReservedCents;
+        if (maximumClaimCents < 1) return 0;
+
+        const packetMode = String(target.packetMode || '').trim();
+        if (packetMode === 'group_average') {
+            const baseCents = Math.floor(totalCents / packetCount);
+            const extraCentSlots = totalCents % packetCount;
+            const currentClaimIndex = previousClaims.length;
+            const averageClaimCents = baseCents + (currentClaimIndex < extraCentSlots ? 1 : 0);
+            return Math.max(1, Math.min(averageClaimCents, maximumClaimCents)) / 100;
+        }
+
+        const requestedCents = Math.round(Number.parseFloat(requestedAmount || 0) * 100);
+        const claimCents = Number.isFinite(requestedCents) && requestedCents > 0
+            ? Math.min(requestedCents, maximumClaimCents)
+            : Math.floor(Math.random() * maximumClaimCents) + 1;
+        return Math.max(1, claimCents) / 100;
+    }
+
     _applyWechatPaymentAction(chatId, action = {}, actorName = '', timelineSource = {}) {
         const safeChatId = String(chatId || '').trim();
         if (!safeChatId || !action || action.type !== 'payment_action') return null;
 
         const messages = this.app.wechatData.getMessages(safeChatId) || [];
+        const chat = this.app.wechatData.getChat?.(safeChatId);
+        const isGroupChat = chat?.type === 'group';
         const targetType = action.targetType === 'redpacket' ? 'redpacket' : 'transfer';
+        const actor = String(actorName || '').trim();
+        const normalizeName = (value) => this._normalizeLookupName(value);
+        const userName = String(this.app.wechatData.getUserInfo()?.name || '').trim();
         let target = null;
         for (let i = messages.length - 1; i >= 0; i--) {
             const msg = messages[i];
             if (!msg || msg.type !== targetType) continue;
-            const isUserSent = msg.from === 'me' || msg.from === this.app.wechatData.getUserInfo()?.name;
-            if (!isUserSent) continue;
-            const status = String(msg.status || '').trim();
+
+            const packetMode = String(msg.packetMode || '').trim();
+            const isGroupPacket = targetType === 'redpacket'
+                && (msg.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average');
+            const isUserSent = msg.from === 'me' || normalizeName(msg.from) === normalizeName(userName);
+            const senderName = String(msg.from === 'me' ? userName : (msg.from || '')).trim();
+            const canClaimMemberGroupPacket = action.action !== 'refund'
+                && isGroupChat
+                && isGroupPacket
+                && normalizeName(senderName) !== normalizeName(actor);
+            if (!isUserSent && !canClaimMemberGroupPacket) continue;
+
+            const claims = Array.isArray(msg.claims) ? msg.claims : [];
+            const packetCount = Math.max(0, Number.parseInt(msg.count || msg.packetCount || 0, 10) || 0);
+            const rawStatus = String(msg.status || '').trim();
             const isPending = targetType === 'redpacket'
-                ? (status === '' || status === 'sent')
-                : status !== 'received' && status !== 'refunded';
+                ? isGroupPacket
+                    ? rawStatus !== 'refunded' && rawStatus !== 'opened' && packetCount > 0 && claims.length < packetCount
+                    : (rawStatus === '' || rawStatus === 'sent')
+                : rawStatus !== 'received' && rawStatus !== 'refunded';
             if (!isPending) continue;
+
+            const recipientName = String(msg.recipientName || msg.targetName || '').trim();
+            if (targetType === 'redpacket' && packetMode === 'single' && recipientName
+                && normalizeName(recipientName) !== normalizeName(actor)) {
+                continue;
+            }
             target = msg;
             break;
         }
@@ -7055,40 +7305,83 @@ renderChatRoom(chat) {
         if (!target?.id) return null;
 
         const isRefund = action.action === 'refund';
-        const nextStatus = isRefund ? 'refunded' : (targetType === 'redpacket' ? 'opened' : 'received');
-        const amount = Number.parseFloat(target.amount || 0);
-        const updated = this.app.wechatData.updateMessageById(safeChatId, target.id, {
-            status: nextStatus,
-            paymentHandledBy: String(actorName || '').trim(),
-            paymentHandledAt: Date.now()
-        });
+        const targetPacketMode = String(target.packetMode || '').trim();
+        const isGroupPacket = targetType === 'redpacket'
+            && (target.isGroupPacket === true || targetPacketMode === 'group_lucky' || targetPacketMode === 'group_average');
+        const targetAmount = Number.parseFloat(target.amount || 0);
 
-        if (isRefund && Number.isFinite(amount) && amount > 0) {
-            const paymentLabel = targetType === 'redpacket' ? '红包' : '转账';
-            this.app.wechatData.updateWalletBalance(amount, null, {
-                type: targetType,
-                title: `${paymentLabel}退款-${String(actorName || this.app.currentChat?.name || '微信好友')}`,
-                detail: `原${paymentLabel}已退回零钱`,
-                source: 'wechat',
-                chatId: safeChatId,
-                counterparty: String(actorName || ''),
-                messageId: String(target.id || ''),
-                referenceId: `wechat:${targetType}:refund:${target.id}`,
-                date: timelineSource?.date,
-                time: timelineSource?.time,
-                weekday: timelineSource?.weekday,
-                timestamp: timelineSource?.timestamp,
-                realTimestamp: timelineSource?.realTimestamp,
-                fromMainChatTag: timelineSource?.fromMainChatTag === true,
-                tavernMessageIndex: timelineSource?.tavernMessageIndex,
-                batchId: timelineSource?.batchId
+        if (isGroupPacket && !isRefund) {
+            const previousClaims = Array.isArray(target.claims) ? target.claims : [];
+            const actorKey = normalizeName(actor);
+            if (!actorKey || previousClaims.some(claim => normalizeName(claim?.name) === actorKey)) return null;
+
+            const packetCount = Math.max(0, Number.parseInt(target.count || target.packetCount || 0, 10) || 0);
+            const claimAmount = this._calculateGroupRedPacketClaimAmount(target, previousClaims, action.amount);
+            if (!Number.isFinite(claimAmount) || claimAmount <= 0) return null;
+
+            const claims = [...previousClaims, {
+                name: actor,
+                amount: claimAmount.toFixed(2),
+                mode: targetPacketMode === 'group_lucky' ? 'lucky' : 'average',
+                timestamp: Date.now()
+            }];
+            const claimedAmount = claims.reduce((sum, claim) => sum + Math.round((Number.parseFloat(claim?.amount || 0) || 0) * 100), 0) / 100;
+            const isFullyClaimed = (packetCount > 0 && claims.length >= packetCount)
+                || (Number.isFinite(targetAmount) && claimedAmount >= targetAmount);
+            return this.app.wechatData.updateMessageById(safeChatId, target.id, {
+                status: isFullyClaimed ? 'opened' : 'sent',
+                claims,
+                packetClaimCount: claims.length,
+                claimedAmount: claimedAmount.toFixed(2),
+                remainingAmount: Number.isFinite(targetAmount) ? Math.max(0, targetAmount - claimedAmount).toFixed(2) : '0.00',
+                lastClaimedBy: actor,
+                lastClaimedAmount: claimAmount.toFixed(2),
+                paymentHandledBy: actor,
+                paymentHandledAt: Date.now()
             });
         }
 
+        const nextStatus = isRefund ? 'refunded' : (targetType === 'redpacket' ? 'opened' : 'received');
+        const updated = this.app.wechatData.updateMessageById(safeChatId, target.id, {
+            status: nextStatus,
+            paymentHandledBy: actor,
+            paymentHandledAt: Date.now()
+        });
+
+        if (isRefund && Number.isFinite(targetAmount) && targetAmount > 0) {
+            const previousClaims = Array.isArray(target.claims) ? target.claims : [];
+            const claimedAmount = previousClaims.reduce((sum, claim) => sum + (Number.parseFloat(claim?.amount || 0) || 0), 0);
+            const refundAmount = isGroupPacket ? Math.max(0, targetAmount - claimedAmount) : targetAmount;
+            if (refundAmount > 0) {
+                const paymentLabel = targetType === 'redpacket' ? '红包' : '转账';
+                this.app.wechatData.updateWalletBalance(refundAmount, null, {
+                    type: targetType,
+                    title: `${paymentLabel}退款-${actor || this.app.currentChat?.name || '微信好友'}`,
+                    detail: `原${paymentLabel}已退回零钱`,
+                    source: 'wechat',
+                    chatId: safeChatId,
+                    counterparty: actor,
+                    messageId: String(target.id || ''),
+                    referenceId: `wechat:${targetType}:refund:${target.id}`,
+                    date: timelineSource?.date,
+                    time: timelineSource?.time,
+                    weekday: timelineSource?.weekday,
+                    timestamp: timelineSource?.timestamp,
+                    realTimestamp: timelineSource?.realTimestamp,
+                    fromMainChatTag: timelineSource?.fromMainChatTag === true,
+                    tavernMessageIndex: timelineSource?.tavernMessageIndex,
+                    batchId: timelineSource?.batchId
+                });
+            }
+        }
+
         if (updated) {
+            const recipientName = String(target.recipientName || target.targetName || '').trim();
             const statusText = isRefund
                 ? '已退回'
-                : (targetType === 'redpacket' ? '对方已领取' : '对方已收款');
+                : (targetType === 'redpacket'
+                    ? (isGroupChat && recipientName ? `${actor || recipientName}领取了给${recipientName}的红包` : (isGroupChat ? `${actor || '群成员'}领取了红包` : '对方已领取'))
+                    : '对方已收款');
             this.app.wechatData.addMessage(safeChatId, {
                 from: 'system',
                 type: 'system',
@@ -7101,7 +7394,6 @@ renderChatRoom(chat) {
 
         return updated;
     }
-
     _getCatboxData() {
         if (window.VirtualPhone?.gamesApp?.catboxData) return window.VirtualPhone.gamesApp.catboxData;
         if (!this._catboxData) {
@@ -11245,9 +11537,7 @@ renderChatRoom(chat) {
         const aiImageDataCache = new Map();
         const aiImageNotes = [];
         const aiImageTokenIds = [];
-        const paymentStatusContext = !isGroupChat
-            ? this._buildWechatPaymentStatusContext([...recentWechatMessages, ...latestUserMessages], userName)
-            : '';
+
         const musicListeningContext = !callMode
             ? this._buildMusicListeningContext(targetChat, userName)
             : '';
@@ -11325,10 +11615,30 @@ renderChatRoom(chat) {
                     const status = rawStatus === 'received' ? '已收款' : (rawStatus === 'refunded' ? '已退回' : '未收款');
                     text += `${timeStr}${speaker}: ${quoteStr}[转账 ¥${msg.amount}]（状态：${status}）\n`;
                 } else if (msg.type === 'redpacket') {
-                    // 🔥 修复：直接将红包状态贴在文字后面
                     const rawStatus = String(msg.status || '').trim();
-                    const status = rawStatus === 'opened' ? '已领取' : (rawStatus === 'refunded' ? '已退回' : '未领取');
-                    text += `${timeStr}${speaker}: ${quoteStr}[红包 ¥${msg.amount}]（状态：${status}）\n`;
+                    const claims = Array.isArray(msg.claims) ? msg.claims : [];
+                    const status = rawStatus === 'opened' ? '已领取' : (rawStatus === 'refunded' ? '已退回' : (claims.length > 0 ? '部分领取' : '未领取'));
+                    const transcriptIsGroup = chat?.type === 'group';
+                    const packetMode = String(msg.packetMode || '').trim();
+                    const isGroupPacket = transcriptIsGroup && (msg.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average');
+                    const recipientName = String(msg.recipientName || msg.targetName || '').trim();
+                    const claimText = claims.length > 0
+                        ? `｜已领取：${claims.map(claim => `${claim.name || '群成员'} ¥${Number.parseFloat(claim.amount || 0).toFixed(2)}`).join('、')}`
+                        : '';
+                    let packetText = '';
+                    if (isGroupPacket) {
+                        const packetType = packetMode === 'group_average' ? '均分红包' : '拼手气红包';
+                        const amount = Number.parseFloat(msg.amount || 0);
+                        const amountText = Number.isFinite(amount) ? `¥${amount.toFixed(2)}` : '金额未知';
+                        const packetCount = Math.max(0, Number.parseInt(msg.count || msg.packetCount || 0, 10) || 0);
+                        const groupStatus = rawStatus === 'opened' ? '已领完' : (rawStatus === 'refunded' ? '已退回' : (claims.length > 0 ? '部分领取' : '未领取'));
+                        packetText = `[群红包｜类型：${packetType}｜总金额：${amountText}｜红包个数：${packetCount || '未记录'}]（状态：${groupStatus}${claimText}）`;
+                    } else if (transcriptIsGroup && recipientName) {
+                        packetText = `[给${recipientName}的红包 ¥${msg.amount}]（状态：${status}）`;
+                    } else {
+                        packetText = `[红包 ¥${msg.amount}]（状态：${status}）`;
+                    }
+                    text += `${timeStr}${speaker}: ${quoteStr}${packetText}\n`;
                 } else if (msg.type === 'location') {
                     const locationText = String(msg.locationText || msg.locationAddress || msg.content || '').trim();
                     text += `${timeStr}${speaker}: ${quoteStr}[定位]（${locationText || '未知位置'}）\n`;
@@ -11408,6 +11718,26 @@ renderChatRoom(chat) {
             });
         }
 
+        if (isGroupChat && !callMode) {
+            messages.push({
+                role: 'system',
+                content: [
+                    '【微信群红包专用规则】',
+                    '群聊红包不能套用单聊的 [红包 ¥金额] 格式，必须根据红包类型输出不同标签；定向红包也不要显示单聊红包的备注文字。',
+                    '1. 用户在群里指定发给某一位群成员时，只显示为：[给群友名字的红包 ¥20.00]（状态：未领取），不要显示单聊红包的备注文字。',
+                    '2. 群成员领取指定红包时，只输出独立标签：[领取红包]；只有被指定的群成员本人可以领取，其他成员不要替领。',
+                    '3. 用户发送拼手气或均分群红包后，聊天记录会显示完整类型、总金额、红包个数和状态。群成员也可以主动发送群红包，但必须单独输出完整标签，例如：群友A：[群红包｜类型：拼手气红包｜总金额：¥10.00｜红包个数：4]，或群友A：[群红包｜类型：均分红包｜总金额：¥10.00｜红包个数：4]；不要只输出缺少金额和个数的 [群红包]。',
+                    '4. 拼手气红包由不同群成员领取，每次只能由一名群成员输出：[领取拼手气红包¥xx.xx]；每位成员金额可以不同，但所有领取金额之和绝对不能超过红包总额，最后一位领取者获得红包剩余余额。',
+                    '5. 均分红包由不同群成员领取，每次输出：[领取均分红包¥xx.xx]；每位成员金额应按红包总额和个数平均分配，最后一位领取者获得因小数取整产生的剩余余额。',
+                    '6. 群红包发送者不能领取自己发出的红包；其他真实群成员均可领取，每名成员只能领取一次，领取人数不能超过红包个数。',
+                    '7. 用户本人可以通过点击群红包领取，系统会自动随机结算金额；你不得替用户输出领取标签。群成员领取时必须使用真实群成员名字，例如：群友B：[领取拼手气红包¥2.80]。',
+                    '8. 红包发送和领取标签必须单独成条，不要和普通聊天文字、动作描写或解释混在同一标签内。',
+                    '除非用户明确要求，不要擅自改变红包类型、总金额、红包个数、领取状态或群成员名单。'
+                ].join('\n'),
+                name: 'SYSTEM (👥微信群红包规则)',
+                isPhoneMessage: true
+            });
+        }
         if (isProactive && !callMode) {
             const proactiveRules = this._buildOnlineProactiveRules({
                 userName,
@@ -11453,14 +11783,6 @@ renderChatRoom(chat) {
                 });
             }
 
-            if (paymentStatusContext) {
-                messages.push({
-                    role: 'system',
-                    content: paymentStatusContext,
-                    name: 'SYSTEM (资金状态)',
-                    isPhoneMessage: true
-                });
-            }
 
             if (contactProfileMessage) {
                 messages.push(contactProfileMessage);
@@ -11510,14 +11832,6 @@ renderChatRoom(chat) {
                 });
             }
         } else {
-            if (paymentStatusContext) {
-                messages.push({
-                    role: 'system',
-                    content: paymentStatusContext,
-                    name: 'SYSTEM (资金状态)',
-                    isPhoneMessage: true
-                });
-            }
             if (contactProfileMessage) {
                 messages.push(contactProfileMessage);
             }
@@ -11901,12 +12215,6 @@ renderChatRoom(chat) {
                 return;
             }
 
-            // 检查钱包余额
-            const currentBalance = this.app.wechatData.getWalletBalance();
-            if (currentBalance !== null && parseFloat(amount) > currentBalance) {
-                this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${parseFloat(currentBalance).toFixed(2)} 啦`, '❌');
-                return;
-            }
             const transferAmount = parseFloat(amount);
             const transferId = `transfer_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
             const transferTransaction = {
@@ -11919,11 +12227,10 @@ renderChatRoom(chat) {
                 messageId: transferId,
                 referenceId: `wechat:transfer:send:${transferId}`
             };
-            // 扣款；未初始化零钱时仍保留流水，避免漏掉已发出的资金消息。
-            if (currentBalance !== null) {
-                this.app.wechatData.updateWalletBalance(-transferAmount, null, transferTransaction);
-            } else {
-                this.app.wechatData.recordWalletTransaction(-transferAmount, transferTransaction);
+            const spendResult = this.app.wechatData.spendWalletBalance(transferAmount, null, transferTransaction);
+            if (!spendResult?.success) {
+                this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${Number(spendResult?.balanceBefore || 0).toFixed(2)} 啦`, '❌');
+                return;
             }
 
             this.app.wechatData.addMessage(this.app.currentChat.id, {
@@ -15447,6 +15754,126 @@ ${callTranscript}`;
 
     // 🧧 显示发红包界面（高仿微信原版）
     showRedPacketDialog() {
+        const currentChat = this.app.currentChat || {};
+        const isGroupChat = currentChat.type === 'group';
+        const groupMembers = isGroupChat
+            ? this._collectGroupParticipantsForFilter(currentChat).filter(name => !this._isCurrentWechatUserName(name))
+            : [];
+        const escapeHtml = (value) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        const memberOptions = groupMembers.length > 0
+            ? groupMembers.map(name => `<option value="${escapeHtml(name)}" style="text-align: left; text-align-last: left; direction: ltr;">${escapeHtml(name)}</option>`).join('')
+            : '<option value="" style="text-align: left; text-align-last: left; direction: ltr;">暂无可选群成员</option>';
+
+        const singleChatForm = `
+            <div class="wechat-redpacket-single-form" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+                <div style="background: #fff; border-radius: 12px; margin: 0 12px 10px; padding: 6px 10px; box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; height: 46px;">
+                        <span style="font-size: 14px; color: #222;">单个金额</span>
+                        <div style="display: flex; align-items: center; justify-content: flex-end; height: 42px; min-width: 130px; padding: 0 11px; border-radius: 10px; background: #fff; box-sizing: border-box;">
+                            <span style="font-size: 14px; color: #b8b8b8; margin-right: 7px;">¥</span>
+                            <input type="text" id="redpacket-amount" placeholder="0.00" inputmode="decimal" style="background: transparent !important; border: none !important; outline: none !important; box-shadow: none !important; font-size: 16px; line-height: 1; text-align: right; color: #a8a8a8; width: 64px; padding: 0;">
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; background: #fff; border-radius: 12px; margin: 0 12px 10px; padding: 0 12px; box-sizing: border-box; min-height: 58px;">
+                    <input type="text" id="redpacket-wish" placeholder="恭喜发财，大吉大利" maxlength="25" style="flex: 1; min-width: 0; height: 42px; background: transparent !important; border: none !important; outline: none !important; box-shadow: none !important; font-size: 14px; color: #222; padding: 0;">
+                    <i class="fa-regular fa-face-smile" aria-hidden="true" style="font-size: 18px; color: #8a8a8a; margin-left: 8px; flex-shrink: 0;"></i>
+                </div>
+                <div style="text-align: center; margin: 25px 0 15px;">
+                    <span style="font-size: 30px; font-weight: 500; color: #000;">¥ </span>
+                    <span id="redpacket-amount-main" style="font-size: 30px; font-weight: 500; color: #000;">0.00</span>
+                </div>
+                <div style="padding: 0 30px;">
+                    <button id="confirm-redpacket" style="width: 100%; padding: 10px; background: #e54c45; color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; box-sizing: border-box;">塞钱进红包</button>
+                </div>
+                <div style="text-align: center; font-size: 11px; color: #aaa; margin-top: auto; padding: 10px 0;">可直接使用收到的零钱发红包</div>
+            </div>
+        `;
+
+        const groupSingleForm = `
+            <div class="wechat-redpacket-group-panel" data-redpacket-mode="single" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+                <div style="background: #fff; border-radius: 14px; margin: 0 12px 10px; padding: 0 14px; box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid #f1f1f1;">
+                        <span style="font-size: 14px; color: #222;">单个金额</span>
+                        <div style="display: flex; align-items: center;">
+                            <span style="font-size: 14px; color: #b8b8b8; margin-right: 8px;">¥</span>
+                            <input type="text" id="redpacket-amount" placeholder="0.00" inputmode="decimal" style="background: transparent !important; border: none !important; outline: none !important; box-shadow: none !important; font-size: 17px; text-align: right; color: #a8a8a8; width: 64px; padding: 0;">
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid #f1f1f1;">
+                        <span style="font-size: 14px; color: #222;">发给</span>
+                        <div style="display: flex; align-items: center; min-width: 0; max-width: 68%;">
+                            <select id="redpacket-group-recipient" aria-label="选择群成员" style="max-width: 170px; border: none !important; outline: none !important; box-shadow: none !important; background: transparent !important; color: #999; font-size: 13px; text-align: right; text-align-last: right; appearance: none; padding: 0 16px 0 0;">
+                                <option value="" style="text-align: left; text-align-last: left; direction: ltr;">选择群成员</option>
+                                ${memberOptions}
+                            </select>
+                            <i class="fa-solid fa-chevron-right" aria-hidden="true" style="font-size: 10px; color: #bbb; margin-left: -10px;"></i>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; min-height: 58px;">
+                        <span style="font-size: 14px; color: #222; margin-right: 24px;">祝福语</span>
+                        <input type="text" id="redpacket-wish" placeholder="恭喜发财，大吉大利" maxlength="25" style="flex: 1; min-width: 0; background: transparent !important; border: none !important; outline: none !important; box-shadow: none !important; font-size: 13px; color: #222; padding: 0;">
+                        <i class="fa-regular fa-face-smile" aria-hidden="true" style="font-size: 17px; color: #8a8a8a; margin-left: 8px; flex-shrink: 0;"></i>
+                    </div>
+
+                </div>
+                <div style="background: #fff; border-radius: 14px; margin: 0 12px 10px; padding: 20px 16px 18px; text-align: center; box-sizing: border-box;">
+                    <div style="font-size: 13px; color: #333; margin-bottom: 16px;">金额</div>
+                    <div><span style="font-size: 30px; font-weight: 500; color: #000;">¥ </span><span id="redpacket-amount-main" style="font-size: 34px; font-weight: 500; color: #000;">0.00</span></div>
+                    <div style="display: inline-flex; align-items: center; gap: 5px; margin-top: 18px; padding: 5px 9px; border-radius: 5px; background: #f7f7f7; color: #999; font-size: 11px;"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>单独红包仅发给一个人</div>
+                    <button id="confirm-redpacket" style="width: 100%; margin-top: 28px; padding: 11px; background: #ff3f45; color: #fff; border: none; border-radius: 9px; font-size: 14px; cursor: pointer; box-sizing: border-box;">塞钱进红包</button>
+                </div>
+                <div style="text-align: center; font-size: 11px; color: #aaa; margin-top: auto; padding: 8px 0 10px;">可直接使用收到的零钱发红包</div>
+            </div>
+        `;
+
+        const groupPacketForm = `
+            <div class="wechat-redpacket-group-panel" data-redpacket-mode="group" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
+                <div data-redpacket-group-note style="margin: 0 12px 10px; padding: 10px 12px; border-radius: 7px; background: #fff5f2; color: #c98778; font-size: 11px; text-align: center;"><i class="fa-solid fa-circle-info" aria-hidden="true" style="margin-right: 4px;"></i>群成员领取后随机拆分</div>
+                <div style="background: #fff; border-radius: 14px; margin: 0 12px 10px; padding: 0 14px; box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid #f1f1f1;">
+                        <span style="font-size: 14px; color: #222;">红包类型</span>
+                        <button id="redpacket-group-kind-toggle" type="button" style="display: inline-flex; align-items: center; gap: 8px; border: none !important; outline: none !important; background: transparent !important; color: #666; font-size: 13px; padding: 0; cursor: pointer;"><span>拼手气红包</span><i class="fa-solid fa-chevron-right" aria-hidden="true" style="font-size: 10px; color: #bbb;"></i></button>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid #f1f1f1;">
+                        <span style="font-size: 14px; color: #222;">总金额</span>
+                        <div style="display: flex; align-items: center;"><span style="font-size: 14px; color: #b8b8b8; margin-right: 8px;">¥</span><input type="text" id="redpacket-group-total" placeholder="0.00" inputmode="decimal" style="background: transparent !important; border: none !important; outline: none !important; box-shadow: none !important; font-size: 17px; text-align: right; color: #999; width: 64px; padding: 0;"></div>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid #f1f1f1;">
+                        <span style="font-size: 14px; color: #222;">红包个数</span>
+                        <div style="display: flex; align-items: center; color: #aaa; font-size: 13px;"><input id="redpacket-group-count" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" placeholder="填写个数" aria-label="红包个数" style="width: 72px; background: transparent !important; border: none !important; outline: none !important; box-shadow: none !important; color: #888; font-size: 13px; text-align: right; padding: 0;"><span style="margin-left: 5px; color: #888;">个</span></div>
+                    </div>
+                    <div style="display: flex; align-items: center; min-height: 58px;">
+                        <span style="font-size: 14px; color: #222; margin-right: 24px;">祝福语</span>
+                        <input type="text" id="redpacket-group-wish" placeholder="恭喜发财，大吉大利" maxlength="25" style="flex: 1; min-width: 0; background: transparent !important; border: none !important; outline: none !important; box-shadow: none !important; font-size: 13px; color: #222; padding: 0;">
+                        <i class="fa-regular fa-face-smile" aria-hidden="true" style="font-size: 17px; color: #8a8a8a; margin-left: 8px; flex-shrink: 0;"></i>
+                    </div>
+
+                </div>
+                <div style="background: #fff; border-radius: 14px; margin: 0 12px 10px; padding: 20px 16px 18px; text-align: center; box-sizing: border-box;">
+                    <div style="font-size: 13px; color: #333; margin-bottom: 16px;">金额</div>
+                    <div><span style="font-size: 30px; font-weight: 500; color: #000;">¥ </span><span id="redpacket-group-amount-main" style="font-size: 34px; font-weight: 500; color: #000;">0.00</span></div>
+                    <div data-redpacket-group-summary style="display: inline-flex; align-items: center; gap: 5px; margin-top: 18px; padding: 5px 9px; border-radius: 5px; background: #f7f7f7; color: #999; font-size: 11px;"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>群成员领取后随机拆分</div>
+                    <button id="confirm-group-redpacket" type="button" style="width: 100%; margin-top: 28px; padding: 11px; background: #ff3f45; color: #fff; border: none; border-radius: 9px; font-size: 14px; cursor: pointer; box-sizing: border-box;">塞钱进红包</button>
+                </div>
+                <div style="text-align: center; font-size: 11px; color: #aaa; margin-top: auto; padding: 8px 0 10px;">可直接使用收到的零钱发红包</div>
+            </div>
+        `;
+
+        const groupTabs = isGroupChat ? `
+                <div style="display: flex; align-items: center; margin: 0 12px 10px; padding: 0 7px; height: 52px; border-radius: 13px; background: #fff;">
+                    <button class="wechat-redpacket-group-tab" data-redpacket-mode="single" type="button" style="flex: 1; height: 100%; border: none !important; outline: none !important; background: transparent !important; color: #fa5151; font-size: 14px; font-weight: 600; cursor: pointer;"><span style="display: inline-flex; align-items: center; height: 100%; border-bottom: 2px solid #fa5151; box-sizing: border-box;">单独红包</span></button>
+                    <button class="wechat-redpacket-group-tab" data-redpacket-mode="group" type="button" style="flex: 1; height: 100%; border: none !important; outline: none !important; background: transparent !important; color: #888; font-size: 14px; cursor: pointer;"><span style="display: inline-flex; align-items: center; height: 100%; border-bottom: 2px solid transparent; box-sizing: border-box;">群红包</span></button>
+                </div>
+            ` : '';
+        const dialogBody = isGroupChat
+            ? `${groupTabs}<div class="wechat-redpacket-group-forms" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">${groupSingleForm}${groupPacketForm}</div>`
+            : singleChatForm;
         const html = `
         <div class="wechat-app">
             <div class="wechat-header" style="background: #f7f7f7;">
@@ -15462,111 +15889,185 @@ ${callTranscript}`;
                     </button>
                 </div>
             </div>
-
-            <div class="wechat-content" style="background: #f7f7f7; padding: 8px 0 0; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box;">
-                <!-- 卡片1: 单个金额 -->
-                <div style="background: #fff; border-radius: 8px; margin: 0 10px 8px; padding: 0 12px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; height: 40px;">
-                        <span style="font-size: 13px; color: #000;">单个金额</span>
-                        <div style="display: flex; align-items: center;">
-                            <span style="font-size: 13px; color: #ccc; margin-right: 2px;">¥</span>
-                            <input type="text" id="redpacket-amount"
-                                   placeholder="0.00"
-                                   inputmode="decimal"
-                                   style="background:transparent; border:none; outline:none; font-size:13px; text-align:right; color:#ccc; width:60px;">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 卡片2: 祝福语 -->
-                <div style="background: #fff; border-radius: 8px; margin: 0 10px 8px; padding: 0 12px;">
-                    <div style="display: flex; align-items: center; height: 40px;">
-                        <input type="text" id="redpacket-wish" placeholder="恭喜发财，大吉大利" maxlength="25" style="
-                            flex: 1; min-width: 0; background: transparent; border: none; outline: none;
-                            font-size: 13px; color: #000; padding: 0;
-                        ">
-                        <span style="font-size: 16px; color: #ccc; margin-left: 6px; flex-shrink: 0;">😊</span>
-                    </div>
-                </div>
-
-                <!-- 卡片3: 红包封面 -->
-                <div style="background: #fff; border-radius: 8px; margin: 0 10px; padding: 0 12px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; height: 40px;">
-                        <span style="font-size: 13px; color: #000;">红包封面</span>
-                        <div style="display: flex; align-items: center; color: #ccc; font-size: 11px;">
-                            <span>领封面</span>
-                            <span style="color: #fa5151; margin: 0 3px; font-size: 8px;">●</span>
-                            <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 金额主显示区 -->
-                <div style="text-align: center; margin: 25px 0 15px;">
-                    <span style="font-size: 30px; font-weight: 500; color: #000;">¥ </span>
-                    <span id="redpacket-amount-main" style="font-size: 30px; font-weight: 500; color: #000;">0.00</span>
-                </div>
-
-                <!-- 塞钱进红包按钮 -->
-                <div style="padding: 0 30px;">
-                    <button id="confirm-redpacket" style="
-                        width: 100%; padding: 10px; background: #e54c45; color: #fff;
-                        border: none; border-radius: 6px; font-size: 13px; cursor: pointer;
-                        box-sizing: border-box;
-                    ">塞钱进红包</button>
-                </div>
-
-                <!-- 底部提示文字 -->
-                <div style="text-align: center; font-size: 11px; color: #aaa; margin-top: auto; padding: 10px 0;">
-                    可直接使用收到的零钱发红包
-                </div>
+            <div class="wechat-content" style="background: #f7f7f7; padding: ${isGroupChat ? '10px 0 0' : '8px 0 0'}; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; box-sizing: border-box;">
+                ${dialogBody}
             </div>
         </div>
     `;
 
         this.app.phoneShell.setContent(html);
 
-        // 获取元素
         const amountInput = document.getElementById('redpacket-amount');
         const amountMainDisplay = document.getElementById('redpacket-amount-main');
 
-        // 监听输入，实时更新下方的大号金额
-        amountInput.addEventListener('input', () => {
-            let valueStr = amountInput.value.replace(/[^\d.]/g, ''); // 只允许数字和小数点
+        if (amountInput && amountMainDisplay) {
+            amountInput.addEventListener('input', () => {
+                let valueStr = amountInput.value.replace(/[^\d.]/g, '');
+                const parts = valueStr.split('.');
+                if (parts.length > 2) valueStr = parts[0] + '.' + parts.slice(1).join('');
+                if (parts[1] && parts[1].length > 2) valueStr = parts[0] + '.' + parts[1].substring(0, 2);
+                amountInput.value = valueStr;
+                const parsedValue = parseFloat(valueStr);
+                amountMainDisplay.textContent = Number.isFinite(parsedValue) ? parsedValue.toFixed(2) : '0.00';
+            });
 
-            const parts = valueStr.split('.');
-            if (parts.length > 2) valueStr = parts[0] + '.' + parts.slice(1).join('');
-            if (parts[1] && parts[1].length > 2) valueStr = parts[0] + '.' + parts[1].substring(0, 2);
+            amountInput.addEventListener('focus', () => {
+                amountInput.style.color = '#000';
+                if (amountInput.value === '0.00' || amountInput.value === '') amountInput.placeholder = '';
+            });
 
-            amountInput.value = valueStr; // 更新输入框的值
+            amountInput.addEventListener('blur', () => {
+                if (amountInput.value === '') {
+                    amountInput.style.color = '#ccc';
+                    amountInput.placeholder = '0.00';
+                }
+            });
+        }
 
-            let displayValue = parseFloat(valueStr).toFixed(2);
-            if (isNaN(displayValue) || valueStr === '' || valueStr === '.') {
-                amountMainDisplay.textContent = '0.00';
-            } else {
-                amountMainDisplay.textContent = displayValue;
-            }
-        });
-
-        // 控制占位符和输入文字的颜色
-        amountInput.addEventListener('focus', () => {
-            amountInput.style.color = '#000'; //聚焦时，输入文字变黑色
-            if (amountInput.value === '0.00' || amountInput.value === '') {
-                amountInput.placeholder = ''; //聚焦时清空占位符
-            }
-        });
-
-        amountInput.addEventListener('blur', () => {
-            if (amountInput.value === '') {
-                amountInput.style.color = '#ccc'; //失焦且为空时，文字恢复灰色
-                amountInput.placeholder = '0.00'; //恢复占位符
-            }
-        });
-
-        // 返回按钮
         document.getElementById('back-from-redpacket')?.addEventListener('click', () => this.app.render());
 
-        // 确认发送红包 (逻辑保持不变)
+        if (isGroupChat) {
+            const tabs = document.querySelectorAll('.wechat-redpacket-group-tab');
+            const panels = document.querySelectorAll('.wechat-redpacket-group-panel');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const mode = tab.dataset.redpacketMode;
+                    tabs.forEach(item => {
+                        const active = item.dataset.redpacketMode === mode;
+                        item.style.color = active ? '#fa5151' : '#888';
+                        item.style.fontWeight = active ? '600' : '400';
+                        const label = item.querySelector('span');
+                        if (label) label.style.borderBottomColor = active ? '#fa5151' : 'transparent';
+                    });
+                    panels.forEach(panel => {
+                        panel.style.display = panel.dataset.redpacketMode === mode ? 'flex' : 'none';
+                    });
+                });
+            });
+
+            const groupCountInput = document.getElementById('redpacket-group-count');
+            groupCountInput?.addEventListener('input', () => {
+                const digits = groupCountInput.value.replace(/\D/g, '').replace(/^0+/, '');
+                groupCountInput.value = digits.slice(0, 3);
+            });
+
+            const groupTotalInput = document.getElementById('redpacket-group-total');
+            const groupAmountMainDisplay = document.getElementById('redpacket-group-amount-main');
+            groupTotalInput?.addEventListener('input', () => {
+                let valueStr = groupTotalInput.value.replace(/[^\d.]/g, '');
+                const parts = valueStr.split('.');
+                if (parts.length > 2) valueStr = parts[0] + '.' + parts.slice(1).join('');
+                if (parts[1] && parts[1].length > 2) valueStr = parts[0] + '.' + parts[1].substring(0, 2);
+                groupTotalInput.value = valueStr;
+                const parsedValue = parseFloat(valueStr);
+                if (groupAmountMainDisplay) {
+                    groupAmountMainDisplay.textContent = Number.isFinite(parsedValue) ? parsedValue.toFixed(2) : '0.00';
+                }
+            });
+
+            const groupKindToggle = document.getElementById('redpacket-group-kind-toggle');
+            groupKindToggle?.addEventListener('click', () => {
+                const isLucky = groupKindToggle.dataset.redpacketKind !== 'average';
+                groupKindToggle.dataset.redpacketKind = isLucky ? 'average' : 'lucky';
+                const label = groupKindToggle.querySelector('span');
+                if (label) label.textContent = isLucky ? '平均分红包' : '拼手气红包';
+                const note = document.querySelector('[data-redpacket-group-note]');
+                if (note) note.textContent = isLucky ? '群成员领取后每人金额相同' : '群成员领取后随机拆分';
+                const groupNote = document.querySelector('[data-redpacket-group-summary]');
+                if (groupNote) groupNote.textContent = isLucky ? '群成员领取后每人金额相同' : '群成员领取后随机拆分';
+            });
+
+            const sendGroupRedPacket = (packetMode) => {
+                const chat = this.app.currentChat || currentChat;
+                const isTargetedPacket = packetMode === 'single';
+                const rawAmount = isTargetedPacket ? amountInput?.value : groupTotalInput?.value;
+                const amount = Number.parseFloat(rawAmount || '0');
+                if (!Number.isFinite(amount) || amount <= 0) {
+                    this.app.phoneShell.showNotification('提示', '请输入正确的金额', '⚠️');
+                    return;
+                }
+
+                const recipientName = String(document.getElementById('redpacket-group-recipient')?.value || '').trim();
+                if (isTargetedPacket && !recipientName) {
+                    this.app.phoneShell.showNotification('提示', '请选择要发给的群成员', '⚠️');
+                    return;
+                }
+
+                const packetCount = isTargetedPacket ? 1 : Number.parseInt(groupCountInput?.value || '0', 10);
+                if (!isTargetedPacket && (!Number.isInteger(packetCount) || packetCount <= 0)) {
+                    this.app.phoneShell.showNotification('提示', '请输入正确的红包个数', '⚠️');
+                    return;
+                }
+                if (!isTargetedPacket && packetCount > groupMembers.length) {
+                    this.app.phoneShell.showNotification('提示', '红包个数不能超过可领取的群成员人数', '⚠️');
+                    return;
+                }
+                if (!isTargetedPacket && Math.round(amount * 100) < packetCount) {
+                    this.app.phoneShell.showNotification('提示', '总金额不足，需保证每个红包至少 ¥0.01', '⚠️');
+                    return;
+                }
+
+                const amountText = amount.toFixed(2);
+                const wish = isTargetedPacket
+                    ? (document.getElementById('redpacket-wish')?.value || '恭喜发财，大吉大利')
+                    : (document.getElementById('redpacket-group-wish')?.value || '恭喜发财，大吉大利');
+                const redpacketId = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                const redpacketTransaction = {
+                    type: 'redpacket',
+                    title: `群聊红包-${chat.name}`,
+                    detail: wish,
+                    source: 'wechat',
+                    chatId: chat.id,
+                    counterparty: chat.name,
+                    messageId: redpacketId,
+                    referenceId: `wechat:redpacket:send:${redpacketId}`
+                };
+                const spendResult = this.app.wechatData.spendWalletBalance(amount, null, redpacketTransaction);
+                if (!spendResult?.success) {
+                    this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${Number(spendResult?.balanceBefore || 0).toFixed(2)} 啦`, '❌');
+                    return;
+                }
+
+                const isLuckyPacket = groupKindToggle?.dataset.redpacketKind !== 'average';
+                this.app.wechatData.addMessage(chat.id, {
+                    id: redpacketId,
+                    from: 'me',
+                    type: 'redpacket',
+                    content: isTargetedPacket ? `[给${recipientName}的红包 ¥${amountText}]` : '[群红包]',
+                    amount: amountText,
+                    wish,
+                    status: 'sent',
+                    ...(isTargetedPacket
+                        ? { packetMode: 'single', recipientName }
+                        : {
+                            isGroupPacket: true,
+                            packetMode: isLuckyPacket ? 'group_lucky' : 'group_average',
+                            count: packetCount,
+                            packetCount,
+                            claims: [],
+                            packetClaimCount: 0
+                        }),
+                    ...(this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : {})
+                });
+
+                this.app.render();
+                this.app.phoneShell.showNotification(
+                    '红包已发送',
+                    isTargetedPacket ? `已向${recipientName}发送 ¥${amountText} 红包` : `已发送 ¥${amountText} 群红包`,
+                    '🧧'
+                );
+                if (this.isOnlineMode()) this._enqueuePendingChat(chat.id);
+            };
+
+            document.getElementById('confirm-redpacket')?.addEventListener('click', () => {
+                sendGroupRedPacket('single');
+            });
+            document.getElementById('confirm-group-redpacket')?.addEventListener('click', () => {
+                sendGroupRedPacket('group');
+            });
+            return;
+        }
+
         document.getElementById('confirm-redpacket')?.addEventListener('click', async () => {
             const amount = amountInput.value;
             const wish = document.getElementById('redpacket-wish').value || '恭喜发财，大吉大利';
@@ -15576,12 +16077,6 @@ ${callTranscript}`;
                 return;
             }
 
-            // 检查钱包余额
-            const currentBalance = this.app.wechatData.getWalletBalance();
-            if (currentBalance !== null && parseFloat(amount) > currentBalance) {
-                this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${parseFloat(currentBalance).toFixed(2)} 啦`, '❌');
-                return;
-            }
             const redpacketAmount = parseFloat(amount);
             const redpacketId = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
             const redpacketTransaction = {
@@ -15594,11 +16089,10 @@ ${callTranscript}`;
                 messageId: redpacketId,
                 referenceId: `wechat:redpacket:send:${redpacketId}`
             };
-            // 扣款；未初始化零钱时仍保留流水，避免漏掉已发出的资金消息。
-            if (currentBalance !== null) {
-                this.app.wechatData.updateWalletBalance(-redpacketAmount, null, redpacketTransaction);
-            } else {
-                this.app.wechatData.recordWalletTransaction(-redpacketAmount, redpacketTransaction);
+            const spendResult = this.app.wechatData.spendWalletBalance(redpacketAmount, null, redpacketTransaction);
+            if (!spendResult?.success) {
+                this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${Number(spendResult?.balanceBefore || 0).toFixed(2)} 啦`, '❌');
+                return;
             }
 
             this.app.wechatData.addMessage(this.app.currentChat.id, {
@@ -15613,16 +16107,10 @@ ${callTranscript}`;
             });
 
             this.app.render();
-
             this.app.phoneShell.showNotification('红包已发送', `已向${this.app.currentChat.name}发送¥${amount}红包`, '🧧');
-
-            // 🔥 如果开启在线模式，触发连发倒计时
-            if (this.isOnlineMode()) {
-                this._enqueuePendingChat(this.app.currentChat.id);
-            }
+            if (this.isOnlineMode()) this._enqueuePendingChat(this.app.currentChat.id);
         });
     }
-
     // 🎨 添加自定义表情弹窗
     showAddCustomEmojiDialog() {
         const html = `
@@ -15928,21 +16416,106 @@ ${callTranscript}`;
         }
     }
 
+    _claimGroupRedPacketForCurrentUser(chatId, message = {}) {
+        const safeChatId = String(chatId || '').trim();
+        const packetMode = String(message.packetMode || '').trim();
+        const isGroupPacket = message.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average';
+        const packetStatus = String(message.status || '').trim();
+        if (!safeChatId || !message?.id || !isGroupPacket || packetStatus === 'refunded' || packetStatus === 'opened') return null;
+
+        const userInfo = this.app.wechatData.getUserInfo?.() || {};
+        const userName = String(userInfo.name || '我').trim() || '我';
+        const senderName = String(message.from === 'me' ? userName : (message.from || '')).trim();
+        if (this._normalizeLookupName(senderName) === this._normalizeLookupName(userName)) return null;
+
+        const previousClaims = Array.isArray(message.claims) ? message.claims : [];
+        const userKey = this._normalizeLookupName(userName);
+        if (!userKey || previousClaims.some(claim => this._normalizeLookupName(claim?.name) === userKey)) return null;
+
+        const claimAmount = this._calculateGroupRedPacketClaimAmount(message, previousClaims);
+        if (!Number.isFinite(claimAmount) || claimAmount <= 0) return null;
+
+        const packetCount = Math.max(0, Number.parseInt(message.count || message.packetCount || 0, 10) || 0);
+        const totalAmount = Number.parseFloat(message.amount || 0);
+        const claims = [...previousClaims, {
+            name: userName,
+            amount: claimAmount.toFixed(2),
+            mode: packetMode === 'group_lucky' ? 'lucky' : 'average',
+            timestamp: Date.now()
+        }];
+        const claimedAmount = claims.reduce((sum, claim) => sum + Math.round((Number.parseFloat(claim?.amount || 0) || 0) * 100), 0) / 100;
+        const isFullyClaimed = (packetCount > 0 && claims.length >= packetCount)
+            || (Number.isFinite(totalAmount) && claimedAmount >= totalAmount);
+        const updatedMessage = this.app.wechatData.updateMessageById(safeChatId, message.id, {
+            status: isFullyClaimed ? 'opened' : 'sent',
+            claims,
+            packetClaimCount: claims.length,
+            claimedAmount: claimedAmount.toFixed(2),
+            remainingAmount: Number.isFinite(totalAmount) ? Math.max(0, totalAmount - claimedAmount).toFixed(2) : '0.00',
+            lastClaimedBy: userName,
+            lastClaimedAmount: claimAmount.toFixed(2),
+            paymentHandledBy: userName,
+            paymentHandledAt: Date.now()
+        });
+        if (!updatedMessage) return null;
+
+        this.app.wechatData.updateWalletBalance(claimAmount, null, {
+            type: 'redpacket',
+            title: `群红包收入-${senderName || this.app.currentChat?.name || '群成员'}`,
+            detail: packetMode === 'group_average' ? '均分群红包' : '拼手气群红包',
+            source: 'wechat',
+            chatId: safeChatId,
+            counterparty: senderName,
+            messageId: String(message.id || ''),
+            referenceId: `wechat:redpacket:group-claim:${message.id}:${userKey}`,
+            date: message.date,
+            time: message.time,
+            weekday: message.weekday,
+            timestamp: message.timestamp,
+            realTimestamp: message.realTimestamp,
+            fromMainChatTag: message.fromMainChatTag === true,
+            tavernMessageIndex: message.tavernMessageIndex,
+            batchId: message.batchId
+        });
+
+        return { message: updatedMessage, amount: claimAmount };
+    }
+
     // 🧧 打开红包详情界面（全新）
     openRedPacket(messageId) {
         const chatId = this.app.currentChat?.id;
         if (!chatId) return;
         const messages = this.app.wechatData.getMessages(chatId);
-        const message = messages.find(m => m.id === messageId);
+        let message = messages.find(m => m.id === messageId);
         if (!message) return;
 
+        const initialPacketMode = String(message.packetMode || '').trim();
+        const initialIsGroupPacket = message.isGroupPacket === true || initialPacketMode === 'group_lucky' || initialPacketMode === 'group_average';
+        const initialIsMe = message.from === 'me' || message.from === this.app.wechatData.getUserInfo().name;
+        if (initialIsGroupPacket && !initialIsMe) {
+            const claimResult = this._claimGroupRedPacketForCurrentUser(chatId, message);
+            if (claimResult?.message) {
+                message = claimResult.message;
+                this.app.phoneShell.showNotification('领取群红包', `已领取 ¥${claimResult.amount.toFixed(2)}`, '🧧');
+            }
+        }
+
         const isMe = message.from === 'me' || message.from === this.app.wechatData.getUserInfo().name;
+        const packetMode = String(message.packetMode || '').trim();
+        const isGroupPacket = message.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average';
+        const claims = Array.isArray(message.claims) ? message.claims : [];
+        const packetCount = Math.max(0, Number.parseInt(message.count || message.packetCount || 0, 10) || 0);
+        const totalAmount = Number.parseFloat(message.amount || 0);
+        const claimedAmount = claims.reduce((sum, claim) => {
+            const amount = Number.parseFloat(claim?.amount || 0);
+            return sum + (Number.isFinite(amount) ? amount : 0);
+        }, 0);
         let resolvedStatus = String(message.status || '').trim();
         let isOpened = resolvedStatus === 'opened';
         let isRefunded = resolvedStatus === 'refunded';
         const contact = this.app.wechatData.getContactByName(message.from);
 
-        if (!isMe && !isOpened && !isRefunded) {
+        if (!isMe && !isGroupPacket && !isOpened && !isRefunded) {
             const updatedMessage = this.app.wechatData.updateMessageById(chatId, messageId, { status: 'opened' });
             resolvedStatus = String(updatedMessage?.status || 'opened').trim();
             isOpened = resolvedStatus === 'opened';
@@ -15973,9 +16546,39 @@ ${callTranscript}`;
         const senderName = message.from === 'me' ? this.app.wechatData.getUserInfo().name : message.from;
         const av = contact?.avatar || (message.from === 'me' ? this.app.wechatData.getUserInfo().avatar : '👤');
         const avatarHtml = this.app.renderAvatar(av, '👤', senderName);
-        const redPacketStatusText = isRefunded
-            ? (isMe ? '红包已退回' : '红包已被退回')
-            : (isMe ? (isOpened ? '红包已被领取' : '红包已发出') : '已存入零钱');
+        const isFullyClaimed = isGroupPacket && packetCount > 0 && claims.length >= packetCount;
+        const redPacketStatusText = isGroupPacket
+            ? (isRefunded
+                ? (isMe ? '红包已退回' : '红包已被退回')
+                : (isFullyClaimed ? '红包已领完' : (claims.length > 0 ? `已领取 ${claims.length}/${packetCount || claims.length} 个` : '红包已发出')))
+            : (isRefunded
+                ? (isMe ? '红包已退回' : '红包已被退回')
+                : (isMe ? (isOpened ? '红包已被领取' : '红包已发出') : '已存入零钱'));
+        const groupClaimProgressText = packetCount > 0
+            ? `已领取 ${claims.length}/${packetCount} 个，共 ${claimedAmount.toFixed(2)}/${Number.isFinite(totalAmount) ? totalAmount.toFixed(2) : '0.00'} 元`
+            : `已领取 ${claims.length} 个，共 ${claimedAmount.toFixed(2)} 元`;
+        const groupClaimRowsHtml = claims.map(claim => {
+            const claimName = String(claim?.name || '群成员').trim() || '群成员';
+            const isCurrentUserClaim = this._isCurrentWechatUserName(claimName);
+            const claimContact = this.app.wechatData.getContactByName(claimName);
+            const claimAvatarValue = isCurrentUserClaim ? this.app.wechatData.getUserInfo()?.avatar : claimContact?.avatar;
+            const claimAvatar = this.app.renderAvatar(claimAvatarValue || '👤', '👤', claimName);
+            const claimAmount = Number.parseFloat(claim?.amount || 0);
+            const claimTimestamp = Number(claim?.timestamp || 0);
+            const claimTime = Number.isFinite(claimTimestamp) && claimTimestamp > 0
+                ? new Date(claimTimestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                : '';
+            return `
+                <div style="display:flex; align-items:center; min-height:58px; padding:8px 16px; border-bottom:1px solid #f2f2f2; box-sizing:border-box;">
+                    <div style="width:36px; height:36px; border-radius:4px; overflow:hidden; background:#eee; flex-shrink:0; display:flex; align-items:center; justify-content:center;">${claimAvatar}</div>
+                    <div style="min-width:0; flex:1; margin-left:10px; text-align:left;">
+                        <div style="font-size:13px; color:#222; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${this._escapeHtml(claimName)}</div>
+                        ${claimTime ? `<div style="font-size:10px; color:#aaa; margin-top:3px;">${this._escapeHtml(claimTime)}</div>` : ''}
+                    </div>
+                    <div style="font-size:14px; color:#222; font-variant-numeric:tabular-nums; margin-left:12px;">${Number.isFinite(claimAmount) ? claimAmount.toFixed(2) : '0.00'} 元</div>
+                </div>
+            `;
+        }).join('');
 
         const html = `
             <div class="wechat-app" style="position: relative;">
@@ -16005,6 +16608,13 @@ ${callTranscript}`;
                         </div>
                         <div style="font-size:11px; color:#e6a158;">${redPacketStatusText}</div>
                     </div>
+                    ${isGroupPacket ? `
+                        <div style="height:8px; background:#f7f7f7; margin-top:24px; flex-shrink:0;"></div>
+                        <div style="padding:12px 16px 9px; font-size:11px; color:#999; text-align:left; border-bottom:1px solid #f2f2f2; flex-shrink:0;">${groupClaimProgressText}</div>
+                        <div style="flex:1; min-height:0; overflow-y:auto; background:#fff;">
+                            ${groupClaimRowsHtml || '<div style="padding:32px 16px; text-align:center; color:#bbb; font-size:12px;">暂时还没有群成员领取</div>'}
+                        </div>
+                    ` : ''}
                 </div>
             </div>
         `;
