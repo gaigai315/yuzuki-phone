@@ -2141,15 +2141,25 @@ export class WechatApp {
 }
 
 /* 自定义表情样式 */
-.custom-emoji-item {
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    overflow: hidden;
-    border-radius: 4px;
+#phone-panel-content .phone-screen .wechat-app .wechat-custom-emoji-grid {
+    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+    justify-items: center;
+    align-items: center;
+    gap: 12px 10px;
+    padding: 2px 0 8px;
 }
 
-.custom-emoji-item img {
+#phone-panel-content .phone-screen .wechat-app .custom-emoji-item,
+#phone-panel-content .phone-screen .wechat-app .wechat-custom-emoji-grid .emoji-add {
+    width: 56px;
+    height: 56px;
+    padding: 0;
+    overflow: hidden;
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-app .custom-emoji-item img {
     width: 100%;
     height: 100%;
     object-fit: cover;

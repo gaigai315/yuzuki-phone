@@ -4091,7 +4091,7 @@ renderChatRoom(chat) {
             ` : ''}
 
            <div class="emoji-scroll">
-                <div class="emoji-grid">
+                <div class="emoji-grid${customMode ? ' wechat-custom-emoji-grid' : ''}">
                     ${this.emojiTab === 'custom' ? `
                         <!-- 自定义表情 -->
                         ${customEmojis.map(emoji => `
@@ -11729,8 +11729,8 @@ renderChatRoom(chat) {
                     '3. 用户发送拼手气或均分群红包后，聊天记录会显示完整类型、总金额、红包个数和状态。群成员也可以主动发送群红包，但必须单独输出完整标签，例如：群友A：[群红包｜类型：拼手气红包｜总金额：¥10.00｜红包个数：4]，或群友A：[群红包｜类型：均分红包｜总金额：¥10.00｜红包个数：4]；不要只输出缺少金额和个数的 [群红包]。',
                     '4. 拼手气红包由不同群成员领取，每次只能由一名群成员输出：[领取拼手气红包¥xx.xx]；每位成员金额可以不同，但所有领取金额之和绝对不能超过红包总额，最后一位领取者获得红包剩余余额。',
                     '5. 均分红包由不同群成员领取，每次输出：[领取均分红包¥xx.xx]；每位成员金额应按红包总额和个数平均分配，最后一位领取者获得因小数取整产生的剩余余额。',
-                    '6. 群红包发送者不能领取自己发出的红包；其他真实群成员均可领取，每名成员只能领取一次，领取人数不能超过红包个数。',
-                    '7. 用户本人可以通过点击群红包领取，系统会自动随机结算金额；你不得替用户输出领取标签。群成员领取时必须使用真实群成员名字，例如：群友B：[领取拼手气红包¥2.80]。',
+                    '6. 用户本人可以点击领取自己发出的拼手气或均分群红包；AI 群成员发送者不要领取自己发出的红包。其他真实群成员均可领取，每名成员只能领取一次，领取人数不能超过红包个数。',
+                    '7. 用户本人通过点击群红包领取（包括自己发出的群红包），系统会自动随机结算金额；你不得替用户输出领取标签。群成员领取时必须使用真实群成员名字，例如：群友B：[领取拼手气红包¥2.80]。',
                     '8. 红包发送和领取标签必须单独成条，不要和普通聊天文字、动作描写或解释混在同一标签内。',
                     '除非用户明确要求，不要擅自改变红包类型、总金额、红包个数、领取状态或群成员名单。'
                 ].join('\n'),
@@ -15759,6 +15759,7 @@ ${callTranscript}`;
         const groupMembers = isGroupChat
             ? this._collectGroupParticipantsForFilter(currentChat).filter(name => !this._isCurrentWechatUserName(name))
             : [];
+        const claimableGroupMemberCount = isGroupChat ? groupMembers.length + 1 : 0;
         const escapeHtml = (value) => String(value ?? '')
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
@@ -15998,8 +15999,8 @@ ${callTranscript}`;
                     this.app.phoneShell.showNotification('提示', '请输入正确的红包个数', '⚠️');
                     return;
                 }
-                if (!isTargetedPacket && packetCount > groupMembers.length) {
-                    this.app.phoneShell.showNotification('提示', '红包个数不能超过可领取的群成员人数', '⚠️');
+                if (!isTargetedPacket && packetCount > claimableGroupMemberCount) {
+                    this.app.phoneShell.showNotification('提示', '红包个数不能超过群内可领取人数（包括自己）', '⚠️');
                     return;
                 }
                 if (!isTargetedPacket && Math.round(amount * 100) < packetCount) {
@@ -16426,7 +16427,6 @@ ${callTranscript}`;
         const userInfo = this.app.wechatData.getUserInfo?.() || {};
         const userName = String(userInfo.name || '我').trim() || '我';
         const senderName = String(message.from === 'me' ? userName : (message.from || '')).trim();
-        if (this._normalizeLookupName(senderName) === this._normalizeLookupName(userName)) return null;
 
         const previousClaims = Array.isArray(message.claims) ? message.claims : [];
         const userKey = this._normalizeLookupName(userName);
@@ -16491,8 +16491,7 @@ ${callTranscript}`;
 
         const initialPacketMode = String(message.packetMode || '').trim();
         const initialIsGroupPacket = message.isGroupPacket === true || initialPacketMode === 'group_lucky' || initialPacketMode === 'group_average';
-        const initialIsMe = message.from === 'me' || message.from === this.app.wechatData.getUserInfo().name;
-        if (initialIsGroupPacket && !initialIsMe) {
+        if (initialIsGroupPacket) {
             const claimResult = this._claimGroupRedPacketForCurrentUser(chatId, message);
             if (claimResult?.message) {
                 message = claimResult.message;
