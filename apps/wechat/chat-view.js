@@ -1173,6 +1173,52 @@ export class ChatView {
         this._syncChatSendButton(input);
     }
 
+    _finishImmediateMediaSend(targetChatId, caretPos = null) {
+        const safeChatId = String(targetChatId || '').trim();
+        if (!safeChatId) return false;
+
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
+        this._collapseTransientInputPanels({ render: false });
+
+        const messagesDiv = this._getVisibleChatMessagesContainer(safeChatId);
+        if (messagesDiv) {
+            const messages = this.app.wechatData.getMessages(safeChatId);
+            const userInfo = this.app.wechatData.getUserInfo();
+            this.smartUpdateMessages(messages, userInfo, { chatId: safeChatId });
+        }
+
+        if (input) {
+            input.value = this.inputText;
+            input.focus();
+            const end = input.value.length;
+            const targetPos = Number.isFinite(Number(caretPos))
+                ? Math.max(0, Math.min(end, Number(caretPos)))
+                : end;
+            if (typeof input.setSelectionRange === 'function') {
+                input.setSelectionRange(targetPos, targetPos);
+            }
+            this._syncChatSendButton(input);
+        }
+
+        const didEnqueue = this._enqueuePendingChat(safeChatId, {
+            shouldStartTimer: false,
+            shouldShowStatus: false
+        });
+        if (!didEnqueue) {
+            this._notifyOnlineModeRequired();
+            return false;
+        }
+
+        if (input && document.activeElement === input) {
+            clearTimeout(this.batchTimer);
+            this.hideTypingStatus();
+        } else {
+            this._restartPendingTimerIfNeeded(safeChatId);
+        }
+
+        return true;
+    }
     _setCustomEmojiSelectionMode(enabled = false) {
         this.customEmojiSelectionMode = !!enabled;
         if (!this.customEmojiSelectionMode) {
@@ -8210,6 +8256,12 @@ renderChatRoom(chat) {
         const targetChatId = String(this.app.currentChat?.id || '').trim();
         if (!dataUrl || !targetChatId) return;
 
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        const input = currentView.querySelector('#chat-input') || document.getElementById('chat-input');
+        const caretPos = input && Number.isInteger(input.selectionStart)
+            ? input.selectionStart
+            : String(this.inputText || '').length;
+
         try {
             const finalUrl = await window.VirtualPhone?.imageManager?.uploadDataUrl?.(dataUrl, filenamePrefix);
             if (!finalUrl) throw new Error('图片上传管理器未初始化');
@@ -8224,12 +8276,9 @@ renderChatRoom(chat) {
                 ...timeFields
             });
 
-            this.resetTransientInputPanels();
             if (String(this.app.currentChat?.id || '') === targetChatId) {
-                this.app.render();
-            }
-
-            if (this.isOnlineMode()) {
+                this._finishImmediateMediaSend(targetChatId, caretPos);
+            } else if (this.isOnlineMode()) {
                 this._enqueuePendingChat(targetChatId);
             }
         } catch (uploadErr) {
@@ -8723,6 +8772,10 @@ renderChatRoom(chat) {
                 if (emoji) {
                     const imageUrl = String(emoji.image || '').trim();
                     if (imageUrl) {
+                        const currentInput = query('#chat-input') || document.getElementById('chat-input');
+                        const caretPos = currentInput && Number.isInteger(currentInput.selectionStart)
+                            ? currentInput.selectionStart
+                            : String(this.inputText || '').length;
                         this.app.wechatData.addMessage(this.app.currentChat.id, {
                             from: 'me',
                             type: 'image',
@@ -8734,11 +8787,7 @@ renderChatRoom(chat) {
                             ...(this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : {})
                         });
 
-                        this._closeActionPanelsAfterImmediateSend();
-
-                        if (this.isOnlineMode()) {
-                            this._enqueuePendingChat(this.app.currentChat.id);
-                        }
+                        this._finishImmediateMediaSend(this.app.currentChat.id, caretPos);
                         return;
                     }
 

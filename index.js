@@ -20,7 +20,7 @@ import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
 import { PhoneFloatingEntry } from './phone/floating-entry.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.7';
+const ST_PHONE_VERSION = '1.4.8';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -57,10 +57,10 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-08-05',
+    date: '2026-08-06',
     items: [
-        '【优化】优化微信聊天相册图片显示：大图按比例缩小至图片占位框范围，小图保持原始尺寸。',
-        '【新增】微信聊天设置新增会话级“注入正文聊天记录”开关，可单独关闭指定会话的正文注入；关闭后即使全局开启互通模式与线下注入，该会话记录也会被排除。'
+        '【修复】微信发送图片或自定义表情后不再立即触发 AI 回复，恢复按输入框焦点、面板状态和失焦后的倒计时规则等待。',
+        '【优化】图片或自定义表情发送完成后保持输入框焦点与光标位置，方便继续连续输入。'
     ]
 };
 
