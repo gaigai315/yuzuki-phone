@@ -20,7 +20,7 @@ import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
 import { PhoneFloatingEntry } from './phone/floating-entry.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.8';
+const ST_PHONE_VERSION = '1.4.9';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -57,12 +57,9 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-08-06',
+    date: '2026-08-08',
     items: [
-        '【修复】微信发送图片或自定义表情后不再立即触发 AI 回复，恢复按输入框焦点、面板状态和失焦后的倒计时规则等待。',
-        '【优化】图片或自定义表情发送完成后保持输入框焦点与光标位置，方便继续连续输入。',
-        '【优化】优化群聊红包功能，支持群友发红包、多人领取、最后一人领取剩余余额，并在发送红包或转账前复核零钱余额。',
-        '【优化】优化用户文字生图 TAG：输入中文图片描述后，先调用小手机 API 转换为英文 TAG，再将英文 TAG 作为实际生图提示词请求生图接口。'
+        '【优化】优化公益站 NAI 生图兼容：在酒馆本地文件 config.yaml 中设置 enableCorsProxy: true 并重启酒馆；插件中直接填写公益站 URL 和 Key，无需手动拼接 http://127.0.0.1:8000/proxy/。'
     ]
 };
 
@@ -1057,7 +1054,7 @@ if (window.GGP_Loaded) {
             import('./config/time-manager.js'),    // 👈 取消懒加载
         import('./config/prompt-manager.js?v=20260802-moments-named-images'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
-        import('./config/image-generation-manager.js?v=20260726-video-background'),
+        import('./config/image-generation-manager.js?v=20260808-nai-zstd-proxy'),
             import('./config/worldbook-manager.js')
         ]);
 

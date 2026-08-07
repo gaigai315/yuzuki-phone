@@ -3453,7 +3453,7 @@ export class SettingsApp {
 
                 <div class="setting-item" id="phone-image-novelai-public-url-row" style="${novelaiSite === 'public' ? '' : 'display: none;'}">
                     <div class="setting-label">公益站点 Base URL</div>
-                    <div class="setting-desc">填写兼容 NovelAI /ai/generate-image 的中转或公益站地址。</div>
+                    <div class="setting-desc">填写原始公益站地址；请求会自动通过酒馆 /proxy 转发，需在 config.yaml 开启 enableCorsProxy。</div>
                     <input type="text" id="phone-image-novelai-public-url"
                            value="${this._escapeHtml(novelaiPublicUrl)}"
                            placeholder="例如：https://your-nai-site.example.com"
@@ -3468,7 +3468,7 @@ export class SettingsApp {
                            style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
                 </div>
 
-                <div class="setting-item" id="phone-image-novelai-queue-row" style="${novelaiSite === 'public' ? 'display: none;' : ''}">
+                <div class="setting-item" id="phone-image-novelai-queue-row" style="${novelaiSite === 'official' ? '' : 'display: none;'}">
                     <div class="setting-label">共享队列服务 URL</div>
                     <div class="setting-desc">多人共用同一个 NAI Key 时填写；留空则直接请求 NAI。</div>
                     <input type="text" id="phone-image-novelai-queue-url"
@@ -5549,7 +5549,7 @@ export class SettingsApp {
         let currentNovelaiSite = String(imageNovelaiSite?.value || this.storage.get('phone-image-novelai-site') || 'official').trim() || 'official';
         const syncNovelaiSiteFields = () => {
             const site = String(imageNovelaiSite?.value || 'official').trim() || 'official';
-            if (imageNovelaiQueueRow) imageNovelaiQueueRow.style.display = site === 'public' ? 'none' : '';
+            if (imageNovelaiQueueRow) imageNovelaiQueueRow.style.display = site === 'official' ? '' : 'none';
             if (imageNovelaiPublicUrlRow) imageNovelaiPublicUrlRow.style.display = site === 'public' ? '' : 'none';
             if (imageNovelaiUrlRow) imageNovelaiUrlRow.style.display = site === 'custom' ? '' : 'none';
             if (imageNovelaiKeyLabel) imageNovelaiKeyLabel.textContent = site === 'public' ? '公益站 Key' : 'API Key';
@@ -6876,7 +6876,7 @@ export class SettingsApp {
                 await this.storage.set(site === 'public' ? 'phone-image-novelai-public-key' : 'phone-image-novelai-key', String(document.getElementById('phone-image-novelai-key')?.value || '').trim());
                 await this.storage.set('phone-image-novelai-url', String(document.getElementById('phone-image-novelai-url')?.value || '').trim());
                 await this.storage.set('phone-image-novelai-public-url', publicUrl);
-                if (site !== 'public') await this.storage.set('phone-image-novelai-queue-url', String(document.getElementById('phone-image-novelai-queue-url')?.value || '').trim());
+                if (site === 'official') await this.storage.set('phone-image-novelai-queue-url', String(document.getElementById('phone-image-novelai-queue-url')?.value || '').trim());
                 await this.storage.set('phone-image-novelai-model', String(document.getElementById('phone-image-novelai-model')?.value || '').trim() || 'nai-diffusion-4-5-full');
                 await this.storage.set('phone-image-novelai-sampler', String(document.getElementById('phone-image-novelai-sampler')?.value || '').trim() || 'k_euler');
                 await this.storage.set('phone-image-novelai-schedule', String(document.getElementById('phone-image-novelai-schedule')?.value || '').trim() || 'native');
@@ -6888,7 +6888,7 @@ export class SettingsApp {
                     btn.disabled = true;
                     btn.textContent = '测试中...';
                 }
-                const queueUrl = site === 'public' ? '' : String(document.getElementById('phone-image-novelai-queue-url')?.value || '').trim();
+                const queueUrl = site === 'official' ? String(document.getElementById('phone-image-novelai-queue-url')?.value || '').trim() : '';
                 setResult(site === 'public' ? '正在请求公益站点...' : (queueUrl ? '正在进入 NAI 共享队列...' : '正在请求 NovelAI...'), '#7c3aed');
                 const result = await imageManager.generate({
                     app: 'honey',

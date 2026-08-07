@@ -10,6 +10,8 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 
+import { decompress as decompressZstd } from '../assets/vendor/fzstd.js';
+
 export class ImageGenerationManager {
     constructor(storage) {
         this.storage = storage;
@@ -413,7 +415,7 @@ export class ImageGenerationManager {
             }),
             signal
         });
-        const bytes = new Uint8Array(await response.arrayBuffer());
+        const bytes = this._maybeDecompressZstdBytes(new Uint8Array(await response.arrayBuffer()));
         if (!response.ok) {
             const parsed = this._tryParseJsonBytes(bytes);
             const message = parsed?.message || parsed?.error || this._getBytesPreview(bytes);
@@ -936,7 +938,7 @@ export class ImageGenerationManager {
             customUrl: String(overrides.customUrl || this._get('phone-image-novelai-url', '')).trim(),
             publicKey: String(overrides.publicKey || this._get('phone-image-novelai-public-key', '')).trim(),
             publicUrl: String(overrides.publicUrl || this._get('phone-image-novelai-public-url', '')).trim(),
-            queueUrl: site === 'public' ? '' : String(overrides.queueUrl || this._get('phone-image-novelai-queue-url', '')).trim(),
+            queueUrl: site === 'official' ? String(overrides.queueUrl || this._get('phone-image-novelai-queue-url', '')).trim() : '',
             model: String(overrides.model || openaiPromptPreset?.openaiModel || this._get(`phone-image-${provider}-model`, '') || (provider === 'novelai' ? 'nai-diffusion-4-5-full' : (provider === 'siliconflow' ? legacySiliconflowModel || 'Kwai-Kolors/Kolors' : (provider === 'openai' ? 'gpt-image-2' : '')))).trim(),
             sampler: provider === 'sd'
                 ? String(overrides.sampler || this._get('phone-image-sd-sampler', 'Euler a')).trim() || 'Euler a'
@@ -1359,10 +1361,28 @@ export class ImageGenerationManager {
         } catch (e) {}
     }
 
+    _resolveSillyTavernCorsProxyUrl(value) {
+        const baseUrl = String(value || '').trim().replace(/\/+$/, '');
+        if (!baseUrl) return '';
+
+        const proxyMarker = '/proxy/';
+        if (baseUrl.startsWith(proxyMarker)) return baseUrl;
+
+        try {
+            const parsed = new URL(baseUrl, window.location.origin);
+            const proxyIndex = parsed.pathname.indexOf(proxyMarker);
+            if (proxyIndex >= 0) {
+                return `${parsed.pathname.slice(proxyIndex)}${parsed.search}${parsed.hash}`.replace(/\/+$/, '');
+            }
+        } catch (e) {}
+
+        return `${proxyMarker}${baseUrl}`;
+    }
+
     _resolveNovelAIEndpoint(config) {
         if (config.site === 'public') {
             if (!config.publicUrl) throw new Error('缺少公益站 Base URL');
-            return config.publicUrl.replace(/\/+$/, '');
+            return this._resolveSillyTavernCorsProxyUrl(config.publicUrl);
         }
         if (config.site === 'custom' && config.customUrl) {
             return config.customUrl.replace(/\/+$/, '');
@@ -1649,6 +1669,29 @@ export class ImageGenerationManager {
         return this._extractImageResult(payload, { allowUrl: true });
     }
 
+    _isZstdBytes(bytes) {
+        return !!bytes
+            && bytes.length >= 4
+            && bytes[0] === 0x28
+            && bytes[1] === 0xb5
+            && bytes[2] === 0x2f
+            && bytes[3] === 0xfd;
+    }
+
+    _maybeDecompressZstdBytes(bytes) {
+        if (!this._isZstdBytes(bytes)) return bytes;
+        try {
+            const decompressed = decompressZstd(bytes);
+            if (!(decompressed instanceof Uint8Array) || !decompressed.length) {
+                throw new Error('解压结果为空');
+            }
+            console.info('[NovelAI] 已解压酒馆代理返回的 zstd 数据');
+            return decompressed;
+        } catch (err) {
+            throw new Error(`NovelAI zstd 响应解压失败: ${err?.message || err}`);
+        }
+    }
+
     _detectImageMime(bytes, fallback = '') {
         if (!bytes || bytes.length < 4) return fallback || '';
         if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
@@ -1683,9 +1726,13 @@ export class ImageGenerationManager {
 
     async _readNovelAIImageResponse(response) {
         const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-        const arrayBuffer = await response.arrayBuffer();
+        let arrayBuffer = await response.arrayBuffer();
         if (!arrayBuffer || arrayBuffer.byteLength <= 0) throw new Error('NovelAI 返回空图片数据');
-        const bytes = new Uint8Array(arrayBuffer);
+        let bytes = new Uint8Array(arrayBuffer);
+        if (this._isZstdBytes(bytes)) {
+            bytes = this._maybeDecompressZstdBytes(bytes);
+            arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        }
 
         const parsedJson = contentType.includes('application/json') || contentType.includes('+json')
             ? this._tryParseJsonBytes(bytes)
