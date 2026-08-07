@@ -3346,6 +3346,7 @@ getWeekday(date) {
     
  // ✅ 智能加载联系人（调用AI）
 async loadContactsFromCharacter() {
+    let aiResponse = '';
     try {
         // 🔑 定义 context
         const context = typeof SillyTavern !== 'undefined' && SillyTavern.getContext 
@@ -3362,7 +3363,7 @@ async loadContactsFromCharacter() {
         
         
         // ✅ 调用AI
-        const aiResponse = await this.sendToAI(messages);
+        aiResponse = await this.sendToAI(messages);
         
         if (!aiResponse) {
             throw new Error('AI未返回数据');
@@ -3531,9 +3532,15 @@ async loadContactsFromCharacter() {
         
     } catch (error) {
         console.error('❌ AI生成失败:', error);
+        if (aiResponse) {
+            console.error('📋 API实际返回:', aiResponse);
+        }
         return {
             success: false,
-            message: `生成失败: ${error.message}`
+            message: `生成失败: ${error.message}`,
+            rawResponse: typeof aiResponse === 'string'
+                ? aiResponse
+                : JSON.stringify(aiResponse, null, 2)
         };
     }
 }

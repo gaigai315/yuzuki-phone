@@ -7455,6 +7455,33 @@ export class WechatApp {
                         font-size: 12px;
                         cursor: pointer;
                     ">开始生成</button>
+
+                    <div id="contact-generation-error" style="
+                        display: none;
+                        margin-top: 20px;
+                        padding: 12px;
+                        border: 1px solid rgba(255, 59, 48, 0.28);
+                        border-radius: 8px;
+                        background: rgba(255, 59, 48, 0.06);
+                        text-align: left;
+                    ">
+                        <div style="font-size: 12px; font-weight: 600; color: #c62828; margin-bottom: 8px;">API 实际返回</div>
+                        <pre id="contact-generation-raw-response" style="
+                            margin: 0;
+                            max-height: 260px;
+                            overflow: auto;
+                            white-space: pre-wrap;
+                            overflow-wrap: anywhere;
+                            touch-action: pan-y;
+                            overscroll-behavior: contain;
+                            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+                            font-size: 10px;
+                            line-height: 1.5;
+                            color: #333;
+                            user-select: text;
+                            -webkit-user-select: text;
+                        "></pre>
+                    </div>
                 </div>
             </div>
         </div>
@@ -7469,7 +7496,11 @@ export class WechatApp {
         document.getElementById('confirm-load')?.addEventListener('click', async () => {
             const shouldClear = confirm('智能加载联系人前，是否先清空当前微信里的所有联系人、群聊和聊天记录？\n\n点击“确定”会先清空再生成，避免重复联系人/群聊；点击“取消”则保留现有数据并继续追加补全。');
             const confirmBtn = document.getElementById('confirm-load');
+            const errorPanel = document.getElementById('contact-generation-error');
+            const rawResponseEl = document.getElementById('contact-generation-raw-response');
             if (confirmBtn?.dataset?.loading === '1') return;
+            if (errorPanel) errorPanel.style.display = 'none';
+            if (rawResponseEl) rawResponseEl.textContent = '';
             if (confirmBtn) {
                 confirmBtn.dataset.loading = '1';
                 confirmBtn.disabled = true;
@@ -7506,6 +7537,11 @@ export class WechatApp {
                     }, 800);
                 } else {
                     this.phoneShell.showNotification('❌ 生成失败', result.message, '❌');
+                    const rawResponse = String(result.rawResponse || '').trim();
+                    if (errorPanel && rawResponseEl && rawResponse) {
+                        rawResponseEl.textContent = rawResponse;
+                        errorPanel.style.display = 'block';
+                    }
                     if (confirmBtn) {
                         confirmBtn.dataset.loading = '0';
                         confirmBtn.disabled = false;
