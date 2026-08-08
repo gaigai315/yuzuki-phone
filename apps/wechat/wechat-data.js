@@ -11,6 +11,7 @@
  * ======================================================== */
 // 微信数据管理
 import { GlobalSocialStore } from '../../config/global-social-store.js';
+import { normalizeWechatVoiceText } from './voice-text.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
@@ -384,7 +385,19 @@ export class WechatData {
 
                     // 🔥 先构建 chats 数组（迁移需要用到）
                     const chats = this._normalizeChatList(data.chats || []);
-                    const contacts = Array.isArray(data.contacts) ? data.contacts.filter(Boolean) : [];
+                    const contacts = (Array.isArray(data.contacts) ? data.contacts : [])
+                        .filter(contact => contact && typeof contact === 'object')
+                        .map((contact) => {
+                            const name = String(contact.name || contact.nickname || contact.remark || '').trim();
+                            if (!name) return null;
+                            Object.assign(contact, {
+                                name,
+                                remark: String(contact.remark || '').trim()
+                            });
+                            return contact;
+                        })
+                        .filter(Boolean);
+                    this._syncSingleChatContactNames(chats, contacts);
                     chats.forEach((chat) => {
                         if (!chat || !chat.contactId) return;
                         const contact = contacts.find(item => item?.id === chat.contactId);
@@ -629,6 +642,68 @@ export class WechatData {
             .trim()
             .replace(/\s+/g, '')
             .toLowerCase();
+    }
+
+    _getContactAliasValues(contact = {}) {
+        const aliases = [];
+        const seen = new Set();
+        [contact?.name, contact?.nickname, contact?.remark].forEach((value) => {
+            const alias = String(value || '').trim();
+            const key = this._normalizeLookupName(alias);
+            if (!alias || !key || seen.has(key)) return;
+            seen.add(key);
+            aliases.push(alias);
+        });
+        return aliases;
+    }
+
+    _contactMatchesAlias(contact, name, { loose = false } = {}) {
+        const lookupKey = this._normalizeLookupName(name);
+        if (!contact || !lookupKey) return false;
+        const aliasKeys = this._getContactAliasValues(contact)
+            .map(alias => this._normalizeLookupName(alias))
+            .filter(Boolean);
+        if (aliasKeys.includes(lookupKey)) return true;
+        return loose && aliasKeys.some(key => key.includes(lookupKey) || lookupKey.includes(key));
+    }
+
+    findContactByAlias(name, { excludeContactId = '' } = {}) {
+        const excludedId = String(excludeContactId || '').trim();
+        return (this.data?.contacts || []).find(contact =>
+            String(contact?.id || '').trim() !== excludedId
+            && this._contactMatchesAlias(contact, name)
+        ) || null;
+    }
+
+    findContactAliasConflict(names = [], { excludeContactId = '' } = {}) {
+        const candidates = Array.isArray(names) ? names : [names];
+        for (const name of candidates) {
+            const matched = this.findContactByAlias(name, { excludeContactId });
+            if (matched) return matched;
+        }
+        return null;
+    }
+
+    _syncSingleChatContactNames(chats = [], contacts = []) {
+        let changed = false;
+        (Array.isArray(chats) ? chats : []).forEach((chat) => {
+            if (!chat || chat.type === 'group') return;
+            const contact = (chat.contactId
+                ? contacts.find(item => String(item?.id || '').trim() === String(chat.contactId || '').trim())
+                : null)
+                || contacts.find(item => this._contactMatchesAlias(item, chat.name));
+            if (!contact) return;
+            if (!chat.contactId && contact.id) {
+                chat.contactId = contact.id;
+                changed = true;
+            }
+            const nickname = String(contact.name || '').trim();
+            if (nickname && chat.name !== nickname) {
+                chat.name = nickname;
+                changed = true;
+            }
+        });
+        return changed;
     }
 
     _setLobbyPersonaCache(name = '', description = '') {
@@ -1183,6 +1258,17 @@ export class WechatData {
             normalized.name = this._getRuntimeUserName();
         }
 
+        normalized.ttsProvider = String(normalized.ttsProvider || '').trim();
+        normalized.ttsVoice = String(normalized.ttsVoice || '').trim();
+        const rawTtsVoices = (normalized.ttsVoices && typeof normalized.ttsVoices === 'object' && !Array.isArray(normalized.ttsVoices))
+            ? normalized.ttsVoices
+            : {};
+        normalized.ttsVoices = Object.fromEntries(
+            Object.entries(rawTtsVoices)
+                .map(([provider, voice]) => [String(provider || '').trim(), String(voice || '').trim()])
+                .filter(([provider, voice]) => provider && voice)
+        );
+
         return normalized;
     }
 
@@ -1196,6 +1282,9 @@ export class WechatData {
             avatar: '',
             signature: '',
             naiPromptTags: '',
+            ttsProvider: '',
+            ttsVoices: {},
+            ttsVoice: '',
             chatCustomCss: '',
             coverImage: null,
             momentsBackground: null,
@@ -2021,7 +2110,8 @@ export class WechatData {
         // 🔥 按时间排序：最新消息的聊天在最前面
         // 使用 chat.timestamp，不读取消息（保持懒加载）
         const chats = this._normalizeChatList(this.data?.chats || []);
-        if (chats.length !== (Array.isArray(this.data?.chats) ? this.data.chats.length : 0)) {
+        const identityChanged = this._syncSingleChatContactNames(chats, this.data?.contacts || []);
+        if (identityChanged || chats.length !== (Array.isArray(this.data?.chats) ? this.data.chats.length : 0)) {
             this.data.chats = chats;
             this.saveData();
         }
@@ -2066,22 +2156,24 @@ export class WechatData {
     createChat(chatInfo) {
         const chatType = chatInfo.type || 'single';
         const safeName = String(chatInfo.name || '').trim();
+        let contactByName = null;
         if (chatType !== 'group') {
             const contactById = chatInfo.contactId
                 ? this.data.contacts.find(c => c.id === chatInfo.contactId)
                 : null;
-            const contactByName = contactById || this.data.contacts.find(c => this._isSameLookupName(c.name, safeName));
+            contactByName = contactById || this.findContactByAlias(safeName);
             const existingSingleChat = this.data.chats.find(c =>
                 c.type !== 'group'
                 && (
                     (chatInfo.contactId && c.contactId === chatInfo.contactId)
                     || (contactByName?.id && c.contactId === contactByName.id)
                     || this._isSameLookupName(c.name, safeName)
-                    || (contactByName?.name && this._isSameLookupName(c.name, contactByName.name))
+                    || (contactByName && this._contactMatchesAlias(contactByName, c.name))
                 )
             );
             if (existingSingleChat) {
                 if (!existingSingleChat.contactId && contactByName?.id) existingSingleChat.contactId = contactByName.id;
+                if (contactByName?.name) existingSingleChat.name = contactByName.name;
                 if ((!existingSingleChat.avatar || existingSingleChat.avatar === '👤') && (contactByName?.avatar || chatInfo.avatar)) {
                     existingSingleChat.avatar = contactByName?.avatar || chatInfo.avatar;
                 }
@@ -2098,8 +2190,8 @@ export class WechatData {
 
         const chat = {
             id: chatInfo.id || Date.now().toString(),
-            contactId: chatInfo.contactId,
-            name: chatInfo.name,
+            contactId: contactByName?.id || chatInfo.contactId,
+            name: chatType === 'group' ? chatInfo.name : (contactByName?.name || chatInfo.name),
             type: chatType,
             avatar: chatInfo.avatar,
             lastMessage: '',
@@ -2117,13 +2209,18 @@ export class WechatData {
     
     getChatByContactId(contactId) {
         const contact = this.data.contacts.find(c => c.id === contactId);
-        return this.data.chats.find(c =>
+        const chat = this.data.chats.find(c =>
             c.type !== 'group'
             && (
                 c.contactId === contactId
-                || (contact?.name && this._isSameLookupName(c.name, contact.name))
+                || (contact && this._contactMatchesAlias(contact, c.name))
             )
         );
+        if (chat && contact) {
+            if (!chat.contactId) chat.contactId = contact.id;
+            if (contact.name) chat.name = contact.name;
+        }
+        return chat;
     }
     
     /**
@@ -2229,8 +2326,7 @@ export class WechatData {
 
     getContactByName(name) {
         // 优先从联系人列表找
-        let contact = this.data.contacts.find(c => c.name === name)
-            || this.data.contacts.find(c => this._isSameLookupName(c.name, name));
+        let contact = this.findContactByAlias(name);
         if (contact) return contact;
 
         // 如果找不到，再从聊天列表里找（比如群聊或者临时会话）
@@ -2263,17 +2359,20 @@ export class WechatData {
         const pickFromList = (list = [], { allowLooseIncludes = true } = {}) => {
             if (!Array.isArray(list) || list.length === 0) return null;
 
-            let exact = list.find(item => String(item?.name || '').trim() === rawName);
+            let exact = list.find(item => this._contactMatchesAlias(item, rawName));
             if (exact) return exact;
 
-            exact = list.find(item => this._normalizeLookupName(item?.name) === normalizedName);
+            exact = list.find(item => this._getContactAliasValues(item)
+                .some(alias => this._normalizeLookupName(alias) === normalizedName));
             if (exact) return exact;
 
             if (!normalizedName || !allowLooseIncludes) return null;
 
             return list.find(item => {
-                const itemName = this._normalizeLookupName(item?.name);
-                return itemName && (itemName.includes(normalizedName) || normalizedName.includes(itemName));
+                return this._getContactAliasValues(item).some((alias) => {
+                    const itemName = this._normalizeLookupName(alias);
+                    return itemName && (itemName.includes(normalizedName) || normalizedName.includes(itemName));
+                });
             }) || null;
         };
 
@@ -2469,15 +2568,7 @@ export class WechatData {
             }
             const newVoiceMatch = /^(?:\[\s*(?:语音条|语音)\s*\]|【\s*(?:语音条|语音)\s*】)\s*[:：]?\s*(.+)$/i.exec(contentStr);
             if (newVoiceMatch) {
-                let parsedVoiceText = String(newVoiceMatch[1] || '').trim();
-                const wrappedVoiceMatch = parsedVoiceText.match(/^[（(]\s*([\s\S]*?)\s*[)）]$/);
-                if (wrappedVoiceMatch) {
-                    parsedVoiceText = String(wrappedVoiceMatch[1] || '').trim();
-                }
-                parsedVoiceText = parsedVoiceText
-                    .replace(/^(?:语音条?\s*)?(?:转文字|转文本|转写|转录|转化出的文字|转化文字|转换文字|文字内容|内容)\s*[：:]\s*/i, '')
-                    .replace(/^语音条转文字内容\s*[：:]\s*/i, '')
-                    .trim();
+                const parsedVoiceText = normalizeWechatVoiceText(newVoiceMatch[1]);
                 message.type = 'voice';
                 message.voiceText = parsedVoiceText;
                 let seconds = Math.ceil((message.voiceText || '语音').length / 3);
@@ -2764,8 +2855,7 @@ getWeekday(date) {
         if (!raw) return '';
         const byId = this.data.contacts.find(c => c.id === raw);
         if (byId?.id) return byId.id;
-        const byName = this.data.contacts.find(c => c.name === raw)
-            || this.data.contacts.find(c => this._isSameLookupName(c.name, raw));
+        const byName = this.findContactByAlias(raw);
         if (byName?.id) return byName.id;
         return raw;
     }
@@ -2787,8 +2877,7 @@ getWeekday(date) {
         const raw = String(contactIdOrName || '').trim();
         const contact = this.data.contacts.find(c => c.id === key)
             || this.data.contacts.find(c => c.id === raw)
-            || this.data.contacts.find(c => c.name === raw)
-            || this.data.contacts.find(c => this._isSameLookupName(c.name, raw));
+            || this.findContactByAlias(raw);
         return this._normalizeGenderValue(contact?.gender);
     }
 
@@ -2873,9 +2962,10 @@ getWeekday(date) {
     }
 
     addContact(contact) {
-        const safeName = String(contact?.name || '').trim();
-        const safeNameKey = this._normalizeExactContactName(safeName);
-        const existed = this.data.contacts.find(c => this._normalizeExactContactName(c.name) === safeNameKey);
+        const safeName = String(contact?.name || contact?.nickname || '').trim();
+        if (!safeName) return null;
+        const safeRemark = String(contact?.remark || '').trim();
+        const existed = this.findContactAliasConflict([safeName, safeRemark].filter(Boolean));
         if (existed) {
             if (!existed.avatar && contact?.avatar) existed.avatar = contact.avatar;
             if (!existed.remark && contact?.remark) existed.remark = contact.remark;
@@ -2890,9 +2980,14 @@ getWeekday(date) {
             this.saveData();
             return existed;
         }
-        this.data.contacts.push(contact);
+        const normalizedContact = {
+            ...contact,
+            name: safeName,
+            remark: safeRemark
+        };
+        this.data.contacts.push(normalizedContact);
         this.saveData();
-        return contact;
+        return normalizedContact;
     }
 
     // 🔥 更新联系人信息（包括头像和名字双向同步）
@@ -2900,24 +2995,42 @@ getWeekday(date) {
         const safeContactId = String(contactId || '').trim();
         let contact = this.data.contacts.find(c => c.id === safeContactId);
         if (!contact && safeContactId) {
-            contact = this.data.contacts.find(c => c.name === safeContactId)
-                || this.data.contacts.find(c => this._isSameLookupName(c.name, safeContactId));
+            contact = this.findContactByAlias(safeContactId);
         }
         if (contact) {
             const oldName = contact.name; // 记录旧名字
+            const nextUpdates = { ...(updates || {}) };
+            if (Object.prototype.hasOwnProperty.call(nextUpdates, 'name')) {
+                nextUpdates.name = String(nextUpdates.name || '').trim();
+            }
+            if (Object.prototype.hasOwnProperty.call(nextUpdates, 'remark')) {
+                nextUpdates.remark = String(nextUpdates.remark || '').trim();
+            }
+            const nextName = nextUpdates.name || contact.name;
+            const nextRemark = Object.prototype.hasOwnProperty.call(nextUpdates, 'remark')
+                ? nextUpdates.remark
+                : contact.remark;
+            const hasIdentityUpdate = Object.prototype.hasOwnProperty.call(nextUpdates, 'name')
+                || Object.prototype.hasOwnProperty.call(nextUpdates, 'remark');
+            if (hasIdentityUpdate && this.findContactAliasConflict(
+                [nextName, nextRemark].filter(Boolean),
+                { excludeContactId: contact.id }
+            )) {
+                return false;
+            }
             const hasAvatarUpdate = Object.prototype.hasOwnProperty.call(updates || {}, 'avatar');
-            Object.assign(contact, updates);
+            Object.assign(contact, nextUpdates);
 
             // 🔥 新增：如果修改了名字，同步更新关联的聊天窗口名字
-            if (updates.name && updates.name !== oldName) {
+            if (nextUpdates.name && nextUpdates.name !== oldName) {
                 const chat = this.getChatByContactId(contact.id || safeContactId);
                 if (chat) {
-                    chat.name = updates.name;
+                    chat.name = nextUpdates.name;
                 } else {
                     // 兜底：兼容没有 contactId 的旧数据，通过旧名字匹配单聊
                     const chatByName = this.data.chats.find(c => c.type !== 'group' && this._isSameLookupName(c.name, oldName));
                     if (chatByName) {
-                        chatByName.name = updates.name;
+                        chatByName.name = nextUpdates.name;
                     }
                 }
             }
@@ -2954,8 +3067,7 @@ getWeekday(date) {
 
         // 2. 如果找不到，尝试通过名字查找
         if (!contact) {
-            contact = this.data.contacts.find(c => c.name === lookup)
-                || this.data.contacts.find(c => this._isSameLookupName(c.name, lookup));
+            contact = this.findContactByAlias(lookup);
         }
 
         if (contact) {
@@ -3074,8 +3186,7 @@ getWeekday(date) {
         }
 
         // 3. 通过名字更新联系人
-        const contactByName = this.data.contacts.find(c => c.name === chat.name)
-            || this.data.contacts.find(c => this._isSameLookupName(c.name, chat.name));
+        const contactByName = this.findContactByAlias(chat.name);
         if (contactByName) {
             contactByName.avatar = safeAvatar;
             foundContact = true;
@@ -3390,14 +3501,16 @@ async loadContactsFromCharacter() {
         let addedCount = 0;
         let addedGroupCount = 0;
         const selfNameKey = normalizeName(context?.name1 || '用户');
-        const existingContactKeys = new Set(this.data.contacts.map(c => normalizeName(c.name)));
 
         const ensureContact = (rawName, options = {}) => {
             const displayName = String(rawName || '').trim();
             const key = normalizeName(displayName);
             if (!displayName || !key || key === selfNameKey) return null;
 
-            const existed = this.data.contacts.find(c => normalizeName(c.name) === key);
+            const existed = this.findContactAliasConflict([
+                displayName,
+                String(options.remark || '').trim()
+            ].filter(Boolean));
             if (existed) return { contact: existed, created: false };
 
             const relation = options.relation || '';
@@ -3412,7 +3525,6 @@ async loadContactsFromCharacter() {
                 gender: this._normalizeGenderValue(options.gender)
             };
             this.data.contacts.push(newContact);
-            existingContactKeys.add(key);
             return { contact: newContact, created: true };
         };
 

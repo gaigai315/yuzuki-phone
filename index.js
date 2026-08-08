@@ -18,9 +18,10 @@ import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parse
 import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data.js';
 import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
 import { PhoneFloatingEntry } from './phone/floating-entry.js';
+import { normalizeWechatVoiceText } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.4.9';
+const ST_PHONE_VERSION = '1.5.0';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -59,8 +60,8 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-08-08',
     items: [
-        '【优化】优化公益站 NAI 生图兼容：在酒馆本地文件 config.yaml 中设置 enableCorsProxy: true 并重启酒馆；插件中直接填写公益站 URL 和 Key，无需手动拼接 http://127.0.0.1:8000/proxy/。',
-        '【优化】AI 智能加载联系人返回成功但无法识别对应标签时，支持直接查看 API 返回内容，便于排查格式问题。'
+        '【优化】优化微信好友昵称和备注名。',
+        '【新增】新增微信用户语音音色绑定。'
     ]
 };
 
@@ -6341,11 +6342,6 @@ if (window.GGP_Loaded) {
     // 🔧 辅助函数：解析消息类型
     function parseMessageType(msgObj) {
         const content = msgObj.content;
-        const normalizeVoiceText = (value = '') => String(value || '')
-            .trim()
-            .replace(/^(?:语音条?\s*)?(?:转文字|转文本|转写|转录|转化出的文字|转化文字|转换文字|文字内容|内容)\s*[：:]\s*/i, '')
-            .replace(/^语音条转文字内容\s*[：:]\s*/i, '')
-            .trim();
 
         // [拨打微信语音] / [拨打微信群语音] / [发起群视频通话]（兼容全角方括号【】）
         const wechatCallMatch = String(content || '').match(/[［\[]\s*(?:拨打|发起)\s*(?:微信)?(群)?(语音|视频)(?:通话)?\s*[］\]]|【\s*(?:拨打|发起)\s*(?:微信)?(群)?(语音|视频)(?:通话)?\s*】/);
@@ -6385,12 +6381,7 @@ if (window.GGP_Loaded) {
         // [语音条]内容 / [语音条](内容) / [语音条]（内容）/ 【语音条】内容，兼容旧 [语音] 写法
         const newVoiceMatch = /^(?:\[\s*(?:语音条|语音)\s*\]|【\s*(?:语音条|语音)\s*】)\s*[:：]?\s*(.+)$/i.exec(String(content || '').trim());
         if (newVoiceMatch) {
-            let parsedVoiceText = String(newVoiceMatch[1] || '').trim();
-            const wrappedVoiceMatch = parsedVoiceText.match(/^[（(]\s*([\s\S]*?)\s*[)）]$/);
-            if (wrappedVoiceMatch) {
-                parsedVoiceText = String(wrappedVoiceMatch[1] || '').trim();
-            }
-            parsedVoiceText = normalizeVoiceText(parsedVoiceText);
+            const parsedVoiceText = normalizeWechatVoiceText(newVoiceMatch[1]);
             msgObj.type = 'voice';
             msgObj.voiceText = parsedVoiceText;
             // 自动计算秒数：每3个字1秒，最少2秒，最多60秒
@@ -6618,16 +6609,15 @@ if (window.GGP_Loaded) {
             let existingContact = null;
             if (!effectiveIsGroupChat) {
                 // 单聊：确保联系人存在（自动添加到通讯录）
-                existingContact = wechatData.getContacts().find(c =>
-                    c.name === rawContactName || c.name === resolvedContactName || normalizeWechatName(c.name) === contactLookupKey
-                );
+                existingContact = wechatData.findContactByAlias?.(resolvedContactName)
+                    || wechatData.findContactByAlias?.(rawContactName);
                 if (isBlockedContact(existingContact)) {
                     console.warn('⚠️ [微信] 已丢弃被拉黑好友的线下消息:', rawContactName);
                     return;
                 }
                 if (!existingContact) {
                     const newContactId = `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    wechatData.addContact({
+                    existingContact = wechatData.addContact({
                         id: newContactId,
                         name: resolvedContactName || rawContactName,
                         avatar: data.avatar || '👤',
@@ -6635,13 +6625,15 @@ if (window.GGP_Loaded) {
                         relation: '',
                         letter: wechatData.getFirstLetter(resolvedContactName || rawContactName)
                     });
-                    existingContact = wechatData.getContacts().find(c => c.name === (resolvedContactName || rawContactName));
                 }
                 if (isBlockedContact(existingContact)) {
                     console.warn('⚠️ [微信] 已丢弃被拉黑好友的线下消息:', rawContactName);
                     return;
                 }
             }
+            const displayContactName = effectiveIsGroupChat
+                ? rawContactName
+                : (existingContact?.name || resolvedContactName || rawContactName);
 
             // 🔥🔥🔥 关键修复：按联系人名字和类型查找现有聊天，避免重复创建 🔥🔥🔥
             // 1. 先按名字和类型查找（最精确）
@@ -6672,7 +6664,7 @@ if (window.GGP_Loaded) {
                 chat = wechatData.createChat({
                     id: newChatId,
                     contactId: existingContact?.id,
-                    name: effectiveIsGroupChat ? rawContactName : (resolvedContactName || rawContactName),
+                    name: displayContactName,
                     type: effectiveIsGroupChat ? 'group' : 'single',
                     avatar: data.avatar || existingContact?.avatar || (effectiveIsGroupChat ? '👥' : '👤'),
                     members: effectiveIsGroupChat ? (data.members || []) : []
@@ -6694,6 +6686,9 @@ if (window.GGP_Loaded) {
                         ...data.members
                     ].map(item => String(item || '').trim()).filter(Boolean)));
                     chat.members = mergedMembers;
+                } else if (!effectiveIsGroupChat && existingContact?.name) {
+                    chat.contactId = existingContact.id || chat.contactId;
+                    chat.name = existingContact.name;
                 }
             }
 
@@ -6803,7 +6798,7 @@ if (window.GGP_Loaded) {
                 let cleanContent = msg.content;
 
                 // 🔥🔥🔥 群聊消息：使用消息中的 sender 字段
-                let messageSender = data.contact;  // 默认使用联系人/群名
+                let messageSender = displayContactName;  // 单聊统一使用昵称，群聊使用群名
                 let senderAvatar = data.avatar || '👤';
                 const rawMsgSender = String(msg?.sender || '').trim();
                 const msgSenderIsCurrentUser = !!rawMsgSender && isWechatSenderCurrentUser(rawMsgSender);
@@ -6919,7 +6914,7 @@ if (window.GGP_Loaded) {
             });
 
             if (hasIncomingCall) {
-                triggerWechatIncomingCall(chat.id, data.contact, incomingCallType, queuedAiLines);
+                triggerWechatIncomingCall(chat.id, displayContactName, incomingCallType, queuedAiLines);
                 return;
             }
 
@@ -6972,7 +6967,7 @@ if (window.GGP_Loaded) {
                     .find(m => m && m.type !== 'incoming_call' && String(m.content || '').trim());
                 let previewText = String(latestMsgObj?.content || data.notification || '').replace(/\s+/g, ' ').trim();
                 previewText = previewText.replace(new RegExp(`^${String(data.contact || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[：:]\\s*`), '');
-                if (!previewText) previewText = `${data.contact || '好友'}发来新消息`;
+                if (!previewText) previewText = `${displayContactName || '好友'}发来新消息`;
                 if (previewText.length > 34) previewText = `${previewText.slice(0, 34)}...`;
 
                 const finalNotifyAvatar = _resolveWechatNotificationAvatar(wechatData, chat, existingContact, data);
@@ -6984,7 +6979,7 @@ if (window.GGP_Loaded) {
                     avatarBg: isNotifyGroup && !finalNotifyAvatar ? '#fff' : undefined,
                     avatarColor: isNotifyGroup && !finalNotifyAvatar ? '#000' : undefined,
                     isGroup: isNotifyGroup,
-                    name: data.contact || '微信',
+                    name: displayContactName || '微信',
                     content: previewText,
                     timeText: '刚刚',
                     senderKey: `wechat:${chat?.id || data.contact || 'unknown'}:${Date.now()}`
@@ -7318,10 +7313,10 @@ if (window.GGP_Loaded) {
                     chat = existingGroupChat;
                 } else {
                     // 2) 未命中群聊才按单聊联系人处理（保持原逻辑）
-                    let existingContact = wechatData.getContacts().find(c => c.name === contactName);
+                    let existingContact = wechatData.findContactByAlias?.(contactName);
                     if (!existingContact) {
                         const newContactId = `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                        wechatData.addContact({
+                        existingContact = wechatData.addContact({
                             id: newContactId,
                             name: contactName,
                             avatar: '',
@@ -7329,18 +7324,15 @@ if (window.GGP_Loaded) {
                             relation: '',
                             letter: wechatData.getFirstLetter(contactName)
                         });
-                        existingContact = wechatData.getContacts().find(c => c.name === contactName);
                     }
 
-                    chat = wechatData.getChatList().find(c => c.name === contactName && c.type !== 'group');
-                    if (!chat && existingContact) {
-                        chat = wechatData.getChatByContactId(existingContact.id);
-                    }
+                    chat = existingContact ? wechatData.getChatByContactId(existingContact.id) : null;
+                    if (!chat) chat = wechatData.getChatList().find(c => c.name === contactName && c.type !== 'group');
                     if (!chat) {
                         chat = wechatData.createChat({
                             id: `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                             contactId: existingContact.id,
-                            name: contactName,
+                            name: existingContact.name || contactName,
                             type: 'single',
                             avatar: existingContact.avatar || ''
                         });
@@ -10282,7 +10274,9 @@ if (window.GGP_Loaded) {
                                                             ? chat.members.map(item => String(item || '').trim()).filter(Boolean)
                                                             : [],
                                                         aliases: !isGroup
-                                                            ? [chat.name, linkedContact?.name].map(item => String(item || '').trim()).filter(Boolean)
+                                                            ? [chat.name, linkedContact?.name, linkedContact?.remark]
+                                                                .map(item => String(item || '').trim())
+                                                                .filter(Boolean)
                                                             : [],
                                                         messages: formattedMessages
                                                     });

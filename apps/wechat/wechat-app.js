@@ -466,6 +466,16 @@ export class WechatApp {
     flex-direction: column;
 }
 
+.wechat-content.wechat-profile-edit-content {
+    display: block;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    box-sizing: border-box;
+}
+
 /* ========================================
    底部导航栏
    ======================================== */
@@ -4243,7 +4253,9 @@ export class WechatApp {
 
         contactsArray.forEach(contact => {
             // 检查是否已存在
-            const exists = this.wechatData.getContacts().find(c => c.name === contact.name);
+            const exists = this.wechatData.findContactAliasConflict?.(
+                [contact.name, contact.remark].filter(Boolean)
+            );
 
             if (!exists) {
                 const addedContact = this.wechatData.addContact({
@@ -4338,15 +4350,16 @@ export class WechatApp {
                 const currentContact = this.currentChat.contactId
                     ? this.wechatData.getContact(this.currentChat.contactId)
                     : this.wechatData.getContactByName(this.currentChat.name);
+                const nickname = String(currentContact?.name || this.currentChat.name || '').trim();
                 const isHoneyContact = currentContact?.sourceApp === 'honey' || currentContact?.sourceLabel === '蜜语' || currentContact?.sourceLabel === '主播';
-                if (!isHoneyContact) return this.currentChat.name;
+                if (!isHoneyContact) return nickname;
                 const honeyLabel = currentContact?.sourceLabel === '主播' || String(currentContact?.relation || '').includes('主播') ? '主播' : '蜜语';
                 return `
                     <span style="position:relative; display:inline-flex; align-items:center; justify-content:center; line-height:1.1; overflow:visible;">
                         <span style="position:absolute; left:50%; top:-11px; transform:translateX(-50%); display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:999px; background:rgba(255,105,180,0.14); color:#ff5fa2; font-size:8px; line-height:1; border:1px solid rgba(255,105,180,0.24); white-space:nowrap;">
                             <i class="fa-solid fa-heart" style="font-size:7px;"></i>${honeyLabel}
                         </span>
-                        <span>${this.currentChat.name}</span>
+                        <span>${nickname}</span>
                     </span>
                 `;
             }
@@ -6032,8 +6045,7 @@ export class WechatApp {
                 }
             } else {
                 // 🔥 单聊：通过发送者名字在通讯录中查找联系人
-                const contacts = this.wechatData.getContacts();
-                const existingContact = contacts.find(c => c.name === fromName);
+                const existingContact = this.wechatData.findContactByAlias?.(fromName);
 
                 if (existingContact) {
                     // 🔥 联系人存在，查找或创建对应的聊天窗口
@@ -6064,20 +6076,21 @@ export class WechatApp {
                     } else {
                         // 🔥 联系人不存在，先添加联系人再创建聊天
                         const newContactId = `contact_${Date.now()}`;
-                        this.wechatData.addContact({
+                        const createdContact = this.wechatData.addContact({
                             id: newContactId,
                             name: fromName,
                             avatar: data.avatar || '👤',
                             letter: this.wechatData.getFirstLetter(fromName)
                         });
 
-                        chatId = `chat_${newContactId}`;
+                        const resolvedContactId = createdContact?.id || newContactId;
+                        chatId = `chat_${resolvedContactId}`;
                         chat = this.wechatData.createChat({
                             id: chatId,
-                            contactId: newContactId,
-                            name: fromName,
+                            contactId: resolvedContactId,
+                            name: createdContact?.name || fromName,
                             type: 'single',
-                            avatar: data.avatar || '👤'
+                            avatar: createdContact?.avatar || data.avatar || '👤'
                         });
                     }
                 }
@@ -6085,12 +6098,12 @@ export class WechatApp {
         }
 
         // 添加消息
-        const msgSender = isGroup ? senderInGroup : fromName;
+        const msgSender = isGroup ? senderInGroup : (chat?.name || fromName);
 
         if (data.messages && Array.isArray(data.messages)) {
             data.messages.forEach(msg => {
                 this.wechatData.addMessage(chatId, {
-                    from: msg.sender || msgSender,
+                    from: isGroup ? (msg.sender || msgSender) : msgSender,
                     content: msg.text || msg.message,
                     time: msg.timestamp || data.timestamp || '刚刚',
                     type: 'text'
@@ -6127,6 +6140,20 @@ export class WechatApp {
         const userInfo = this.wechatData.getUserInfo();
         const shellBg = this._getMainShellBackgroundConfig();
         const profileContentStyle = `${shellBg.contentBgStyle || 'background: #f2f2f7;'} padding: 16px 12px;`;
+        const ttsProviderOptions = this.contactsView?._getTtsProviderOptions?.() || [];
+        const currentTtsProvider = this.contactsView?._getCurrentTtsProvider?.() || 'minimax_cn';
+        const userTtsProvider = String(userInfo.ttsProvider || '').trim();
+        const userTtsVoices = (userInfo.ttsVoices && typeof userInfo.ttsVoices === 'object')
+            ? userInfo.ttsVoices
+            : {};
+        const legacyTtsVoice = String(userInfo.ttsVoice || '').trim();
+        const ttsHistoryOptions = this.contactsView?._getTtsVoiceHistoryOptions?.() || '';
+        const escapeAttr = (value) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
         const safeNaiPromptTags = String(userInfo.naiPromptTags || userInfo.imageTags || '')
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
@@ -6146,7 +6173,7 @@ export class WechatApp {
                 <div class="wechat-header-right"></div>
             </div>
 
-            <div class="wechat-content" style="${profileContentStyle}">
+            <div class="wechat-content wechat-profile-edit-content" style="${profileContentStyle}">
                 
                 <!-- 📸 头像卡片 -->
                 <div style="background: #fff; border-radius: 12px; padding: 24px 16px; text-align: center; margin-bottom: 16px;">
@@ -6203,6 +6230,52 @@ export class WechatApp {
                     </div>
                 </div>
 
+                <div class="phone-prompt-fold wechat-user-tts-fold" data-default-open="false" style="margin-bottom: 16px;">
+                    <div class="phone-prompt-fold-header" id="edit-user-tts-fold-header" role="button" tabindex="0"
+                         aria-expanded="false" aria-controls="edit-user-tts-fold-content">
+                        <div class="phone-prompt-fold-main">
+                            <div class="phone-prompt-fold-title"><i class="fa-solid fa-microphone" aria-hidden="true" style="margin-right: 6px;"></i>专属语音音色</div>
+                            <div class="phone-prompt-fold-desc">点击展开查看各服务商音色</div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow" aria-hidden="true"></i>
+                    </div>
+                    <div class="phone-prompt-fold-content" id="edit-user-tts-fold-content" aria-hidden="true">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <div style="font-size: 11px; color: #666;">历史音色快速填入</div>
+                            <select id="edit-user-tts-history-select" style="border: 1px solid #ddd; background: rgba(255,255,255,0.82); border-radius: 4px; font-size: 11px; padding: 2px 4px; outline: none; max-width: 128px;">
+                                <option value="">-- 历史音色 --</option>
+                                ${ttsHistoryOptions}
+                            </select>
+                        </div>
+                        <label style="display: block; margin-bottom: 7px;">
+                            <div style="font-size: 11px; color: #666; margin-bottom: 3px;">用户默认语音服务商</div>
+                            <select id="edit-user-tts-provider-select" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #ddd; background: rgba(255,255,255,0.82); border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+                                <option value="" ${!userTtsProvider ? 'selected' : ''}>跟随全局设置</option>
+                                ${ttsProviderOptions.map(option => `
+                                    <option value="${escapeAttr(option.id)}" ${userTtsProvider === option.id ? 'selected' : ''}>${escapeAttr(option.label)}</option>
+                                `).join('')}
+                            </select>
+                        </label>
+                        <div style="display: flex; flex-direction: column; gap: 7px;">
+                            ${ttsProviderOptions.map(option => {
+                                const providerVoice = String(userTtsVoices?.[option.id] || '').trim();
+                                const value = providerVoice || (option.id === currentTtsProvider ? legacyTtsVoice : '');
+                                return `
+                                    <label style="display: block;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                                            <span style="font-size: 11px; color: #666;">${escapeAttr(option.label)}</span>
+                                            ${option.id === currentTtsProvider ? '<span style="font-size: 10px; color: #07c160;">当前</span>' : ''}
+                                        </div>
+                                        <input type="text" class="edit-user-tts-provider-input" data-provider="${escapeAttr(option.id)}"
+                                               placeholder="${escapeAttr(option.placeholder)}" value="${escapeAttr(value)}" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; background: rgba(255,255,255,0.82); border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+                                    </label>
+                                `;
+                            }).join('')}
+                        </div>
+                        <div style="font-size: 10px; color: #8e8e93; line-height: 1.4; margin-top: 7px;">点击自己发送的文字语音条时，会优先使用这里设置的音色。</div>
+                    </div>
+                </div>
+
                 <!-- iOS蓝按钮 -->
                 <button id="save-user-profile" style="
                     width: 100%; padding: 14px; background: #ffffff; color: #050505; 
@@ -6215,6 +6288,36 @@ export class WechatApp {
         `;
 
         this.phoneShell.setContent(html);
+
+        const userTtsFold = document.querySelector('.wechat-user-tts-fold');
+        const userTtsFoldHeader = document.getElementById('edit-user-tts-fold-header');
+        const userTtsFoldContent = document.getElementById('edit-user-tts-fold-content');
+        const setUserTtsFoldExpanded = (expanded) => {
+            const isExpanded = expanded === true;
+            userTtsFold?.classList.toggle('is-open', isExpanded);
+            userTtsFoldHeader?.setAttribute('aria-expanded', String(isExpanded));
+            userTtsFoldContent?.setAttribute('aria-hidden', String(!isExpanded));
+        };
+        const toggleUserTtsFold = () => {
+            setUserTtsFoldExpanded(!userTtsFold?.classList.contains('is-open'));
+        };
+        userTtsFoldHeader?.addEventListener('click', toggleUserTtsFold);
+        userTtsFoldHeader?.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            toggleUserTtsFold();
+        });
+        setUserTtsFoldExpanded(false);
+
+        document.getElementById('edit-user-tts-history-select')?.addEventListener('change', (event) => {
+            const selectedVoice = String(event.target?.value || '').trim();
+            if (!selectedVoice) return;
+            const targetProvider = String(document.getElementById('edit-user-tts-provider-select')?.value || currentTtsProvider).trim() || currentTtsProvider;
+            const targetInput = Array.from(document.querySelectorAll('.edit-user-tts-provider-input'))
+                .find(input => String(input.dataset.provider || '').trim() === targetProvider)
+                || document.querySelector('.edit-user-tts-provider-input');
+            if (targetInput) targetInput.value = selectedVoice;
+        });
 
         // 返回按钮
         document.getElementById('back-from-profile-edit')?.addEventListener('click', () => {
@@ -6288,6 +6391,15 @@ export class WechatApp {
             const newName = document.getElementById('user-name-input').value.trim();
             const newSignature = document.getElementById('user-signature-input').value.trim();
             const naiPromptTags = document.getElementById('user-nai-prompt-tags-input')?.value?.trim() || '';
+            const ttsProvider = String(document.getElementById('edit-user-tts-provider-select')?.value || '').trim();
+            const ttsVoices = {};
+            let currentProviderTtsVoice = '';
+            document.querySelectorAll('.edit-user-tts-provider-input').forEach((input) => {
+                const provider = String(input.dataset.provider || '').trim();
+                const value = String(input.value || '').trim();
+                if (provider && value) ttsVoices[provider] = value;
+                if (provider === currentTtsProvider) currentProviderTtsVoice = value;
+            });
 
             if (!newName) {
                 this.phoneShell.showNotification('提示', '请输入昵称', '⚠️');
@@ -6297,7 +6409,10 @@ export class WechatApp {
             this.wechatData.updateUserInfo({
                 name: newName,
                 signature: newSignature,
-                naiPromptTags
+                naiPromptTags,
+                ttsProvider,
+                ttsVoices,
+                ttsVoice: currentProviderTtsVoice
             });
             
             setTimeout(() => this.render(), 200);
@@ -7674,7 +7789,9 @@ export class WechatApp {
                     return;
                 }
 
-                const contacts = this.wechatData.getContacts().filter(c => c.name.toLowerCase().includes(query));
+                const contacts = this.wechatData.getContacts().filter(c =>
+                    [c.name, c.remark].some(value => String(value || '').toLowerCase().includes(query))
+                );
                 const chats = this.wechatData.getChatList().filter(c => c.name.toLowerCase().includes(query));
 
                 let resultsHtml = '';

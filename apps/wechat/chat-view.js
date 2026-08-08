@@ -15,6 +15,7 @@ import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { readPhoneContextLimit } from '../../config/context-settings.js';
 import { CatboxData } from '../games/catbox/catbox-data.js';
 import { parseWangxiangTaskTags, tokenizeWangxiangTaskTags } from '../wangxiang/wangxiang-task-parser.js';
+import { normalizeWechatVoiceText } from './voice-text.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
@@ -1348,6 +1349,31 @@ export class ChatView {
             };
         }
         return { provider, voice: '', source: 'global' };
+    }
+
+    _resolveWechatUserVoice() {
+        const globalConfig = this._getGlobalTtsVoiceConfig();
+        const userInfo = this.app?.wechatData?.getUserInfo?.() || {};
+        const providerVoices = (userInfo.ttsVoices && typeof userInfo.ttsVoices === 'object')
+            ? userInfo.ttsVoices
+            : {};
+        const globalProviderVoice = String(providerVoices[globalConfig.provider] || '').trim();
+        if (globalProviderVoice) {
+            return { provider: globalConfig.provider, voice: globalProviderVoice, source: 'user_provider' };
+        }
+
+        const userProvider = String(userInfo.ttsProvider || '').trim();
+        const userProviderVoice = String(providerVoices[userProvider] || '').trim();
+        if (userProvider && userProviderVoice) {
+            return { provider: userProvider, voice: userProviderVoice, source: 'user_default_provider' };
+        }
+
+        const legacyVoice = String(userInfo.ttsVoice || '').trim();
+        if (legacyVoice) {
+            return { provider: userProvider || globalConfig.provider, voice: legacyVoice, source: 'user_legacy' };
+        }
+
+        return globalConfig;
     }
 
     _normalizeTtsGender(gender = '') {
@@ -3404,33 +3430,26 @@ renderChatRoom(chat) {
                 let durationStr = msg.duration || '3"';
                 let durationNum = parseInt(durationStr.replace('"', '').replace('秒', '')) || 3;
                 let voiceText = msg.voiceText || '';
+                let hasExplicitLegacyDuration = false;
 
                 // 兼容新老格式提取
                 const newVMatch = inlineVoiceNewMatch || /^(?:\[\s*(?:语音条|语音)\s*\]|【\s*(?:语音条|语音)\s*】)\s*[:：]?\s*(.+)$/i.exec(msg.content);
                 if (newVMatch) {
-                    voiceText = String(newVMatch[1] || '').trim();
-                    const wrappedVoiceMatch = voiceText.match(/^[（(]\s*([\s\S]*?)\s*[)）]$/);
-                    if (wrappedVoiceMatch) {
-                        voiceText = String(wrappedVoiceMatch[1] || '').trim();
-                    }
-                    voiceText = voiceText
-                        .replace(/^(?:语音条?\s*)?(?:转文字|转文本|转写|转录|转化出的文字|转化文字|转换文字|文字内容|内容)\s*[：:]\s*/i, '')
-                        .replace(/^语音条转文字内容\s*[：:]\s*/i, '')
-                        .trim();
-                    durationNum = Math.max(2, Math.min(Math.ceil(voiceText.length / 3), 60));
-                    durationStr = durationNum + '"';
+                    voiceText = newVMatch[1];
                 } else {
                     const oldVMatch = inlineVoiceOldMatch || /^\[语音\s*(\d+)秒?\]\(?([^)]*)\)?$/.exec(msg.content);
                     if (oldVMatch) {
                         durationStr = oldVMatch[1] + '"';
                         voiceText = oldVMatch[2] || '';
                         durationNum = parseInt(oldVMatch[1]);
+                        hasExplicitLegacyDuration = true;
                     }
                 }
-                voiceText = String(voiceText || '')
-                    .replace(/^(?:语音条?\s*)?(?:转文字|转文本|转写|转录|转化出的文字|转化文字|转换文字|文字内容|内容)\s*[：:]\s*/i, '')
-                    .replace(/^语音条转文字内容\s*[：:]\s*/i, '')
-                    .trim();
+                voiceText = normalizeWechatVoiceText(voiceText);
+                if (!hasExplicitLegacyDuration) {
+                    durationNum = Math.max(2, Math.min(Math.ceil((voiceText || '语音').length / 3), 60));
+                    durationStr = durationNum + '"';
+                }
 
                 // 动态宽度
                 const minW = 60;
@@ -9156,7 +9175,6 @@ renderChatRoom(chat) {
                 const bubble = e.target.closest('.voice-bubble-playable');
                 if (!bubble) return;
 
-                const storage = window.VirtualPhone?.storage;
                 const ttsManager = window.VirtualPhone?.ttsManager;
 
                 if (!ttsManager) {
@@ -9176,9 +9194,10 @@ renderChatRoom(chat) {
                     return;
                 }
 
-                // 🔥 核心修改：动态判定发送者音色
-                let finalVoice = this._getGlobalTtsVoice(); // 默认拿全局音色兜底（对自己有效）
-                let finalProvider = String(storage?.get('phone-tts-provider') || '').trim();
+                // 动态判定发送者音色；自己的语音优先使用个人资料中的专属配置。
+                const userVoice = this._resolveWechatUserVoice();
+                let finalVoice = userVoice.voice;
+                let finalProvider = userVoice.provider;
                 const msgNode = bubble.closest('.chat-message');
                 const isMe = msgNode && msgNode.classList.contains('message-right');
 
@@ -10118,7 +10137,10 @@ renderChatRoom(chat) {
                     const headerMatch = block.match(/^---(.+?)---/);
                     if (headerMatch) {
                         const targetName = headerMatch[1].trim();
-                        const isTargetCurrentChat = isSameWechatWindowName(targetName, savedChatName);
+                        const isTargetCurrentChat = isGroupChat
+                            ? isSameWechatWindowName(targetName, savedChatName)
+                            : [savedChatName, ...singleChatAliases]
+                                .some(alias => isSameWechatSingleName(targetName, alias));
                         let blockContent = block.replace(/^---.+---/, '').trim();
                         const blockDeclaredGroup = /(^|\n)\s*type[：:]\s*group\s*(?=\n|$)/i.test(blockContent);
                         blockContent = blockContent.replace(/^type[：:]\s*\S+\s*$/gmi, '');
@@ -10462,8 +10484,7 @@ renderChatRoom(chat) {
                         }
                     } else {
                         // 🔥 单聊：先查找联系人（严格名称归一匹配）
-                        const contacts = this.app.wechatData.getContacts();
-                        const existingContact = contacts.find(c => isSameWechatSingleName(c.name, targetName));
+                        const existingContact = this.app.wechatData.findContactByAlias?.(targetName);
 
                         if (existingContact) {
                             // 联系人存在，查找或创建聊天窗口
@@ -10523,6 +10544,7 @@ renderChatRoom(chat) {
                     }
                 }
                 let senderAvatar = bgChat.avatar || '👤';
+                const bgDisplayName = isBgGroupChat ? targetName : (bgChat.name || targetName);
                 const bgShortGapMap = this._buildShortWechatReplyGapMap(msgs);
                 for (let bgIndex = 0; bgIndex < msgs.length; bgIndex++) {
                     const m = msgs[bgIndex];
@@ -10539,7 +10561,7 @@ renderChatRoom(chat) {
                         bgIndex += consumedCount;
                         window.VirtualPhone?.triggerWechatIncomingCall?.(
                             bgChat.id,
-                            targetName || m.sender || '对方',
+                            bgDisplayName || m.sender || '对方',
                             special.callType || 'voice',
                             queuedLines
                         );
@@ -10554,11 +10576,14 @@ renderChatRoom(chat) {
 
                     const specialSender = String(special?.sender || '').trim();
                     const resolvedSpecialSender = this._isCurrentWechatUserName(specialSender) ? 'me' : specialSender;
-                    const senderNameForCatbox = resolvedSpecialSender || m.sender;
+                    const canonicalSender = isGeneratedUserSender
+                        ? 'me'
+                        : (isBgGroupChat ? (resolvedSpecialSender || m.sender) : bgDisplayName);
+                    const senderNameForCatbox = canonicalSender;
                     const senderAvatarForCatbox = senderAvatar;
                     let msgData = special
-                        ? this._attachMessageTimelineFields({ from: resolvedSpecialSender || m.sender, ...special, avatar: senderAvatar, replyBatchId: responseBatchId }, m)
-                        : this._attachMessageTimelineFields({ from: m.sender, content: normalizedTextContent, type: 'text', quote: m.quote, avatar: senderAvatar, replyBatchId: responseBatchId }, m);
+                        ? this._attachMessageTimelineFields({ ...special, from: canonicalSender, avatar: senderAvatar, replyBatchId: responseBatchId }, m)
+                        : this._attachMessageTimelineFields({ from: canonicalSender, content: normalizedTextContent, type: 'text', quote: m.quote, avatar: senderAvatar, replyBatchId: responseBatchId }, m);
                     if (special?.type === 'catbox_item_use') {
                         msgData = this._attachMessageTimelineFields(
                             this._buildCatboxCareCardMessage(bgChat.id, special, senderNameForCatbox, senderAvatarForCatbox, m.time, responseBatchId),
@@ -10566,7 +10591,7 @@ renderChatRoom(chat) {
                         );
                     }
                     if (special?.type === 'payment_action') {
-                        this._applyWechatPaymentAction(bgChat.id, special, m.sender, m);
+                        this._applyWechatPaymentAction(bgChat.id, special, canonicalSender, m);
                         continue;
                     }
                     if (special?.type === 'catbox_coadopt_response') {
@@ -10588,12 +10613,12 @@ renderChatRoom(chat) {
                         const latestMsg = latestMessages[latestMessages.length - 1] || {};
                         this._handleHoneyInviteResponse(
                             { ...special, messageId: latestMsg.id || special.messageId || '' },
-                            { senderName: targetName || m.sender, chatId: bgChat.id }
+                            { senderName: bgDisplayName || m.sender, chatId: bgChat.id }
                         );
                     }
                     bgAddedCount++;
                     if (special?.type === 'weibo_card' && special.weiboData) {
-                        this.syncWeiboNewsToWeiboApp(special.weiboData, m.sender);
+                        this.syncWeiboNewsToWeiboApp(special.weiboData, canonicalSender);
                     }
                 }
 
@@ -10605,16 +10630,16 @@ renderChatRoom(chat) {
                         if (!this.app._isCustomAvatarValue(finalNotifyAvatar)) {
                             finalNotifyAvatar = this.app.wechatData.getContactAutoAvatar(targetName) || finalNotifyAvatar;
                         }
-                        window.VirtualPhone.notify('新微信消息', bgLatestPreview || `${targetName} 给你发了新消息`, '', {
+                        window.VirtualPhone.notify('新微信消息', bgLatestPreview || `${bgDisplayName} 给你发了新消息`, '', {
                             avatar: finalNotifyAvatar,
-                            name: targetName || '微信',
+                            name: bgDisplayName || '微信',
                             content: bgLatestPreview || '发来新消息',
                             timeText: '刚刚',
                             senderKey: `wechat:bg:${bgChat.id}:${Date.now()}`
                         });
                         window.VirtualPhone.playWechatMessageSound?.({ source: 'online_background' });
                     } else {
-                        this.app.phoneShell?.showNotification('新微信消息', `${targetName} 给你发了新消息`, '💬');
+                        this.app.phoneShell?.showNotification('新微信消息', `${bgDisplayName} 给你发了新消息`, '💬');
                         window.VirtualPhone?.playWechatMessageSound?.({ source: 'online_background' });
                     }
                 }
@@ -14555,8 +14580,16 @@ ${groupParticipants.join('、') || '暂无成员'}
         if (wechatContent) {
 
             // 1a: 尝试找到当前联系人的 ---name--- 区块
-            const contactBlockRegex = new RegExp(`---${contactName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}---([\\s\\S]*?)(?=---[^-]+---|$)`, 'i');
-            const contactBlock = wechatContent.match(contactBlockRegex);
+            const contactAliases = [
+                contactName,
+                ...this._collectSingleChatAliasesForFilter(this.app.currentChat, this._safeGetContext())
+            ].map(name => String(name || '').trim()).filter(Boolean);
+            const escapedAliases = [...new Set(contactAliases)]
+                .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+            const contactBlockRegex = escapedAliases.length > 0
+                ? new RegExp(`---(?:${escapedAliases.join('|')})---([\\s\\S]*?)(?=---[^-]+---|$)`, 'i')
+                : null;
+            const contactBlock = contactBlockRegex ? wechatContent.match(contactBlockRegex) : null;
 
             if (contactBlock) {
                 const msgLines = contactBlock[1].match(/\[[0-9A-Za-z:：]+\]\s*(.+)/g);
@@ -17222,9 +17255,10 @@ ${callTranscript}`;
         const storage = window.VirtualPhone?.storage;
         const ttsManager = window.VirtualPhone?.ttsManager;
         if (!storage) return;
-        // 🔥 核心修改：拦截通话全局音色，强制要求专属音色
-        let finalVoice = this._getGlobalTtsVoice();
-        let finalProvider = String(storage.get('phone-tts-provider') || '').trim();
+        // 对方必须使用绑定音色；自己的语音优先使用个人资料中的专属配置。
+        const userVoice = this._resolveWechatUserVoice();
+        let finalVoice = userVoice.voice;
+        let finalProvider = userVoice.provider;
         const row = bubble?.closest?.('.call-msg-row');
         const isMe = !!(bubble && !bubble.classList.contains('wechat-call-ai-bubble')) ||
             (row && String(row.style?.justifyContent || '').trim() === 'flex-end');

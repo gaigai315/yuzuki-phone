@@ -662,9 +662,20 @@ export class ContactsView {
                                 border-radius: 6px;
                                 font-size: 13px;
                                 box-sizing: border-box;
-                                margin-bottom: 6px;
                             ">
-                            <div style="font-size: 11px; color: #999;">备注请直接写在昵称里（例如：张三（同事））</div>
+                        </div>
+
+                        <div style="margin-bottom: 10px;">
+                            <div style="font-size: 11px; color: #999; margin-bottom: 4px;">备注</div>
+                            <input type="text" id="edit-contact-remark-input" placeholder="输入备注" maxlength="20"
+                                   value="${contact.remark || ''}" style="
+                                width: 100%;
+                                padding: 8px 10px;
+                                ${fieldStyle}
+                                border-radius: 6px;
+                                font-size: 13px;
+                                box-sizing: border-box;
+                            ">
                         </div>
 
                         <div style="margin-bottom: 10px;">
@@ -1156,19 +1167,19 @@ export class ContactsView {
 
         query('#save-edit-contact-btn')?.addEventListener('click', async () => {
             const name = query('#edit-contact-name-input').value.trim();
+            const remark = String(query('#edit-contact-remark-input')?.value || '').trim();
 
             if (!name) {
                 this.app.phoneShell.showNotification('提示', '请输入昵称', '⚠️');
                 return;
             }
 
-            const nextNameKey = this.app.wechatData._normalizeExactContactName?.(name) || String(name || '').trim().replace(/\s+/g, '').toLowerCase();
-            const exists = this.app.wechatData.getContacts().find(c =>
-                c.id !== safeContactId
-                && (this.app.wechatData._normalizeExactContactName?.(c.name) || String(c?.name || '').trim().replace(/\s+/g, '').toLowerCase()) === nextNameKey
+            const exists = this.app.wechatData.findContactAliasConflict?.(
+                [name, remark].filter(Boolean),
+                { excludeContactId: safeContactId }
             );
             if (exists) {
-                this.app.phoneShell.showNotification('提示', '该名称已被其他联系人使用', '⚠️');
+                this.app.phoneShell.showNotification('提示', '该昵称或备注已被其他联系人使用', '⚠️');
                 return;
             }
 
@@ -1191,8 +1202,9 @@ export class ContactsView {
             const naiPromptTagsValue = String(query('#edit-contact-nai-prompt-tags')?.value || '').trim();
             const wechatSupplementalSettingValue = String(query('#edit-contact-wechat-supplemental-setting')?.value || '').trim();
 
-            this.app.wechatData.updateContact(safeContactId, {
+            const updated = this.app.wechatData.updateContact(safeContactId, {
                 name: name,
+                remark: remark,
                 avatar: selectedAvatar,
                 letter: this.app.wechatData.getFirstLetter(name),
                 ttsVoice: ttsVoice, // 🔥 旧字段兜底
@@ -1205,6 +1217,10 @@ export class ContactsView {
                 naiPromptTags: naiPromptTagsValue,
                 wechatSupplementalSetting: wechatSupplementalSettingValue
             });
+            if (!updated) {
+                this.app.phoneShell.showNotification('提示', '该昵称或备注已被其他联系人使用', '⚠️');
+                return;
+            }
             this.app.wechatData.setContactGender?.(
                 safeContactId,
                 String(query('#edit-contact-gender-select')?.value || 'female').trim() === 'male' ? 'male' : 'female'
@@ -1466,6 +1482,18 @@ export class ContactsView {
                         </div>
 
                         <div style="margin-bottom: 10px;">
+                            <div style="font-size: 11px; color: #999; margin-bottom: 4px;">备注</div>
+                            <input type="text" id="friend-remark-input" placeholder="输入备注" maxlength="20" style="
+                                width: 100%;
+                                padding: 8px;
+                                border: 1px solid #e5e5e5;
+                                border-radius: 6px;
+                                font-size: 13px;
+                                box-sizing: border-box;
+                            ">
+                        </div>
+
+                        <div style="margin-bottom: 10px;">
                             <div style="font-size: 11px; color: #999; margin-bottom: 4px;">性别（用于默认头像池）</div>
                             <select id="friend-gender-select" style="
                                 width: 100%;
@@ -1501,9 +1529,6 @@ export class ContactsView {
                             </select>
                         </div>
 
-                        <div style="font-size: 11px; color: #999;">
-                            备注请直接写在昵称里（例如：张三（同事））
-                        </div>
                     </div>
 
                     <button id="save-friend-btn" style="
@@ -1581,18 +1606,16 @@ export class ContactsView {
             if (isSaving) return;
 
             const name = currentView.querySelector('#friend-name-input').value.trim();
+            const remark = String(currentView.querySelector('#friend-remark-input')?.value || '').trim();
 
             if (!name) {
                 this.app.phoneShell.showNotification('提示', '请输入好友昵称', '⚠️');
                 return;
             }
 
-            const nextNameKey = this.app.wechatData._normalizeExactContactName?.(name) || String(name || '').trim().replace(/\s+/g, '').toLowerCase();
-            const exists = this.app.wechatData.getContacts().find(c =>
-                (this.app.wechatData._normalizeExactContactName?.(c.name) || String(c?.name || '').trim().replace(/\s+/g, '').toLowerCase()) === nextNameKey
-            );
+            const exists = this.app.wechatData.findContactAliasConflict?.([name, remark].filter(Boolean));
             if (exists) {
-                this.app.phoneShell.showNotification('提示', '该好友已存在', '⚠️');
+                this.app.phoneShell.showNotification('提示', '该昵称或备注已被其他联系人使用', '⚠️');
                 return;
             }
 
@@ -1604,10 +1627,11 @@ export class ContactsView {
             const createdContact = this.app.wechatData.addContact({
                 id: newContactId,
                 name: name,
+                remark: remark,
                 avatar: selectedAvatar,
                 gender,
                 letter: this.app.wechatData.getFirstLetter(name)
-            }) || { id: newContactId, name, avatar: selectedAvatar };
+            }) || { id: newContactId, name, remark, avatar: selectedAvatar };
 
             this.app.wechatData.setContactGender?.(createdContact.id || name, gender);
             this.app.wechatData.setContactAvatarGroup?.(createdContact.id || name, avatarGroup);
