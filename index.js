@@ -117,6 +117,8 @@ if (window.GGP_Loaded) {
     let _phoneVirtualKeyboardOffset = 0;
     let _phoneEstimatedKeyboardOffset = 0;
     let _phoneKeyboardFallbackArmedAt = 0;
+    let _phoneReportedKeyboardOffset = 0;
+    let _phoneKeyboardFallbackSuppressed = false;
     let _phoneTauriLayoutUnsubscribe = null;
     let _phoneTauriLayoutBindToken = 0;
     let _wechatMessageAudio = null;
@@ -525,7 +527,6 @@ if (window.GGP_Loaded) {
             || (activeTag === 'input' && ['text', 'search', 'password', 'email', 'number', 'url', 'tel'].includes(activeInputType))
             || activeElement?.isContentEditable;
         const now = Date.now();
-        const isLikelyKeyboardWindow = now < _phoneKeyboardLikelyOpenUntil;
         const hasVisualKeyboardViewportGap = keyboardGap > 120 || stableGap > 120;
         const hostImeBottom = panel
             ? Math.max(0, Number.parseFloat(getComputedStyle(panel).getPropertyValue('--tt-ime-bottom')) || 0)
@@ -537,12 +538,24 @@ if (window.GGP_Loaded) {
             _phoneVirtualKeyboardOffset,
             hostCssKeyboardOffset
         );
+        const hadReportedKeyboardInset = _phoneReportedKeyboardOffset > 120;
         const hasReportedKeyboardInset = reportedKeyboardOffset > 120;
+        _phoneReportedKeyboardOffset = reportedKeyboardOffset;
+        if (hadReportedKeyboardInset && !hasReportedKeyboardInset) {
+            // Android WebView may keep the input focused after the IME is dismissed.
+            // Do not let the focus-only fallback immediately recreate the closed keyboard inset.
+            _phoneKeyboardFallbackSuppressed = true;
+            _phoneEstimatedKeyboardOffset = 0;
+            _phoneKeyboardFallbackArmedAt = 0;
+            _phoneKeyboardLikelyOpenUntil = 0;
+        }
+        const isLikelyKeyboardWindow = now < _phoneKeyboardLikelyOpenUntil;
         const hasCoarsePointer = (window.matchMedia?.('(pointer: coarse)')?.matches === true)
             || Number(navigator.maxTouchPoints || 0) > 0;
         const useFocusedInputFallback = Boolean(
             isTypingTarget
             && hasCoarsePointer
+            && !_phoneKeyboardFallbackSuppressed
             && now >= _phoneKeyboardFallbackArmedAt
             && _phoneKeyboardFallbackArmedAt > 0
             && !hasVisualKeyboardViewportGap
@@ -1029,6 +1042,20 @@ if (window.GGP_Loaded) {
             if (panel.classList?.contains('phone-panel-open')) return true;
             return !!(target && typeof panel.contains === 'function' && panel.contains(target));
         };
+        const isTypingTarget = (target) => {
+            if (!(target instanceof Element)) return false;
+            const field = target.closest?.('textarea, input, [contenteditable]');
+            if (!field) return false;
+            if (field.tagName?.toLowerCase() === 'textarea' || field.isContentEditable) return true;
+            const inputType = String(field.type || 'text').toLowerCase();
+            return ['text', 'search', 'password', 'email', 'number', 'url', 'tel'].includes(inputType);
+        };
+        const armPhoneKeyboardFallback = () => {
+            _phoneKeyboardFallbackSuppressed = false;
+            _phoneKeyboardLikelyOpenUntil = Date.now() + 700;
+            _phoneKeyboardFallbackArmedAt = Date.now() + 160;
+            schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
+        };
         const onViewportResize = () => {
             if (!shouldUpdatePhoneViewport()) return;
             schedulePhonePanelViewportUpdate({ delay: 40, settleDelay: 160 });
@@ -1039,9 +1066,12 @@ if (window.GGP_Loaded) {
         };
         const onFocusIn = (event) => {
             if (!shouldUpdatePhoneViewport(event.target)) return;
-            _phoneKeyboardLikelyOpenUntil = Date.now() + 700;
-            _phoneKeyboardFallbackArmedAt = Date.now() + 160;
-            schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
+            if (isTypingTarget(event.target)) armPhoneKeyboardFallback();
+        };
+        const onPointerDown = (event) => {
+            if (!shouldUpdatePhoneViewport(event.target) || !isTypingTarget(event.target)) return;
+            // A dismissed Android keyboard can leave the field focused, so focusin will not fire again.
+            armPhoneKeyboardFallback();
         };
         const onFocusOut = (event) => {
             if (!shouldUpdatePhoneViewport(event.target)) return;
@@ -1064,6 +1094,7 @@ if (window.GGP_Loaded) {
             }
             document.removeEventListener('focusin', prev.onFocusIn, true);
             document.removeEventListener('focusout', prev.onFocusOut, true);
+            document.removeEventListener('pointerdown', prev.onPointerDown, true);
         }
 
         const virtualKeyboard = navigator.virtualKeyboard || null;
@@ -1078,6 +1109,7 @@ if (window.GGP_Loaded) {
             onViewportScroll,
             onFocusIn,
             onFocusOut,
+            onPointerDown,
             onVirtualKeyboardGeometry,
             virtualKeyboard
         };
@@ -1093,6 +1125,7 @@ if (window.GGP_Loaded) {
 
         document.addEventListener('focusin', onFocusIn, true);
         document.addEventListener('focusout', onFocusOut, true);
+        document.addEventListener('pointerdown', onPointerDown, true);
     }
 
     async function bindTauriTavernPhoneLayout(panel) {
