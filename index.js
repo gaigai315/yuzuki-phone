@@ -121,6 +121,7 @@ if (window.GGP_Loaded) {
     let _phoneEstimatedKeyboardOffset = 0;
     let _phoneKeyboardFallbackArmedAt = 0;
     let _phoneReportedKeyboardOffset = 0;
+    let _phoneVisualKeyboardViewportOpen = false;
     let _phoneKeyboardFallbackSuppressed = false;
     let _phoneTauriLayoutUnsubscribe = null;
     let _phoneTauriLayoutBindToken = 0;
@@ -531,6 +532,8 @@ if (window.GGP_Loaded) {
             || activeElement?.isContentEditable;
         const now = Date.now();
         const hasVisualKeyboardViewportGap = keyboardGap > 120 || stableGap > 120;
+        const hadVisualKeyboardViewportGap = _phoneVisualKeyboardViewportOpen;
+        _phoneVisualKeyboardViewportOpen = hasVisualKeyboardViewportGap;
         const hostImeBottom = panel
             ? Math.max(0, Number.parseFloat(getComputedStyle(panel).getPropertyValue('--tt-ime-bottom')) || 0)
             : 0;
@@ -544,8 +547,10 @@ if (window.GGP_Loaded) {
         const hadReportedKeyboardInset = _phoneReportedKeyboardOffset > 120;
         const hasReportedKeyboardInset = reportedKeyboardOffset > 120;
         _phoneReportedKeyboardOffset = reportedKeyboardOffset;
-        if (hadReportedKeyboardInset && !hasReportedKeyboardInset) {
-            // Android WebView may keep the input focused after the IME is dismissed.
+        const visualKeyboardClosed = hadVisualKeyboardViewportGap && !hasVisualKeyboardViewportGap;
+        const reportedKeyboardClosed = hadReportedKeyboardInset && !hasReportedKeyboardInset;
+        if (visualKeyboardClosed || reportedKeyboardClosed) {
+            // Mobile browsers and WebViews may keep the input focused after the IME is dismissed.
             // Do not let the focus-only fallback immediately recreate the closed keyboard inset.
             _phoneKeyboardFallbackSuppressed = true;
             _phoneEstimatedKeyboardOffset = 0;
