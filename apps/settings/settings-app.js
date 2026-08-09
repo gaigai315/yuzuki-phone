@@ -974,7 +974,7 @@ export class SettingsApp {
         const legacyUrl = String(this.storage.get('phone-tts-url') || '').trim().toLowerCase();
         if (legacyUrl.includes('minimaxi.com')) return 'minimax_cn';
         if (legacyUrl.includes('minimax.chat') || legacyUrl.includes('minimax.io')) return 'minimax_intl';
-        if (legacyUrl.includes('127.0.0.1:7880') || legacyUrl.includes('localhost:7880') || legacyUrl.includes('index-tts')) return 'indextts';
+        if (legacyUrl.includes('127.0.0.1:7880') || legacyUrl.includes('localhost:7880') || legacyUrl.includes('index-tts') || /\/api\/clone(?:[?#]|$)/.test(legacyUrl)) return 'indextts';
         if (legacyUrl.includes('xiaomimimo.com') || /\/(?:v1\/)?chat\/completions\b/.test(legacyUrl)) return 'nimo';
         if (legacyUrl.includes('api.openai.com') || /\/audio\/speech\b/.test(legacyUrl)) return 'openai';
         return 'minimax_cn';
@@ -2560,7 +2560,8 @@ export class SettingsApp {
                                                 <option value="https://api.minimaxi.com/v1/t2a_v2">MiniMax 国内版</option>
                                                 <option value="https://api.minimax.io/v1/t2a_v2">MiniMax 国际版</option>
                                                 <option value="https://api.openai.com/v1/audio/speech">OpenAI 官方</option>
-                                                <option value="http://127.0.0.1:7880/v1/audio/speech">IndexTTS 本地</option>
+                                                <option value="http://127.0.0.1:7880/v1/audio/speech">IndexTTS OpenAI 兼容版</option>
+                                                <option value="http://127.0.0.1:9001/api/clone">IndexTTS 雨落原生 API</option>
                                                 <option value="https://api.xiaomimimo.com/v1">MiMo 官方</option>
                                                 <option value="__nimo_public__">MiMo 公益站 / New API</option>
                                                 <option value="https://openspeech.bytedance.com/api/v3/tts/unidirectional">火山引擎/豆包</option>
@@ -2568,16 +2569,16 @@ export class SettingsApp {
                                         </div>
                                         <input type="text" id="phone-tts-url"
                                                value="${currentTtsUrl}"
-                                               placeholder="本地 IndexTTS 例如 http://127.0.0.1:7880/v1/audio/speech"
+                                               placeholder="例如 http://127.0.0.1:9001/api/clone"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
                                     </div>
 
                                     <div id="phone-tts-main-key-setting" class="setting-item" style="display: ${currentTtsProvider === 'volcengine' ? 'none' : 'flex'} !important; align-items: center; justify-content: space-between;">
-                                        <span style="font-size: 14px; color: #000;">API Key</span>
+                                        <span id="phone-tts-main-key-label" style="font-size: 14px; color: #000;">${currentTtsProvider === 'indextts' ? 'API Key（可留空）' : 'API Key'}</span>
                                         <div class="phone-secret-field" style="width: 140px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;">
                                             <input type="text" class="phone-secret-input phone-secret-masked" id="phone-tts-key"
                                                    value="${currentTtsKey}"
-                                                   placeholder="MiniMax/OpenAI/MiMo API Key"
+                                                   placeholder="${currentTtsProvider === 'indextts' ? 'IndexTTS 本地无需填写' : 'MiniMax/OpenAI/MiMo API Key'}"
                                                    style="width: 100%; min-width: 0; height: 100%; padding: 0 34px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
                                             <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-tts-key" aria-label="显示 TTS API Key" title="显示 TTS API Key">
                                                 <i class="fa-regular fa-eye"></i>
@@ -2600,7 +2601,7 @@ export class SettingsApp {
                                                value="${currentTtsModel}"
                                                placeholder="选择预设或手动输入模型名"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                                        <div id="phone-tts-models-result" class="setting-desc" style="margin-top: 6px; display: ${['nimo', 'indextts'].includes(currentTtsProvider) ? 'block' : 'none'} !important;">${currentTtsProvider === 'indextts' ? 'IndexTTS 本地可从当前接口 /v1/models 拉取可用模型与音色。' : (currentTtsProvider === 'nimo' ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。' : '')}</div>
+                                        <div id="phone-tts-models-result" class="setting-desc" style="margin-top: 6px; display: ${['nimo', 'indextts'].includes(currentTtsProvider) ? 'block' : 'none'} !important;">${currentTtsProvider === 'indextts' ? '旧兼容版可拉取 /v1/models；雨落版使用 /api/clone，无需 API Key。' : (currentTtsProvider === 'nimo' ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。' : '')}</div>
                                     </div>
 
                                     <div id="phone-tts-nimo-relay-setting" class="setting-item" style="display: ${currentTtsProvider === 'nimo' ? 'block' : 'none'} !important;">
@@ -2616,14 +2617,16 @@ export class SettingsApp {
 
                                     <div class="setting-item">
                                         <div style="display: flex; align-items: center; justify-content: space-between;">
-                                            <span style="font-size: 14px; color: #000;">音色 ID (Voice)</span>
+                                            <span id="phone-tts-voice-label" style="font-size: 14px; color: #000;">${currentTtsProvider === 'indextts' ? '参考音频 / 音色 ID' : '音色 ID (Voice)'}</span>
                                             <select id="phone-tts-voice-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
                                                 <option value="">-- 历史音色 --</option>
                                             </select>
                                         </div>
                                         <input type="text" id="phone-tts-voice"
                                                value="${currentTtsVoice}"
+                                               placeholder="${currentTtsProvider === 'indextts' ? '雨落版例如 demo_boy.wav 或 F:/voices/角色.wav' : ''}"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
+                                        <div id="phone-tts-voice-help" class="setting-desc" style="margin-top: 4px; display: ${currentTtsProvider === 'indextts' ? 'block' : 'none'} !important;">雨落版填写 resources/prompt_audio 内的文件名或参考音频绝对路径；旧兼容版填写 Voice。</div>
                                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
                                             <button id="phone-tts-preview" style="padding: 2px 8px; border: none; background: none; color: #1677ff; font-size: 10px; cursor: pointer;">试听当前音色</button>
                                             <button id="phone-tts-voice-delete" style="padding: 2px 8px; border: none; background: none; color: #ff3b30; font-size: 10px; cursor: pointer;">删除当前音色</button>
@@ -8272,6 +8275,7 @@ export class SettingsApp {
         const ttsUrlPreset = document.getElementById('phone-tts-url-preset');
         const ttsKey = document.getElementById('phone-tts-key');
         const ttsMainKeySetting = document.getElementById('phone-tts-main-key-setting');
+        const ttsMainKeyLabel = document.getElementById('phone-tts-main-key-label');
         const ttsMainProviderOptions = document.getElementById('phone-tts-main-provider-options');
         const ttsVolcKey = document.getElementById('phone-tts-volc-key');
         const ttsVolcAppId = document.getElementById('phone-tts-volc-app-id');
@@ -8284,6 +8288,8 @@ export class SettingsApp {
         const ttsNimoRelayUrl = document.getElementById('phone-tts-nimo-relay-url');
         const ttsNimoCloneSetting = document.getElementById('phone-tts-nimo-clone-setting');
         const ttsVoice = document.getElementById('phone-tts-voice');
+        const ttsVoiceLabel = document.getElementById('phone-tts-voice-label');
+        const ttsVoiceHelp = document.getElementById('phone-tts-voice-help');
         const ttsVoicePreset = document.getElementById('phone-tts-voice-preset');
         const ttsVolcVoice = document.getElementById('phone-tts-volc-voice');
         const ttsPreviewBtn = document.getElementById('phone-tts-preview');
@@ -8392,7 +8398,7 @@ export class SettingsApp {
             const url = String(urlValue || '').trim().toLowerCase();
             if (url.includes('minimaxi.com')) return 'minimax_cn';
             if (url.includes('minimax.chat') || url.includes('minimax.io')) return 'minimax_intl';
-            if (url.includes('127.0.0.1:7880') || url.includes('localhost:7880') || url.includes('index-tts')) return 'indextts';
+            if (url.includes('127.0.0.1:7880') || url.includes('localhost:7880') || url.includes('index-tts') || /\/api\/clone(?:[?#]|$)/.test(url)) return 'indextts';
             if (url.includes('xiaomimimo.com') || /\/(?:v1\/)?chat\/completions\b/.test(url)) return 'nimo';
             if (url.includes('openspeech.bytedance.com')) return 'volcengine';
             if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
@@ -8418,11 +8424,16 @@ export class SettingsApp {
             setProviderFieldVisible(ttsMainProviderOptions, provider !== 'volcengine');
             setProviderFieldVisible(ttsNimoRelaySetting, provider === 'nimo');
             setProviderFieldVisible(ttsNimoCloneSetting, provider === 'nimo');
+            if (ttsMainKeyLabel) ttsMainKeyLabel.textContent = provider === 'indextts' ? 'API Key（可留空）' : 'API Key';
+            if (ttsKey) ttsKey.placeholder = provider === 'indextts' ? 'IndexTTS 本地无需填写' : 'MiniMax/OpenAI/MiMo API Key';
+            if (ttsVoiceLabel) ttsVoiceLabel.textContent = provider === 'indextts' ? '参考音频 / 音色 ID' : '音色 ID (Voice)';
+            if (ttsVoice) ttsVoice.placeholder = provider === 'indextts' ? '雨落版例如 demo_boy.wav 或 F:/voices/角色.wav' : '';
+            setProviderFieldVisible(ttsVoiceHelp, provider === 'indextts');
             if (ttsModelsResult) {
                 const supportsModelFetch = provider === 'nimo' || provider === 'indextts';
                 setProviderFieldVisible(ttsModelsResult, supportsModelFetch);
                 ttsModelsResult.textContent = provider === 'indextts'
-                    ? 'IndexTTS 本地可从当前接口 /v1/models 拉取可用模型与音色。'
+                    ? '旧兼容版可拉取 /v1/models；雨落版使用 /api/clone，无需 API Key。'
                     : (provider === 'nimo' ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。' : '');
                 ttsModelsResult.style.color = '#666';
             }
@@ -8727,7 +8738,7 @@ export class SettingsApp {
                     await setMainTtsProviderField('url', String(ttsUrl?.value || '').trim(), 'phone-tts-url');
                     await setMainTtsProviderField('key', String(ttsKey?.value || '').trim(), 'phone-tts-key');
                     if (provider === 'nimo') await setNimoTtsField('relay-url', String(ttsNimoRelayUrl?.value || '').trim());
-                    setTtsModelsResult('正在请求 /v1/models...', false);
+                    setTtsModelsResult(provider === 'indextts' ? '正在识别 IndexTTS 接口...' : '正在请求 /v1/models...', false);
 
                     if (provider === 'indextts') {
                         if (!ttsManager.fetchIndexTtsVoices) throw new Error('当前版本 TTS 管理器不支持 IndexTTS 音色拉取');
@@ -8760,7 +8771,9 @@ export class SettingsApp {
                             ttsVoice.value = nextVoice;
                             await saveTtsVoice(nextVoice);
                         }
-                        setTtsModelsResult(`已拉取 ${models.length} 个模型、${voices.length} 个本地音色。`, false);
+                        setTtsModelsResult(result?.protocol === 'rainfall'
+                            ? '已识别雨落原生 API。参考音频可填写 prompt_audio 文件名或绝对路径。'
+                            : `已拉取 ${models.length} 个模型、${voices.length} 个本地音色。`, false);
                         return;
                     }
 

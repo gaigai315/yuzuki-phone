@@ -198,6 +198,18 @@ export class MomentsView {
     renderInteractions(moment) {
         const hasLikes = moment.likeList && moment.likeList.length > 0;
         const hasComments = moment.commentList && moment.commentList.length > 0;
+        const replyableNames = new Set();
+        const displayComments = hasComments
+            ? moment.commentList.map((comment) => {
+                const name = String(comment?.name || '').trim();
+                const replyTo = String(comment?.replyTo || '').trim();
+                const visibleReplyTo = replyTo && replyTo !== name && replyableNames.has(replyTo)
+                    ? replyTo
+                    : '';
+                if (name) replyableNames.add(name);
+                return { ...comment, visibleReplyTo };
+            })
+            : [];
 
         if (!hasLikes && !hasComments) return '';
 
@@ -212,10 +224,10 @@ export class MomentsView {
 
                 ${hasComments ? `
                     <div class="interaction-comments">
-                        ${moment.commentList.map((comment, idx) => `
+                        ${displayComments.map((comment, idx) => `
                             <div class="comment-row" data-moment-id="${moment.id}" data-comment-idx="${idx}" data-author="${comment.name}">
                                 <span class="comment-author">${comment.name}</span>
-                                ${comment.replyTo ? `<span class="comment-reply">回复</span><span class="comment-author">${comment.replyTo}</span>` : ''}
+                                ${comment.visibleReplyTo ? `<span class="comment-reply">回复</span><span class="comment-author">${comment.visibleReplyTo}</span>` : ''}
                                 <span class="comment-colon">：</span>
                                 <span class="comment-content">${comment.text}</span>
                             </div>
@@ -717,6 +729,52 @@ export class MomentsView {
         };
     }
 
+    _extractMomentImageTagsFromText(rawText = '') {
+        let cleanedText = String(rawText || '');
+        const images = [];
+        const mediaRegex = /\[(用户照片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
+        let match;
+
+        while ((match = mediaRegex.exec(cleanedText)) !== null) {
+            images.push(match[0].trim());
+        }
+
+        cleanedText = cleanedText
+            .replace(mediaRegex, '')
+            .replace(/[ \t]+\n/g, '\n')
+            .replace(/\n[ \t]+/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+        return { text: cleanedText, images };
+    }
+
+    _insertMomentTextImageTemplate(textInput) {
+        if (!textInput) return false;
+        const uploadedCount = Array.isArray(this.pendingMomentImages) ? this.pendingMomentImages.length : 0;
+        const textImageCount = this._extractMomentImageTagsFromText(textInput.value).images.length;
+        if (uploadedCount + textImageCount >= 9) {
+            this.app.phoneShell.showNotification('提示', '上传图片和文字图片合计最多9张', '⚠️');
+            return false;
+        }
+
+        const template = '[图片]（输入描述）';
+        const selectionStart = Number.isInteger(textInput.selectionStart) ? textInput.selectionStart : textInput.value.length;
+        const selectionEnd = Number.isInteger(textInput.selectionEnd) ? textInput.selectionEnd : selectionStart;
+        const before = textInput.value.slice(0, selectionStart);
+        const after = textInput.value.slice(selectionEnd);
+        const prefix = before && !before.endsWith('\n') ? '\n' : '';
+        const suffix = after && !after.startsWith('\n') ? '\n' : '';
+        const insertion = `${prefix}${template}${suffix}`;
+        textInput.setRangeText(insertion, selectionStart, selectionEnd, 'end');
+
+        const placeholderStart = selectionStart + prefix.length + '[图片]（'.length;
+        textInput.focus();
+        textInput.setSelectionRange(placeholderStart, placeholderStart + '输入描述'.length);
+        textInput.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+    }
+
     _parsePromptDescriptionPair(rawValue = '') {
         const raw = String(rawValue || '').trim()
             .replace(/^\[(?:用户照片|图片(?:-[^\]\r\n]+)?|视频)\]\s*/i, '');
@@ -891,11 +949,6 @@ export class MomentsView {
                 ? `[${mediaType}]（${displayDescription}）（${promptText}）`
                 : `[${mediaType}]（${promptText}）`;
         }
-        const generationContext = await this._buildMomentImageGenerationContext(moment, index, promptText);
-        const generationPrompt = generationContext.prompt;
-        const novelAIReferences = generationContext.references;
-        const referenceNames = generationContext.referenceNames;
-        const useUserReference = generationContext.useUserReference;
         const generationId = `moment_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
         this._setMomentImageState(moment, index, {
@@ -905,8 +958,8 @@ export class MomentsView {
             description: displayDescription,
             generationId,
             mediaType,
-            useUserReference,
-            referenceNames,
+            useUserReference: parsedImage.useUserReference,
+            referenceNames: parsedImage.referenceNames,
             generatedImageUrl: '',
             imageProvider: resolvedImageProvider
         });
@@ -914,6 +967,27 @@ export class MomentsView {
         this._refreshMomentImageUI(momentId);
 
         try {
+            const shouldTranslateUserPrompt = moment?.isUserPost === true
+                && this._hasCjkText(promptText)
+                && typeof imageManager.translatePromptToEnglish === 'function';
+            const translatedPrompt = shouldTranslateUserPrompt
+                ? await imageManager.translatePromptToEnglish(promptText, 'wechat')
+                : promptText;
+            promptText = String(translatedPrompt || promptText).trim();
+            const generationContext = await this._buildMomentImageGenerationContext(moment, index, promptText);
+            const generationPrompt = generationContext.prompt;
+            const novelAIReferences = generationContext.references;
+            const referenceNames = generationContext.referenceNames;
+            const useUserReference = generationContext.useUserReference;
+            this._setMomentImageState(moment, index, {
+                prompt: promptText,
+                description: displayDescription,
+                useUserReference,
+                referenceNames
+            });
+            await this.app.wechatData.saveData();
+            this._refreshMomentImageUI(momentId);
+
             const result = await imageManager.generate({
                 app: 'wechat',
                 prompt: generationPrompt,
@@ -1592,9 +1666,11 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
             this.app.phoneShell.showNotification('朋友圈', '好友围观中...', '👀');
 
             const result = await this.callAI(prompt);
-            const reactions = this._normalizeMomentReactions(result, allowedContactSet, userInfo.name, {
+            const defaultReplyTo = actionType === 'comment' ? userInfo.name : null;
+            const reactions = this._normalizeMomentReactions(result, allowedContactSet, defaultReplyTo, {
                 momentAuthor: moment.name || '',
-                userName: userInfo.name || ''
+                userName: userInfo.name || '',
+                existingCommentNames: currentComments.map(comment => comment?.name)
             });
 
             if (reactions.length > 0) {
@@ -1669,6 +1745,9 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
             .trim();
         const momentAuthor = String(options?.momentAuthor || '').trim();
         const userName = String(options?.userName || '').trim();
+        const existingCommentNames = Array.isArray(options?.existingCommentNames)
+            ? options.existingCommentNames.map(name => normalizeName(name)).filter(Boolean)
+            : [];
         const authorAliases = new Set(['发布者', '作者', '博主', '楼主']);
         const canonicalName = (value) => {
             const raw = normalizeName(value);
@@ -1692,10 +1771,10 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
             if (!cleaned) return String(defaultReplyTo || '').trim() || null;
             if (authorAliases.has(cleaned)) {
                 if (momentAuthor === userName || allowedContactSet.has(momentAuthor)) return momentAuthor;
-                return String(defaultReplyTo || '').trim() || null;
+                return null;
             }
             if (cleaned === userName || allowedContactSet.has(cleaned)) return cleaned;
-            return String(defaultReplyTo || '').trim() || null;
+            return null;
         };
 
         const parseXmlLike = (rawText) => {
@@ -1782,7 +1861,21 @@ ${replyTo ? `- 回复对象：${replyTo}` : ''}
             parseXmlLike(fallbackText).forEach(pushReaction);
         }
 
-        return output;
+        const replyableNames = new Set(existingCommentNames);
+        return output.map((reaction) => {
+            if (reaction.type !== 'comment') return reaction;
+
+            const replyTarget = normalizeName(reaction.replyTo || '');
+            const hasVisibleTarget = replyTarget
+                && replyTarget !== reaction.name
+                && replyableNames.has(replyTarget);
+            replyableNames.add(reaction.name);
+
+            return {
+                ...reaction,
+                replyTo: hasVisibleTarget ? replyTarget : null
+            };
+        });
     }
 
     _normalizeAiMomentsPayload(result) {
@@ -2520,6 +2613,25 @@ ${memoryLines.slice(0, 10).join('\n')}
                             <span>添加图片</span>
                             <span style="margin-left: auto; color: #999; font-size: 12px;">最多9张</span>
                         </label>
+                        <button type="button" class="wechat-moment-text-image-trigger" id="wechat-moment-text-image-trigger" style="
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            margin-top: 8px;
+                            padding: 12px 15px;
+                            background: #f7f7f7;
+                            border: none;
+                            border-radius: 8px;
+                            font-size: 14px;
+                            color: #333;
+                            cursor: pointer;
+                            width: 100%;
+                            box-sizing: border-box;
+                        ">
+                            <i class="fa-solid fa-wand-magic-sparkles" style="font-size: 18px; color: #07c160;"></i>
+                            <span>文字图片</span>
+                            <span style="margin-left: auto; color: #999; font-size: 12px;">最多9张</span>
+                        </button>
                     </div>
 
                     <button type="button" class="wechat-moment-visibility-trigger" id="wechat-moment-visibility-trigger">
@@ -2564,6 +2676,10 @@ ${memoryLines.slice(0, 10).join('\n')}
             this.showMomentVisibilityPicker();
         });
 
+        document.getElementById('wechat-moment-text-image-trigger')?.addEventListener('click', () => {
+            this._insertMomentTextImageTemplate(document.getElementById('moment-text-input'));
+        });
+
         // 发表按钮
         document.getElementById('publish-moment-btn')?.addEventListener('click', () => {
             this.publishMoment();
@@ -2576,10 +2692,12 @@ ${memoryLines.slice(0, 10).join('\n')}
 
         const maxImages = 9;
         const currentCount = this.pendingMomentImages?.length || 0;
-        const remainingSlots = maxImages - currentCount;
+        const textInput = document.getElementById('moment-text-input');
+        const textImageCount = this._extractMomentImageTagsFromText(textInput?.value || '').images.length;
+        const remainingSlots = maxImages - currentCount - textImageCount;
 
         if (remainingSlots <= 0) {
-            this.app.phoneShell.showNotification('提示', '最多只能上传9张图片', '⚠️');
+            this.app.phoneShell.showNotification('提示', '上传图片和文字图片合计最多9张', '⚠️');
             return;
         }
 
@@ -2659,14 +2777,21 @@ ${memoryLines.slice(0, 10).join('\n')}
     // 发表朋友圈
     publishMoment() {
         const textInput = document.getElementById('moment-text-input');
-        const text = textInput?.value?.trim() || '';
-        const images = Array.isArray(this.pendingMomentImages)
+        const rawText = textInput?.value?.trim() || '';
+        const extracted = this._extractMomentImageTagsFromText(rawText);
+        const uploadedImages = Array.isArray(this.pendingMomentImages)
             ? this.pendingMomentImages.filter(item => typeof item === 'string' && item.trim())
             : [];
+        const images = [...uploadedImages, ...extracted.images];
+        const text = extracted.text;
 
         // 验证内容
         if (!text && images.length === 0) {
             this.app.phoneShell.showNotification('提示', '请输入内容或添加图片', '⚠️');
+            return;
+        }
+        if (images.length > 9) {
+            this.app.phoneShell.showNotification('提示', '上传图片和生图标签合计最多9张', '⚠️');
             return;
         }
 
@@ -2700,6 +2825,8 @@ ${memoryLines.slice(0, 10).join('\n')}
             likeList: [],
             comments: 0,
             commentList: [],
+            imageGenerationStates: [],
+            isUserPost: true,
             visibility: {
                 type: visibility.type,
                 contactIds: Array.isArray(visibility.contactIds) ? [...visibility.contactIds] : [],

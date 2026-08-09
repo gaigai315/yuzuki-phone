@@ -549,6 +549,48 @@ export class ImageGenerationManager {
             .trim();
     }
 
+    async translatePromptToEnglish(rawPrompt, appKey = '') {
+        const source = String(rawPrompt || '').trim();
+        if (!source || !this._containsCjk(source)) return source;
+
+        const apiManager = (typeof window !== 'undefined') ? window.VirtualPhone?.apiManager : null;
+        if (!apiManager || typeof apiManager.callAI !== 'function') {
+            throw new Error('小手机 API 未初始化，无法生成英文 TAG');
+        }
+
+        const normalizedApp = String(appKey || '').trim().toLowerCase();
+        const appName = ['wechat', 'weibo'].includes(normalizedApp) ? normalizedApp : 'phone_online';
+        const result = await apiManager.callAI([
+            {
+                role: 'system',
+                content: [
+                    'You convert Chinese image descriptions into English image-generation prompt tags.',
+                    'Output only concise English comma-separated tags.',
+                    'Do not output explanations, Markdown, Chinese, labels, or complete sentences.',
+                    'Preserve subject, gender, count, appearance, pose, expression, clothing, setting, camera distance, angle, lighting, atmosphere, and illustration style.',
+                    'Do not add unrelated content.'
+                ].join('\n')
+            },
+            {
+                role: 'user',
+                content: `Chinese image description:\n${source}\n\nEnglish comma-separated tags only:`
+            }
+        ], {
+            appId: appName,
+            max_tokens: 360,
+            stream: false
+        });
+
+        if (result?.success === false) {
+            throw new Error(result?.error || '小手机 API 未能生成英文 TAG');
+        }
+        const translated = this._cleanNovelAITagText(result?.summary || result?.content || result?.text || '');
+        if (!translated || this._containsCjk(translated)) {
+            throw new Error('小手机 API 返回的英文 TAG 无效');
+        }
+        return translated;
+    }
+
     async _translatePromptForNovelAI(rawPrompt, appKey = '') {
         const source = String(rawPrompt || '').trim();
         if (!source || !this._containsCjk(source)) return source;

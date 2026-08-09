@@ -562,7 +562,34 @@ export class TtsManager {
         return `${raw}/v1/models`;
     }
 
+    _isRainfallIndexTtsEndpoint(apiUrl = '') {
+        try {
+            const endpoint = new URL(String(apiUrl || '').trim());
+            return /\/api\/clone\/?$/i.test(endpoint.pathname);
+        } catch (_e) {
+            return /\/api\/clone(?:[?#]|$)/i.test(String(apiUrl || '').trim());
+        }
+    }
+
+    _buildRainfallIndexTtsUrl(apiUrl = '', text = '', promptPath = '', emoText = '') {
+        const endpoint = new URL(String(apiUrl || '').trim());
+        endpoint.searchParams.set('text', String(text || '').trim());
+        endpoint.searchParams.set('prompt_path', String(promptPath || '').trim());
+        const safeEmoText = String(emoText || '').trim();
+        if (safeEmoText) endpoint.searchParams.set('emo_text', safeEmoText);
+        else endpoint.searchParams.delete('emo_text');
+        return endpoint.toString();
+    }
+
     async fetchIndexTtsVoices(apiUrl = '', apiKey = '', options = {}) {
+        if (this._isRainfallIndexTtsEndpoint(apiUrl)) {
+            return {
+                protocol: 'rainfall',
+                models: ['index-tts2'],
+                voices: ['demo_boy.wav']
+            };
+        }
+
         const endpoint = new URL(this._resolveIndexTtsModelsEndpoint(apiUrl));
         const headers = {};
         const safeKey = String(apiKey || this._getStoredProviderValue('indextts', 'key', 'phone-tts-key') || '').trim();
@@ -964,6 +991,17 @@ export class TtsManager {
         }
 
         if (provider === 'indextts') {
+            if (this._isRainfallIndexTtsEndpoint(apiUrl)) {
+                // Rainfall's FastAPI service does not expose CORS headers. Returning the
+                // media URL lets the browser audio element load the WAV cross-origin.
+                return this._buildRainfallIndexTtsUrl(
+                    apiUrl,
+                    inputText,
+                    voice,
+                    options.emoText || options.emotionText || ''
+                );
+            }
+
             const endpoint = new URL(apiUrl || this._getProviderDefaults('indextts').url);
             const response = await this._getRawFetch()(endpoint, {
                 method: 'POST',

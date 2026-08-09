@@ -1248,6 +1248,37 @@ export class WeiboView {
     // 📝 发微博页面
     // ========================================
 
+    _countWeiboDraftTextImages(rawText = '') {
+        const mediaRegex = /\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
+        return (String(rawText || '').match(mediaRegex) || []).length;
+    }
+
+    _insertWeiboTextImageTemplate(textInput) {
+        if (!textInput) return false;
+        const uploadedCount = Array.isArray(this.pendingPostImages) ? this.pendingPostImages.length : 0;
+        const textImageCount = this._countWeiboDraftTextImages(textInput.value);
+        if (uploadedCount + textImageCount >= 9) {
+            this.app.phoneShell.showNotification('提示', '上传图片和文字图片合计最多9张', '⚠️');
+            return false;
+        }
+
+        const template = '[图片]（输入描述）';
+        const selectionStart = Number.isInteger(textInput.selectionStart) ? textInput.selectionStart : textInput.value.length;
+        const selectionEnd = Number.isInteger(textInput.selectionEnd) ? textInput.selectionEnd : selectionStart;
+        const before = textInput.value.slice(0, selectionStart);
+        const after = textInput.value.slice(selectionEnd);
+        const prefix = before && !before.endsWith('\n') ? '\n' : '';
+        const suffix = after && !after.startsWith('\n') ? '\n' : '';
+        const insertion = `${prefix}${template}${suffix}`;
+        textInput.setRangeText(insertion, selectionStart, selectionEnd, 'end');
+
+        const placeholderStart = selectionStart + prefix.length + '[图片]（'.length;
+        textInput.focus();
+        textInput.setSelectionRange(placeholderStart, placeholderStart + '输入描述'.length);
+        textInput.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+    }
+
     showPostWeiboPage() {
         const context = this.app.weiboData._getContext();
         const userName = context?.name1 || '微博用户';
@@ -1316,6 +1347,15 @@ export class WeiboView {
                             <span>添加图片</span>
                             <span style="margin-left: auto; color: #999; font-size: 10px;">最多9张</span>
                         </button>
+                        <button type="button" class="weibo-text-image-trigger" id="weibo-text-image-trigger" style="
+                            display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 10px 12px;
+                            background: #f7f7f7; border: none; border-radius: 6px;
+                            font-size: 12px; color: #333; cursor: pointer; width: 100%;
+                        ">
+                            <i class="fa-solid fa-wand-magic-sparkles" style="font-size: 16px; color: #ff8200;"></i>
+                            <span>文字图片</span>
+                            <span style="margin-left: auto; color: #999; font-size: 10px;">最多9张</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1346,6 +1386,10 @@ export class WeiboView {
             currentView.querySelector('#weibo-post-image-upload')?.click();
         });
 
+        currentView.querySelector('#weibo-text-image-trigger')?.addEventListener('click', () => {
+            this._insertWeiboTextImageTemplate(currentView.querySelector('#weibo-post-text'));
+        });
+
         // 🖼️ 图片上传核心逻辑
         currentView.querySelector('#weibo-post-image-upload')?.addEventListener('change', async (e) => {
             const rawFiles = e.target.files;
@@ -1358,9 +1402,10 @@ export class WeiboView {
             e.target.value = '';
 
             const maxImages = 9;
-            const remaining = maxImages - (this.pendingPostImages?.length || 0);
+            const textImageCount = this._countWeiboDraftTextImages(currentView.querySelector('#weibo-post-text')?.value || '');
+            const remaining = maxImages - (this.pendingPostImages?.length || 0) - textImageCount;
             if (remaining <= 0) {
-                this.app.phoneShell.showNotification('提示', '最多只能上传9张图片', '⚠️');
+                this.app.phoneShell.showNotification('提示', '上传图片和文字图片合计最多9张', '⚠️');
                 return;
             }
 
@@ -1458,9 +1503,14 @@ export class WeiboView {
             document.getElementById('weibo-post-text');
         const text = textInput?.value?.trim() || '';
         const images = this.pendingPostImages || [];
+        const textImageCount = this._countWeiboDraftTextImages(text);
 
         if (!text && images.length === 0) {
             this.app.phoneShell.showNotification('提示', '请输入内容或添加图片', '⚠️');
+            return;
+        }
+        if (images.length + textImageCount > 9) {
+            this.app.phoneShell.showNotification('提示', '上传图片和文字图片合计最多9张', '⚠️');
             return;
         }
 
@@ -2598,8 +2648,23 @@ export class WeiboView {
         this._persistPostMediaTarget(posts, source, post);
         this._refreshPostMediaUI(postId);
 
+        let generationPromptText = slotPromptText;
         try {
-            const generationContext = await this._buildWeiboImageGenerationContext(parsedMedia, slotPromptText);
+            const shouldTranslateUserPrompt = post?.isUserPost === true
+                && this._hasCjkText(slotPromptText)
+                && typeof imageManager.translatePromptToEnglish === 'function';
+            const translatedPrompt = shouldTranslateUserPrompt
+                ? await imageManager.translatePromptToEnglish(slotPromptText, 'weibo')
+                : slotPromptText;
+            generationPromptText = String(translatedPrompt || slotPromptText).trim();
+            this._setWeiboPostImageState(post, index, {
+                prompt: generationPromptText,
+                description: displayDescription
+            });
+            this._persistPostMediaTarget(posts, source, post);
+            this._refreshPostMediaUI(postId);
+
+            const generationContext = await this._buildWeiboImageGenerationContext(parsedMedia, generationPromptText);
             const result = await imageManager.generate({
                 app: 'weibo',
                 prompt: generationContext.prompt,
@@ -2621,7 +2686,7 @@ export class WeiboView {
             this._setWeiboPostImageState(post, index, {
                 status: 'done',
                 error: '',
-                prompt: slotPromptText,
+                prompt: generationPromptText,
                 description: displayDescription,
                 mediaType: safeMediaType,
                 generatedImageUrl: imageUrl,
@@ -2640,7 +2705,7 @@ export class WeiboView {
             this._setWeiboPostImageState(post, index, {
                 status: 'failed',
                 error: friendlyMessage,
-                prompt: slotPromptText,
+                prompt: generationPromptText,
                 description: displayDescription,
                 mediaType: safeMediaType,
                 generatedImageUrl: '',
