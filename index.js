@@ -113,6 +113,12 @@ if (window.GGP_Loaded) {
     let _phoneViewportResizeTimer = null;
     let _phoneViewportSettleTimer = null;
     let _phoneKeyboardLikelyOpenUntil = 0;
+    let _phoneHostKeyboardOffset = 0;
+    let _phoneVirtualKeyboardOffset = 0;
+    let _phoneEstimatedKeyboardOffset = 0;
+    let _phoneKeyboardFallbackArmedAt = 0;
+    let _phoneTauriLayoutUnsubscribe = null;
+    let _phoneTauriLayoutBindToken = 0;
     let _wechatMessageAudio = null;
     let _wechatMessageSoundLastAt = 0;
     let _honeyModulePromise = null;
@@ -512,12 +518,49 @@ if (window.GGP_Loaded) {
         const currentWidth = Math.max(layoutWidth, visualWidth, 320);
         const keyboardGap = layoutHeight && visualHeight ? layoutHeight - visualHeight : 0;
         const stableGap = _phoneStableViewportHeight ? _phoneStableViewportHeight - visualHeight : 0;
-        const activeTag = String(document.activeElement?.tagName || '').toLowerCase();
-        const isTypingTarget = ['input', 'textarea', 'select'].includes(activeTag)
-            || document.activeElement?.isContentEditable;
+        const activeElement = document.activeElement;
+        const activeTag = String(activeElement?.tagName || '').toLowerCase();
+        const activeInputType = String(activeElement?.type || 'text').toLowerCase();
+        const isTypingTarget = activeTag === 'textarea'
+            || (activeTag === 'input' && ['text', 'search', 'password', 'email', 'number', 'url', 'tel'].includes(activeInputType))
+            || activeElement?.isContentEditable;
         const now = Date.now();
         const isLikelyKeyboardWindow = now < _phoneKeyboardLikelyOpenUntil;
-        const hasKeyboardViewportGap = keyboardGap > 120 || stableGap > 120;
+        const hasVisualKeyboardViewportGap = keyboardGap > 120 || stableGap > 120;
+        const hostImeBottom = panel
+            ? Math.max(0, Number.parseFloat(getComputedStyle(panel).getPropertyValue('--tt-ime-bottom')) || 0)
+            : 0;
+        const hostSafeBottom = Math.max(0, Number.parseFloat(getComputedStyle(root).getPropertyValue('--tt-inset-bottom')) || 0);
+        const hostCssKeyboardOffset = Math.max(hostImeBottom - hostSafeBottom, 0);
+        const reportedKeyboardOffset = Math.max(
+            _phoneHostKeyboardOffset,
+            _phoneVirtualKeyboardOffset,
+            hostCssKeyboardOffset
+        );
+        const hasReportedKeyboardInset = reportedKeyboardOffset > 120;
+        const hasCoarsePointer = (window.matchMedia?.('(pointer: coarse)')?.matches === true)
+            || Number(navigator.maxTouchPoints || 0) > 0;
+        const useFocusedInputFallback = Boolean(
+            isTypingTarget
+            && hasCoarsePointer
+            && now >= _phoneKeyboardFallbackArmedAt
+            && _phoneKeyboardFallbackArmedAt > 0
+            && !hasVisualKeyboardViewportGap
+            && !hasReportedKeyboardInset
+        );
+        if (useFocusedInputFallback) {
+            _phoneEstimatedKeyboardOffset = Math.min(
+                Math.max(0, visualHeight - 320),
+                Math.min(visualHeight * 0.48, Math.max(visualHeight * 0.34, visualWidth * 0.82))
+            );
+        } else if (hasVisualKeyboardViewportGap || hasReportedKeyboardInset || (!isTypingTarget && !isLikelyKeyboardWindow)) {
+            _phoneEstimatedKeyboardOffset = 0;
+        }
+        const estimatedKeyboardOffset = (useFocusedInputFallback || isLikelyKeyboardWindow)
+            ? _phoneEstimatedKeyboardOffset
+            : 0;
+        const effectiveKeyboardOffset = Math.max(reportedKeyboardOffset, estimatedKeyboardOffset);
+        const hasKeyboardViewportGap = hasVisualKeyboardViewportGap || effectiveKeyboardOffset > 120;
         const keyboardOpen = Boolean((isTypingTarget || isLikelyKeyboardWindow) && hasKeyboardViewportGap);
         const orientationChanged = _phoneStableViewportWidth
             && Math.abs(currentWidth - _phoneStableViewportWidth) > 80;
@@ -537,7 +580,12 @@ if (window.GGP_Loaded) {
         root.style.setProperty('--phone-panel-vw', `${Math.round(panelWidth)}px`);
         root.style.setProperty('--phone-panel-top', '0px');
         root.style.setProperty('--phone-panel-left', '0px');
-        root.style.setProperty('--phone-keyboard-vh', `${Math.round(Math.max(visualHeight, 320))}px`);
+        // Some Android shells keep the WebView viewport stable while exposing IME overlap separately (or not at all).
+        // Only subtract a reported/estimated inset when visualViewport has not already shrunk.
+        const keyboardViewportHeight = hasVisualKeyboardViewportGap
+            ? visualHeight
+            : visualHeight - (keyboardOpen ? effectiveKeyboardOffset : 0);
+        root.style.setProperty('--phone-keyboard-vh', `${Math.round(Math.max(keyboardViewportHeight, 320))}px`);
         root.style.setProperty('--phone-keyboard-vw', `${Math.round(Math.max(visualWidth, 320))}px`);
         root.style.setProperty('--phone-keyboard-top', `${Math.round(Math.max(visualTop, 0))}px`);
         root.style.setProperty('--phone-keyboard-left', `${Math.round(Math.max(visualLeft, 0))}px`);
@@ -992,10 +1040,12 @@ if (window.GGP_Loaded) {
         const onFocusIn = (event) => {
             if (!shouldUpdatePhoneViewport(event.target)) return;
             _phoneKeyboardLikelyOpenUntil = Date.now() + 700;
+            _phoneKeyboardFallbackArmedAt = Date.now() + 160;
             schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
         };
         const onFocusOut = (event) => {
             if (!shouldUpdatePhoneViewport(event.target)) return;
+            _phoneKeyboardFallbackArmedAt = 0;
             // Android 的收键盘动画可能晚于 focusout 数百毫秒完成。
             // 保持键盘态直到 viewport 恢复；900ms 复查用于兼容不补发 resize 的 WebView。
             _phoneKeyboardLikelyOpenUntil = Date.now() + 800;
@@ -1009,15 +1059,27 @@ if (window.GGP_Loaded) {
                 window.visualViewport.removeEventListener('resize', prev.onViewportResize);
                 window.visualViewport.removeEventListener('scroll', prev.onViewportScroll);
             }
+            if (prev.virtualKeyboard && prev.onVirtualKeyboardGeometry) {
+                prev.virtualKeyboard.removeEventListener?.('geometrychange', prev.onVirtualKeyboardGeometry);
+            }
             document.removeEventListener('focusin', prev.onFocusIn, true);
             document.removeEventListener('focusout', prev.onFocusOut, true);
         }
+
+        const virtualKeyboard = navigator.virtualKeyboard || null;
+        const onVirtualKeyboardGeometry = () => {
+            _phoneVirtualKeyboardOffset = Math.max(0, Number(virtualKeyboard?.boundingRect?.height) || 0);
+            if (!shouldUpdatePhoneViewport()) return;
+            schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
+        };
 
         bindPhonePanelViewportGuards._handlers = {
             onViewportResize,
             onViewportScroll,
             onFocusIn,
-            onFocusOut
+            onFocusOut,
+            onVirtualKeyboardGeometry,
+            virtualKeyboard
         };
 
         window.addEventListener('resize', onViewportResize, { passive: true });
@@ -1026,9 +1088,64 @@ if (window.GGP_Loaded) {
             window.visualViewport.addEventListener('resize', onViewportResize, { passive: true });
             window.visualViewport.addEventListener('scroll', onViewportScroll, { passive: true });
         }
+        virtualKeyboard?.addEventListener?.('geometrychange', onVirtualKeyboardGeometry);
+        onVirtualKeyboardGeometry();
 
         document.addEventListener('focusin', onFocusIn, true);
         document.addEventListener('focusout', onFocusOut, true);
+    }
+
+    async function bindTauriTavernPhoneLayout(panel) {
+        const hostReady = window.__TAURITAVERN__?.ready || window.__TAURITAVERN_MAIN_READY__;
+        if (!window.__TAURITAVERN__ && !hostReady) return;
+
+        const bindToken = ++_phoneTauriLayoutBindToken;
+        panel.setAttribute('data-tt-mobile-surface', 'fullscreen-window');
+
+        try {
+            if (hostReady && typeof hostReady.then === 'function') {
+                await hostReady;
+            }
+            if (bindToken !== _phoneTauriLayoutBindToken || panel !== document.getElementById('phone-panel')) return;
+
+            const layout = window.__TAURITAVERN__?.api?.layout;
+            if (!layout || typeof layout.subscribe !== 'function') return;
+
+            if (typeof _phoneTauriLayoutUnsubscribe === 'function') {
+                await _phoneTauriLayoutUnsubscribe();
+            }
+            _phoneTauriLayoutUnsubscribe = null;
+
+            const unsubscribe = await layout.subscribe((snapshot) => {
+                if (bindToken !== _phoneTauriLayoutBindToken || panel !== document.getElementById('phone-panel')) return;
+
+                const activeSurface = snapshot?.ime?.activeSurface || null;
+                const activeElement = document.activeElement;
+                const targetsPhone = activeSurface === panel
+                    || (activeSurface instanceof Element && panel.contains(activeSurface))
+                    || (activeElement instanceof Element && panel.contains(activeElement));
+                const nextOffset = targetsPhone
+                    ? Math.max(0, Number(snapshot?.ime?.keyboardOffset) || 0)
+                    : 0;
+                const changed = Math.abs(nextOffset - _phoneHostKeyboardOffset) >= 1;
+                _phoneHostKeyboardOffset = nextOffset;
+
+                if (changed || panel.classList.contains('phone-panel-open')) {
+                    schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
+                }
+            });
+
+            if (bindToken !== _phoneTauriLayoutBindToken || panel !== document.getElementById('phone-panel')) {
+                await unsubscribe?.();
+                return;
+            }
+            _phoneTauriLayoutUnsubscribe = unsubscribe;
+        } catch (error) {
+            if (bindToken === _phoneTauriLayoutBindToken) {
+                _phoneHostKeyboardOffset = 0;
+            }
+            console.warn('[手机插件] TauriTavern 移动布局兼容层初始化失败:', error);
+        }
     }
 
     async function loadCoreModules() {
@@ -4544,6 +4661,7 @@ if (window.GGP_Loaded) {
         const drawerPanel = document.getElementById('phone-panel');
         const triggerTarget = drawerEntry || drawerIcon;
 
+        if (drawerPanel) void bindTauriTavernPhoneLayout(drawerPanel);
         applyPhonePanelDesktopPosition();
         bindPhonePanelDesktopDockDrag(drawerPanel);
 

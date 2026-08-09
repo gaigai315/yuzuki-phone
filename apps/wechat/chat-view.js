@@ -9456,6 +9456,24 @@ renderChatRoom(chat) {
         });
     }
 
+    _bindWechatMenuAction(button, handler) {
+        if (!button || typeof handler !== 'function') return;
+
+        let activated = false;
+        const activate = (event) => {
+            if (event?.cancelable) event.preventDefault();
+            event?.stopPropagation?.();
+            event?.stopImmediatePropagation?.();
+            if (activated) return;
+            activated = true;
+            handler(event);
+        };
+
+        button.addEventListener('click', activate);
+        button.style.touchAction = 'manipulation';
+        button.addEventListener('touchend', activate, { passive: false });
+    }
+
     bindManualTimeMarkerEvents() {
         const currentView = this.getCurrentWechatView();
         const messagesDiv = currentView?.querySelector('#chat-messages');
@@ -9598,8 +9616,7 @@ renderChatRoom(chat) {
             }
         };
 
-        menuEl.querySelector('.wechat-time-marker-delete')?.addEventListener('click', (e) => {
-            e.stopPropagation();
+        this._bindWechatMenuAction(menuEl.querySelector('.wechat-time-marker-delete'), () => {
             cleanupMenu();
             this.deleteManualTimeMarker(messageIndex, messageId);
         });
@@ -12926,17 +12943,17 @@ renderChatRoom(chat) {
         let buttonsHtml = '';
 
         if (isTextMessage || isLocationMessage) {
-            buttonsHtml += `<button class="msg-action-btn" data-action="edit" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">编辑</button>`;
+            buttonsHtml += `<button type="button" class="msg-action-btn" data-action="edit" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">编辑</button>`;
         }
-        buttonsHtml += `<button class="msg-action-btn" data-action="multi-select" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">多选</button>`;
+        buttonsHtml += `<button type="button" class="msg-action-btn" data-action="multi-select" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">多选</button>`;
         if (isTextMessage || isImageMessage) {
-            buttonsHtml += `<button class="msg-action-btn" data-action="quote" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">引用</button>`;
+            buttonsHtml += `<button type="button" class="msg-action-btn" data-action="quote" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">引用</button>`;
         }
         if (hasCallTranscript) {
-            buttonsHtml += `<button class="msg-action-btn" data-action="view" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">查看</button>`;
+            buttonsHtml += `<button type="button" class="msg-action-btn" data-action="view" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">查看</button>`;
         }
-        buttonsHtml += `<button class="msg-action-btn" data-action="recall" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">撤回</button>`;
-        buttonsHtml += `<button class="msg-action-btn" data-action="delete" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #ff3b30; border: none; padding: 4px 8px; font-size: 11px; cursor: pointer;">删除</button>`;
+        buttonsHtml += `<button type="button" class="msg-action-btn" data-action="recall" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">撤回</button>`;
+        buttonsHtml += `<button type="button" class="msg-action-btn" data-action="delete" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #ff3b30; border: none; padding: 4px 8px; font-size: 11px; cursor: pointer;">删除</button>`;
 
         const menuEl = document.createElement('div');
         menuEl.className = 'message-action-menu wechat-message-action-menu';
@@ -13008,8 +13025,7 @@ renderChatRoom(chat) {
 
         // 按钮点击事件
         menuEl.querySelectorAll('.msg-action-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
+            this._bindWechatMenuAction(btn, () => {
                 const action = btn.dataset.action;
                 const index = parseInt(btn.dataset.index);
                 const actionMessageId = String(btn.dataset.messageId || '').trim();
