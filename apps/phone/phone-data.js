@@ -28,17 +28,23 @@ export function parseSmsMessagesFromText(text = '') {
             if (!senderMatch) return;
 
             const body = section.slice(senderMatch[0].length);
-            const contentMatch = body.match(/^\s*([\s\S]*?)\s*(?:\r?\n)+\s*发送时间\s*[:：]\s*([01]?\d|2[0-3])\s*[:：]\s*([0-5]\d)\s*$/);
+            const contentMatch = body.match(/^\s*([\s\S]*?)\s*(?:\r?\n)+\s*发送时间\s*[:：]\s*(?:(\d{1,6})\s*(?:年|[-/.])\s*(0?[1-9]|1[0-2])\s*(?:月|[-/.])\s*(0?[1-9]|[12]\d|3[01])\s*日?\s*)?([01]?\d|2[0-3])\s*[:：]\s*([0-5]\d)\s*$/);
             const sender = String(senderMatch[1] || '').trim();
             const content = String(contentMatch?.[1] || '')
                 .replace(/^\s*内容\s*[:：]\s*/, '')
                 .trim();
             if (!sender || !content || !contentMatch) return;
 
+            const year = String(contentMatch[2] || '');
+            const date = year
+                ? `${year.padStart(4, '0')}年${String(contentMatch[3]).padStart(2, '0')}月${String(contentMatch[4]).padStart(2, '0')}日`
+                : '';
+
             messages.push({
                 sender,
                 text: content,
-                time: `${contentMatch[2].padStart(2, '0')}:${contentMatch[3]}`,
+                date,
+                time: `${contentMatch[5].padStart(2, '0')}:${contentMatch[6]}`,
                 sourceIndex: tagMatch.index + sectionIndex
             });
         });

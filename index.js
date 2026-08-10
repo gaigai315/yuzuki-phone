@@ -61,7 +61,8 @@ const ST_PHONE_CURRENT_UPDATE = {
     date: '2026-08-11',
     items: [
         '【修复】修复生图预设切换不跟随当前预设的问题。',
-        '【优化】优化微信解析边界问题。'
+        '【优化】优化微信解析边界问题。',
+        '【优化】优化短信功能，快捷回复面板新增短信快捷回复。'
     ]
 };
 
@@ -4450,7 +4451,7 @@ if (window.GGP_Loaded) {
                                 const name = String(el.dataset.smsName || '').trim();
                                 if (!name) return;
                                 const tagPrefix = `\n<短信>\n[${name}]\n内容：`;
-                                const tagStr = `${tagPrefix}\n发送时间：${formatSmsInlineReplyTime()}\n\n</短信>\n`;
+                                const tagStr = `${tagPrefix}\n发送时间：${formatSmsInlineReplyDateTime()}\n\n</短信>\n`;
                                 insertTextToSendTextarea(tagStr, tagPrefix.length);
                                 closeMenuSafely();
                             });
@@ -5905,7 +5906,20 @@ if (window.GGP_Loaded) {
         return !!changed;
     }
 
-    const SMS_PARSER_VERSION = '2';
+    const SMS_PARSER_VERSION = '3';
+
+    function getSmsMessageTimeInfo(message = {}, storyTime = {}) {
+        const date = String(message?.date || storyTime?.date || '');
+        const tm = window.VirtualPhone?.timeManager || timeManager;
+        const weekday = message?.date
+            ? String(tm?.calculateWeekday?.(date) || storyTime?.weekday || '')
+            : String(storyTime?.weekday || '');
+        return {
+            date,
+            weekday,
+            time: String(message?.time || storyTime?.time || '')
+        };
+    }
 
     function processUserSmsTags(text, tavernIndex, batchId) {
         const parsedMessages = parseSmsMessagesFromText(getExplicitSmsTagSource(text));
@@ -5935,11 +5949,7 @@ if (window.GGP_Loaded) {
             );
             if (alreadyStored) return [];
 
-            const result = phoneData.addSmsMessage(message.sender, message.text, {
-                date: String(storyTime?.date || ''),
-                weekday: String(storyTime?.weekday || ''),
-                time: message.time || String(storyTime?.time || '')
-            }, {
+            const result = phoneData.addSmsMessage(message.sender, message.text, getSmsMessageTimeInfo(message, storyTime), {
                 direction: 'outgoing',
                 from: 'me',
                 batchId: safeBatchId,
@@ -5979,16 +5989,13 @@ if (window.GGP_Loaded) {
                     && existing?.sourceIndex === message.sourceIndex;
                 const samePayload = String(existing?.from || '').trim().toLocaleLowerCase('zh-CN') === senderKey
                     && String(existing?.text || '').trim() === message.text
+                    && String(existing?.date || '') === String(message.date || storyTime?.date || '')
                     && String(existing?.time || '') === message.time;
                 return sameSource || samePayload;
             });
             if (alreadyStored) return [];
 
-            const result = phoneData.addIncomingSmsMessage(message.sender, message.text, {
-                date: String(storyTime?.date || ''),
-                weekday: String(storyTime?.weekday || ''),
-                time: message.time || String(storyTime?.time || '')
-            }, {
+            const result = phoneData.addIncomingSmsMessage(message.sender, message.text, getSmsMessageTimeInfo(message, storyTime), {
                 batchId: safeBatchId,
                 tavernMessageIndex: floor,
                 sourceIndex: message.sourceIndex,
@@ -6173,10 +6180,11 @@ if (window.GGP_Loaded) {
         return `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日${pad(now.getHours())}:${pad(now.getMinutes())}`;
     }
 
-    function formatSmsInlineReplyTime() {
-        const match = formatWechatInlineReplyDateTime().match(/(\d{1,2})[:：](\d{2})$/);
-        if (!match) return '00:00';
-        return `${match[1].padStart(2, '0')}:${match[2]}`;
+    function formatSmsInlineReplyDateTime() {
+        const value = formatWechatInlineReplyDateTime();
+        const match = value.match(/^(.+?日)\s*(\d{1,2})[:：](\d{2})$/);
+        if (!match) return value;
+        return `${match[1]} ${match[2].padStart(2, '0')}:${match[3]}`;
     }
 
     function getWechatRuntimeSnapshot() {

@@ -1224,9 +1224,16 @@ export class PhoneCallView {
                 ? String(fallbackSender || '').trim()
                 : parsedSender;
             const text = String(contentMatch[1] || '').trim();
-            const timeMatch = String(block || '').match(/发送时间\s*[：:]\s*([0-2]?\d:[0-5]\d)/i);
+            const dateTimeMatch = String(block || '').match(/发送时间\s*[：:]\s*(?:(\d{1,6})\s*(?:年|[-/.])\s*(0?[1-9]|1[0-2])\s*(?:月|[-/.])\s*(0?[1-9]|[12]\d|3[01])\s*日?\s*)?([01]?\d|2[0-3])\s*[:：]\s*([0-5]\d)/i);
             if (!sender || !text) return [];
-            return [{ sender, text, time: String(timeMatch?.[1] || '').trim() }];
+            const year = String(dateTimeMatch?.[1] || '');
+            const date = year
+                ? `${year.padStart(4, '0')}年${String(dateTimeMatch[2]).padStart(2, '0')}月${String(dateTimeMatch[3]).padStart(2, '0')}日`
+                : '';
+            const time = dateTimeMatch
+                ? `${String(dateTimeMatch[4]).padStart(2, '0')}:${dateTimeMatch[5]}`
+                : '';
+            return [{ sender, text, date, time }];
         });
     }
 
@@ -1280,10 +1287,17 @@ export class PhoneCallView {
                 weekday: ''
             };
             const batchId = `phone_sms_batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-            const storedReplies = replies.map(reply => this.app.phoneCallData.addIncomingSmsMessage(reply.sender, reply.text, {
-                ...now,
-                time: reply.time || now.time
-            }, { batchId })).filter(Boolean);
+            const storedReplies = replies.map(reply => {
+                const date = reply.date || now.date;
+                return this.app.phoneCallData.addIncomingSmsMessage(reply.sender, reply.text, {
+                    ...now,
+                    date,
+                    time: reply.time || now.time,
+                    weekday: reply.date
+                        ? (timeManager?.calculateWeekday?.(date) || now.weekday || '')
+                        : now.weekday
+                }, { batchId });
+            }).filter(Boolean);
 
             if (document.querySelector('.phone-view-current .phone-sms-new-overlay')) {
                 this.app.phoneShell.showNotification('收到新短信', replies[0].sender, '💬');
@@ -1432,7 +1446,8 @@ export class PhoneCallView {
                 const sender = item?.direction === 'outgoing' || item?.from === 'me'
                     ? userName
                     : String(item?.from || smsRoleName);
-                const time = item?.time ? `[${item.time}] ` : '';
+                const dateTime = [item?.date, item?.time].filter(Boolean).join(' ');
+                const time = dateTime ? `[${dateTime}] ` : '';
                 historyText += `${time}${sender}: ${String(item?.text || item?.content || '').trim()}\n`;
             });
             messages.push({ role: 'assistant', content: historyText.trim(), isPhoneMessage: true });
