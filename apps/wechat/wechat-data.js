@@ -11,7 +11,7 @@
  * ======================================================== */
 // 微信数据管理
 import { GlobalSocialStore } from '../../config/global-social-store.js';
-import { normalizeWechatVoiceText } from './voice-text.js';
+import { parseWechatVoiceContent } from './voice-text.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
@@ -2568,9 +2568,10 @@ export class WechatData {
             }
             const newVoiceMatch = /^(?:\[\s*(?:语音条|语音)\s*\]|【\s*(?:语音条|语音)\s*】)\s*[:：]?\s*(.+)$/i.exec(contentStr);
             if (newVoiceMatch) {
-                const parsedVoiceText = normalizeWechatVoiceText(newVoiceMatch[1]);
+                const parsedVoice = parseWechatVoiceContent(newVoiceMatch[1]);
                 message.type = 'voice';
-                message.voiceText = parsedVoiceText;
+                message.voiceText = parsedVoice.voiceText;
+                message.innerThought = parsedVoice.innerThought;
                 let seconds = Math.ceil((message.voiceText || '语音').length / 3);
                 seconds = Math.max(2, Math.min(seconds, 60));
                 message.duration = seconds + '"';

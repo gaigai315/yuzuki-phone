@@ -15,7 +15,7 @@ import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { readPhoneContextLimit } from '../../config/context-settings.js';
 import { CatboxData } from '../games/catbox/catbox-data.js';
 import { parseWangxiangTaskTags, tokenizeWangxiangTaskTags } from '../wangxiang/wangxiang-task-parser.js';
-import { normalizeWechatVoiceText } from './voice-text.js';
+import { parseWechatVoiceContent } from './voice-text.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
@@ -3430,6 +3430,7 @@ renderChatRoom(chat) {
                 let durationStr = msg.duration || '3"';
                 let durationNum = parseInt(durationStr.replace('"', '').replace('秒', '')) || 3;
                 let voiceText = msg.voiceText || '';
+                let innerThought = String(msg.innerThought || '').trim();
                 let hasExplicitLegacyDuration = false;
 
                 // 兼容新老格式提取
@@ -3445,7 +3446,9 @@ renderChatRoom(chat) {
                         hasExplicitLegacyDuration = true;
                     }
                 }
-                voiceText = normalizeWechatVoiceText(voiceText);
+                const parsedVoice = parseWechatVoiceContent(voiceText);
+                voiceText = parsedVoice.voiceText;
+                if (!innerThought) innerThought = parsedVoice.innerThought;
                 if (!hasExplicitLegacyDuration) {
                     durationNum = Math.max(2, Math.min(Math.ceil((voiceText || '语音').length / 3), 60));
                     durationStr = durationNum + '"';
@@ -3461,8 +3464,13 @@ renderChatRoom(chat) {
                 const voiceSvgLeft = `<svg class="voice-wave-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: -1px;"><path d="M8 12h.01"/><path class="voice-arc-1" d="M12 8.5a5 5 0 0 1 0 7"/><path class="voice-arc-2" d="M16 5a10 10 0 0 1 0 14"/></svg>`;
                 const voiceSvgRight = `<svg class="voice-wave-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: scaleX(-1); flex-shrink: 0; margin-top: -1px;"><path d="M8 12h.01"/><path class="voice-arc-1" d="M12 8.5a5 5 0 0 1 0 7"/><path class="voice-arc-2" d="M16 5a10 10 0 0 1 0 14"/></svg>`;
 
+                const showInnerThought = !!innerThought && !isGroupChat;
+                if (showInnerThought) {
+                    messageBody = '<div class="wechat-inner-os-wrapper">';
+                }
+
                 // 🔥 包裹容器：竖向排列语音条和转文字
-                messageBody = `<div style="display: flex; flex-direction: column; gap: 4px; align-items: ${isMe ? 'flex-end' : 'flex-start'};">`;
+                messageBody += `<div style="display: flex; flex-direction: column; gap: 4px; align-items: ${isMe ? 'flex-end' : 'flex-start'};">`;
 
                 // 🔥 1. 语音条：【完全复用 .message-text 类】，保证 padding、颜色、圆角、小尾巴和纯文字框 100% 像素级一致！
                 // 使用 display: flex 实现左右对齐
@@ -3471,15 +3479,18 @@ renderChatRoom(chat) {
                     ${isMe
                         ? `<span>${this._escapeHtml(durationStr)}</span> ${voiceSvgRight}`
                         : `${voiceSvgLeft} <span>${this._escapeHtml(durationStr)}</span>`}
+                    ${showInnerThought && !voiceText ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}
                 </div>
             `;
 
                 // 🔥 2. 语音转文字：仿照文本框手写样式，但不加 .message-text 类（为了避免小尾巴重复出现）
                 if (voiceText) {
                     messageBody += `
-                    <div style="
+                    <div${showInnerThought ? ' class="wechat-inner-os-bubble"' : ''} style="
+                        position: relative;
                         padding: 7px 10px;
                         border-radius: 4px;
+                        ${showInnerThought ? 'padding-right: 22px; border-bottom-right-radius: 0;' : ''}
                         font-size: 14px;
                         line-height: 1.4;
                         background: ${isMe ? '#95ec69' : '#fff'};
@@ -3489,10 +3500,18 @@ renderChatRoom(chat) {
                         max-width: 100%;
                         box-sizing: border-box;
                         text-align: left;
-                    ">${this._escapeHtml(voiceText)}</div>
+                    ">${this._escapeHtml(voiceText)}${showInnerThought ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}</div>
                 `;
                 }
                 messageBody += `</div>`;
+                if (showInnerThought) {
+                    messageBody += `
+                        <div class="wechat-inner-os-popup" role="note">
+                            <div class="wechat-inner-os-title">INNER THOUGHTS</div>
+                            <div class="wechat-inner-os-content">${this._escapeHtml(innerThought)}</div>
+                        </div>
+                    </div>`;
+                }
                 break;
             case 'transfer': {
                 const isTransferOpened = paymentStatus === 'received' || isPaymentRefunded;
@@ -16673,6 +16692,51 @@ ${callTranscript}`;
         if (backBtn) backBtn.onclick = () => this.app.render();
     }
 
+    _getTransferDetailPhoneTime(fallbackMessage = {}) {
+        const timeManager = window.VirtualPhone?.timeManager;
+        const phoneShell = this.app?.phoneShell;
+        let current = null;
+        try {
+            const useRealTime = phoneShell?._shouldUseRealTimeForPhoneDisplay?.() === true;
+            if (useRealTime && typeof timeManager?.getRealTime === 'function') {
+                current = timeManager.getRealTime() || null;
+            } else {
+                timeManager?.clearCache?.();
+                current = timeManager?.getCurrentStoryTime?.() || null;
+            }
+            const displayedTime = String(phoneShell?.getCurrentTime?.() || '').trim();
+            if (current && displayedTime) current = { ...current, time: displayedTime };
+        } catch (e) {
+            console.warn('⚠️ [微信转账] 获取手机时间失败，使用消息时间兜底:', e);
+        }
+
+        const source = current?.date && current?.time ? current : fallbackMessage;
+        const timestamp = Number(source?.timestamp);
+        return {
+            date: String(source?.date || fallbackMessage?.date || '').trim(),
+            time: String(source?.time || fallbackMessage?.time || '').trim(),
+            weekday: String(source?.weekday || fallbackMessage?.weekday || '').trim(),
+            timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null
+        };
+    }
+
+    _formatTransferDetailTime(timeData = {}, fallbackMessage = {}) {
+        let date = String(timeData?.date || fallbackMessage?.date || '').trim();
+        let time = String(timeData?.time || fallbackMessage?.time || '').trim();
+        const timestamp = Number(timeData?.timestamp || fallbackMessage?.timestamp || 0);
+
+        if ((!date || !time) && Number.isFinite(timestamp) && timestamp > 0) {
+            if (!date) date = this._formatWechatDateFromTimestamp(timestamp);
+            if (!time) time = this._formatWechatTimeFromTimestamp(timestamp);
+        }
+
+        const timeMatch = time.match(/(\d{1,2})[:：](\d{2})/);
+        const normalizedTime = timeMatch
+            ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`
+            : time;
+        return [date, normalizedTime].filter(Boolean).join(' ') || '时间未知';
+    }
+
     // 💰 打开转账详情界面
     openTransferDetail(messageId) {
         const chatId = this.app.currentChat?.id;
@@ -16684,10 +16748,18 @@ ${callTranscript}`;
         const isMe = message.from === 'me' || message.from === this.app.wechatData.getUserInfo().name;
         const formattedAmount = parseFloat(message.amount || 0).toFixed(2);
         let resolvedStatus = String(message.status || '').trim();
+        let resolvedMessage = message;
+        let transferReceivedTime = message.transferReceivedTime || null;
+        let transferRefundedTime = message.transferRefundedTime || null;
         
         // 对方发来的转账，如果还没被收款（用 status 记录），点击后存入钱包
         if (!isMe && resolvedStatus !== 'received' && resolvedStatus !== 'refunded') {
-            const updatedMessage = this.app.wechatData.updateMessageById(chatId, messageId, { status: 'received' });
+            transferReceivedTime = this._getTransferDetailPhoneTime(message);
+            const updatedMessage = this.app.wechatData.updateMessageById(chatId, messageId, {
+                status: 'received',
+                transferReceivedTime
+            });
+            resolvedMessage = updatedMessage || resolvedMessage;
             resolvedStatus = String(updatedMessage?.status || 'received').trim();
             this.app.wechatData.updateWalletBalance(parseFloat(formattedAmount), null, {
                 type: 'transfer',
@@ -16698,10 +16770,10 @@ ${callTranscript}`;
                 counterparty: String(message.from || ''),
                 messageId,
                 referenceId: `wechat:transfer:receive:${messageId}`,
-                date: message.date,
-                time: message.time,
-                weekday: message.weekday,
-                timestamp: message.timestamp,
+                date: transferReceivedTime.date,
+                time: transferReceivedTime.time,
+                weekday: transferReceivedTime.weekday,
+                timestamp: transferReceivedTime.timestamp,
                 realTimestamp: message.realTimestamp,
                 fromMainChatTag: message.fromMainChatTag === true,
                 tavernMessageIndex: message.tavernMessageIndex,
@@ -16714,10 +16786,25 @@ ${callTranscript}`;
             });
         }
 
-        const now = new Date();
-        const timeStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
         const isTransferRefunded = resolvedStatus === 'refunded';
         const isTransferReceived = resolvedStatus === 'received';
+        if (isTransferReceived && !transferReceivedTime) {
+            transferReceivedTime = this._getTransferDetailPhoneTime(message);
+            resolvedMessage = this.app.wechatData.updateMessageById(chatId, messageId, {
+                transferReceivedTime
+            }) || resolvedMessage;
+        } else if (isTransferRefunded && !transferRefundedTime) {
+            transferRefundedTime = this._getTransferDetailPhoneTime(message);
+            resolvedMessage = this.app.wechatData.updateMessageById(chatId, messageId, {
+                transferRefundedTime
+            }) || resolvedMessage;
+        }
+
+        const transferTimeStr = this._formatTransferDetailTime(message);
+        const completionTime = isTransferRefunded ? transferRefundedTime : transferReceivedTime;
+        const completionTimeStr = completionTime
+            ? this._formatTransferDetailTime(completionTime, resolvedMessage)
+            : '';
         const statusTitle = isTransferRefunded
             ? (isMe ? '转账已退回' : '你已退回该笔转账')
             : (isMe
@@ -16756,11 +16843,13 @@ ${callTranscript}`;
                     <!-- 时间信息 -->
                     <div style="margin: 0 16px; border-top:1px solid #f0f0f0; padding:10px 0;">
                         <div style="display:flex; justify-content:space-between; font-size:11px; color:#888; margin-bottom:6px;">
-                            <span>转账时间</span><span>${timeStr}</span>
+                            <span>转账时间</span><span>${this._escapeHtml(transferTimeStr)}</span>
                         </div>
-                        <div style="display:flex; justify-content:space-between; font-size:11px; color:#888;">
-                            <span>${receiveTimeLabel}</span><span>${timeStr}</span>
-                        </div>
+                        ${completionTimeStr ? `
+                            <div style="display:flex; justify-content:space-between; font-size:11px; color:#888;">
+                                <span>${receiveTimeLabel}</span><span>${this._escapeHtml(completionTimeStr)}</span>
+                            </div>
+                        ` : ''}
                     </div>
 
                     <!-- 零钱通广告 -->

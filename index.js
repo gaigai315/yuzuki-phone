@@ -18,10 +18,10 @@ import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parse
 import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data.js';
 import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
 import { PhoneFloatingEntry } from './phone/floating-entry.js';
-import { normalizeWechatVoiceText } from './apps/wechat/voice-text.js';
+import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.0';
+const ST_PHONE_VERSION = '1.5.1';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -58,13 +58,10 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-08-08',
+    date: '2026-08-11',
     items: [
-        '【优化】优化微信好友昵称和备注名。',
-        '【新增】新增微信用户语音音色绑定。',
-        '【优化】优化 IndexTTS 本地两个版本兼容，详细配置请查看说明书。',
-        '【新增】微博/朋友圈支持用户发布文字生图动态，输入[图片]（描述）即可生成配图。',
-        '【优化】优化部分二改酒馆安卓 APP 的兼容性，修复键盘弹出/收起时小手机高度异常，以及引用、编辑等消息操作点击无响应的问题。'
+        '【修复】修复生图预设切换不跟随当前预设的问题。',
+        '【优化】优化微信解析边界问题。'
     ]
 };
 
@@ -499,7 +496,16 @@ if (window.GGP_Loaded) {
     }
 
     function hasExplicitWechatTag(text) {
-        return /(?:<|&lt;)\s*wechat\b[\s\S]*?(?:<|&lt;)\s*\/\s*wechat\s*(?:>|&gt;)/i.test(String(text || ''));
+        const source = decodePhoneTagBoundaryEntities(maskPhoneParserReasoningBlocks(text), ['wechat']);
+        return WECHAT_TAG_REGEX_SINGLE.test(source);
+    }
+
+    function getExplicitSmsTagSource(text) {
+        return decodePhoneTagBoundaryEntities(maskPhoneParserReasoningBlocks(text), ['短信']);
+    }
+
+    function hasExplicitSmsTag(text) {
+        return parseSmsMessagesFromText(getExplicitSmsTagSource(text)).length > 0;
     }
 
     function updatePhonePanelViewportHeight(options = {}) {
@@ -1298,13 +1304,36 @@ if (window.GGP_Loaded) {
     }
 
     // 🔥 新版：轻量级XML格式微信标签（简单闭合标签，属性在内容里）
-    const WECHAT_TAG_REGEX_NEW = /<\s*wechat\b[^>]*>([\s\S]*?)<\s*\/\s*wechat\s*>/gi;
+    const WECHAT_OPEN_TAG_PATTERN = '<\\s*wechat\\b[^>]*>';
+    const WECHAT_CLOSE_TAG_PATTERN = '<\\s*\\/\\s*wechat\\s*>';
+    const WECHAT_TAG_CONTENT_PATTERN = `((?:(?!${WECHAT_OPEN_TAG_PATTERN})[\\s\\S])*?)`;
+    const WECHAT_TAG_REGEX_NEW = new RegExp(
+        `${WECHAT_OPEN_TAG_PATTERN}${WECHAT_TAG_CONTENT_PATTERN}${WECHAT_CLOSE_TAG_PATTERN}`,
+        'gi'
+    );
+    const WECHAT_TAG_REGEX_SINGLE = new RegExp(
+        `${WECHAT_OPEN_TAG_PATTERN}${WECHAT_TAG_CONTENT_PATTERN}${WECHAT_CLOSE_TAG_PATTERN}`,
+        'i'
+    );
+    const WECHAT_HTML_OPEN_TAG_PATTERN = '(?:<\\s*wechat\\b[^>]*>|&lt;\\s*wechat\\b(?:(?!&gt;)[\\s\\S])*?&gt;)';
+    const WECHAT_HTML_CLOSE_TAG_PATTERN = '(?:<\\s*\\/\\s*wechat\\s*>|&lt;\\s*\\/\\s*wechat\\s*&gt;)';
+    const WECHAT_HTML_TAG_REGEX = new RegExp(
+        `(?:<p>|<br>\\s*)*(?:<pre><code[^>]*>)?${WECHAT_HTML_OPEN_TAG_PATTERN}`
+        + `(?:(?!${WECHAT_HTML_OPEN_TAG_PATTERN})[\\s\\S])*?${WECHAT_HTML_CLOSE_TAG_PATTERN}`
+        + '(?:<\\/code><\\/pre>)?(?:<\\/p>)?',
+        'gi'
+    );
+    const WECHAT_HTML_SAFE_FALLBACK_REGEX = new RegExp(
+        `(?:^|<p>|<br>\\s*)(?:<pre><code[^>]*>)?${WECHAT_HTML_OPEN_TAG_PATTERN}`
+        + '\\s*(?:<!--|&lt;!--)[\\s\\S]*$',
+        'i'
+    );
     const WECHAT_OFFLINE_REGEX = /<wechat><\/wechat>/gi;
     const WECHAT_EMPTY_REGEX = /<wechat><\/wechat>/gi;
 
     // 兼容旧版标签（逐步废弃）
     const LEGACY_PHONE_TAG = /<Phone>([\s\S]*?)<\/Phone>/gi;
-    const LEGACY_WECHAT_TAG = /<wechat\s+chatId="([^"]+)"\s+from="([^"]+)">([\s\S]*?)<\/wechat>/gi;
+    const LEGACY_WECHAT_TAG = /<wechat\s+chatId="([^"]+)"\s+from="([^"]+)">((?:(?!<\s*wechat\b[^>]*>)[\s\S])*?)<\/wechat>/gi;
     const HONEY_INVITE_TAG_REGEX = /^[［\[]\s*蜜语\s*[］\]]\s*(?:[（(]\s*([^）)]*)\s*[）)])?\s*$/i;
 
     // 来电标签正则
@@ -1315,6 +1344,17 @@ if (window.GGP_Loaded) {
     const MUSIC_TAG_REGEX = /<\s*music\b[^>]*>([\s\S]*?)<\/\s*music\s*>/gi;
 
     const _fallbackNotificationQueue = [];
+
+    const PHONE_PARSER_REASONING_TAGS = ['think', 'thinking', 'reasoning', 'analysis', 'reflection'];
+
+    function maskPhoneParserReasoningBlocks(text) {
+        let out = String(text || '');
+        PHONE_PARSER_REASONING_TAGS.forEach((tag) => {
+            const blockRegex = new RegExp(`<\\s*${tag}\\b[^>]*>[\\s\\S]*?<\\s*\\/\\s*${tag}\\s*>`, 'gi');
+            out = out.replace(blockRegex, block => block.replace(/[^\r\n]/g, ' '));
+        });
+        return out;
+    }
 
     function stripWechatCommentWrapper(text) {
         let out = String(text || '').replace(/\r\n/g, '\n').trim();
@@ -1334,7 +1374,7 @@ if (window.GGP_Loaded) {
     }
 
     function extractWechatTagPayload(text) {
-        const match = String(text || '').match(/<\s*wechat\b[^>]*>([\s\S]*?)<\s*\/\s*wechat\s*>/i);
+        const match = String(text || '').match(WECHAT_TAG_REGEX_SINGLE);
         if (!match) return '';
         return stripWechatCommentWrapper(match[1]);
     }
@@ -3562,6 +3602,10 @@ if (window.GGP_Loaded) {
                             chatType: 'group'
                         }))
                     ];
+                    const smsConversations = getOrCreatePhoneCallData()
+                        .getSmsConversations()
+                        .filter(conversation => String(conversation?.name || '').trim())
+                        .sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
 
                     const mofoData = await getOrCreateMofoData();
                     let mofoItems = (typeof mofoData?.getItems === 'function') ? mofoData.getItems() : [];
@@ -3712,6 +3756,24 @@ if (window.GGP_Loaded) {
                                 <div class="inline-reply-menu-item" data-name="${escapeHtml(item.name)}" data-chat-type="${item.chatType}">
                                     ${avatarHtml}
                                     <span class="inline-reply-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
+                                </div>
+                            `;
+                        });
+                        return html;
+                    };
+
+                    const buildSmsListHtml = () => {
+                        let html = '<div class="inline-reply-section-title">插入短信标签</div>';
+                        if (smsConversations.length === 0) {
+                            html += '<div class="inline-reply-section-title" style="border-bottom:0; padding-top:10px; font-weight:500;">暂无短信会话</div>';
+                            return html;
+                        }
+                        smsConversations.forEach(conversation => {
+                            const name = String(conversation?.name || '').trim();
+                            html += `
+                                <div class="inline-reply-menu-item phone-inline-reply-sms-item" data-sms-name="${escapeHtml(name)}">
+                                    <i class="fa-solid fa-message" aria-hidden="true"></i>
+                                    <span class="inline-reply-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
                                 </div>
                             `;
                         });
@@ -3894,9 +3956,11 @@ if (window.GGP_Loaded) {
                     menu.innerHTML = `
                         <div class="inline-reply-tabbar">
                             <button class="inline-reply-tab-btn is-active" data-tab-target="wechat">微信</button>
+                            <button class="inline-reply-tab-btn" data-tab-target="sms">短信</button>
                             <button class="inline-reply-tab-btn" data-tab-target="mofo">魔坊</button>
                         </div>
                         <div class="inline-reply-page is-active" data-tab-page="wechat">${buildWechatListHtml()}</div>
+                        <div class="inline-reply-page" data-tab-page="sms">${buildSmsListHtml()}</div>
                         <div class="inline-reply-page" data-tab-page="mofo">
                             <div id="mofo-page-root"></div>
                         </div>
@@ -4378,6 +4442,21 @@ if (window.GGP_Loaded) {
                         });
                     };
 
+                    const bindSmsEvents = () => {
+                        menu.querySelectorAll('.phone-inline-reply-sms-item[data-sms-name]').forEach(el => {
+                            el.addEventListener('click', (ev) => {
+                                ev.stopPropagation();
+                                ev.preventDefault();
+                                const name = String(el.dataset.smsName || '').trim();
+                                if (!name) return;
+                                const tagPrefix = `\n<短信>\n[${name}]\n内容：`;
+                                const tagStr = `${tagPrefix}\n发送时间：${formatSmsInlineReplyTime()}\n\n</短信>\n`;
+                                insertTextToSendTextarea(tagStr, tagPrefix.length);
+                                closeMenuSafely();
+                            });
+                        });
+                    };
+
                     const bindMofoEvents = () => {
                         if (menu.querySelector('#mofo-detail-page')) {
                             menu.querySelector('#mofo-detail-back-btn')?.addEventListener('click', (e) => {
@@ -4575,6 +4654,7 @@ if (window.GGP_Loaded) {
                     });
 
                     bindWechatEvents();
+                    bindSmsEvents();
                     rerenderMofoPane({ keepEditor: false });
                     switchTab('wechat');
 
@@ -5756,11 +5836,12 @@ if (window.GGP_Loaded) {
     // 🔥 新增：解析微信消息标签
     function parseWechatMessages(text) {
         if (!text || !isPhoneFeatureEnabled()) return [];
+        const sourceText = maskPhoneParserReasoningBlocks(text);
         const messages = [];
         let match;
         LEGACY_WECHAT_TAG.lastIndex = 0;
 
-        while ((match = LEGACY_WECHAT_TAG.exec(text)) !== null) {
+        while ((match = LEGACY_WECHAT_TAG.exec(sourceText)) !== null) {
             try {
                 messages.push({
                     chatId: match[1],
@@ -5825,6 +5906,54 @@ if (window.GGP_Loaded) {
     }
 
     const SMS_PARSER_VERSION = '2';
+
+    function processUserSmsTags(text, tavernIndex, batchId) {
+        const parsedMessages = parseSmsMessagesFromText(getExplicitSmsTagSource(text));
+        if (parsedMessages.length === 0) return [];
+
+        const phoneData = getOrCreatePhoneCallData();
+        const floor = Number.isInteger(tavernIndex) ? tavernIndex : null;
+        const safeBatchId = String(batchId || '');
+        let storyTime = {};
+        try {
+            const tm = window.VirtualPhone?.timeManager || timeManager;
+            tm?.clearCache?.();
+            storyTime = tm?.getCurrentStoryTime?.() || {};
+        } catch (e) {
+            console.warn('[Phone SMS] 获取用户短信剧情时间失败:', e);
+        }
+
+        const existingMessages = phoneData.getSmsConversations()
+            .flatMap(conversation => Array.isArray(conversation?.messages) ? conversation.messages : []);
+        const results = parsedMessages.flatMap(message => {
+            const alreadyStored = existingMessages.some(existing =>
+                existing?.direction === 'outgoing'
+                && existing?.from === 'me'
+                && existing?.batchId === safeBatchId
+                && existing?.sourceIndex === message.sourceIndex
+                && existing?.tavernMessageIndex === floor
+            );
+            if (alreadyStored) return [];
+
+            const result = phoneData.addSmsMessage(message.sender, message.text, {
+                date: String(storyTime?.date || ''),
+                weekday: String(storyTime?.weekday || ''),
+                time: message.time || String(storyTime?.time || '')
+            }, {
+                direction: 'outgoing',
+                from: 'me',
+                batchId: safeBatchId,
+                tavernMessageIndex: floor,
+                sourceIndex: message.sourceIndex,
+                fromMainChatTag: false
+            });
+            if (result?.message) existingMessages.push(result.message);
+            return result ? [result] : [];
+        });
+
+        if (results.length > 0) refreshVisibleSmsView(results);
+        return results;
+    }
 
     function processSmsTags(text, tavernIndex, batchId, { isHistoryReplay = false } = {}) {
         const parsedMessages = parseSmsMessagesFromText(text);
@@ -6044,6 +6173,12 @@ if (window.GGP_Loaded) {
         return `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日${pad(now.getHours())}:${pad(now.getMinutes())}`;
     }
 
+    function formatSmsInlineReplyTime() {
+        const match = formatWechatInlineReplyDateTime().match(/(\d{1,2})[:：](\d{2})$/);
+        if (!match) return '00:00';
+        return `${match[1].padStart(2, '0')}:${match[2]}`;
+    }
+
     function getWechatRuntimeSnapshot() {
         const chats = [];
         const contacts = [];
@@ -6161,7 +6296,7 @@ if (window.GGP_Loaded) {
     function parseLightweightWechatTag(text) {
         if (!text || !isPhoneFeatureEnabled()) return [];
 
-        let normalizedText = String(text || '');
+        let normalizedText = maskPhoneParserReasoningBlocks(text);
         // 🔥 防御性修复：将 SillyTavern 渲染后的 markdown 链接还原为原始格式
         // 例如 <a href="金额：100元">转账</a> → [转账](金额：100元)
         // 这解决了 [转账](金额：xx元) 等格式被 markdown 引擎吞掉的问题
@@ -6185,7 +6320,8 @@ if (window.GGP_Loaded) {
         const emptyMatch = normalizedText.match(WECHAT_EMPTY_REGEX);
         if (emptyMatch && emptyMatch.length > 0) {
             // 检查是否只有空标签，没有其他内容
-            const hasContentTags = /<\s*wechat\b[^>]*>[\s\S]+?<\s*\/\s*wechat\s*>/i.test(normalizedText);
+            const contentMatch = normalizedText.match(WECHAT_TAG_REGEX_SINGLE);
+            const hasContentTags = !!String(contentMatch?.[1] || '').trim();
             if (!hasContentTags) {
                 return [{ type: 'empty', status: 'online' }];
             }
@@ -6540,9 +6676,10 @@ if (window.GGP_Loaded) {
         // [语音条]内容 / [语音条](内容) / [语音条]（内容）/ 【语音条】内容，兼容旧 [语音] 写法
         const newVoiceMatch = /^(?:\[\s*(?:语音条|语音)\s*\]|【\s*(?:语音条|语音)\s*】)\s*[:：]?\s*(.+)$/i.exec(String(content || '').trim());
         if (newVoiceMatch) {
-            const parsedVoiceText = normalizeWechatVoiceText(newVoiceMatch[1]);
+            const parsedVoice = parseWechatVoiceContent(newVoiceMatch[1]);
             msgObj.type = 'voice';
-            msgObj.voiceText = parsedVoiceText;
+            msgObj.voiceText = parsedVoice.voiceText;
+            msgObj.innerThought = parsedVoice.innerThought;
             // 自动计算秒数：每3个字1秒，最少2秒，最多60秒
             let seconds = Math.ceil((msgObj.voiceText || '语音').length / 3);
             seconds = Math.max(2, Math.min(seconds, 60));
@@ -7041,6 +7178,7 @@ if (window.GGP_Loaded) {
                     avatar: senderAvatar,
                     duration: msg.duration,
                     voiceText: msg.voiceText,
+                    innerThought: msg.innerThought,
                     tavernMessageIndex: data.tavernMessageIndex,
                     batchId: data.batchId,                 // 🔥 传入批次ID
                     isHistoryReplay: data.isHistoryReplay, // 🔥 传入历史回放标记
@@ -7356,7 +7494,13 @@ if (window.GGP_Loaded) {
             let changed = false;
 
             // 策略 A: 尝试完整匹配并替换 (适用于格式完美，没有被浏览器截断的情况)
-            const tags = ['music', 'phone', 'wechat', 'weibo', '短信', '任务进度'];
+            const wechatReplaced = html.replace(WECHAT_HTML_TAG_REGEX, '');
+            if (wechatReplaced !== html) {
+                html = wechatReplaced;
+                changed = true;
+            }
+
+            const tags = ['music', 'phone', 'weibo', '短信', '任务进度'];
             tags.forEach(tag => {
                 const rx = new RegExp(`(?:<p>|<br>\\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)\\s*${tag}\\s*(?:>|&gt;)[\\s\\S]*?(?:<|&lt;)\\s*\\/\\s*${tag}\\s*(?:>|&gt;)(?:<\\/code><\\/pre>)?(?:<\\/p>)?`, 'gi');
                 const replaced = html.replace(rx, '');
@@ -7373,13 +7517,17 @@ if (window.GGP_Loaded) {
                 changed = true;
             }
 
-            // 🔥 策略 B: 兜底斩断法 ！！！核心大招！！！
-            // 专门对付浏览器 DOM 解析时吃掉闭合标签导致正则失效的千古难题。
-            // 只要发现开头标签，直接把后面的一切内容全部截断删除！(因为标签都在消息最末尾，安全无痛)
-            const fallbackRegex = /(?:<p>|<br>\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)(?:music|phone|wechat|weibo|任务进度)(?:>|&gt;)[\s\S]*$/i;
+            // 策略 B: 只处理独立行开始的尾部协议块，避免正文里提到标签名时误删后文。
+            // 微信额外要求标准注释头，残缺的字面量 <wechat> 不参与兜底截断。
+            const fallbackRegex = /(?:^|<p>|<br>\s*)(?:<pre><code[^>]*>)?(?:<|&lt;)(?:music|phone|weibo|任务进度)(?:>|&gt;)[\s\S]*$/i;
             const fallbackReplaced = html.replace(fallbackRegex, '');
             if (fallbackReplaced !== html) {
                 html = fallbackReplaced;
+                changed = true;
+            }
+            const wechatFallbackReplaced = html.replace(WECHAT_HTML_SAFE_FALLBACK_REGEX, '');
+            if (wechatFallbackReplaced !== html) {
+                html = wechatFallbackReplaced;
                 changed = true;
             }
 
@@ -7680,7 +7828,7 @@ if (window.GGP_Loaded) {
     }
 
     async function processWechatMomentsPayloads(text, metadata = {}) {
-        const sourceText = String(text || '');
+        const sourceText = maskPhoneParserReasoningBlocks(text);
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
@@ -7726,7 +7874,7 @@ if (window.GGP_Loaded) {
     }
 
     function processWechatLikeTagsInSourceOrder(text, tavernIndex, batchId, isHistoryReplay = false, exactReplayForMessage = false) {
-        const sourceText = String(text || '');
+        const sourceText = maskPhoneParserReasoningBlocks(text);
         if (!sourceText) return;
 
         const tasks = [];
@@ -7921,11 +8069,15 @@ if (window.GGP_Loaded) {
             }
             const currentBatchId = message._phone_stable_batch_id || `batch_${context.chatId || 'chat'}_${index}_${swipeIndex}`;
 
-            // 🔥 新增：单独拦截用户消息，处理 <回复xx> 标签
+            // 单独拦截用户消息，处理微信回复和用户主动短信标签。
             if (message.is_user) {
                 const listenUserMessages = isPhoneUserMessageListenerEnabled();
+                const explicitSmsTag = hasExplicitSmsTag(text);
                 if (isPhoneFeatureEnabled() && !isHistoryReplay && (listenUserMessages || hasExplicitUserReplyTag(text) || hasExplicitWechatTag(text))) {
                     processWechatLikeTagsInSourceOrder(text, index, currentBatchId, true, false);
+                }
+                if (isPhoneFeatureEnabled() && !isHistoryReplay && explicitSmsTag) {
+                    processUserSmsTags(text, index, currentBatchId);
                 }
                 // 用户楼层同样参与微博自动触发判断
                 if (listenUserMessages) {

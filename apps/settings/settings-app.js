@@ -3108,6 +3108,86 @@ export class SettingsApp {
         }
     }
 
+    _normalizeComfyUIPromptSettings(settings = null) {
+        if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return null;
+        const promptKeys = ['fixedPrompt', 'fixedPromptEnd', 'negativePrompt'];
+        const hasInitializedFlag = Object.prototype.hasOwnProperty.call(settings, 'promptSettingsInitialized');
+        const initialized = hasInitializedFlag
+            ? settings.promptSettingsInitialized === true
+            : promptKeys.some(key => Object.prototype.hasOwnProperty.call(settings, key));
+        if (!initialized) return null;
+
+        return {
+            promptSettingsInitialized: true,
+            fixedPrompt: String(settings.fixedPrompt || ''),
+            fixedPromptEnd: String(settings.fixedPromptEnd || ''),
+            negativePrompt: String(settings.negativePrompt || '')
+        };
+    }
+
+    _normalizeComfyUIPromptSettingsByApp(settingsByApp = null) {
+        const raw = settingsByApp && typeof settingsByApp === 'object' && !Array.isArray(settingsByApp)
+            ? settingsByApp
+            : {};
+        const normalized = {};
+        ['honey', 'wechat', 'weibo'].forEach((scope) => {
+            const settings = this._normalizeComfyUIPromptSettings(raw[scope]);
+            if (settings) normalized[scope] = settings;
+        });
+        if (!normalized.wechat) {
+            const diarySettings = this._normalizeComfyUIPromptSettings(raw.diary);
+            if (diarySettings) normalized.wechat = diarySettings;
+        }
+        return normalized;
+    }
+
+    _getComfyUIWorkflowPromptSettings(workflow, app) {
+        const scope = this._normalizeImagePresetScope(app);
+        const settingsByApp = this._normalizeComfyUIPromptSettingsByApp(workflow?.promptSettingsByApp);
+        if (settingsByApp[scope]) return settingsByApp[scope];
+
+        const legacySettings = this._normalizeComfyUIPromptSettings(workflow);
+        if (legacySettings) return legacySettings;
+
+        return {
+            promptSettingsInitialized: false,
+            ...this._getImagePromptDraft(scope)
+        };
+    }
+
+    _getComfyUIBuiltInPromptDraft(app) {
+        const scope = this._normalizeImagePresetScope(app);
+        const initialized = this.storage.get(`phone-image-comfyui-${scope}-prompt-draft-initialized`) === true
+            || this.storage.get(`phone-image-comfyui-${scope}-prompt-draft-initialized`) === 'true';
+        if (!initialized) return this._getImagePromptDraft(scope);
+        return {
+            promptSettingsInitialized: true,
+            fixedPrompt: String(this.storage.get(`phone-image-comfyui-${scope}-fixed-prompt`) || ''),
+            fixedPromptEnd: String(this.storage.get(`phone-image-comfyui-${scope}-fixed-prompt-end`) || ''),
+            negativePrompt: String(this.storage.get(`phone-image-comfyui-${scope}-negative-prompt`) || '')
+        };
+    }
+
+    _getComfyUIActiveWorkflowStorageKey(app) {
+        const scope = this._normalizeImagePresetScope(app);
+        return `phone-image-comfyui-${scope}-active-workflow`;
+    }
+
+    _getComfyUIActiveWorkflowId(app) {
+        const scopedValue = this.storage.get(this._getComfyUIActiveWorkflowStorageKey(app));
+        if (scopedValue !== null && typeof scopedValue !== 'undefined') {
+            return String(scopedValue || '').trim();
+        }
+        return String(this.storage.get('phone-image-comfyui-active-workflow') || '').trim();
+    }
+
+    async _setComfyUIActiveWorkflowId(app, workflowId) {
+        await this.storage.set(
+            this._getComfyUIActiveWorkflowStorageKey(app),
+            String(workflowId || '').trim()
+        );
+    }
+
     _normalizeComfyUIWorkflows(workflows = []) {
         const seen = new Set();
         return (Array.isArray(workflows) ? workflows : []).map((workflow) => {
@@ -3118,6 +3198,11 @@ export class SettingsApp {
                 : (workflow?.workflow && typeof workflow.workflow === 'object' ? JSON.stringify(workflow.workflow, null, 2) : '');
             if (!id || !name || seen.has(id)) return null;
             seen.add(id);
+            const hasPromptSettingsFlag = Object.prototype.hasOwnProperty.call(workflow || {}, 'promptSettingsInitialized');
+            const promptSettingsInitialized = hasPromptSettingsFlag
+                ? workflow?.promptSettingsInitialized === true
+                : ['fixedPrompt', 'fixedPromptEnd', 'negativePrompt']
+                    .some(key => Object.prototype.hasOwnProperty.call(workflow || {}, key));
             return {
                 id,
                 name,
@@ -3130,6 +3215,11 @@ export class SettingsApp {
                 comfyuiScheduler: String(workflow?.comfyuiScheduler || workflow?.scheduler || 'normal').trim() || 'normal',
                 comfyuiVae: String(workflow?.comfyuiVae || workflow?.vae || '').trim(),
                 comfyuiClip: String(workflow?.comfyuiClip || workflow?.clip || '').trim(),
+                promptSettingsInitialized,
+                fixedPrompt: String(workflow?.fixedPrompt || ''),
+                fixedPromptEnd: String(workflow?.fixedPromptEnd || ''),
+                negativePrompt: String(workflow?.negativePrompt || ''),
+                promptSettingsByApp: this._normalizeComfyUIPromptSettingsByApp(workflow?.promptSettingsByApp),
                 updatedAt: Number(workflow?.updatedAt || 0) || Date.now()
             };
         }).filter(Boolean);
@@ -3351,6 +3441,14 @@ export class SettingsApp {
             const safeName = this._escapeHtml(preset.name);
             return `<option value="${safeId}" ${preset.id === activeImagePromptPresetId ? 'selected' : ''}>${safeName}</option>`;
         }).join('');
+        const activeComfyUIApp = this._normalizeImagePromptApp(
+            this.storage.get('phone-image-active-comfyui-app') || activeImagePromptApp
+        );
+        const comfyuiAppOptions = imagePromptAppDefs.map((def) => {
+            const safeId = this._escapeHtml(def.id);
+            const safeName = this._escapeHtml(def.name);
+            return `<option value="${safeId}" ${def.id === activeComfyUIApp ? 'selected' : ''}>${safeName}</option>`;
+        }).join('');
         const openaiImagePresets = this._getOpenAIImagePresets(activeImagePresetScope);
         const activeOpenaiImagePresetId = String(
             this.storage.get(`phone-image-openai-${activeImagePresetScope}-active-preset`)
@@ -3365,7 +3463,7 @@ export class SettingsApp {
             return `<option value="${safeId}" ${preset.id === activeOpenaiImagePresetId ? 'selected' : ''}>${safeName}</option>`;
         }).join('');
         const comfyuiWorkflows = this._getComfyUIWorkflows();
-        const activeComfyUIWorkflowId = String(this.storage.get('phone-image-comfyui-active-workflow') || '').trim();
+        const activeComfyUIWorkflowId = this._getComfyUIActiveWorkflowId(activeComfyUIApp);
         const activeComfyUIWorkflow = comfyuiWorkflows.find(workflow => workflow.id === activeComfyUIWorkflowId) || null;
         const activeComfyUIWorkflowName = this._escapeHtml(activeComfyUIWorkflow?.name || '');
         const comfyuiWorkflowOptions = comfyuiWorkflows.map((workflow) => {
@@ -3965,7 +4063,7 @@ export class SettingsApp {
                     </div>
                     <div class="setting-desc">工作流按蜜语、微信/日记、微博分别记住当前选择；微信和日记使用同一套工作流。</div>
                     <select id="phone-image-comfyui-app-select" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
-                        ${imagePromptAppOptions}
+                        ${comfyuiAppOptions}
                     </select>
                     <select id="phone-image-comfyui-workflow-select" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
                         <option value="">未选择工作流</option>
@@ -3998,7 +4096,7 @@ export class SettingsApp {
                     <button id="phone-image-test-comfyui" class="phone-image-test-btn" style="width: 100%; height: 34px; border: none; border-radius: 8px; background: #10b981 !important; color: #fff !important; font-size: 13px; font-weight: 600; cursor: pointer;">
                         测试 ComfyUI 工作流连接
                     </button>
-                    <div class="setting-desc" id="phone-image-test-comfyui-result" style="margin-top: 6px;">使用当前 ComfyUI 工作流和蜜语尺寸生成测试媒体。</div>
+                    <div class="setting-desc" id="phone-image-test-comfyui-result" style="margin-top: 6px;">使用当前 App 的 ComfyUI 工作流和尺寸生成测试媒体。</div>
                 </div>
             </div>
 
@@ -4038,19 +4136,19 @@ export class SettingsApp {
 
                 <div class="setting-item">
                     <div class="setting-label">固定前置提示词</div>
-                    <div class="setting-desc">只对当前选择的 App 生效；日记跟随微信。画师串可放这里。</div>
+                    <div class="setting-desc">按当前 App 生效；使用 ComfyUI 时按 App + 当前工作流独立保存；日记跟随微信。画师串可放这里。</div>
                     <textarea id="phone-image-fixed-prompt" style="width: 100%; min-height: 58px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${fixedPrompt}</textarea>
                 </div>
 
                 <div class="setting-item">
                     <div class="setting-label">固定后置提示词</div>
-                    <div class="setting-desc">只对当前选择的 App 生效；日记跟随微信，会拼在 AI 本轮提示词后面。</div>
+                    <div class="setting-desc">按当前 App 生效；使用 ComfyUI 时按 App + 当前工作流独立保存；日记跟随微信，会拼在 AI 本轮提示词后面。</div>
                     <textarea id="phone-image-fixed-prompt-end" style="width: 100%; min-height: 58px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${fixedPromptEnd}</textarea>
                 </div>
 
                 <div class="setting-item">
                     <div class="setting-label">负面提示词</div>
-                    <div class="setting-desc">只对当前选择的 App 生效；日记跟随微信，例如 low quality、bad hands、text、watermark。</div>
+                    <div class="setting-desc">按当前 App 生效；使用 ComfyUI 时按 App + 当前工作流独立保存；日记跟随微信，例如 low quality、bad hands、text、watermark。</div>
                     <textarea id="phone-image-negative-prompt" style="width: 100%; min-height: 70px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${negativePrompt}</textarea>
                 </div>
 
@@ -5806,6 +5904,10 @@ export class SettingsApp {
                 setComfyUIFieldValue(id, value);
                 await this.storage.set(id, value);
             }
+            const promptSettings = this._getComfyUIWorkflowPromptSettings(workflow, getComfyUIPresetScope());
+            if (imageFixedPromptInput) imageFixedPromptInput.value = String(promptSettings.fixedPrompt || '');
+            if (imageFixedPromptEndInput) imageFixedPromptEndInput.value = String(promptSettings.fixedPromptEnd || '');
+            if (imageNegativePromptInput) imageNegativePromptInput.value = String(promptSettings.negativePrompt || '');
         };
         const fillComfyUIWorkflowSelect = (workflows, activeId = '') => {
             if (!imageComfyUIWorkflowSelect) return;
@@ -5838,7 +5940,10 @@ export class SettingsApp {
         };
         let currentComfyUIApp = this._normalizeImagePromptApp(this.storage.get('phone-image-active-comfyui-app') || imageComfyUIAppSelect?.value || getActiveImagePromptApp());
         const getComfyUIPresetScope = () => this._normalizeImagePresetScope(currentComfyUIApp || imageComfyUIAppSelect?.value || getActiveImagePromptApp());
-        const getComfyUIActiveWorkflowId = () => String(this.storage.get('phone-image-comfyui-active-workflow') || '').trim();
+        const getComfyUIActiveWorkflowId = (app = currentComfyUIApp) => this._getComfyUIActiveWorkflowId(app);
+        const setComfyUIActiveWorkflowId = async (workflowId, app = currentComfyUIApp) => {
+            await this._setComfyUIActiveWorkflowId(app, workflowId);
+        };
         const updateActiveComfyUIWorkflowDraft = async (patch = {}) => {
             const activeId = getComfyUIActiveWorkflowId();
             if (!activeId) return false;
@@ -5849,6 +5954,29 @@ export class SettingsApp {
                 ...workflows[index],
                 ...patch,
                 updatedAt: new Date().toISOString()
+            };
+            await this._saveComfyUIWorkflows(workflows);
+            return true;
+        };
+        const updateActiveComfyUIWorkflowPromptSettings = async (form = getImagePromptForm()) => {
+            const activeId = getComfyUIActiveWorkflowId();
+            if (!activeId) return false;
+            const workflows = this._getComfyUIWorkflows();
+            const index = workflows.findIndex(item => item.id === activeId);
+            if (index < 0) return false;
+            const scope = getComfyUIPresetScope();
+            workflows[index] = {
+                ...workflows[index],
+                promptSettingsByApp: {
+                    ...this._normalizeComfyUIPromptSettingsByApp(workflows[index].promptSettingsByApp),
+                    [scope]: {
+                        promptSettingsInitialized: true,
+                        fixedPrompt: String(form.fixedPrompt || ''),
+                        fixedPromptEnd: String(form.fixedPromptEnd || ''),
+                        negativePrompt: String(form.negativePrompt || '')
+                    }
+                },
+                updatedAt: Date.now()
             };
             await this._saveComfyUIWorkflows(workflows);
             return true;
@@ -5865,6 +5993,13 @@ export class SettingsApp {
             await this.storage.set(`phone-image-openai-${appKey}-fixed-prompt-end`, String(form.fixedPromptEnd || '').trim());
             await this.storage.set(`phone-image-openai-${appKey}-negative-prompt`, String(form.negativePrompt || '').trim());
             await this.storage.set(`phone-image-openai-${appKey}-prompt-draft-initialized`, true);
+        };
+        const saveComfyUIBuiltInPromptDraft = async (app, form = getImagePromptForm()) => {
+            const appKey = this._normalizeImagePresetScope(app);
+            await this.storage.set(`phone-image-comfyui-${appKey}-fixed-prompt`, String(form.fixedPrompt || '').trim());
+            await this.storage.set(`phone-image-comfyui-${appKey}-fixed-prompt-end`, String(form.fixedPromptEnd || '').trim());
+            await this.storage.set(`phone-image-comfyui-${appKey}-negative-prompt`, String(form.negativePrompt || '').trim());
+            await this.storage.set(`phone-image-comfyui-${appKey}-prompt-draft-initialized`, true);
         };
         const setImagePromptForm = async (preset) => {
             const fixedPromptValue = String(preset?.fixedPrompt || '');
@@ -6453,6 +6588,11 @@ export class SettingsApp {
             const importedMapping = typeof item?.nodeMapping === 'string'
                 ? String(item.nodeMapping || '').trim()
                 : (item?.nodeMapping && typeof item.nodeMapping === 'object' ? JSON.stringify(item.nodeMapping, null, 2) : '');
+            const hasPromptSettingsFlag = Object.prototype.hasOwnProperty.call(item || {}, 'promptSettingsInitialized');
+            const promptSettingsInitialized = hasPromptSettingsFlag
+                ? item?.promptSettingsInitialized === true
+                : ['fixedPrompt', 'fixedPromptEnd', 'negativePrompt']
+                    .some(key => Object.prototype.hasOwnProperty.call(item || {}, key));
             return {
                 id: createImagePromptPresetId(),
                 name: String(item?.name || item?.title || fallbackName || '导入工作流').trim() || '导入工作流',
@@ -6463,6 +6603,11 @@ export class SettingsApp {
                 comfyuiScheduler: String(item?.comfyuiScheduler || item?.scheduler || 'normal').trim() || 'normal',
                 comfyuiVae: String(item?.comfyuiVae || item?.vae || '').trim(),
                 comfyuiClip: String(item?.comfyuiClip || item?.clip || '').trim(),
+                promptSettingsInitialized,
+                fixedPrompt: String(item?.fixedPrompt || ''),
+                fixedPromptEnd: String(item?.fixedPromptEnd || ''),
+                negativePrompt: String(item?.negativePrompt || ''),
+                promptSettingsByApp: this._normalizeComfyUIPromptSettingsByApp(item?.promptSettingsByApp),
                 updatedAt: Date.now()
             };
         };
@@ -6526,7 +6671,7 @@ export class SettingsApp {
         };
         const buildComfyUIWorkflowSharePayload = (workflows = []) => ({
             type: 'yuzuki-phone-comfyui-workflows',
-            version: 1,
+            version: 3,
             exportedAt: new Date().toISOString(),
             workflows: (Array.isArray(workflows) ? workflows : []).map(workflow => ({
                 name: String(workflow?.name || '').trim(),
@@ -6536,7 +6681,16 @@ export class SettingsApp {
                 sampler: String(workflow?.comfyuiSampler || '').trim(),
                 scheduler: String(workflow?.comfyuiScheduler || '').trim(),
                 vae: String(workflow?.comfyuiVae || '').trim(),
-                clip: String(workflow?.comfyuiClip || '').trim()
+                clip: String(workflow?.comfyuiClip || '').trim(),
+                ...(workflow?.promptSettingsInitialized ? {
+                    promptSettingsInitialized: true,
+                    fixedPrompt: String(workflow?.fixedPrompt || ''),
+                    fixedPromptEnd: String(workflow?.fixedPromptEnd || ''),
+                    negativePrompt: String(workflow?.negativePrompt || '')
+                } : {}),
+                ...(Object.keys(this._normalizeComfyUIPromptSettingsByApp(workflow?.promptSettingsByApp)).length ? {
+                    promptSettingsByApp: this._normalizeComfyUIPromptSettingsByApp(workflow?.promptSettingsByApp)
+                } : {})
             })).filter(workflow => workflow.name)
         });
         const showImagePromptPresetTextModal = ({ title, desc, value = '', mode = 'export', confirmText = '', onConfirm = null }) => {
@@ -6606,8 +6760,9 @@ export class SettingsApp {
         };
         const refreshComfyUIAppPanel = async (appKey, options = {}) => {
             currentComfyUIApp = this._normalizeImagePromptApp(appKey);
+            if (imageComfyUIAppSelect) imageComfyUIAppSelect.value = currentComfyUIApp;
             const workflows = this._getComfyUIWorkflows();
-            let activeId = getComfyUIActiveWorkflowId();
+            let activeId = getComfyUIActiveWorkflowId(currentComfyUIApp);
             const activeWorkflow = workflows.find(item => item.id === activeId);
             if (!activeWorkflow) activeId = '';
             fillComfyUIWorkflowSelect(workflows, activeId);
@@ -6615,6 +6770,15 @@ export class SettingsApp {
             if (imageComfyUIWorkflowName) imageComfyUIWorkflowName.value = activeWorkflow?.name || '';
             if (activeWorkflow && options.applyWorkflow !== false) {
                 await applyComfyUIWorkflowSettings(activeWorkflow);
+            } else if (!activeWorkflow) {
+                const promptDraft = this._getComfyUIBuiltInPromptDraft(getComfyUIPresetScope());
+                if (imageFixedPromptInput) imageFixedPromptInput.value = String(promptDraft.fixedPrompt || '');
+                if (imageFixedPromptEndInput) imageFixedPromptEndInput.value = String(promptDraft.fixedPromptEnd || '');
+                if (imageNegativePromptInput) imageNegativePromptInput.value = String(promptDraft.negativePrompt || '');
+                if (options.applyWorkflow !== false) {
+                    setComfyUIFieldValue('phone-image-comfyui-workflow', '');
+                    setComfyUIFieldValue('phone-image-comfyui-node-mapping', '');
+                }
             }
         };
         const refreshOpenAIImagePresetAppPanel = async (appKey, options = {}) => {
@@ -6640,6 +6804,10 @@ export class SettingsApp {
             const provider = String(providerKey || imageProvider?.value || 'novelai').trim().toLowerCase() || 'novelai';
             if (provider === 'openai') {
                 await refreshOpenAIImagePresetAppPanel(getActiveImagePromptApp(), { applyGenerationSettings: false });
+                return;
+            }
+            if (provider === 'comfyui') {
+                await refreshComfyUIAppPanel(currentComfyUIApp, { applyWorkflow: true });
                 return;
             }
 
@@ -7655,11 +7823,15 @@ export class SettingsApp {
 
         imageComfyUIWorkflowSelect?.addEventListener('change', async (e) => {
             const workflowId = String(e.target.value || '').trim();
-            await this.storage.set('phone-image-comfyui-active-workflow', workflowId);
+            await setComfyUIActiveWorkflowId(workflowId);
             const workflows = this._getComfyUIWorkflows();
             const workflow = workflows.find(item => item.id === workflowId);
             if (!workflow) {
                 if (imageComfyUIWorkflowName) imageComfyUIWorkflowName.value = '';
+                const promptDraft = this._getComfyUIBuiltInPromptDraft(getComfyUIPresetScope());
+                if (imageFixedPromptInput) imageFixedPromptInput.value = String(promptDraft.fixedPrompt || '');
+                if (imageFixedPromptEndInput) imageFixedPromptEndInput.value = String(promptDraft.fixedPromptEnd || '');
+                if (imageNegativePromptInput) imageNegativePromptInput.value = String(promptDraft.negativePrompt || '');
                 return;
             }
             if (imageComfyUIWorkflowName) imageComfyUIWorkflowName.value = workflow.name;
@@ -7696,9 +7868,23 @@ export class SettingsApp {
                     target = { id: activeId, name, workflow: '', updatedAt: now };
                     workflows.push(target);
                 }
-                Object.assign(target, settings, { name, updatedAt: now });
+                const promptForm = getImagePromptForm();
+                const promptScope = getComfyUIPresetScope();
+                Object.assign(target, settings, {
+                    name,
+                    promptSettingsByApp: {
+                        ...this._normalizeComfyUIPromptSettingsByApp(target.promptSettingsByApp),
+                        [promptScope]: {
+                            promptSettingsInitialized: true,
+                            fixedPrompt: String(promptForm.fixedPrompt || ''),
+                            fixedPromptEnd: String(promptForm.fixedPromptEnd || ''),
+                            negativePrompt: String(promptForm.negativePrompt || '')
+                        }
+                    },
+                    updatedAt: now
+                });
                 await this._saveComfyUIWorkflows(workflows);
-                await this.storage.set('phone-image-comfyui-active-workflow', activeId);
+                await setComfyUIActiveWorkflowId(activeId);
                 fillComfyUIWorkflowSelect(workflows, activeId);
                 if (imageComfyUIWorkflowSelect) imageComfyUIWorkflowSelect.value = activeId;
                 this.phoneShell?.showNotification?.('已保存 ComfyUI 工作流', name, '✅');
@@ -7713,7 +7899,7 @@ export class SettingsApp {
                 imageComfyUIWorkflowName.value = '';
                 imageComfyUIWorkflowName.focus();
             }
-            await this.storage.set('phone-image-comfyui-active-workflow', '');
+            await setComfyUIActiveWorkflowId('');
             this.phoneShell?.showNotification?.('新建 ComfyUI 工作流', '填写名称后点击保存', '✏️');
         });
 
@@ -7730,7 +7916,15 @@ export class SettingsApp {
 
             const nextWorkflows = workflows.filter(workflow => workflow.id !== activeId);
             await this._saveComfyUIWorkflows(nextWorkflows);
-            await this.storage.set('phone-image-comfyui-active-workflow', '');
+            for (const appScope of ['honey', 'wechat', 'weibo']) {
+                const storageKey = this._getComfyUIActiveWorkflowStorageKey(appScope);
+                if (String(this.storage.get(storageKey) || '').trim() === activeId) {
+                    await this.storage.set(storageKey, '');
+                }
+            }
+            if (String(this.storage.get('phone-image-comfyui-active-workflow') || '').trim() === activeId) {
+                await this.storage.set('phone-image-comfyui-active-workflow', '');
+            }
             fillComfyUIWorkflowSelect(nextWorkflows, '');
             if (imageComfyUIWorkflowSelect) imageComfyUIWorkflowSelect.value = '';
             if (imageComfyUIWorkflowName) imageComfyUIWorkflowName.value = '';
@@ -7812,7 +8006,7 @@ export class SettingsApp {
                     nextWorkflows.push(workflow);
                 });
                 await this._saveComfyUIWorkflows(nextWorkflows);
-                await this.storage.set('phone-image-comfyui-active-workflow', firstImportedId);
+                await setComfyUIActiveWorkflowId(firstImportedId);
                 fillComfyUIWorkflowSelect(nextWorkflows, firstImportedId);
                 if (imageComfyUIWorkflowSelect) imageComfyUIWorkflowSelect.value = firstImportedId;
                 const activeWorkflow = nextWorkflows.find(workflow => workflow.id === firstImportedId) || imported[0];
@@ -7833,7 +8027,7 @@ export class SettingsApp {
             setComfyUIFieldValue('phone-image-comfyui-node-mapping', '');
             if (imageComfyUIWorkflowSelect) imageComfyUIWorkflowSelect.value = '';
             if (imageComfyUIWorkflowName) imageComfyUIWorkflowName.value = '';
-            await this.storage.set('phone-image-comfyui-active-workflow', '');
+            await setComfyUIActiveWorkflowId('');
             await this.storage.set('phone-image-comfyui-node-mapping', '');
             await saveComfyUISettings();
             this.phoneShell?.showNotification?.('已切换内置工作流', '当前会使用基础文生图工作流', '✅');
@@ -7941,7 +8135,7 @@ export class SettingsApp {
                 }
                 setResult('正在提交 ComfyUI 工作流...', '#10b981');
                 const result = await imageManager.generate({
-                    app: 'honey',
+                    app: currentComfyUIApp,
                     provider: 'comfyui',
                     prompt: '1girl, solo, anime illustration, live streaming, looking at viewer',
                     width: 832,
@@ -8258,6 +8452,13 @@ export class SettingsApp {
                 const provider = String(imageProvider?.value || 'novelai').trim().toLowerCase();
                 if (provider === 'openai') {
                     await saveOpenAIImagePromptDraft(getActiveImagePromptApp());
+                    return;
+                }
+                if (provider === 'comfyui') {
+                    const form = getImagePromptForm();
+                    const updated = await updateActiveComfyUIWorkflowPromptSettings(form);
+                    if (updated) return;
+                    await saveComfyUIBuiltInPromptDraft(getComfyUIPresetScope(), form);
                     return;
                 }
                 await saveImagePromptDraft(getActiveImagePromptApp());

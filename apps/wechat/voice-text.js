@@ -34,3 +34,20 @@ export function normalizeWechatVoiceText(value = '') {
 
     return stripVoiceParentheticalContent(text);
 }
+
+export function parseWechatVoiceContent(value = '') {
+    const thoughts = [];
+    const voiceSource = String(value || '').replace(
+        /\[\s*内心\s*\]\s*[（(]\s*([\s\S]*?)\s*[）)]/g,
+        (_match, thought) => {
+            const text = String(thought || '').trim();
+            if (text) thoughts.push(text);
+            return '';
+        }
+    );
+
+    return {
+        voiceText: normalizeWechatVoiceText(voiceSource),
+        innerThought: thoughts.join('\n')
+    };
+}
