@@ -3148,6 +3148,9 @@ export class ImageGenerationManager {
         const replacements = {
             '%prompt%': positivePrompt,
             '%positive_prompt%': positivePrompt,
+            '%fixed_prompt%': String(config.fixedPrompt || ''),
+            '%main_prompt%': prompt,
+            '%fixed_prompt_end%': String(config.fixedPromptEnd || ''),
             '%video_prompt%': prompt,
             '%VIDEO_PROMPT%': prompt,
             '%motion_prompt%': prompt,
