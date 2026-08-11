@@ -492,6 +492,11 @@ if (window.GGP_Loaded) {
         return raw !== false && raw !== 'false';
     }
 
+    function isPhoneInjectionVariableRequired() {
+        const raw = storage?.get?.('phone-injection-require-variable-enabled');
+        return raw !== false && raw !== 'false' && raw !== 0 && raw !== '0';
+    }
+
     function hasExplicitUserReplyTag(text) {
         return /(?:<|&lt;)回复([^>&]+?)(?:>|&gt;)[\s\S]*?(?:<|&lt;)\/回复\1(?:>|&gt;)/i.test(String(text || ''));
     }
@@ -8944,7 +8949,7 @@ if (window.GGP_Loaded) {
             await loadCoreModules();
             let phonePromptHandler = async () => {};
             let phonePromptRunTail = Promise.resolve();
-            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|PHONE_APP_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i;
+            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|PHONE_APP_HISTORY|MOMENTS_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i;
             const runPhonePromptHandler = (eventData, source = 'unknown') => {
                 const run = phonePromptRunTail
                     .catch(() => undefined)
@@ -9940,6 +9945,24 @@ if (window.GGP_Loaded) {
                                         eventData.prompt.splice(i, 1);
                                     }
                                 }
+                            }
+
+                            const requirePhoneInjectionVariable = isPhoneInjectionVariableRequired();
+                            const requestHasPhoneMacro = (() => {
+                                try {
+                                    return PHONE_REQUEST_MACRO_PATTERN.test(JSON.stringify({
+                                        chat: eventData.chat,
+                                        prompt: eventData.prompt
+                                    }));
+                                } catch (_error) {
+                                    return false;
+                                }
+                            })();
+                            const hasWechatOnlineToOfflinePending = !!getWechatOnlineToOfflineTransferPending();
+                            if (requirePhoneInjectionVariable && !requestHasPhoneMacro && !hasWechatOnlineToOfflinePending) {
+                                forceFallbackCleanup(eventData.chat);
+                                forceFallbackCleanup(eventData.prompt);
+                                return;
                             }
 
                             // 📱 收集手机活动记录
@@ -11338,8 +11361,10 @@ if (window.GGP_Loaded) {
                                         return -1;
                                     };
 
+                                    const allowVariablelessFallback = !requirePhoneInjectionVariable;
+
                                     // 🔥 辅助函数：原地拆分注入 (Gaigai 终极防弹版)
-                                    const injectIntoMessages = (targetVar, contentToInject, identifier, fallbackWhenMissing = true) => {
+                                    const injectIntoMessages = (targetVar, contentToInject, identifier, fallbackWhenMissing = allowVariablelessFallback) => {
                                         const normalizedVarName = String(targetVar || '').replace(/[{}]/g, '').trim();
                                         const spacedVarRegex = normalizedVarName
                                             ? new RegExp(`\\{\\{\\s*${normalizedVarName}\\s*\\}\\}`, 'i')
@@ -11441,7 +11466,7 @@ if (window.GGP_Loaded) {
                                             }
                                         }
 
-                                        // 4. 兜底策略：如果没找到变量，默认插入到最后一条 user 消息之前
+                                        // 4. 兼容旧行为：允许缺失变量兜底时，插入到最后一条 user 消息之前
                                         if (!replaced && fallbackWhenMissing) {
                                             let insertPos = messages.length;
                                             for (let i = messages.length - 1; i >= 0; i--) {
@@ -11551,8 +11576,8 @@ if (window.GGP_Loaded) {
                                             }
                                         }
 
-                                        // 2️⃣ 兜底：如果上下文中没有 {{MUSIC_PROMPT}}，默认插入到最后一条 user 消息之前
-                                        if (!musicReplaced) {
+                                        // 2️⃣ 兼容旧行为：允许缺失变量兜底时，插入到最后一条 user 消息之前
+                                        if (!musicReplaced && allowVariablelessFallback) {
                                             let insertPos = messages.length;
                                             for (let i = messages.length - 1; i >= 0; i--) {
                                                 if (messages[i].role === 'user') {
@@ -11645,7 +11670,9 @@ if (window.GGP_Loaded) {
                                             console.warn('⚠️ [手机] 追加手机时间锚点失败:', e);
                                         }
                                     };
-                                    appendPhoneTimeAnchorToLastUserMessage();
+                                    if (requestHasPhoneMacro || allowVariablelessFallback) {
+                                        appendPhoneTimeAnchorToLastUserMessage();
+                                    }
 
                                     const appendWechatOnlineToOfflineHintAsTailUserMessage = () => {
                                         try {

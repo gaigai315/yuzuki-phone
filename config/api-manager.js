@@ -15,6 +15,8 @@
 // 支持：独立API / 代理直连 / 流式解析 / 原生兜底
 // ========================================
 
+import { getMemoryTagFilterInfo } from './tag-filter.js';
+
 export class ApiManager {
     constructor(storage) {
         this.storage = storage;
@@ -360,6 +362,25 @@ export class ApiManager {
         }
     }
 
+    _hasMemorySignalBridge() {
+        try {
+            const memoryInfo = getMemoryTagFilterInfo();
+            const requestProbe = (typeof window !== 'undefined')
+                ? window.YuzukiMemory?.RequestProbe
+                : null;
+            const hasYuzukiMemoryBridge = memoryInfo.hasYuzukiMemory
+                && requestProbe?.installed === true
+                && typeof requestProbe.processFetchArgs === 'function'
+                && typeof requestProbe.stripTransportMessageMetadata === 'function';
+
+            // 旧版记忆插件通过 Gaigai 全局对象接收同一套手机权限信号。
+            return hasYuzukiMemoryBridge || memoryInfo.hasGaigai;
+        } catch (e) {
+            console.warn('⚠️ [ApiManager] 检测记忆插件失败，本次不发送手机权限信号:', e);
+            return false;
+        }
+    }
+
     _createPhoneRequestSignal(appId = 'phone_online') {
         try {
             const rawPerms = this.storage.get('phone_memory_permissions');
@@ -418,13 +439,23 @@ export class ApiManager {
         try {
         // 获取当前调用 AI 的 App 标识，默认 phone_online
         const appId = options.appId || 'phone_online';
-        const phoneSignal = this._createPhoneRequestSignal(appId);
+        const phoneSignal = this._hasMemorySignalBridge()
+            ? this._createPhoneRequestSignal(appId)
+            : null;
 
         // 给最后一条消息打上通行证标记
         if (Array.isArray(messages) && messages.length > 0) {
-            messages[messages.length - 1].gaigaiPhoneSignal = phoneSignal;
-            messages[messages.length - 1].isPhoneMessage = true;
-            messages[messages.length - 1].isVirtualPhoneApiCall = true; // 🔥 绝杀：专门贴上手机API专用标签
+            const lastMessage = messages[messages.length - 1];
+            if (phoneSignal) {
+                lastMessage.gaigaiPhoneSignal = phoneSignal;
+                lastMessage.isPhoneMessage = true;
+                lastMessage.isVirtualPhoneApiCall = true; // 🔥 绝杀：专门贴上手机API专用标签
+            } else {
+                // 防止调用方复用曾经打过标记的消息对象，把内部元数据带到模型上游。
+                delete lastMessage.gaigaiPhoneSignal;
+                delete lastMessage.isPhoneMessage;
+                delete lastMessage.isVirtualPhoneApiCall;
+            }
         }
 
         // 1. 获取 API 配置 (优先读取 options 中传入的临时配置，用于测试按钮)

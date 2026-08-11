@@ -4313,8 +4313,14 @@ export class SettingsApp {
         const isUserMessageListenerEnabled = userMessageListenerRaw !== false && userMessageListenerRaw !== 'false';
         const wechatOfflineUserCleanRaw = this.storage.get('phone-wechat-offline-clean-user-reply-enabled');
         const isWechatOfflineUserCleanEnabled = wechatOfflineUserCleanRaw !== false && wechatOfflineUserCleanRaw !== 'false';
+        const injectionRequireVariableRaw = this.storage.get('phone-injection-require-variable-enabled');
+        const isInjectionRequireVariableEnabled = injectionRequireVariableRaw !== false
+            && injectionRequireVariableRaw !== 'false'
+            && injectionRequireVariableRaw !== 0
+            && injectionRequireVariableRaw !== '0';
         const userMessageListenerInfo = '关闭后，酒馆正文生成时不做用户消息自动监听；明确的 <回复联系人> 标签仍会同步微信线上。如果你使用数据库插件，建议优先关闭；否则默认开启。';
         const wechatOfflineUserCleanInfo = '开启：清洗 AI 伪造的玩家发言，适合不让 AI 抢话的玩家。关闭：不清洗这类内容，适合允许 AI 代替玩家抢话的玩法。';
+        const injectionRequireVariableInfo = '开启后，小手机只会在本次请求中找到对应的 {{PHONE_PROMPT}}、{{PHONE_HISTORY}} 等变量时注入内容；未使用手机变量的酒馆后台任务不会被注入。关闭后恢复旧行为：缺少变量时也会自动插入手机内容。';
         const appDefs = [
             { id: 'wechat', name: '微信', desc: '聊天与社交场景' },
             { id: 'weibo', name: '微博', desc: '动态与评论场景' },
@@ -4353,6 +4359,21 @@ export class SettingsApp {
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" id="phone-wechat-offline-clean-user-reply-enabled" ${isWechatOfflineUserCleanEnabled ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item setting-toggle" style="margin-top: 10px;">
+                    <div>
+                        <div class="setting-label" style="display:inline-flex; align-items:center; gap:6px;">
+                            <span>仅变量命中时注入</span>
+                            <button type="button" class="phone-version-info-btn phone-memory-toggle-info" data-info-title="仅变量命中时注入" data-info-message="${this._escapeHtml(injectionRequireVariableInfo)}" aria-label="查看仅变量命中时注入说明" title="查看说明">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="phone-injection-require-variable-enabled" ${isInjectionRequireVariableEnabled ? 'checked' : ''}>
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
@@ -4420,6 +4441,9 @@ export class SettingsApp {
         });
         document.getElementById('phone-wechat-offline-clean-user-reply-enabled')?.addEventListener('change', async (e) => {
             await this.storage.set('phone-wechat-offline-clean-user-reply-enabled', !!e.target.checked);
+        });
+        document.getElementById('phone-injection-require-variable-enabled')?.addEventListener('change', async (e) => {
+            await this.storage.set('phone-injection-require-variable-enabled', !!e.target.checked);
         });
 
         document.querySelectorAll('.phone-memory-perm').forEach(input => {
