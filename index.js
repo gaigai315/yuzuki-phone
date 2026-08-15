@@ -517,6 +517,26 @@ if (window.GGP_Loaded) {
         return parseSmsMessagesFromText(getExplicitSmsTagSource(text)).length > 0;
     }
 
+    function shouldUseFocusedInputKeyboardFallback() {
+        const userAgent = String(navigator.userAgent || '');
+        const maxTouchPoints = Number(navigator.maxTouchPoints || 0);
+        const reportsMobileDevice = navigator.userAgentData?.mobile === true
+            || /Android|iPhone|iPad|iPod|IEMobile|Opera Mini|Mobile/i.test(userAgent);
+        const isIPadDesktopMode = navigator.platform === 'MacIntel' && maxTouchPoints > 1;
+        if (reportsMobileDevice || isIPadDesktopMode) return true;
+
+        const hasCoarsePrimaryPointer = window.matchMedia?.('(hover: none) and (pointer: coarse)')?.matches === true;
+        const hasDesktopPointer = window.matchMedia?.('(any-hover: hover) and (any-pointer: fine)')?.matches === true;
+        const viewportWidth = window.visualViewport?.width
+            || window.innerWidth
+            || document.documentElement?.clientWidth
+            || 0;
+
+        // Some mobile shells use a desktop-like UA. Limit that fallback to compact, touch-only layouts;
+        // Windows touch PCs can report maxTouchPoints without having an on-screen keyboard.
+        return hasCoarsePrimaryPointer && !hasDesktopPointer && viewportWidth > 0 && viewportWidth <= 900;
+    }
+
     function updatePhonePanelViewportHeight(options = {}) {
         const panel = document.getElementById('phone-panel');
         const root = document.documentElement;
@@ -573,11 +593,10 @@ if (window.GGP_Loaded) {
             _phoneKeyboardLikelyOpenUntil = 0;
         }
         const isLikelyKeyboardWindow = now < _phoneKeyboardLikelyOpenUntil;
-        const hasCoarsePointer = (window.matchMedia?.('(pointer: coarse)')?.matches === true)
-            || Number(navigator.maxTouchPoints || 0) > 0;
+        const canEstimateKeyboardFromFocus = shouldUseFocusedInputKeyboardFallback();
         const useFocusedInputFallback = Boolean(
             isTypingTarget
-            && hasCoarsePointer
+            && canEstimateKeyboardFromFocus
             && !_phoneKeyboardFallbackSuppressed
             && now >= _phoneKeyboardFallbackArmedAt
             && _phoneKeyboardFallbackArmedAt > 0
