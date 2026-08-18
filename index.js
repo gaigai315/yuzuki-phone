@@ -21,7 +21,7 @@ import { PhoneFloatingEntry } from './phone/floating-entry.js';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.1';
+const ST_PHONE_VERSION = '1.5.2';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -58,14 +58,9 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-08-11',
+    date: '2026-08-19',
     items: [
-        '【新增】联动设置新增“仅变量命中时注入”开关，默认开启，避免酒馆其他非正文请求误触发小手机兜底注入机制。',
-        '【修复】修复生图预设切换不跟随当前预设的问题。',
-        '【修复】未安装兼容记忆插件时不再发送小手机内部记忆权限信号，避免请求元数据传至上游 API。',
-        '【优化】优化微信解析边界问题。',
-        '【优化】优化短信功能，快捷回复面板新增短信快捷回复。',
-        '【优化】优化 ComfyUI 工作流占位符，支持前置、动态和后置提示词分段替换；完整占位符说明请查看小手机说明书。'
+        '【优化】优化微信部分解析问题。'
     ]
 };
 

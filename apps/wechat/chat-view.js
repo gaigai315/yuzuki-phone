@@ -10694,9 +10694,9 @@ renderChatRoom(chat) {
                     this.app.currentChat && this.app.currentChat.id === savedChatId;
 
                 if (msgIndex > 0) {
-                    const baseDelay = 800;
+                    const baseDelay = 600;
                     const typingDelay = String(msg.content || '').length * 50;
-                    const totalDelay = baseDelay + typingDelay;
+                    const totalDelay = Math.min(1500, baseDelay + typingDelay);
 
                     if (isViewingThisChat) {
                         this.showTypingStatus('正在输入');

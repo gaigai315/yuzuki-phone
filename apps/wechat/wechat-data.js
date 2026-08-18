@@ -2591,11 +2591,14 @@ export class WechatData {
             const msgType = String(message.type || 'text');
             const msgFrom = String(message.from || '');
             const msgContent = String(message.content || '');
+            const hasSamePayload = (existing) => (
+                String(existing?.from || '') === msgFrom
+                && String(existing?.content || '') === msgContent
+                && String(existing?.type || 'text') === msgType
+            );
 
             const isDuplicate = recentMessages.some(m => {
-                if (String(m.from || '') !== msgFrom) return false;
-                if (String(m.content || '') !== msgContent) return false;
-                if (String(m.type || 'text') !== msgType) return false;
+                if (!hasSamePayload(m)) return false;
 
                 // 只要同楼层且内容完全一致，必定是重复触发
                 if (message.tavernMessageIndex !== undefined && m.tavernMessageIndex !== undefined) {
@@ -2604,6 +2607,13 @@ export class WechatData {
                 return false;
             });
             if (isDuplicate) return false; // 拦截重复
+
+            // AI 偶尔会在下一次正文更新中原样复读上一条微信消息。
+            // 仅比较紧邻的正文同步消息，避免吞掉用户手动连发或非连续复述。
+            const previousMessage = this.data.messages[chatId][this.data.messages[chatId].length - 1];
+            if (previousMessage?.fromMainChatTag === true && hasSamePayload(previousMessage)) {
+                return false;
+            }
         }
 
         // 🔥 时间戳保底机制
