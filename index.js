@@ -58,9 +58,10 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-08-19',
+    date: '2026-08-20',
     items: [
-        '【优化】优化微信部分解析问题。'
+        '【优化】优化微信部分解析问题。',
+        '【优化】优化时间锚点提示词，支持从手机最晚时间衔接剧情并识别用户的显式或相对时间推进。'
     ]
 };
 
@@ -11660,9 +11661,14 @@ if (window.GGP_Loaded) {
                                             const anchorBlock = [
                                                 '<时间提示>',
                                                 '【手机时间锚点】',
-                                                `当前手机时间：${formatTimeAnchor(phoneTime)}`,
-                                                `当前剧情时间：${formatTimeAnchor(storyTime)}`,
-                                                '说明：当前手机时间晚于剧情时间，请以当前手机时间为最晚时间推进剧情。',
+                                                `手机最晚时间：${formatTimeAnchor(phoneTime)}`,
+                                                `正文剧情最晚时间：${formatTimeAnchor(storyTime)}`,
+                                                '【时间处理规则】',
+                                                '1. 基准锚点：当前主时间线与剧情应该衔接【手机最晚时间】为最新起点，严禁倒退回旧正文时间及剧情。',
+                                                '2. 剧情推进（按以下优先级判定）：',
+                                                '   - 显式指定：如用户本轮给出了明确日期/时刻，直接采用该时间。',
+                                                '   - 相对推进：如用户包含“稍后/次日/几天后”等时移词，以手机时间为起点向后顺延。',
+                                                '   - 默认接续：用户无时移描述，必须紧接手机时间发生之后继续剧情。',
                                                 '</时间提示>'
                                             ].join('\n');
                                             const anchorRegex = /\n*\s*(?:<时间提示>[\s\S]*?<\/时间提示>|【手机时间锚点】[\s\S]*?(?=\n{2,}|$))/g;
