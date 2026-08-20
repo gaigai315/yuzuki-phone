@@ -49,6 +49,15 @@ export class PhoneFloatingEntry {
         return normalizeStyle(this.storage?.get?.(PHONE_FLOATING_ENTRY_STYLE_KEY, PHONE_FLOATING_ENTRY_DEFAULT_STYLE));
     }
 
+    isMobileViewport() {
+        if (typeof window === 'undefined') return false;
+        if (typeof window.matchMedia === 'function'
+            && window.matchMedia('(max-width: 600px), (pointer: coarse)').matches) {
+            return true;
+        }
+        return Number(window.innerWidth) <= 600;
+    }
+
     getRoot() {
         let root = document.getElementById(FLOATING_ROOT_ID);
         if (root) return root;
@@ -67,16 +76,33 @@ export class PhoneFloatingEntry {
             const left = Number(parsed?.left);
             const top = Number(parsed?.top);
             if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
-            return { left, top };
+            return {
+                left,
+                top,
+                mode: parsed?.mode === 'mobile' || parsed?.mode === 'desktop' ? parsed.mode : null,
+                source: parsed?.source === 'user' || parsed?.source === 'default' ? parsed.source : null
+            };
         } catch {
             return null;
         }
     }
 
-    savePosition(left, top) {
+    shouldUseSavedPosition(saved) {
+        if (!saved) return false;
+        if (!this.isMobileViewport()) {
+            // 移动端的默认坐标不是桌面端的有效位置；用户拖动过的坐标仍可跨端保留。
+            return saved.mode !== 'mobile' || saved.source === 'user';
+        }
+        // 老版本没有 mode/source，或是桌面端留下的默认坐标，移动端统一迁移到视口边缘。
+        return saved.mode === 'mobile' && saved.source === 'user';
+    }
+
+    savePosition(left, top, options = {}) {
         const payload = JSON.stringify({
             left: Math.round(left),
-            top: Math.round(top)
+            top: Math.round(top),
+            mode: this.isMobileViewport() ? 'mobile' : 'desktop',
+            source: options.source === 'default' ? 'default' : 'user'
         });
         Promise.resolve(this.storage?.set?.(PHONE_FLOATING_ENTRY_POSITION_KEY, payload)).catch(error => {
             console.warn('[VirtualPhone] 保存悬浮图标位置失败:', error);
@@ -85,7 +111,8 @@ export class PhoneFloatingEntry {
 
     getViewport(button = null) {
         const rect = button?.getBoundingClientRect?.();
-        const fallbackSize = Math.max(44, Math.round(Math.max(rect?.width || 0, rect?.height || 0, 52)));
+        const defaultSize = this.isMobileViewport() ? 46 : 52;
+        const fallbackSize = Math.max(44, Math.round(Math.max(rect?.width || 0, rect?.height || 0, defaultSize)));
         const viewport = window.visualViewport;
         return {
             left: Math.max(0, Number(viewport?.offsetLeft) || 0),
@@ -98,7 +125,7 @@ export class PhoneFloatingEntry {
 
     clampPosition(left, top, button = null) {
         const viewport = this.getViewport(button);
-        const margin = 8;
+        const margin = this.isMobileViewport() ? 0 : 8;
         const minLeft = viewport.left + margin;
         const minTop = viewport.top + margin;
         const maxLeft = Math.max(minLeft, viewport.left + viewport.width - viewport.size - margin);
@@ -116,30 +143,43 @@ export class PhoneFloatingEntry {
         button.style.top = `${next.top}px`;
         button.style.right = 'auto';
         button.style.bottom = 'auto';
-        if (options.persist) this.savePosition(next.left, next.top);
+        if (options.persist) this.savePosition(next.left, next.top, options);
     }
 
     position(button) {
         const saved = this.readPosition();
-        if (saved) {
+        if (this.shouldUseSavedPosition(saved)) {
             this.applyPosition(button, saved.left, saved.top);
             return;
         }
 
         const viewport = this.getViewport(button);
-        const margin = 14;
+        const mobile = this.isMobileViewport();
+        const margin = mobile ? 0 : 14;
+        const shouldPersistMobileDefault = mobile
+            && (!saved || saved.mode !== 'mobile' || saved.source !== 'default');
         let left = viewport.left + viewport.width - viewport.size - margin;
         const top = viewport.top + Math.round(viewport.height * 0.72);
-        const chatArea = document.querySelector('#sheld') || document.querySelector('#chat');
-        const chatRect = chatArea?.getBoundingClientRect?.();
-        if (chatRect?.width > 0 && chatRect.right > viewport.size && chatRect.right <= viewport.left + viewport.width + 1) {
-            left = chatRect.right - viewport.size - margin;
+        if (!mobile) {
+            const chatArea = document.querySelector('#sheld') || document.querySelector('#chat');
+            const chatRect = chatArea?.getBoundingClientRect?.();
+            if (chatRect?.width > 0 && chatRect.right > viewport.size && chatRect.right <= viewport.left + viewport.width + 1) {
+                left = chatRect.right - viewport.size - margin;
+            }
         }
-        this.applyPosition(button, left, top);
+        this.applyPosition(button, left, top, {
+            persist: shouldPersistMobileDefault,
+            source: 'default'
+        });
     }
 
     ensureVisible(button = document.getElementById(FLOATING_BUTTON_ID)) {
         if (!button?.isConnected || button.hidden) return;
+        const saved = this.readPosition();
+        if (this.isMobileViewport() && !this.shouldUseSavedPosition(saved)) {
+            this.position(button);
+            return;
+        }
         const rect = button.getBoundingClientRect();
         const viewport = this.getViewport(button);
         const outside = rect.right < viewport.left
@@ -147,8 +187,7 @@ export class PhoneFloatingEntry {
             || rect.bottom < viewport.top
             || rect.top > viewport.top + viewport.height;
         if (outside) {
-            const saved = this.readPosition();
-            if (saved) this.applyPosition(button, saved.left, saved.top, { persist: true });
+            if (this.shouldUseSavedPosition(saved)) this.applyPosition(button, saved.left, saved.top, { persist: true, source: 'user' });
             else this.position(button);
             return;
         }
@@ -261,7 +300,8 @@ export class PhoneFloatingEntry {
         button.setAttribute('aria-hidden', String(hidden));
         if (!hidden) {
             const saved = this.readPosition();
-            if (saved) this.applyPosition(button, saved.left, saved.top);
+            if (this.shouldUseSavedPosition(saved)) this.applyPosition(button, saved.left, saved.top);
+            else if (this.isMobileViewport()) this.position(button);
             else this.ensureVisible(button);
         }
     }
