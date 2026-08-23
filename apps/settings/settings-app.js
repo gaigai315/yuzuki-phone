@@ -3314,6 +3314,7 @@ export class SettingsApp {
         const sdRestoreFaces = this.storage.get('phone-image-sd-restore-faces') === true || this.storage.get('phone-image-sd-restore-faces') === 'true';
         const sdADetailer = this.storage.get('phone-image-sd-adetailer') === true || this.storage.get('phone-image-sd-adetailer') === 'true';
         const comfyuiMode = String(this.storage.get('phone-image-comfyui-mode') || 'local').trim() === 'remote' ? 'remote' : 'local';
+        const comfyuiTransport = String(this.storage.get('phone-image-comfyui-transport') || 'tavern').trim() === 'direct' ? 'direct' : 'tavern';
         const comfyuiUrl = String(this.storage.get('phone-image-comfyui-url') || 'http://127.0.0.1:8188').trim();
         const comfyuiRemoteUrl = String(this.storage.get('phone-image-comfyui-remote-url') || '').trim();
         const comfyuiModel = String(this.storage.get('phone-image-comfyui-model') || '').trim();
@@ -3986,6 +3987,19 @@ export class SettingsApp {
 
                 ${this._renderImageProviderAppBinding('comfyui', imageProviderAppBindings)}
 
+                <div class="setting-item">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <span style="font-size: 14px; color: #000;">连接方式</span>
+                        <select id="phone-image-comfyui-transport" style="width: 180px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
+                            <option value="tavern" ${comfyuiTransport === 'tavern' ? 'selected' : ''}>酒馆后端（免跨域）</option>
+                            <option value="direct" ${comfyuiTransport === 'direct' ? 'selected' : ''}>浏览器直连</option>
+                        </select>
+                    </div>
+                    <div class="setting-desc" id="phone-image-comfyui-transport-desc" style="margin-top: 6px;">${comfyuiTransport === 'tavern'
+                        ? '资源读取和生成由酒馆后端转发，无需开启跨域；参考图上传仍需 ComfyUI 允许跨域。'
+                        : '浏览器直接请求 ComfyUI，需在 ComfyUI 启动参数中开启跨域。'}</div>
+                </div>
+
                 <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                     <span style="font-size: 14px; color: #000;">连接位置</span>
                     <select id="phone-image-comfyui-mode" style="width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa;">
@@ -4010,14 +4024,16 @@ export class SettingsApp {
                            value="${this._escapeHtml(comfyuiRemoteUrl)}"
                            placeholder="https://your-comfyui.example.com"
                            style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
-                    <div class="setting-desc" style="margin-top: 6px;">远端服务需要开放 /object_info、/prompt、/history、/view 和 /upload/image，并允许浏览器跨域访问。</div>
+                    <div class="setting-desc" style="margin-top: 6px;">浏览器直连时，远端服务需要开放 /object_info、/prompt、/history、/view 和 /upload/image，并允许跨域访问。</div>
                 </div>
 
                 <div class="setting-item">
                     <button id="phone-image-comfyui-refresh" class="phone-image-test-btn" style="width: 100%; height: 34px; border: none; border-radius: 8px; background: #6366f1 !important; color: #fff !important; font-size: 13px; font-weight: 600; cursor: pointer;">
                         连接并刷新 ComfyUI 数据
                     </button>
-                    <div class="setting-desc" id="phone-image-comfyui-status" style="margin-top: 6px;">从 /object_info 读取模型、采样器、调度器、VAE 和 CLIP。</div>
+                    <div class="setting-desc" id="phone-image-comfyui-status" style="margin-top: 6px;">${comfyuiTransport === 'tavern'
+                        ? '通过酒馆后端读取模型、采样器、调度器和 VAE。'
+                        : '从 /object_info 读取模型、采样器、调度器、VAE 和 CLIP。'}</div>
                 </div>
 
                 <div class="setting-item">
@@ -7788,6 +7804,7 @@ export class SettingsApp {
         ];
         const fallbackComfyUISamplers = ['euler', 'euler_ancestral', 'dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_sde', 'ddim'];
         const fallbackComfyUISchedulers = ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform'];
+        const getComfyUITransport = () => String(document.getElementById('phone-image-comfyui-transport')?.value || 'tavern').trim() === 'direct' ? 'direct' : 'tavern';
         const getComfyUIMode = () => String(document.getElementById('phone-image-comfyui-mode')?.value || 'local').trim() === 'remote' ? 'remote' : 'local';
         const getActiveComfyUIUrl = () => {
             const mode = getComfyUIMode();
@@ -7802,8 +7819,16 @@ export class SettingsApp {
             if (localRow) localRow.style.display = isRemote ? 'none' : '';
             if (remoteRow) remoteRow.style.display = isRemote ? '' : 'none';
         };
+        const updateComfyUITransportDesc = () => {
+            const desc = document.getElementById('phone-image-comfyui-transport-desc');
+            if (!desc) return;
+            desc.textContent = getComfyUITransport() === 'tavern'
+                ? '资源读取和生成由酒馆后端转发，无需开启跨域；参考图上传仍需 ComfyUI 允许跨域。'
+                : '浏览器直接请求 ComfyUI，需在 ComfyUI 启动参数中开启跨域。';
+        };
         const saveComfyUISettings = async () => {
             await this.storage.set('phone-image-comfyui-mode', getComfyUIMode());
+            await this.storage.set('phone-image-comfyui-transport', getComfyUITransport());
             const textFields = [
                 ['phone-image-comfyui-url', 'http://127.0.0.1:8188'],
                 ['phone-image-comfyui-remote-url', ''],
@@ -7827,7 +7852,12 @@ export class SettingsApp {
             updateComfyUIModeRows();
             await saveComfyUISettings();
         });
+        document.getElementById('phone-image-comfyui-transport')?.addEventListener('change', async () => {
+            updateComfyUITransportDesc();
+            await saveComfyUISettings();
+        });
         updateComfyUIModeRows();
+        updateComfyUITransportDesc();
         [
             'phone-image-comfyui-url',
             'phone-image-comfyui-remote-url',
@@ -8104,8 +8134,11 @@ export class SettingsApp {
                     btn.disabled = true;
                     btn.textContent = '刷新中...';
                 }
-                setStatus(`正在读取 ${getComfyUIMode() === 'remote' ? '远端' : '本地'} ComfyUI /object_info...`, '#6366f1');
-                const resources = await imageManager.fetchComfyUIResources(comfyUrlValue);
+                const transportLabel = getComfyUITransport() === 'tavern' ? '酒馆后端' : '浏览器直连';
+                setStatus(`正在通过${transportLabel}读取 ${getComfyUIMode() === 'remote' ? '远端' : '本地'} ComfyUI 数据...`, '#6366f1');
+                const resources = await imageManager.fetchComfyUIResources(comfyUrlValue, {
+                    comfyuiTransport: getComfyUITransport()
+                });
                 const savedModel = String(this.storage.get('phone-image-comfyui-model') || '').trim();
                 const savedSampler = String(this.storage.get('phone-image-comfyui-sampler') || 'euler').trim() || 'euler';
                 const savedScheduler = String(this.storage.get('phone-image-comfyui-scheduler') || 'normal').trim() || 'normal';

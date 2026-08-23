@@ -78,6 +78,10 @@ export class ImageGenerationManager {
         return String(value || '').trim().toLowerCase() === 'remote' ? 'remote' : 'local';
     }
 
+    _normalizeComfyUITransport(value) {
+        return String(value || '').trim().toLowerCase() === 'direct' ? 'direct' : 'tavern';
+    }
+
     _getComfyUIEndpointUrl(overrides = {}) {
         const mode = this._normalizeComfyUIMode(overrides.comfyuiMode || this._get('phone-image-comfyui-mode', 'local'));
         const localUrl = this._normalizeComfyUIBaseUrl(overrides.comfyuiUrl || this._get('phone-image-comfyui-url', 'http://127.0.0.1:8188'));
@@ -143,14 +147,16 @@ export class ImageGenerationManager {
         return this._csrfTokenPromise;
     }
 
-    async _sdProxyRequest(endpoint, body = {}, method = 'POST') {
+    async _sdProxyRequest(endpoint, body = {}, method = 'POST', options = {}) {
         const token = await this._getCsrfToken();
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['X-CSRF-Token'] = token;
         return fetch(`/api/sd/${endpoint}`, {
             method,
             headers,
-            body: method === 'GET' ? undefined : JSON.stringify(body || {})
+            body: method === 'GET' ? undefined : JSON.stringify(body || {}),
+            credentials: 'include',
+            signal: options.signal
         });
     }
 
@@ -1029,6 +1035,7 @@ export class ImageGenerationManager {
             openaiMode: 'images',
             openaiQuality: String(overrides.openaiQuality || openaiPromptPreset?.openaiQuality || this._get('phone-image-openai-quality', 'auto')).trim() || 'auto',
             comfyuiMode: this._normalizeComfyUIMode(overrides.comfyuiMode || this._get('phone-image-comfyui-mode', 'local')),
+            comfyuiTransport: this._normalizeComfyUITransport(overrides.comfyuiTransport || this._get('phone-image-comfyui-transport', 'tavern')),
             comfyuiUrl: this._getComfyUIEndpointUrl(overrides),
             comfyuiLocalUrl: this._normalizeComfyUIBaseUrl(overrides.comfyuiUrl || this._get('phone-image-comfyui-url', 'http://127.0.0.1:8188')),
             comfyuiRemoteUrl: this._normalizeComfyUIBaseUrl(overrides.comfyuiRemoteUrl || this._get('phone-image-comfyui-remote-url', '')),
@@ -2598,14 +2605,54 @@ export class ImageGenerationManager {
             ? this._normalizeComfyUIBaseUrl(baseUrl)
             : this._getComfyUIEndpointUrl(options);
         if (!normalizedUrl) throw new Error('未配置 ComfyUI 服务地址');
+        const transport = this._normalizeComfyUITransport(
+            options.comfyuiTransport || this._get('phone-image-comfyui-transport', 'tavern')
+        );
+        const cacheKey = `${transport}:${normalizedUrl}`;
 
         const now = Date.now();
         if (
             this._comfyUIResourcesCache &&
-            this._comfyUIResourcesCacheUrl === normalizedUrl &&
+            this._comfyUIResourcesCacheUrl === cacheKey &&
             now - this._comfyUIResourcesCacheTime < this._comfyUIResourcesCacheTtl
         ) {
             return this._comfyUIResourcesCache;
+        }
+
+        if (transport === 'tavern') {
+            const readResource = async (endpoint) => {
+                const response = await this._sdProxyRequest(
+                    `comfy/${endpoint}`,
+                    { url: normalizedUrl },
+                    'POST',
+                    { signal: options.signal }
+                );
+                const text = await response.text().catch(() => '');
+                let payload = null;
+                try { payload = text ? JSON.parse(text) : null; } catch (e) { payload = null; }
+                if (!response.ok) {
+                    throw new Error(`酒馆 ComfyUI ${endpoint} 代理请求失败：HTTP ${response.status}${text ? ` ${text.slice(0, 120)}` : ''}`);
+                }
+                return payload;
+            };
+            const [models, samplers, schedulers, vae] = await Promise.all([
+                readResource('models'),
+                readResource('samplers'),
+                readResource('schedulers'),
+                readResource('vaes')
+            ]);
+            const resources = {
+                models: this._mapSdListItems(models, item => item?.value || item?.text || item),
+                samplers: this._mapSdListItems(samplers),
+                schedulers: this._mapSdListItems(schedulers),
+                vae: this._mapSdListItems(vae),
+                clips: [],
+                loras: []
+            };
+            this._comfyUIResourcesCache = resources;
+            this._comfyUIResourcesCacheUrl = cacheKey;
+            this._comfyUIResourcesCacheTime = now;
+            return resources;
         }
 
         const response = await fetch(`${normalizedUrl}/object_info`, {
@@ -2644,7 +2691,7 @@ export class ImageGenerationManager {
             )
         };
         this._comfyUIResourcesCache = resources;
-        this._comfyUIResourcesCacheUrl = normalizedUrl;
+        this._comfyUIResourcesCacheUrl = cacheKey;
         this._comfyUIResourcesCacheTime = now;
         return resources;
     }
@@ -4025,6 +4072,8 @@ export class ImageGenerationManager {
 
         const baseUrl = this._normalizeComfyUIBaseUrl(config.comfyuiUrl);
         if (!baseUrl) throw new Error('未配置 ComfyUI 服务地址');
+        const transport = this._normalizeComfyUITransport(config.comfyuiTransport);
+        const useTavernProxy = transport === 'tavern';
 
         const referenceImages = this._normalizeComfyUIReferenceImages(options);
         const workflowTemplate = this._parseComfyUIWorkflow(config.comfyuiWorkflow);
@@ -4039,11 +4088,18 @@ export class ImageGenerationManager {
             : (canInjectWanReference ? 1 : 0);
         let uploadedReferenceImages = [];
         if (needsReferenceUpload && referenceImages.length > 0) {
-            uploadedReferenceImages = await Promise.all(
-                referenceImages
-                    .slice(0, Math.max(1, referenceSlotCount))
-                    .map(image => this._uploadComfyUIReferenceImage(baseUrl, image, options.signal))
-            );
+            try {
+                uploadedReferenceImages = await Promise.all(
+                    referenceImages
+                        .slice(0, Math.max(1, referenceSlotCount))
+                        .map(image => this._uploadComfyUIReferenceImage(baseUrl, image, options.signal))
+                );
+            } catch (err) {
+                if (useTavernProxy) {
+                    throw new Error(`酒馆后端只代理 ComfyUI 生成，参考图仍需浏览器直传 /upload/image；请为 ComfyUI 开启跨域。原始错误：${err?.message || err}`);
+                }
+                throw err;
+            }
             uploadedReferenceImages = uploadedReferenceImages.filter(Boolean);
         }
 
@@ -4061,7 +4117,12 @@ export class ImageGenerationManager {
             throw new Error('当前 ComfyUI 工作流需要参考图，但本次没有可用的参考图');
         }
 
-        const endpoint = `${baseUrl}/prompt`;
+        const clientId = `yuzuki-phone-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const promptPayload = JSON.stringify({
+            prompt: built.workflow,
+            client_id: clientId
+        });
+        const endpoint = useTavernProxy ? '/api/sd/comfy/generate' : `${baseUrl}/prompt`;
         this._debugComfyUIRequest({
             endpoint,
             built,
@@ -4071,16 +4132,81 @@ export class ImageGenerationManager {
             referenceImages,
             uploadedReferenceImages
         });
+        if (useTavernProxy) {
+            const response = await this._sdProxyRequest(
+                'comfy/generate',
+                { url: baseUrl, prompt: promptPayload },
+                'POST',
+                { signal: options.signal }
+            );
+            const text = await response.text().catch(() => '');
+            let payload = null;
+            try { payload = text ? JSON.parse(text) : null; } catch (err) { payload = null; }
+            if (!response.ok) {
+                const message = payload?.error?.message || payload?.error || payload?.message || text;
+                throw new Error(`酒馆 ComfyUI 后端生成失败：HTTP ${response.status}${message ? ` ${String(message).slice(0, 240)}` : ''}`);
+            }
+
+            const base64 = String(payload?.data || '').trim();
+            if (!base64) throw new Error('酒馆 ComfyUI 后端未返回媒体数据');
+            const format = String(payload?.format || 'png').trim().toLowerCase().replace(/^\./, '');
+            const isVideo = /^(?:mp4|webm|mov|mkv|avi)$/.test(format) || /^video\//.test(format);
+            const mimeType = isVideo
+                ? (format.includes('/') ? format : (format === 'mov' ? 'video/quicktime' : (format === 'mkv' ? 'video/x-matroska' : `video/${format}`)))
+                : (format.includes('/') ? format : (format === 'jpg' ? 'image/jpeg' : `image/${format}`));
+            const mediaData = /^data:/i.test(base64) ? base64 : `data:${mimeType};base64,${base64}`;
+            const commonResult = {
+                provider: 'comfyui',
+                model: config.comfyuiModel,
+                prompt,
+                width: built.width,
+                height: built.height,
+                requestedWidth: built.width,
+                requestedHeight: built.height,
+                steps: built.steps,
+                sampler: config.comfyuiSampler,
+                scheduler: config.comfyuiScheduler,
+                scale: built.scale,
+                seed: built.seed,
+                promptId: '',
+                positivePrompt: built.positivePrompt,
+                negativePrompt: built.negativePrompt,
+                nodeMapping: null,
+                missingReferenceSubmitted: built.missingReferenceSubmitted
+            };
+            if (isVideo) {
+                const videoBlob = this._dataUrlToBlob(mediaData, mimeType);
+                if (!videoBlob) throw new Error('酒馆 ComfyUI 后端返回的视频数据不可用');
+                return {
+                    ...commonResult,
+                    mediaType: 'video',
+                    videoBlob,
+                    videoFilename: `comfyui-output.${format.split('/').pop() || 'mp4'}`,
+                    videoSubfolder: '',
+                    videoCompatibilityAdjusted: built.videoCompatibilityAdjusted
+                };
+            }
+
+            const imageInfo = await this._waitForImageDecode(mediaData).catch((err) => {
+                throw new Error(`酒馆 ComfyUI 后端返回图片不可用: ${err?.message || err}`);
+            });
+            return {
+                ...commonResult,
+                mediaType: 'image',
+                width: imageInfo.width || built.width,
+                height: imageInfo.height || built.height,
+                imageData: mediaData,
+                imageUrl: mediaData
+            };
+        }
+
         const response = await fetch(`${baseUrl}/prompt`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 Accept: 'application/json'
             },
-            body: JSON.stringify({
-                prompt: built.workflow,
-                client_id: `yuzuki-phone-${Date.now()}-${Math.random().toString(16).slice(2)}`
-            }),
+            body: promptPayload,
             signal: options.signal
         });
         const text = await response.text();
