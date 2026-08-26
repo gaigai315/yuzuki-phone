@@ -23,7 +23,7 @@ import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.5.2';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
-const ST_PHONE_HONEY_ASSET_REVISION = '20260726-video-visibility';
+const ST_PHONE_HONEY_ASSET_REVISION = '20260826-api-timeout';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_CSS_URL = new URL(`./apps/honey/honey.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
