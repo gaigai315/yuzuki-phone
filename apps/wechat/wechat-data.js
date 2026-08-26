@@ -17,6 +17,69 @@ const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const GLOBAL_WECHAT_CHATLIST_BACKGROUND_KEY = 'global_wechat_chatlist_background';
 const GLOBAL_WECHAT_CHATLIST_BACKGROUND_NONE = '__none__';
+const PINYIN_INITIALS = 'ABCDEFGHJKLMNOPQRSTWXYZ';
+const PINYIN_BOUNDARIES = Array.from('阿八嚓哒妸发旮哈讥咔垃妈拿噢啪期然撒塌挖昔压匝');
+const GB2312_PINYIN_BOUNDARIES = [
+    1601, 1637, 1833, 2078, 2274, 2302, 2433, 2594, 2787, 3106, 3212,
+    3472, 3635, 3722, 3730, 3858, 4027, 4086, 4390, 4558, 4684, 4925, 5249
+];
+
+let pinyinCollator = null;
+let gb2312PinyinCodeMap;
+
+function getGb2312PinyinCodeMap() {
+    if (gb2312PinyinCodeMap !== undefined) return gb2312PinyinCodeMap;
+    gb2312PinyinCodeMap = null;
+    if (typeof TextDecoder !== 'function') return gb2312PinyinCodeMap;
+
+    try {
+        const bytes = [];
+        const codes = [];
+        const addRow = (lead, lastTrail) => {
+            for (let trail = 0xA1; trail <= lastTrail; trail++) {
+                bytes.push(lead, trail);
+                codes.push((lead - 0xA0) * 100 + trail - 0xA0);
+            }
+        };
+        for (let lead = 0xB0; lead <= 0xD6; lead++) addRow(lead, 0xFE);
+        addRow(0xD7, 0xF9);
+
+        const characters = Array.from(new TextDecoder('gb18030').decode(Uint8Array.from(bytes)));
+        if (characters.length !== codes.length) return gb2312PinyinCodeMap;
+        gb2312PinyinCodeMap = new Map(characters.map((character, index) => [character, codes[index]]));
+    } catch (error) {
+        console.warn('GB2312 拼音映射不可用:', error);
+    }
+
+    return gb2312PinyinCodeMap;
+}
+
+function getPinyinInitialByGb2312(char) {
+    const code = getGb2312PinyinCodeMap()?.get(char);
+    if (!code) return '';
+
+    for (let index = GB2312_PINYIN_BOUNDARIES.length - 1; index >= 0; index--) {
+        if (code >= GB2312_PINYIN_BOUNDARIES[index]) return PINYIN_INITIALS[index];
+    }
+    return '';
+}
+
+function getPinyinInitialByCollation(char) {
+    if (typeof Intl === 'undefined' || typeof Intl.Collator !== 'function') return '#';
+
+    try {
+        pinyinCollator ||= new Intl.Collator('zh-CN-u-co-pinyin');
+        for (let index = PINYIN_BOUNDARIES.length - 1; index >= 0; index--) {
+            if (pinyinCollator.compare(char, PINYIN_BOUNDARIES[index]) >= 0) {
+                return PINYIN_INITIALS[index];
+            }
+        }
+    } catch (error) {
+        console.warn('中文拼音排序不可用:', error);
+    }
+
+    return '#';
+}
 
 export function extractMomentsJsonPayloads(rawText = '') {
     const source = String(rawText || '');
@@ -4082,44 +4145,25 @@ parseAIResponse(text) {
             return '#';
         }
 
-        // 🔥 使用汉字 Unicode 码点范围判断拼音首字母
-        // 这个方法基于 GB2312 汉字按拼音排序的特点
+        // 汉字使用中文拼音排序规则取首字母。
         const code = firstChar.charCodeAt(0);
 
         // 常用汉字区域 (0x4E00 - 0x9FA5)
         if (code >= 0x4E00 && code <= 0x9FA5) {
-            // 基于拼音排序的区间划分
-            const pinyinMap = [
-                [0x9FA5, 'Z'], // 默认最大值
-                [0x9F44, 'Z'], [0x9E99, 'Z'], [0x9DFA, 'Y'], [0x9D70, 'Y'],
-                [0x9CE1, 'Y'], [0x9C10, 'X'], [0x9B92, 'X'], [0x9AFC, 'W'],
-                [0x9A65, 'W'], [0x9963, 'T'], [0x98DC, 'T'], [0x984B, 'S'],
-                [0x9798, 'S'], [0x96E8, 'R'], [0x9645, 'R'], [0x95B0, 'Q'],
-                [0x9510, 'Q'], [0x9479, 'P'], [0x93D2, 'P'], [0x9338, 'O'],
-                [0x928D, 'N'], [0x91E2, 'N'], [0x9149, 'M'], [0x90A8, 'M'],
-                [0x8FFD, 'L'], [0x8F44, 'L'], [0x8E8A, 'K'], [0x8DDF, 'K'],
-                [0x8D29, 'J'], [0x8C6A, 'J'], [0x8BB0, 'H'], [0x8AEE, 'H'],
-                [0x8A3E, 'G'], [0x8984, 'G'], [0x88C4, 'F'], [0x8803, 'F'],
-                [0x8757, 'E'], [0x86A9, 'D'], [0x85E9, 'D'], [0x8537, 'C'],
-                [0x8468, 'C'], [0x83B8, 'B'], [0x82EB, 'B'], [0x8230, 'A']
-            ];
-
-            // 简化的拼音首字母查找（基于常用字的大致分布）
-            // 这个方法不是100%准确，但覆盖率很高
             return this.getChinesePinyinInitial(firstChar) || '#';
         }
 
         return '#';
     }
 
-    // 🔥 获取汉字拼音首字母（基于常用字映射 + Unicode区间估算）
+    // 获取汉字拼音首字母（常见多音姓氏优先，其余按拼音规则排序）
     getChinesePinyinInitial(char) {
         // 优先使用精确映射
         const exactMap = {
             // 常见姓氏和名字用字
             '艾': 'A', '安': 'A', '敖': 'A', '奥': 'A', '阿': 'A', '爱': 'A', '昂': 'A',
             '白': 'B', '柏': 'B', '班': 'B', '包': 'B', '鲍': 'B', '贝': 'B', '毕': 'B', '卞': 'B', '边': 'B', '冰': 'B', '波': 'B', '博': 'B',
-            '蔡': 'C', '曹': 'C', '岑': 'C', '柴': 'C', '昌': 'C', '常': 'C', '车': 'C', '陈': 'C', '成': 'C', '程': 'C', '池': 'C', '储': 'C', '楚': 'C', '褚': 'C', '崔': 'C', '春': 'C', '辰': 'C',
+            '蔡': 'C', '曹': 'C', '岑': 'C', '柴': 'C', '昌': 'C', '常': 'C', '车': 'C', '陈': 'C', '成': 'C', '程': 'C', '池': 'C', '储': 'C', '楚': 'C', '褚': 'C', '崔': 'C', '春': 'C', '辰': 'C', '沧': 'C', '苍': 'C',
             '戴': 'D', '邓': 'D', '狄': 'D', '刁': 'D', '丁': 'D', '董': 'D', '窦': 'D', '杜': 'D', '段': 'D', '大': 'D', '德': 'D', '冬': 'D',
             '鄂': 'E', '恩': 'E', '尔': 'E',
             '樊': 'F', '范': 'F', '方': 'F', '房': 'F', '费': 'F', '冯': 'F', '封': 'F', '凤': 'F', '伏': 'F', '扶': 'F', '符': 'F', '傅': 'F', '付': 'F', '富': 'F', '芳': 'F', '飞': 'F', '风': 'F',
@@ -4146,39 +4190,7 @@ parseAIResponse(text) {
             return exactMap[char];
         }
 
-        // 🔥 使用 Unicode 码点区间估算（基于汉字按拼音排序的规律）
-        const code = char.charCodeAt(0);
-
-        // CJK统一汉字区间的拼音首字母估算
-        // 这些区间是根据GB2312等编码标准中汉字按拼音排序的特点估算的
-        if (code >= 0x4E00 && code <= 0x9FFF) {
-            // 简化的拼音分布区间（不100%精确，但覆盖大部分情况）
-            if (code >= 0x9EA0) return 'Z';
-            if (code >= 0x9D00) return 'Y';
-            if (code >= 0x9B00) return 'X';
-            if (code >= 0x9900) return 'W';
-            if (code >= 0x9700) return 'T';
-            if (code >= 0x9400) return 'S';
-            if (code >= 0x9100) return 'R';
-            if (code >= 0x8E00) return 'Q';
-            if (code >= 0x8B00) return 'P';
-            if (code >= 0x8900) return 'O';
-            if (code >= 0x8700) return 'N';
-            if (code >= 0x8400) return 'M';
-            if (code >= 0x8000) return 'L';
-            if (code >= 0x7D00) return 'K';
-            if (code >= 0x7A00) return 'J';
-            if (code >= 0x7700) return 'H';
-            if (code >= 0x7400) return 'G';
-            if (code >= 0x7100) return 'F';
-            if (code >= 0x6E00) return 'E';
-            if (code >= 0x6800) return 'D';
-            if (code >= 0x6200) return 'C';
-            if (code >= 0x5C00) return 'B';
-            if (code >= 0x4E00) return 'A';
-        }
-
-        return '#';
+        return getPinyinInitialByGb2312(char) || getPinyinInitialByCollation(char);
     }
 
     // 🗑️ 删除消息
