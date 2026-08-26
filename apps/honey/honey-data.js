@@ -3568,7 +3568,7 @@ export class HoneyData {
             });
         }
 
-        const timeoutMs = 90000;
+        const timeoutMs = 240000;
         let timeoutId = null;
         const timeoutPromise = new Promise((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error('蜜语记录总结超时，请重试')), timeoutMs);
@@ -4291,7 +4291,7 @@ export class HoneyData {
         if (!apiManager) throw new Error('API Manager 未初始化');
 
         const context = this._getContext();
-        const timeoutMs = 90000;
+        const timeoutMs = 240000;
         let timeoutId = null;
         const timeoutPromise = new Promise((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error('蜜语AI请求超时，请重试')), timeoutMs);
@@ -4573,7 +4573,7 @@ export class HoneyData {
             content: '好的我严格按照要求生成，且直接开始输出标签的内容。',
             isPhoneMessage: true
         });
-        const timeoutMs = 90000;
+        const timeoutMs = 240000;
         let timeoutId = null;
         const timeoutPromise = new Promise((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error('蜜语AI请求超时，请重试')), timeoutMs);
