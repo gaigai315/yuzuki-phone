@@ -167,6 +167,48 @@ export class ApiManager {
         };
     }
 
+    _supportsAssistantPrefill(config = {}) {
+        const provider = String(config.provider || config.source || '').trim().toLowerCase();
+        const model = String(config.model || '').trim().toLowerCase();
+        if (!model.includes('gemini')) return true;
+
+        const apiUrl = String(config.apiUrl || config.baseUrl || config.reverseProxy || '').trim();
+        const usesOpenAiCompatibility = /\/openai(?:\/|$|[?#])/i.test(apiUrl);
+        let usesGeminiNativeApi = provider === 'makersuite';
+        if (provider === 'gemini' && !usesOpenAiCompatibility) {
+            try {
+                usesGeminiNativeApi = new URL(apiUrl).hostname.toLowerCase() === 'generativelanguage.googleapis.com';
+            } catch (_error) {
+                usesGeminiNativeApi = !/\/v1(?:\/|$|[?#])/i.test(apiUrl);
+            }
+            if (!usesGeminiNativeApi) {
+                usesGeminiNativeApi = !/\/v1(?:\/|$|[?#])/i.test(apiUrl);
+            }
+        }
+
+        if (usesGeminiNativeApi) return false;
+        if (/gemini-3\.(?:6|7)-flash(?:-|$)/.test(model)) return false;
+        return true;
+    }
+
+    _removeUnsupportedAssistantPrefill(messages, config = {}) {
+        if (!Array.isArray(messages) || messages.length < 2 || this._supportsAssistantPrefill(config)) {
+            return messages;
+        }
+
+        const prefill = messages[messages.length - 1];
+        if (prefill?.role !== 'assistant') return messages;
+
+        const normalized = messages.slice(0, -1);
+        const lastMessage = normalized[normalized.length - 1];
+        if (prefill.gaigaiPhoneSignal) lastMessage.gaigaiPhoneSignal = prefill.gaigaiPhoneSignal;
+        if (prefill.isPhoneMessage) lastMessage.isPhoneMessage = true;
+        if (prefill.isVirtualPhoneApiCall) lastMessage.isVirtualPhoneApiCall = true;
+
+        console.info(`ℹ️ [ApiManager] ${config.model || 'Gemini'} 不支持 assistant 预填充，已移除末条预填充消息`);
+        return normalized;
+    }
+
     _normalizeMessageContentForText(content) {
         if (Array.isArray(content)) {
             return content
@@ -811,7 +853,7 @@ export class ApiManager {
             ? messages
             : [{ role: 'user', content: String(messages || '') }];
         const preserveSystem = ['openai', 'deepseek', 'claude', 'gemini', 'siliconflow', 'proxy_only', 'compatible'].includes(provider);
-        const cleanMessages = sourceMessages.map((m, idx) => {
+        let cleanMessages = sourceMessages.map((m, idx) => {
             const rawContent = this._replacePhoneImageTokens(m?.content, { consume: true });
             const sanitizedRawContent = this._sanitizeContentForModel(rawContent, { provider, model });
             const content = preserveSystem
@@ -835,6 +877,7 @@ export class ApiManager {
             }
             return normalized;
         });
+        cleanMessages = this._removeUnsupportedAssistantPrefill(cleanMessages, apiConfig);
 
         let authHeader;
         if (apiKey) {
