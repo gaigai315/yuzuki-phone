@@ -4258,7 +4258,7 @@ export class HoneyData {
                 if (userMessage) messages.push({ role: 'user', content: userMessage, isPhoneMessage: true });
             });
             if (runtimeContext) {
-                messages.push({ role: 'assistant', content: runtimeContext, isPhoneMessage: true });
+                messages.push({ role: 'system', content: runtimeContext, isPhoneMessage: true });
             }
             if (safeUserMessageWithNick) {
                 messages.push({ role: 'user', content: safeUserMessageWithNick, isPhoneMessage: true });
@@ -4445,7 +4445,7 @@ export class HoneyData {
                 instructionUserPrompt = `${instructionUserPrompt}\n${recommendHints.join('\n')}`;
             }
             if (runtimeContext) {
-                extraMessages.push({ role: 'assistant', content: runtimeContext });
+                extraMessages.push({ role: 'system', content: runtimeContext });
             }
         } else if (mode === 'from_scratch') {
             // 从零生成只发一条 user 指令，不拼接“当前直播间状态”
@@ -4538,7 +4538,7 @@ export class HoneyData {
             }
 
             if (runtimeContext) {
-                extraMessages.push({ role: 'assistant', content: runtimeContext });
+                extraMessages.push({ role: 'system', content: runtimeContext });
             }
             if (safeUserMessageWithNick) {
                 extraMessages.push({ role: 'user', content: safeUserMessageWithNick });
