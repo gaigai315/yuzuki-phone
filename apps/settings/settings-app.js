@@ -1308,6 +1308,20 @@ export class SettingsApp {
                     .settings-app textarea {
                         color: #111 !important;
                     }
+                    #yzp-settings-app.yzp-settings-safe-render #phone-api-model,
+                    #yzp-settings-app.yzp-settings-safe-render #phone-api-model-select {
+                        width: 100% !important;
+                        min-width: 0 !important;
+                        max-width: 100% !important;
+                        height: 36px !important;
+                        min-height: 36px !important;
+                        margin: 0 !important;
+                        padding: 0 10px !important;
+                        box-sizing: border-box !important;
+                        font-size: 13px !important;
+                        line-height: 20px !important;
+                        flex: 0 0 auto !important;
+                    }
                     .settings-fold-arrow {
                         width: 26px;
                         height: 26px;
@@ -2512,7 +2526,7 @@ export class SettingsApp {
                                         <button id="phone-api-fetch-models" style="background: none; border: 1px solid #07c160; color: #07c160; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;">🔄 拉取列表</button>
                                     </div>
                                     <input type="text" id="phone-api-model" placeholder="例如: gpt-4o" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; background: #fff; box-sizing: border-box;">
-                                    <select id="phone-api-model-select" style="display:none; width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; background: #fff; box-sizing: border-box; margin-top: 5px;"></select>
+                                    <select id="phone-api-model-select" style="display:none; width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; line-height: 20px; background: #fff; box-sizing: border-box; margin: 0;"></select>
                                 </div>
 
                                 <div style="display: flex; gap: 10px; margin-bottom: 12px;">
