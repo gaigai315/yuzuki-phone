@@ -2384,6 +2384,57 @@ ${memoryLines.slice(0, 10).join('\n')}
         if (summary) summary.textContent = this._getPendingMomentVisibilitySummary();
     }
 
+    _bindMomentVisibilityScrollGuard(overlay) {
+        if (!overlay) return;
+
+        let activeList = null;
+        let lastTouchY = null;
+        const resolveList = target => target?.closest?.('.wechat-moment-visibility-list') || null;
+        const shouldContainScroll = (list, deltaY) => {
+            if (!list) return true;
+            const maxScrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
+            if (maxScrollTop <= 1) return true;
+            if (deltaY < 0 && list.scrollTop >= maxScrollTop - 1) return true;
+            if (deltaY > 0 && list.scrollTop <= 1) return true;
+            return false;
+        };
+        const resetTouch = () => {
+            activeList = null;
+            lastTouchY = null;
+        };
+
+        overlay.addEventListener('touchstart', event => {
+            activeList = resolveList(event.target);
+            lastTouchY = event.touches?.[0]?.clientY ?? null;
+            event.stopPropagation();
+        }, { passive: true });
+
+        overlay.addEventListener('touchmove', event => {
+            const currentY = event.touches?.[0]?.clientY;
+            const currentList = resolveList(event.target);
+            const deltaY = Number.isFinite(currentY) && Number.isFinite(lastTouchY)
+                ? currentY - lastTouchY
+                : 0;
+
+            event.stopPropagation();
+            if (currentList !== activeList || shouldContainScroll(currentList, deltaY)) {
+                if (event.cancelable) event.preventDefault();
+            }
+            if (Number.isFinite(currentY)) lastTouchY = currentY;
+        }, { passive: false });
+
+        overlay.addEventListener('touchend', resetTouch, { passive: true });
+        overlay.addEventListener('touchcancel', resetTouch, { passive: true });
+
+        overlay.addEventListener('wheel', event => {
+            const list = resolveList(event.target);
+            event.stopPropagation();
+            if (shouldContainScroll(list, -event.deltaY) && event.cancelable) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+    }
+
     showMomentVisibilityPicker() {
         document.querySelector('.wechat-moment-visibility-overlay')?.remove();
 
@@ -2543,6 +2594,7 @@ ${memoryLines.slice(0, 10).join('\n')}
         dialog?.addEventListener('click', event => event.stopPropagation());
 
         document.querySelector('#phone-panel-content .phone-screen')?.appendChild(overlay);
+        this._bindMomentVisibilityScrollGuard(overlay);
         renderContactPicker();
     }
 
