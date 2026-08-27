@@ -2374,8 +2374,8 @@ ${memoryLines.slice(0, 10).join('\n')}
             Array.isArray(visibility.contactIds) ? visibility.contactIds.length : 0,
             Array.isArray(visibility.contactNames) ? visibility.contactNames.length : 0
         );
-        if (visibility.type === 'exclude') return `不给${selectedCount}人看`;
-        if (visibility.type === 'include') return `仅${selectedCount}人可看`;
+        if (visibility.type === 'exclude' && selectedCount > 0) return `不给${selectedCount}人看`;
+        if (visibility.type === 'include') return selectedCount > 0 ? `仅${selectedCount}人可看` : '仅自己可见';
         return '公开';
     }
 
@@ -2580,12 +2580,11 @@ ${memoryLines.slice(0, 10).join('\n')}
         });
         doneButton.addEventListener('click', () => {
             const selectedContacts = contacts.filter(isContactSelected);
-            if (draftType !== 'public' && selectedContacts.length === 0) {
-                this.app.phoneShell.showNotification('提示', '请至少选择一位好友', '⚠️');
-                return;
-            }
+            const resolvedType = draftType === 'exclude' && selectedContacts.length === 0
+                ? 'public'
+                : draftType;
             this.pendingMomentVisibility = {
-                type: draftType,
+                type: resolvedType,
                 contactIds: selectedContacts.map(contact => String(contact.id || '').trim()).filter(Boolean),
                 contactNames: selectedContacts.map(contact => String(contact.name || '').trim()).filter(Boolean)
             };
@@ -2860,12 +2859,6 @@ ${memoryLines.slice(0, 10).join('\n')}
             contactIds: [],
             contactNames: []
         };
-        if (visibility.type !== 'public'
-            && (!Array.isArray(visibility.contactIds) || visibility.contactIds.length === 0)
-            && (!Array.isArray(visibility.contactNames) || visibility.contactNames.length === 0)) {
-            this.app.phoneShell.showNotification('提示', '请先设置朋友圈可见好友', '⚠️');
-            return;
-        }
 
         // 创建朋友圈
         const moment = {
