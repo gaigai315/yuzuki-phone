@@ -2522,8 +2522,8 @@ ${memoryLines.slice(0, 10).join('\n')}
                     </div>
                     <div class="wechat-moment-visibility-list">
                         ${contacts.map((contact, index) => `
-                            <label class="wechat-moment-visibility-contact">
-                                <input type="checkbox" data-contact-index="${index}" ${isContactSelected(contact) ? 'checked' : ''}>
+                            <label class="wechat-moment-visibility-contact" role="checkbox" aria-checked="${isContactSelected(contact) ? 'true' : 'false'}">
+                                <input type="checkbox" data-contact-index="${index}" tabindex="-1" hidden ${isContactSelected(contact) ? 'checked' : ''}>
                                 <span class="wechat-moment-visibility-avatar">
                                     ${this.app.renderAvatar(contact.avatar, '👤', contact.name)}
                                 </span>
@@ -2540,8 +2540,13 @@ ${memoryLines.slice(0, 10).join('\n')}
                 const countNode = picker.querySelector('.wechat-moment-visibility-count');
                 if (countNode) countNode.textContent = `已选 ${count} 人`;
             };
-            picker.querySelectorAll('input[data-contact-index]').forEach(input => {
-                input.addEventListener('change', () => {
+            picker.querySelectorAll('.wechat-moment-visibility-contact').forEach(row => {
+                const input = row.querySelector('input[data-contact-index]');
+                if (!input) return;
+                row.addEventListener('click', event => {
+                    event.preventDefault();
+                    input.checked = !input.checked;
+                    row.setAttribute('aria-checked', input.checked ? 'true' : 'false');
                     const contact = contacts[Number(input.dataset.contactIndex)];
                     if (!contact) return;
                     const key = getContactKey(contact);
