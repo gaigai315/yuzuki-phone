@@ -111,7 +111,7 @@ if (window.GGP_Loaded) {
     let worldbookManager = null;
     let phoneFloatingEntry = null;
     let modulesLoaded = false;
-    let _lastWechatChatId = null; // 🔥 防串味：记录上一次处理微信数据的 chatId
+    let _lastWechatConversationId = null; // 防串味：角色卡 + 酒馆聊天文件联合标识
     let _globalCssLoadingPromise = null;
     let _phoneStableViewportHeight = 0;
     let _phoneStableViewportWidth = 0;
@@ -1326,7 +1326,7 @@ if (window.GGP_Loaded) {
     // 🔥 按需加载设置模块
     async function loadSettingsModule() {
         if (!SettingsApp) {
-            const module = await import('./apps/settings/settings-app.js?v=20260827-site-key-isolation');
+            const module = await import('./apps/settings/settings-app.js?v=20260828-model-select-size');
             SettingsApp = module.SettingsApp;
         }
         return SettingsApp;
@@ -1742,6 +1742,35 @@ if (window.GGP_Loaded) {
         return String(ctx?.chatMetadata?.file_name || ctx?.chatId || '').trim();
     }
 
+    function getCurrentTavernCharacterIdentity(context = null) {
+        const ctx = context || getContext();
+        if (!ctx) return '';
+
+        const groupId = String(ctx.groupId ?? ctx.group?.id ?? '').trim();
+        if (groupId) return `group:${groupId}`;
+
+        const characterId = ctx.characterId;
+        const character = (characterId !== undefined && characterId !== null)
+            ? (ctx.characters?.[characterId] || window.characters?.[characterId] || null)
+            : null;
+        const avatar = String(character?.avatar || character?.data?.avatar || '').trim();
+        const name = String(character?.name || character?.data?.name || ctx.name2 || '').trim();
+
+        if (/^SillyTavern System$/i.test(name)) return 'lobby';
+        if (avatar) return `avatar:${avatar}`;
+        if (characterId !== undefined && characterId !== null && String(characterId).trim()) {
+            return `id:${String(characterId).trim()}|name:${name || 'character'}`;
+        }
+        return name ? `name:${name}` : '';
+    }
+
+    function getCurrentTavernConversationIdentity(context = null) {
+        const ctx = context || getContext();
+        const characterIdentity = getCurrentTavernCharacterIdentity(ctx) || 'unknown-character';
+        const chatIdentity = getCurrentTavernChatIdentity(ctx) || 'unknown-chat';
+        return `${characterIdentity}::${chatIdentity}`;
+    }
+
     function capturePhoneDataForNewChatMigration() {
         const ctx = getContext();
         const sourceChatId = getCurrentTavernChatIdentity(ctx);
@@ -1754,6 +1783,7 @@ if (window.GGP_Loaded) {
 
         _pendingNewChatPhoneDataMigration = {
             sourceChatId,
+            sourceCharacterIdentity: getCurrentTavernCharacterIdentity(ctx),
             snapshot,
             capturedAt: Date.now()
         };
@@ -1784,6 +1814,13 @@ if (window.GGP_Loaded) {
 
         const ctx = getContext();
         const targetChatId = getCurrentTavernChatIdentity(ctx);
+        const targetCharacterIdentity = getCurrentTavernCharacterIdentity(ctx);
+        if (!pending.sourceCharacterIdentity
+            || !targetCharacterIdentity
+            || pending.sourceCharacterIdentity !== targetCharacterIdentity) {
+            console.log('[ST-Phone] 角色卡已切换，取消继承上一角色的手机数据');
+            return false;
+        }
         if (pending.sourceChatId && targetChatId && pending.sourceChatId === targetChatId) {
             console.warn('[ST-Phone] 新聊天未切换，跳过手机数据迁移');
             return false;
@@ -6892,17 +6929,23 @@ if (window.GGP_Loaded) {
         const context = getContext();
         const charId = context?.characterId || 'default';
         const chatId = context?.chatId || 'default';
+        const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
         import('./apps/wechat/wechat-data.js?v=20260802-chat-moments-feed').then(module => {
             let wechatData;
 
+            if (getCurrentTavernConversationIdentity() !== conversationId) {
+                console.warn('⚠️ 微信消息解析期间会话已切换，丢弃旧会话回调');
+                return;
+            }
+
             // 🔥🔥🔥 关键修复：确保 VirtualPhone 对象存在！🔥🔥🔥
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
-            // 🔥 防串味安全校验：chatId 变了就强制重建 WechatData 实例
-            if (_lastWechatChatId && _lastWechatChatId !== chatId) {
-                console.warn('⚠️ chatId 变更，清空微信缓存防止串味:', _lastWechatChatId, '->', chatId);
+            // 角色卡或聊天文件任一变化，都必须重建 WechatData 实例。
+            if (_lastWechatConversationId && _lastWechatConversationId !== conversationId) {
+                console.warn('⚠️ 微信会话身份变更，清空缓存防止串味:', _lastWechatConversationId, '->', conversationId);
                 if (window.VirtualPhone) {
                     window.VirtualPhone.wechatApp = null;
                     window.VirtualPhone.cachedWechatData = null;
@@ -6910,7 +6953,7 @@ if (window.GGP_Loaded) {
                 window.currentWechatApp = null;
                 window.ggp_currentWechatApp = null;
             }
-            _lastWechatChatId = chatId;
+            _lastWechatConversationId = conversationId;
 
             // 🔥🔥🔥 核心修复：确保全局只有一个 WechatData 实例，防止数据分叉！🔥🔥🔥
             // 优先级：cachedWechatData > wechatApp.wechatData > 新建
@@ -7594,18 +7637,24 @@ if (window.GGP_Loaded) {
             rawContent = decodeWechatTextEntities(rawContent);
             rawContent = rawContent.replace(/<[^>]+>/g, ''); // 移除剩余的段落等P标签
             const content = rawContent.trim();
+            const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
             import('./apps/wechat/wechat-data.js?v=20260802-chat-moments-feed').then(async module => {
                 let wechatData;
+                if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
+                    console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
+                    return;
+                }
                 const context = getContext();
                 const chatId = context?.chatId || 'default';
+                const conversationId = sourceConversationId;
 
                 // 🔥🔥🔥 关键修复：确保 VirtualPhone 对象存在！🔥🔥🔥
                 if (!window.VirtualPhone) window.VirtualPhone = {};
 
                 // 防串味处理
-                if (_lastWechatChatId && _lastWechatChatId !== chatId) {
+                if (_lastWechatConversationId && _lastWechatConversationId !== conversationId) {
                     if (window.VirtualPhone) {
                         window.VirtualPhone.wechatApp = null;
                         window.VirtualPhone.cachedWechatData = null;
@@ -7613,7 +7662,7 @@ if (window.GGP_Loaded) {
                     window.currentWechatApp = null;
                     window.ggp_currentWechatApp = null;
                 }
-                _lastWechatChatId = chatId;
+                _lastWechatConversationId = conversationId;
 
                 // 🔥🔥🔥 核心修复：确保全局只有一个 WechatData 实例，防止数据分叉！🔥🔥🔥
                 if (!window.VirtualPhone.cachedWechatData) {
@@ -7873,13 +7922,14 @@ if (window.GGP_Loaded) {
 
             const context = getContext();
             const chatId = context?.chatId || 'default';
-            if (_lastWechatChatId && _lastWechatChatId !== chatId) {
+            const conversationId = getCurrentTavernConversationIdentity(context);
+            if (_lastWechatConversationId && _lastWechatConversationId !== conversationId) {
                 window.VirtualPhone.wechatApp = null;
                 window.VirtualPhone.cachedWechatData = null;
                 window.currentWechatApp = null;
                 window.ggp_currentWechatApp = null;
             }
-            _lastWechatChatId = chatId;
+            _lastWechatConversationId = conversationId;
 
             const existingWechatData = window.VirtualPhone.cachedWechatData
                 || window.VirtualPhone.wechatApp?.wechatData
@@ -8582,7 +8632,7 @@ if (window.GGP_Loaded) {
         }
         window.currentWechatApp = null;
         window.ggp_currentWechatApp = null;
-        _lastWechatChatId = null;
+        _lastWechatConversationId = null;
         _forcedReplayFloors.clear();
 
         // 🔥 清除 timeManager 缓存，强制切换后重新从所有来源取最晚时间

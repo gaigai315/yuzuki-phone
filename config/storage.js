@@ -28,6 +28,7 @@ export class PhoneStorage {
         // ==================== 上下文缓存 ====================
         this.currentCharacterId = null;
         this.currentChatId = null;
+        this.currentConversationId = null;
 
         // ==================== 聊天数据的关键字匹配规则 ====================
         // 匹配这些关键字的 key 会被存入 chatMetadata（聊天专属）
@@ -88,6 +89,27 @@ export class PhoneStorage {
         return this.CHAT_DATA_PATTERNS.some(pattern => pattern.test(key));
     }
 
+    _buildContextIdentity(context) {
+        if (!context) return '';
+
+        const chatId = String(context.chatMetadata?.file_name || context.chatId || 'default_chat').trim();
+        const groupId = String(context.groupId ?? context.group?.id ?? '').trim();
+        if (groupId) return `group:${groupId}::${chatId}`;
+
+        const characterId = context.characterId;
+        const character = (characterId !== undefined && characterId !== null)
+            ? context.characters?.[characterId]
+            : null;
+        const avatar = String(character?.avatar || character?.data?.avatar || '').trim();
+        const name = String(character?.name || character?.data?.name || context.name2 || '').trim();
+        const characterIdentity = avatar
+            ? `avatar:${avatar}`
+            : ((characterId !== undefined && characterId !== null && String(characterId).trim())
+                ? `id:${String(characterId).trim()}|name:${name || 'character'}`
+                : `name:${name || 'default'}`);
+        return `${characterIdentity}::${chatId}`;
+    }
+
     /**
      * 获取酒馆上下文
      * @returns {Object|null}
@@ -101,6 +123,7 @@ export class PhoneStorage {
             if (context) {
                 this.currentCharacterId = context.characterId || context.name2 || 'default';
                 this.currentChatId = context.chatMetadata?.file_name || context.chatId || 'default_chat';
+                this.currentConversationId = this._buildContextIdentity(context);
             }
 
             return context;
@@ -154,8 +177,8 @@ export class PhoneStorage {
             clearTimeout(this._saveChatTimer);
         }
 
-        // 记录当前聊天ID，防止切换后误写
-        const queuedChatId = this.currentChatId;
+        // 使用稳定的联合会话标识，防止跨角色或同名聊天文件的延迟保存串写。
+        const queuedConversationId = this.currentConversationId;
 
         // 设置新的定时器
         this._saveChatTimer = setTimeout(async () => {
@@ -163,7 +186,7 @@ export class PhoneStorage {
             try {
                 const context = this.getContext();
                 // 如果聊天已切换或上下文丢失，禁止保存
-                if (!context || this.currentChatId !== queuedChatId) return;
+                if (!context || this.currentConversationId !== queuedConversationId) return;
 
                 if (typeof window.saveChatDebounced === 'function') {
                     window.saveChatDebounced();
@@ -182,7 +205,7 @@ export class PhoneStorage {
                                     await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
                                 }
                                 const latestContext = this.getContext();
-                                if (!latestContext || this.currentChatId !== queuedChatId) return;
+                                if (!latestContext || this.currentConversationId !== queuedConversationId) return;
                                 try {
                                     await latestContext.saveChat();
                                     return;
