@@ -9,8 +9,8 @@
  * 
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
-import { HoneyView } from './honey-view.js?v=1.5.2&r=20260826-api-timeout';
-import { HoneyData } from './honey-data.js?v=1.5.2&r=20260826-api-timeout';
+import { HoneyView } from './honey-view.js?v=1.5.2&r=20260828-stale-media-recovery';
+import { HoneyData } from './honey-data.js?v=1.5.2&r=20260828-stale-media-recovery';
 
 export class HoneyApp {
     constructor(phoneShell, storage) {
