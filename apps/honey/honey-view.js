@@ -69,6 +69,7 @@ export class HoneyView {
         this._lastLiveTurnRetry = null;
         this._isSceneTagHistoryOpen = false;
         this._isRetaggingSceneNai = false;
+        this._failedLiveMediaUrls = new Set();
         this._restoreSessionState();
         this._loadCSS();
     }
@@ -2280,14 +2281,7 @@ export class HoneyView {
     }
 
     _buildSceneRetagInstruction() {
-        return [
-            '请重写当前直播剧情的直播画面的生图 tag。',
-            '要求：',
-            '1. 严格根据生图tag的所有提示词，只写剧情画面 tag。',
-            '2. 必须结合前文当前直播剧情、主播、标题、评论/弹幕互动，生成更贴合这一帧的英文逗号分隔 NAI tags。',
-            '3. 禁止输出中文句子，禁止续写剧情，禁止输出解释、 Markdown，禁止输出除生图tag的格式的任何其他多余内容。',
-            '4. 只输出生图tag格式：[图片]：[tag1, tag2, tag3]'
-        ].join('\n');
+        return '请根据上述规则，仅重写输出当前直播剧情的直播画面的生图 tag，输出格式为：[图片]：tag内容。';
     }
 
     async _retagCurrentSceneNaiPrompt(sourceRoot = null) {
@@ -2313,7 +2307,7 @@ export class HoneyView {
         try {
             const messages = [{
                 role: 'system',
-                content: '你是蜜语 APP 的 NovelAI tag 重写器。你只能按用户指定格式输出一行新的画面 tag，不得输出解释、剧情、寒暄或其他内容。',
+                content: '你是蜜语 APP 的 生图 tag 重写器。你必须按照以上规则输出新的图片tags。',
                 isPhoneMessage: true
             }];
             messages.push({
@@ -2334,8 +2328,13 @@ export class HoneyView {
             });
             if (!result?.success) throw new Error(result?.error || 'AI 返回为空');
             const rawText = String(result.summary || result.content || result.text || '').trim();
-            const nextPrompt = String(this.app?.honeyData?._extractNaiPrompt?.(rawText) || '').trim();
-            if (!nextPrompt) throw new Error('AI 未返回有效的 [图片] NAI tag');
+            if (result?.truncated || /\[\s*⚠️\s*内容已因达到最大Token限制而截断\s*\]\s*$/i.test(rawText)) {
+                throw new Error('AI 返回达到最大 Token 限制，未覆盖原 Tag');
+            }
+            const nextPrompt = String(this.app?.honeyData?._extractNaiPrompt?.(rawText, {
+                strictImageTag: true
+            }) || '').trim();
+            if (!nextPrompt) throw new Error('AI 未返回有效的 [图片] 生图 tag');
 
             const topicKey = this._getActiveTopicKey();
             const topicTitle = this._getActiveTopicTitle();
@@ -3594,37 +3593,94 @@ export class HoneyView {
         if (!img || img.dataset.honeyImageErrorBound === '1') return;
         img.dataset.honeyImageErrorBound = '1';
         img.addEventListener('error', () => {
-            const placeholder = img.closest?.('.honey-nai-placeholder');
-            const scene = this.currentSceneData || {};
-            const liveVideoUrl = this._buildLiveVideoUrl(scene);
+            const failedSrc = String(img.currentSrc || img.getAttribute?.('src') || '').trim();
+            const liveRoot = img.closest?.('.honey-page-live');
+            this._rememberFailedLiveMediaUrl(failedSrc);
+            this._clearFailedCurrentSceneMedia(failedSrc, 'image');
             img.remove();
-            if (!placeholder) return;
-            placeholder.classList.remove('has-generated-image');
-            placeholder.style.background = liveVideoUrl ? '#000' : '';
-            let glassEl = placeholder.querySelector('.honey-nai-glass');
-            if (!glassEl) {
-                glassEl = document.createElement('div');
-                glassEl.className = 'honey-nai-glass';
-                placeholder.appendChild(glassEl);
-            }
-            glassEl.setAttribute(
-                'style',
-                liveVideoUrl ? 'backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(0,0,0,0.1);' : ''
-            );
-            if (liveVideoUrl && !placeholder.querySelector('#honey-live-video-el')) {
-                const liveVideo = document.createElement('video');
-                liveVideo.id = 'honey-live-video-el';
-                liveVideo.className = 'honey-live-video';
-                liveVideo.loop = true;
-                liveVideo.muted = true;
-                liveVideo.playsInline = true;
-                liveVideo.setAttribute('webkit-playsinline', '');
-                liveVideo.preload = 'metadata';
-                liveVideo.src = liveVideoUrl;
-                placeholder.prepend(liveVideo);
-                this._bindHoneyLiveVideoPlayback(placeholder.closest?.('.honey-page-live'));
+            if (liveRoot?.isConnected && this.currentPage === 'live') {
+                this._refreshLivePageDom({ sourceRoot: liveRoot, scene: this.currentSceneData });
             }
         });
+    }
+
+    _getHoneyMediaUrlKey(value) {
+        const normalized = this._normalizeUploadedBackgroundUrl(value);
+        return normalized || String(value || '').trim();
+    }
+
+    _rememberFailedLiveMediaUrl(value) {
+        const key = this._getHoneyMediaUrlKey(value);
+        if (!key) return false;
+        if (!(this._failedLiveMediaUrls instanceof Set)) {
+            this._failedLiveMediaUrls = new Set();
+        }
+        const isNewFailure = !this._failedLiveMediaUrls.has(key);
+        this._failedLiveMediaUrls.add(key);
+        return isNewFailure;
+    }
+
+    _isFailedLiveMediaUrl(value) {
+        const key = this._getHoneyMediaUrlKey(value);
+        return !!key && this._failedLiveMediaUrls instanceof Set && this._failedLiveMediaUrls.has(key);
+    }
+
+    _clearFailedCurrentSceneMedia(failedUrl, mediaType = 'image') {
+        const scene = this.currentSceneData;
+        const failedKey = this._getHoneyMediaUrlKey(failedUrl);
+        if (!scene || typeof scene !== 'object' || !failedKey) return false;
+
+        const nextScene = { ...scene };
+        const clearMatchingFields = (keys) => {
+            let cleared = false;
+            keys.forEach((key) => {
+                if (this._getHoneyMediaUrlKey(nextScene[key]) !== failedKey) return;
+                nextScene[key] = '';
+                cleared = true;
+            });
+            return cleared;
+        };
+
+        let changed = false;
+        if (mediaType === 'video') {
+            changed = clearMatchingFields(['generatedVideoUrl']);
+            if (changed) {
+                nextScene.videoGenerationStatus = 'failed';
+                nextScene.videoGenerationError = '保存的直播视频已失效或无法播放，请重新生成';
+            }
+        } else {
+            changed = clearMatchingFields(['naiImageUrl', 'generatedImageUrl', 'imageUrl', 'videoSourceImageUrl']);
+            if (changed) {
+                nextScene.imageGenerationStatus = 'failed';
+                nextScene.imageGenerationError = '保存的直播图片已失效，请重新生成';
+            }
+        }
+
+        if (!changed) return false;
+        this.currentSceneData = nextScene;
+        this._persistCurrentScene();
+        return true;
+    }
+
+    _removeFailedManagedLiveVideoReference(failedUrl, scene = null) {
+        const failedKey = this._getHoneyMediaUrlKey(failedUrl);
+        if (!failedKey || !this._isManagedBackgroundUrl(failedKey)) return;
+
+        const honeyData = this.app?.honeyData;
+        const rawPool = honeyData?.getCustomLiveVideos?.() || [];
+        rawPool.forEach((rawUrl) => {
+            if (this._getHoneyMediaUrlKey(rawUrl) === failedKey) {
+                honeyData?.removeCustomLiveVideo?.(rawUrl);
+            }
+        });
+
+        const hostName = String(scene?.host || this.currentSceneData?.host || '').trim();
+        if (!hostName) return;
+        const followedHost = (honeyData?.getFollowedHosts?.() || [])
+            .find(item => this._isSameHostName(item?.name, hostName));
+        if (this._getHoneyMediaUrlKey(followedHost?.boundVideoUrl) === failedKey) {
+            honeyData?.updateFollowedHost?.(followedHost.name, { boundVideoUrl: '' });
+        }
     }
 
     _bindHoneyLiveVideoPlayback(root) {
@@ -3663,55 +3719,46 @@ export class HoneyView {
             });
             liveVideo.addEventListener('error', () => {
                 const failedSrc = String(liveVideo.currentSrc || liveVideo.src || '').trim();
+                const isNewFailure = this._rememberFailedLiveMediaUrl(failedSrc);
                 if (liveVideo.dataset.honeyGeneratedVideo === '1') {
                     this._setHoneyGeneratedVideoReplayVisible(liveVideo, true);
+                    const cleared = this._clearFailedCurrentSceneMedia(failedSrc, 'video');
                     console.warn('蜜语生成视频加载失败:', failedSrc || '(empty src)');
-                    this.app?.phoneShell?.showNotification?.('蜜语', '视频无法解码，请检查浏览器是否支持该视频编码', '⚠️');
+                    if (isNewFailure) {
+                        this.app?.phoneShell?.showNotification?.('蜜语', '保存的直播视频已失效或无法播放，请重新生成', '⚠️');
+                    }
+                    if (cleared && root?.isConnected && this.currentPage === 'live') {
+                        this._refreshLivePageDom({ sourceRoot: root, scene: this.currentSceneData });
+                    } else {
+                        liveVideo.pause?.();
+                        liveVideo.removeAttribute('src');
+                        liveVideo.load?.();
+                        liveVideo.remove();
+                    }
                     return;
                 }
-                const retryCount = Math.max(0, Number.parseInt(String(liveVideo.dataset.retryCount || '0'), 10) || 0);
                 const data = this.currentSceneData || {};
-                const rawPool = this.app?.honeyData?.getCustomLiveVideos?.() || [];
-                const pool = [];
-                const seen = new Set();
-                rawPool.forEach((item) => {
-                    const normalized = this._normalizeUploadedBackgroundUrl(item);
-                    if (!normalized || seen.has(normalized)) return;
-                    seen.add(normalized);
-                    pool.push(normalized);
-                });
-
-                const normalizedCurrent = this._normalizeUploadedBackgroundUrl(failedSrc);
-                const currentIndex = normalizedCurrent ? pool.indexOf(normalizedCurrent) : -1;
-                const canRetry = pool.length > 1 && retryCount < (pool.length - 1);
-
-                if (canRetry) {
-                    const nextIndex = currentIndex >= 0
-                        ? (currentIndex + 1) % pool.length
-                        : (retryCount % pool.length);
-                    const nextUrl = pool[nextIndex] || '';
-                    if (nextUrl && nextUrl !== normalizedCurrent) {
-                        liveVideo.dataset.retryCount = String(retryCount + 1);
-                        liveVideo.src = nextUrl;
-                        liveVideo.load();
-                        this._playLiveVideoIfCurrent(liveVideo, root);
-                        console.warn('蜜语直播视频加载失败，已切换候选源:', failedSrc || '(empty src)', '=>', nextUrl);
-                        return;
-                    }
-                }
-
-                const repickedUrl = this._buildLiveVideoUrl(data);
-                if (repickedUrl && repickedUrl !== normalizedCurrent && retryCount < pool.length + 1) {
-                    liveVideo.dataset.retryCount = String(retryCount + 1);
-                    liveVideo.src = repickedUrl;
+                this._removeFailedManagedLiveVideoReference(failedSrc, data);
+                const nextUrl = this._buildLiveVideoUrl(data);
+                if (nextUrl && this._getHoneyMediaUrlKey(nextUrl) !== this._getHoneyMediaUrlKey(failedSrc)) {
+                    liveVideo.src = nextUrl;
                     liveVideo.load();
                     this._playLiveVideoIfCurrent(liveVideo, root);
-                    console.warn('蜜语直播视频加载失败，已重新挑选视频源:', failedSrc || '(empty src)', '=>', repickedUrl);
+                    console.warn('蜜语直播视频加载失败，已切换候选源:', failedSrc || '(empty src)', '=>', nextUrl);
                     return;
                 }
 
                 console.warn('蜜语直播视频加载失败:', failedSrc || '(empty src)');
-                this.app?.phoneShell?.showNotification?.('蜜语', '视频无法解码或地址失效，请重新生成 H.264 MP4', '⚠️');
+                liveVideo.pause?.();
+                liveVideo.removeAttribute('src');
+                liveVideo.load?.();
+                liveVideo.remove();
+                if (root?.isConnected && this.currentPage === 'live') {
+                    this._refreshLivePageDom({ sourceRoot: root, scene: data });
+                }
+                if (isNewFailure) {
+                    this.app?.phoneShell?.showNotification?.('蜜语', '失效的直播背景已自动移除', '⚠️');
+                }
             });
         }
 
@@ -7520,7 +7567,7 @@ export class HoneyView {
         const poolSeen = new Set();
         rawPool.forEach((item) => {
             const normalized = this._normalizeUploadedBackgroundUrl(item);
-            if (!normalized || poolSeen.has(normalized)) return;
+            if (!normalized || poolSeen.has(normalized) || this._isFailedLiveMediaUrl(normalized)) return;
             poolSeen.add(normalized);
             pool.push(normalized);
         });
@@ -7531,7 +7578,7 @@ export class HoneyView {
         const boundVideoUrl = this._normalizeUploadedBackgroundUrl(followedHost?.boundVideoUrl || '');
 
         // 如果该主播绑定了专属视频，优先固定播放
-        if (boundVideoUrl) {
+        if (boundVideoUrl && !this._isFailedLiveMediaUrl(boundVideoUrl)) {
             if (pool.length === 0 || pool.includes(boundVideoUrl)) {
                 return boundVideoUrl;
             }
@@ -8145,26 +8192,54 @@ export class HoneyView {
         }
     }
 
+    _recoverInterruptedMediaGeneration(scene = null) {
+        if (!scene || typeof scene !== 'object') return scene;
+        const imageWasLoading = String(scene.imageGenerationStatus || '').trim() === 'loading';
+        const videoWasLoading = String(scene.videoGenerationStatus || '').trim() === 'loading';
+        if (!imageWasLoading && !videoWasLoading) return scene;
+        const recovered = { ...scene };
+        if (imageWasLoading) {
+            recovered.imageGenerationStatus = 'failed';
+            recovered.imageGenerationError = '页面刷新后，上一张图片生成任务已中断，请重新生成';
+        }
+        if (videoWasLoading) {
+            recovered.videoGenerationStatus = 'failed';
+            recovered.videoGenerationError = '页面刷新后，上一个视频生成任务已中断，请重新生成';
+        }
+        return recovered;
+    }
+
     _restoreSessionState() {
         this.recommendTopics = this._getDefaultTopics();
         this.currentSceneData = null;
         this.selectedTopic = null;
         this._liveBackTarget = 'home';
+        let recoveredInterruptedMediaGeneration = false;
+        let recoveredRecommendMediaGeneration = false;
+        const recoverScene = (scene) => {
+            const recovered = this._recoverInterruptedMediaGeneration(scene);
+            if (recovered !== scene) recoveredInterruptedMediaGeneration = true;
+            return recovered;
+        };
 
         const state = this.app?.honeyData?.loadSessionState?.();
         if (!state) return;
 
         if (Array.isArray(state.recommendTopics) && state.recommendTopics.length > 0) {
-            this.recommendTopics = this._normalizeRecommendTopics(state.recommendTopics);
+            this.recommendTopics = this._normalizeRecommendTopics(state.recommendTopics).map((scene) => {
+                const recovered = recoverScene(scene);
+                if (recovered !== scene) recoveredRecommendMediaGeneration = true;
+                return recovered;
+            });
         }
 
         if (state.currentSceneData && typeof state.currentSceneData === 'object') {
             const sceneTitle = String(state.currentSceneData._topicTitle || state.currentSceneData.title || '').trim();
-            this.currentSceneData = {
+            this.currentSceneData = recoverScene({
                 ...state.currentSceneData,
                 _topicTitle: sceneTitle || '直播间',
                 _topicKey: this._resolveTopicKey(state.currentSceneData, sceneTitle)
-            };
+            });
         }
 
         const selectedKey = String(state.selectedTopicKey || this.currentSceneData?._topicKey || '').trim();
@@ -8195,6 +8270,18 @@ export class HoneyView {
         if (this._isUserLiveScene(this.selectedTopic || this.currentSceneData)) {
             this._liveBackTarget = 'mine';
             this._liveEntrySource = 'mine';
+        }
+
+        if (recoveredInterruptedMediaGeneration) {
+            if (recoveredRecommendMediaGeneration) {
+                this.app?.honeyData?.saveRecommendTopics?.(this.recommendTopics);
+            }
+            if (this.currentSceneData) {
+                const topicTitle = String(this.currentSceneData._topicTitle || this.currentSceneData.title || '').trim();
+                const topicKey = String(this.currentSceneData._topicKey || '').trim();
+                this.app?.honeyData?.saveTopicScene?.(topicKey || topicTitle, this.currentSceneData, topicTitle);
+                this.app?.honeyData?.saveLastSceneData?.(this.currentSceneData);
+            }
         }
     }
 

@@ -8,6 +8,7 @@ const CORS_HEADERS = {
 
 const QUEUE_STALE_MS = 15 * 60 * 1000;
 const ACTIVE_STALE_MS = 8 * 60 * 1000;
+const ACTIVE_MAX_MS = 12 * 60 * 1000;
 
 function json(data, init = {}) {
     return new Response(JSON.stringify(data), {
@@ -58,6 +59,9 @@ export class NaiQueueDO extends DurableObject {
             if (path === '/my-turn' && request.method === 'GET') {
                 return this.handleMyTurn(Object.fromEntries(url.searchParams.entries()));
             }
+            if (path === '/heartbeat' && request.method === 'POST') {
+                return this.handleHeartbeat(await readJson(request));
+            }
             if (path === '/complete' && request.method === 'POST') {
                 return this.handleComplete(await readJson(request));
             }
@@ -95,8 +99,13 @@ export class NaiQueueDO extends DurableObject {
 
         if (state.active) {
             const activeAt = Number(state.active.activeAt || state.active.updatedAt || 0);
+            const startedAt = Number(state.active.startedAt || activeAt || 0);
             const activeStillQueued = state.queue.some(item => item.taskId === state.active.taskId);
-            if (!activeAt || now - activeAt > ACTIVE_STALE_MS || !activeStillQueued) {
+            const leaseExpired = !activeAt || now - activeAt > ACTIVE_STALE_MS;
+            const exceededMaximum = !startedAt || now - startedAt > ACTIVE_MAX_MS;
+            if (leaseExpired || exceededMaximum || !activeStillQueued) {
+                const abandonedTaskId = state.active.taskId;
+                state.queue = state.queue.filter(item => item.taskId !== abandonedTaskId);
                 state.active = null;
             }
         }
@@ -110,7 +119,8 @@ export class NaiQueueDO extends DurableObject {
             taskId: first.taskId,
             userId: first.userId,
             token,
-            activeAt: Date.now()
+            activeAt: Date.now(),
+            startedAt: Date.now()
         };
         first.token = token;
         first.updatedAt = Date.now();
@@ -122,6 +132,7 @@ export class NaiQueueDO extends DurableObject {
         return {
             success: true,
             can_run: !!active,
+            queued: index >= 0,
             token: active ? (state.active.token || token || '') : (token || ''),
             position: index >= 0 ? index : null,
             queue_size: state.queue.length
@@ -138,6 +149,18 @@ export class NaiQueueDO extends DurableObject {
         this.cleanup(state);
 
         const now = Date.now();
+        const supersededTaskIds = new Set(
+            state.queue
+                .filter(item => item.userId === task.userId && item.taskId !== task.taskId)
+                .map(item => item.taskId)
+        );
+        if (supersededTaskIds.size > 0) {
+            state.queue = state.queue.filter(item => !supersededTaskIds.has(item.taskId));
+            if (state.active && supersededTaskIds.has(state.active.taskId)) {
+                state.active = null;
+            }
+        }
+
         let existing = state.queue.find(item => item.taskId === task.taskId);
         if (!existing) {
             existing = {
@@ -174,6 +197,32 @@ export class NaiQueueDO extends DurableObject {
         this.promote(state);
         await this.saveState(state);
         return json(this.buildStatus(state, task.taskId, existing?.token || task.token));
+    }
+
+    async handleHeartbeat(input) {
+        const task = normalizeTask(input);
+        if (!task.taskId || !task.token) {
+            return json({ success: false, error: 'Missing task_id or token' }, { status: 400 });
+        }
+
+        const state = await this.loadState();
+        this.cleanup(state);
+
+        const isActive = state.active
+            && state.active.taskId === task.taskId
+            && state.active.token === task.token;
+        if (!isActive) {
+            this.promote(state);
+            await this.saveState(state);
+            return json({ success: false, error: 'Queue lease is no longer active' }, { status: 409 });
+        }
+
+        const now = Date.now();
+        state.active.activeAt = now;
+        const existing = state.queue.find(item => item.taskId === task.taskId);
+        if (existing) existing.updatedAt = now;
+        await this.saveState(state);
+        return json(this.buildStatus(state, task.taskId, task.token));
     }
 
     async handleComplete(input) {

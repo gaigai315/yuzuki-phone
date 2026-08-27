@@ -1302,6 +1302,10 @@ export class ApiManager {
         return { content, reasoning, finishReason, error: null };
     }
 
+    _isTokenLimitFinishReason(finishReason = '') {
+        return /^(?:length|max[_\s-]?(?:output[_\s-]?)?tokens?)$/i.test(String(finishReason || '').trim());
+    }
+
     async _getCsrfToken(forceRefresh = false) {
         // 尝试从全局变量获取（兼容部分酒馆版本）
         if (!forceRefresh && typeof window !== 'undefined' && typeof window.getRequestHeaders === 'function') {
@@ -1485,15 +1489,17 @@ export class ApiManager {
             if (error) throw new Error(error);
             const summary = String(content || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
             if (summary) {
+                const truncated = this._isTokenLimitFinishReason(finishReason);
                 return {
                     success: true,
-                    summary: finishReason === 'length'
+                    summary: truncated
                         ? `${summary}\n\n[⚠️ 内容已因达到最大Token限制而截断]`
-                        : summary
+                        : summary,
+                    truncated
                 };
             }
             if (reasoning && String(reasoning).trim()) {
-                const suffix = finishReason === 'length'
+                const suffix = this._isTokenLimitFinishReason(finishReason)
                     ? '，可能是 max_tokens 太小，模型把输出额度用在思考过程里'
                     : '';
                 throw new Error(`API 只返回了 reasoning_content，未返回正文内容${suffix}`);
@@ -1521,14 +1527,18 @@ export class ApiManager {
             '';
 
         content = String(content || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
+        const finishReason = data?.choices?.[0]?.finish_reason || data?.data?.choices?.[0]?.finish_reason || data?.candidates?.[0]?.finishReason || '';
         if (!content) {
-            const finishReason = data?.choices?.[0]?.finish_reason || data?.data?.choices?.[0]?.finish_reason || data?.candidates?.[0]?.finishReason;
             if (finishReason === 'safety' || finishReason === 'content_filter' || finishReason === 'SAFETY') {
                 throw new Error('内容被安全策略拦截');
             }
             throw new Error('API 返回内容为空');
         }
-        return { success: true, summary: content };
+        return {
+            success: true,
+            summary: content,
+            truncated: this._isTokenLimitFinishReason(finishReason)
+        };
     }
 
     _looksLikeStreamChunk(data) {
@@ -1570,7 +1580,7 @@ export class ApiManager {
             sawChunk = true;
             const { content, reasoning, finishReason, error } = this._extractStreamContent(chunk);
             if (error) throw new Error(error);
-            if (finishReason === 'length') isTruncated = true;
+            if (this._isTokenLimitFinishReason(finishReason)) isTruncated = true;
             if (content) fullText += content;
             if (reasoning) fullReasoning += reasoning;
         }
@@ -1579,7 +1589,7 @@ export class ApiManager {
         let summary = String(fullText || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
         if (summary) {
             if (isTruncated) summary += '\n\n[⚠️ 内容已因达到最大Token限制而截断]';
-            return { success: true, summary };
+            return { success: true, summary, truncated: isTruncated };
         }
         if (fullReasoning && String(fullReasoning).trim()) {
             const suffix = isTruncated
@@ -1637,7 +1647,7 @@ export class ApiManager {
                         const chunk = JSON.parse(rawData);
                         const { content, reasoning, finishReason, error } = this._extractStreamContent(chunk);
                         if (error) throw new Error(`${logPrefix} ${error}`.trim());
-                        if (finishReason === 'length') isTruncated = true;
+                        if (this._isTokenLimitFinishReason(finishReason)) isTruncated = true;
                         if (reasoning) fullReasoning += reasoning;
                         if (content) fullText += content;
                     } catch (error) {
@@ -1676,6 +1686,7 @@ export class ApiManager {
             return {
                 success: true,
                 summary,
+                truncated: isTruncated,
                 streamCompletedAt: Date.now()
             };
         } finally {

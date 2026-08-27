@@ -217,25 +217,41 @@ export class HoneyData {
         ].join('\n');
     }
 
-    _extractNaiPrompt(source) {
+    _extractNaiPrompt(source, options = {}) {
         const text = String(source || '').replace(/\r/g, '').trim();
         if (!text) return '';
 
+        const unwrapPromptWrapper = (value) => {
+            const safeText = String(value || '').trim();
+            if ((safeText.startsWith('[') && safeText.endsWith(']'))
+                || (safeText.startsWith('【') && safeText.endsWith('】'))) {
+                return safeText.slice(1, -1).trim();
+            }
+            if ((safeText.startsWith('[') || safeText.startsWith('【'))
+                && (safeText.endsWith('}') || safeText.endsWith(']') || safeText.endsWith('】'))) {
+                return safeText.slice(1, -1).trim();
+            }
+            return safeText;
+        };
+
+        if (options?.strictImageTag === true) {
+            const prefixPattern = /(?:^|\n)\s*[\[【]\s*图片\s*[\]】]\s*[:：]\s*/i;
+            const prefixMatch = text.match(prefixPattern);
+            if (!prefixMatch || typeof prefixMatch.index !== 'number') return '';
+            let cleaned = text.slice(prefixMatch.index + prefixMatch[0].length)
+                .replace(/\s*```\s*$/i, '')
+                .trim();
+            cleaned = unwrapPromptWrapper(cleaned);
+            return cleaned.replace(/\s+/g, ' ').trim();
+        }
+
         const candidates = [];
         const push = (value) => {
-            const unwrapSquareBrackets = (text) => {
-                const safeText = String(text || '').trim();
-                if ((safeText.startsWith('[') && safeText.endsWith(']'))
-                    || (safeText.startsWith('【') && safeText.endsWith('】'))) {
-                    return safeText.slice(1, -1).trim();
-                }
-                return safeText;
-            };
-            let cleaned = unwrapSquareBrackets(value)
+            let cleaned = unwrapPromptWrapper(value)
                 .replace(/^\s*(?:NAI|NovelAI)\s*(?:英文\s*)?(?:tag\s*)?(?:提示词|prompt)?\s*[:：]?\s*/i, '')
                 .replace(/^\s*[\[【]?\s*(?:图片|画面)\s*[\]】]?\s*[:：]\s*/i, '')
                 .trim();
-            cleaned = unwrapSquareBrackets(cleaned);
+            cleaned = unwrapPromptWrapper(cleaned);
             cleaned = cleaned
                 .replace(/\s*(?:供前端调用|其他推荐内容|好友申请|联播|榜单|打赏记录|直播剧情描写|评论区|[\[【]?\s*视频\s*[\]】]?\s*[:：])[\s\S]*$/i, '')
                 .replace(/\s+/g, ' ')

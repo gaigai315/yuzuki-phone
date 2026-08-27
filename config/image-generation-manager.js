@@ -12,6 +12,11 @@
 
 import { decompress as decompressZstd } from '../assets/vendor/fzstd.js';
 
+const NOVELAI_QUEUE_POLL_MS = 3000;
+const NOVELAI_QUEUE_WAIT_MS = 30 * 60 * 1000;
+const NOVELAI_QUEUE_HEARTBEAT_MS = 30 * 1000;
+const NOVELAI_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
+
 export class ImageGenerationManager {
     constructor(storage) {
         this.storage = storage;
@@ -1152,6 +1157,12 @@ export class ImageGenerationManager {
         const originalPrompt = String(options?.rawPrompt || options?.prompt || '').trim();
         const translatedPrompt = String(options?.translatedPrompt || '').trim();
         const debugPayload = this._redactNovelAIDebugPayload(payload);
+        const positiveCharacterPrompts = (payload?.parameters?.v4_prompt?.caption?.char_captions || [])
+            .map(item => String(item?.char_caption || '').trim())
+            .filter(Boolean);
+        const negativeCharacterPrompts = (payload?.parameters?.v4_negative_prompt?.caption?.char_captions || [])
+            .map(item => String(item?.char_caption || '').trim())
+            .filter(Boolean);
         const debugInfo = {
             endpoint,
             provider: 'novelai',
@@ -1171,6 +1182,8 @@ export class ImageGenerationManager {
             translatedPrompt,
             positivePrompt: payload?.input || '',
             negativePrompt: payload?.parameters?.negative_prompt || '',
+            positiveCharacterPrompts,
+            negativeCharacterPrompts,
             referenceCount: Array.isArray(payload?.parameters?.director_reference_images_cached)
                 ? payload.parameters.director_reference_images_cached.length
                 : (Array.isArray(payload?.parameters?.director_reference_images)
@@ -1213,9 +1226,19 @@ export class ImageGenerationManager {
                 '',
                 '最终发送给 NAI 的正面提示词:',
                 debugInfo.positivePrompt || '(空)',
+                ...(debugInfo.positiveCharacterPrompts.length ? [
+                    '',
+                    '最终发送给 NAI 的角色正面提示词:',
+                    ...debugInfo.positiveCharacterPrompts.map((item, index) => `角色 ${index + 1}: ${item}`)
+                ] : []),
                 '',
                 '最终发送给 NAI 的负面提示词:',
                 debugInfo.negativePrompt || '(空)',
+                ...(debugInfo.negativeCharacterPrompts.length ? [
+                    '',
+                    '最终发送给 NAI 的角色负面提示词:',
+                    ...debugInfo.negativeCharacterPrompts.map((item, index) => `角色 ${index + 1}: ${item}`)
+                ] : []),
                 '',
                 '调试 payload 已保存到 window.__lastNovelAIRequest（参考图 base64 已脱敏）',
                 '复制完整调试信息: copy(JSON.stringify(window.__lastNovelAIRequest, null, 2))'
@@ -1241,7 +1264,9 @@ export class ImageGenerationManager {
             console.info('AI 画面 tag（原样）', debugInfo.originalPrompt);
             if (debugInfo.translatedPrompt) console.info('自动转英文后的 NAI tag', debugInfo.translatedPrompt);
             console.info('positive prompt', debugInfo.positivePrompt);
+            console.info('positive character prompts', debugInfo.positiveCharacterPrompts);
             console.info('negative prompt', debugInfo.negativePrompt);
+            console.info('negative character prompts', debugInfo.negativeCharacterPrompts);
             console.info('full payload', debugInfo.payload);
             console.info('copy helper', 'copy(JSON.stringify(window.__lastNovelAIRequest, null, 2))');
             console.groupEnd();
@@ -1693,15 +1718,19 @@ export class ImageGenerationManager {
                 return { baseUrl, keyHash, userId, taskId, token };
             }
 
-            for (let retry = 0; retry < 120; retry++) {
+            const waitDeadline = Date.now() + NOVELAI_QUEUE_WAIT_MS;
+            while (Date.now() < waitDeadline) {
                 if (options?.signal?.aborted) {
                     await leave();
                     throw new Error('已取消 NAI 生图队列等待');
                 }
-                await this._sleep(3000);
+                await this._sleep(NOVELAI_QUEUE_POLL_MS);
                 const turnInfo = await this._queueRequest(baseUrl, '/my-turn', {
                     query: queuePayload
                 });
+                if (turnInfo?.queued === false) {
+                    throw new Error('NAI 队列任务已失效，请重新生成');
+                }
                 token = this._getQueueToken(turnInfo) || token;
                 this._noticeQueueStatus(turnInfo);
                 if (turnInfo?.can_run && token) {
@@ -1717,6 +1746,37 @@ export class ImageGenerationManager {
             }
             throw err;
         }
+    }
+
+    _startNovelAIQueueHeartbeat(queueInfo) {
+        if (!queueInfo?.baseUrl || !queueInfo?.token) return () => {};
+
+        let stopped = false;
+        let pending = false;
+        const heartbeat = async () => {
+            if (stopped || pending) return;
+            pending = true;
+            try {
+                await this._queueRequest(queueInfo.baseUrl, '/heartbeat', {
+                    method: 'POST',
+                    body: {
+                        key_hash: queueInfo.keyHash,
+                        user_id: queueInfo.userId,
+                        task_id: queueInfo.taskId,
+                        token: queueInfo.token
+                    }
+                });
+            } catch (err) {
+                console.warn('[NovelAI Queue] 队列续租失败:', err);
+            } finally {
+                pending = false;
+            }
+        };
+        const timer = setInterval(heartbeat, NOVELAI_QUEUE_HEARTBEAT_MS);
+        return () => {
+            stopped = true;
+            clearInterval(timer);
+        };
     }
 
     async _finishNovelAIQueue(queueInfo) {
@@ -2105,66 +2165,6 @@ export class ImageGenerationManager {
         return this._isNovelAIV45Model(config?.model) ? 19 : 58;
     }
 
-    _cleanNovelAIPromptSegment(text) {
-        return String(text || '')
-            .replace(/[，、]/g, ', ')
-            .replace(/\s*,\s*/g, ', ')
-            .replace(/(?:^|,\s*)(?:,+\s*)+/g, ', ')
-            .replace(/,\s*,+/g, ', ')
-            .replace(/^["'“”‘’\s,]+|["'“”‘’\s,]+$/g, '')
-            .replace(/\s{2,}/g, ' ')
-            .trim();
-    }
-
-    _stripNovelAICharacterNameTags(text) {
-        const roleWords = new Set([
-            '1boy', '1girl', '1other', 'mature male', 'adult male', 'adult woman', 'adult female',
-            'young man', 'young woman', 'handsome', 'beautiful', 'male focus', 'female focus'
-        ]);
-        const visualWords = /^(?:long|short|messy|black|white|blonde|brown|silver|red|blue|green|golden|dark|light|open|half|bound|blindfold|shirt|robe|cassock|suit|pants|dress|lingerie|hair|eyes?|smile|gaze|flushed|sweating|panting|looking|holding|grabbing|pinned|kneeling|sitting|standing|leaning|lying|source#|target#|mutual#)/i;
-        return this._cleanNovelAIPromptSegment(text)
-            .split(/\s*,\s*/)
-            .map(item => item.trim())
-            .filter(Boolean)
-            .filter((item, index) => {
-                const lower = item.toLowerCase();
-                if (this._isNovelAIManagedBoilerplateTag(lower)) return false;
-                if (roleWords.has(lower) || visualWords.test(item)) return true;
-                if (/^(?:dragon|tiger|wolf|fox|lion|snake|rabbit|bunny|cat|dog)$/i.test(item)) return false;
-                if (index <= 2 && /^[A-Z][a-z]{2,18}$/.test(item)) return false;
-                return true;
-            })
-            .join(', ');
-    }
-
-    _isNovelAIManagedBoilerplateTag(tag = '') {
-        const lower = String(tag || '').trim().toLowerCase();
-        if (!lower) return false;
-        const managed = new Set([
-            'amazing quality',
-            'very aesthetic',
-            'absurdres',
-            'highres',
-            'best quality',
-            'masterpiece',
-            'anime illustration',
-            'digital illustration',
-            'highly finished',
-            'character study',
-            'photo (medium)'
-        ]);
-        return managed.has(lower);
-    }
-
-    _stripNovelAIManagedBoilerplateTags(text) {
-        return this._cleanNovelAIPromptSegment(text)
-            .split(/\s*,\s*/)
-            .map(item => item.trim())
-            .filter(Boolean)
-            .filter(item => !this._isNovelAIManagedBoilerplateTag(item))
-            .join(', ');
-    }
-
     _resolveNovelAICharacterPosition(value = '') {
         const raw = String(value || '').trim().replace(/\s+/g, '');
         if (!raw) return null;
@@ -2261,6 +2261,13 @@ export class ImageGenerationManager {
         return { content, position };
     }
 
+    _trimNovelAIPromptSeparators(text = '') {
+        return String(text || '')
+            .replace(/([,，、；;])(?:\s*[,，、；;])+/g, '$1')
+            .replace(/^\s*[,，、；;]+\s*|\s*[,，、；;]+\s*$/g, '')
+            .trim();
+    }
+
     _parseNovelAICharacterPromptSyntax(prompt = '', negativePrompt = '') {
         const source = String(prompt || '');
         const characters = [];
@@ -2278,8 +2285,8 @@ export class ImageGenerationManager {
                 charText = charText.slice(0, negativeMatch.index);
             }
 
-            const charCaption = this._stripNovelAICharacterNameTags(charText);
-            const negativeCaption = this._cleanNovelAIPromptSegment(charNegative);
+            const charCaption = this._trimNovelAIPromptSeparators(charText);
+            const negativeCaption = this._trimNovelAIPromptSeparators(charNegative);
             if (!charCaption && !negativeCaption) continue;
             characters.push({
                 charCaption,
@@ -2290,17 +2297,17 @@ export class ImageGenerationManager {
 
         if (characters.length === 0) {
             return {
-                baseCaption: this._cleanNovelAIPromptSegment(source),
-                negativeBaseCaption: this._cleanNovelAIPromptSegment(negativePrompt),
+                baseCaption: source.trim(),
+                negativeBaseCaption: String(negativePrompt || '').trim(),
                 characters: [],
                 useCoords: false
             };
         }
 
-        const baseCaption = this._stripNovelAIManagedBoilerplateTags(source.replace(blockPattern, ''));
+        const baseCaption = this._trimNovelAIPromptSeparators(source.replace(blockPattern, ''));
         return {
             baseCaption,
-            negativeBaseCaption: this._cleanNovelAIPromptSegment(negativePrompt),
+            negativeBaseCaption: String(negativePrompt || '').trim(),
             characters,
             useCoords: characters.some(item => item.center)
         };
@@ -2310,7 +2317,7 @@ export class ImageGenerationManager {
         return (Array.isArray(characters) ? characters : [])
             .map((item) => {
                 const entry = {
-                    char_caption: this._cleanNovelAIPromptSegment(item?.[key] || '')
+                    char_caption: String(item?.[key] || '').trim()
                 };
                 if (item?.center) entry.centers = [item.center];
                 return entry;
@@ -2319,20 +2326,21 @@ export class ImageGenerationManager {
 
     async _buildNovelAIPayload(options, config) {
         const appKey = String(options.app || '').trim().toLowerCase();
+        const aiPrompt = String(options.prompt || '').trim();
+        const parsedV4Prompt = this._isNovelAIV4PlusModel(config.model)
+            ? this._parseNovelAICharacterPromptSyntax(aiPrompt, '')
+            : null;
         const rawPrompt = this._joinPrompt([
             config.fixedPrompt,
-            options.prompt,
+            parsedV4Prompt ? parsedV4Prompt.baseCaption : aiPrompt,
             config.fixedPromptEnd
         ]);
         const rawNegativePrompt = this._joinPrompt([
             config.negativePrompt,
             options.negativePrompt
         ]);
-        const parsedV4Prompt = this._isNovelAIV4PlusModel(config.model)
-            ? this._parseNovelAICharacterPromptSyntax(rawPrompt, rawNegativePrompt)
-            : null;
-        const prompt = parsedV4Prompt?.baseCaption || rawPrompt;
-        const negativePrompt = parsedV4Prompt?.negativeBaseCaption || rawNegativePrompt;
+        const prompt = rawPrompt;
+        const negativePrompt = rawNegativePrompt;
         const seed = Number(options.seed ?? config.seed);
         let width = Number(options.width || config.width);
         let height = Number(options.height || config.height);
@@ -4338,6 +4346,13 @@ export class ImageGenerationManager {
 
         const endpoint = `${this._resolveNovelAIEndpoint(config)}/ai/generate-image`;
         const queueInfo = await this._waitForNovelAIQueueTurn(config, options);
+        const stopQueueHeartbeat = this._startNovelAIQueueHeartbeat(queueInfo);
+        const requestController = new AbortController();
+        const externalSignal = options?.signal;
+        const abortRequest = () => requestController.abort();
+        if (externalSignal?.aborted) abortRequest();
+        else externalSignal?.addEventListener?.('abort', abortRequest, { once: true });
+        const requestTimeout = setTimeout(abortRequest, NOVELAI_REQUEST_TIMEOUT_MS);
         try {
             const payload = await this._buildNovelAIPayload(options, config);
             this._debugNovelAIRequest({ endpoint, payload, config, options });
@@ -4349,7 +4364,7 @@ export class ImageGenerationManager {
                     Accept: 'application/x-zip-compressed, image/png, application/json'
                 },
                 body: JSON.stringify(payload),
-                signal: options.signal
+                signal: requestController.signal
             });
 
             if (!response.ok) {
@@ -4381,7 +4396,15 @@ export class ImageGenerationManager {
                 imageData,
                 imageUrl: imageData
             };
+        } catch (err) {
+            if (requestController.signal.aborted && !externalSignal?.aborted) {
+                throw new Error('NovelAI 生图请求超时，请稍后重试');
+            }
+            throw err;
         } finally {
+            clearTimeout(requestTimeout);
+            externalSignal?.removeEventListener?.('abort', abortRequest);
+            stopQueueHeartbeat();
             await this._finishNovelAIQueue(queueInfo);
         }
     }
