@@ -1244,7 +1244,7 @@ if (window.GGP_Loaded) {
             import('./config/time-manager.js'),    // 👈 取消懒加载
         import('./config/prompt-manager.js?v=20260802-moments-named-images'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
-        import('./config/image-generation-manager.js?v=20260808-nai-zstd-proxy'),
+        import('./config/image-generation-manager.js?v=20260827-site-key-isolation'),
             import('./config/worldbook-manager.js')
         ]);
 
@@ -1321,7 +1321,7 @@ if (window.GGP_Loaded) {
     // 🔥 按需加载设置模块
     async function loadSettingsModule() {
         if (!SettingsApp) {
-            const module = await import('./apps/settings/settings-app.js?v=20260728-nai-only-visibility');
+            const module = await import('./apps/settings/settings-app.js?v=20260827-site-key-isolation');
             SettingsApp = module.SettingsApp;
         }
         return SettingsApp;

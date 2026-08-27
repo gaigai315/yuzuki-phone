@@ -3291,13 +3291,37 @@ export class SettingsApp {
         await this.storage.set('phone-image-novelai-vibe-groups', JSON.stringify(this._normalizeNovelAIVibeGroups(groups)));
     }
 
+    _getImageSiteKeyStorageKey(provider, site) {
+        const normalizedProvider = String(provider || '').trim().toLowerCase();
+        const normalizedSite = String(site || 'official').trim().toLowerCase();
+        if (!['novelai', 'openai'].includes(normalizedProvider)) return '';
+        if (normalizedSite === 'public') return `phone-image-${normalizedProvider}-public-key`;
+        if (normalizedSite === 'custom') return `phone-image-${normalizedProvider}-custom-key`;
+        return `phone-image-${normalizedProvider}-key`;
+    }
+
+    _getImageSiteApiKey(provider, site) {
+        const storageKey = this._getImageSiteKeyStorageKey(provider, site);
+        if (!storageKey) return '';
+        const storedValue = this.storage.get(storageKey);
+        if (String(site || '').trim().toLowerCase() === 'custom' && (storedValue === null || storedValue === undefined)) {
+            const legacyKey = this._getImageSiteKeyStorageKey(provider, 'official');
+            const legacyValue = String(this.storage.get(legacyKey) || '').trim();
+            void this.storage.set(storageKey, legacyValue);
+            return legacyValue;
+        }
+        return String(storedValue || '').trim();
+    }
+
     renderImageGenerationSection() {
         const provider = String(this.storage.get('phone-image-provider') || 'novelai').trim() || 'novelai';
         const enabled = this.storage.get('phone-image-enabled') === true || this.storage.get('phone-image-enabled') === 'true';
-        const novelaiKey = String(this.storage.get('phone-image-novelai-key') || '').trim();
-        const novelaiPublicKey = String(this.storage.get('phone-image-novelai-public-key') || '').trim();
-        const openaiKey = String(this.storage.get('phone-image-openai-key') || '').trim();
-        const openaiPublicKey = String(this.storage.get('phone-image-openai-public-key') || '').trim();
+        const novelaiKey = this._getImageSiteApiKey('novelai', 'official');
+        const novelaiPublicKey = this._getImageSiteApiKey('novelai', 'public');
+        const novelaiCustomKey = this._getImageSiteApiKey('novelai', 'custom');
+        const openaiKey = this._getImageSiteApiKey('openai', 'official');
+        const openaiPublicKey = this._getImageSiteApiKey('openai', 'public');
+        const openaiCustomKey = this._getImageSiteApiKey('openai', 'custom');
         const siliconflowKey = String(this.storage.get('phone-image-siliconflow-key') || this.storage.get('siliconflow_api_key') || '').trim();
         const novelaiModel = String(this.storage.get('phone-image-novelai-model') || 'nai-diffusion-4-5-full').trim();
         const openaiModel = String(this.storage.get('phone-image-openai-model') || 'gpt-image-2').trim();
@@ -3335,6 +3359,7 @@ export class SettingsApp {
         const openaiQuality = String(this.storage.get('phone-image-openai-quality') || 'auto').trim() || 'auto';
         const sampler = String(this.storage.get('phone-image-novelai-sampler') || 'k_euler').trim() || 'k_euler';
         const schedule = String(this.storage.get('phone-image-novelai-schedule') || 'native').trim() || 'native';
+        const isNovelAIV5 = /^nai-diffusion-5(?:-|$)/i.test(novelaiModel);
         const novelaiSamplers = [
             ['k_euler', 'Euler'],
             ['ddim_v3', 'DDIM'],
@@ -3372,7 +3397,9 @@ export class SettingsApp {
             'PLMS'
         ];
         const samplerValue = novelaiSamplers.some(([value]) => value === sampler) ? sampler : 'k_euler';
-        const scheduleValue = novelaiSchedules.some(([value]) => value === schedule) ? schedule : 'native';
+        const scheduleValue = isNovelAIV5
+            ? 'karras'
+            : (novelaiSchedules.some(([value]) => value === schedule) ? schedule : 'native');
         const readImageNumber = (key, fallback, min = null, max = null, integer = true) => {
             const raw = this.storage.get(key);
             const num = raw === null || raw === undefined || raw === '' ? NaN : Number(raw);
@@ -3580,11 +3607,11 @@ export class SettingsApp {
                 </div>
 
                 <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                    <span id="phone-image-novelai-key-label" style="font-size: 14px; color: #000;">${novelaiSite === 'public' ? '公益站 Key' : 'API Key'}</span>
+                    <span id="phone-image-novelai-key-label" style="font-size: 14px; color: #000;">${novelaiSite === 'public' ? '公益站 Key' : (novelaiSite === 'custom' ? '自定义站 Key' : '官方站 Key')}</span>
                     <div class="phone-secret-field" style="width: 150px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;">
                         <input type="text" class="phone-secret-input phone-secret-masked" id="phone-image-novelai-key"
-                               value="${this._escapeHtml(novelaiSite === 'public' ? novelaiPublicKey : novelaiKey)}"
-                               placeholder="${novelaiSite === 'public' ? '公益站 API Key' : 'NovelAI API Key'}"
+                               value="${this._escapeHtml(novelaiSite === 'public' ? novelaiPublicKey : (novelaiSite === 'custom' ? novelaiCustomKey : novelaiKey))}"
+                               placeholder="${novelaiSite === 'public' ? '公益站 API Key' : (novelaiSite === 'custom' ? '自定义站 API Key' : 'NovelAI 官方 API Key')}"
                                style="width: 100%; min-width: 0; height: 100%; padding: 0 34px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
                         <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-image-novelai-key" aria-label="显示 API Key" title="显示 API Key">
                             <i class="fa-regular fa-eye"></i>
@@ -3610,13 +3637,13 @@ export class SettingsApp {
                     </label>
                 </div>
 
-                <div class="setting-item setting-toggle">
+                <div class="setting-item setting-toggle" id="phone-image-novelai-skip-cfg-row" style="${isNovelAIV5 ? 'opacity:0.55;' : ''}">
                     <div>
                         <div class="setting-label">NAI 4/4.5 自动兼容参数</div>
-                        <div class="setting-desc">Euler Ancestral + karras/exponential 时自动发送 skip_cfg_above_sigma；关闭后按原始参数发包。</div>
+                        <div class="setting-desc" id="phone-image-novelai-skip-cfg-desc">${isNovelAIV5 ? 'V5 当前不使用 Variety+ 参数。' : 'Euler Ancestral + karras/exponential 时自动发送 skip_cfg_above_sigma；关闭后按原始参数发包。'}</div>
                     </div>
                     <label class="toggle-switch">
-                        <input type="checkbox" id="phone-image-novelai-skip-cfg-compat" ${novelaiSkipCfgCompat ? 'checked' : ''}>
+                        <input type="checkbox" id="phone-image-novelai-skip-cfg-compat" ${novelaiSkipCfgCompat ? 'checked' : ''} ${isNovelAIV5 ? 'disabled' : ''}>
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
@@ -3651,7 +3678,9 @@ export class SettingsApp {
                 <div class="setting-item">
                     <div class="setting-label">模型</div>
                     <select id="phone-image-novelai-model" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
-                        ${!['nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-full', 'nai-diffusion-4-curated-preview', 'nai-diffusion-3'].includes(novelaiModel) ? `<option value="${this._escapeHtml(novelaiModel)}" selected>${this._escapeHtml(novelaiModel)}</option>` : ''}
+                        ${!['nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-full', 'nai-diffusion-4-curated-preview', 'nai-diffusion-3'].includes(novelaiModel) ? `<option value="${this._escapeHtml(novelaiModel)}" selected>${this._escapeHtml(novelaiModel)}</option>` : ''}
+                        <option value="nai-diffusion-5-full" ${novelaiModel === 'nai-diffusion-5-full' ? 'selected' : ''}>NAI Diffusion 5 Full</option>
+                        <option value="nai-diffusion-5-curated" ${novelaiModel === 'nai-diffusion-5-curated' ? 'selected' : ''}>NAI Diffusion 5 Curated</option>
                         <option value="nai-diffusion-4-5-full" ${novelaiModel === 'nai-diffusion-4-5-full' ? 'selected' : ''}>NAI Diffusion 4.5 Full</option>
                         <option value="nai-diffusion-4-5-curated" ${novelaiModel === 'nai-diffusion-4-5-curated' ? 'selected' : ''}>NAI Diffusion 4.5 Curated</option>
                         <option value="nai-diffusion-4-full" ${novelaiModel === 'nai-diffusion-4-full' ? 'selected' : ''}>NAI Diffusion 4 Full</option>
@@ -3669,7 +3698,7 @@ export class SettingsApp {
                     </div>
                     <div class="setting-item">
                         <div class="setting-label">Schedule</div>
-                        <select id="phone-image-novelai-schedule" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                        <select id="phone-image-novelai-schedule" ${isNovelAIV5 ? 'disabled title="NAI V5 当前固定使用 karras"' : ''} style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
                             ${novelaiSchedules.map(([value, label]) => `<option value="${value}" ${scheduleValue === value ? 'selected' : ''}>${label}</option>`).join('')}
                         </select>
                     </div>
@@ -3725,11 +3754,11 @@ export class SettingsApp {
                 </div>
 
                 <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
-                    <span id="phone-image-openai-key-label" style="font-size: 14px; color: #000;">${openaiSite === 'public' ? '公益站 Key' : 'API Key'}</span>
+                    <span id="phone-image-openai-key-label" style="font-size: 14px; color: #000;">${openaiSite === 'public' ? '公益站 Key' : (openaiSite === 'custom' ? '自定义站 Key' : '官方站 Key')}</span>
                     <div class="phone-secret-field" style="width: 150px; height: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;">
                         <input type="text" class="phone-secret-input phone-secret-masked" id="phone-image-openai-key"
-                               value="${this._escapeHtml(openaiSite === 'public' ? openaiPublicKey : openaiKey)}"
-                               placeholder="${openaiSite === 'public' ? '公益站 API Key' : 'OpenAI API Key'}"
+                               value="${this._escapeHtml(openaiSite === 'public' ? openaiPublicKey : (openaiSite === 'custom' ? openaiCustomKey : openaiKey))}"
+                               placeholder="${openaiSite === 'public' ? '公益站 API Key' : (openaiSite === 'custom' ? '自定义站 API Key' : 'OpenAI 官方 API Key')}"
                                style="width: 100%; min-width: 0; height: 100%; padding: 0 34px 0 8px; border: none; outline: none; font-size: 12px; background: transparent; box-sizing: border-box;">
                         <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-image-openai-key" aria-label="显示 API Key" title="显示 API Key">
                             <i class="fa-regular fa-eye"></i>
@@ -5601,6 +5630,10 @@ export class SettingsApp {
         const imageNovelaiPublicUrlRow = document.getElementById('phone-image-novelai-public-url-row');
         const imageNovelaiUrlRow = document.getElementById('phone-image-novelai-url-row');
         const imageNovelaiModel = document.getElementById('phone-image-novelai-model');
+        const imageNovelaiSchedule = document.getElementById('phone-image-novelai-schedule');
+        const imageNovelaiSkipCfgCompat = document.getElementById('phone-image-novelai-skip-cfg-compat');
+        const imageNovelaiSkipCfgRow = document.getElementById('phone-image-novelai-skip-cfg-row');
+        const imageNovelaiSkipCfgDesc = document.getElementById('phone-image-novelai-skip-cfg-desc');
         const imageOpenaiSite = document.getElementById('phone-image-openai-site');
         const imageOpenaiKey = document.getElementById('phone-image-openai-key');
         const imageOpenaiKeyLabel = document.getElementById('phone-image-openai-key-label');
@@ -5693,23 +5726,47 @@ export class SettingsApp {
             if (imageNovelaiQueueRow) imageNovelaiQueueRow.style.display = site === 'official' ? '' : 'none';
             if (imageNovelaiPublicUrlRow) imageNovelaiPublicUrlRow.style.display = site === 'public' ? '' : 'none';
             if (imageNovelaiUrlRow) imageNovelaiUrlRow.style.display = site === 'custom' ? '' : 'none';
-            if (imageNovelaiKeyLabel) imageNovelaiKeyLabel.textContent = site === 'public' ? '公益站 Key' : 'API Key';
+            if (imageNovelaiKeyLabel) imageNovelaiKeyLabel.textContent = site === 'public' ? '公益站 Key' : (site === 'custom' ? '自定义站 Key' : '官方站 Key');
             if (imageNovelaiKey) {
-                imageNovelaiKey.placeholder = site === 'public' ? '公益站 API Key' : 'NovelAI API Key';
-                imageNovelaiKey.value = String(this.storage.get(site === 'public' ? 'phone-image-novelai-public-key' : 'phone-image-novelai-key') || '').trim();
+                imageNovelaiKey.placeholder = site === 'public' ? '公益站 API Key' : (site === 'custom' ? '自定义站 API Key' : 'NovelAI 官方 API Key');
+                imageNovelaiKey.value = this._getImageSiteApiKey('novelai', site);
             }
             currentNovelaiSite = site;
         };
+        const syncNovelaiModelCapabilities = () => {
+            const model = String(imageNovelaiModel?.value || '').trim();
+            const isV5 = /^nai-diffusion-5(?:-|$)/i.test(model);
+            if (imageNovelaiSchedule) {
+                imageNovelaiSchedule.disabled = isV5;
+                imageNovelaiSchedule.title = isV5 ? 'NAI V5 当前固定使用 karras' : '';
+                if (isV5) {
+                    imageNovelaiSchedule.value = 'karras';
+                } else {
+                    const storedSchedule = String(this.storage.get('phone-image-novelai-schedule') || 'native').trim() || 'native';
+                    if (Array.from(imageNovelaiSchedule.options).some(option => option.value === storedSchedule)) {
+                        imageNovelaiSchedule.value = storedSchedule;
+                    }
+                }
+            }
+            if (imageNovelaiSkipCfgCompat) imageNovelaiSkipCfgCompat.disabled = isV5;
+            if (imageNovelaiSkipCfgRow) imageNovelaiSkipCfgRow.style.opacity = isV5 ? '0.55' : '';
+            if (imageNovelaiSkipCfgDesc) {
+                imageNovelaiSkipCfgDesc.textContent = isV5
+                    ? 'V5 当前不使用 Variety+ 参数。'
+                    : 'Euler Ancestral + karras/exponential 时自动发送 skip_cfg_above_sigma；关闭后按原始参数发包。';
+            }
+        };
+        syncNovelaiModelCapabilities();
         let currentOpenaiSite = String(imageOpenaiSite?.value || this.storage.get('phone-image-openai-site') || 'official').trim() || 'official';
         const syncOpenaiSiteFields = () => {
             const site = String(imageOpenaiSite?.value || 'official').trim() || 'official';
             if (imageOpenaiPublicUrlRow) imageOpenaiPublicUrlRow.style.display = site === 'public' ? '' : 'none';
             if (imageOpenaiUrlRow) imageOpenaiUrlRow.style.display = site === 'custom' ? '' : 'none';
             if (imageOpenaiPublicRelayRow) imageOpenaiPublicRelayRow.style.display = site === 'public' ? '' : 'none';
-            if (imageOpenaiKeyLabel) imageOpenaiKeyLabel.textContent = site === 'public' ? '公益站 Key' : 'API Key';
+            if (imageOpenaiKeyLabel) imageOpenaiKeyLabel.textContent = site === 'public' ? '公益站 Key' : (site === 'custom' ? '自定义站 Key' : '官方站 Key');
             if (imageOpenaiKey) {
-                imageOpenaiKey.placeholder = site === 'public' ? '公益站 API Key' : 'OpenAI API Key';
-                imageOpenaiKey.value = String(this.storage.get(site === 'public' ? 'phone-image-openai-public-key' : 'phone-image-openai-key') || '').trim();
+                imageOpenaiKey.placeholder = site === 'public' ? '公益站 API Key' : (site === 'custom' ? '自定义站 API Key' : 'OpenAI 官方 API Key');
+                imageOpenaiKey.value = this._getImageSiteApiKey('openai', site);
             }
             currentOpenaiSite = site;
         };
@@ -5829,6 +5886,7 @@ export class SettingsApp {
                 if (input) input.value = value;
                 await this.storage.set('phone-image-novelai-schedule', value);
             }
+            syncNovelaiModelCapabilities();
 
             await setPresetDimensionPair('phone-image-honey-width', 'phone-image-honey-height', preset.honeyWidth, preset.honeyHeight, 832, 1216);
             await setPresetDimensionPair('phone-image-wechat-width', 'phone-image-wechat-height', preset.wechatWidth, preset.wechatHeight, 512, 512);
@@ -6915,12 +6973,12 @@ export class SettingsApp {
 
         imageNovelaiKey?.addEventListener('change', async (e) => {
             const site = String(imageNovelaiSite?.value || currentNovelaiSite || 'official').trim() || 'official';
-            await this.storage.set(site === 'public' ? 'phone-image-novelai-public-key' : 'phone-image-novelai-key', String(e.target.value || '').trim());
+            await this.storage.set(this._getImageSiteKeyStorageKey('novelai', site), String(e.target.value || '').trim());
         });
 
         imageOpenaiKey?.addEventListener('change', async (e) => {
             const site = String(imageOpenaiSite?.value || currentOpenaiSite || 'official').trim() || 'official';
-            await this.storage.set(site === 'public' ? 'phone-image-openai-public-key' : 'phone-image-openai-key', String(e.target.value || '').trim());
+            await this.storage.set(this._getImageSiteKeyStorageKey('openai', site), String(e.target.value || '').trim());
         });
 
         document.querySelectorAll('[data-toggle-password-target]').forEach((button) => {
@@ -7084,7 +7142,7 @@ export class SettingsApp {
                 const publicUrl = String(document.getElementById('phone-image-novelai-public-url')?.value || '').trim();
                 if (site === 'public' && !publicUrl) throw new Error('请先填写公益站点 Base URL');
                 await this.storage.set('phone-image-novelai-site', site);
-                await this.storage.set(site === 'public' ? 'phone-image-novelai-public-key' : 'phone-image-novelai-key', String(document.getElementById('phone-image-novelai-key')?.value || '').trim());
+                await this.storage.set(this._getImageSiteKeyStorageKey('novelai', site), String(document.getElementById('phone-image-novelai-key')?.value || '').trim());
                 await this.storage.set('phone-image-novelai-url', String(document.getElementById('phone-image-novelai-url')?.value || '').trim());
                 await this.storage.set('phone-image-novelai-public-url', publicUrl);
                 if (site === 'official') await this.storage.set('phone-image-novelai-queue-url', String(document.getElementById('phone-image-novelai-queue-url')?.value || '').trim());
@@ -7150,7 +7208,7 @@ export class SettingsApp {
                 if (site === 'public' && !publicUrl) throw new Error('请先填写 GPT 公益站点 Base URL');
                 if (site === 'custom' && !customUrl) throw new Error('请先填写 GPT 自定义 Base URL');
                 await this.storage.set('phone-image-openai-site', site);
-                await this.storage.set(site === 'public' ? 'phone-image-openai-public-key' : 'phone-image-openai-key', String(document.getElementById('phone-image-openai-key')?.value || '').trim());
+                await this.storage.set(this._getImageSiteKeyStorageKey('openai', site), String(document.getElementById('phone-image-openai-key')?.value || '').trim());
                 await this.storage.set('phone-image-openai-public-url', publicUrl);
                 await this.storage.set('phone-image-openai-public-relay-url', publicRelayUrl);
                 await this.storage.set('phone-image-openai-url', customUrl);
@@ -7204,7 +7262,7 @@ export class SettingsApp {
 
         imageNovelaiSite?.addEventListener('change', async (e) => {
             if (imageNovelaiKey) {
-                await this.storage.set(currentNovelaiSite === 'public' ? 'phone-image-novelai-public-key' : 'phone-image-novelai-key', String(imageNovelaiKey.value || '').trim());
+                await this.storage.set(this._getImageSiteKeyStorageKey('novelai', currentNovelaiSite), String(imageNovelaiKey.value || '').trim());
             }
             const site = String(e.target.value || 'official').trim() || 'official';
             await this.storage.set('phone-image-novelai-site', site);
@@ -7213,7 +7271,7 @@ export class SettingsApp {
 
         imageOpenaiSite?.addEventListener('change', async (e) => {
             if (imageOpenaiKey) {
-                await this.storage.set(currentOpenaiSite === 'public' ? 'phone-image-openai-public-key' : 'phone-image-openai-key', String(imageOpenaiKey.value || '').trim());
+                await this.storage.set(this._getImageSiteKeyStorageKey('openai', currentOpenaiSite), String(imageOpenaiKey.value || '').trim());
             }
             const site = String(e.target.value || 'official').trim() || 'official';
             await this.storage.set('phone-image-openai-site', site);
@@ -7280,7 +7338,7 @@ export class SettingsApp {
                 if (!apiKey) throw new Error('请先填写 GPT 生图 API Key');
 
                 await this.storage.set('phone-image-openai-site', site);
-                await this.storage.set(site === 'public' ? 'phone-image-openai-public-key' : 'phone-image-openai-key', apiKey);
+                await this.storage.set(this._getImageSiteKeyStorageKey('openai', site), apiKey);
                 await this.storage.set('phone-image-openai-public-url', publicUrl);
                 await this.storage.set('phone-image-openai-public-relay-url', publicRelayUrl);
                 await this.storage.set('phone-image-openai-url', customUrl);
@@ -7518,6 +7576,7 @@ export class SettingsApp {
             const model = String(e.target.value || '').trim() || 'nai-diffusion-4-5-full';
             e.target.value = model;
             await this.storage.set('phone-image-novelai-model', model);
+            syncNovelaiModelCapabilities();
         });
 
         document.getElementById('phone-image-novelai-sampler')?.addEventListener('change', async (e) => {

@@ -2392,9 +2392,10 @@ export class PhoneCallView {
         };
 
         // 发送消息并获取AI回复（核心逻辑，复用于发送和重新生成）
-        const requestAIReply = async (userText) => {
+        const requestAIReply = async (userText, currentUserRoundSize = 0) => {
             const messagesDiv = document.getElementById('phone-call-messages');
             if (!messagesDiv) return;
+            const callHistorySnapshot = this.chatMessages.slice();
 
             // 显示 "对方正在说话..." 指示器
             messagesDiv.insertAdjacentHTML('beforeend',
@@ -2404,7 +2405,12 @@ export class PhoneCallView {
 
             try {
                 // 调用AI获取回复（返回数组，每行一条）
-                const aiLines = await this.sendCallMessageToAI(userText, callerName, this.chatMessages);
+                const aiLines = await this.sendCallMessageToAI(
+                    userText,
+                    callerName,
+                    callHistorySnapshot,
+                    currentUserRoundSize
+                );
 
                 // 移除打字指示器
                 document.getElementById('phone-call-typing')?.remove();
@@ -2456,11 +2462,12 @@ export class PhoneCallView {
             isCallSending = true;
             clearCallBatchTimer();
             setCallStatus('red');
+            const currentUserRoundSize = callPendingUserLines.length;
             const messageToSend = callPendingUserLines.join('\n');
             callPendingUserLines = [];
 
             try {
-                await requestAIReply(messageToSend);
+                await requestAIReply(messageToSend, currentUserRoundSize);
             } finally {
                 isCallSending = false;
                 if (callPendingUserLines.length > 0) {
@@ -2574,7 +2581,7 @@ export class PhoneCallView {
             isCallSending = true;
             setCallStatus('red');
             try {
-                await requestAIReply(lastUserMsg);
+                await requestAIReply(lastUserMsg, 1);
             } finally {
                 isCallSending = false;
                 setCallStatus('green');
@@ -2791,7 +2798,7 @@ export class PhoneCallView {
         }
     }
 
-    async sendCallMessageToAI(message, callerName, chatMessages) {
+    async sendCallMessageToAI(message, callerName, chatMessages, currentUserRoundSize = 0) {
         try {
             const context = window.SillyTavern?.getContext?.();
             if (!context) return '...';
@@ -2944,7 +2951,8 @@ export class PhoneCallView {
             // 7️⃣ 通话聊天记录（最近 phone-call-limit 条）
             // ========================================
             const callLimit = storage ? (parseInt(storage.get('phone-call-limit')) || 10) : 10;
-            const recentMessages = chatMessages.slice(-callLimit);
+            const historyEnd = Math.max(0, chatMessages.length - currentUserRoundSize);
+            const recentMessages = chatMessages.slice(0, historyEnd).slice(-callLimit);
             if (recentMessages.length > 0) {
                 let historyText = '【📞 当前通话记录】\n';
                 recentMessages.forEach(h => {

@@ -239,18 +239,23 @@ export class ImageGenerationManager {
         return allowed.has(sampler) ? sampler : 'k_euler';
     }
 
-    _normalizeNovelAISchedule(value) {
+    _normalizeNovelAISchedule(value, model = '') {
+        if (this._isNovelAIV5Model(model)) return 'karras';
         const schedule = String(value || '').trim();
         const allowed = new Set(['native', 'exponential', 'polyexponential', 'karras']);
         return allowed.has(schedule) ? schedule : 'native';
     }
 
-    _isNovelAIV4Model(model) {
-        return /^nai-diffusion-4(?:-|$)/i.test(String(model || '').trim());
+    _isNovelAIV4PlusModel(model) {
+        return /^nai-diffusion-(?:4|5)(?:-|$)/i.test(String(model || '').trim());
     }
 
     _isNovelAIV45Model(model) {
         return /^nai-diffusion-4-5(?:-|$)/i.test(String(model || '').trim());
+    }
+
+    _isNovelAIV5Model(model) {
+        return /^nai-diffusion-5(?:-|$)/i.test(String(model || '').trim());
     }
 
     _clampReferenceValue(value, fallback = 0.7, min = 0, max = 1) {
@@ -437,7 +442,7 @@ export class ImageGenerationManager {
     }
 
     async _encodeNovelAIVibeItems(items, config, signal) {
-        if (!config || !this._isNovelAIV4Model(config.model)) return items;
+        if (!config || !this._isNovelAIV4PlusModel(config.model)) return items;
         const encodedItems = [];
         for (const item of items) {
             encodedItems.push({
@@ -1019,9 +1024,31 @@ export class ImageGenerationManager {
         let apiKey = String(overrides.apiKey || this._get(`phone-image-${provider}-key`, '') || (provider === 'siliconflow' ? legacySiliconflowKey : '')).trim();
         if (provider === 'novelai' && site === 'public') {
             apiKey = String(overrides.apiKey || this._get('phone-image-novelai-public-key', '') || '').trim();
+        } else if (provider === 'novelai' && site === 'custom') {
+            const customKey = this.storage?.get?.('phone-image-novelai-custom-key');
+            const storedKey = customKey === null || customKey === undefined
+                ? this._get('phone-image-novelai-key', '')
+                : customKey;
+            apiKey = String(overrides.apiKey || storedKey || '').trim();
         } else if (provider === 'openai' && openaiSite === 'public') {
             apiKey = String(overrides.apiKey || this._get('phone-image-openai-public-key', '') || '').trim();
+        } else if (provider === 'openai' && openaiSite === 'custom') {
+            const customKey = this.storage?.get?.('phone-image-openai-custom-key');
+            const storedKey = customKey === null || customKey === undefined
+                ? this._get('phone-image-openai-key', '')
+                : customKey;
+            apiKey = String(overrides.apiKey || storedKey || '').trim();
         }
+        const model = String(
+            overrides.model
+            || openaiPromptPreset?.openaiModel
+            || this._get(`phone-image-${provider}-model`, '')
+            || (provider === 'novelai'
+                ? 'nai-diffusion-4-5-full'
+                : (provider === 'siliconflow'
+                    ? legacySiliconflowModel || 'Kwai-Kolors/Kolors'
+                    : (provider === 'openai' ? 'gpt-image-2' : '')))
+        ).trim();
 
         return {
             enabled: overrides.enabled ?? this._getBool('phone-image-enabled', false),
@@ -1066,11 +1093,14 @@ export class ImageGenerationManager {
             publicKey: String(overrides.publicKey || this._get('phone-image-novelai-public-key', '')).trim(),
             publicUrl: String(overrides.publicUrl || this._get('phone-image-novelai-public-url', '')).trim(),
             queueUrl: site === 'official' ? String(overrides.queueUrl || this._get('phone-image-novelai-queue-url', '')).trim() : '',
-            model: String(overrides.model || openaiPromptPreset?.openaiModel || this._get(`phone-image-${provider}-model`, '') || (provider === 'novelai' ? 'nai-diffusion-4-5-full' : (provider === 'siliconflow' ? legacySiliconflowModel || 'Kwai-Kolors/Kolors' : (provider === 'openai' ? 'gpt-image-2' : '')))).trim(),
+            model,
             sampler: provider === 'sd'
                 ? String(overrides.sampler || this._get('phone-image-sd-sampler', 'Euler a')).trim() || 'Euler a'
                 : this._normalizeNovelAISampler(overrides.sampler || this._get('phone-image-novelai-sampler', 'k_euler')),
-            schedule: this._normalizeNovelAISchedule(overrides.schedule || this._get('phone-image-novelai-schedule', 'native')),
+            schedule: this._normalizeNovelAISchedule(
+                overrides.schedule || this._get('phone-image-novelai-schedule', 'native'),
+                model
+            ),
             width: size.width,
             height: size.height,
             steps: rawSteps,
@@ -2069,6 +2099,7 @@ export class ImageGenerationManager {
     _getNovelAISkipCfgAboveSigma(config) {
         const sampler = String(config?.sampler || '').trim();
         const schedule = String(config?.schedule || '').trim();
+        if (this._isNovelAIV5Model(config?.model)) return null;
         if (sampler !== 'k_euler_ancestral') return null;
         if (schedule !== 'karras' && schedule !== 'exponential') return null;
         return this._isNovelAIV45Model(config?.model) ? 19 : 58;
@@ -2297,7 +2328,7 @@ export class ImageGenerationManager {
             config.negativePrompt,
             options.negativePrompt
         ]);
-        const parsedV4Prompt = this._isNovelAIV4Model(config.model)
+        const parsedV4Prompt = this._isNovelAIV4PlusModel(config.model)
             ? this._parseNovelAICharacterPromptSyntax(rawPrompt, rawNegativePrompt)
             : null;
         const prompt = parsedV4Prompt?.baseCaption || rawPrompt;
@@ -2331,7 +2362,7 @@ export class ImageGenerationManager {
             negative_prompt: negativePrompt
         };
 
-        if (this._isNovelAIV4Model(config.model)) {
+        if (this._isNovelAIV4PlusModel(config.model)) {
             Object.assign(parameters, {
                 params_version: 3,
                 dynamic_thresholding: false,
