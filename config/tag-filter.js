@@ -22,6 +22,7 @@ export const PHONE_TAG_FILTER_AI_DIAGNOSTIC_PROMPT = `你是一个剧情记录�
 【系统过滤机制说明】
 - 黑名单 (blacklist)：列出的标签及其内部内容会被删除，保留剩下的所有内容（包括裸文本和其他未列出的标签）。
 - 白名单 (whitelist)：仅提取并保留列出的标签内部内容，其他所有内容（包括裸文本和其他标签）都会被删除。
+- 标签不成对时，孤立闭合标签以前的内容视为标签内部，孤立开始标签以后的内容视为标签内部。
 
 【核心决策逻辑（必须遵守）】
 1. 如果正文是裸文本（正文没有被特定标签包裹）：
@@ -131,6 +132,26 @@ function parseTagInput(input) {
         .filter(Boolean);
 }
 
+function createTagBoundaryPatterns(tag) {
+    const value = String(tag || '').trim();
+    if (!value) return null;
+    if (value.startsWith('!--')) {
+        return { opening: '<!--', closing: '-->' };
+    }
+    if (value.startsWith('[') && value.endsWith(']')) {
+        const inner = escapeRegExp(value.slice(1, -1));
+        return {
+            opening: `\\[${inner}(?:\\s+[^\\]]*)?\\]`,
+            closing: `\\[\\/${inner}\\s*\\]`
+        };
+    }
+    const safe = escapeRegExp(value);
+    return {
+        opening: `<${safe}(?:\\s+[^>]*)?>`,
+        closing: `<\\/\\s*${safe}\\s*>`
+    };
+}
+
 export function cleanMemoryTagsLocal(text) {
     if (!text) return text;
 
@@ -163,27 +184,33 @@ export function filterContentByTagsLocal(content, blacklistInput = '', whitelist
     let result = String(content);
     const blacklist = parseTagInput(blacklistInput);
     const whitelist = parseTagInput(whitelistInput);
+    const protectedOpenings = whitelist
+        .map(createTagBoundaryPatterns)
+        .filter(Boolean)
+        .map((boundaries) => new RegExp(boundaries.opening, 'i'));
 
     // 1) 黑名单：先删
     blacklist.forEach((tag) => {
-        let re;
-        if (tag.startsWith('!--')) {
-            re = new RegExp('<' + tag + '[\\s\\S]*?-->', 'gi');
-        } else if (tag.startsWith('[') && tag.endsWith(']')) {
-            const inner = escapeRegExp(tag.slice(1, -1));
-            re = new RegExp('\\[' + inner + '(?:\\s+[^\\]]*)?\\][\\s\\S]*?\\[\\/' + inner + '\\s*\\]', 'gi');
-        } else {
-            const safe = escapeRegExp(tag);
-            re = new RegExp('<' + safe + '(?:\\s+[^>]*)?>[\\s\\S]*?<\\/' + safe + '\\s*>', 'gi');
-        }
+        const boundaries = createTagBoundaryPatterns(tag);
+        if (!boundaries) return;
+        const paired = new RegExp(`${boundaries.opening}[\\s\\S]*?${boundaries.closing}`, 'gi');
 
         let prev;
         let loop = 0;
         do {
             prev = result;
-            result = result.replace(re, '');
+            result = result.replace(paired, '');
             loop++;
         } while (prev !== result && loop < 50);
+
+        const closingPrefix = result.match(new RegExp(`^[\\s\\S]*?${boundaries.closing}`, 'i'));
+        if (closingPrefix) {
+            const containsProtectedOpening = protectedOpenings.some((opening) => opening.test(closingPrefix[0]));
+            result = containsProtectedOpening
+                ? result.replace(new RegExp(boundaries.closing, 'i'), '')
+                : result.slice(closingPrefix[0].length);
+        }
+        result = result.replace(new RegExp(`${boundaries.opening}[\\s\\S]*$`, 'i'), '');
     });
 
     // 2) 白名单：再提取（仅当至少命中 1 个时生效，防止误删）
@@ -192,24 +219,24 @@ export function filterContentByTagsLocal(content, blacklistInput = '', whitelist
         let foundAny = false;
 
         whitelist.forEach((tag) => {
-            let re;
-            if (tag.startsWith('!--')) {
-                re = new RegExp('<' + tag + '[\\s\\S]*?-->', 'gi');
-            } else if (tag.startsWith('[') && tag.endsWith(']')) {
-                const inner = escapeRegExp(tag.slice(1, -1));
-                re = new RegExp('\\[' + inner + '(?:\\s+[^\\]]*)?\\]([\\s\\S]*?)(?:\\[\\/' + inner + '\\]|$)', 'gi');
-            } else {
-                const safe = escapeRegExp(tag);
-                re = new RegExp('<' + safe + '(?:\\s+[^>]*)?>([\\s\\S]*?)(?:<\\/' + safe + '>|$)', 'gi');
-            }
+            const boundaries = createTagBoundaryPatterns(tag);
+            if (!boundaries) return;
+            const re = new RegExp(`${boundaries.opening}([\\s\\S]*?)(?:${boundaries.closing}|$)`, 'gi');
 
             let match;
+            let foundOpening = false;
             while ((match = re.exec(result)) !== null) {
+                foundOpening = true;
                 if (match[1] && match[1].trim()) {
                     extracted.push(match[1].trim());
                     foundAny = true;
-                } else if (match[0]) {
-                    extracted.push(match[0].trim());
+                }
+            }
+            if (!foundOpening) {
+                const closingOnly = result.match(new RegExp(`^([\\s\\S]*?)${boundaries.closing}`, 'i'));
+                const text = String(closingOnly?.[1] || '').trim();
+                if (text) {
+                    extracted.push(text);
                     foundAny = true;
                 }
             }
