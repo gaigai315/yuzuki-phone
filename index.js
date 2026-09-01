@@ -21,7 +21,7 @@ import { PhoneFloatingEntry } from './phone/floating-entry.js';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.2';
+const ST_PHONE_VERSION = '1.5.3';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260828-stale-media-recovery';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -58,20 +58,9 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-08-28',
+    date: '2026-08-30',
     items: [
-        '【优化】优化微信部分解析问题。',
-        '【优化】优化时间锚点提示词，支持从手机最晚时间衔接剧情并识别用户的显式或相对时间推进。',
-        '【优化】ComfyUI 新增“酒馆后端（免跨域）”连接方式，模型资源读取和普通生图可由酒馆代理转发；参考图上传继续兼容浏览器直连。',
-        '【修复】修复朋友圈“不给谁看”和“仅给谁看”好友选择列表在滑动或点击勾选时带动外层页面上移越界的问题，并支持返回重新编辑后正确保存取消选择。',
-        '【更新】NAI 生图新增 V5 Full 与 V5 Curated 模型支持。',
-        '【修复】修复蜜语刷新后生图或视频生成状态卡住，以及失效直播图片或视频反复加载的问题。',
-        '【修复】修复蜜语重写生图 Tag 时，达到输出上限的截断结果可能覆盖原 Tag 的问题。',
-        '【修复】修复 NAI V4/V5 角色提示词被错误清洗的问题，并优化生图队列续租、超时与失效任务回收。',
-        '【修复】修复切换角色卡后小手机聊天记录可能串到另一角色卡的问题，数据现按角色卡与聊天文件联合隔离。',
-        '【修复】修复拉取模型后模型选择框被挤窄的问题。',
-        '【修复】修复蜜语进入或续写直播时将当前直播间状态误作 assistant 消息的问题，现改为 system 上下文。',
-        '【优化】正文标签过滤支持清理不成对标签，无需安装记忆插件。'
+        '【优化】优化部分渲染界面。'
     ]
 };
 

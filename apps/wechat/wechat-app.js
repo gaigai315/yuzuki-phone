@@ -4441,11 +4441,11 @@ export class WechatApp {
                 <!-- 顶部栏 -->
                 <div class="${headerClass}">
                     <div class="wechat-header-left">
-                        ${this.currentChat ? `
-                            <button class="wechat-back-btn" id="wechat-back">
-                                <i class="fa-solid fa-chevron-left"></i>
-                            </button>
-                        ` : ''}
+                        <button class="wechat-back-btn" id="wechat-back" type="button"
+                                aria-label="${this.currentChat ? '返回微信列表' : '返回手机桌面'}"
+                                title="${this.currentChat ? '返回微信列表' : '返回桌面'}">
+                            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                        </button>
                     </div>
                     <div class="wechat-header-title">
                         <span class="wechat-header-title-text">
@@ -5228,7 +5228,11 @@ export class WechatApp {
                 this.currentChat = null;
                 this.render();
             } else {
-                window.dispatchEvent(new CustomEvent('phone:goHome'));
+                if (typeof this.phoneShell?.goHome === 'function') {
+                    this.phoneShell.goHome();
+                } else {
+                    window.dispatchEvent(new CustomEvent('phone:goHome'));
+                }
             }
         });
 
