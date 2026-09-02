@@ -12,6 +12,16 @@
     "m11.png",
     "m12.png"
   ],
+  "hostFemale": [
+    "f1.png",
+    "f2.png",
+    "f3.png",
+    "f4.png",
+    "f5.png",
+    "f6.png",
+    "f7.png",
+    "f8.png"
+  ],
   "male": [
     "m1.png",
     "m2.png",

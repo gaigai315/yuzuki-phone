@@ -1081,7 +1081,7 @@ export class WangxiangApp {
 
         let wechatApp = window.VirtualPhone?.wechatApp || null;
         if (!wechatApp) {
-            const module = await import('../wechat/wechat-app.js?v=20260805-avatar-elder-pool');
+            const module = await import('../wechat/wechat-app.js?v=20260902-image-mime');
             wechatApp = new module.WechatApp(this.phoneShell, this.storage);
             if (!window.VirtualPhone) window.VirtualPhone = {};
             window.VirtualPhone.wechatApp = wechatApp;

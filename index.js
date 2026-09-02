@@ -23,7 +23,7 @@ import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.5.3';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
-const ST_PHONE_HONEY_ASSET_REVISION = '20260828-stale-media-recovery';
+const ST_PHONE_HONEY_ASSET_REVISION = '20260902-avatar-gender';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_CSS_URL = new URL(`./apps/honey/honey.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
@@ -58,9 +58,11 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-08-30',
+    date: '2026-09-02',
     items: [
-        '【优化】优化部分渲染界面。'
+        '【优化】优化部分渲染界面。',
+        '【修复】修复蜜语直播头像未按账号性别分配的问题：男性账号显示女性主播和男性观众头像，女性账号显示男性主播和女性观众头像。',
+        '【修复】修复微信静态表情实际图片格式与 MIME 标记不一致时发送消息报 400 的问题，并在上传和发送阶段自动校正图片格式。'
     ]
 };
 
@@ -1292,7 +1294,7 @@ if (window.GGP_Loaded) {
         ] = await Promise.all([
             import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
             import('./phone/home-screen.js'),
-            import('./apps/settings/image-upload.js')
+            import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20260902-image-mime`)
         ]);
 
         PhoneShell = phoneShellModule.PhoneShell;
@@ -5477,7 +5479,7 @@ if (window.GGP_Loaded) {
 
     async function ensureWechatAppForBackground() {
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260805-avatar-elder-pool');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260902-image-mime');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             if (!window.VirtualPhone.wechatApp) {
                 window.VirtualPhone.wechatApp = new module.WechatApp(phoneShell, storage);
@@ -8470,7 +8472,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260805-avatar-elder-pool');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260902-image-mime');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             // 单例复用
@@ -9308,7 +9310,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.settingsApp.render();
                     });
                 } else if (appId === 'wechat') {
-                    import('./apps/wechat/wechat-app.js?v=20260805-avatar-elder-pool')
+                    import('./apps/wechat/wechat-app.js?v=20260902-image-mime')
                         .then(module => {
                             try {
                                 // 🔥 单例模式：只在第一次打开时创建微信实例，拒绝重复绑定事件

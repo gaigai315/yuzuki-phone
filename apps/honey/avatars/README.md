@@ -10,6 +10,10 @@ Example:
     "male/host_01.jpg",
     "male/host_02.png"
   ],
+  "hostFemale": [
+    "female/host_01.jpg",
+    "female/host_02.png"
+  ],
   "male": [
     "male/user_01.jpg"
   ],
@@ -28,8 +32,9 @@ Example:
 
 Rules:
 
-- `hostMale`: main host avatar pool (male only, preferred).
-- `audience`: right-side audience avatar pool (preferred).
-- If `audience` is empty, it falls back to `all + male + female`.
+- `hostMale` / `hostFemale`: gender-specific host avatar pools.
+- `male` / `female`: gender-specific audience pools and host fallbacks.
+- `audience`: legacy default audience pool when no gender preference is supplied.
+- A preferred gender pool is used first; `audience`, the other gender, and `all` only fill missing slots.
 - Paths are relative to this folder.
 - Absolute URLs and root paths (for example `/backgrounds/x.jpg`) are also supported.
