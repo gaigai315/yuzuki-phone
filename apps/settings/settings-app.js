@@ -1180,6 +1180,73 @@ export class SettingsApp {
                         height: 0 !important;
                         display: none !important;
                     }
+                    #yzp-settings-app .yzp-settings-home-back {
+                        position: absolute !important;
+                        left: 8px !important;
+                        bottom: 2px !important;
+                        z-index: 2;
+                        width: 40px !important;
+                        min-width: 40px !important;
+                        max-width: 40px !important;
+                        height: 40px !important;
+                        min-height: 40px !important;
+                        display: inline-flex !important;
+                        align-items: center;
+                        justify-content: center;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        border: 0 !important;
+                        border-radius: 8px !important;
+                        background: transparent !important;
+                        color: var(--settings-text-color) !important;
+                        box-shadow: none !important;
+                        cursor: pointer;
+                        -webkit-tap-highlight-color: transparent;
+                        appearance: none !important;
+                    }
+                    #yzp-settings-app .yzp-settings-home-back i {
+                        font-size: 18px;
+                        line-height: 1;
+                        pointer-events: none;
+                    }
+                    #yzp-settings-app .yzp-settings-home-back:active {
+                        transform: scale(0.92);
+                        background: rgba(0,0,0,0.06) !important;
+                    }
+                    #yzp-settings-app .phone-image-prompt-label-row {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 8px;
+                    }
+                    #yzp-settings-app .phone-image-prompt-expand-btn {
+                        width: 28px !important;
+                        min-width: 28px !important;
+                        height: 28px !important;
+                        min-height: 28px !important;
+                        flex: 0 0 28px;
+                        display: inline-flex !important;
+                        align-items: center;
+                        justify-content: center;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        border: 1px solid #d8d8d8 !important;
+                        border-radius: 7px !important;
+                        background: rgba(255,255,255,0.82) !important;
+                        color: #555 !important;
+                        box-shadow: none !important;
+                        cursor: pointer;
+                        -webkit-tap-highlight-color: transparent;
+                    }
+                    #yzp-settings-app .phone-image-prompt-expand-btn i {
+                        font-size: 12px;
+                        line-height: 1;
+                        pointer-events: none;
+                    }
+                    #yzp-settings-app .phone-image-prompt-expand-btn:active {
+                        transform: scale(0.94);
+                        background: #f0f0f0 !important;
+                    }
                     #yzp-settings-app.yzp-settings-safe-render {
                         background-color: #f2f2f7 !important;
                     }
@@ -1843,6 +1910,9 @@ export class SettingsApp {
                     }
                 </style>
                 <div class="settings-app-header yzp-settings-header" style="background: #f7f7f7; color: #000; border-bottom: 0.5px solid #d8d8d8; display: flex; align-items: center; justify-content: center; position: sticky; top: 0; z-index: 100; height: 78px; min-height: 78px; padding: 34px 14px 0; box-sizing: border-box; flex-shrink: 0;">
+                    <button type="button" id="yzp-settings-home-back" class="yzp-settings-home-back" aria-label="返回手机桌面" title="返回桌面">
+                        <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                    </button>
                     <h2 style="color: #000; font-size: 17px; font-weight: 500; margin: 0;">设置</h2>
                 </div>
 
@@ -4194,19 +4264,34 @@ export class SettingsApp {
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">固定前置提示词</div>
+                    <div class="phone-image-prompt-label-row">
+                        <div class="setting-label">固定前置提示词</div>
+                        <button type="button" id="phone-image-fixed-prompt-expand" class="phone-image-prompt-expand-btn" aria-label="展开编辑固定前置提示词" title="展开编辑" aria-haspopup="dialog">
+                            <i class="fa-solid fa-expand" aria-hidden="true"></i>
+                        </button>
+                    </div>
                     <div class="setting-desc">按当前 App 生效；使用 ComfyUI 时按 App + 当前工作流独立保存；日记跟随微信。画师串可放这里。</div>
                     <textarea id="phone-image-fixed-prompt" style="width: 100%; min-height: 58px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${fixedPrompt}</textarea>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">固定后置提示词</div>
+                    <div class="phone-image-prompt-label-row">
+                        <div class="setting-label">固定后置提示词</div>
+                        <button type="button" id="phone-image-fixed-prompt-end-expand" class="phone-image-prompt-expand-btn" aria-label="展开编辑固定后置提示词" title="展开编辑" aria-haspopup="dialog">
+                            <i class="fa-solid fa-expand" aria-hidden="true"></i>
+                        </button>
+                    </div>
                     <div class="setting-desc">按当前 App 生效；使用 ComfyUI 时按 App + 当前工作流独立保存；日记跟随微信，会拼在 AI 本轮提示词后面。</div>
                     <textarea id="phone-image-fixed-prompt-end" style="width: 100%; min-height: 58px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${fixedPromptEnd}</textarea>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">负面提示词</div>
+                    <div class="phone-image-prompt-label-row">
+                        <div class="setting-label">负面提示词</div>
+                        <button type="button" id="phone-image-negative-prompt-expand" class="phone-image-prompt-expand-btn" aria-label="展开编辑负面提示词" title="展开编辑" aria-haspopup="dialog">
+                            <i class="fa-solid fa-expand" aria-hidden="true"></i>
+                        </button>
+                    </div>
                     <div class="setting-desc">按当前 App 生效；使用 ComfyUI 时按 App + 当前工作流独立保存；日记跟随微信，例如 low quality、bad hands、text、watermark。</div>
                     <textarea id="phone-image-negative-prompt" style="width: 100%; min-height: 70px; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; resize: vertical; margin-top: 6px;">${negativePrompt}</textarea>
                 </div>
@@ -4818,6 +4903,16 @@ export class SettingsApp {
         const settingsRoot = this._getActiveSettingsRoot();
         const document = this._createSettingsScopedDocument(settingsRoot);
         const $ = (selector) => settingsRoot?.querySelector(selector) || document.querySelector(selector);
+
+        document.getElementById('yzp-settings-home-back')?.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof this.phoneShell?.goHome === 'function') {
+                this.phoneShell.goHome();
+                return;
+            }
+            this.handleSwipeBack();
+        });
 
         const bindLobbyEvents = () => {
             const lobbyRoot = settingsRoot?.querySelector('#tab-lobby') || document.getElementById('tab-lobby');
@@ -6113,6 +6208,21 @@ export class SettingsApp {
             await this.storage.set(`phone-image-comfyui-${appKey}-negative-prompt`, String(form.negativePrompt || '').trim());
             await this.storage.set(`phone-image-comfyui-${appKey}-prompt-draft-initialized`, true);
         };
+        const saveCurrentImagePromptForm = async () => {
+            const provider = String(imageProvider?.value || 'novelai').trim().toLowerCase();
+            if (provider === 'openai') {
+                await saveOpenAIImagePromptDraft(getActiveImagePromptApp());
+                return;
+            }
+            if (provider === 'comfyui') {
+                const form = getImagePromptForm();
+                const updated = await updateActiveComfyUIWorkflowPromptSettings(form);
+                if (updated) return;
+                await saveComfyUIBuiltInPromptDraft(getComfyUIPresetScope(), form);
+                return;
+            }
+            await saveImagePromptDraft(getActiveImagePromptApp());
+        };
         const setImagePromptForm = async (preset) => {
             const fixedPromptValue = String(preset?.fixedPrompt || '');
             const fixedPromptEndValue = String(preset?.fixedPromptEnd || '');
@@ -6805,18 +6915,24 @@ export class SettingsApp {
                 } : {})
             })).filter(workflow => workflow.name)
         });
-        const showImagePromptPresetTextModal = ({ title, desc, value = '', mode = 'export', confirmText = '', onConfirm = null }) => {
+        const showImagePromptPresetTextModal = ({ title, desc, value = '', mode = 'export', confirmText = '', onConfirm = null, large = false }) => {
             document.getElementById('phone-image-preset-share-modal')?.remove();
             const overlay = document.createElement('div');
             overlay.id = 'phone-image-preset-share-modal';
             overlay.style.cssText = 'position:absolute; inset:0; z-index:10020; background:rgba(0,0,0,0.38); display:flex; align-items:center; justify-content:center; padding:14px; box-sizing:border-box;';
+            const dialogSizeStyle = large
+                ? 'height:calc(100% - 28px); max-height:620px;'
+                : 'max-height:82%;';
+            const textareaSizeStyle = large
+                ? 'height:auto; min-height:0; max-height:none; flex:1 1 auto; resize:none; font-size:12px;'
+                : 'height:240px; min-height:160px; max-height:48vh; resize:vertical; font-size:11px;';
             overlay.innerHTML = `
-                <div style="width:100%; max-width:320px; max-height:82%; background:#fff; border-radius:12px; box-shadow:0 12px 28px rgba(0,0,0,0.22); display:flex; flex-direction:column; overflow:hidden;">
+                <div style="width:100%; max-width:320px; ${dialogSizeStyle} background:#fff; border-radius:12px; box-shadow:0 12px 28px rgba(0,0,0,0.22); display:flex; flex-direction:column; overflow:hidden; touch-action:pan-y; overscroll-behavior:contain;">
                     <div style="padding:12px 14px 8px; border-bottom:1px solid #eee;">
                         <div style="font-size:15px; font-weight:700; color:#111;">${this._escapeHtml(title)}</div>
                         <div style="font-size:11px; line-height:1.45; color:#666; margin-top:4px;">${this._escapeHtml(desc)}</div>
                     </div>
-                    <textarea id="phone-image-preset-share-text" spellcheck="false" style="height:240px; min-height:160px; max-height:48vh; width:100%; resize:vertical; border:none; outline:none; padding:10px 12px; box-sizing:border-box; font-size:11px; line-height:1.45; font-family:Consolas, Monaco, monospace; color:#111; background:#fbfbfb; touch-action:pan-y; overscroll-behavior:contain;">${this._escapeHtml(value)}</textarea>
+                    <textarea id="phone-image-preset-share-text" spellcheck="false" style="${textareaSizeStyle} width:100%; border:none; outline:none; padding:10px 12px; box-sizing:border-box; line-height:1.45; font-family:Consolas, Monaco, monospace; color:#111; background:#fbfbfb; touch-action:pan-y; overscroll-behavior:contain;">${this._escapeHtml(value)}</textarea>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px; border-top:1px solid #eee; background:#fff;">
                         <button type="button" id="phone-image-preset-share-cancel" style="height:32px; border:1px solid #ddd; border-radius:8px; background:#fff; color:#333; font-size:12px; cursor:pointer;">取消</button>
                         <button type="button" id="phone-image-preset-share-confirm" style="height:32px; border:none; border-radius:8px; background:${mode === 'import' ? '#f59e0b' : '#2563eb'}; color:#fff; font-size:12px; font-weight:700; cursor:pointer;">${this._escapeHtml(confirmText || (mode === 'import' ? '导入' : '复制'))}</button>
@@ -6851,6 +6967,43 @@ export class SettingsApp {
                 if (mode === 'export') textarea?.select?.();
             }, 30);
         };
+        [
+            {
+                buttonId: 'phone-image-fixed-prompt-expand',
+                input: imageFixedPromptInput,
+                title: '固定前置提示词',
+                desc: '当前 App 的前置提示词；ComfyUI 会按当前工作流独立保存。'
+            },
+            {
+                buttonId: 'phone-image-fixed-prompt-end-expand',
+                input: imageFixedPromptEndInput,
+                title: '固定后置提示词',
+                desc: '当前 App 的后置提示词；会拼接在本轮提示词后面。'
+            },
+            {
+                buttonId: 'phone-image-negative-prompt-expand',
+                input: imageNegativePromptInput,
+                title: '负面提示词',
+                desc: '当前 App 的负面提示词；ComfyUI 会按当前工作流独立保存。'
+            }
+        ].forEach(({ buttonId, input, title, desc }) => {
+            document.getElementById(buttonId)?.addEventListener('click', () => {
+                showImagePromptPresetTextModal({
+                    title,
+                    desc,
+                    value: String(input?.value || ''),
+                    mode: 'edit',
+                    confirmText: '保存',
+                    large: true,
+                    onConfirm: async (text) => {
+                        if (!input) return;
+                        input.value = String(text || '');
+                        await saveCurrentImagePromptForm();
+                        this.phoneShell?.showNotification?.('提示词', `${title}已保存`, '✅');
+                    }
+                });
+            });
+        });
         const refreshImagePromptAppPanel = async (appKey, options = {}) => {
             const normalizedApp = this._normalizeImagePromptApp(appKey);
             const presetScope = this._normalizeImagePresetScope(normalizedApp);
@@ -8579,24 +8732,9 @@ export class SettingsApp {
         ].forEach(id => {
             const input = document.getElementById(id);
             if (!input) return;
-            const saveTextInput = async () => {
-                const provider = String(imageProvider?.value || 'novelai').trim().toLowerCase();
-                if (provider === 'openai') {
-                    await saveOpenAIImagePromptDraft(getActiveImagePromptApp());
-                    return;
-                }
-                if (provider === 'comfyui') {
-                    const form = getImagePromptForm();
-                    const updated = await updateActiveComfyUIWorkflowPromptSettings(form);
-                    if (updated) return;
-                    await saveComfyUIBuiltInPromptDraft(getComfyUIPresetScope(), form);
-                    return;
-                }
-                await saveImagePromptDraft(getActiveImagePromptApp());
-            };
-            input.addEventListener('input', saveTextInput);
-            input.addEventListener('change', saveTextInput);
-            input.addEventListener('blur', saveTextInput);
+            input.addEventListener('input', saveCurrentImagePromptForm);
+            input.addEventListener('change', saveCurrentImagePromptForm);
+            input.addEventListener('blur', saveCurrentImagePromptForm);
         });
 
         // 🔊 TTS 设置事件绑定

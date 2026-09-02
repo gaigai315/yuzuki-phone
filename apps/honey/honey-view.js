@@ -1272,9 +1272,8 @@ export class HoneyView {
             _topicKey: activeTopicKey
         };
         const isUserLive = this._isUserLiveScene(data) || this._isUserLiveScene(topic) || activeTopicKey === 'topic_user_live';
-        const userLiveProfile = isUserLive
-            ? (this.app?.honeyData?.getHoneyUserProfile?.() || {})
-            : null;
+        const honeyUserProfile = this.app?.honeyData?.getHoneyUserProfile?.() || {};
+        const userLiveProfile = isUserLive ? honeyUserProfile : null;
         const resolvedHostName = String(
             isUserLive
                 ? (userLiveProfile?.nickname || data.host || '主播')
@@ -1292,10 +1291,8 @@ export class HoneyView {
         const isHostFollowed = !isUserLive && followedHosts.some(item => this._isSameHostName(item?.name, safeHostName));
         this._ensureAvatarManifestLoaded();
         const avatarSeedData = isUserLive ? { ...data, host: resolvedHostName } : data;
-        const preferredAudienceGender = isUserLive
-            ? ((String(userLiveProfile?.gender || 'female').trim().toLowerCase() === 'male') ? 'female' : 'male')
-            : '';
-        const avatarSetBase = this._buildLiveAvatarSet(avatarSeedData, { preferredAudienceGender });
+        const avatarGenderPreferences = this._resolveLiveAvatarGenderPreferences(isUserLive, honeyUserProfile);
+        const avatarSetBase = this._buildLiveAvatarSet(avatarSeedData, avatarGenderPreferences);
         const avatarSet = isUserLive
             ? {
                 ...avatarSetBase,
@@ -7313,17 +7310,21 @@ export class HoneyView {
             ...(Array.isArray(source.hostMale) ? source.hostMale : []),
             ...(Array.isArray(source.host_male) ? source.host_male : [])
         ]);
+        const hostFemale = this._normalizeAvatarList([
+            ...(Array.isArray(source.hostFemale) ? source.hostFemale : []),
+            ...(Array.isArray(source.host_female) ? source.host_female : [])
+        ]);
         const male = this._normalizeAvatarList(source.male);
         const female = this._normalizeAvatarList(source.female);
         const audience = this._normalizeAvatarList(source.audience);
         const all = this._normalizeAvatarList(source.all);
-        return { hostMale, male, female, audience, all };
+        return { hostMale, hostFemale, male, female, audience, all };
     }
 
     _ensureAvatarManifestLoaded() {
         if (this._avatarManifestLoaded || this._avatarManifestLoading) return;
         this._avatarManifestLoading = true;
-        const manifestUrl = this._getHoneyAssetUrl('avatars/manifest.json?v=20260406-02');
+        const manifestUrl = this._getHoneyAssetUrl('avatars/manifest.json?v=20260902-01');
 
         fetch(manifestUrl, { cache: 'no-cache' })
             .then(resp => (resp.ok ? resp.text() : ''))
@@ -7509,11 +7510,31 @@ export class HoneyView {
         return basename.trim().toLowerCase();
     }
 
+    _resolveLiveAvatarGenderPreferences(isUserLive = false, profile = null) {
+        const rawGender = String(profile?.gender || 'female').trim().toLowerCase();
+        const userGender = rawGender === 'male' ? 'male' : 'female';
+        const oppositeGender = userGender === 'male' ? 'female' : 'male';
+
+        return isUserLive
+            ? { preferredHostGender: userGender, preferredAudienceGender: oppositeGender }
+            : { preferredHostGender: oppositeGender, preferredAudienceGender: userGender };
+    }
+
     _buildLiveAvatarSet(data, options = {}) {
         const manifest = this._avatarManifest || {};
         const seedBase = `${data?._topicKey || data?.title || 'honey'}|${data?.host || ''}|${data?.viewers || ''}`;
 
-        const hostPool = (manifest.hostMale?.length ? manifest.hostMale : (manifest.male || []));
+        const preferredHostGender = String(options?.preferredHostGender || '').trim().toLowerCase();
+        const preferredHostPool = preferredHostGender === 'female'
+            ? (manifest.hostFemale?.length ? manifest.hostFemale : (manifest.female || []))
+            : preferredHostGender === 'male'
+                ? (manifest.hostMale?.length ? manifest.hostMale : (manifest.male || []))
+                : [];
+        const hostPool = preferredHostPool.length
+            ? preferredHostPool
+            : (manifest.hostMale?.length
+                ? manifest.hostMale
+                : (manifest.male?.length ? manifest.male : [...(manifest.female || []), ...(manifest.all || [])]));
         const hostAvatarUrl = hostPool.length
             ? hostPool[this._simpleHash(`${seedBase}|host`) % hostPool.length]
             : '';
@@ -7524,37 +7545,42 @@ export class HoneyView {
             ? (manifest.male || [])
             : preferredAudienceGender === 'female'
                 ? (manifest.female || [])
-                : [];
+                : (manifest.audience?.length
+                    ? manifest.audience
+                    : [...(manifest.all || []), ...(manifest.male || []), ...(manifest.female || [])]);
         const secondaryAudiencePool = preferredAudienceGender === 'male'
             ? (manifest.female || [])
             : preferredAudienceGender === 'female'
                 ? (manifest.male || [])
                 : [];
-        const audienceSource = primaryAudiencePool.length
-            ? [
-                ...primaryAudiencePool,
-                ...(manifest.audience || []),
-                ...secondaryAudiencePool,
-                ...(manifest.all || [])
-            ]
-            : (manifest.audience?.length
-                ? manifest.audience
-                : [...(manifest.all || []), ...(manifest.male || []), ...(manifest.female || [])]);
-        const audiencePool = [];
-        const audienceSeen = new Set();
-        for (const rawUrl of audienceSource) {
-            if (!rawUrl) continue;
-            const key = this._avatarIdentityKey(rawUrl) || String(rawUrl);
-            if (audienceSeen.has(key)) continue;
-            audienceSeen.add(key);
-            audiencePool.push(rawUrl);
-        }
-        const filteredPool = hostKey
-            ? audiencePool.filter(url => this._avatarIdentityKey(url) !== hostKey)
-            : audiencePool;
+        const buildUniquePool = (source, excludedKeys = new Set()) => {
+            const pool = [];
+            const seen = new Set(excludedKeys);
+            for (const rawUrl of source) {
+                if (!rawUrl) continue;
+                const key = this._avatarIdentityKey(rawUrl) || String(rawUrl);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                pool.push(rawUrl);
+            }
+            return pool;
+        };
+        const excludedHostKeys = hostKey ? new Set([hostKey]) : new Set();
+        const preferredPool = buildUniquePool(primaryAudiencePool, excludedHostKeys);
+        const preferredKeys = new Set(preferredPool.map(url => this._avatarIdentityKey(url) || String(url)));
+        const fallbackPool = buildUniquePool([
+            ...(manifest.audience || []),
+            ...secondaryAudiencePool,
+            ...(manifest.all || [])
+        ], new Set([...excludedHostKeys, ...preferredKeys]));
 
-        const shuffled = this._seededShuffle(filteredPool, this._simpleHash(`${seedBase}|audience`));
-        const audienceAvatarUrls = shuffled.slice(0, 3);
+        const audienceAvatarUrls = this
+            ._seededShuffle(preferredPool, this._simpleHash(`${seedBase}|audience|preferred`))
+            .slice(0, 3);
+        if (audienceAvatarUrls.length < 3) {
+            const fallbackAvatars = this._seededShuffle(fallbackPool, this._simpleHash(`${seedBase}|audience|fallback`));
+            audienceAvatarUrls.push(...fallbackAvatars.slice(0, 3 - audienceAvatarUrls.length));
+        }
         while (audienceAvatarUrls.length < 3) audienceAvatarUrls.push('');
 
         return { hostAvatarUrl, audienceAvatarUrls };

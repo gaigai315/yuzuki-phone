@@ -2186,6 +2186,14 @@ export class ImageGenerationManager {
             ['右', [0.7, 0.5]],
             ['上', [0.5, 0.3]],
             ['下', [0.5, 0.7]],
+            ['前', [0.5, 0.7]],
+            ['前方', [0.5, 0.7]],
+            ['前景', [0.5, 0.7]],
+            ['后', [0.5, 0.3]],
+            ['後', [0.5, 0.3]],
+            ['后方', [0.5, 0.3]],
+            ['後方', [0.5, 0.3]],
+            ['背景', [0.5, 0.3]],
             ['左上', [0.3, 0.3]],
             ['上左', [0.3, 0.3]],
             ['右上', [0.7, 0.3]],
@@ -2234,6 +2242,10 @@ export class ImageGenerationManager {
             ['upper', [0.5, 0.3]],
             ['bottom', [0.5, 0.7]],
             ['lower', [0.5, 0.7]],
+            ['front', [0.5, 0.7]],
+            ['foreground', [0.5, 0.7]],
+            ['back', [0.5, 0.3]],
+            ['background', [0.5, 0.3]],
             ['upperleft', [0.3, 0.3]],
             ['topleft', [0.3, 0.3]],
             ['upperright', [0.7, 0.3]],
@@ -2252,13 +2264,26 @@ export class ImageGenerationManager {
         return null;
     }
 
+    _resolveNovelAICharacterDepthTag(value = '') {
+        const key = String(value || '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+        if (['前', '前方', '前景', 'front', 'foreground'].includes(key)) return 'foreground';
+        if (['后', '後', '后方', '後方', '背景', 'back', 'background'].includes(key)) return 'background';
+        return '';
+    }
+
     _extractNovelAICharacterPosition(text = '') {
         let position = null;
+        const depthTags = [];
         const content = String(text || '').replace(/\{\s*(?:位置|position)\s*[:：]?\s*([^{}]+?)\s*\}/gi, (match, value) => {
             if (!position) position = this._resolveNovelAICharacterPosition(value);
+            const depthTag = this._resolveNovelAICharacterDepthTag(value);
+            if (depthTag && !depthTags.includes(depthTag)) depthTags.push(depthTag);
             return '';
         });
-        return { content, position };
+        return {
+            content: [content, ...depthTags].filter(Boolean).join(', '),
+            position
+        };
     }
 
     _trimNovelAIPromptSeparators(text = '') {
@@ -2305,11 +2330,18 @@ export class ImageGenerationManager {
         }
 
         const baseCaption = this._trimNovelAIPromptSeparators(source.replace(blockPattern, ''));
+        const useCoords = characters.every(item => item.center);
+        if (!useCoords) {
+            characters.forEach((item) => {
+                item.center = null;
+            });
+        }
+
         return {
             baseCaption,
             negativeBaseCaption: String(negativePrompt || '').trim(),
             characters,
-            useCoords: characters.some(item => item.center)
+            useCoords
         };
     }
 

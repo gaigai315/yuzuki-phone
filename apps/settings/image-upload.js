@@ -9,6 +9,8 @@
  * 
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
+import { detectImageMime } from '../../config/image-mime.js';
+
 // ==========================================
 // 图片上传管理 - 全部存酒馆服务端，彻底告别 localStorage 和 Base64
 export class ImageUploadManager {
@@ -50,10 +52,23 @@ export class ImageUploadManager {
         if (mime.includes('png')) return 'png';
         if (mime.includes('webp')) return 'webp';
         if (mime.includes('gif')) return 'gif';
+        if (mime.includes('avif')) return 'avif';
+        if (mime.includes('bmp')) return 'bmp';
+        if (mime.includes('svg')) return 'svg';
         if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
         if (mime.includes('mp4')) return 'mp4';
         if (mime.includes('webm')) return 'webm';
         return 'jpg';
+    }
+
+    async _normalizeImageBlobMime(blob) {
+        const reportedMime = String(blob?.type || '').split(';')[0].trim().toLowerCase();
+        if (!reportedMime.startsWith('image/')) return blob;
+
+        const arrayBuffer = await blob.arrayBuffer();
+        const detectedMime = detectImageMime(new Uint8Array(arrayBuffer));
+        if (!detectedMime || detectedMime === reportedMime) return blob;
+        return new Blob([arrayBuffer], { type: detectedMime });
     }
 
     _sanitizeFilenamePrefix(prefix) {
@@ -123,7 +138,8 @@ export class ImageUploadManager {
             throw new Error('请选择图片或视频文件');
         }
 
-        const filename = options.filename || await this._buildManagedFilename(blob, prefix);
+        const uploadBlob = await this._normalizeImageBlobMime(blob);
+        const filename = options.filename || await this._buildManagedFilename(uploadBlob, prefix);
         const finalUrl = `/backgrounds/${filename}`;
         if (await this._backgroundExists(finalUrl)) {
             await this._unmarkAlbumDeletedPath(finalUrl);
@@ -132,7 +148,7 @@ export class ImageUploadManager {
         }
 
         const formData = new FormData();
-        formData.append('avatar', blob, filename);
+        formData.append('avatar', uploadBlob, filename);
         const headers = await this._buildRequestHeaders();
         const response = await fetch('/api/backgrounds/upload', {
             method: 'POST',

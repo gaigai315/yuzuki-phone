@@ -2374,14 +2374,65 @@ ${memoryLines.slice(0, 10).join('\n')}
             Array.isArray(visibility.contactIds) ? visibility.contactIds.length : 0,
             Array.isArray(visibility.contactNames) ? visibility.contactNames.length : 0
         );
-        if (visibility.type === 'exclude') return `不给${selectedCount}人看`;
-        if (visibility.type === 'include') return `仅${selectedCount}人可看`;
+        if (visibility.type === 'exclude' && selectedCount > 0) return `不给${selectedCount}人看`;
+        if (visibility.type === 'include') return selectedCount > 0 ? `仅${selectedCount}人可看` : '仅自己可见';
         return '公开';
     }
 
     _updatePendingMomentVisibilitySummary() {
         const summary = document.getElementById('wechat-moment-visibility-summary');
         if (summary) summary.textContent = this._getPendingMomentVisibilitySummary();
+    }
+
+    _bindMomentVisibilityScrollGuard(overlay) {
+        if (!overlay) return;
+
+        let activeList = null;
+        let lastTouchY = null;
+        const resolveList = target => target?.closest?.('.wechat-moment-visibility-list') || null;
+        const shouldContainScroll = (list, deltaY) => {
+            if (!list) return true;
+            const maxScrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
+            if (maxScrollTop <= 1) return true;
+            if (deltaY < 0 && list.scrollTop >= maxScrollTop - 1) return true;
+            if (deltaY > 0 && list.scrollTop <= 1) return true;
+            return false;
+        };
+        const resetTouch = () => {
+            activeList = null;
+            lastTouchY = null;
+        };
+
+        overlay.addEventListener('touchstart', event => {
+            activeList = resolveList(event.target);
+            lastTouchY = event.touches?.[0]?.clientY ?? null;
+            event.stopPropagation();
+        }, { passive: true });
+
+        overlay.addEventListener('touchmove', event => {
+            const currentY = event.touches?.[0]?.clientY;
+            const currentList = resolveList(event.target);
+            const deltaY = Number.isFinite(currentY) && Number.isFinite(lastTouchY)
+                ? currentY - lastTouchY
+                : 0;
+
+            event.stopPropagation();
+            if (currentList !== activeList || shouldContainScroll(currentList, deltaY)) {
+                if (event.cancelable) event.preventDefault();
+            }
+            if (Number.isFinite(currentY)) lastTouchY = currentY;
+        }, { passive: false });
+
+        overlay.addEventListener('touchend', resetTouch, { passive: true });
+        overlay.addEventListener('touchcancel', resetTouch, { passive: true });
+
+        overlay.addEventListener('wheel', event => {
+            const list = resolveList(event.target);
+            event.stopPropagation();
+            if (shouldContainScroll(list, -event.deltaY) && event.cancelable) {
+                event.preventDefault();
+            }
+        }, { passive: false });
     }
 
     showMomentVisibilityPicker() {
@@ -2471,8 +2522,8 @@ ${memoryLines.slice(0, 10).join('\n')}
                     </div>
                     <div class="wechat-moment-visibility-list">
                         ${contacts.map((contact, index) => `
-                            <label class="wechat-moment-visibility-contact">
-                                <input type="checkbox" data-contact-index="${index}" ${isContactSelected(contact) ? 'checked' : ''}>
+                            <label class="wechat-moment-visibility-contact" role="checkbox" aria-checked="${isContactSelected(contact) ? 'true' : 'false'}">
+                                <input type="checkbox" data-contact-index="${index}" tabindex="-1" hidden ${isContactSelected(contact) ? 'checked' : ''}>
                                 <span class="wechat-moment-visibility-avatar">
                                     ${this.app.renderAvatar(contact.avatar, '👤', contact.name)}
                                 </span>
@@ -2489,8 +2540,13 @@ ${memoryLines.slice(0, 10).join('\n')}
                 const countNode = picker.querySelector('.wechat-moment-visibility-count');
                 if (countNode) countNode.textContent = `已选 ${count} 人`;
             };
-            picker.querySelectorAll('input[data-contact-index]').forEach(input => {
-                input.addEventListener('change', () => {
+            picker.querySelectorAll('.wechat-moment-visibility-contact').forEach(row => {
+                const input = row.querySelector('input[data-contact-index]');
+                if (!input) return;
+                row.addEventListener('click', event => {
+                    event.preventDefault();
+                    input.checked = !input.checked;
+                    row.setAttribute('aria-checked', input.checked ? 'true' : 'false');
                     const contact = contacts[Number(input.dataset.contactIndex)];
                     if (!contact) return;
                     const key = getContactKey(contact);
@@ -2524,12 +2580,11 @@ ${memoryLines.slice(0, 10).join('\n')}
         });
         doneButton.addEventListener('click', () => {
             const selectedContacts = contacts.filter(isContactSelected);
-            if (draftType !== 'public' && selectedContacts.length === 0) {
-                this.app.phoneShell.showNotification('提示', '请至少选择一位好友', '⚠️');
-                return;
-            }
+            const resolvedType = draftType === 'exclude' && selectedContacts.length === 0
+                ? 'public'
+                : draftType;
             this.pendingMomentVisibility = {
-                type: draftType,
+                type: resolvedType,
                 contactIds: selectedContacts.map(contact => String(contact.id || '').trim()).filter(Boolean),
                 contactNames: selectedContacts.map(contact => String(contact.name || '').trim()).filter(Boolean)
             };
@@ -2543,6 +2598,7 @@ ${memoryLines.slice(0, 10).join('\n')}
         dialog?.addEventListener('click', event => event.stopPropagation());
 
         document.querySelector('#phone-panel-content .phone-screen')?.appendChild(overlay);
+        this._bindMomentVisibilityScrollGuard(overlay);
         renderContactPicker();
     }
 
@@ -2803,12 +2859,6 @@ ${memoryLines.slice(0, 10).join('\n')}
             contactIds: [],
             contactNames: []
         };
-        if (visibility.type !== 'public'
-            && (!Array.isArray(visibility.contactIds) || visibility.contactIds.length === 0)
-            && (!Array.isArray(visibility.contactNames) || visibility.contactNames.length === 0)) {
-            this.app.phoneShell.showNotification('提示', '请先设置朋友圈可见好友', '⚠️');
-            return;
-        }
 
         // 创建朋友圈
         const moment = {
