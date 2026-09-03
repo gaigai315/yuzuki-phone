@@ -2044,6 +2044,10 @@ export class WechatApp {
     cursor: pointer;
     transition: all 0.2s;
     border-bottom: 2px solid transparent;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .emoji-tab.active {
@@ -2057,13 +2061,22 @@ export class WechatApp {
 }
 
 .wechat-app .wechat-emoji-custom-tab {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+.wechat-app .wechat-emoji-custom-tab > .emoji-tab {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
 }
 
 .wechat-app .wechat-emoji-manage-trigger {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
     width: 22px;
     height: 22px;
     display: inline-flex;
@@ -2157,6 +2170,26 @@ export class WechatApp {
     align-items: center;
     gap: 12px 10px;
     padding: 2px 0 8px;
+}
+
+#phone-panel-content .phone-screen .wechat-app .wechat-custom-emoji-empty {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 54px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: #7f8792;
+    font-size: 12px;
+    line-height: 1.35;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wechat-app .wechat-custom-emoji-empty small {
+    color: #a0a6af;
+    font-size: 10px;
 }
 
 #phone-panel-content .phone-screen .wechat-app .custom-emoji-item,

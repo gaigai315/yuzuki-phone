@@ -4095,13 +4095,15 @@ renderChatRoom(chat) {
         return `
         <div class="emoji-panel">
             <!-- 🔥 新增：表情标签 -->
-            <div class="emoji-tabs">
-                <div class="emoji-tab ${this.emojiTab !== 'custom' ? 'active' : ''}" data-tab="default">
+            <div class="emoji-tabs" role="tablist" aria-label="表情分类">
+                <div class="emoji-tab ${this.emojiTab !== 'custom' ? 'active' : ''}" data-tab="default" role="tab" tabindex="0" aria-selected="${this.emojiTab !== 'custom' ? 'true' : 'false'}">
                     系统表情
                 </div>
-                <div class="emoji-tab wechat-emoji-custom-tab ${this.emojiTab === 'custom' ? 'active' : ''}" data-tab="custom">
-                    <span>我的表情</span>
-                    <button type="button" class="wechat-emoji-manage-trigger" aria-label="表情管理" aria-expanded="false">
+                <div class="wechat-emoji-custom-tab">
+                    <div class="emoji-tab ${this.emojiTab === 'custom' ? 'active' : ''}" data-tab="custom" role="tab" tabindex="0" aria-selected="${this.emojiTab === 'custom' ? 'true' : 'false'}">
+                        <span>我的表情</span>
+                    </div>
+                    <button type="button" class="wechat-emoji-manage-trigger" aria-label="表情管理" aria-expanded="${this.customEmojiManageMenuOpen ? 'true' : 'false'}">
                         <i class="fa-solid fa-broom" aria-hidden="true"></i>
                     </button>
                 </div>
@@ -4133,6 +4135,12 @@ renderChatRoom(chat) {
                 <div class="emoji-grid${customMode ? ' wechat-custom-emoji-grid' : ''}">
                     ${this.emojiTab === 'custom' ? `
                         <!-- 自定义表情 -->
+                        ${customEmojis.length === 0 ? `
+                            <div class="wechat-custom-emoji-empty" role="status">
+                                <span>还没有添加表情</span>
+                                <small>点击下方加号添加</small>
+                            </div>
+                        ` : ''}
                         ${customEmojis.map(emoji => `
                             <span class="emoji-item custom-emoji-item ${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'is-selected' : ''}" data-emoji-type="custom" data-emoji-id="${this._escapeHtml(emoji.id || '')}" data-selection-mode="${isSelectionMode ? '1' : '0'}" title="${this._escapeHtml(String(emoji.description || emoji.name || '表情'))}" style="position:relative;${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'outline:2px solid #07c160; outline-offset:1px; border-radius:10px;' : ''}">
                                 <img src="${this.escapeInlineStickerAttr(emoji.image || '')}" data-custom-emoji-src="${this.escapeInlineStickerAttr(emoji.image || '')}" alt="${this._escapeHtml(emoji.name || '')}" referrerpolicy="no-referrer">
@@ -8989,22 +8997,37 @@ renderChatRoom(chat) {
         query('.wechat-emoji-manage-trigger')?.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (this.emojiTab !== 'custom') {
+                this.emojiTab = 'custom';
+                this.customEmojiManageMenuOpen = true;
+                this.app.render();
+                return;
+            }
             const trigger = event.currentTarget;
             const menu = query('.wechat-emoji-manage-menu');
             if (!menu) return;
             const isOpen = menu.classList.toggle('is-open');
+            this.customEmojiManageMenuOpen = isOpen;
             menu.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
             trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         });
 
         queryAll('.emoji-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                this.emojiTab = tab.dataset.tab;
+            const activateTab = () => {
+                const nextTab = String(tab.dataset.tab || '').trim();
+                if (!['default', 'custom'].includes(nextTab) || nextTab === this.emojiTab) return;
+                this.emojiTab = nextTab;
                 if (this.emojiTab !== 'custom') {
                     this._setCustomEmojiSelectionMode(false);
                     this.customEmojiManageMenuOpen = false;
                 }
                 this.app.render();
+            };
+            tab.addEventListener('click', activateTab);
+            tab.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                activateTab();
             });
         });
 

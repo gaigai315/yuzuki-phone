@@ -212,7 +212,7 @@ export class PhoneShell {
         };
         const resolveInteractiveHost = (node) => {
             if (!node || typeof node.closest !== 'function') return null;
-            return node.closest('button, a, select, option, label, [role="button"], [data-no-swipe-back]');
+            return node.closest('button, a, select, option, label, [role="button"], [role="tab"], [data-no-swipe-back]');
         };
         const hasActiveSelection = () => {
             const selection = window.getSelection?.();
@@ -226,7 +226,7 @@ export class PhoneShell {
             const activeEditableHost = resolveEditableHost(document.activeElement);
             const hasFocusedTextInput = !!(activeEditableHost && isTextEditableElement(activeEditableHost) && phoneBody.contains(activeEditableHost));
             if (isTextEditableElement(touchEditableHost) || hasFocusedTextInput) return;
-            if (resolveGestureControlHost(target)) return;
+            if (resolveGestureControlHost(target) || resolveInteractiveHost(target)) return;
 
             // 动态判断当前手势是否是明显的水平滑动
             let isHorizontalSwipe = false;
@@ -248,7 +248,7 @@ export class PhoneShell {
             const scrollableAreas =[
                 '.home-dashboard', '.home-app-cluster-scroll',
                 '.chat-messages', '#voice-chat-messages', '#video-chat-messages',
-                '.quick-reply-panel', '.quick-time-column',
+                '.quick-reply-panel', '.quick-time-column', '.emoji-panel', '.emoji-scroll',
                 '.wechat-content', '.wechat-profile-edit-content', '.wechat-wallet-ledger-scroll', '.app-body', '.settings-app', '.app-name-custom-list', '.moments-list',
                 '.wechat-moment-visibility-list',
                 '#tab-memory', '.settings-app #tab-memory',
