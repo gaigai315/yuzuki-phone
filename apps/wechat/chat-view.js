@@ -12644,7 +12644,8 @@ renderChatRoom(chat) {
             this.app._getWechatAssetUrl('backgrounds/bg3.png'),
             this.app._getWechatAssetUrl('backgrounds/bg4.png'),
             this.app._getWechatAssetUrl('backgrounds/bg5.png'),
-            this.app._getWechatAssetUrl('backgrounds/bg6.png')
+            this.app._getWechatAssetUrl('backgrounds/bg6.png'),
+            this.app._getWechatAssetUrl('backgrounds/bg7.jpg')
         ];
 
         // 动态生成预设图的HTML
