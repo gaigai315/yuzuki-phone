@@ -9,8 +9,8 @@
  * 
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
-import { HoneyView } from './honey-view.js?v=1.5.3&r=20260902-avatar-gender';
-import { HoneyData } from './honey-data.js?v=1.5.3&r=20260902-avatar-gender';
+import { HoneyView } from './honey-view.js?v=1.5.4&r=20260902-avatar-gender';
+import { HoneyData } from './honey-data.js?v=1.5.4&r=20260902-avatar-gender';
 
 export class HoneyApp {
     constructor(phoneShell, storage) {

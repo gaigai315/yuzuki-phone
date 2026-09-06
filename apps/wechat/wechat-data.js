@@ -15,6 +15,7 @@ import { parseWechatVoiceContent } from './voice-text.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
+const GLOBAL_WECHAT_CHAT_BACKGROUND_KEY = 'global_wechat_chat_background';
 const GLOBAL_WECHAT_CHATLIST_BACKGROUND_KEY = 'global_wechat_chatlist_background';
 const GLOBAL_WECHAT_CHATLIST_BACKGROUND_NONE = '__none__';
 const PINYIN_INITIALS = 'ABCDEFGHJKLMNOPQRSTWXYZ';
@@ -448,6 +449,7 @@ export class WechatData {
 
                     // 🔥 先构建 chats 数组（迁移需要用到）
                     const chats = this._normalizeChatList(data.chats || []);
+                    this._applyGlobalChatBackgroundSync(chats, normalizedUserInfo);
                     const contacts = (Array.isArray(data.contacts) ? data.contacts : [])
                         .filter(contact => contact && typeof contact === 'object')
                         .map((contact) => {
@@ -536,8 +538,10 @@ export class WechatData {
             console.error('❌ 加载微信数据失败:', e);
         }
 
+        const defaultUserInfo = this._normalizeUserInfo(null);
+        this._applyGlobalChatBackgroundSync([], defaultUserInfo);
         return {
-            userInfo: this._normalizeUserInfo(null),
+            userInfo: defaultUserInfo,
             chats: [],
             contacts: [],
             messages: {},
@@ -1785,10 +1789,15 @@ export class WechatData {
 
     getUserInfo() {
         const info = this.data.userInfo;
+        const globalChatBackgroundState = this._getGlobalChatBackgroundState();
+        const withGlobalChatBackground = globalChatBackgroundState.exists
+            && globalChatBackgroundState.background !== (info.globalChatBackground || null)
+            ? { ...info, globalChatBackground: globalChatBackgroundState.background }
+            : info;
         const globalChatListBackground = this.getChatListBackground();
-        const withGlobalBg = globalChatListBackground === (info.chatListBackground || '')
-            ? info
-            : { ...info, chatListBackground: globalChatListBackground };
+        const withGlobalBg = globalChatListBackground === (withGlobalChatBackground.chatListBackground || '')
+            ? withGlobalChatBackground
+            : { ...withGlobalChatBackground, chatListBackground: globalChatListBackground };
         // 如果用户没有手动上传过自定义头像，则动态抓取酒馆默认的 Persona 头像
         if (!withGlobalBg.avatar || withGlobalBg.avatar.trim() === '') {
             const stAvatar = this._getSillyTavernPersonaAvatar();
@@ -2047,22 +2056,131 @@ export class WechatData {
         return String(background || '').trim() || null;
     }
 
+    _normalizeGlobalChatBackgroundState(rawState) {
+        if (rawState === undefined || rawState === null || rawState === '') {
+            return {
+                exists: false,
+                background: null,
+                syncedBackground: null,
+                syncRevision: 0
+            };
+        }
+
+        let parsed = rawState;
+        if (typeof rawState === 'string') {
+            const trimmed = rawState.trim();
+            if (!trimmed) {
+                return {
+                    exists: false,
+                    background: null,
+                    syncedBackground: null,
+                    syncRevision: 0
+                };
+            }
+            try {
+                parsed = JSON.parse(trimmed);
+            } catch (e) {
+                parsed = trimmed;
+            }
+        }
+
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return {
+                exists: true,
+                background: this._normalizeChatBackground(parsed),
+                syncedBackground: null,
+                syncRevision: 0
+            };
+        }
+
+        const syncRevision = Math.max(0, Number(parsed.syncRevision || parsed.revision || 0) || 0);
+        const background = this._normalizeChatBackground(
+            Object.prototype.hasOwnProperty.call(parsed, 'background')
+                ? parsed.background
+                : parsed.defaultBackground
+        );
+        const syncedBackground = this._normalizeChatBackground(
+            Object.prototype.hasOwnProperty.call(parsed, 'syncedBackground')
+                ? parsed.syncedBackground
+                : (syncRevision > 0 ? background : null)
+        );
+
+        return {
+            exists: true,
+            background,
+            syncedBackground,
+            syncRevision
+        };
+    }
+
+    _getGlobalChatBackgroundState() {
+        return this._normalizeGlobalChatBackgroundState(
+            this.storage?.get?.(GLOBAL_WECHAT_CHAT_BACKGROUND_KEY, undefined)
+        );
+    }
+
+    _saveGlobalChatBackgroundState(background, { syncAll = false } = {}) {
+        const current = this._getGlobalChatBackgroundState();
+        const nextBackground = this._normalizeChatBackground(background);
+        const nextState = {
+            background: nextBackground,
+            syncedBackground: syncAll ? nextBackground : current.syncedBackground,
+            syncRevision: syncAll
+                ? Math.max(Date.now(), current.syncRevision + 1)
+                : current.syncRevision
+        };
+        this.storage?.set?.(GLOBAL_WECHAT_CHAT_BACKGROUND_KEY, nextState);
+        return { exists: true, ...nextState };
+    }
+
+    _applyGlobalChatBackgroundSync(chats, userInfo) {
+        const state = this._getGlobalChatBackgroundState();
+        if (!state.exists) return false;
+
+        userInfo.globalChatBackground = state.background;
+        if (state.syncRevision <= 0 || !Array.isArray(chats)) return false;
+
+        let changed = false;
+        chats.forEach((chat) => {
+            if (!chat || typeof chat !== 'object') return;
+            const appliedRevision = Math.max(0, Number(chat.globalChatBackgroundSyncRevision || 0) || 0);
+            if (appliedRevision === state.syncRevision) return;
+            chat.background = state.syncedBackground;
+            chat.globalChatBackgroundSyncRevision = state.syncRevision;
+            changed = true;
+        });
+        return changed;
+    }
+
+    getGlobalChatBackground() {
+        const state = this._getGlobalChatBackgroundState();
+        if (state.exists) return state.background;
+        return this._normalizeChatBackground(this.data.userInfo?.globalChatBackground);
+    }
+
+    _getGlobalChatBackgroundSyncRevision() {
+        return this._getGlobalChatBackgroundState().syncRevision;
+    }
+
     _getInitialChatBackground(background = null) {
         return this._normalizeChatBackground(background)
-            || this._normalizeChatBackground(this.data.userInfo?.globalChatBackground);
+            || this.getGlobalChatBackground();
     }
 
     // 🔥 新增：设置全局聊天背景
     setGlobalChatBackground(background) {
-        this.data.userInfo.globalChatBackground = this._normalizeChatBackground(background);
+        const state = this._saveGlobalChatBackgroundState(background);
+        this.data.userInfo.globalChatBackground = state.background;
         this.saveData();
     }
 
     setAllChatBackgrounds(background) {
         const next = this._normalizeChatBackground(background);
+        const state = this._saveGlobalChatBackgroundState(next, { syncAll: true });
         const chats = this._normalizeChatList(this.data?.chats || []);
         chats.forEach((chat) => {
             chat.background = next;
+            chat.globalChatBackgroundSyncRevision = state.syncRevision;
         });
         this.data.chats = chats;
         this.data.userInfo.globalChatBackground = next;
@@ -2235,7 +2353,7 @@ export class WechatData {
         const chat = this.getChat(chatId);
         return String(
             chat?.background
-            || this.data.userInfo?.globalChatBackground
+            || this.getGlobalChatBackground()
             || fallback
             || ''
         ).trim();
@@ -2289,6 +2407,7 @@ export class WechatData {
             type: chatType,
             avatar: chatInfo.avatar,
             background: this._getInitialChatBackground(chatInfo.background),
+            globalChatBackgroundSyncRevision: this._getGlobalChatBackgroundSyncRevision(),
             lastMessage: '',
             time: '刚刚',
             date: '',
@@ -3713,6 +3832,7 @@ async loadContactsFromCharacter() {
                     type: 'group',
                     avatar: group.avatar || '',
                     background: this._getInitialChatBackground(group.background),
+                    globalChatBackgroundSyncRevision: this._getGlobalChatBackgroundSyncRevision(),
                     lastMessage: '',
                     time: '刚刚',
                     date: '',
@@ -4576,6 +4696,7 @@ parseAIResponse(text) {
         const chat = this.getChat(chatId);
         if (chat) {
             chat.background = this._normalizeChatBackground(background);
+            chat.globalChatBackgroundSyncRevision = this._getGlobalChatBackgroundSyncRevision();
             this.saveData();
         }
     }
@@ -4755,6 +4876,7 @@ parseAIResponse(text) {
             type: 'group',
             avatar: groupInfo.avatar || '',
             background: this._getInitialChatBackground(groupInfo.background),
+            globalChatBackgroundSyncRevision: this._getGlobalChatBackgroundSyncRevision(),
             lastMessage: '',
             time: '刚刚',
             date: '',

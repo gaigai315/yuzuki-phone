@@ -21,7 +21,7 @@ import { PhoneFloatingEntry } from './phone/floating-entry.js';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.3';
+const ST_PHONE_VERSION = '1.5.4';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260902-avatar-gender';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -58,11 +58,10 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-09-02',
+    date: '2026-09-06',
     items: [
-        '【优化】优化部分渲染界面。',
-        '【修复】修复蜜语直播头像未按账号性别分配的问题：男性账号显示女性主播和男性观众头像，女性账号显示男性主播和女性观众头像。',
-        '【修复】修复微信静态表情实际图片格式与 MIME 标记不一致时发送消息报 400 的问题，并在上传和发送阶段自动校正图片格式。'
+        '【优化】优化部分渲染及聊天背景图，并新增一张微信聊天默认背景图。',
+        '【优化】优化提示词并新增狗头emoji。'
     ]
 };
 
@@ -5479,7 +5478,7 @@ if (window.GGP_Loaded) {
 
     async function ensureWechatAppForBackground() {
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260906-chat-background-sync-fix');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260906-global-chat-background-sync');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             if (!window.VirtualPhone.wechatApp) {
                 window.VirtualPhone.wechatApp = new module.WechatApp(phoneShell, storage);
@@ -6928,7 +6927,7 @@ if (window.GGP_Loaded) {
         const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync').then(module => {
             let wechatData;
 
             if (getCurrentTavernConversationIdentity() !== conversationId) {
@@ -7636,7 +7635,7 @@ if (window.GGP_Loaded) {
             const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync').then(async module => {
                 let wechatData;
                 if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                     console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
@@ -7913,7 +7912,7 @@ if (window.GGP_Loaded) {
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
-            const module = await import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix');
+            const module = await import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             const context = getContext();
@@ -8472,7 +8471,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260906-chat-background-sync-fix');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260906-global-chat-background-sync');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             // 单例复用
@@ -9310,7 +9309,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.settingsApp.render();
                     });
                 } else if (appId === 'wechat') {
-                    import('./apps/wechat/wechat-app.js?v=20260906-chat-background-sync-fix')
+                    import('./apps/wechat/wechat-app.js?v=20260906-global-chat-background-sync')
                         .then(module => {
                             try {
                                 // 🔥 单例模式：只在第一次打开时创建微信实例，拒绝重复绑定事件
@@ -9643,7 +9642,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -10073,7 +10072,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;

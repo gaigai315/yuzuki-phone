@@ -329,7 +329,7 @@ date:{{STORY_DATE}}
 [HH:MM] [红包]（金额：xx元）
 [HH:MM] [拨打微信语音]
 [HH:MM] [语音条]（语音条转文字内容）
-[HH:MM] 直接发送emoji（如 ）
+[HH:MM] 😀（直接发送emoji;若发送特殊emoji，如狗头,则输出[狗头]）
 [HH:MM] [图片]（中文图片描述）（English NovelAI tags）
 [HH:MM] [个人图片]（中文图片描述）（English NovelAI tags）
 [HH:MM] [用户照片]（中文图片描述）（English NovelAI tags）
@@ -431,7 +431,7 @@ date:{{STORY_DATE}}
 [HH:MM] [红包]（金额：xx元）
 [HH:MM] [拨打微信语音]
 [HH:MM] [语音条]（语音条转文字内容）
-[HH:MM] 直接发送emoji（如 ）
+[HH:MM] 😀（直接发送emoji;若发送特殊emoji，如狗头,则输出[狗头]）
 [HH:MM] [图片]（中文图片描述）（English NovelAI tags）
 [HH:MM] [个人图片]（中文图片描述）（English NovelAI tags）
 [HH:MM] [用户照片]（中文图片描述）（English NovelAI tags）
@@ -651,7 +651,7 @@ date:{{STORY_DATE}}
 {{chatName}}: 怎么了？
 {{chatName}}: 有什么事吗
 {{chatName}}: 我到了，开门[转线下]
-{{chatName}}: 直接发送emoji（如 😀😭😅）
+{{chatName}}: 😀（直接发送emoji;若发送特殊emoji，如狗头,则输出[狗头]）
 {{chatName}}: [转账](金额：100元)
 {{chatName}}: [红包](金额：88.88元)
 {{chatName}}: [收款]/[领取红包]/[退回转账]/[退回红包]
@@ -1060,7 +1060,7 @@ type:group
 群友B: [图片]（中文图片描述）（English NovelAI tags）
 群友B: [个人图片]（中文图片描述）（English NovelAI tags）
 群友B: [用户照片]（中文图片描述）（English NovelAI tags）
-群友B: 直接发送emoji（如 😀😭😅）
+群友B: 😀（直接发送emoji;若发送特殊emoji，如狗头,则输出[狗头]）
 群友B: [表情包](表情包中文名称) （直接发送表情包）
 群友A: [拨打微信群语音]
 群友D: [拨打微信群视频]

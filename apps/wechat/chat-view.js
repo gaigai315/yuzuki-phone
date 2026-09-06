@@ -17,6 +17,11 @@ import { CatboxData } from '../games/catbox/catbox-data.js';
 import { parseWangxiangTaskTags, tokenizeWangxiangTaskTags } from '../wangxiang/wangxiang-task-parser.js';
 import { parseWechatVoiceContent } from './voice-text.js';
 import { detectImageMime, normalizeImageDataUrlMime, resolveImageMime } from '../../config/image-mime.js';
+import {
+    getPhoneInlineEmoji,
+    renderPhoneInlineEmoji,
+    replacePhoneInlineEmojiTokens
+} from '../../config/phone-emoji.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
@@ -3648,7 +3653,10 @@ renderChatRoom(chat) {
                             ${this._escapeHtml(wb.blogger || '微博')}
                         </div>
                         <div style="font-size: 12px; color: #666; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
-                            ${this._escapeHtml((wb.content || '').substring(0, 80))}
+                            ${replacePhoneInlineEmojiTokens(this._escapeHtml((wb.content || '').substring(0, 80)), {
+                                size: 16,
+                                className: 'wechat-inline-system-emoji'
+                            })}
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; justify-content: flex-start; gap: 6px; padding: 6px 10px; background: #f5f5f5; border-top: 1px solid #eee;">
@@ -4062,6 +4070,7 @@ renderChatRoom(chat) {
 
     renderEmojiPanel() {
         const emojis = [
+            '[狗头]',
             // 😀 表情情绪
             '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘',
             '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥳', '🤩',
@@ -4154,9 +4163,16 @@ renderChatRoom(chat) {
                         </span>
                     ` : `
                         <!-- 系统表情 -->
-                        ${emojis.map(emoji => `
-                            <span class="emoji-item" data-emoji="${emoji}" title="${emoji}">${this.renderTwemojiEmoji(emoji, 20, false)}</span>
-                        `).join('')}
+                        ${emojis.map(emoji => {
+                            const mappedEmoji = getPhoneInlineEmoji(emoji);
+                            const title = mappedEmoji?.name || emoji;
+                            const renderedEmoji = mappedEmoji
+                                ? renderPhoneInlineEmoji(emoji, { size: 20, inline: false, className: 'wechat-system-emoji-image' })
+                                : this.renderTwemojiEmoji(emoji, 20, false);
+                            return `
+                                <span class="emoji-item" data-emoji="${this._escapeHtml(emoji)}" title="${this._escapeHtml(title)}">${renderedEmoji}</span>
+                            `;
+                        }).join('')}
                     `}
                 </div>
             </div>
@@ -5908,6 +5924,10 @@ renderChatRoom(chat) {
         };
 
         let result = this._escapeHtml(text);
+        result = replacePhoneInlineEmojiTokens(result, {
+            size: 16,
+            className: 'wechat-inline-system-emoji'
+        });
         // 0️⃣ 文本内联表情包：[表情包](关键词) / [表情包]（关键词）
         // 单独一整条的表情包消息会在数据层被识别为 `sticker` 类型，不走这里
         // 这里与单条表情包保持一致：本地自定义表情 -> ALAPI -> 关键词占位卡片
@@ -8403,7 +8423,10 @@ renderChatRoom(chat) {
             .join('\n')
             .replace(/\n{3,}/g, '\n\n')
             .trim();
-        const content = esc(this.cleanAbnormalSpaces(rawContent));
+        const content = replacePhoneInlineEmojiTokens(esc(this.cleanAbnormalSpaces(rawContent)), {
+            size: 16,
+            className: 'wechat-inline-system-emoji'
+        });
 
         const forward = Number.parseInt(weiboData.forward, 10) || 0;
         const comments = Number.parseInt(weiboData.comments, 10) || (Array.isArray(weiboData.commentList) ? weiboData.commentList.length : 0);
@@ -8442,7 +8465,10 @@ renderChatRoom(chat) {
             const name = esc(comment.name || '网友');
             const replyTo = esc(comment.replyTo || '');
             const location = esc(comment.location || '');
-            const text = esc(comment.text || '');
+            const text = replacePhoneInlineEmojiTokens(esc(comment.text || ''), {
+                size: 15,
+                className: 'wechat-inline-system-emoji'
+            });
             return `
                 <div style="padding:${nested ? '5px 0' : '6px 0'}; font-size:11px; line-height:1.5; color:#333; text-align:left; word-break:break-word;">
                     ${nested ? `<span style="color:#aaa;">↳ </span>` : `<span style="color:#999;">${comment.floor}. </span>`}

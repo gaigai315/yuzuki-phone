@@ -13,6 +13,7 @@
 // 微博视图渲染 - 所有UI界面
 // ========================================
 import { ImageCropper } from '../settings/image-cropper.js';
+import { replacePhoneInlineEmojiTokens } from '../../config/phone-emoji.js';
 
 export class WeiboView {
     constructor(weiboApp) {
@@ -1614,7 +1615,10 @@ export class WeiboView {
         }
 
         const targetMap = new Map(forwardTargets.map(target => [target.name, target]));
-        const previewDesc = this._escapeHtml((post.content || '').substring(0, 50));
+        const previewDesc = replacePhoneInlineEmojiTokens(
+            this._escapeHtml((post.content || '').substring(0, 50)),
+            { size: 16, className: 'weibo-inline-emoji' }
+        );
         const previewTitle = this._escapeHtml(post.blogger || '微博');
 
         // 🔥 清理旧弹窗，防止重复叠加
@@ -1790,7 +1794,7 @@ export class WeiboView {
         try {
             let wechatApp = window.currentWechatApp || window.ggp_currentWechatApp || window.VirtualPhone?.wechatApp || null;
             if (!wechatApp) {
-                const module = await import('../wechat/wechat-app.js?v=20260906-chat-background-sync-fix');
+                const module = await import('../wechat/wechat-app.js?v=20260906-global-chat-background-sync');
                 const phoneShell = window.VirtualPhone?.phoneShell || this.app.phoneShell;
                 const storage = window.VirtualPhone?.storage || this.app.storage;
                 if (!phoneShell || !storage) return;
@@ -2006,7 +2010,7 @@ export class WeiboView {
                             <!-- 🔥 主评论，添加 weibo-replyable 类用于点击回复 -->
                             <div class="wnc-name weibo-replyable" data-author="${this._escapeAttr(mainComment.cleanName)}" data-root-index="${mainComment.originalIndex}" data-comment-index="${mainComment.originalIndex}">${this._escapeHtml(mainComment.cleanName)}</div>
                             <div class="wnc-content weibo-replyable" data-author="${this._escapeAttr(mainComment.cleanName)}" data-root-index="${mainComment.originalIndex}" data-comment-index="${mainComment.originalIndex}">
-                                ${mainComment.text}
+                                ${this._highlightWeiboText(mainComment.text)}
                             </div>
                             
                             <!-- 🔥 楼中楼渲染区域 -->
@@ -2020,7 +2024,7 @@ export class WeiboView {
                                                     <span style="color:#333;margin:0 2px;">回复</span>
                                                     <span class="wnc-sub-name">@${sub.cleanReplyTo}</span>
                                                 ` : ''}
-                                                <span style="color:#333;">: ${sub.text}</span>
+                                                <span style="color:#333;">: ${this._highlightWeiboText(sub.text)}</span>
                                             </span>
                                             <button class="wnc-sub-like-btn weibo-comment-like-btn ${(() => {
                                                 const subUsers = Array.isArray(sub.likeUsers)
@@ -3983,11 +3987,15 @@ export class WeiboView {
 
     _highlightWeiboText(text) {
         if (!text) return '';
+        let result = this._escapeHtml(text);
         // #话题# 高亮
-        text = text.replace(/#([^#]+)#/g, '<span class="weibo-topic-link">#$1#</span>');
+        result = result.replace(/#([^#]+)#/g, '<span class="weibo-topic-link">#$1#</span>');
         // @提及 高亮
-        text = text.replace(/@([\u4e00-\u9fa5\w]+)/g, '<span class="weibo-mention">@$1</span>');
-        return text;
+        result = result.replace(/@([\u4e00-\u9fa5\w]+)/g, '<span class="weibo-mention">@$1</span>');
+        return replacePhoneInlineEmojiTokens(result, {
+            size: 16,
+            className: 'weibo-inline-emoji'
+        });
     }
 
     _formatNum(num) {
