@@ -12762,8 +12762,9 @@ renderChatRoom(chat) {
         };
 
         const getCurrentBackgroundForSync = () => {
-            const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
-            return String(this.app.currentChat?.background || latestUserInfo.globalChatBackground || '').trim();
+            const chatId = String(this.app.currentChat?.id || '').trim();
+            const defaultChatBg = this.app._getWechatAssetUrl?.('backgrounds/bg1.png') || '';
+            return String(this.app.wechatData.getChatBackground?.(chatId, defaultChatBg) || '').trim();
         };
 
         document.getElementById('sync-current-bg-to-chatlist')?.addEventListener('click', () => {

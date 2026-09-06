@@ -1081,7 +1081,7 @@ export class WangxiangApp {
 
         let wechatApp = window.VirtualPhone?.wechatApp || null;
         if (!wechatApp) {
-            const module = await import('../wechat/wechat-app.js?v=20260906-chat-background-sync');
+            const module = await import('../wechat/wechat-app.js?v=20260906-chat-background-sync-fix');
             wechatApp = new module.WechatApp(this.phoneShell, this.storage);
             if (!window.VirtualPhone) window.VirtualPhone = {};
             window.VirtualPhone.wechatApp = wechatApp;

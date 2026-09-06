@@ -2043,17 +2043,26 @@ export class WechatData {
         this.saveData();
     }
 
+    _normalizeChatBackground(background) {
+        return String(background || '').trim() || null;
+    }
+
+    _getInitialChatBackground(background = null) {
+        return this._normalizeChatBackground(background)
+            || this._normalizeChatBackground(this.data.userInfo?.globalChatBackground);
+    }
+
     // 🔥 新增：设置全局聊天背景
     setGlobalChatBackground(background) {
-        this.data.userInfo.globalChatBackground = String(background || '').trim() || null;
+        this.data.userInfo.globalChatBackground = this._normalizeChatBackground(background);
         this.saveData();
     }
 
     setAllChatBackgrounds(background) {
-        const next = String(background || '').trim() || null;
+        const next = this._normalizeChatBackground(background);
         const chats = this._normalizeChatList(this.data?.chats || []);
         chats.forEach((chat) => {
-            chat.background = null;
+            chat.background = next;
         });
         this.data.chats = chats;
         this.data.userInfo.globalChatBackground = next;
@@ -2279,6 +2288,7 @@ export class WechatData {
             name: chatType === 'group' ? chatInfo.name : (contactByName?.name || chatInfo.name),
             type: chatType,
             avatar: chatInfo.avatar,
+            background: this._getInitialChatBackground(chatInfo.background),
             lastMessage: '',
             time: '刚刚',
             date: '',
@@ -3702,6 +3712,7 @@ async loadContactsFromCharacter() {
                     name: groupName,
                     type: 'group',
                     avatar: group.avatar || '',
+                    background: this._getInitialChatBackground(group.background),
                     lastMessage: '',
                     time: '刚刚',
                     date: '',
@@ -4564,7 +4575,7 @@ parseAIResponse(text) {
     setChatBackground(chatId, background) {
         const chat = this.getChat(chatId);
         if (chat) {
-            chat.background = background;
+            chat.background = this._normalizeChatBackground(background);
             this.saveData();
         }
     }
@@ -4743,6 +4754,7 @@ parseAIResponse(text) {
             name: groupInfo.name || '群聊',
             type: 'group',
             avatar: groupInfo.avatar || '',
+            background: this._getInitialChatBackground(groupInfo.background),
             lastMessage: '',
             time: '刚刚',
             date: '',

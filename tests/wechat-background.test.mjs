@@ -45,8 +45,8 @@ test('syncing all chat backgrounds replaces existing overrides', () => {
         background: '/backgrounds/shared.png',
         chatCount: 2
     });
-    assert.equal(data.getChat('chat-a').background, null);
-    assert.equal(data.getChat('chat-b').background, null);
+    assert.equal(data.getChat('chat-a').background, '/backgrounds/shared.png');
+    assert.equal(data.getChat('chat-b').background, '/backgrounds/shared.png');
     assert.equal(data.getChatBackground('chat-a', '/backgrounds/default.png'), '/backgrounds/shared.png');
     assert.equal(data.getChatBackground('chat-b', '/backgrounds/default.png'), '/backgrounds/shared.png');
 });
@@ -59,6 +59,8 @@ test('a chat created after syncing inherits the saved all-chat background', () =
     const reloadedData = new WechatData(storage);
     const newChat = reloadedData.createChat({ id: 'chat-new', name: '新会话' });
 
+    assert.equal(reloadedData.getChat('chat-a').background, '/backgrounds/shared.png');
+    assert.equal(newChat.background, '/backgrounds/shared.png');
     assert.equal(reloadedData.getChatBackground(newChat.id, '/backgrounds/default.png'), '/backgrounds/shared.png');
 });
 
@@ -67,6 +69,8 @@ test('clearing all chat backgrounds restores the supplied system fallback', () =
     data.setAllChatBackgrounds('/backgrounds/shared.png');
     data.setAllChatBackgrounds(null);
 
+    assert.equal(data.getChat('chat-a').background, null);
+    assert.equal(data.getChat('chat-b').background, null);
     assert.equal(data.getChatBackground('chat-a', '/backgrounds/default.png'), '/backgrounds/default.png');
     assert.equal(data.getChatBackground('chat-b', '/backgrounds/default.png'), '/backgrounds/default.png');
     assert.equal(data.data.userInfo.globalChatBackground, null);

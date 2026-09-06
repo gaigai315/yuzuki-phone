@@ -1790,7 +1790,7 @@ export class WeiboView {
         try {
             let wechatApp = window.currentWechatApp || window.ggp_currentWechatApp || window.VirtualPhone?.wechatApp || null;
             if (!wechatApp) {
-                const module = await import('../wechat/wechat-app.js?v=20260906-chat-background-sync');
+                const module = await import('../wechat/wechat-app.js?v=20260906-chat-background-sync-fix');
                 const phoneShell = window.VirtualPhone?.phoneShell || this.app.phoneShell;
                 const storage = window.VirtualPhone?.storage || this.app.storage;
                 if (!phoneShell || !storage) return;

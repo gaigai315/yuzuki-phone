@@ -5479,7 +5479,7 @@ if (window.GGP_Loaded) {
 
     async function ensureWechatAppForBackground() {
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260906-chat-background-sync');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260906-chat-background-sync-fix');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             if (!window.VirtualPhone.wechatApp) {
                 window.VirtualPhone.wechatApp = new module.WechatApp(phoneShell, storage);
@@ -6928,7 +6928,7 @@ if (window.GGP_Loaded) {
         const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix').then(module => {
             let wechatData;
 
             if (getCurrentTavernConversationIdentity() !== conversationId) {
@@ -7636,7 +7636,7 @@ if (window.GGP_Loaded) {
             const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix').then(async module => {
                 let wechatData;
                 if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                     console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
@@ -7913,7 +7913,7 @@ if (window.GGP_Loaded) {
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
-            const module = await import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync');
+            const module = await import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             const context = getContext();
@@ -8472,7 +8472,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260906-chat-background-sync');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260906-chat-background-sync-fix');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             // 单例复用
@@ -9310,7 +9310,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.settingsApp.render();
                     });
                 } else if (appId === 'wechat') {
-                    import('./apps/wechat/wechat-app.js?v=20260906-chat-background-sync')
+                    import('./apps/wechat/wechat-app.js?v=20260906-chat-background-sync-fix')
                         .then(module => {
                             try {
                                 // 🔥 单例模式：只在第一次打开时创建微信实例，拒绝重复绑定事件
@@ -9643,7 +9643,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -10073,7 +10073,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20260906-chat-background-sync-fix');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;
