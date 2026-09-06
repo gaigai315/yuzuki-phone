@@ -10,17 +10,17 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20260902-image-mime';
+import { ChatView } from './chat-view.js?v=20260906-chat-background-sync';
 import { ContactsView } from './contacts-view.js';
 import { MomentsView } from './moments-view.js?v=20260802-chat-moments-feed';
-import { WechatData } from './wechat-data.js?v=20260802-chat-moments-feed';
+import { WechatData } from './wechat-data.js?v=20260906-chat-background-sync';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
 import {
     DEFAULT_WECHAT_CHAT_STYLE_ID,
     WECHAT_NATIVE_CHAT_STYLE_ID,
     getBuiltinWechatChatStyleProfiles
-} from './chat-style-presets.js?v=20260728-clear-floral-avatar-clip';
+} from './chat-style-presets.js?v=20260906-wechat-back-color';
 
 const CHAT_CSS_VALUE_KEY = 'phone_global_chat_css';
 const CHAT_CSS_PROFILES_KEY = 'phone_chat_css_profiles';
@@ -322,7 +322,7 @@ export class WechatApp {
 .wechat-back-btn {
     background: none;
     border: none;
-    color: #576b95;
+    color: var(--phone-global-text);
     font-size: 14px;  /* 🔥 字号减小 */
     padding: 6px;
     cursor: pointer;
@@ -4441,9 +4441,8 @@ export class WechatApp {
         // 🔥 新增：把背景贴在整个APP最底层
         let appBgStyle = '';
         if (this.currentChat) {
-            const globalBg = userInfo.globalChatBackground;
             const defaultChatBg = this._getWechatAssetUrl('backgrounds/bg1.png');
-            const targetBg = this.currentChat.background || globalBg || defaultChatBg;
+            const targetBg = this.wechatData.getChatBackground(this.currentChat.id, defaultChatBg);
             if (targetBg.startsWith('data:') || targetBg.startsWith('/') || targetBg.startsWith('http')) {
                 appBgStyle = `background-image: url('${targetBg}'); background-size: cover; background-position: center;`;
             } else {

@@ -40,7 +40,6 @@ const YUZUKI_CLEAR_FLORAL_CHAT_CSS = `
     text-shadow: 0 1px 2px rgba(255, 255, 255, 0.78);
 }
 
-#phone-panel-content .phone-screen .wechat-app:has(.chat-room) .wechat-back-btn,
 #phone-panel-content .phone-screen .wechat-app:has(.chat-room) .wechat-header-btn {
     color: #263746 !important;
 }

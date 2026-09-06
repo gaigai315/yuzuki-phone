@@ -2045,8 +2045,20 @@ export class WechatData {
 
     // 🔥 新增：设置全局聊天背景
     setGlobalChatBackground(background) {
-        this.data.userInfo.globalChatBackground = background;
+        this.data.userInfo.globalChatBackground = String(background || '').trim() || null;
         this.saveData();
+    }
+
+    setAllChatBackgrounds(background) {
+        const next = String(background || '').trim() || null;
+        const chats = this._normalizeChatList(this.data?.chats || []);
+        chats.forEach((chat) => {
+            chat.background = null;
+        });
+        this.data.chats = chats;
+        this.data.userInfo.globalChatBackground = next;
+        this.saveData();
+        return { background: next, chatCount: chats.length };
     }
 
     // 🔥 新增：设置微信聊天列表背景
@@ -2208,6 +2220,16 @@ export class WechatData {
         const safeChatId = String(chatId || '').trim();
         if (!safeChatId) return null;
         return this._normalizeChatList(this.data?.chats || []).find(c => String(c.id || '') === safeChatId) || null;
+    }
+
+    getChatBackground(chatId, fallback = '') {
+        const chat = this.getChat(chatId);
+        return String(
+            chat?.background
+            || this.data.userInfo?.globalChatBackground
+            || fallback
+            || ''
+        ).trim();
     }
 
     _isSameLookupName(a, b) {

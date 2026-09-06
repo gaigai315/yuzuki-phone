@@ -12657,8 +12657,22 @@ renderChatRoom(chat) {
         }).join('');
         const userInfo = this.app.wechatData.getUserInfo?.() || {};
         const listBgActive = String(userInfo.chatListBackground || '').trim();
+        const allChatsBgActive = String(userInfo.globalChatBackground || '').trim();
         const shellBg = this._getChatSettingsShellBackgroundConfig();
         const pickerContentStyle = `${shellBg.contentBgStyle} padding: 20px;`;
+        const backgroundActionButtonStyle = `
+            width: 100%;
+            min-height: 54px;
+            padding: 9px 8px;
+            background: #ffffff;
+            color: #333;
+            border: 1px solid #d8d8d8;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            line-height: 1.35;
+            cursor: pointer;
+        `;
 
         const html = `
             <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
@@ -12692,35 +12706,16 @@ renderChatRoom(chat) {
                         </button>
                     </div>
 
-                    <!-- 同步到全局微信背景 -->
+                    <!-- 微信背景同步 -->
                     <div style="background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 15px;">
-                        <div style="font-size: 14px; color: #999; margin-bottom: 4px;">全局微信背景</div>
+                        <div style="font-size: 14px; color: #999; margin-bottom: 4px;">微信背景同步</div>
                         <div style="font-size: 11px; color: #07c160; margin-bottom: 12px;">
-                            当前状态：${listBgActive ? '已设置（微信/通讯录/朋友圈/我 全局同步）' : '未设置'}
+                            微信主页：${listBgActive ? '已同步' : '未同步'} · 所有会话默认：${allChatsBgActive ? '已设置' : '未设置'}
                         </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <button id="sync-current-bg-to-chatlist" style="
-                                width: 100%;
-                                padding: 10px;
-                                background: #ffffff;
-                                color: #333;
-                                border: 1px solid #d8d8d8;
-                                border-radius: 8px;
-                                font-size: 13px;
-                                font-weight: 500;
-                                cursor: pointer;
-                            ">同步全局微信背景</button>
-                            <button id="clear-chatlist-bg" style="
-                                width: 100%;
-                                padding: 10px;
-                                background: #ffffff;
-                                color: #333;
-                                border: 1px solid #d8d8d8;
-                                border-radius: 8px;
-                                font-size: 13px;
-                                font-weight: 500;
-                                cursor: pointer;
-                            ">清除全局背景</button>
+                            <button id="sync-current-bg-to-chatlist" style="${backgroundActionButtonStyle}">同步当前会话背景</button>
+                            <button id="sync-current-bg-to-all-chats" style="${backgroundActionButtonStyle}">同步所有会话背景</button>
+                            <button id="clear-wechat-backgrounds" style="${backgroundActionButtonStyle} grid-column: 1 / -1; min-height: 44px;">清除背景</button>
                         </div>
                     </div>
                     
@@ -12748,17 +12743,32 @@ renderChatRoom(chat) {
             document.getElementById('bg-upload').click();
         });
 
-        const tryCleanupOldListBg = (oldBg, keepSet = new Set()) => {
+        const tryCleanupBackground = (oldBg, keepSet = new Set()) => {
             const oldValue = String(oldBg || '').trim();
             if (!oldValue) return;
             if (keepSet.has(oldValue)) return;
-            const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldValue, { quiet: true });
+            const cleanupTask = window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldValue, {
+                quiet: true,
+                skipIfReferenced: true
+            });
             cleanupTask?.catch?.(() => { });
+        };
+
+        const cleanupBackgrounds = (backgrounds, keepSet = new Set()) => {
+            [...new Set((Array.isArray(backgrounds) ? backgrounds : [backgrounds])
+                .map(item => String(item || '').trim())
+                .filter(Boolean))]
+                .forEach(item => tryCleanupBackground(item, keepSet));
+        };
+
+        const getCurrentBackgroundForSync = () => {
+            const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
+            return String(this.app.currentChat?.background || latestUserInfo.globalChatBackground || '').trim();
         };
 
         document.getElementById('sync-current-bg-to-chatlist')?.addEventListener('click', () => {
             const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
-            const sourceBg = String(this.app.currentChat?.background || latestUserInfo.globalChatBackground || '').trim();
+            const sourceBg = getCurrentBackgroundForSync();
             if (!sourceBg) {
                 this.app.phoneShell.showNotification('提示', '当前没有可同步的聊天背景', '⚠️');
                 return;
@@ -12774,35 +12784,114 @@ renderChatRoom(chat) {
                     String(latestUserInfo.globalChatBackground || '').trim(),
                     String(latestUserInfo.momentsBackground || '').trim()
                 ].filter(Boolean));
-                tryCleanupOldListBg(oldListBg, keepSet);
+                tryCleanupBackground(oldListBg, keepSet);
             }
 
-            this.app.phoneShell.showNotification('设置成功', '全局微信背景已同步', '✅');
+            this.app.phoneShell.showNotification('设置成功', '当前会话背景已同步到微信主页', '✅');
             setTimeout(() => this.app.render(), 320);
         });
 
-        document.getElementById('clear-chatlist-bg')?.addEventListener('click', () => {
-            const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
-            const oldListBg = String(latestUserInfo.chatListBackground || '').trim();
-            const oldGlobalBg = String(latestUserInfo.globalChatBackground || '').trim();
-            if (!oldListBg && !oldGlobalBg) {
-                this.app.phoneShell.showNotification('提示', '当前未设置全局微信背景', 'ℹ️');
+        document.getElementById('sync-current-bg-to-all-chats')?.addEventListener('click', () => {
+            const sourceBg = getCurrentBackgroundForSync();
+            if (!sourceBg) {
+                this.app.phoneShell.showNotification('提示', '当前没有可同步的聊天背景', '⚠️');
                 return;
             }
 
-            this.app.wechatData.setChatListBackground(null);
-            this.app.wechatData.setGlobalChatBackground(null);
-            const keepSet = new Set([
-                String(this.app.currentChat?.background || '').trim(),
-                String(latestUserInfo.momentsBackground || '').trim()
-            ].filter(Boolean));
-            tryCleanupOldListBg(oldListBg, keepSet);
-            if (oldGlobalBg && oldGlobalBg !== oldListBg) {
-                tryCleanupOldListBg(oldGlobalBg, keepSet);
-            }
+            const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
+            const replacedBackgrounds = [
+                latestUserInfo.globalChatBackground,
+                ...this.app.wechatData.getChatList().map(chat => chat?.background)
+            ];
+            const result = this.app.wechatData.setAllChatBackgrounds(sourceBg);
+            cleanupBackgrounds(replacedBackgrounds, new Set([sourceBg]));
 
-            this.app.phoneShell.showNotification('已清除', '全局微信背景和聊天默认背景已恢复默认', '✅');
+            const chatCount = Number(result?.chatCount || 0);
+            const message = chatCount > 0
+                ? `已同步 ${chatCount} 个现有会话，并设为新会话默认背景`
+                : '已设为所有会话和新会话的默认背景';
+            this.app.phoneShell.showNotification('设置成功', message, '✅');
             setTimeout(() => this.app.render(), 320);
+        });
+
+        document.getElementById('clear-wechat-backgrounds')?.addEventListener('click', () => {
+            const modalId = 'wechat-background-clear-modal';
+            document.getElementById(modalId)?.remove();
+
+            const modal = document.createElement('div');
+            modal.id = modalId;
+            modal.style.cssText = 'position:absolute;inset:0;z-index:100000;background:rgba(0,0,0,.32);display:flex;align-items:flex-end;justify-content:center;padding:12px;box-sizing:border-box;';
+            modal.innerHTML = `
+                <div role="dialog" aria-modal="true" aria-label="选择要清除的背景" style="width:100%;max-width:330px;overflow:hidden;border-radius:8px;background:#f2f2f7;box-shadow:0 12px 36px rgba(0,0,0,.22);">
+                    <div style="padding:14px 16px 10px;text-align:center;background:rgba(255,255,255,.94);">
+                        <div style="font-size:14px;font-weight:600;color:#111;">清除背景</div>
+                        <div style="margin-top:4px;font-size:11px;line-height:1.45;color:#888;">选择清除范围</div>
+                    </div>
+                    <button type="button" data-wechat-background-clear="current" style="width:100%;min-height:50px;padding:8px 14px;border:0;border-top:1px solid #e5e5e5;background:#fff;color:#111;font-size:14px;cursor:pointer;">清除当前会话背景</button>
+                    <button type="button" data-wechat-background-clear="global" style="width:100%;min-height:50px;padding:8px 14px;border:0;border-top:1px solid #e5e5e5;background:#fff;color:#111;font-size:14px;cursor:pointer;">清除全局背景</button>
+                    <button type="button" data-wechat-background-clear="all" style="width:100%;min-height:50px;padding:8px 14px;border:0;border-top:1px solid #e5e5e5;background:#fff;color:#d93025;font-size:14px;font-weight:600;cursor:pointer;">清除所有会话及全局背景</button>
+                    <button type="button" data-wechat-background-clear="cancel" style="width:100%;min-height:48px;margin-top:7px;padding:8px 14px;border:0;background:#fff;color:#576b95;font-size:14px;font-weight:600;cursor:pointer;">取消</button>
+                </div>
+            `;
+
+            const host = document.querySelector('.phone-view-current') || document.body;
+            host.appendChild(modal);
+            const close = () => modal.remove();
+            const finish = (message, oldBackgrounds = []) => {
+                close();
+                cleanupBackgrounds(oldBackgrounds);
+                this.app.phoneShell.showNotification('已清除', message, '✅');
+                setTimeout(() => this.app.render(), 320);
+            };
+
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) close();
+            });
+            modal.querySelector('[data-wechat-background-clear="cancel"]')?.addEventListener('click', close);
+
+            modal.querySelector('[data-wechat-background-clear="current"]')?.addEventListener('click', () => {
+                const chatId = String(this.app.currentChat?.id || '').trim();
+                const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
+                const oldCurrentBg = String(this.app.currentChat?.background || '').trim();
+                const globalBg = String(latestUserInfo.globalChatBackground || '').trim();
+                if (!oldCurrentBg && !globalBg) {
+                    close();
+                    this.app.phoneShell.showNotification('提示', '当前会话已经使用默认背景', 'ℹ️');
+                    return;
+                }
+
+                const defaultChatBg = this.app._getWechatAssetUrl('backgrounds/bg1.png');
+                this.app.wechatData.setChatBackground(chatId, globalBg ? defaultChatBg : null);
+                finish('当前会话背景已恢复默认', [oldCurrentBg]);
+            });
+
+            modal.querySelector('[data-wechat-background-clear="global"]')?.addEventListener('click', () => {
+                const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
+                const oldListBg = String(latestUserInfo.chatListBackground || '').trim();
+                const oldGlobalBg = String(latestUserInfo.globalChatBackground || '').trim();
+                if (!oldListBg && !oldGlobalBg) {
+                    close();
+                    this.app.phoneShell.showNotification('提示', '当前未设置全局背景', 'ℹ️');
+                    return;
+                }
+
+                this.app.wechatData.setChatListBackground(null);
+                this.app.wechatData.setGlobalChatBackground(null);
+                finish('全局背景已恢复默认，单独会话背景保持不变', [oldListBg, oldGlobalBg]);
+            });
+
+            modal.querySelector('[data-wechat-background-clear="all"]')?.addEventListener('click', () => {
+                const latestUserInfo = this.app.wechatData.getUserInfo?.() || {};
+                const oldBackgrounds = [
+                    latestUserInfo.chatListBackground,
+                    latestUserInfo.globalChatBackground,
+                    ...this.app.wechatData.getChatList().map(chat => chat?.background)
+                ];
+
+                this.app.wechatData.setChatListBackground(null);
+                this.app.wechatData.setAllChatBackgrounds(null);
+                finish('所有会话及全局背景已恢复默认', oldBackgrounds);
+            });
         });
 
         // 上传背景 - 支持裁剪
