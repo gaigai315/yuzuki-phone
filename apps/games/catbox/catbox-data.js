@@ -5,7 +5,8 @@
 
 import { WechatData } from '../../wechat/wechat-data.js';
 
-const STORAGE_KEY = 'games_catbox_state';
+const LEGACY_STORAGE_KEY = 'games_catbox_state';
+const STORAGE_KEY = 'chat_games_catbox_state';
 
 const CAT_IDS = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12'];
 const BACKGROUND_IDS = ['wxxw1', 'wxxw2', 'wxxw3', 'wxxw4'];
@@ -122,6 +123,11 @@ export class CatboxData {
     constructor(storage) {
         this.storage = storage;
         this.state = this._loadState();
+    }
+
+    reloadForCurrentChat() {
+        this.state = this._loadState();
+        return this.state;
     }
 
     getState() {
@@ -561,8 +567,29 @@ export class CatboxData {
 
     _loadState() {
         const saved = this.storage?.get?.(STORAGE_KEY);
-        const state = saved && typeof saved === 'object' ? saved : {};
-        return this._normalizeState(state);
+        if (saved && typeof saved === 'object') {
+            this._removeLegacyGlobalState();
+            return this._normalizeState(saved);
+        }
+
+        const legacySaved = this.storage?.get?.(LEGACY_STORAGE_KEY);
+        if (legacySaved && typeof legacySaved === 'object') {
+            const migrated = this._normalizeState(legacySaved);
+            this.state = migrated;
+            this._persist();
+            this._removeLegacyGlobalState();
+            return migrated;
+        }
+
+        this._removeLegacyGlobalState();
+        return this._normalizeState({});
+    }
+
+    _removeLegacyGlobalState() {
+        const legacy = this.storage?.get?.(LEGACY_STORAGE_KEY);
+        if (legacy !== undefined && legacy !== null) {
+            this.storage?.remove?.(LEGACY_STORAGE_KEY);
+        }
     }
 
     _normalizeState(state) {

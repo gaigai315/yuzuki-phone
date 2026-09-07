@@ -772,6 +772,12 @@ export class GamesApp extends PokerApp {
         this.catboxView.render();
     }
 
+    onChatChanged(storage = this.storage) {
+        this.storage = storage || this.storage;
+        this.catboxView?.destroy?.();
+        this.catboxData = new CatboxData(this.storage);
+    }
+
     openWerewolf() {
         this.applyPhoneChromeTheme();
         this.currentView = 'werewolf';

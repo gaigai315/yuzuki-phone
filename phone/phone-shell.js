@@ -56,20 +56,17 @@ export class PhoneShell {
                 <span class="time">${this.getCurrentTime()}</span>
             </div>
             <div class="statusbar-right">
-                <!-- 🔥 信号强度条（4格） -->
-                <div class="signal-bars">
-                    <span class="bar bar-1"></span>
-                    <span class="bar bar-2"></span>
-                    <span class="bar bar-3"></span>
-                    <span class="bar bar-4"></span>
+                <!-- Wi-Fi 信号 -->
+                <div class="phone-wifi-signal" role="img" aria-label="Wi-Fi 已连接">
+                    <i class="fa-solid fa-wifi" aria-hidden="true"></i>
                 </div>
-                <!-- 🔥 竖版电池图标，数字在里面 -->
-                <div class="battery-vertical" id="battery-icon">
-                    <div class="battery-head-v"></div>
-                    <div class="battery-body-v">
-                        <div class="battery-level-v" id="battery-level" style="height: ${this.batteryLevel}%"></div>
-                        <span class="battery-text-v" id="battery-text">${this.batteryLevel}</span>
+                <!-- 🔋 横向电池：百分比显示在电池槽内 -->
+                <div class="battery-icon" id="battery-icon" aria-label="电量 ${this.batteryLevel}%">
+                    <div class="battery-body">
+                        <div class="battery-level" id="battery-level" style="width: ${this.batteryLevel}%"></div>
+                        <span class="battery-text" id="battery-text">${this.batteryLevel}</span>
                     </div>
+                    <div class="battery-head"></div>
                 </div>
             </div>
         </div>
@@ -129,56 +126,29 @@ export class PhoneShell {
 
     // 🔋 更新电池显示
     updateBatteryDisplay(level, charging) {
-        this.batteryLevel = Math.round(level);
-        this.isCharging = charging;
+        const parsedLevel = Number(level);
+        const nextLevel = Number.isFinite(parsedLevel) ? Math.round(parsedLevel) : this.batteryLevel;
+        this.batteryLevel = Math.min(100, Math.max(0, nextLevel));
+        this.isCharging = Boolean(charging);
 
-        // 竖版电池
-        const levelElV = this.container?.querySelector('.battery-level-v');
-        const textElV = this.container?.querySelector('.battery-text-v');
-        const iconElV = this.container?.querySelector('.battery-vertical');
+        const levelEl = this.container?.querySelector('.battery-level');
+        const textEl = this.container?.querySelector('.battery-text');
+        const iconEl = this.container?.querySelector('.battery-icon');
 
-        if (levelElV) {
-            levelElV.style.height = `${this.batteryLevel}%`;
-            // 根据电量改变颜色
-            if (this.batteryLevel <= 20) {
-                levelElV.style.background = '#ff3b30';
-            } else if (this.batteryLevel <= 50) {
-                levelElV.style.background = '#ffcc00';
-            } else {
-                levelElV.style.background = charging ? '#34c759' : '#4cd964';
-            }
-        }
-        if (textElV) {
-            textElV.textContent = this.batteryLevel;
-        }
-        if (iconElV && charging) {
-            iconElV.classList.add('charging');
-        } else if (iconElV) {
-            iconElV.classList.remove('charging');
-        }
-
-        // 旧版横版电池（兼容）
-        const levelEl = this.container?.querySelector('#battery-level:not(.battery-level-v)');
-        const textEl = this.container?.querySelector('#battery-text:not(.battery-text-v)');
-        const iconEl = this.container?.querySelector('#battery-icon:not(.battery-vertical)');
-
-        if (levelEl && !levelEl.classList.contains('battery-level-v')) {
+        if (levelEl) {
             levelEl.style.width = `${this.batteryLevel}%`;
-            if (this.batteryLevel <= 20) {
-                levelEl.style.background = '#ff3b30';
-            } else if (this.batteryLevel <= 50) {
-                levelEl.style.background = '#ffcc00';
-            } else {
-                levelEl.style.background = charging ? '#34c759' : '#333';
-            }
         }
-        if (textEl && !textEl.classList.contains('battery-text-v')) {
-            textEl.textContent = `${this.batteryLevel}%`;
+        if (textEl) {
+            textEl.textContent = String(this.batteryLevel);
         }
-        if (iconEl && charging && !iconEl.classList.contains('battery-vertical')) {
-            iconEl.classList.add('charging');
-        } else if (iconEl && !iconEl.classList.contains('battery-vertical')) {
-            iconEl.classList.remove('charging');
+        if (iconEl) {
+            iconEl.classList.toggle('charging', this.isCharging);
+            iconEl.classList.toggle('battery-low', this.batteryLevel <= 20);
+            iconEl.classList.toggle('battery-medium', this.batteryLevel > 20 && this.batteryLevel <= 50);
+            iconEl.setAttribute(
+                'aria-label',
+                `电量 ${this.batteryLevel}%${this.isCharging ? '，充电中' : ''}`
+            );
         }
     }
 

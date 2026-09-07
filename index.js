@@ -21,7 +21,7 @@ import { PhoneFloatingEntry } from './phone/floating-entry.js';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.4';
+const ST_PHONE_VERSION = '1.5.5';
 const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260902-avatar-gender';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -58,10 +58,10 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-09-06',
+    date: '2026-09-07',
     items: [
-        '【优化】优化部分渲染及聊天背景图，并新增一张微信聊天默认背景图。',
-        '【优化】优化提示词并新增狗头emoji。'
+        '【修复】修复电子小猫存档未按酒馆会话隔离，切换角色或会话后错误共用同一只小猫的问题。',
+        '【优化】旧版全局猫盒存档会自动迁移到当前会话，并清理遗留全局数据，避免继续跨会话串档。'
     ]
 };
 
@@ -8623,6 +8623,10 @@ if (window.GGP_Loaded) {
             // 🎵 音乐：清空缓存 + 刷新悬浮窗 + 扫描当前会话卡片
             if (window.VirtualPhone.musicApp) {
                 window.VirtualPhone.musicApp.onChatChanged(storage);
+            }
+            // 🎮 猫盒：重新绑定当前会话存档，避免切换角色后沿用上一只小猫
+            if (window.VirtualPhone.gamesApp) {
+                window.VirtualPhone.gamesApp.onChatChanged?.(storage);
             }
         }
         window.currentWechatApp = null;

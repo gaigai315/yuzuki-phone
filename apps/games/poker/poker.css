@@ -897,17 +897,26 @@
     text-shadow: 0 0 6px rgba(255, 255, 255, 0.28);
 }
 
-.phone-body-panel-games .signal-bars .bar {
-    background: #ffffff !important;
-    box-shadow: 0 0 5px rgba(255, 255, 255, 0.32);
-}
-
-.phone-body-panel-games .battery-text-v {
+.phone-body-panel-games .phone-wifi-signal,
+.phone-body-panel-games .phone-wifi-signal .fa-wifi {
     color: #ffffff !important;
 }
 
-.phone-body-panel-games .battery-body-v {
+.phone-body-panel-games .phone-wifi-signal {
+    filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.32));
+}
+
+.phone-body-panel-games .battery-text {
+    color: #ffffff !important;
+}
+
+.phone-body-panel-games .battery-body {
     border-color: rgba(255, 255, 255, 0.95) !important;
+    background: rgba(0, 0, 0, 0.3) !important;
+}
+
+.phone-body-panel-games .battery-head {
+    background: rgba(255, 255, 255, 0.95) !important;
 }
 
 .games-poker-table-wrap {

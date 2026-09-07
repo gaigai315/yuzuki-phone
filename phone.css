@@ -657,90 +657,72 @@
     margin-right: 10px;  /* 🔥 往左一点 */
 }
 
-/* 📶 信号图标 - 扇形样式 */
-.signal-icon {
-    width: 14px;
-    height: 12px;
-    position: relative;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-}
-
-/* 🔥 隐藏旧的条形信号 */
-.signal-bar {
-    display: none;
-}
-
-/* 📶 新版信号强度条（4格递增） */
-.signal-bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 1.5px;
-    height: 12px;
-}
-
-.signal-bars .bar {
-    width: 3px;
-    background: #333;
-    border-radius: 1px;
-}
-
-.signal-bars .bar-1 { height: 3px; }
-.signal-bars .bar-2 { height: 5px; }
-.signal-bars .bar-3 { height: 8px; }
-.signal-bars .bar-4 { height: 11px; }
-
-/* 📶 WiFi图标 - 扇形 */
-.wifi-icon {
-    display: flex;
-    align-items: center;
-    color: #000;
-}
-
-.wifi-icon svg {
+/* 📶 Wi-Fi 信号 */
+.phone-statusbar .phone-wifi-signal {
     width: 15px;
-    height: 15px;
-}
-
-/* 🔋 电池图标 - 横条风格（旧版，保留兼容） */
-.battery-icon {
+    height: 12px;
     display: flex;
     align-items: center;
-    gap: 2px;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: #333;
 }
 
-.battery-body {
-    width: 18px;
-    height: 8px;
-    border: 1.5px solid #000;
-    border-radius: 2px;
+.phone-statusbar .phone-wifi-signal .fa-wifi {
+    color: inherit;
+    font-size: 13px;
+    line-height: 1;
+}
+
+/* 🔋 横向电池图标 */
+.phone-statusbar .battery-icon {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    height: 12px;
+}
+
+.phone-statusbar .battery-body {
+    width: 29px;
+    height: 12px;
+    border: 1px solid #333;
+    border-radius: 2.5px;
+    background: rgba(255, 255, 255, 0.72);
+    box-sizing: border-box;
     position: relative;
     overflow: hidden;
 }
 
-.battery-level {
+.phone-statusbar .battery-level {
     position: absolute;
-    top: 1px;
-    left: 1px;
-    bottom: 1px;
-    background: #4cd964;  /* 🔥 绿色电量 */
+    inset: 1px auto 1px 1px;
+    background: #4cd964;
     border-radius: 1px;
     transition: width 0.3s, background 0.3s;
 }
 
-.battery-head {
+.phone-statusbar .battery-head {
     width: 2px;
-    height: 4px;
-    background: #000;
+    height: 5px;
+    margin-left: 1px;
+    background: #333;
     border-radius: 0 1px 1px 0;
+    flex: 0 0 auto;
 }
 
-.battery-text {
-    font-size: 10px;
-    font-weight: 600;
-    color: #000;
-    min-width: 28px;
+.phone-statusbar .battery-text {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #333;
+    font-size: 7px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.75);
 }
 
 /* 🔋 竖版电池图标 - 数字在里面 */
@@ -786,13 +768,17 @@
     color: #333;
 }
 
-/* 🔋 充电状态 */
-.battery-icon.charging .battery-level,
+/* 🔋 充电与低电量状态 */
+.phone-statusbar .battery-icon.charging .battery-level,
 .battery-vertical.charging .battery-level-v {
     background: #4cd964 !important;
 }
 
-/* 🔋 低电量 */
+.phone-statusbar .battery-icon.battery-medium:not(.charging) .battery-level {
+    background: #ffcc00;
+}
+
+.phone-statusbar .battery-icon.battery-low:not(.charging) .battery-level,
 .battery-level.low,
 .battery-level-v.low {
     background: #ff3b30 !important;

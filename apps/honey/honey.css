@@ -4389,17 +4389,26 @@ body.phone-input-active .honey-page-live .honey-input-bar {
     text-shadow: 0 0 6px rgba(255, 123, 177, 0.35);
 }
 
-.phone-body-panel-honey .signal-bars .bar {
-    background: #ffd7ea !important;
-    box-shadow: 0 0 5px rgba(255, 123, 177, 0.45);
+.phone-body-panel-honey .phone-wifi-signal,
+.phone-body-panel-honey .phone-wifi-signal .fa-wifi {
+    color: #ffd7ea !important;
 }
 
-.phone-body-panel-honey .battery-text-v {
+.phone-body-panel-honey .phone-wifi-signal {
+    filter: drop-shadow(0 0 3px rgba(255, 123, 177, 0.45));
+}
+
+.phone-body-panel-honey .battery-text {
     color: #ffe9f4 !important;
 }
 
-.phone-body-panel-honey .battery-body-v {
+.phone-body-panel-honey .battery-body {
     border-color: rgba(255, 216, 232, 0.95) !important;
+    background: rgba(41, 12, 28, 0.45) !important;
+}
+
+.phone-body-panel-honey .battery-head {
+    background: rgba(255, 216, 232, 0.95) !important;
 }
 
 /* 蜜语直播输入栏在移动端软键盘弹起时需要额外避让，避免被系统键盘贴边遮挡 */
