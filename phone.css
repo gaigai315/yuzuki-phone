@@ -680,11 +680,15 @@
     align-items: center;
     flex: 0 0 auto;
     height: 12px;
+    position: relative;
 }
 
 .phone-statusbar .battery-body {
     width: 29px;
+    min-width: 29px;
+    max-width: 29px;
     height: 12px;
+    flex: 0 0 29px;
     border: 1px solid #333;
     border-radius: 2.5px;
     background: rgba(255, 255, 255, 0.72);
@@ -722,7 +726,38 @@
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     line-height: 1;
+    min-width: 0;
+    padding: 0;
+    box-sizing: border-box;
+    white-space: nowrap;
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
     text-shadow: 0 1px 1px rgba(255, 255, 255, 0.75);
+}
+
+/* 移动端会把整个小手机压到更窄的可视区，给三位数电量保留稳定的像素栅格。 */
+@media (max-width: 500px), (hover: none) and (pointer: coarse) {
+    #phone-panel-content .phone-statusbar .battery-icon {
+        height: 14px;
+    }
+
+    #phone-panel-content .phone-statusbar .battery-body {
+        width: 32px;
+        min-width: 32px;
+        max-width: 32px;
+        height: 14px;
+        flex-basis: 32px;
+    }
+
+    #phone-panel-content .phone-statusbar .battery-head {
+        height: 6px;
+    }
+
+    #phone-panel-content .phone-statusbar .battery-text {
+        font-size: 9px !important;
+        font-weight: 800;
+        line-height: 1 !important;
+    }
 }
 
 /* 🔋 竖版电池图标 - 数字在里面 */

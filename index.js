@@ -22,7 +22,7 @@ import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.5.5';
-const ST_PHONE_CSS_REVISION = '20260803-floating-entry';
+const ST_PHONE_CSS_REVISION = '20260907-mobile-battery';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260902-avatar-gender';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
@@ -8736,6 +8736,7 @@ if (window.GGP_Loaded) {
 
     function isProtectedPhoneFontElement(element) {
         if (!(element instanceof HTMLElement)) return true;
+        if (element.closest('.phone-statusbar')) return true;
         if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'PATH', 'IMG', 'PICTURE', 'VIDEO', 'AUDIO', 'CANVAS', 'SOURCE', 'I'].includes(element.tagName)) {
             return true;
         }
