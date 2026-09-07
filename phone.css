@@ -735,26 +735,29 @@
     text-shadow: 0 1px 1px rgba(255, 255, 255, 0.75);
 }
 
-/* 移动端会把整个小手机压到更窄的可视区，给三位数电量保留稳定的像素栅格。 */
+/* 移动端保持紧凑尺寸，同时给三位数电量保留稳定的像素栅格。 */
 @media (max-width: 500px), (hover: none) and (pointer: coarse) {
     #phone-panel-content .phone-statusbar .battery-icon {
-        height: 14px;
+        height: 8px;
     }
 
     #phone-panel-content .phone-statusbar .battery-body {
-        width: 32px;
-        min-width: 32px;
-        max-width: 32px;
-        height: 14px;
-        flex-basis: 32px;
+        width: 18px;
+        min-width: 18px;
+        max-width: 18px;
+        height: 8px;
+        flex-basis: 18px;
+        border-radius: 2px;
     }
 
     #phone-panel-content .phone-statusbar .battery-head {
-        height: 6px;
+        width: 1.5px;
+        height: 4px;
+        margin-left: 0.5px;
     }
 
     #phone-panel-content .phone-statusbar .battery-text {
-        font-size: 9px !important;
+        font-size: 5.5px !important;
         font-weight: 800;
         line-height: 1 !important;
     }
