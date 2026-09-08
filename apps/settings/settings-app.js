@@ -36,6 +36,8 @@ const PHONE_SHELL_SCALE_DEFAULT = 100;
 const PHONE_FONT_SCALE_MIN = 70;
 const PHONE_FONT_SCALE_MAX = 130;
 const PHONE_FONT_SCALE_DEFAULT = 100;
+const PHONE_FRAME_COLOR_DEFAULT = '#1a1a1a';
+const PHONE_GLOBAL_TEXT_COLOR_DEFAULT = '#000000';
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const CARD_LAYOUT_CUSTOM_CSS_KEY = 'phone-card-layout-custom-css';
@@ -80,6 +82,78 @@ function normalizePhoneFontScalePercent(value) {
     const raw = Number.parseFloat(value);
     if (!Number.isFinite(raw)) return PHONE_FONT_SCALE_DEFAULT;
     return Math.max(PHONE_FONT_SCALE_MIN, Math.min(PHONE_FONT_SCALE_MAX, Math.round(raw)));
+}
+
+function parsePhoneHexColor(value) {
+    let clean = String(value || '').trim();
+    if (!clean) return null;
+    if (!clean.startsWith('#')) clean = `#${clean}`;
+    if (/^#[0-9a-f]{3}$/i.test(clean)) {
+        clean = `#${clean.slice(1).split('').map(char => char.repeat(2)).join('')}`;
+    }
+    return /^#[0-9a-f]{6}$/i.test(clean) ? clean.toUpperCase() : null;
+}
+
+function normalizePhoneHexColor(value, fallback = PHONE_FRAME_COLOR_DEFAULT) {
+    return parsePhoneHexColor(value) || parsePhoneHexColor(fallback) || '#1A1A1A';
+}
+
+function clampPhoneColorNumber(value, min, max) {
+    const number = Number(value);
+    return Math.min(max, Math.max(min, Number.isFinite(number) ? number : min));
+}
+
+function phoneHexToRgb(value) {
+    const hex = normalizePhoneHexColor(value).slice(1);
+    return [
+        Number.parseInt(hex.slice(0, 2), 16),
+        Number.parseInt(hex.slice(2, 4), 16),
+        Number.parseInt(hex.slice(4, 6), 16)
+    ];
+}
+
+function phoneRgbToHex(rgb) {
+    return `#${rgb.map(channel => Math.round(clampPhoneColorNumber(channel, 0, 255)).toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+}
+
+function phoneRgbToHsv(rgb) {
+    const [r, g, b] = rgb.map(channel => clampPhoneColorNumber(channel, 0, 255) / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const delta = max - min;
+    let hue = 0;
+
+    if (delta) {
+        if (max === r) hue = 60 * (((g - b) / delta) % 6);
+        else if (max === g) hue = 60 * (((b - r) / delta) + 2);
+        else hue = 60 * (((r - g) / delta) + 4);
+    }
+    if (hue < 0) hue += 360;
+
+    return {
+        h: hue,
+        s: max ? delta / max : 0,
+        v: max
+    };
+}
+
+function phoneHsvToRgb({ h, s, v }) {
+    const hue = ((clampPhoneColorNumber(h, 0, 360) % 360) + 360) % 360;
+    const saturation = clampPhoneColorNumber(s, 0, 1);
+    const value = clampPhoneColorNumber(v, 0, 1);
+    const chroma = value * saturation;
+    const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+    const match = value - chroma;
+    let channels;
+
+    if (hue < 60) channels = [chroma, x, 0];
+    else if (hue < 120) channels = [x, chroma, 0];
+    else if (hue < 180) channels = [0, chroma, x];
+    else if (hue < 240) channels = [0, x, chroma];
+    else if (hue < 300) channels = [x, 0, chroma];
+    else channels = [chroma, 0, x];
+
+    return channels.map(channel => (channel + match) * 255);
 }
 
 function readNonNegativeStorageNumber(storage, key, defaultValue = 0, maxValue = 9999) {
@@ -1144,8 +1218,8 @@ export class SettingsApp {
             ? `background-image: url('${String(wallpaper).replace(/'/g, "\\'")}'); background-size: cover; background-position: center;`
             : '';
         const cardTimeImage = this.storage.get('phone-card-time-image') || null;
-        const globalTextColor = this.storage.get('phone-global-text') || '#000000';
-        const phoneFrameColor = this.storage.get('phone-frame-color') || '#1a1a1a';
+        const globalTextColor = normalizePhoneHexColor(this.storage.get('phone-global-text'), PHONE_GLOBAL_TEXT_COLOR_DEFAULT);
+        const phoneFrameColor = normalizePhoneHexColor(this.storage.get('phone-frame-color'), PHONE_FRAME_COLOR_DEFAULT);
         const phoneShellScale = normalizePhoneShellScalePercent(this.storage.get('phone-shell-scale') || PHONE_SHELL_SCALE_DEFAULT);
         const phoneFontScale = normalizePhoneFontScalePercent(this.storage.get('phone-font-scale') || PHONE_FONT_SCALE_DEFAULT);
         const html = `
@@ -2305,19 +2379,6 @@ export class SettingsApp {
                                 </div>
                             </div>
 
-                            <div class="setting-item">
-                                <div class="setting-toggle">
-                                    <div>
-                                        <div class="setting-label">手机边框颜色</div>
-                                        <div class="setting-desc">调整小手机外壳边框颜色，默认黑色</div>
-                                    </div>
-                                    <input type="color"
-                                           id="phone-frame-color-picker"
-                                           value="${phoneFrameColor}"
-                                           class="color-picker-input">
-                                </div>
-                            </div>
-
                             <!-- 壁纸设置 -->
                             <div class="setting-item">
                                 <div class="setting-label">手机壁纸</div>
@@ -2427,7 +2488,7 @@ export class SettingsApp {
 
                         <details data-settings-fold-key="phone-settings-general-text-color-open" ${isGeneralTextColorOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>🎨 文字颜色</span>
+                                <span>🎨 颜色</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
@@ -2435,13 +2496,44 @@ export class SettingsApp {
                             <div class="setting-item">
                                 <div class="setting-toggle">
                                     <div>
+                                        <div class="setting-label">手机边框颜色</div>
+                                        <div class="setting-desc">调整小手机外壳边框颜色，默认黑色</div>
+                                    </div>
+                                    <button type="button"
+                                            id="phone-frame-color-trigger"
+                                            class="yzp-frame-color-control"
+                                            data-color="${phoneFrameColor}"
+                                            data-color-storage-key="phone-frame-color"
+                                            data-color-default="${PHONE_FRAME_COLOR_DEFAULT}"
+                                            data-color-picker-title="选择边框颜色"
+                                            data-color-picker-label="手机边框颜色"
+                                            data-color-preview-kind="frame"
+                                            aria-label="选择手机边框颜色">
+                                        <span class="yzp-frame-color-control-swatch" style="--yzp-frame-control-color: ${phoneFrameColor};" aria-hidden="true"></span>
+                                        <span class="yzp-frame-color-control-value">${phoneFrameColor}</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-toggle">
+                                    <div>
                                         <div class="setting-label">全局文字颜色</div>
                                         <div class="setting-desc">统一控制手机内所有文字的颜色</div>
                                     </div>
-                                    <input type="color"
-                                           id="global-text-color-picker"
-                                           value="${globalTextColor}"
-                                           class="color-picker-input">
+                                    <button type="button"
+                                            id="global-text-color-trigger"
+                                            class="yzp-frame-color-control"
+                                            data-color="${globalTextColor}"
+                                            data-color-storage-key="phone-global-text"
+                                            data-color-default="${PHONE_GLOBAL_TEXT_COLOR_DEFAULT}"
+                                            data-color-picker-title="选择文字颜色"
+                                            data-color-picker-label="全局文字颜色"
+                                            data-color-preview-kind="text"
+                                            aria-label="选择全局文字颜色">
+                                        <span class="yzp-frame-color-control-swatch" style="--yzp-frame-control-color: ${globalTextColor};" aria-hidden="true"></span>
+                                        <span class="yzp-frame-color-control-value">${globalTextColor}</span>
+                                    </button>
                                 </div>
                             </div>
                             </div>
@@ -4898,11 +4990,245 @@ export class SettingsApp {
         }
     }
 
+    _bindPhoneColorPickers(settingsRoot = this._getActiveSettingsRoot()) {
+        if (!settingsRoot) return;
+
+        const globalDocument = globalThis.document;
+        const triggers = Array.from(settingsRoot.querySelectorAll('.yzp-frame-color-control[data-color-storage-key]'));
+        triggers.forEach((trigger) => {
+            const storageKey = String(trigger.dataset.colorStorageKey || '').trim();
+            const defaultColor = normalizePhoneHexColor(trigger.dataset.colorDefault, PHONE_FRAME_COLOR_DEFAULT);
+            const pickerTitle = String(trigger.dataset.colorPickerTitle || '选择颜色').trim() || '选择颜色';
+            const pickerLabel = String(trigger.dataset.colorPickerLabel || '颜色').trim() || '颜色';
+            const previewKind = String(trigger.dataset.colorPreviewKind || 'frame').trim();
+            if (!storageKey) return;
+
+            const swatch = trigger.querySelector('.yzp-frame-color-control-swatch');
+            const valueLabel = trigger.querySelector('.yzp-frame-color-control-value');
+            const setControlColor = (value) => {
+                const color = normalizePhoneHexColor(value, defaultColor);
+                trigger.dataset.color = color;
+                swatch?.style.setProperty('--yzp-frame-control-color', color);
+                if (valueLabel) valueLabel.textContent = color;
+                return color;
+            };
+            const applyPreview = (value) => {
+                const color = setControlColor(value);
+                if (previewKind === 'text') {
+                    if (typeof window.VirtualPhone?.applyGlobalTextColor === 'function') {
+                        window.VirtualPhone.applyGlobalTextColor(color);
+                    } else {
+                        globalDocument.documentElement.style.setProperty('--phone-global-text', color);
+                    }
+                } else {
+                    globalDocument.documentElement.style.setProperty('--phone-frame-color', color);
+                }
+                return color;
+            };
+
+            applyPreview(this.storage.get(storageKey) || defaultColor);
+
+            trigger.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            settingsRoot.querySelector('#yzp-frame-color-picker-overlay')?.remove();
+
+            const originalColor = normalizePhoneHexColor(this.storage.get(storageKey) || trigger.dataset.color, defaultColor);
+            let draft = phoneRgbToHsv(phoneHexToRgb(originalColor));
+
+            const overlay = globalDocument.createElement('div');
+            overlay.id = 'yzp-frame-color-picker-overlay';
+            overlay.className = 'yzp-frame-color-picker-overlay';
+            overlay.dataset.noSwipeBack = 'true';
+            overlay.innerHTML = `
+                <section class="yzp-frame-color-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="yzp-frame-color-picker-title">
+                    <header class="yzp-frame-color-picker-header">
+                        <h3 id="yzp-frame-color-picker-title">${this._escapeHtml(pickerTitle)}</h3>
+                        <button type="button" class="yzp-frame-color-picker-close" aria-label="关闭颜色选择器" title="关闭">
+                            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                        </button>
+                    </header>
+                    <div class="yzp-frame-color-picker-body">
+                        <div class="yzp-frame-color-field" role="slider" tabindex="0" aria-label="颜色饱和度与明度">
+                            <span class="yzp-frame-color-field-pointer" aria-hidden="true"></span>
+                        </div>
+                        <div class="yzp-frame-color-hue-row">
+                            <span class="yzp-frame-color-preview" aria-hidden="true"></span>
+                            <input class="yzp-frame-color-hue phone-gesture-control phone-theme-range" type="range" min="0" max="360" step="1" value="0" aria-label="色相">
+                            <input class="yzp-frame-color-hex" type="text" value="${originalColor}" maxlength="7" spellcheck="false" aria-label="十六进制颜色值">
+                        </div>
+                        <div class="yzp-frame-color-rgb-grid">
+                            <label><span>R</span><input data-channel="r" type="number" min="0" max="255" inputmode="numeric" aria-label="红色通道"></label>
+                            <label><span>G</span><input data-channel="g" type="number" min="0" max="255" inputmode="numeric" aria-label="绿色通道"></label>
+                            <label><span>B</span><input data-channel="b" type="number" min="0" max="255" inputmode="numeric" aria-label="蓝色通道"></label>
+                        </div>
+                    </div>
+                    <footer class="yzp-frame-color-picker-footer">
+                        <button type="button" class="yzp-frame-color-picker-cancel">取消</button>
+                        <button type="button" class="yzp-frame-color-picker-confirm">确认</button>
+                    </footer>
+                </section>
+            `;
+            settingsRoot.appendChild(overlay);
+
+            const field = overlay.querySelector('.yzp-frame-color-field');
+            const pointer = overlay.querySelector('.yzp-frame-color-field-pointer');
+            const hueInput = overlay.querySelector('.yzp-frame-color-hue');
+            const preview = overlay.querySelector('.yzp-frame-color-preview');
+            const hexInput = overlay.querySelector('.yzp-frame-color-hex');
+            const rgbInputs = Array.from(overlay.querySelectorAll('.yzp-frame-color-rgb-grid input'));
+            const cancelButton = overlay.querySelector('.yzp-frame-color-picker-cancel');
+            const confirmButton = overlay.querySelector('.yzp-frame-color-picker-confirm');
+            let activePointerId = null;
+
+            const currentHex = () => phoneRgbToHex(phoneHsvToRgb(draft));
+            const renderPicker = ({ preserveHexInput = false, preserveRgbInput = false } = {}) => {
+                draft = {
+                    h: clampPhoneColorNumber(draft.h, 0, 360),
+                    s: clampPhoneColorNumber(draft.s, 0, 1),
+                    v: clampPhoneColorNumber(draft.v, 0, 1)
+                };
+                const rgb = phoneHsvToRgb(draft).map(channel => Math.round(channel));
+                const hex = phoneRgbToHex(rgb);
+
+                field?.style.setProperty('--yzp-frame-picker-hue', String(draft.h));
+                field?.setAttribute('aria-valuetext', hex);
+                if (pointer) {
+                    pointer.style.left = `${draft.s * 100}%`;
+                    pointer.style.top = `${(1 - draft.v) * 100}%`;
+                }
+                if (hueInput) {
+                    hueInput.value = String(Math.round(draft.h));
+                    hueInput.style.setProperty('--yzp-frame-picker-hue', String(draft.h));
+                }
+                if (preview) preview.style.backgroundColor = hex;
+                if (hexInput && !preserveHexInput) hexInput.value = hex;
+                rgbInputs.forEach((input, index) => {
+                    if (!preserveRgbInput || globalDocument.activeElement !== input) {
+                        input.value = String(rgb[index]);
+                    }
+                });
+                applyPreview(hex);
+            };
+
+            const closePicker = ({ restore = false } = {}) => {
+                if (restore) applyPreview(originalColor);
+                overlay.remove();
+                globalThis.requestAnimationFrame?.(() => trigger.focus());
+            };
+
+            const updateFieldFromPointer = (pointerEvent) => {
+                if (!field) return;
+                const rect = field.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+                draft.s = clampPhoneColorNumber((pointerEvent.clientX - rect.left) / rect.width, 0, 1);
+                draft.v = 1 - clampPhoneColorNumber((pointerEvent.clientY - rect.top) / rect.height, 0, 1);
+                renderPicker();
+            };
+
+            field?.addEventListener('pointerdown', (pointerEvent) => {
+                pointerEvent.preventDefault();
+                pointerEvent.stopPropagation();
+                activePointerId = pointerEvent.pointerId;
+                field.focus();
+                try { field.setPointerCapture(pointerEvent.pointerId); } catch (e) {}
+                updateFieldFromPointer(pointerEvent);
+            });
+            field?.addEventListener('pointermove', (pointerEvent) => {
+                if (activePointerId !== pointerEvent.pointerId) return;
+                pointerEvent.preventDefault();
+                updateFieldFromPointer(pointerEvent);
+            });
+            const finishPointer = (pointerEvent) => {
+                if (activePointerId !== pointerEvent.pointerId) return;
+                activePointerId = null;
+                try { field.releasePointerCapture(pointerEvent.pointerId); } catch (e) {}
+            };
+            field?.addEventListener('pointerup', finishPointer);
+            field?.addEventListener('pointercancel', finishPointer);
+            field?.addEventListener('keydown', (keyEvent) => {
+                const step = keyEvent.shiftKey ? 0.05 : 0.01;
+                if (keyEvent.key === 'ArrowLeft') draft.s -= step;
+                else if (keyEvent.key === 'ArrowRight') draft.s += step;
+                else if (keyEvent.key === 'ArrowUp') draft.v += step;
+                else if (keyEvent.key === 'ArrowDown') draft.v -= step;
+                else return;
+                keyEvent.preventDefault();
+                renderPicker();
+            });
+
+            hueInput?.addEventListener('input', (inputEvent) => {
+                draft.h = clampPhoneColorNumber(inputEvent.target.value, 0, 360);
+                renderPicker();
+            });
+            ['pointerdown', 'touchstart', 'touchmove'].forEach((eventName) => {
+                hueInput?.addEventListener(eventName, (inputEvent) => inputEvent.stopPropagation(), { passive: true });
+            });
+
+            rgbInputs.forEach(input => {
+                input.addEventListener('input', () => {
+                    const values = rgbInputs.map(channelInput => String(channelInput.value || '').trim());
+                    if (values.some(value => value === '')) return;
+                    draft = phoneRgbToHsv(values.map(value => clampPhoneColorNumber(value, 0, 255)));
+                    renderPicker({ preserveRgbInput: true });
+                });
+                input.addEventListener('blur', () => renderPicker());
+            });
+
+            hexInput?.addEventListener('input', () => {
+                const parsed = parsePhoneHexColor(hexInput.value);
+                if (!parsed) return;
+                draft = phoneRgbToHsv(phoneHexToRgb(parsed));
+                renderPicker({ preserveHexInput: true });
+            });
+            hexInput?.addEventListener('blur', () => renderPicker());
+            hexInput?.addEventListener('keydown', (keyEvent) => {
+                if (keyEvent.key !== 'Enter') return;
+                keyEvent.preventDefault();
+                const parsed = parsePhoneHexColor(hexInput.value);
+                if (parsed) draft = phoneRgbToHsv(phoneHexToRgb(parsed));
+                renderPicker();
+                hexInput.blur();
+            });
+
+            overlay.querySelector('.yzp-frame-color-picker-close')?.addEventListener('click', () => closePicker({ restore: true }));
+            cancelButton?.addEventListener('click', () => closePicker({ restore: true }));
+            confirmButton?.addEventListener('click', async () => {
+                const color = currentHex();
+                confirmButton.disabled = true;
+                try {
+                    await this.storage.set(storageKey, color);
+                    applyPreview(color);
+                    closePicker();
+                } catch (error) {
+                    console.error(`保存${pickerLabel}失败:`, error);
+                    confirmButton.disabled = false;
+                    this.phoneShell?.showNotification?.('保存失败', `${pickerLabel}未保存`, '⚠️');
+                }
+            });
+            overlay.addEventListener('click', (overlayEvent) => {
+                if (overlayEvent.target === overlay) closePicker({ restore: true });
+            });
+            overlay.addEventListener('keydown', (keyEvent) => {
+                if (keyEvent.key !== 'Escape') return;
+                keyEvent.preventDefault();
+                keyEvent.stopPropagation();
+                closePicker({ restore: true });
+            });
+
+            renderPicker();
+            globalThis.requestAnimationFrame?.(() => field?.focus());
+            });
+        });
+    }
+
     bindEvents() {
         const globalDocument = globalThis.document;
         const settingsRoot = this._getActiveSettingsRoot();
         const document = this._createSettingsScopedDocument(settingsRoot);
         const $ = (selector) => settingsRoot?.querySelector(selector) || document.querySelector(selector);
+
+        this._bindPhoneColorPickers(settingsRoot);
 
         document.getElementById('yzp-settings-home-back')?.addEventListener('click', (event) => {
             event.preventDefault();
@@ -5251,17 +5577,6 @@ export class SettingsApp {
             await this.storage.set('phone-font-scale', percent);
         });
 
-        document.getElementById('phone-frame-color-picker')?.addEventListener('input', (e) => {
-            const color = e.target.value || '#1a1a1a';
-            document.documentElement.style.setProperty('--phone-frame-color', color);
-        });
-
-        document.getElementById('phone-frame-color-picker')?.addEventListener('change', async (e) => {
-            const color = e.target.value || '#1a1a1a';
-            await this.storage.set('phone-frame-color', color);
-            document.documentElement.style.setProperty('--phone-frame-color', color);
-        });
-        
         // APP图标上传 - 支持裁剪和PNG透明
         document.querySelectorAll('.upload-app-icon-item[data-upload-icon-target]').forEach(item => {
             const openPicker = (e) => {
@@ -9655,26 +9970,6 @@ export class SettingsApp {
                     alert('✅ 所有数据已清空！');
                 }
             }
-        });
-
-        // 🎨 颜色设置事件（新版：统一全局文字颜色）
-
-        const applyGlobalTextColor = (color) => {
-            const safeColor = typeof window.VirtualPhone?.applyGlobalTextColor === 'function'
-                ? window.VirtualPhone.applyGlobalTextColor(color)
-                : String(color || '#000000').trim() || '#000000';
-            return safeColor;
-        };
-
-        // 全局文字颜色选择器（实时预览）
-        document.getElementById('global-text-color-picker')?.addEventListener('input', (e) => {
-            applyGlobalTextColor(e.target.value);
-        });
-
-        // 全局文字颜色选择器（保存设置）
-        document.getElementById('global-text-color-picker')?.addEventListener('change', async (e) => {
-            const color = applyGlobalTextColor(e.target.value);
-            await this.storage.set('phone-global-text', color);
         });
 
         // ⏰ 时间管理功能
