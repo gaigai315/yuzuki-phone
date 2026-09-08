@@ -34,6 +34,35 @@ export class ImageCropper {
         this.isDragging = false;
         this.lastTouchDistance = 0;
         this.container = null;
+        this.rotation = 0;
+    }
+
+    _getImageDimensions() {
+        return {
+            width: Number(this.image?.naturalWidth || this.image?.width || 0),
+            height: Number(this.image?.naturalHeight || this.image?.height || 0)
+        };
+    }
+
+    _getCoverScale() {
+        const { width, height } = this._getImageDimensions();
+        if (!width || !height || !this.cWidth || !this.cHeight) return 1;
+        return Math.max(this.cWidth / width, this.cHeight / height);
+    }
+
+    _updateSliderFromScale(slider) {
+        if (!slider) return;
+        const scaleRange = this.maxScale - this.minScale;
+        const percent = scaleRange > 0 ? (this.scale - this.minScale) / scaleRange : 0;
+        slider.value = String(50 + Math.max(0, Math.min(1, percent)) * 150);
+    }
+
+    _getPointerCoordinateScale(canvas) {
+        const rect = canvas?.getBoundingClientRect?.();
+        return {
+            x: rect?.width ? this.cWidth / rect.width : 1,
+            y: rect?.height ? this.cHeight / rect.height : 1
+        };
     }
 
     // 打开裁剪器
@@ -95,36 +124,31 @@ export class ImageCropper {
 
     // 显示裁剪界面
     showCropper(resolve, reject) {
-        // 🔥 检测是否为小屏幕
-        const isMobile = window.innerWidth <= 500 || window.innerHeight <= 600;
-        const baseSize = isMobile ? 220 : 280;
+        const viewportWidth = Number(window.visualViewport?.width || window.innerWidth || 0);
+        const viewportHeight = Number(window.visualViewport?.height || window.innerHeight || 0);
+        const isMobile = viewportWidth <= 500 || viewportHeight <= 600;
+        const baseSize = isMobile ? 180 : 280;
 
         // 🔥 动态计算裁剪框的宽高比例
         const targetRatio = this.options.outputWidth / this.options.outputHeight;
         this.cWidth = baseSize;
         this.cHeight = baseSize;
         if (targetRatio < 1) { // 长图 (如手机壁纸)
-            this.cWidth = baseSize * targetRatio;
+            this.cWidth = Math.max(1, Math.round(baseSize * targetRatio));
         } else if (targetRatio > 1) { // 宽图
-            this.cHeight = baseSize / targetRatio;
+            this.cHeight = Math.max(1, Math.round(baseSize / targetRatio));
         }
 
-        const imgAspect = this.image.width / this.image.height;
-        const containerAspect = this.cWidth / this.cHeight;
-
-        // 🔥 使用 cover 模式完美填满裁剪框
-        if (imgAspect > containerAspect) {
-            this.scale = this.cHeight / this.image.height;
-        } else {
-            this.scale = this.cWidth / this.image.width;
-        }
+        const { width: imageWidth, height: imageHeight } = this._getImageDimensions();
+        this.scale = this._getCoverScale();
 
         // 🔥 设定对称的缩放极限，确保滑块（125）完美居中
         this.minScale = this.scale * 0.2;
         this.maxScale = this.scale * 1.8;
 
-        this.offsetX = (this.cWidth - this.image.width * this.scale) / 2;
-        this.offsetY = (this.cHeight - this.image.height * this.scale) / 2;
+        this.offsetX = (this.cWidth - imageWidth * this.scale) / 2;
+        this.offsetY = (this.cHeight - imageHeight * this.scale) / 2;
+        this.rotation = 0;
 
         // 创建裁剪界面
         this.container = document.createElement('div');
@@ -139,7 +163,7 @@ export class ImageCropper {
 
                 <div class="cropper-workspace">
                     <div class="cropper-canvas-container" id="cropper-container" style="width: ${this.cWidth}px; height: ${this.cHeight}px; margin: 0 auto; position: relative; border-radius: 12px; overflow: hidden; background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 20px 20px;">
-                        <canvas id="cropper-canvas" width="${this.cWidth}" height="${this.cHeight}" style="position: absolute; top: 0; left: 0; cursor: move; touch-action: none;"></canvas>
+                        <canvas id="cropper-canvas" width="${this.cWidth}" height="${this.cHeight}" style="position: absolute; top: 0; left: 0; width: ${this.cWidth}px; height: ${this.cHeight}px; cursor: move; touch-action: none;"></canvas>
                         <div class="cropper-grid"></div>
                     </div>
 
@@ -193,10 +217,7 @@ export class ImageCropper {
         // 🔥 初始化滑块位置 - 滑块范围50-200对应minScale到maxScale
         const slider = document.getElementById('zoom-slider');
         if (slider) {
-            // 计算当前缩放在范围内的百分比位置
-            const percent = (this.scale - this.minScale) / (this.maxScale - this.minScale);
-            // 映射到滑块范围 50-200
-            slider.value = 50 + percent * 150;
+            this._updateSliderFromScale(slider);
         }
 
         // 绘制初始图片
@@ -278,6 +299,7 @@ export class ImageCropper {
             .cropper-canvas-container {
                 width: 280px;
                 height: 280px;
+                max-width: 100%;
                 margin: 0 auto;
                 position: relative;
                 border-radius: 12px;
@@ -413,16 +435,6 @@ export class ImageCropper {
                     padding: 8px !important;
                 }
 
-                .cropper-canvas-container {
-                    width: 180px !important;
-                    height: 180px !important;
-                }
-
-                #cropper-canvas {
-                    width: 180px !important;
-                    height: 180px !important;
-                }
-
                 .cropper-hint {
                     font-size: 10px !important;
                     margin: 4px 0 !important;
@@ -484,12 +496,13 @@ export class ImageCropper {
 
         // 🔥 以画布中心为基点缩放的辅助函数
         const zoomAroundCenter = (newScale) => {
+            const { width: imageWidth, height: imageHeight } = this._getImageDimensions();
             const centerX = this.cWidth / 2;
             const centerY = this.cHeight / 2;
 
             // 计算当前图片中心相对于画布中心的位置
-            const oldImgCenterX = this.offsetX + (this.image.width * this.scale) / 2;
-            const oldImgCenterY = this.offsetY + (this.image.height * this.scale) / 2;
+            const oldImgCenterX = this.offsetX + (imageWidth * this.scale) / 2;
+            const oldImgCenterY = this.offsetY + (imageHeight * this.scale) / 2;
 
             // 计算缩放比例
             const scaleRatio = newScale / this.scale;
@@ -502,14 +515,8 @@ export class ImageCropper {
             const newImgCenterY = centerY + (oldImgCenterY - centerY) * scaleRatio;
 
             // 更新偏移量
-            this.offsetX = newImgCenterX - (this.image.width * this.scale) / 2;
-            this.offsetY = newImgCenterY - (this.image.height * this.scale) / 2;
-        };
-
-        // 🔥 辅助函数：根据缩放值更新滑块位置
-        const updateSliderFromScale = () => {
-            const percent = (this.scale - this.minScale) / (this.maxScale - this.minScale);
-            slider.value = 50 + percent * 150;
+            this.offsetX = newImgCenterX - (imageWidth * this.scale) / 2;
+            this.offsetY = newImgCenterY - (imageHeight * this.scale) / 2;
         };
 
         // 缩放滑块 - 滑块范围50-200对应minScale到maxScale
@@ -525,7 +532,7 @@ export class ImageCropper {
         document.getElementById('zoom-in')?.addEventListener('click', () => {
             const newScale = Math.min(this.scale * 1.2, this.maxScale);
             zoomAroundCenter(newScale);
-            updateSliderFromScale();
+            this._updateSliderFromScale(slider);
             this.clampPosition();
             this.draw();
         });
@@ -534,30 +541,23 @@ export class ImageCropper {
         document.getElementById('zoom-out')?.addEventListener('click', () => {
             const newScale = Math.max(this.scale / 1.2, this.minScale);
             zoomAroundCenter(newScale);
-            updateSliderFromScale();
+            this._updateSliderFromScale(slider);
             this.clampPosition();
             this.draw();
         });
 
         // 重置按钮
         document.getElementById('reset-btn')?.addEventListener('click', () => {
-            const imgAspect = this.image.width / this.image.height;
-            const containerAspect = this.cWidth / this.cHeight;
-            // 🔥 重置时也使用cover模式
-            if (imgAspect > containerAspect) {
-                this.scale = this.cHeight / this.image.height;
-            } else {
-                this.scale = this.cWidth / this.image.width;
-            }
-            this.offsetX = (this.cWidth - this.image.width * this.scale) / 2;
-            this.offsetY = (this.cHeight - this.image.height * this.scale) / 2;
+            const { width: imageWidth, height: imageHeight } = this._getImageDimensions();
+            this.scale = this._getCoverScale();
+            this.offsetX = (this.cWidth - imageWidth * this.scale) / 2;
+            this.offsetY = (this.cHeight - imageHeight * this.scale) / 2;
             this.rotation = 0;
-            updateSliderFromScale();
+            this._updateSliderFromScale(slider);
             this.draw();
         });
 
         // 旋转按钮（暂时简化，不实现复杂旋转）
-        this.rotation = 0;
         document.getElementById('rotate-left')?.addEventListener('click', () => {
             this.rotation -= 90;
             this.draw();
@@ -581,8 +581,9 @@ export class ImageCropper {
 
         document.addEventListener('mousemove', (e) => {
             if (!this.isDragging) return;
-            this.offsetX = startOffsetX + (e.clientX - startX);
-            this.offsetY = startOffsetY + (e.clientY - startY);
+            const coordinateScale = this._getPointerCoordinateScale(canvas);
+            this.offsetX = startOffsetX + (e.clientX - startX) * coordinateScale.x;
+            this.offsetY = startOffsetY + (e.clientY - startY) * coordinateScale.y;
             this.clampPosition();
             this.draw();
         });
@@ -607,17 +608,18 @@ export class ImageCropper {
 
         canvas.addEventListener('touchmove', (e) => {
             if (e.touches.length === 1 && this.isDragging) {
-                this.offsetX = startOffsetX + (e.touches[0].clientX - startX);
-                this.offsetY = startOffsetY + (e.touches[0].clientY - startY);
+                const coordinateScale = this._getPointerCoordinateScale(canvas);
+                this.offsetX = startOffsetX + (e.touches[0].clientX - startX) * coordinateScale.x;
+                this.offsetY = startOffsetY + (e.touches[0].clientY - startY) * coordinateScale.y;
                 this.clampPosition();
                 this.draw();
             } else if (e.touches.length === 2) {
                 // 双指缩放
                 const newDistance = this.getTouchDistance(e.touches);
                 const scaleChange = newDistance / this.lastTouchDistance;
-                this.scale = Math.max(this.minScale, Math.min(this.maxScale, this.scale * scaleChange));
+                zoomAroundCenter(Math.max(this.minScale, Math.min(this.maxScale, this.scale * scaleChange)));
                 this.lastTouchDistance = newDistance;
-                slider.value = (this.scale / ((this.minScale + this.maxScale) / 2)) * 100;
+                this._updateSliderFromScale(slider);
                 this.clampPosition();
                 this.draw();
             }
@@ -632,8 +634,8 @@ export class ImageCropper {
         container.addEventListener('wheel', (e) => {
             e.preventDefault();
             const delta = e.deltaY > 0 ? 0.9 : 1.1;
-            this.scale = Math.max(this.minScale, Math.min(this.maxScale, this.scale * delta));
-            slider.value = (this.scale / ((this.minScale + this.maxScale) / 2)) * 100;
+            zoomAroundCenter(Math.max(this.minScale, Math.min(this.maxScale, this.scale * delta)));
+            this._updateSliderFromScale(slider);
             this.clampPosition();
             this.draw();
         }, { passive: false });
@@ -648,8 +650,9 @@ export class ImageCropper {
 
     // 限制位置，防止拖出边界
     clampPosition() {
-        const imgWidth = this.image.width * this.scale;
-        const imgHeight = this.image.height * this.scale;
+        const { width: imageWidth, height: imageHeight } = this._getImageDimensions();
+        const imgWidth = imageWidth * this.scale;
+        const imgHeight = imageHeight * this.scale;
 
         // 允许图片部分超出，但至少要覆盖画布中心区域
         const minOverlapX = this.cWidth * 0.3;
@@ -659,22 +662,14 @@ export class ImageCropper {
         this.offsetY = Math.max(minOverlapY - imgHeight, Math.min(this.cHeight - minOverlapY, this.offsetY));
     }
 
-    // 绘制图片
-    draw() {
-        const canvas = document.getElementById('cropper-canvas');
-        if (!canvas) return;
-
-        const ctx = canvas.getContext('2d');
-
-        // 清空画布（透明背景）
-        ctx.clearRect(0, 0, this.cWidth, this.cHeight);
-
-        // 保存状态
+    _renderImage(ctx, coordinateScaleX = 1, coordinateScaleY = coordinateScaleX) {
+        const { width: imageWidth, height: imageHeight } = this._getImageDimensions();
         ctx.save();
+        ctx.scale(coordinateScaleX, coordinateScaleY);
 
         // 移动到图片中心进行旋转
-        const centerX = this.offsetX + (this.image.width * this.scale) / 2;
-        const centerY = this.offsetY + (this.image.height * this.scale) / 2;
+        const centerX = this.offsetX + (imageWidth * this.scale) / 2;
+        const centerY = this.offsetY + (imageHeight * this.scale) / 2;
 
         ctx.translate(centerX, centerY);
         ctx.rotate((this.rotation * Math.PI) / 180);
@@ -685,12 +680,21 @@ export class ImageCropper {
             this.image,
             this.offsetX,
             this.offsetY,
-            this.image.width * this.scale,
-            this.image.height * this.scale
+            imageWidth * this.scale,
+            imageHeight * this.scale
         );
 
-        // 恢复状态
         ctx.restore();
+    }
+
+    // 绘制图片
+    draw() {
+        const canvas = document.getElementById('cropper-canvas');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        this._renderImage(ctx);
     }
 
     // 裁剪并导出
@@ -710,30 +714,9 @@ export class ImageCropper {
             ctx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
         }
 
-        // 🔥 将缩放比例改为只基于宽度
-        const scaleRatio = outputCanvas.width / this.cWidth;
-
-        // 保存状态
-        ctx.save();
-
-        // 处理旋转
-        const centerX = (this.offsetX + (this.image.width * this.scale) / 2) * scaleRatio;
-        const centerY = (this.offsetY + (this.image.height * this.scale) / 2) * scaleRatio;
-
-        ctx.translate(centerX, centerY);
-        ctx.rotate((this.rotation * Math.PI) / 180);
-        ctx.translate(-centerX, -centerY);
-
-        // 绘制缩放后的图片
-        ctx.drawImage(
-            this.image,
-            this.offsetX * scaleRatio,
-            this.offsetY * scaleRatio,
-            this.image.width * this.scale * scaleRatio,
-            this.image.height * this.scale * scaleRatio
-        );
-
-        ctx.restore();
+        const scaleRatioX = outputCanvas.width / this.cWidth;
+        const scaleRatioY = outputCanvas.height / this.cHeight;
+        this._renderImage(ctx, scaleRatioX, scaleRatioY);
 
         // 导出
         return outputCanvas.toDataURL(this.options.outputFormat, this.options.quality);
