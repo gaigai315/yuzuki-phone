@@ -6888,9 +6888,185 @@ input:checked + .toggle-slider:before {
 .message-image-prompt-generate,
 .message-image-prompt-regenerate,
 .message-image-prompt-show-back,
+.message-image-prompt-edit,
 .message-image-prompt-restore {
     pointer-events: auto !important;
     touch-action: manipulation !important;
+}
+
+#phone-panel-content .phone-screen .wechat-image-prompt-editor-overlay {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 10060 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    padding: 14px !important;
+    background: rgba(0, 0, 0, 0.48) !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+}
+
+#phone-panel-content .phone-screen .wechat-image-prompt-editor-dialog {
+    width: min(328px, 100%) !important;
+    max-height: 88% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    border-radius: 8px !important;
+    background: #f8f8f8 !important;
+    color: #1f1f1f !important;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.24) !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+}
+
+#phone-panel-content .phone-screen .wechat-image-prompt-editor-header {
+    min-height: 48px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    box-sizing: border-box !important;
+    padding: 10px 12px !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+    background: #fff !important;
+}
+
+#phone-panel-content .phone-screen .wechat-image-prompt-editor-title {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    color: #1f1f1f !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    line-height: 1.35 !important;
+    letter-spacing: 0 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#phone-panel-content .phone-screen button.wechat-image-prompt-editor-close {
+    width: 32px !important;
+    height: 32px !important;
+    flex: 0 0 32px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 6px !important;
+    background: transparent !important;
+    color: #747474 !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+}
+
+#phone-panel-content .phone-screen .wechat-image-prompt-editor-body {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    box-sizing: border-box !important;
+    padding: 14px !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .wechat-image-prompt-editor-field {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    margin: 0 !important;
+    color: #333 !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    line-height: 1.4 !important;
+    letter-spacing: 0 !important;
+}
+
+#phone-panel-content .phone-screen textarea.wechat-image-prompt-editor-textarea {
+    width: 100% !important;
+    min-height: 72px !important;
+    max-height: 160px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 10px !important;
+    resize: vertical !important;
+    border: 1px solid #d7d7d7 !important;
+    border-radius: 6px !important;
+    outline: none !important;
+    background: #fff !important;
+    color: #1f1f1f !important;
+    box-shadow: none !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    line-height: 1.5 !important;
+    letter-spacing: 0 !important;
+    text-align: left !important;
+    white-space: pre-wrap !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+}
+
+#phone-panel-content .phone-screen textarea.wechat-image-prompt-editor-textarea.is-prompt {
+    min-height: 112px !important;
+}
+
+#phone-panel-content .phone-screen textarea.wechat-image-prompt-editor-textarea:focus {
+    border-color: #07c160 !important;
+    box-shadow: 0 0 0 2px rgba(7, 193, 96, 0.12) !important;
+}
+
+#phone-panel-content .phone-screen .wechat-image-prompt-editor-actions {
+    display: grid !important;
+    grid-template-columns: auto auto minmax(0, 1fr) !important;
+    gap: 8px !important;
+    box-sizing: border-box !important;
+    padding: 10px 12px 12px !important;
+    border-top: 1px solid rgba(0, 0, 0, 0.08) !important;
+    background: #fff !important;
+}
+
+#phone-panel-content .phone-screen button.wechat-image-prompt-editor-button {
+    min-width: 0 !important;
+    min-height: 36px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 7px 10px !important;
+    border: 1px solid transparent !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+    letter-spacing: 0 !important;
+    white-space: normal !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+}
+
+#phone-panel-content .phone-screen button.wechat-image-prompt-editor-button.is-secondary {
+    border-color: #d9d9d9 !important;
+    background: #fff !important;
+    color: #4f4f4f !important;
+}
+
+#phone-panel-content .phone-screen button.wechat-image-prompt-editor-button.is-primary {
+    background: #07c160 !important;
+    color: #fff !important;
+}
+
+#phone-panel-content .phone-screen button.wechat-image-prompt-editor-button:disabled {
+    cursor: wait !important;
+    opacity: 0.55 !important;
 }
 
 /* 微博转发弹窗手势豁免：联系人列表与弹窗内容区域允许稳定纵向手势 */

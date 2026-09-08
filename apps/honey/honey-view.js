@@ -2228,6 +2228,9 @@ export class HoneyView {
                         </button>
                     </div>
                     <div class="honey-scene-tag-history-actions">
+                        <button class="honey-scene-tag-history-edit" id="honey-scene-tag-history-edit" type="button" title="编辑最新Tag" aria-label="编辑最新Tag" ${this._resolveLatestSceneNaiTagPrompt(sceneData || {}) ? '' : 'disabled'}>
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
                         <button class="honey-scene-tag-history-retag" id="honey-scene-tag-history-retag" type="button" ${this._isRetaggingSceneNai ? 'disabled' : ''}>
                             <i class="fa-solid ${this._isRetaggingSceneNai ? 'fa-spinner fa-spin' : 'fa-arrows-rotate'}"></i>
                             <span>${this._isRetaggingSceneNai ? '重筛中' : '重筛最新Tag'}</span>
@@ -2239,6 +2242,141 @@ export class HoneyView {
                 </div>
             </div>
         `;
+    }
+
+    _resolveLatestSceneNaiTagPrompt(scene = null) {
+        const sourceScene = scene && typeof scene === 'object' ? scene : {};
+        const history = this._filterSceneTagHistoryByTopic(
+            this._getSceneNaiTagHistory(sourceScene),
+            sourceScene._topicKey || '',
+            sourceScene._topicTitle || sourceScene.title || ''
+        );
+        const latestItem = history.length ? history[history.length - 1] : null;
+        return String(latestItem?.prompt || this._resolveSceneNaiPrompt(sourceScene) || '').trim();
+    }
+
+    _buildSceneNaiTagEditPatch(scene = null, prompt = '') {
+        const safePrompt = String(prompt || '').trim();
+        if (!safePrompt) return null;
+
+        const sourceScene = scene && typeof scene === 'object' ? scene : {};
+        const topicKey = String(sourceScene._topicKey || this._getActiveTopicKey()).trim();
+        const topicTitle = String(sourceScene._topicTitle || sourceScene.title || this._getActiveTopicTitle()).trim();
+        const nextHistory = this._replaceLatestSceneNaiTagHistoryForTopic(
+            this._getSceneNaiTagHistory(sourceScene),
+            safePrompt,
+            { source: 'user_edit', topicKey, topicTitle }
+        );
+
+        return {
+            ...sourceScene,
+            naiPrompt: safePrompt,
+            imageGenerationPrompt: safePrompt,
+            naiTagHistory: nextHistory,
+            _topicKey: topicKey,
+            _topicTitle: topicTitle
+        };
+    }
+
+    _isSceneNaiTagEditBusy(scene = null) {
+        const sourceScene = scene && typeof scene === 'object' ? scene : {};
+        return this._isGeneratingScene
+            || this._liveSendInFlight
+            || this._isRetaggingSceneNai
+            || String(sourceScene.imageGenerationStatus || '').trim() === 'loading';
+    }
+
+    _openCurrentSceneNaiTagEditor(sourceRoot = null) {
+        const scene = this.currentSceneData || {};
+        const prompt = this._resolveLatestSceneNaiTagPrompt(scene);
+        if (!prompt) {
+            this.app?.phoneShell?.showNotification?.('蜜语', '当前直播没有可编辑的 NAI 提示词', '⚠️');
+            return;
+        }
+        if (this._isSceneNaiTagEditBusy(scene)) {
+            this.app?.phoneShell?.showNotification?.('蜜语', '当前内容正在生成，请完成后再编辑 Tag', '⏳');
+            return;
+        }
+
+        const layer = sourceRoot?.querySelector?.('#honey-scene-tag-history-layer')
+            || document.querySelector?.('.phone-view-current #honey-scene-tag-history-layer')
+            || document.querySelector?.('#honey-scene-tag-history-layer');
+        if (!layer?.appendChild) return;
+
+        layer.querySelector?.('#honey-scene-tag-editor')?.remove();
+        const editor = document.createElement('div');
+        editor.id = 'honey-scene-tag-editor';
+        editor.className = 'honey-scene-tag-editor-overlay';
+        editor.innerHTML = `
+            <div class="honey-scene-tag-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="honey-scene-tag-editor-title">
+                <div class="honey-scene-tag-editor-head">
+                    <div class="honey-scene-tag-editor-title" id="honey-scene-tag-editor-title">编辑最新Tag</div>
+                    <button class="honey-scene-tag-editor-close" type="button" data-action="close" title="关闭" aria-label="关闭">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="honey-scene-tag-editor-body">
+                    <textarea class="honey-scene-tag-editor-textarea" rows="9" spellcheck="false" aria-label="最新Tag">${this._escapeHtml(prompt)}</textarea>
+                </div>
+                <div class="honey-scene-tag-editor-actions">
+                    <button class="honey-scene-tag-editor-button is-secondary" type="button" data-action="cancel">取消</button>
+                    <button class="honey-scene-tag-editor-button is-primary" type="button" data-action="save">保存</button>
+                </div>
+            </div>
+        `;
+        layer.appendChild(editor);
+
+        const textarea = editor.querySelector('.honey-scene-tag-editor-textarea');
+        const saveButton = editor.querySelector('[data-action="save"]');
+        let saving = false;
+        const close = () => editor.remove();
+        const save = () => {
+            if (saving) return;
+            const latestScene = this.currentSceneData || scene;
+            if (this._isSceneNaiTagEditBusy(latestScene)) {
+                this.app?.phoneShell?.showNotification?.('蜜语', '当前内容正在生成，请完成后再保存 Tag', '⏳');
+                return;
+            }
+            const nextScene = this._buildSceneNaiTagEditPatch(latestScene, textarea?.value);
+            if (!nextScene) {
+                this.app?.phoneShell?.showNotification?.('蜜语', 'Tag 不能为空', '⚠️');
+                textarea?.focus();
+                return;
+            }
+
+            saving = true;
+            if (saveButton) saveButton.disabled = true;
+            this.currentSceneData = nextScene;
+            this._persistCurrentScene();
+            const listEl = sourceRoot?.querySelector?.('#honey-scene-tag-history-list');
+            if (listEl) {
+                listEl.innerHTML = this._buildSceneTagHistoryPanelInnerHtml(this.currentSceneData);
+            }
+            close();
+            this.app?.phoneShell?.showNotification?.('蜜语', '最新 Tag 已保存', '✅');
+        };
+        const stopInputPropagation = (event) => {
+            event.stopPropagation();
+            if (event.type === 'keydown' && event.key === 'Escape') {
+                event.preventDefault();
+                close();
+            }
+        };
+
+        ['input', 'keydown', 'keyup', 'focus', 'blur'].forEach(eventName => {
+            textarea?.addEventListener(eventName, stopInputPropagation);
+        });
+        editor.addEventListener('click', (event) => {
+            if (event.target === editor) close();
+        });
+        editor.querySelector('[data-action="close"]')?.addEventListener('click', close);
+        editor.querySelector('[data-action="cancel"]')?.addEventListener('click', close);
+        saveButton?.addEventListener('click', save);
+
+        requestAnimationFrame(() => {
+            textarea?.focus();
+            textarea?.setSelectionRange?.(textarea.value.length, textarea.value.length);
+        });
     }
 
     _buildSceneRetagContext(scene = {}) {
@@ -4046,6 +4184,11 @@ export class HoneyView {
         }
         root.querySelector('#honey-scene-tag-history-close')?.addEventListener('click', closeSceneTagHistory);
         root.querySelector('#honey-scene-tag-history-backdrop')?.addEventListener('click', closeSceneTagHistory);
+        root.querySelector('#honey-scene-tag-history-edit')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._openCurrentSceneNaiTagEditor(root);
+        });
         root.querySelector('#honey-scene-tag-history-retag')?.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();

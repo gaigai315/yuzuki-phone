@@ -2806,7 +2806,7 @@ renderChatRoom(chat) {
                         </div>
                         <div class="chat-input-wrapper" style="flex: 1; margin: 0;">
                             <input type="text" class="chat-input" id="chat-input"
-                                   style="background: rgba(255, 255, 255, 0.42) !important; border: 0.5px solid rgba(255, 255, 255, 0.58) !important; color: #111111 !important; backdrop-filter: blur(8px) saturate(130%) !important; -webkit-backdrop-filter: blur(8px) saturate(130%) !important;"
+                                   style="background: rgba(255, 255, 255, 0.42) !important; border: 0.5px solid rgba(255, 255, 255, 0.58) !important; color: #111111 !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important;"
                                    placeholder="${this._escapeHtml(this._getQuickReplyInputPlaceholder())}" value="${this._escapeHtml(this.inputText)}">
                         </div>
                         <div style="display: flex; align-items: center; gap: 0px;">
@@ -4319,6 +4319,157 @@ renderChatRoom(chat) {
         back.style.display = showBack ? 'block' : 'none';
     }
 
+    _buildImagePromptEditPatch(message = {}, descriptionValue = '', promptValue = '') {
+        const prompt = String(promptValue || '').trim();
+        if (!prompt) return null;
+
+        const description = String(descriptionValue || '').trim() || prompt;
+        return {
+            imageDescription: description,
+            imagePrompt: prompt,
+            content: prompt,
+            imageGenStatus: String(message?.generatedImageUrl || '').trim() ? 'done' : 'idle',
+            imageGenerationRuntimeId: '',
+            imageGenError: ''
+        };
+    }
+
+    openImagePromptEditor(messageId) {
+        const chatId = String(this.app.currentChat?.id || '').trim();
+        const safeMessageId = String(messageId || '').trim();
+        if (!chatId || !safeMessageId) return;
+
+        const message = this.app.wechatData.getMessages(chatId)
+            .find(item => String(item?.id || '').trim() === safeMessageId);
+        if (!message || message.type !== 'image_prompt') return;
+
+        const isCurrentGenerationLoading = String(message.imageGenStatus || '').trim() === 'loading'
+            && String(message.imageGenerationRuntimeId || '').trim() === String(this.app.wechatData.imageGenerationRuntimeId || '').trim();
+        if (isCurrentGenerationLoading) {
+            this.app.phoneShell?.showNotification('提示', '图片正在生成，请完成后再修改描述', '⚠️');
+            return;
+        }
+
+        const currentView = this.getCurrentWechatView ? this.getCurrentWechatView() : document;
+        const host = currentView.querySelector?.('.wechat-app') || currentView;
+        if (!host?.appendChild) return;
+
+        currentView.querySelector?.('#wechat-image-prompt-editor-modal')?.remove();
+        const displayPrompt = this._normalizeImagePromptDisplayFields(message);
+        const mediaLabel = String(message.mediaType || '图片').trim() || '图片';
+        const modal = document.createElement('div');
+        modal.id = 'wechat-image-prompt-editor-modal';
+        modal.className = 'wechat-image-prompt-editor-overlay';
+        modal.innerHTML = `
+            <div class="wechat-image-prompt-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="wechat-image-prompt-editor-title">
+                <div class="wechat-image-prompt-editor-header">
+                    <div id="wechat-image-prompt-editor-title" class="wechat-image-prompt-editor-title">编辑${this._escapeHtml(mediaLabel)}描述</div>
+                    <button type="button" class="wechat-image-prompt-editor-close" data-action="close" title="关闭">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="wechat-image-prompt-editor-body">
+                    <label class="wechat-image-prompt-editor-field">
+                        <span>展示描述</span>
+                        <textarea class="wechat-image-prompt-editor-textarea" data-field="description" rows="3">${this._escapeHtml(displayPrompt.description)}</textarea>
+                    </label>
+                    <label class="wechat-image-prompt-editor-field">
+                        <span>实际生图内容</span>
+                        <textarea class="wechat-image-prompt-editor-textarea is-prompt" data-field="prompt" rows="5">${this._escapeHtml(displayPrompt.prompt)}</textarea>
+                    </label>
+                </div>
+                <div class="wechat-image-prompt-editor-actions">
+                    <button type="button" class="wechat-image-prompt-editor-button is-secondary" data-action="cancel">取消</button>
+                    <button type="button" class="wechat-image-prompt-editor-button is-secondary" data-action="save">仅保存</button>
+                    <button type="button" class="wechat-image-prompt-editor-button is-primary" data-action="save-generate">保存并生成</button>
+                </div>
+            </div>
+        `;
+        host.appendChild(modal);
+        this._setMessageInlineEditMode(true, chatId);
+
+        const descriptionInput = modal.querySelector('[data-field="description"]');
+        const promptInput = modal.querySelector('[data-field="prompt"]');
+        const actionButtons = Array.from(modal.querySelectorAll('[data-action="save"], [data-action="save-generate"]'));
+        let saving = false;
+        let closed = false;
+
+        const close = () => {
+            if (closed) return;
+            closed = true;
+            modal.remove();
+            this._setMessageInlineEditMode(false, chatId);
+        };
+        const stopInputPropagation = (event) => {
+            event.stopPropagation();
+            if (event.type === 'keydown' && event.key === 'Escape') {
+                event.preventDefault();
+                close();
+            }
+        };
+        [descriptionInput, promptInput].forEach((input) => {
+            ['input', 'keydown', 'keyup', 'focus', 'blur'].forEach(eventName => {
+                input?.addEventListener(eventName, stopInputPropagation);
+            });
+        });
+
+        const save = async (generateAfterSave = false) => {
+            if (saving) return;
+            const latestMessage = this.app.wechatData.getMessages(chatId)
+                .find(item => String(item?.id || '').trim() === safeMessageId);
+            if (!latestMessage) {
+                close();
+                return;
+            }
+            const latestIsLoading = String(latestMessage.imageGenStatus || '').trim() === 'loading'
+                && String(latestMessage.imageGenerationRuntimeId || '').trim() === String(this.app.wechatData.imageGenerationRuntimeId || '').trim();
+            if (latestIsLoading) {
+                this.app.phoneShell?.showNotification('提示', '图片正在生成，请完成后再保存修改', '⚠️');
+                return;
+            }
+
+            const patch = this._buildImagePromptEditPatch(
+                latestMessage,
+                descriptionInput?.value,
+                promptInput?.value
+            );
+            if (!patch) {
+                this.app.phoneShell?.showNotification('提示', '实际生图描述不能为空', '⚠️');
+                promptInput?.focus();
+                return;
+            }
+
+            saving = true;
+            actionButtons.forEach(button => { button.disabled = true; });
+            this.app.wechatData.updateMessageById(chatId, safeMessageId, patch);
+            close();
+            this._refreshVisibleChatMessages(chatId);
+            this.app.phoneShell?.showNotification('已保存', generateAfterSave ? '已按修改后的描述开始生成' : '图片描述已更新', '✅');
+            if (generateAfterSave) {
+                await this.generateImagePromptMessage(safeMessageId);
+            }
+        };
+
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) close();
+        });
+        modal.querySelector('[data-action="close"]')?.addEventListener('click', close);
+        modal.querySelector('[data-action="cancel"]')?.addEventListener('click', close);
+        modal.querySelector('[data-action="save"]')?.addEventListener('click', () => save(false));
+        modal.querySelector('[data-action="save-generate"]')?.addEventListener('click', () => save(true));
+        modal.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                close();
+            }
+        });
+
+        requestAnimationFrame(() => {
+            promptInput?.focus();
+            promptInput?.setSelectionRange?.(promptInput.value.length, promptInput.value.length);
+        });
+    }
+
     async _resolveWechatImageGenerationPrompt(rawPrompt = '') {
         const sourcePrompt = String(rawPrompt || '').trim();
         if (!sourcePrompt || !this._hasCjkText(sourcePrompt)) return sourcePrompt;
@@ -4819,7 +4970,7 @@ renderChatRoom(chat) {
                         width:100%;
                         height:100%;
                         padding:10px;
-                        padding-bottom:28px;
+                        padding-bottom:30px;
                         overflow-y:auto;
                         box-sizing:border-box;
                         display:flex;
@@ -4840,6 +4991,24 @@ renderChatRoom(chat) {
                             <div style="font-weight:700; margin:10px 0 6px;">英文Tag</div>
                             <div>${promptLabelHtml}</div>
                         </div>
+                    </div>
+                    <div class="message-image-prompt-edit" data-message-id="${cardId}" title="编辑${msg.mediaType || '图片'}描述" style="
+                        position:absolute;
+                        bottom:4px;
+                        left:4px;
+                        background:rgba(80,80,88,0.18);
+                        color:rgba(156,156,166,0.95);
+                        border-radius:999px;
+                        padding:3px 6px;
+                        font-size:10px;
+                        cursor:pointer;
+                        z-index:10;
+                        display:flex;
+                        align-items:center;
+                        gap:3px;
+                        box-shadow:none;
+                    ">
+                        <i class="fa-solid fa-pen"></i> 编辑
                     </div>
                     <div class="message-image-prompt-restore" data-message-id="${cardId}" title="恢复卡片正面" style="
                         position:absolute;
@@ -7679,6 +7848,15 @@ renderChatRoom(chat) {
                 e.preventDefault();
                 e.stopPropagation();
                 this._toggleImagePromptCard(e.currentTarget.closest('.message-image-prompt-box'), true);
+            });
+        });
+        currentView.querySelectorAll('.message-image-prompt-edit').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (this._isMessageSelectionActiveForCurrentChat()) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const messageId = e.currentTarget.dataset.messageId;
+                if (messageId) this.openImagePromptEditor(messageId);
             });
         });
         currentView.querySelectorAll('.message-image-prompt-restore').forEach(btn => {
@@ -13078,6 +13256,7 @@ renderChatRoom(chat) {
         const isTextMessage = message.type === 'text' || !message.type;
         const isLocationMessage = message.type === 'location';
         const isImageMessage = message.type === 'image';
+        const isImagePromptMessage = message.type === 'image_prompt';
         const isSystemMessage = message.type === 'system';
         const hasCallTranscript = message.type === 'call_record'
             && message.status === 'answered'
@@ -13089,7 +13268,7 @@ renderChatRoom(chat) {
 
         let buttonsHtml = '';
 
-        if (isTextMessage || isLocationMessage) {
+        if (isTextMessage || isLocationMessage || isImagePromptMessage) {
             buttonsHtml += `<button type="button" class="msg-action-btn" data-action="edit" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">编辑</button>`;
         }
         buttonsHtml += `<button type="button" class="msg-action-btn" data-action="multi-select" data-index="${messageIndex}" data-message-id="${this._escapeHtml(messageId)}" style="background: transparent; color: #333; border: none; border-right: 0.5px solid rgba(0,0,0,0.08); padding: 4px 8px; font-size: 11px; cursor: pointer;">多选</button>`;
@@ -13187,7 +13366,12 @@ renderChatRoom(chat) {
                 if (action === 'delete') {
                     this.deleteMessage(safeIndex, actionMessageId);
                 } else if (action === 'edit') {
-                    this.editMessage(safeIndex, actionMessageId);
+                    const targetMessage = messages?.[safeIndex];
+                    if (targetMessage?.type === 'image_prompt') {
+                        this.openImagePromptEditor(targetMessage.id || actionMessageId);
+                    } else {
+                        this.editMessage(safeIndex, actionMessageId);
+                    }
                 } else if (action === 'multi-select') {
                     const targetMessage = messages?.[safeIndex];
                     this.enterMessageSelectionMode(targetMessage?.id || null);

@@ -245,6 +245,7 @@ export class PhoneShell {
                 '#wechat-werewolf-preview-modal', '#wechat-werewolf-preview-modal > div', '.wechat-werewolf-preview-body',
                 '#wechat-undercover-preview-modal', '#wechat-undercover-preview-modal > div', '.wechat-undercover-preview-body',
                 '.wechat-call-transcript-overlay', '.wechat-call-transcript-panel', '.wechat-call-transcript-body',
+                '.wechat-image-prompt-editor-overlay', '.wechat-image-prompt-editor-dialog', '.wechat-image-prompt-editor-body', '.wechat-image-prompt-editor-textarea',
                 '.phone-image-viewer-overlay', '.phone-image-viewer-stage',
                 '.phone-image-viewer-workflow-picker', '.phone-image-viewer-workflow-dialog', '.phone-image-viewer-workflow-list',
                 '#st-phone-update-modal', '.st-phone-update-dialog', '.st-phone-update-content', '.st-phone-update-list',

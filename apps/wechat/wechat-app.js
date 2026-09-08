@@ -867,6 +867,15 @@ export class WechatApp {
     border-radius: inherit;
 }
 
+/* 动态头像装饰独立合成，避免每帧刷新扩大到输入栏毛玻璃。 */
+.wechat-app .message-avatar::after {
+    contain: paint;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
 .message-avatar:hover {
     transform: scale(1.05);
 }
@@ -1849,6 +1858,12 @@ export class WechatApp {
     padding-bottom: env(safe-area-inset-bottom, 8px);
     position: relative;
     z-index: 10;
+    overflow: hidden;
+    contain: paint;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 .wechat-app .chat-input {
@@ -1886,8 +1901,9 @@ export class WechatApp {
     border: 0.5px solid rgba(255, 255, 255, 0.58);
     border-radius: 8px;
     padding: 6px 10px;
-    backdrop-filter: blur(8px) saturate(130%);
-    -webkit-backdrop-filter: blur(8px) saturate(130%);
+    /* 外层输入栏已经执行毛玻璃，避免动态头像下的嵌套滤镜重复合成。 */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     /* 🔥 移除硬编码字体大小，继承父元素设置 */
     outline: none;
     box-sizing: border-box;

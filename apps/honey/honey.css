@@ -3511,8 +3511,34 @@ body.phone-input-active .honey-page-live .honey-input-bar {
 
 .honey-scene-tag-history-actions {
     display: flex;
+    align-items: center;
     justify-content: flex-start;
+    gap: 6px;
     padding: 8px 10px 0;
+}
+
+.honey-scene-tag-history-edit {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 204, 228, 0.48);
+    background: rgba(255, 154, 200, 0.18);
+    color: #fff4fa !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+}
+
+.honey-scene-tag-history-edit:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.honey-scene-tag-history-edit i {
+    font-size: 10px;
 }
 
 .honey-scene-tag-history-retag {
@@ -3607,6 +3633,134 @@ body.phone-input-active .honey-page-live .honey-input-bar {
     text-align: center;
     font-size: 11px;
     color: rgba(255, 229, 242, 0.86) !important;
+}
+
+.honey-scene-tag-editor-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    box-sizing: border-box;
+    background: rgba(5, 3, 8, 0.62);
+}
+
+.honey-scene-tag-editor-dialog {
+    width: min(92%, 340px);
+    max-height: min(78%, 460px);
+    border: 1px solid rgba(255, 192, 222, 0.48);
+    border-radius: 12px;
+    background: linear-gradient(160deg, rgba(40, 26, 38, 0.98), rgba(14, 10, 16, 0.98));
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.56);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.honey-scene-tag-editor-head {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid rgba(255, 183, 216, 0.24);
+    box-sizing: border-box;
+}
+
+.honey-scene-tag-editor-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #ffe8f5 !important;
+}
+
+.honey-scene-tag-editor-close {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 204, 228, 0.62);
+    background: rgba(255, 154, 200, 0.2);
+    color: #fff4fa !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+}
+
+.honey-scene-tag-editor-close i {
+    font-size: 10px;
+}
+
+.honey-scene-tag-editor-body {
+    min-height: 0;
+    padding: 10px;
+    overflow: auto;
+}
+
+.honey-scene-tag-editor-textarea {
+    display: block;
+    width: 100%;
+    min-height: 176px;
+    max-height: 290px;
+    border: 1px solid rgba(255, 194, 224, 0.34);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+    color: #fff0f8 !important;
+    padding: 9px;
+    box-sizing: border-box;
+    resize: none;
+    outline: none;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.55;
+    letter-spacing: 0;
+    word-break: break-word;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+.honey-scene-tag-editor-textarea:focus {
+    border-color: rgba(255, 181, 219, 0.76);
+    box-shadow: 0 0 0 2px rgba(255, 143, 198, 0.12);
+}
+
+.honey-scene-tag-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 7px;
+    padding: 0 10px 10px;
+}
+
+.honey-scene-tag-editor-button {
+    min-width: 54px;
+    min-height: 27px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 204, 228, 0.4);
+    padding: 0 11px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.honey-scene-tag-editor-button.is-secondary {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 235, 246, 0.9) !important;
+}
+
+.honey-scene-tag-editor-button.is-primary {
+    background: rgba(255, 135, 193, 0.3);
+    color: #fff7fb !important;
+}
+
+.honey-scene-tag-editor-button:disabled {
+    opacity: 0.55;
+    cursor: wait;
 }
 
 .honey-live-collab-modal {
