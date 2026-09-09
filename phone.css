@@ -1973,6 +1973,25 @@
     line-height: 1.25;
 }
 
+#phone-panel-content .phone-screen .home-layout-icons .home-time.is-ancient .date {
+    max-width: 100%;
+    padding-inline: 4%;
+    box-sizing: border-box;
+    line-height: 1.3;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+#phone-panel-content .phone-screen .home-layout-cards .home-time-card.is-ancient .home-time-date {
+    max-width: 58%;
+    white-space: normal;
+}
+
+#phone-panel-content .phone-screen .home-layout-cards .home-time-card.is-ancient .date {
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
 /* ========================================
    📱 APP图标美化
    ======================================== */
@@ -3125,6 +3144,319 @@ body > .st-phone-honey-invite-modal.honey-live-collab-modal {
 
 .setting-item:last-child {
     border-bottom: none;
+}
+
+#phone-panel-content .phone-screen .settings-app .phone-image-comfyui-lora-open {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 36px;
+    margin-top: 8px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    border: 1px solid #d9d9df;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 12px;
+    letter-spacing: 0;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .settings-app .phone-image-comfyui-lora-open > span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .settings-app .phone-image-comfyui-lora-open i {
+    color: #4f46e5;
+}
+
+#phone-panel-content .phone-screen .settings-app .phone-image-comfyui-lora-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    background: #f0f0f3;
+    color: #444;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+#phone-panel-content .phone-screen .settings-app .phone-image-comfyui-lora-summary {
+    margin-top: 6px;
+    overflow: hidden;
+    color: #777;
+    font-size: 10.5px;
+    line-height: 1.45;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Storage-only fields must stay hidden when host themes force all textareas visible. */
+#phone-panel-content .phone-screen .settings-app #phone-image-comfyui-workflow,
+#phone-panel-content .phone-screen .settings-app #phone-image-comfyui-node-mapping,
+#phone-panel-content .phone-screen .settings-app textarea.phone-image-comfyui-hidden-storage {
+    display: none !important;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-modal {
+    position: absolute;
+    inset: 0;
+    z-index: 10070;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.42);
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-dialog {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 320px;
+    max-height: min(82%, 620px);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+    color: #171717;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 12px 9px;
+    border-bottom: 1px solid #ececef;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-header h3,
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-header p {
+    margin: 0;
+    letter-spacing: 0;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-header h3 {
+    font-size: 15px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-header p {
+    margin-top: 3px;
+    color: #6d6d72;
+    font-size: 10.5px;
+    line-height: 1.4;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-close,
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-manual-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 0;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-close {
+    width: 30px;
+    height: 30px;
+    border: 1px solid #dedee2;
+    background: #fff;
+    color: #555;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-search-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 34px;
+    gap: 7px;
+    padding: 9px 12px 7px;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-search,
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-picker-strength {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid #dcdce1;
+    border-radius: 8px;
+    background: #fafafa;
+    color: #222;
+    letter-spacing: 0;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-search {
+    height: 34px;
+    padding: 0 9px;
+    font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-manual-add {
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(79, 70, 229, 0.35);
+    background: #fff;
+    color: #4f46e5;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-picker-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 12px 7px;
+    color: #777;
+    font-size: 9.5px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-selected-count {
+    color: #166534;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-picker-list {
+    flex: 1 1 auto;
+    min-height: 156px;
+    max-height: 52vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-top: 1px solid #ececef;
+    border-bottom: 1px solid #ececef;
+    background: #fbfbfc;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-picker-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 64px;
+    gap: 8px;
+    align-items: center;
+    min-height: 48px;
+    padding: 6px 12px;
+    box-sizing: border-box;
+    border-bottom: 1px solid #ececef;
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-picker-item:last-child {
+    border-bottom: none;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-picker-item.is-selected {
+    background: #f0f8f3;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-choice-label {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-choice {
+    width: 17px;
+    height: 17px;
+    margin: 0;
+    accent-color: #16804c;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-choice-label span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: #222;
+    font-size: 10.5px;
+    line-height: 1.35;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-picker-weight {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    color: #6f6f74;
+    font-size: 8.5px;
+    line-height: 1;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-picker-strength {
+    height: 27px;
+    padding: 0 4px;
+    font-size: 10.5px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-picker-strength:disabled {
+    background: #eeeef1;
+    color: #999;
+    opacity: 0.72;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-no-match {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 156px;
+    padding: 18px;
+    box-sizing: border-box;
+    color: #7b7b80;
+    font-size: 10.5px;
+    line-height: 1.5;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-footer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-footer button {
+    height: 32px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    letter-spacing: 0;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-cancel {
+    border: 1px solid #d9d9de;
+    background: #fff;
+    color: #333;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-confirm {
+    border: 1px solid #4f46e5;
+    background: #4f46e5;
+    color: #fff;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .phone-image-comfyui-lora-confirm:disabled {
+    cursor: wait;
+    opacity: 0.65;
 }
 
 /* 🎨 新增：点击反馈 */

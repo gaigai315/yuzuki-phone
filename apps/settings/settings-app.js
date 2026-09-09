@@ -12,6 +12,8 @@
 // 设置APP
 import { ImageUploadManager } from './image-upload.js';
 import { ImageCropper } from './image-cropper.js';
+import { AlbumData } from '../album/album-data.js';
+import { AlbumImagePicker } from '../album/album-image-picker.js';
 import { DEFAULT_APP_ICONS, PHONE_CONFIG } from '../../config/apps.js';
 import * as PhoneTagFilter from '../../config/tag-filter.js';
 import {
@@ -206,6 +208,7 @@ export class SettingsApp {
         this.storage = storage;
         this.settings = settings;
         this.imageManager = new ImageUploadManager(storage);
+        this._albumImagePicker = null;
         this.currentTab = 'general'; // 可选值: 'general', 'memory', 'llm', 'tts', 'image', 'lobby'
         void ensurePhoneContextLimitSetting(this.storage);
 
@@ -2385,11 +2388,11 @@ export class SettingsApp {
                                 <div class="setting-desc">支持 jpg/png/webp，最大20MB；HEIC请先转为JPG/PNG</div>
                                 <div style="margin-top: 10px; display: flex; gap: 8px;">
                                     <button type="button" id="choose-wallpaper-btn" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
-                                        <i class="fa-solid fa-upload"></i> 选择壁纸
+                                        <i class="fa-regular fa-images"></i> 选择壁纸
                                     </button>
                                     <input type="file" id="upload-wallpaper" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0;">
                                     <button id="delete-wallpaper" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); color: #999; border-radius: 6px;">
-                                        <i class="fa-solid fa-trash"></i> 删除
+                                        <i class="fa-solid fa-rotate-left"></i> 恢复默认
                                     </button>
                                 </div>
                                 <div id="wallpaper-preview" style="margin-top: 10px; max-height: 100px; overflow: hidden; border-radius: 8px; ${wallpaper ? '' : 'display: none;'}">
@@ -2402,11 +2405,11 @@ export class SettingsApp {
                                 <div class="setting-desc">用于卡片布局顶部时间区域；最大20MB，HEIC请先转为JPG/PNG</div>
                                 <div style="margin-top: 10px; display: flex; gap: 8px;">
                                     <button type="button" id="choose-card-time-image-btn" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
-                                        <i class="fa-solid fa-upload"></i> 选择图片
+                                        <i class="fa-regular fa-images"></i> 选择图片
                                     </button>
                                     <input type="file" id="upload-card-time-image" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0;">
                                     <button id="delete-card-time-image" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); color: #999; border-radius: 6px;">
-                                        <i class="fa-solid fa-trash"></i> 删除
+                                        <i class="fa-solid fa-xmark"></i> 清除
                                     </button>
                                 </div>
                                 <div id="card-time-image-preview" style="margin-top: 10px; max-height: 100px; overflow: hidden; border-radius: 8px; ${cardTimeImage ? '' : 'display: none;'}">
@@ -3391,12 +3394,56 @@ export class SettingsApp {
                 comfyuiScheduler: String(workflow?.comfyuiScheduler || workflow?.scheduler || 'normal').trim() || 'normal',
                 comfyuiVae: String(workflow?.comfyuiVae || workflow?.vae || '').trim(),
                 comfyuiClip: String(workflow?.comfyuiClip || workflow?.clip || '').trim(),
+                comfyuiLoras: this._normalizeComfyUILoras(workflow?.comfyuiLoras ?? workflow?.loras),
                 promptSettingsInitialized,
                 fixedPrompt: String(workflow?.fixedPrompt || ''),
                 fixedPromptEnd: String(workflow?.fixedPromptEnd || ''),
                 negativePrompt: String(workflow?.negativePrompt || ''),
                 promptSettingsByApp: this._normalizeComfyUIPromptSettingsByApp(workflow?.promptSettingsByApp),
                 updatedAt: Number(workflow?.updatedAt || 0) || Date.now()
+            };
+        }).filter(Boolean);
+    }
+
+    _getAlbumImagePicker() {
+        if (!this._albumImagePicker) {
+            const albumData = window.VirtualPhone?.albumApp?.albumData || new AlbumData(this.storage);
+            this._albumImagePicker = new AlbumImagePicker(albumData);
+        }
+        return this._albumImagePicker;
+    }
+
+    _normalizeComfyUILoras(value = []) {
+        let items = value;
+        if (typeof items === 'string') {
+            try {
+                items = JSON.parse(items || '[]');
+            } catch (e) {
+                items = [];
+            }
+        }
+        if (!Array.isArray(items)) return [];
+
+        const seen = new Set();
+        const clampStrength = (raw, fallback = 1) => {
+            const number = Number.parseFloat(raw);
+            const normalized = Number.isFinite(number) ? number : fallback;
+            return Math.round(Math.max(-10, Math.min(10, normalized)) * 1000) / 1000;
+        };
+        return items.map((item) => {
+            const name = String(item?.name || item?.loraName || item?.lora_name || item || '').trim();
+            if (!name || seen.has(name)) return null;
+            seen.add(name);
+            return {
+                name,
+                strength: clampStrength(
+                    item?.strength
+                    ?? item?.strengthModel
+                    ?? item?.strength_model
+                    ?? item?.strengthClip
+                    ?? item?.strength_clip,
+                    1
+                )
             };
         }).filter(Boolean);
     }
@@ -3670,6 +3717,14 @@ export class SettingsApp {
         const activeComfyUIWorkflowId = this._getComfyUIActiveWorkflowId(activeComfyUIApp);
         const activeComfyUIWorkflow = comfyuiWorkflows.find(workflow => workflow.id === activeComfyUIWorkflowId) || null;
         const activeComfyUIWorkflowName = this._escapeHtml(activeComfyUIWorkflow?.name || '');
+        const comfyuiLoras = this._normalizeComfyUILoras(
+            activeComfyUIWorkflow?.comfyuiLoras
+            ?? this.storage.get('phone-image-comfyui-loras')
+            ?? []
+        );
+        const comfyuiLoraSummary = comfyuiLoras.length
+            ? `已选择 ${comfyuiLoras.length} 个：${comfyuiLoras.map(lora => lora.name).join('、')}`
+            : '尚未选择 LoRA';
         const comfyuiWorkflowOptions = comfyuiWorkflows.map((workflow) => {
             const safeId = this._escapeHtml(workflow.id);
             const safeName = this._escapeHtml(workflow.name);
@@ -4201,7 +4256,7 @@ export class SettingsApp {
                         </select>
                     </div>
                     <div class="setting-desc" id="phone-image-comfyui-transport-desc" style="margin-top: 6px;">${comfyuiTransport === 'tavern'
-                        ? '资源读取和生成由酒馆后端转发，无需开启跨域；参考图上传仍需 ComfyUI 允许跨域。'
+                        ? '资源读取和生成由酒馆后端转发；旧版酒馆没有 LoRA 代理时会尝试浏览器直连，仍可手动输入文件名。'
                         : '浏览器直接请求 ComfyUI，需在 ComfyUI 启动参数中开启跨域。'}</div>
                 </div>
 
@@ -4237,8 +4292,8 @@ export class SettingsApp {
                         连接并刷新 ComfyUI 数据
                     </button>
                     <div class="setting-desc" id="phone-image-comfyui-status" style="margin-top: 6px;">${comfyuiTransport === 'tavern'
-                        ? '通过酒馆后端读取模型、采样器、调度器和 VAE。'
-                        : '从 /object_info 读取模型、采样器、调度器、VAE 和 CLIP。'}</div>
+                        ? '通过酒馆后端读取资源；LoRA 会优先走代理，旧版酒馆不支持时尝试直连。'
+                        : '从 /object_info 读取模型、采样器、调度器、VAE、CLIP 和 LoRA。'}</div>
                 </div>
 
                 <div class="setting-item">
@@ -4275,6 +4330,18 @@ export class SettingsApp {
                     </div>
                 </div>
 
+                <div class="setting-item phone-image-comfyui-lora-setting">
+                    <div class="setting-label">LoRA</div>
+                    <div class="setting-desc">在弹窗内勾选一个或多个 LoRA，并分别调整权重。工作流原有的其他 LoRA 保持不变。</div>
+                    <button type="button" id="phone-image-comfyui-lora-open" class="phone-image-comfyui-lora-open">
+                        <span><i class="fa-solid fa-sliders"></i> 选择 LoRA</span>
+                        <span id="phone-image-comfyui-lora-count" class="phone-image-comfyui-lora-count">${comfyuiLoras.length}</span>
+                    </button>
+                    <div id="phone-image-comfyui-lora-summary" class="phone-image-comfyui-lora-summary" title="${this._escapeHtml(comfyuiLoraSummary)}">
+                        ${this._escapeHtml(comfyuiLoraSummary)}
+                    </div>
+                </div>
+
                 <div class="setting-item">
                     <div style="display: flex; align-items: center; gap: 5px;">
                         <div class="setting-label">工作流 JSON</div>
@@ -4307,11 +4374,12 @@ export class SettingsApp {
                         <span>编辑工作流 JSON</span>
                         <span id="phone-image-comfyui-workflow-summary" style="min-width: 0; flex: 1; text-align: right; color: #777; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${comfyuiWorkflow ? `${this._escapeHtml(String(comfyuiWorkflow.length))} 字符` : '未填写'}</span>
                     </button>
-                    <textarea id="phone-image-comfyui-workflow" rows="8"
-                              style="display:none;">${this._escapeHtml(comfyuiWorkflow)}</textarea>
+                    <textarea id="phone-image-comfyui-workflow" class="phone-image-comfyui-hidden-storage" rows="8"
+                              hidden aria-hidden="true">${this._escapeHtml(comfyuiWorkflow)}</textarea>
                 </div>
 
-                <textarea id="phone-image-comfyui-node-mapping" style="display:none;">${this._escapeHtml(comfyuiNodeMapping)}</textarea>
+                <textarea id="phone-image-comfyui-node-mapping" class="phone-image-comfyui-hidden-storage"
+                          hidden aria-hidden="true">${this._escapeHtml(comfyuiNodeMapping)}</textarea>
 
                 <div class="setting-item">
                     <button id="phone-image-test-comfyui" class="phone-image-test-btn" style="width: 100%; height: 34px; border: none; border-radius: 8px; background: #10b981 !important; color: #fff !important; font-size: 13px; font-weight: 600; cursor: pointer;">
@@ -5308,10 +5376,86 @@ export class SettingsApp {
             return message;
         };
 
-        document.getElementById('choose-wallpaper-btn')?.addEventListener('click', (e) => {
+        const getActiveSettingsRoot = (target = null) => target?.closest?.('.settings-app')
+            || document.querySelector('.phone-view-current .settings-app')
+            || document.querySelector('.settings-app');
+        const applyWallpaperPath = async (pathLike, successMessage = '手机壁纸已更换') => {
+            const nextWallpaper = String(pathLike || '').trim();
+            if (!nextWallpaper) throw new Error('壁纸路径无效');
+            if (nextWallpaper === String(this.imageManager.getWallpaper?.() || '').trim()) {
+                this.phoneShell?.showNotification?.('提示', '当前已经在使用这张壁纸', 'ℹ️');
+                return false;
+            }
+
+            this.imageManager.cache.wallpaper = nextWallpaper;
+            await this.imageManager.saveImages(this.imageManager.cache);
+
+            const activeSettingsRoot = getActiveSettingsRoot();
+            const preview = activeSettingsRoot?.querySelector('#wallpaper-preview') || document.getElementById('wallpaper-preview');
+            const img = preview?.querySelector('img');
+            if (preview && img) {
+                preview.style.display = 'block';
+                img.style.display = 'block';
+                img.src = nextWallpaper;
+            }
+            if (activeSettingsRoot) {
+                activeSettingsRoot.classList.add('settings-has-wallpaper');
+                activeSettingsRoot.style.backgroundImage = `url("${nextWallpaper.replace(/"/g, '\\"')}")`;
+                activeSettingsRoot.style.backgroundSize = 'cover';
+                activeSettingsRoot.style.backgroundPosition = 'center';
+            }
+
+            window.dispatchEvent(new CustomEvent('phone:updateWallpaper', {
+                detail: { wallpaper: nextWallpaper }
+            }));
+            this.phoneShell?.showNotification?.('已更换', successMessage, '✅');
+            return true;
+        };
+        const applyCardTimeImagePath = async (pathLike, successMessage = '时间卡片图片已更换') => {
+            const nextImage = String(pathLike || '').trim();
+            if (!nextImage) throw new Error('时间卡片图片路径无效');
+            if (nextImage === String(this.storage.get('phone-card-time-image') || '').trim()) {
+                this.phoneShell?.showNotification?.('提示', '当前已经在使用这张时间卡片图片', 'ℹ️');
+                return false;
+            }
+
+            await this.storage.set('phone-card-time-image', nextImage);
+            const preview = getActiveSettingsRoot()?.querySelector('#card-time-image-preview')
+                || document.getElementById('card-time-image-preview');
+            const img = preview?.querySelector('img');
+            if (preview && img) {
+                preview.style.display = 'block';
+                img.style.display = 'block';
+                img.src = nextImage;
+            }
+            window.VirtualPhone?.home?.render?.({ forceDomRefresh: true });
+            this.phoneShell?.showNotification?.('已更换', successMessage, '✅');
+            return true;
+        };
+
+        document.getElementById('choose-wallpaper-btn')?.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            document.getElementById('upload-wallpaper')?.click?.();
+            try {
+                const picker = this._getAlbumImagePicker();
+                const source = await picker.chooseSource({ title: '选择壁纸来源' });
+                if (source === 'device') {
+                    document.getElementById('upload-wallpaper')?.click?.();
+                    return;
+                }
+                if (source !== 'album') return;
+
+                if (!(picker.albumData?.getImages?.() || []).length) {
+                    this.phoneShell?.showNotification?.('提示', '相册 App 里还没有可复用的图片', 'ℹ️');
+                    return;
+                }
+                const image = await picker.chooseImage({ title: '选择壁纸' });
+                if (!image) return;
+                await applyWallpaperPath(image.path, '已复用相册中的图片作为壁纸');
+            } catch (err) {
+                console.warn('[Settings] 从相册选择壁纸失败:', err);
+                this.phoneShell?.showNotification?.('更换失败', err?.message || '壁纸更换失败', '❌');
+            }
         });
 
         document.getElementById('upload-wallpaper')?.addEventListener('change', async (e) => {
@@ -5332,36 +5476,10 @@ export class SettingsApp {
                 });
 
                 const croppedImage = await cropper.open(file);
-                const oldWallpaper = this.imageManager.getWallpaper();
-                await this.imageManager.deleteManagedBackgroundByPath(oldWallpaper, { quiet: true });
 
                 // 🔥 上传到服务端，避免 Base64 撑大存档
                 const serverUrl = await this.imageManager._uploadToServer(croppedImage, 'wallpaper', { allowBase64Fallback: false });
-
-                // 保存壁纸
-                this.imageManager.cache.wallpaper = serverUrl;
-                await this.imageManager.saveImages(this.imageManager.cache);
-
-                // 更新预览
-                const preview = document.getElementById('wallpaper-preview');
-                const img = preview.querySelector('img');
-                preview.style.display = 'block';
-                img.style.display = 'block';
-                img.src = serverUrl;
-                const settingsRoot = document.querySelector('.phone-view-current .settings-app') || document.querySelector('.settings-app');
-                if (settingsRoot) {
-                    settingsRoot.classList.add('settings-has-wallpaper');
-                    settingsRoot.style.backgroundImage = `url("${serverUrl.replace(/"/g, '\\"')}")`;
-                    settingsRoot.style.backgroundSize = 'cover';
-                    settingsRoot.style.backgroundPosition = 'center';
-                }
-
-                // 通知主屏幕更新
-                window.dispatchEvent(new CustomEvent('phone:updateWallpaper', {
-                    detail: { wallpaper: serverUrl }
-                }));
-
-                alert('✅ 壁纸上传成功！');
+                await applyWallpaperPath(serverUrl, '壁纸已上传并保留到相册 App');
             } catch (err) {
                 if (err.message !== '用户取消') {
                     alert('❌ 上传失败：' + formatImageUploadError(err));
@@ -5369,30 +5487,23 @@ export class SettingsApp {
             }
         });
         
-        // 删除壁纸
+        // 恢复默认壁纸时只解除绑定，旧图继续保留在相册 App。
         document.querySelectorAll('.settings-app #delete-wallpaper').forEach((deleteWallpaperBtn) => deleteWallpaperBtn.addEventListener('click', async (event) => {
             event.preventDefault();
             event.stopPropagation();
             const activeSettingsRoot = event.currentTarget?.closest?.('.settings-app') || settingsRoot;
             const ok = await this._showPhoneConfirm({
-                title: '删除壁纸',
-                message: '确定删除手机桌面壁纸吗？',
-                confirmText: '删除',
+                title: '恢复默认壁纸',
+                message: '确定恢复默认壁纸吗？当前图片会继续保留在相册 App，之后可以重新选择。',
+                confirmText: '恢复默认',
                 cancelText: '取消',
-                danger: true,
+                danger: false,
                 host: activeSettingsRoot
             });
             if (!ok) return;
 
-            const oldWallpaper = this.imageManager.getWallpaper?.();
-            try {
-                await this.imageManager.deleteWallpaper();
-            } catch (err) {
-                console.warn('[Settings] 删除壁纸文件失败，已继续清空本地壁纸设置:', err);
-                await this.imageManager.deleteManagedBackgroundByPath?.(oldWallpaper, { quiet: true });
-                this.imageManager.cache.wallpaper = null;
-                await this.imageManager.saveImages(this.imageManager.cache);
-            }
+            this.imageManager.cache.wallpaper = null;
+            await this.imageManager.saveImages(this.imageManager.cache);
 
             const preview = activeSettingsRoot?.querySelector('#wallpaper-preview') || document.getElementById('wallpaper-preview');
             if (preview) {
@@ -5419,10 +5530,29 @@ export class SettingsApp {
             this.phoneShell?.showNotification?.('已恢复', '手机壁纸已恢复为默认背景', '✅');
         }));
 
-        document.getElementById('choose-card-time-image-btn')?.addEventListener('click', (e) => {
+        document.getElementById('choose-card-time-image-btn')?.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            document.getElementById('upload-card-time-image')?.click?.();
+            try {
+                const picker = this._getAlbumImagePicker();
+                const source = await picker.chooseSource({ title: '选择时间卡片图片来源' });
+                if (source === 'device') {
+                    document.getElementById('upload-card-time-image')?.click?.();
+                    return;
+                }
+                if (source !== 'album') return;
+
+                if (!(picker.albumData?.getImages?.() || []).length) {
+                    this.phoneShell?.showNotification?.('提示', '相册 App 里还没有可复用的图片', 'ℹ️');
+                    return;
+                }
+                const image = await picker.chooseImage({ title: '选择时间卡片图片' });
+                if (!image) return;
+                await applyCardTimeImagePath(image.path, '已复用相册中的时间卡片图片');
+            } catch (err) {
+                console.warn('[Settings] 从相册选择时间卡片图片失败:', err);
+                this.phoneShell?.showNotification?.('更换失败', err?.message || '时间卡片图片更换失败', '❌');
+            }
         });
 
         document.getElementById('upload-card-time-image')?.addEventListener('change', async (e) => {
@@ -5442,21 +5572,8 @@ export class SettingsApp {
                 });
 
                 const croppedImage = await cropper.open(file);
-                const oldImage = this.storage.get('phone-card-time-image') || null;
-                await this.imageManager.deleteManagedBackgroundByPath(oldImage, { quiet: true });
                 const serverUrl = await this.imageManager._uploadToServer(croppedImage, 'card_time', { allowBase64Fallback: false });
-                await this.storage.set('phone-card-time-image', serverUrl);
-
-                const preview = document.getElementById('card-time-image-preview');
-                const img = preview?.querySelector('img');
-                if (preview && img) {
-                    preview.style.display = 'block';
-                    img.style.display = 'block';
-                    img.src = serverUrl;
-                }
-
-                window.VirtualPhone?.home?.render?.({ forceDomRefresh: true });
-                alert('✅ 时间卡片图片上传成功！');
+                await applyCardTimeImagePath(serverUrl, '时间卡片图片已上传并保留到相册 App');
             } catch (err) {
                 if (err.message !== '用户取消') {
                     alert('❌ 上传失败：' + formatImageUploadError(err));
@@ -5464,11 +5581,18 @@ export class SettingsApp {
             }
         });
 
-        document.getElementById('delete-card-time-image')?.addEventListener('click', async () => {
-            if (!confirm('确定删除时间卡片图片吗？')) return;
+        document.getElementById('delete-card-time-image')?.addEventListener('click', async (event) => {
+            const activeSettingsRoot = event.currentTarget?.closest?.('.settings-app') || settingsRoot;
+            const ok = await this._showPhoneConfirm({
+                title: '清除时间卡片图片',
+                message: '确定清除当前时间卡片图片吗？图片会继续保留在相册 App，之后可以重新选择。',
+                confirmText: '清除',
+                cancelText: '取消',
+                danger: false,
+                host: activeSettingsRoot
+            });
+            if (!ok) return;
 
-            const oldImage = this.storage.get('phone-card-time-image') || null;
-            await this.imageManager.deleteManagedBackgroundByPath(oldImage, { quiet: true });
             await this.storage.remove('phone-card-time-image');
 
             const preview = document.getElementById('card-time-image-preview');
@@ -5480,7 +5604,7 @@ export class SettingsApp {
             }
 
             window.VirtualPhone?.home?.render?.({ forceDomRefresh: true });
-            alert('✅ 时间卡片图片已删除！');
+            this.phoneShell?.showNotification?.('已清除', '时间卡片图片已清除，原图仍保留在相册 App', '✅');
         });
 
         document.getElementById('phone-home-layout')?.addEventListener('change', async (e) => {
@@ -6102,6 +6226,9 @@ export class SettingsApp {
         const imageComfyUIWorkflowHelpBtn = document.getElementById('phone-image-comfyui-workflow-help');
         const imageComfyUIWorkflowEditBtn = document.getElementById('phone-image-comfyui-workflow-edit');
         const imageComfyUIWorkflowSummary = document.getElementById('phone-image-comfyui-workflow-summary');
+        const imageComfyUILoraOpenBtn = document.getElementById('phone-image-comfyui-lora-open');
+        const imageComfyUILoraCount = document.getElementById('phone-image-comfyui-lora-count');
+        const imageComfyUILoraSummary = document.getElementById('phone-image-comfyui-lora-summary');
         const imagePromptAppSelect = document.getElementById('phone-image-prompt-app-select');
         const imagePromptPresetSelect = document.getElementById('phone-image-prompt-preset-select');
         const imagePromptPresetName = document.getElementById('phone-image-prompt-preset-name');
@@ -6387,6 +6514,198 @@ export class SettingsApp {
                 imageOpenaiPresetSelect.appendChild(opt);
             });
         };
+        const initialComfyUIApp = this._normalizeImagePromptApp(
+            this.storage.get('phone-image-active-comfyui-app')
+            || imageComfyUIAppSelect?.value
+            || 'honey'
+        );
+        const initialComfyUIWorkflowId = this._getComfyUIActiveWorkflowId(initialComfyUIApp);
+        const initialComfyUIWorkflow = this._getComfyUIWorkflows()
+            .find(workflow => workflow.id === initialComfyUIWorkflowId);
+        let selectedComfyUILoras = this._normalizeComfyUILoras(
+            initialComfyUIWorkflow?.comfyuiLoras
+            ?? this.storage.get('phone-image-comfyui-loras')
+            ?? []
+        );
+        let availableComfyUILoraNames = [];
+        const readComfyUILoras = () => this._normalizeComfyUILoras(selectedComfyUILoras);
+        const renderComfyUILoras = (loras = []) => {
+            const normalized = this._normalizeComfyUILoras(loras);
+            selectedComfyUILoras = normalized;
+            if (imageComfyUILoraCount) imageComfyUILoraCount.textContent = String(normalized.length);
+            if (imageComfyUILoraSummary) {
+                const summary = normalized.length
+                    ? `已选择 ${normalized.length} 个：${normalized.map(lora => lora.name).join('、')}`
+                    : '尚未选择 LoRA';
+                imageComfyUILoraSummary.textContent = summary;
+                imageComfyUILoraSummary.title = summary;
+            }
+        };
+        const fillComfyUILoraOptions = (loras = []) => {
+            availableComfyUILoraNames = this._normalizeComfyUILoras(
+                (Array.isArray(loras) ? loras : []).map(name => ({ name }))
+            ).map(lora => lora.name);
+        };
+        const showComfyUILoraPicker = () => {
+            document.getElementById('phone-image-comfyui-lora-modal')?.remove();
+            const current = readComfyUILoras();
+            const currentByName = new Map(current.map(lora => [lora.name, lora]));
+            const names = [...new Set([...availableComfyUILoraNames, ...current.map(lora => lora.name)])];
+            const overlay = document.createElement('div');
+            overlay.id = 'phone-image-comfyui-lora-modal';
+            overlay.className = 'phone-image-comfyui-lora-modal';
+            overlay.dataset.noSwipeBack = 'true';
+            overlay.innerHTML = `
+                <section class="phone-image-comfyui-lora-dialog" role="dialog" aria-modal="true" aria-labelledby="phone-image-comfyui-lora-title">
+                    <header class="phone-image-comfyui-lora-header">
+                        <div>
+                            <h3 id="phone-image-comfyui-lora-title">选择 LoRA</h3>
+                            <p>勾选需要使用的 LoRA，并修改对应权重</p>
+                        </div>
+                        <button type="button" class="phone-image-comfyui-lora-close" aria-label="关闭 LoRA 选择" title="关闭">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </header>
+                    <div class="phone-image-comfyui-lora-search-row">
+                        <input type="search" class="phone-image-comfyui-lora-search" placeholder="搜索或输入 LoRA 文件名" autocomplete="off">
+                        <button type="button" class="phone-image-comfyui-lora-manual-add" aria-label="手动添加 LoRA" title="手动添加输入的文件名">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                    </div>
+                    <div class="phone-image-comfyui-lora-picker-status">
+                        <span class="phone-image-comfyui-lora-selected-count">已选 ${current.length} 个</span>
+                        <span>${availableComfyUILoraNames.length ? `共 ${names.length} 个可选` : '未读取到清单，可手动添加'}</span>
+                    </div>
+                    <div class="phone-image-comfyui-lora-picker-list"></div>
+                    <footer class="phone-image-comfyui-lora-footer">
+                        <button type="button" class="phone-image-comfyui-lora-cancel">取消</button>
+                        <button type="button" class="phone-image-comfyui-lora-confirm">确定</button>
+                    </footer>
+                </section>
+            `;
+            const host = document.querySelector('.phone-view-current') || document.querySelector('.phone-body-panel') || document.body;
+            host.appendChild(overlay);
+
+            const dialog = overlay.querySelector('.phone-image-comfyui-lora-dialog');
+            const list = overlay.querySelector('.phone-image-comfyui-lora-picker-list');
+            const search = overlay.querySelector('.phone-image-comfyui-lora-search');
+            const manualAdd = overlay.querySelector('.phone-image-comfyui-lora-manual-add');
+            const selectedCount = overlay.querySelector('.phone-image-comfyui-lora-selected-count');
+            const close = () => {
+                overlay.remove();
+                globalThis.requestAnimationFrame?.(() => imageComfyUILoraOpenBtn?.focus?.());
+            };
+            const getRows = () => Array.from(list?.querySelectorAll('.phone-image-comfyui-lora-picker-item') || []);
+            const syncDraftFromRows = () => {
+                getRows().forEach((row) => {
+                    const name = String(row.dataset.loraName || '').trim();
+                    if (!name) return;
+                    const checked = row.querySelector('.phone-image-comfyui-lora-choice')?.checked;
+                    if (!checked) {
+                        currentByName.delete(name);
+                        return;
+                    }
+                    currentByName.set(name, {
+                        name,
+                        strength: row.querySelector('.phone-image-comfyui-lora-picker-strength')?.value
+                    });
+                });
+            };
+            const updateSelectedCount = () => {
+                const count = getRows().filter(row => row.querySelector('.phone-image-comfyui-lora-choice')?.checked).length;
+                if (selectedCount) selectedCount.textContent = `已选 ${count} 个`;
+            };
+            const applySearch = () => {
+                const query = String(search?.value || '').trim().toLowerCase();
+                let visibleCount = 0;
+                getRows().forEach((row) => {
+                    const visible = !query || String(row.dataset.loraName || '').toLowerCase().includes(query);
+                    row.hidden = !visible;
+                    if (visible) visibleCount += 1;
+                });
+                list?.querySelector('.phone-image-comfyui-lora-no-match')?.remove();
+                if (list && visibleCount === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'phone-image-comfyui-lora-no-match';
+                    empty.textContent = query ? '没有匹配项，可点右侧加号手动添加' : '暂无 LoRA，请先刷新清单或手动添加';
+                    list.appendChild(empty);
+                }
+            };
+            const renderRows = () => {
+                if (!list) return;
+                list.innerHTML = names.map((name) => {
+                    const selected = currentByName.get(name);
+                    const checked = Boolean(selected);
+                    return `
+                        <div class="phone-image-comfyui-lora-picker-item${checked ? ' is-selected' : ''}" data-lora-name="${this._escapeHtml(name)}">
+                            <label class="phone-image-comfyui-lora-choice-label" title="${this._escapeHtml(name)}">
+                                <input type="checkbox" class="phone-image-comfyui-lora-choice" ${checked ? 'checked' : ''}>
+                                <span>${this._escapeHtml(name)}</span>
+                            </label>
+                            <label class="phone-image-comfyui-lora-picker-weight">
+                                <span>权重</span>
+                                <input type="number" class="phone-image-comfyui-lora-picker-strength" min="-10" max="10" step="0.05" value="${this._escapeHtml(selected?.strength ?? 1)}" ${checked ? '' : 'disabled'}>
+                            </label>
+                        </div>
+                    `;
+                }).join('');
+                updateSelectedCount();
+                applySearch();
+            };
+            renderRows();
+
+            list?.addEventListener('change', (event) => {
+                if (!event.target.matches('.phone-image-comfyui-lora-choice')) return;
+                const row = event.target.closest('.phone-image-comfyui-lora-picker-item');
+                const strengthInput = row?.querySelector('.phone-image-comfyui-lora-picker-strength');
+                row?.classList.toggle('is-selected', event.target.checked);
+                if (strengthInput) strengthInput.disabled = !event.target.checked;
+                updateSelectedCount();
+            });
+            search?.addEventListener('input', applySearch);
+            manualAdd?.addEventListener('click', () => {
+                const name = String(search?.value || '').trim();
+                if (!name) {
+                    search?.focus?.();
+                    return;
+                }
+                syncDraftFromRows();
+                if (!names.includes(name)) names.push(name);
+                currentByName.set(name, currentByName.get(name) || { name, strength: 1 });
+                if (search) search.value = '';
+                renderRows();
+                const row = getRows().find(item => item.dataset.loraName === name);
+                row?.scrollIntoView?.({ block: 'nearest' });
+            });
+            overlay.querySelector('.phone-image-comfyui-lora-close')?.addEventListener('click', close);
+            overlay.querySelector('.phone-image-comfyui-lora-cancel')?.addEventListener('click', close);
+            overlay.querySelector('.phone-image-comfyui-lora-confirm')?.addEventListener('click', async (event) => {
+                const button = event.currentTarget;
+                try {
+                    button.disabled = true;
+                    const selected = getRows().filter(row => row.querySelector('.phone-image-comfyui-lora-choice')?.checked).map(row => ({
+                        name: String(row.dataset.loraName || '').trim(),
+                        strength: row.querySelector('.phone-image-comfyui-lora-picker-strength')?.value
+                    }));
+                    renderComfyUILoras(selected);
+                    await saveComfyUILoras();
+                    close();
+                } catch (err) {
+                    button.disabled = false;
+                    this.phoneShell?.showNotification?.('LoRA 保存失败', err?.message || String(err || '失败'), '⚠️');
+                }
+            });
+            overlay.addEventListener('click', (event) => {
+                if (event.target === overlay) close();
+            });
+            dialog?.addEventListener('click', event => event.stopPropagation());
+            overlay.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape') return;
+                event.preventDefault();
+                close();
+            });
+            globalThis.requestAnimationFrame?.(() => search?.focus?.());
+        };
         const getComfyUIWorkflowSettings = () => ({
             workflow: String(document.getElementById('phone-image-comfyui-workflow')?.value || '').trim(),
             nodeMapping: String(document.getElementById('phone-image-comfyui-node-mapping')?.value || '').trim(),
@@ -6394,7 +6713,8 @@ export class SettingsApp {
             comfyuiSampler: String(document.getElementById('phone-image-comfyui-sampler')?.value || 'euler').trim() || 'euler',
             comfyuiScheduler: String(document.getElementById('phone-image-comfyui-scheduler')?.value || 'normal').trim() || 'normal',
             comfyuiVae: String(document.getElementById('phone-image-comfyui-vae')?.value || '').trim(),
-            comfyuiClip: String(document.getElementById('phone-image-comfyui-clip')?.value || '').trim()
+            comfyuiClip: String(document.getElementById('phone-image-comfyui-clip')?.value || '').trim(),
+            comfyuiLoras: readComfyUILoras()
         });
         const setComfyUIFieldValue = (id, value) => {
             const input = document.getElementById(id);
@@ -6426,6 +6746,9 @@ export class SettingsApp {
                 setComfyUIFieldValue(id, value);
                 await this.storage.set(id, value);
             }
+            const workflowLoras = this._normalizeComfyUILoras(workflow.comfyuiLoras);
+            renderComfyUILoras(workflowLoras);
+            await this.storage.set('phone-image-comfyui-loras', JSON.stringify(workflowLoras));
             const promptSettings = this._getComfyUIWorkflowPromptSettings(workflow, getComfyUIPresetScope());
             if (imageFixedPromptInput) imageFixedPromptInput.value = String(promptSettings.fixedPrompt || '');
             if (imageFixedPromptEndInput) imageFixedPromptEndInput.value = String(promptSettings.fixedPromptEnd || '');
@@ -6479,6 +6802,15 @@ export class SettingsApp {
             };
             await this._saveComfyUIWorkflows(workflows);
             return true;
+        };
+        const saveComfyUILoras = async ({ updateWorkflow = true, rerender = true } = {}) => {
+            const loras = readComfyUILoras();
+            if (rerender) renderComfyUILoras(loras);
+            await this.storage.set('phone-image-comfyui-loras', JSON.stringify(loras));
+            if (updateWorkflow) {
+                await updateActiveComfyUIWorkflowDraft({ comfyuiLoras: loras });
+            }
+            return loras;
         };
         const updateActiveComfyUIWorkflowPromptSettings = async (form = getImagePromptForm()) => {
             const activeId = getComfyUIActiveWorkflowId();
@@ -7140,6 +7472,7 @@ export class SettingsApp {
                 comfyuiScheduler: String(item?.comfyuiScheduler || item?.scheduler || 'normal').trim() || 'normal',
                 comfyuiVae: String(item?.comfyuiVae || item?.vae || '').trim(),
                 comfyuiClip: String(item?.comfyuiClip || item?.clip || '').trim(),
+                comfyuiLoras: this._normalizeComfyUILoras(item?.comfyuiLoras ?? item?.loras),
                 promptSettingsInitialized,
                 fixedPrompt: String(item?.fixedPrompt || ''),
                 fixedPromptEnd: String(item?.fixedPromptEnd || ''),
@@ -7181,7 +7514,8 @@ export class SettingsApp {
                 comfyuiSampler: settings.comfyuiSampler,
                 comfyuiScheduler: settings.comfyuiScheduler,
                 comfyuiVae: settings.comfyuiVae,
-                comfyuiClip: settings.comfyuiClip
+                comfyuiClip: settings.comfyuiClip,
+                comfyuiLoras: settings.comfyuiLoras
             }, fallbackName);
             if (!normalized) throw new Error('无法识别 ComfyUI 工作流 JSON，请粘贴 API Format、普通 UI 工作流或本项目导出的工作流包');
             return {
@@ -7192,7 +7526,8 @@ export class SettingsApp {
                 comfyuiSampler: settings.comfyuiSampler || normalized.comfyuiSampler || 'euler',
                 comfyuiScheduler: settings.comfyuiScheduler || normalized.comfyuiScheduler || 'normal',
                 comfyuiVae: settings.comfyuiVae || normalized.comfyuiVae || '',
-                comfyuiClip: settings.comfyuiClip || normalized.comfyuiClip || ''
+                comfyuiClip: settings.comfyuiClip || normalized.comfyuiClip || '',
+                comfyuiLoras: this._normalizeComfyUILoras(settings.comfyuiLoras ?? normalized.comfyuiLoras)
             };
         };
         const makeUniqueComfyUIWorkflowName = (name, usedNames) => {
@@ -7208,7 +7543,7 @@ export class SettingsApp {
         };
         const buildComfyUIWorkflowSharePayload = (workflows = []) => ({
             type: 'yuzuki-phone-comfyui-workflows',
-            version: 3,
+            version: 4,
             exportedAt: new Date().toISOString(),
             workflows: (Array.isArray(workflows) ? workflows : []).map(workflow => ({
                 name: String(workflow?.name || '').trim(),
@@ -7219,6 +7554,7 @@ export class SettingsApp {
                 scheduler: String(workflow?.comfyuiScheduler || '').trim(),
                 vae: String(workflow?.comfyuiVae || '').trim(),
                 clip: String(workflow?.comfyuiClip || '').trim(),
+                loras: this._normalizeComfyUILoras(workflow?.comfyuiLoras),
                 ...(workflow?.promptSettingsInitialized ? {
                     promptSettingsInitialized: true,
                     fixedPrompt: String(workflow?.fixedPrompt || ''),
@@ -8364,7 +8700,7 @@ export class SettingsApp {
             const desc = document.getElementById('phone-image-comfyui-transport-desc');
             if (!desc) return;
             desc.textContent = getComfyUITransport() === 'tavern'
-                ? '资源读取和生成由酒馆后端转发，无需开启跨域；参考图上传仍需 ComfyUI 允许跨域。'
+                ? '资源读取和生成由酒馆后端转发；旧版酒馆没有 LoRA 代理时会尝试浏览器直连，仍可手动输入文件名。'
                 : '浏览器直接请求 ComfyUI，需在 ComfyUI 启动参数中开启跨域。';
         };
         const saveComfyUISettings = async () => {
@@ -8388,6 +8724,7 @@ export class SettingsApp {
                 if (id !== 'phone-image-comfyui-workflow') input.value = value;
                 await this.storage.set(id, value);
             }
+            await saveComfyUILoras();
         };
         document.getElementById('phone-image-comfyui-mode')?.addEventListener('change', async () => {
             updateComfyUIModeRows();
@@ -8415,6 +8752,7 @@ export class SettingsApp {
             input.addEventListener('change', saveComfyUISettings);
             input.addEventListener('blur', saveComfyUISettings);
         });
+        imageComfyUILoraOpenBtn?.addEventListener('click', showComfyUILoraPicker);
 
         imageComfyUIWorkflowSelect?.addEventListener('change', async (e) => {
             const workflowId = String(e.target.value || '').trim();
@@ -8639,6 +8977,7 @@ export class SettingsApp {
                     '简单工作流也可继续使用占位符：',
                     '%prompt%、%negative_prompt%、%width%、%height%、%MODEL_NAME%、%reference_image%。',
                     '分段正面提示词可使用 %fixed_prompt%（前置）、%main_prompt%（AI 动态内容）、%fixed_prompt_end%（后置）；%prompt% 继续表示拼接后的完整正面提示词。',
+                    '设置页选择的多个 LoRA 会优先写入工作流现有的 LoraManager；没有管理器时自动追加标准 LoraLoader。只需填写一个 LoRA 权重，无需添加 LoRA 占位符。',
                     '单参考图使用 %reference_image%；多参考图按槽位使用 %reference_image_1%、%reference_image_2%……，也支持对应的 filename、subfolder、type 编号占位符。',
                     '系统检测的是参考图占位符，不会因为工作流里存在普通 LoadImage 节点就强制传图；普通生图没有可用参考图时仍提交当前工作流，并将动态参考图输入留空，请由工作流自身处理可选参考图分支。',
                     '视频工作流还可使用 %video_prompt%、%motion_prompt% 或 %视频提示词%；发起图生视频时，%prompt% 也会替换为视频提示词。',
@@ -8678,7 +9017,8 @@ export class SettingsApp {
                 const transportLabel = getComfyUITransport() === 'tavern' ? '酒馆后端' : '浏览器直连';
                 setStatus(`正在通过${transportLabel}读取 ${getComfyUIMode() === 'remote' ? '远端' : '本地'} ComfyUI 数据...`, '#6366f1');
                 const resources = await imageManager.fetchComfyUIResources(comfyUrlValue, {
-                    comfyuiTransport: getComfyUITransport()
+                    comfyuiTransport: getComfyUITransport(),
+                    forceRefresh: true
                 });
                 const savedModel = String(this.storage.get('phone-image-comfyui-model') || '').trim();
                 const savedSampler = String(this.storage.get('phone-image-comfyui-sampler') || 'euler').trim() || 'euler';
@@ -8690,13 +9030,18 @@ export class SettingsApp {
                 fillSdSelect(schedulerSelect, resources?.schedulers?.length ? resources.schedulers : fallbackComfyUISchedulers, savedScheduler, null);
                 fillSdSelect(vaeSelect, resources?.vae || [], savedVae, '不指定');
                 fillSdSelect(clipSelect, resources?.clips || [], savedClip, '不指定');
+                fillComfyUILoraOptions(resources?.loras || []);
                 await saveComfyUISettings();
                 const counts = [
                     `${Array.isArray(resources?.models) ? resources.models.length : 0} 个模型`,
                     `${Array.isArray(resources?.samplers) ? resources.samplers.length : 0} 个采样器`,
-                    `${Array.isArray(resources?.vae) ? resources.vae.length : 0} 个 VAE`
+                    `${Array.isArray(resources?.vae) ? resources.vae.length : 0} 个 VAE`,
+                    `${Array.isArray(resources?.loras) ? resources.loras.length : 0} 个 LoRA`
                 ].join('，');
-                setStatus(`已刷新 ComfyUI 数据：${counts}。`, '#0f9f6e');
+                const loraHint = getComfyUITransport() === 'tavern' && !resources?.loras?.length
+                    ? ' 当前酒馆后端未提供 LoRA 清单，可切换浏览器直连或手动输入文件名。'
+                    : '';
+                setStatus(`已刷新 ComfyUI 数据：${counts}。${loraHint}`, '#0f9f6e');
             } catch (err) {
                 const message = err?.message || String(err || '刷新失败');
                 setStatus(`刷新失败：${message}`, '#d33');
@@ -10740,13 +11085,21 @@ export class SettingsApp {
                 const timeManager = window.VirtualPhone?.timeManager;
                 if (timeManager && timeManager.setTime) {
                     // 🔥 传递星期
-                    timeManager.setTime(extractedTime.time, extractedTime.date, extractedTime.weekday, { force: true });
+                    timeManager.setTime(extractedTime.time, extractedTime.date, extractedTime.weekday, {
+                        force: true,
+                        isAncient: extractedTime.isAncient === true,
+                        era: extractedTime.era || '',
+                        calendarDate: extractedTime.calendarDate || ''
+                    });
                     const effectiveTime = timeManager.getCurrentStoryTime?.();
                     const extractedTimestamp = timeManager.parseTimeToTimestamp?.(extractedTime);
                     const effectiveTimestamp = timeManager.parseTimeToTimestamp?.(effectiveTime);
                     const isEffectiveTimeLater = Number.isFinite(extractedTimestamp)
                         && Number.isFinite(effectiveTimestamp)
                         && effectiveTimestamp > extractedTimestamp;
+                    const extractedText = [extractedTime.date, extractedTime.weekday, extractedTime.time]
+                        .filter(Boolean)
+                        .join(' ');
 
                     this.updatePhoneTimeDisplay();
 
@@ -10769,13 +11122,13 @@ export class SettingsApp {
                             : '未知';
                         alert(
                             '⚠️ 手机时间未回退\n\n' +
-                            `正文时间：${extractedTime.date} ${extractedTime.weekday} ${extractedTime.time}\n` +
+                            `正文时间：${extractedText}\n` +
                             `当前手机时间：${effectiveText}\n\n` +
                             '系统会取正文时间和手机最新消息时间中的较晚值。' +
                             '如需改回正文时间，请删除小手机里更晚时间的微信聊天记录后再同步。'
                         );
                     } else {
-                        alert(`✅ 时间已同步：${extractedTime.date} ${extractedTime.weekday} ${extractedTime.time}`);
+                        alert(`✅ 时间已同步：${extractedText}`);
                     }
                 } else {
                     alert('❌ 时间管理器未初始化');
@@ -10788,7 +11141,8 @@ export class SettingsApp {
                     '2) 417年11月7日 星期三 21:28\n' +
                     '3) 417/11/7 21:28\n' +
                     '4) 417年11月7日 星期三 2128\n' +
-                    '5) <statusbar>417年11月7日·星期三·21:28</statusbar>'
+                    '5) <statusbar>417年11月7日·星期三·21:28</statusbar>\n' +
+                    '6) <globalTime>T_story：大明永乐十二年九月初八日·辰时(07:30)·晴天</globalTime>'
                 );
             }
         } catch (e) {
@@ -10808,7 +11162,10 @@ export class SettingsApp {
                 return {
                     time: parsedByTimeManager.time,
                     date: parsedByTimeManager.date,
-                    weekday: parsedByTimeManager.weekday
+                    weekday: parsedByTimeManager.weekday,
+                    isAncient: parsedByTimeManager.isAncient === true,
+                    era: parsedByTimeManager.era || '',
+                    calendarDate: parsedByTimeManager.calendarDate || ''
                 };
             }
         } catch (e) {

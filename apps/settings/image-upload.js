@@ -634,6 +634,11 @@ export class ImageUploadManager {
         try { visit(window.VirtualPhone?.weiboApp?.weiboData?.getProfile?.()); } catch (e) { }
         try { visit(window.VirtualPhone?.honeyApp?.honeyData?.getHoneyUserProfile?.()); } catch (e) { }
         try { visit(this.cache); } catch (e) { }
+        try { visit(this.storage?.get?.('phone-card-time-image')); } catch (e) { }
+        try {
+            const rawIndex = this.storage?.get?.('phone_album_upload_index', '[]');
+            visit(Array.isArray(rawIndex) ? rawIndex : JSON.parse(rawIndex || '[]'));
+        } catch (e) { }
 
         return count;
     }

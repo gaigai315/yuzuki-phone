@@ -36,3 +36,24 @@ test('image uploader normalizes MIME before choosing the managed extension', asy
     assert.equal(normalizedBlob.type, 'image/webp');
     assert.equal(uploader._getBlobExtension(normalizedBlob), 'webp');
 });
+
+test('managed image cleanup treats album history and the time card as active references', () => {
+    const target = '/backgrounds/phone_card_time_test.png';
+    const uploader = Object.create(ImageUploadManager.prototype);
+    uploader.cache = { wallpaper: null, appIcons: {}, avatars: {} };
+    uploader.storage = {
+        get(key, fallback) {
+            if (key === 'phone-card-time-image') return target;
+            if (key === 'phone_album_upload_index') return JSON.stringify([{ path: target }]);
+            return fallback;
+        }
+    };
+    const originalWindow = globalThis.window;
+    globalThis.window = { VirtualPhone: {} };
+
+    try {
+        assert.equal(uploader._countManagedBackgroundReferences(target), 2);
+    } finally {
+        globalThis.window = originalWindow;
+    }
+});

@@ -154,10 +154,11 @@ export class HomeScreen {
     }
 
     renderIconLayout() {
+        const dateInfo = this.getCurrentDateParts();
         return `
-            <div class="home-time yzp-home-time">
+            <div class="home-time yzp-home-time${dateInfo.isAncient ? ' is-ancient' : ''}">
                 <div class="time-large yzp-home-time-large">${this.getCurrentTime()}</div>
-                <div class="date yzp-home-date">${this.getCurrentDate()}</div>
+                <div class="date yzp-home-date">${this._escapeHtml(dateInfo.date)}${dateInfo.weekday ? ` ${this._escapeHtml(dateInfo.weekday)}` : ''}</div>
             </div>
             <div class="app-grid yzp-home-app-grid">
                 ${this.apps.map(app => this.renderAppIcon(app)).join('')}
@@ -173,12 +174,12 @@ export class HomeScreen {
         const cardDate = this.getCurrentDateParts();
         return `
             <div class="home-dashboard yzp-home-dashboard">
-                <section class="home-time-card yzp-home-time-card yzp-home-floating-time${timeCardImage ? ' has-image' : ''}"${timeCardImageStyle}>
+                <section class="home-time-card yzp-home-time-card yzp-home-floating-time${timeCardImage ? ' has-image' : ''}${cardDate.isAncient ? ' is-ancient' : ''}"${timeCardImageStyle}>
                     <div class="home-time-info yzp-home-time-info">
                         <div class="time-large yzp-home-time-large">${this.getCurrentTime()}</div>
                         <div class="home-time-date yzp-home-time-date">
                             <div class="date yzp-home-date">${this._escapeHtml(cardDate.date)}</div>
-                            <div class="home-time-weekday yzp-home-time-weekday">${this._escapeHtml(cardDate.weekday)}</div>
+                            <div class="home-time-weekday yzp-home-time-weekday"${cardDate.isAncient ? ' hidden' : ''}>${this._escapeHtml(cardDate.weekday)}</div>
                         </div>
                     </div>
                 </section>
@@ -632,6 +633,9 @@ export class HomeScreen {
     
     getCurrentDate() {
         const currentTime = this._getCurrentPhoneTimeInfo();
+        if (currentTime?.isAncient && currentTime.date) {
+            return String(currentTime.date).trim();
+        }
         const dateParts = currentTime?.date?.match(/(\d+)年(\d+)月(\d+)日/);
         if (dateParts) {
             const year = parseInt(dateParts[1]);
@@ -650,17 +654,28 @@ export class HomeScreen {
     }
 
     getCurrentDateParts() {
+        const currentTime = this._getCurrentPhoneTimeInfo();
+        if (currentTime?.isAncient && currentTime.date) {
+            return {
+                date: String(currentTime.date).trim(),
+                weekday: '',
+                isAncient: true,
+            };
+        }
+
         const dateText = this.getCurrentDate() || '';
         const match = dateText.match(/^(.+?日)\s*(.+)$/);
         if (match) {
             return {
                 date: match[1],
                 weekday: match[2],
+                isAncient: false,
             };
         }
         return {
             date: dateText,
             weekday: '',
+            isAncient: false,
         };
     }
 
@@ -671,6 +686,10 @@ export class HomeScreen {
         const currentTime = this.getCurrentTime() || '';
         const currentDate = this.getCurrentDate() || '';
         const cardDate = this.getCurrentDateParts();
+
+        root.querySelectorAll('.home-time, .yzp-home-time, .home-time-card, .yzp-home-time-card').forEach(el => {
+            el.classList.toggle('is-ancient', cardDate.isAncient);
+        });
 
         root.querySelectorAll('.time-large, .yzp-home-time-large').forEach(el => {
             el.textContent = currentTime;
@@ -683,6 +702,7 @@ export class HomeScreen {
         });
         root.querySelectorAll('.home-time-weekday, .yzp-home-time-weekday').forEach(el => {
             el.textContent = cardDate.weekday;
+            el.hidden = cardDate.isAncient;
         });
 
         return true;

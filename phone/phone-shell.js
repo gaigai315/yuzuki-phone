@@ -251,6 +251,7 @@ export class PhoneShell {
                 '#st-phone-update-modal', '.st-phone-update-dialog', '.st-phone-update-content', '.st-phone-update-list',
                 '#phone-image-preset-share-modal', '#phone-image-preset-share-modal > div', '#phone-image-preset-share-text',
                 '#phone-image-preset-export-chooser', '.phone-image-preset-export-dialog', '.phone-image-preset-export-list',
+                '#phone-image-comfyui-lora-modal', '.phone-image-comfyui-lora-dialog', '.phone-image-comfyui-lora-picker-list',
                 '.phone-call-history-list', '.phone-call-main', '.phone-call-contacts', '.phone-call-contact-list',
                 '.phone-sms-main', '.phone-sms-conversation-list', '.phone-sms-thread', '.phone-sms-thread-messages',
                 '.phone-sms-new-overlay', '.phone-sms-new-sheet', '.phone-sms-new-message', '.phone-sms-new-recipient-options',

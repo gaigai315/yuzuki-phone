@@ -28,19 +28,219 @@ export class TimeManager {
         this._cacheTimestamp = 0;
     }
 
+    _parseChineseNumber(value) {
+        const raw = String(value || '').trim().replace(/^初/, '');
+        if (!raw) return NaN;
+        if (/^\d+$/.test(raw)) return Number.parseInt(raw, 10);
+        if (raw === '元') return 1;
+
+        const digits = {
+            '〇': 0, '零': 0,
+            '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
+            '五': 5, '六': 6, '七': 7, '八': 8, '九': 9
+        };
+
+        if (/^[〇零一二三四五六七八九两]+$/.test(raw)) {
+            return Number.parseInt(Array.from(raw).map(char => digits[char]).join(''), 10);
+        }
+
+        let total = 0;
+        let current = 0;
+        for (const char of raw) {
+            if (Object.prototype.hasOwnProperty.call(digits, char)) {
+                current = digits[char];
+                continue;
+            }
+            if (char === '廿') {
+                total += 20;
+                current = 0;
+                continue;
+            }
+            if (char === '卅') {
+                total += 30;
+                current = 0;
+                continue;
+            }
+            const unit = char === '十' ? 10 : char === '百' ? 100 : char === '千' ? 1000 : 0;
+            if (!unit) return NaN;
+            total += (current || 1) * unit;
+            current = 0;
+        }
+        return total + current;
+    }
+
+    _formatChineseNumber(value) {
+        const number = Number.parseInt(value, 10);
+        if (!Number.isFinite(number) || number <= 0) return String(value || '');
+        const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+        if (number < 10) return digits[number];
+        if (number < 20) return `十${number % 10 ? digits[number % 10] : ''}`;
+        if (number < 100) {
+            const tens = Math.floor(number / 10);
+            const ones = number % 10;
+            return `${digits[tens]}十${ones ? digits[ones] : ''}`;
+        }
+        return Array.from(String(number)).map(char => digits[Number(char)]).join('');
+    }
+
+    _formatAncientDay(value) {
+        const day = Number.parseInt(value, 10);
+        if (day >= 1 && day <= 10) return `初${this._formatChineseNumber(day)}`;
+        if (day >= 21 && day <= 29) return `廿${this._formatChineseNumber(day - 20)}`;
+        return this._formatChineseNumber(day);
+    }
+
+    _parseStoryDate(dateText, options = {}) {
+        const source = String(dateText || '')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/[／]/g, '/')
+            .trim();
+        if (!source) return null;
+
+        const numberToken = '(?:元|[〇零一二三四五六七八九十百千廿卅两]+|\\d{1,6})';
+        const monthToken = '(?:正|冬|腊|[〇零一二三四五六七八九十廿卅两]+|\\d{1,2})';
+        const dayToken = '(?:初?[〇零一二三四五六七八九十两]+|廿[一二三四五六七八九]?|卅|\\d{1,2})';
+        const eraPattern = new RegExp(`([〇\\u3400-\\u9fff\\d]{1,26})年\\s*(${monthToken})月\\s*(${dayToken})日`);
+        const eraMatch = source.match(eraPattern);
+        const beforeYear = String(eraMatch?.[1] || '');
+        const yearSuffixMatch = beforeYear.match(new RegExp(`(${numberToken})$`));
+        const eraYearToken = String(yearSuffixMatch?.[1] || '');
+        const eraCandidate = eraYearToken ? beforeYear.slice(0, -eraYearToken.length) : '';
+        const knownEraPrefix = /^(?:夏|商|周|秦|西汉|东汉|蜀汉|汉|曹魏|孙吴|西晋|东晋|晋|北魏|南梁|北齐|北周|隋|大唐|唐|后梁|后唐|后晋|后汉|后周|辽|金|西夏|北宋|南宋|宋|大元|元|大明|明|大清|清|春秋|战国)/;
+        const eraUsesChineseYear = Boolean(eraYearToken) && !/^\d+$/.test(eraYearToken);
+        const shouldUseEraMatch = Boolean(eraMatch && eraYearToken)
+            && (
+                options.preferAncient === true
+                || (options.allowUnknownEra === true && Boolean(eraCandidate))
+                || eraUsesChineseYear
+                || knownEraPrefix.test(eraCandidate)
+            );
+
+        let fullMatch = null;
+        let era = '';
+        let yearToken = '';
+        let monthTokenValue = '';
+        let dayTokenValue = '';
+
+        if (shouldUseEraMatch) {
+            fullMatch = eraMatch[0];
+            era = eraCandidate;
+            yearToken = eraYearToken;
+            monthTokenValue = eraMatch[2];
+            dayTokenValue = eraMatch[3];
+        } else {
+            const genericPattern = new RegExp(`(${numberToken})[-/年]\\s*(${monthToken})[-/月]\\s*(${dayToken})\\s*日?`);
+            const genericMatch = source.match(genericPattern);
+            if (!genericMatch) return null;
+            [fullMatch, yearToken, monthTokenValue, dayTokenValue] = genericMatch;
+        }
+
+        const month = monthTokenValue === '正'
+            ? 1
+            : monthTokenValue === '冬'
+                ? 11
+                : monthTokenValue === '腊'
+                    ? 12
+                    : this._parseChineseNumber(monthTokenValue);
+        const year = this._parseChineseNumber(yearToken);
+        const day = this._parseChineseNumber(dayTokenValue);
+        if (![year, month, day].every(Number.isFinite) || month < 1 || month > 12 || day < 1 || day > 31) {
+            return null;
+        }
+
+        const usesChineseNumerals = !/^\d+$/.test(yearToken)
+            || !/^\d+$/.test(monthTokenValue)
+            || !/^\d+$/.test(dayTokenValue);
+        const isAncient = Boolean(era) || usesChineseNumerals;
+        const displayDate = isAncient
+            ? String(fullMatch).replace(/\s+/g, '')
+            : `${yearToken}年${String(month).padStart(2, '0')}月${String(day).padStart(2, '0')}日`;
+
+        return {
+            year,
+            month,
+            day,
+            era: String(era || '').replace(/\s+/g, ''),
+            isAncient,
+            matchedText: String(fullMatch),
+            displayDate,
+            calendarDate: `${year}年${String(month).padStart(2, '0')}月${String(day).padStart(2, '0')}日`,
+            yearToken,
+            monthToken: monthTokenValue,
+            dayToken: dayTokenValue,
+            yearUsesDigits: /^\d+$/.test(yearToken),
+            monthUsesDigits: /^\d+$/.test(monthTokenValue),
+            dayUsesDigits: /^\d+$/.test(dayTokenValue)
+        };
+    }
+
+    _formatStoryDate(parsedDate, year, month, day) {
+        if (!parsedDate?.isAncient) {
+            return `${year}年${String(month).padStart(2, '0')}月${String(day).padStart(2, '0')}日`;
+        }
+
+        const yearText = year === parsedDate.year
+            ? parsedDate.yearToken
+            : parsedDate.yearUsesDigits ? String(year) : this._formatChineseNumber(year);
+        const monthText = month === parsedDate.month
+            ? parsedDate.monthToken
+            : parsedDate.monthUsesDigits ? String(month).padStart(2, '0') : this._formatChineseNumber(month);
+        const dayText = day === parsedDate.day
+            ? parsedDate.dayToken
+            : parsedDate.dayUsesDigits ? String(day).padStart(2, '0') : this._formatAncientDay(day);
+        return `${parsedDate.era || ''}${yearText}年${monthText}月${dayText}日`;
+    }
+
+    _createStoryTimestamp(year, month, day, hour, minute) {
+        const date = new Date(0);
+        date.setFullYear(Number(year), Number(month) - 1, Number(day));
+        date.setHours(Number(hour), Number(minute), 0, 0);
+        return date.getTime();
+    }
+
+    isAncientTimeData(timeData) {
+        if (timeData?.isAncient === true) return true;
+        return this._parseStoryDate(timeData?.date, { allowUnknownEra: true })?.isAncient === true;
+    }
+
+    _getEraKey(timeData) {
+        const parsedDate = this._parseStoryDate(timeData?.date, { allowUnknownEra: true });
+        if (timeData?.isAncient !== true && !parsedDate?.isAncient) return 'modern';
+        return `ancient:${String(timeData?.era || parsedDate?.era || 'unknown').trim()}`;
+    }
+
+    _isSameStoryEra(left, right) {
+        if (!left || !right) return true;
+        const leftAncient = this.isAncientTimeData(left);
+        const rightAncient = this.isAncientTimeData(right);
+        if (leftAncient !== rightAncient) return false;
+        if (!leftAncient) return true;
+
+        const leftKey = this._getEraKey(left);
+        const rightKey = this._getEraKey(right);
+        return leftKey.endsWith(':unknown') || rightKey.endsWith(':unknown') || leftKey === rightKey;
+    }
+
     _getRecentManualSyncTime() {
         try {
             const saved = this.storage.get('story-current-time', true);
             if (!saved) return null;
 
             const data = JSON.parse(saved);
-            if (!data.time || !data.date || !data.weekday) return null;
+            if (!data.time || !data.date) return null;
+
+            const parsedDate = this._parseStoryDate(data.date, { allowUnknownEra: true });
+            const isAncient = data.isAncient === true || parsedDate?.isAncient === true;
 
             return {
+                ...data,
                 time: data.time,
                 date: data.date,
-                weekday: data.weekday,
+                weekday: isAncient ? '' : (data.weekday || this.calculateWeekday(data.date)),
                 timestamp: this.parseTimeToTimestamp(data),
+                isAncient,
+                era: data.era || parsedDate?.era || '',
+                calendarDate: data.calendarDate || parsedDate?.calendarDate || data.date,
                 source: data.source || 'story-current'
             };
         } catch (e) {
@@ -151,7 +351,7 @@ export class TimeManager {
 
     // 来源1：正文聊天记录时间。线下注入全部关闭时，用户通常只使用线上功能，此时不读正文时间。
     const timeFromChat = offlineTimeSourceEnabled ? this.extractTimeFromChat(context) : null;
-    const timeFromPhone = this.getPhoneLastMessageTime();
+    const timeFromPhone = this.getPhoneLastMessageTime(timeFromChat || manualSyncTime);
 
     // 🔥 收集所有时间源。正文/持久剧情时间是权威源，手机消息只用于没有权威源时兜底。
     const authoritativeCandidates = [];
@@ -162,11 +362,15 @@ export class TimeManager {
         if (!offlineTimeSourceEnabled && timeFromPhone && manualSyncTime.source !== 'manual-sync') {
             shouldUseSavedTime = false;
         }
-        if (timeFromChat && manualSyncTime.source !== 'manual-sync') {
-            const savedTs = this.parseTimeToTimestamp(manualSyncTime);
-            const chatTs = this.parseTimeToTimestamp(timeFromChat);
-            const diffDays = Math.abs(savedTs - chatTs) / (1000 * 60 * 60 * 24);
-            shouldUseSavedTime = Number.isFinite(diffDays) && diffDays <= 7;
+        if (timeFromChat) {
+            if (!this._isSameStoryEra(manualSyncTime, timeFromChat)) {
+                shouldUseSavedTime = false;
+            } else if (manualSyncTime.source !== 'manual-sync') {
+                const savedTs = this.parseTimeToTimestamp(manualSyncTime);
+                const chatTs = this.parseTimeToTimestamp(timeFromChat);
+                const diffDays = Math.abs(savedTs - chatTs) / (1000 * 60 * 60 * 24);
+                shouldUseSavedTime = Number.isFinite(diffDays) && diffDays <= 7;
+            }
         }
         if (shouldUseSavedTime) {
             authoritativeCandidates.push(manualSyncTime);
@@ -184,8 +388,10 @@ export class TimeManager {
 
     // 来源3：手机线上消息时间。正常参与“取最晚”，允许线上聊天把剧情时间推到正文之后。
     // 只过滤一种情况：候选时间接近现实今天，且和正文/保存剧情时间相差很远，通常是旧版本现实时间戳污染。
+    const eraReference = timeFromChat || authoritativeCandidates[0] || null;
+    const phoneTimeHasMatchingEra = !eraReference || this._isSameStoryEra(timeFromPhone, eraReference);
     const phoneTimeLooksPolluted = this._isLikelyRealClockPollution(timeFromPhone, authoritativeCandidates);
-    if (timeFromPhone && !phoneTimeLooksPolluted) {
+    if (timeFromPhone && phoneTimeHasMatchingEra && !phoneTimeLooksPolluted) {
         candidates.push(timeFromPhone);
     }
 
@@ -200,9 +406,8 @@ export class TimeManager {
         candidates.sort((a, b) => (b._ts || 0) - (a._ts || 0));
         const best = candidates[0];
         const result = {
-            time: best.time,
-            date: best.date,
-            weekday: best.weekday,
+            ...best,
+            weekday: this.isAncientTimeData(best) ? '' : best.weekday,
             timestamp: best._ts || best.timestamp,
             source: best.source || 'merged'
         };
@@ -262,6 +467,7 @@ export class TimeManager {
      * 支持格式：
      * - <statusbar>全局时间：2044年10月28日·晚上·星期一·21:30</statusbar>
      * - <globalTime>2832年09月12日·🍂·星期一·17:00·🌤️</globalTime>
+     * - <globalTime>T_story：大明永乐十二年九月初八日·🍂·辰时(07:30)·晴天·18°C</globalTime>
      * - <time>2044年06月11日·🍦·星期三·14:30</time>
      * - 无标签正文：417年11月7日|星期三|21:28
      * - 无标签正文：417/11/7 21:28
@@ -278,54 +484,65 @@ export class TimeManager {
             .replace(/｜/g, '|')
             .replace(/／/g, '/');
 
-        // 2. 独立提取年月日、时间、星期 (🔥超强兼容：支持横杠、斜杠、冒号、全角半角等)
-        const dateMatch = content.match(/(\d{1,6})[-\/年]\s*(\d{1,2})[-\/月]\s*(\d{1,2})\s*日?/);
-        // 时间兼容：
-        // 1) 21:28 / 21：28
-        // 2) 21时28分 / 21时28
-        // 3) 紧凑写法 2128（优先在日期后半段里查，避免误匹配年份）
-        const dateToken = dateMatch?.[0] || '';
-        const afterDateContent = dateToken ? content.slice(content.indexOf(dateToken) + dateToken.length) : content;
-        const standardTimeMatch = afterDateContent.match(/(\d{1,2})\s*[:：时]\s*(\d{1,2})(?:\s*分)?/);
+        // 2. 日期既支持现代公历，也支持“大明永乐十二年九月初八日”一类古代纪年。
+        const hourBranchMatch = content.match(/(子|丑|寅|卯|辰|巳|午|未|申|酉|戌|亥)[时時](?:\s*[（(]\s*([01]?\d|2[0-3])\s*[:：时]\s*([0-5]?\d)(?:\s*分)?\s*[)）])?/);
+        const parsedDate = this._parseStoryDate(content, { preferAncient: Boolean(hourBranchMatch) });
+        if (!parsedDate) return null;
+
+        const dateToken = parsedDate.matchedText || '';
+        const dateIndex = dateToken ? content.indexOf(dateToken) : -1;
+        const afterDateContent = dateIndex >= 0 ? content.slice(dateIndex + dateToken.length) : content;
+        const standardTimeMatch = afterDateContent.match(/([01]?\d|2[0-3])\s*[:：时]\s*([0-5]?\d)(?:\s*分)?/);
         const compactTimeMatch = standardTimeMatch
             ? null
             : afterDateContent.match(/(?:^|[^\d])([01]?\d|2[0-3])([0-5]\d)(?:$|[^\d])/);
+
+        const branchMidpoint = {
+            子: '00:00', 丑: '02:00', 寅: '04:00', 卯: '06:00',
+            辰: '08:00', 巳: '10:00', 午: '12:00', 未: '14:00',
+            申: '16:00', 酉: '18:00', 戌: '20:00', 亥: '22:00'
+        };
+        const inferredBranchTime = hourBranchMatch ? branchMidpoint[hourBranchMatch[1]] : '';
+        const hourValue = hourBranchMatch?.[2]
+            ?? standardTimeMatch?.[1]
+            ?? compactTimeMatch?.[1]
+            ?? (inferredBranchTime ? inferredBranchTime.split(':')[0] : null);
+        const minuteValue = hourBranchMatch?.[3]
+            ?? standardTimeMatch?.[2]
+            ?? compactTimeMatch?.[2]
+            ?? (inferredBranchTime ? inferredBranchTime.split(':')[1] : null);
+        if (hourValue === null || minuteValue === null) return null;
+
+        const isAncient = parsedDate.isAncient || Boolean(hourBranchMatch);
+        const hour = String(Number.parseInt(hourValue, 10)).padStart(2, '0');
+        const minute = String(Number.parseInt(minuteValue, 10)).padStart(2, '0');
         const weekdayMatch = content.match(/(星期[一二三四五六日天]|周[一二三四五六日天])/);
-
-        if (dateMatch && (standardTimeMatch || compactTimeMatch)) {
-            const year = dateMatch[1];
-            // 🔥 统一补零格式化
-            const month = String(parseInt(dateMatch[2])).padStart(2, '0');
-            const day = String(parseInt(dateMatch[3])).padStart(2, '0');
-            const hour = String(standardTimeMatch ? standardTimeMatch[1] : compactTimeMatch[1]);
-            const minute = String(standardTimeMatch ? standardTimeMatch[2] : compactTimeMatch[2]);
-
-            // 🔥 优先使用正文中提取的星期，如果没有才计算
-            let weekday;
+        let weekday = '';
+        if (!isAncient) {
             if (weekdayMatch) {
                 weekday = weekdayMatch[1].replace('周', '星期');
                 if (weekday === '星期天') weekday = '星期日';
             } else {
-                // 计算星期（使用蔡勒公式，避免Date对远未来年份的问题）
-                weekday = this.calculateWeekdayFromDate(parseInt(year), parseInt(month), parseInt(day));
+                weekday = this.calculateWeekdayFromDate(parsedDate.year, parsedDate.month, parsedDate.day);
             }
-
-            const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute));
-
-            return {
-                time: `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`,
-                date: `${year}年${month}月${day}日`,
-                weekday: weekday,
-                timestamp: dateObj.getTime(),
-                year: year,
-                month: month,
-                day: day,
-                hour: hour,
-                minute: minute
-            };
         }
 
-        return null;
+        return {
+            time: `${hour}:${minute}`,
+            date: parsedDate.displayDate,
+            weekday,
+            timestamp: this._createStoryTimestamp(parsedDate.year, parsedDate.month, parsedDate.day, hour, minute),
+            year: String(parsedDate.year),
+            month: String(parsedDate.month).padStart(2, '0'),
+            day: String(parsedDate.day).padStart(2, '0'),
+            hour,
+            minute,
+            isAncient,
+            era: parsedDate.era,
+            calendarDate: parsedDate.calendarDate,
+            traditionalTime: hourBranchMatch ? `${hourBranchMatch[1]}时` : ''
+        };
+
     }
 
     /**
@@ -337,11 +554,17 @@ getStoryInitialTime() {
         if (saved) {
             const data = JSON.parse(saved);
             if (!data.date || !data.time) return null;
+            const parsedDate = this._parseStoryDate(data.date, { allowUnknownEra: true });
+            const isAncient = data.isAncient === true || parsedDate?.isAncient === true;
             return {
+                ...data,
                 time: data.time,
                 date: data.date,
-                weekday: data.weekday,
+                weekday: isAncient ? '' : data.weekday,
                 timestamp: this.parseTimeToTimestamp(data),
+                isAncient,
+                era: data.era || parsedDate?.era || '',
+                calendarDate: data.calendarDate || parsedDate?.calendarDate || data.date,
                 isStoryInitial: true
             };
         }
@@ -357,17 +580,17 @@ getStoryInitialTime() {
 parseTimeToTimestamp(timeData) {
     try {
         if (!timeData?.date || !timeData?.time) return Date.now();
-        const dateParts = timeData.date.match(/(\d{1,6})[-\/年]\s*(\d{1,2})[-\/月]\s*(\d{1,2})\s*日?/);
+        const dateParts = this._parseStoryDate(timeData.date, { allowUnknownEra: true });
         const timeParts = timeData.time.match(/(\d{1,2})[:：](\d{2})/);
         
         if (dateParts && timeParts) {
-            const year = parseInt(dateParts[1]);
-            const month = parseInt(dateParts[2]) - 1;
-            const day = parseInt(dateParts[3]);
+            const year = dateParts.year;
+            const month = dateParts.month;
+            const day = dateParts.day;
             const hour = parseInt(timeParts[1]);
             const minute = parseInt(timeParts[2]);
-            
-            return new Date(year, month, day, hour, minute).getTime();
+
+            return this._createStoryTimestamp(year, month, day, hour, minute);
         }
     } catch (e) {
         console.warn('⚠️ 时间戳解析失败:', e);
@@ -489,7 +712,7 @@ parseTimeToTimestamp(timeData) {
     /**
  * 🔥 新增：从手机微信获取最后一条消息的时间
  */
-getPhoneLastMessageTime() {
+getPhoneLastMessageTime(referenceTime = null) {
     try {
         // 🔥 优先从内存中的 wechatData 读取（更准确、更实时）
         const wechatData = window.VirtualPhone?.wechatApp?.wechatData;
@@ -497,7 +720,7 @@ getPhoneLastMessageTime() {
 
         // 🔥 遍历所有聊天，找到最新的消息时间
         let latestTime = null;
-        let latestTimestamp = 0;
+        let latestTimestamp = Number.NEGATIVE_INFINITY;
 
         const chatList = wechatData.getChatList?.() || [];
 
@@ -506,14 +729,27 @@ getPhoneLastMessageTime() {
             if (chatMessages.length > 0) {
                 const lastMsg = chatMessages[chatMessages.length - 1];
 
-                if (lastMsg.time && lastMsg.timestamp) {
-                    if (lastMsg.timestamp > latestTimestamp) {
-                        latestTimestamp = lastMsg.timestamp;
+                if (lastMsg.time && (lastMsg.date || lastMsg.timestamp)) {
+                    const messageDate = lastMsg.date || this.formatDate(new Date(lastMsg.timestamp));
+                    const parsedDate = this._parseStoryDate(messageDate, { allowUnknownEra: true });
+                    const candidate = {
+                        time: lastMsg.time,
+                        date: messageDate,
+                        weekday: parsedDate?.isAncient ? '' : (lastMsg.weekday || this.getWeekday(new Date(lastMsg.timestamp))),
+                        isAncient: parsedDate?.isAncient === true,
+                        era: parsedDate?.era || '',
+                        calendarDate: parsedDate?.calendarDate || messageDate
+                    };
+                    if (referenceTime && !this._isSameStoryEra(candidate, referenceTime)) continue;
+
+                    const candidateTimestamp = parsedDate
+                        ? this.parseTimeToTimestamp(candidate)
+                        : Number(lastMsg.timestamp);
+                    if (Number.isFinite(candidateTimestamp) && candidateTimestamp > latestTimestamp) {
+                        latestTimestamp = candidateTimestamp;
                         latestTime = {
-                            time: lastMsg.time,
-                            date: lastMsg.date || this.formatDate(new Date(lastMsg.timestamp)),
-                            weekday: lastMsg.weekday || this.getWeekday(new Date(lastMsg.timestamp)),
-                            timestamp: lastMsg.timestamp,
+                            ...candidate,
+                            timestamp: candidateTimestamp,
                             source: 'phone'
                         };
                     }
@@ -573,22 +809,26 @@ getWechatMessageMinutesToAdd(content = '', options = {}) {
  */
 addMinutesToStoryTime(timeData, minutesToAdd) {
     try {
-        const dateParts = timeData.date.match(/(\d{1,6})[-\/年]\s*(\d{1,2})[-\/月]\s*(\d{1,2})\s*日?/);
+        const dateParts = this._parseStoryDate(timeData.date, { allowUnknownEra: true });
         const timeParts = timeData.time.match(/(\d{1,2})[:：](\d{2})/);
 
         if (!dateParts || !timeParts) {
             console.warn('⚠️ addMinutesToStoryTime: 无法解析时间数据', timeData);
-            return { time: timeData.time, date: timeData.date, weekday: timeData.weekday || '星期一', timestamp: Date.now() };
+            return {
+                ...timeData,
+                weekday: this.isAncientTimeData(timeData) ? '' : (timeData.weekday || '星期一'),
+                timestamp: this.parseTimeToTimestamp(timeData)
+            };
         }
 
-        const year = parseInt(dateParts[1]);
-        const month = parseInt(dateParts[2]) - 1;
-        const day = parseInt(dateParts[3]);
+        const year = dateParts.year;
+        const month = dateParts.month;
+        const day = dateParts.day;
         const hour = parseInt(timeParts[1]);
         const minute = parseInt(timeParts[2]);
 
         // JS 原生 Date 自动处理跨天、跨月、跨年进位
-        const dateObj = new Date(year, month, day, hour, minute);
+        const dateObj = new Date(this._createStoryTimestamp(year, month, day, hour, minute));
         dateObj.setMinutes(dateObj.getMinutes() + minutesToAdd);
 
         const newYear = dateObj.getFullYear();
@@ -597,16 +837,12 @@ addMinutesToStoryTime(timeData, minutesToAdd) {
         const newHour = dateObj.getHours();
         const newMinute = dateObj.getMinutes();
 
-        // 🔥 修复点 1：保持日期格式对齐，永远补齐 0（例如 09月 05日）
-        const paddedMonth = String(newMonth).padStart(2, '0');
-        const paddedDay = String(newDay).padStart(2, '0');
-
         // 🔥 修复点 2：根据天数差值推算星期，防止 AI 幻觉和真实日历冲突
-        let weekday = timeData.weekday;
+        let weekday = dateParts.isAncient ? '' : timeData.weekday;
 
         // 计算真实过去的天数
-        const oldDateOnly = new Date(year, month, day).getTime();
-        const newDateOnly = new Date(newYear, newMonth - 1, newDay).getTime();
+        const oldDateOnly = this._createStoryTimestamp(year, month, day, 0, 0);
+        const newDateOnly = this._createStoryTimestamp(newYear, newMonth, newDay, 0, 0);
         const dayDiff = Math.round((newDateOnly - oldDateOnly) / (1000 * 60 * 60 * 24));
 
         // 只有真的跨天了，才顺延星期
@@ -637,13 +873,20 @@ addMinutesToStoryTime(timeData, minutesToAdd) {
 
         return {
             time: `${String(newHour).padStart(2, '0')}:${String(newMinute).padStart(2, '0')}`,
-            date: `${newYear}年${paddedMonth}月${paddedDay}日`,
+            date: this._formatStoryDate(dateParts, newYear, newMonth, newDay),
             weekday: weekday,
-            timestamp: dateObj.getTime()
+            timestamp: dateObj.getTime(),
+            isAncient: dateParts.isAncient,
+            era: dateParts.era,
+            calendarDate: `${newYear}年${String(newMonth).padStart(2, '0')}月${String(newDay).padStart(2, '0')}日`
         };
     } catch (e) {
         console.error('❌ addMinutesToStoryTime 失败:', e);
-        return { time: timeData.time, date: timeData.date, weekday: timeData.weekday || '星期一', timestamp: Date.now() };
+        return {
+            ...timeData,
+            weekday: this.isAncientTimeData(timeData) ? '' : (timeData.weekday || '星期一'),
+            timestamp: this.parseTimeToTimestamp(timeData)
+        };
     }
 }
 
@@ -694,11 +937,19 @@ setTime(time, date, weekday = null, options = {}) {
 
         let finalTime = time;
         const finalDate = date;
-        const finalWeekday = weekday || this.calculateWeekday(date);
+        const parsedDate = this._parseStoryDate(finalDate, { allowUnknownEra: true });
+        const isAncient = options?.isAncient === true || parsedDate?.isAncient === true;
+        const finalWeekday = isAncient ? '' : (weekday || this.calculateWeekday(date));
         const force = options?.force === true;
 
         // 🔥 和手机聊天记录的最后时间比较，取更晚的
-        const phoneLastTime = this.getPhoneLastMessageTime();
+        const phoneLastTime = this.getPhoneLastMessageTime({
+            time,
+            date: finalDate,
+            weekday: finalWeekday,
+            isAncient,
+            era: options?.era || parsedDate?.era || ''
+        });
         if (!force && phoneLastTime && phoneLastTime.time) {
             const [syncHour, syncMin] = time.split(':').map(Number);
             const [phoneHour, phoneMin] = phoneLastTime.time.split(':').map(Number);
@@ -715,17 +966,14 @@ setTime(time, date, weekday = null, options = {}) {
             time: finalTime,
             date: finalDate,
             weekday: finalWeekday,
-            timestamp: Date.now(),
+            isAncient,
+            era: options?.era || parsedDate?.era || '',
+            calendarDate: options?.calendarDate || parsedDate?.calendarDate || finalDate,
             source: options?.source || (force ? 'manual-sync' : 'story-current')
         };
+        timeData.timestamp = this.parseTimeToTimestamp(timeData);
 
-        this._rememberStableStoryTime({
-            time: finalTime,
-            date: finalDate,
-            weekday: finalWeekday,
-            timestamp: this.parseTimeToTimestamp(timeData),
-            source: timeData.source
-        });
+        this._rememberStableStoryTime(timeData);
 
         this.storage.set('story-current-time', JSON.stringify(timeData), true);
 
@@ -735,6 +983,8 @@ setTime(time, date, weekday = null, options = {}) {
                     time: finalTime,
                     date: finalDate,
                     weekday: finalWeekday,
+                    isAncient,
+                    era: timeData.era,
                     source: timeData.source
                 }
             }));
@@ -752,9 +1002,10 @@ setTime(time, date, weekday = null, options = {}) {
  */
 calculateWeekday(dateStr) {
     try {
-        const match = dateStr.match(/(\d{1,6})[-\/年]\s*(\d{1,2})[-\/月]\s*(\d{1,2})\s*日?/);
-        if (match) {
-            return this.calculateWeekdayFromDate(parseInt(match[1]), parseInt(match[2]), parseInt(match[3]));
+        const parsedDate = this._parseStoryDate(dateStr, { allowUnknownEra: true });
+        if (parsedDate?.isAncient) return '';
+        if (parsedDate) {
+            return this.calculateWeekdayFromDate(parsedDate.year, parsedDate.month, parsedDate.day);
         }
     } catch (e) {
         console.warn('⚠️ 计算星期失败:', e);
@@ -771,11 +1022,15 @@ getCurrentTime() {
         const saved = this.storage.get('story-current-time', true);
         if (saved) {
             const data = JSON.parse(saved);
+            const parsedDate = this._parseStoryDate(data.date, { allowUnknownEra: true });
+            const isAncient = data.isAncient === true || parsedDate?.isAncient === true;
             return {
-                time: data.time,
-                date: data.date,
-                weekday: data.weekday,
-                timestamp: data.timestamp
+                ...data,
+                weekday: isAncient ? '' : data.weekday,
+                isAncient,
+                era: data.era || parsedDate?.era || '',
+                calendarDate: data.calendarDate || parsedDate?.calendarDate || data.date,
+                timestamp: this.parseTimeToTimestamp(data)
             };
         }
     } catch (e) {

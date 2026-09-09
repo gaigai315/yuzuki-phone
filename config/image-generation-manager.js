@@ -299,6 +299,41 @@ export class ImageGenerationManager {
         return `${(hash >>> 0).toString(16)}-${text.length}`;
     }
 
+    _normalizeComfyUILoras(value = []) {
+        let items = value;
+        if (typeof items === 'string') {
+            try {
+                items = JSON.parse(items || '[]');
+            } catch (e) {
+                items = [];
+            }
+        }
+        if (!Array.isArray(items)) return [];
+
+        const seen = new Set();
+        const clampStrength = (raw, fallback = 1) => {
+            const valueNumber = Number.parseFloat(raw);
+            const normalized = Number.isFinite(valueNumber) ? valueNumber : fallback;
+            return Math.round(Math.max(-10, Math.min(10, normalized)) * 1000) / 1000;
+        };
+        return items.map((item) => {
+            const name = String(item?.name || item?.loraName || item?.lora_name || item || '').trim();
+            if (!name || seen.has(name)) return null;
+            seen.add(name);
+            return {
+                name,
+                strength: clampStrength(
+                    item?.strength
+                    ?? item?.strengthModel
+                    ?? item?.strength_model
+                    ?? item?.strengthClip
+                    ?? item?.strength_clip,
+                    1
+                )
+            };
+        }).filter(Boolean);
+    }
+
     _normalizeNovelAIReferences(options = {}) {
         const rawList = Array.isArray(options.novelAIReferences)
             ? options.novelAIReferences
@@ -749,6 +784,7 @@ export class ImageGenerationManager {
                 comfyuiScheduler: String(item?.comfyuiScheduler || item?.scheduler || 'normal').trim() || 'normal',
                 comfyuiVae: String(item?.comfyuiVae || item?.vae || '').trim(),
                 comfyuiClip: String(item?.comfyuiClip || item?.clip || '').trim(),
+                comfyuiLoras: this._normalizeComfyUILoras(item?.comfyuiLoras ?? item?.loras),
                 promptSettingsInitialized,
                 fixedPrompt: String(item?.fixedPrompt || ''),
                 fixedPromptEnd: String(item?.fixedPromptEnd || ''),
@@ -1079,6 +1115,11 @@ export class ImageGenerationManager {
             comfyuiModel: String(overrides.comfyuiModel || comfyuiAppWorkflow?.comfyuiModel || comfyuiAppWorkflow?.model || this._get('phone-image-comfyui-model', '')).trim(),
             comfyuiVae: String(overrides.comfyuiVae || comfyuiAppWorkflow?.comfyuiVae || comfyuiAppWorkflow?.vae || this._get('phone-image-comfyui-vae', '')).trim(),
             comfyuiClip: String(overrides.comfyuiClip || comfyuiAppWorkflow?.comfyuiClip || comfyuiAppWorkflow?.clip || this._get('phone-image-comfyui-clip', '')).trim(),
+            comfyuiLoras: this._normalizeComfyUILoras(
+                overrides.comfyuiLoras
+                ?? comfyuiAppWorkflow?.comfyuiLoras
+                ?? this._get('phone-image-comfyui-loras', '[]')
+            ),
             comfyuiSampler: String(overrides.comfyuiSampler || comfyuiAppWorkflow?.comfyuiSampler || comfyuiAppWorkflow?.sampler || this._get('phone-image-comfyui-sampler', 'euler')).trim() || 'euler',
             comfyuiScheduler: String(overrides.comfyuiScheduler || comfyuiAppWorkflow?.comfyuiScheduler || comfyuiAppWorkflow?.scheduler || this._get('phone-image-comfyui-scheduler', 'normal')).trim() || 'normal',
             sdUrl: this._normalizeSdBaseUrl(overrides.sdUrl || this._get('phone-image-sd-url', 'http://127.0.0.1:7860')),
@@ -1346,6 +1387,7 @@ export class ImageGenerationManager {
             provider: 'comfyui',
             app: String(options?.app || '').trim(),
             model: config.comfyuiModel,
+            loras: this._normalizeComfyUILoras(config.comfyuiLoras),
             sampler: config.comfyuiSampler,
             scheduler: config.comfyuiScheduler,
             width: built.width,
@@ -1380,6 +1422,7 @@ export class ImageGenerationManager {
                 `工作流: ${debugInfo.workflowName || '(未命名/直接填写)'} ${debugInfo.workflowId ? `(${debugInfo.workflowId})` : ''}`.trim(),
                 `工作流指纹: ${debugInfo.workflowFingerprint || '-'}`,
                 `模型: ${debugInfo.model || '(工作流固定/未指定)'}`,
+                `LoRA: ${debugInfo.loras.length ? debugInfo.loras.map(item => `${item.name} (${item.strength})`).join('；') : '(未选择)'}`,
                 `尺寸: ${debugInfo.width}x${debugInfo.height}`,
                 `Steps: ${debugInfo.steps}`,
                 `Sampler: ${debugInfo.sampler}`,
@@ -2659,6 +2702,25 @@ export class ImageGenerationManager {
         return first.map(item => String(item || '').trim()).filter(Boolean);
     }
 
+    _getComfyUILoraOptions(objectInfo) {
+        const groups = [];
+        Object.entries(objectInfo || {}).forEach(([classType, definition]) => {
+            const displayName = String(definition?.display_name || definition?.name || classType || '');
+            if (!/lora/i.test(`${classType} ${displayName}`)) return;
+            const inputs = {
+                ...(definition?.input?.required || {}),
+                ...(definition?.input?.optional || {})
+            };
+            Object.entries(inputs).forEach(([inputName, input]) => {
+                if (!/lora/i.test(inputName)) return;
+                const options = Array.isArray(input) ? input[0] : null;
+                if (!Array.isArray(options) || !options.every(item => typeof item === 'string')) return;
+                groups.push(options);
+            });
+        });
+        return this._uniqueComfyUIItems(...groups);
+    }
+
     _uniqueComfyUIItems(...groups) {
         const seen = new Set();
         const values = [];
@@ -2683,6 +2745,7 @@ export class ImageGenerationManager {
 
         const now = Date.now();
         if (
+            options.forceRefresh !== true &&
             this._comfyUIResourcesCache &&
             this._comfyUIResourcesCacheUrl === cacheKey &&
             now - this._comfyUIResourcesCacheTime < this._comfyUIResourcesCacheTtl
@@ -2706,19 +2769,35 @@ export class ImageGenerationManager {
                 }
                 return payload;
             };
-            const [models, samplers, schedulers, vae] = await Promise.all([
+            const [models, samplers, schedulers, vae, proxyLoras] = await Promise.all([
                 readResource('models'),
                 readResource('samplers'),
                 readResource('schedulers'),
-                readResource('vaes')
+                readResource('vaes'),
+                readResource('loras').catch(() => null)
             ]);
+            let loras = this._mapSdListItems(proxyLoras, item => item?.value || item?.text || item);
+            if (!loras.length) {
+                try {
+                    const directResponse = await fetch(`${normalizedUrl}/object_info`, {
+                        method: 'GET',
+                        headers: { Accept: 'application/json' },
+                        signal: options.signal
+                    });
+                    if (directResponse.ok) {
+                        loras = this._getComfyUILoraOptions(await directResponse.json());
+                    }
+                } catch (e) {
+                    // Older SillyTavern versions do not proxy LoRA metadata. The UI still allows manual names.
+                }
+            }
             const resources = {
                 models: this._mapSdListItems(models, item => item?.value || item?.text || item),
                 samplers: this._mapSdListItems(samplers),
                 schedulers: this._mapSdListItems(schedulers),
                 vae: this._mapSdListItems(vae),
                 clips: [],
-                loras: []
+                loras
             };
             this._comfyUIResourcesCache = resources;
             this._comfyUIResourcesCacheUrl = cacheKey;
@@ -2757,9 +2836,7 @@ export class ImageGenerationManager {
                 this._getComfyUIInputOptions(objectInfo, 'DualCLIPLoader', 'clip_name1'),
                 this._getComfyUIInputOptions(objectInfo, 'DualCLIPLoader', 'clip_name2')
             ),
-            loras: this._uniqueComfyUIItems(
-                this._getComfyUIInputOptions(objectInfo, 'LoraLoader', 'lora_name')
-            )
+            loras: this._getComfyUILoraOptions(objectInfo)
         };
         this._comfyUIResourcesCache = resources;
         this._comfyUIResourcesCacheUrl = cacheKey;
@@ -3223,6 +3300,175 @@ export class ImageGenerationManager {
         return { promptInjected, seedInjected };
     }
 
+    _injectComfyUILoras(workflow, loras = []) {
+        const graph = workflow && typeof workflow === 'object' && !Array.isArray(workflow) ? workflow : {};
+        const normalizedLoras = this._normalizeComfyUILoras(loras);
+        if (!normalizedLoras.length) return { injectedCount: 0, nodeIds: [] };
+
+        const entries = Object.entries(graph);
+        const isLink = value => Array.isArray(value) && value.length >= 2 && graph[String(value[0])];
+        const normalizeLoraIdentity = (name) => String(name || '')
+            .trim()
+            .replace(/\\/g, '/')
+            .replace(/\.(?:safetensors|ckpt|pt|bin)$/i, '')
+            .toLowerCase();
+        const toLoraManagerName = (name) => String(name || '')
+            .trim()
+            .replace(/\\/g, '/')
+            .replace(/\.(?:safetensors|ckpt|pt|bin)$/i, '');
+        const formatStrength = (strength) => String(
+            Math.round((Number(strength) || 0) * 1000) / 1000
+        );
+
+        const loraManagerCandidates = entries
+            .filter(([, node]) => /^Lora Loader \(LoraManager\)$/i.test(String(node?.class_type || '').trim()))
+            .map(([nodeId, node]) => {
+                let downstreamLinks = 0;
+                let modelClipLinks = 0;
+                entries.forEach(([, candidate]) => {
+                    Object.entries(candidate?.inputs || {}).forEach(([inputName, value]) => {
+                        if (!isLink(value) || String(value[0]) !== String(nodeId)) return;
+                        downstreamLinks += 1;
+                        if (
+                            (inputName === 'model' && Number(value[1]) === 0)
+                            || (inputName === 'clip' && Number(value[1]) === 1)
+                        ) {
+                            modelClipLinks += 1;
+                        }
+                    });
+                });
+                return { nodeId, node, downstreamLinks, modelClipLinks };
+            })
+            .filter(item => item.modelClipLinks > 0)
+            .sort((a, b) => (
+                b.modelClipLinks - a.modelClipLinks
+                || b.downstreamLinks - a.downstreamLinks
+            ));
+
+        if (loraManagerCandidates.length) {
+            const { nodeId, node } = loraManagerCandidates[0];
+            const inputs = node.inputs && typeof node.inputs === 'object' ? node.inputs : (node.inputs = {});
+            const lorasValue = Array.isArray(inputs?.loras?.__value__)
+                ? inputs.loras.__value__
+                : (Array.isArray(inputs.loras) ? inputs.loras : []);
+            const mergedLoras = lorasValue.map(item => (
+                item && typeof item === 'object' ? { ...item } : item
+            ));
+            const selectedByIdentity = new Map(
+                normalizedLoras.map(lora => [normalizeLoraIdentity(lora.name), lora])
+            );
+            const appliedIdentities = new Set();
+
+            mergedLoras.forEach((item) => {
+                if (!item || typeof item !== 'object') return;
+                const identity = normalizeLoraIdentity(item.name);
+                const selected = selectedByIdentity.get(identity);
+                if (!selected || appliedIdentities.has(identity)) return;
+                const strength = formatStrength(selected.strength);
+                item.name = toLoraManagerName(selected.name);
+                item.strength = strength;
+                item.clipStrength = strength;
+                item.active = true;
+                appliedIdentities.add(identity);
+            });
+
+            normalizedLoras.forEach((lora) => {
+                const identity = normalizeLoraIdentity(lora.name);
+                if (appliedIdentities.has(identity)) return;
+                const strength = formatStrength(lora.strength);
+                mergedLoras.push({
+                    name: toLoraManagerName(lora.name),
+                    strength,
+                    active: true,
+                    expanded: false,
+                    clipStrength: strength,
+                    selected: false,
+                    locked: false
+                });
+                appliedIdentities.add(identity);
+            });
+
+            inputs.loras = { __value__: mergedLoras };
+            let managerText = String(inputs.text || '').trim();
+            normalizedLoras.forEach((lora) => {
+                const identity = normalizeLoraIdentity(lora.name);
+                const syntax = `<lora:${toLoraManagerName(lora.name)}:${formatStrength(lora.strength)}>`;
+                let replaced = false;
+                managerText = managerText.replace(/<lora:([^:>]+):[^>]+>/gi, (match, name) => {
+                    if (replaced || normalizeLoraIdentity(name) !== identity) return match;
+                    replaced = true;
+                    return syntax;
+                });
+                if (!replaced) managerText = [managerText, syntax].filter(Boolean).join(' ');
+            });
+            inputs.text = managerText;
+
+            return {
+                injectedCount: normalizedLoras.length,
+                nodeIds: [nodeId],
+                mode: 'lora-manager'
+            };
+        }
+
+        const findSource = (inputName, preferredTypePattern) => {
+            const preferred = entries.find(([, node]) => (
+                preferredTypePattern.test(String(node?.class_type || ''))
+                && isLink(node?.inputs?.[inputName])
+            ));
+            if (preferred) return [...preferred[1].inputs[inputName]];
+            const fallback = entries.find(([, node]) => (
+                !/lora/i.test(String(node?.class_type || ''))
+                && isLink(node?.inputs?.[inputName])
+            ));
+            return fallback ? [...fallback[1].inputs[inputName]] : null;
+        };
+        const modelSource = findSource('model', /KSampler|SamplerCustom|BasicGuider|CFGGuider/i);
+        const clipSource = findSource('clip', /CLIPTextEncode/i);
+        if (!modelSource || !clipSource) {
+            throw new Error('当前工作流找不到可连接 LoRA 的 MODEL/CLIP 输入；请使用标准 LoraLoader 节点工作流，或取消所选 LoRA');
+        }
+
+        let nextNumericId = Math.max(
+            99999,
+            ...Object.keys(graph).map(id => (/^\d+$/.test(id) ? Number(id) : 0))
+        ) + 1;
+        const nodeIds = [];
+        let currentModelLink = modelSource;
+        let currentClipLink = clipSource;
+        normalizedLoras.forEach((lora) => {
+            while (graph[String(nextNumericId)]) nextNumericId += 1;
+            const nodeId = String(nextNumericId++);
+            graph[nodeId] = {
+                inputs: {
+                    model: [...currentModelLink],
+                    clip: [...currentClipLink],
+                    lora_name: lora.name,
+                    strength_model: lora.strength,
+                    strength_clip: lora.strength
+                },
+                class_type: 'LoraLoader',
+                _meta: { title: `Yuzuki Phone LoRA ${nodeIds.length + 1}` }
+            };
+            nodeIds.push(nodeId);
+            currentModelLink = [nodeId, 0];
+            currentClipLink = [nodeId, 1];
+        });
+
+        const insertedIds = new Set(nodeIds);
+        Object.entries(graph).forEach(([nodeId, node]) => {
+            if (insertedIds.has(nodeId) || !node?.inputs) return;
+            Object.entries(node.inputs).forEach(([inputName, value]) => {
+                if (!isLink(value)) return;
+                if (inputName === 'model' && String(value[0]) === String(modelSource[0]) && Number(value[1]) === Number(modelSource[1])) {
+                    node.inputs[inputName] = [...currentModelLink];
+                } else if (inputName === 'clip' && String(value[0]) === String(clipSource[0]) && Number(value[1]) === Number(clipSource[1])) {
+                    node.inputs[inputName] = [...currentClipLink];
+                }
+            });
+        });
+        return { injectedCount: nodeIds.length, nodeIds, mode: 'standard-loader' };
+    }
+
     _buildComfyUIWorkflow(options, config, referenceImages = []) {
         const prompt = String(options.prompt || '').trim();
         if (!prompt) throw new Error('缺少生图提示词');
@@ -3333,6 +3579,7 @@ export class ImageGenerationManager {
             || JSON.stringify(workflowTemplate).includes('%model%');
         const requiresReferenceImage = referencePlaceholderInfo.hasAny;
         const workflow = this._replaceComfyUIPlaceholders(workflowTemplate, replacements);
+        const loraInjection = this._injectComfyUILoras(workflow, config.comfyuiLoras);
         const vaeInjectedCount = this._injectComfyUIEverywhereVae(workflow);
         const runtimeInputs = this._injectComfyUIHoneyRuntimeInputs(workflow, {
             appKey,
@@ -3358,6 +3605,7 @@ export class ImageGenerationManager {
             isVideoWorkflow: videoCompatibility.videoOutputCount > 0,
             videoCompatibilityAdjusted: videoCompatibility.adjustedOutputCount > 0,
             referenceImageInjected: referenceImageInjectedCount > 0,
+            loraInjectedCount: loraInjection.injectedCount,
             vaeInjected: vaeInjectedCount > 0,
             promptInjected: runtimeInputs.promptInjected > 0,
             seedInjected: runtimeInputs.seedInjected > 0
@@ -3402,6 +3650,38 @@ export class ImageGenerationManager {
 
         candidates.sort((a, b) => b.priority - a.priority);
         return candidates[0] || null;
+    }
+
+    _extractComfyUIMediaByClientId(historyPayload, clientId) {
+        const targetClientId = String(clientId || '').trim();
+        if (!targetClientId || !historyPayload || typeof historyPayload !== 'object') return null;
+
+        for (const [promptId, entry] of Object.entries(historyPayload).reverse()) {
+            const promptMeta = Array.isArray(entry?.prompt) ? entry.prompt[3] : null;
+            if (String(promptMeta?.client_id || '').trim() !== targetClientId) continue;
+            const media = this._extractComfyUIMedia(entry, promptId);
+            if (media?.filename) return { promptId, media };
+        }
+        return null;
+    }
+
+    async _waitForComfyUIHistoryByClientId(baseUrl, clientId, signal = null, timeoutMs = 8000) {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < Math.max(1000, Number(timeoutMs) || 8000)) {
+            if (signal?.aborted) throw new Error('ComfyUI 请求已取消');
+            const response = await fetch(`${baseUrl}/history`, {
+                method: 'GET',
+                headers: { Accept: 'application/json' },
+                signal
+            });
+            if (response.ok) {
+                const payload = await response.json().catch(() => null);
+                const recovered = this._extractComfyUIMediaByClientId(payload, clientId);
+                if (recovered) return recovered;
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        return null;
     }
 
     async _waitForComfyUIHistory(baseUrl, promptId, signal = null, timeoutMs = 300000) {
@@ -3467,6 +3747,58 @@ export class ImageGenerationManager {
     async _readComfyUIImage(baseUrl, image, signal = null) {
         const blob = await this._readComfyUIOutput(baseUrl, image, signal);
         return this._blobToDataUrl(blob);
+    }
+
+    async _buildComfyUIOutputResult({ baseUrl, mediaRef, promptId = '', prompt, config, built, signal = null }) {
+        const commonResult = {
+            provider: 'comfyui',
+            model: config.comfyuiModel,
+            prompt,
+            width: built.width,
+            height: built.height,
+            requestedWidth: built.width,
+            requestedHeight: built.height,
+            steps: built.steps,
+            sampler: config.comfyuiSampler,
+            scheduler: config.comfyuiScheduler,
+            scale: built.scale,
+            seed: built.seed,
+            promptId,
+            positivePrompt: built.positivePrompt,
+            negativePrompt: built.negativePrompt,
+            nodeMapping: null,
+            missingReferenceSubmitted: built.missingReferenceSubmitted
+        };
+
+        if (mediaRef.mediaType === 'video') {
+            const rawVideoBlob = await this._readComfyUIOutput(baseUrl, mediaRef, signal);
+            const extension = String(mediaRef.filename || '').split('.').pop()?.toLowerCase() || '';
+            const expectedMimeType = extension === 'webm' ? 'video/webm' : 'video/mp4';
+            const videoBlob = /^video\//i.test(String(rawVideoBlob.type || ''))
+                ? rawVideoBlob
+                : rawVideoBlob.slice(0, rawVideoBlob.size, expectedMimeType);
+            return {
+                ...commonResult,
+                mediaType: 'video',
+                videoBlob,
+                videoFilename: mediaRef.filename,
+                videoSubfolder: mediaRef.subfolder,
+                videoCompatibilityAdjusted: built.videoCompatibilityAdjusted
+            };
+        }
+
+        const imageData = await this._readComfyUIImage(baseUrl, mediaRef, signal);
+        const imageInfo = await this._waitForImageDecode(imageData).catch((err) => {
+            throw new Error(`ComfyUI 返回图片不可用: ${err?.message || err}`);
+        });
+        return {
+            ...commonResult,
+            mediaType: 'image',
+            width: imageInfo.width || built.width,
+            height: imageInfo.height || built.height,
+            imageData,
+            imageUrl: imageData
+        };
     }
 
     async _uploadComfyUIReferenceImage(baseUrl, imageData, signal = null) {
@@ -4215,6 +4547,32 @@ export class ImageGenerationManager {
             try { payload = text ? JSON.parse(text) : null; } catch (err) { payload = null; }
             if (!response.ok) {
                 const message = payload?.error?.message || payload?.error || payload?.message || text;
+                if (/did not return any recognizable outputs/i.test(String(message || ''))) {
+                    try {
+                        const recovered = await this._waitForComfyUIHistoryByClientId(
+                            baseUrl,
+                            clientId,
+                            options.signal
+                        );
+                        if (recovered?.media) {
+                            console.warn('[ComfyUI] 酒馆后端未识别自定义输出，已从 ComfyUI 历史恢复结果', {
+                                promptId: recovered.promptId,
+                                output: recovered.media
+                            });
+                            return this._buildComfyUIOutputResult({
+                                baseUrl,
+                                mediaRef: recovered.media,
+                                promptId: recovered.promptId,
+                                prompt,
+                                config,
+                                built,
+                                signal: options.signal
+                            });
+                        }
+                    } catch (recoveryError) {
+                        console.warn('[ComfyUI] 从历史恢复酒馆后端未识别的输出失败', recoveryError);
+                    }
+                }
                 throw new Error(`酒馆 ComfyUI 后端生成失败：HTTP ${response.status}${message ? ` ${String(message).slice(0, 240)}` : ''}`);
             }
 
@@ -4310,66 +4668,15 @@ export class ImageGenerationManager {
             options.signal,
             built.isVideoWorkflow ? 20 * 60 * 1000 : 300000
         );
-        if (mediaRef.mediaType === 'video') {
-            const rawVideoBlob = await this._readComfyUIOutput(baseUrl, mediaRef, options.signal);
-            const extension = String(mediaRef.filename || '').split('.').pop()?.toLowerCase() || '';
-            const expectedMimeType = extension === 'webm' ? 'video/webm' : 'video/mp4';
-            const videoBlob = /^video\//i.test(String(rawVideoBlob.type || ''))
-                ? rawVideoBlob
-                : rawVideoBlob.slice(0, rawVideoBlob.size, expectedMimeType);
-            return {
-                provider: 'comfyui',
-                model: config.comfyuiModel,
-                prompt,
-                mediaType: 'video',
-                width: built.width,
-                height: built.height,
-                requestedWidth: built.width,
-                requestedHeight: built.height,
-                steps: built.steps,
-                sampler: config.comfyuiSampler,
-                scheduler: config.comfyuiScheduler,
-                scale: built.scale,
-                seed: built.seed,
-                promptId,
-                positivePrompt: built.positivePrompt,
-                negativePrompt: built.negativePrompt,
-                nodeMapping: null,
-                videoBlob,
-                videoFilename: mediaRef.filename,
-                videoSubfolder: mediaRef.subfolder,
-                videoCompatibilityAdjusted: built.videoCompatibilityAdjusted,
-                missingReferenceSubmitted: built.missingReferenceSubmitted
-            };
-        }
-
-        const imageData = await this._readComfyUIImage(baseUrl, mediaRef, options.signal);
-        const imageInfo = await this._waitForImageDecode(imageData).catch((err) => {
-            throw new Error(`ComfyUI 返回图片不可用: ${err?.message || err}`);
-        });
-
-        return {
-            provider: 'comfyui',
-            model: config.comfyuiModel,
-            prompt,
-            mediaType: 'image',
-            width: imageInfo.width || built.width,
-            height: imageInfo.height || built.height,
-            requestedWidth: built.width,
-            requestedHeight: built.height,
-            steps: built.steps,
-            sampler: config.comfyuiSampler,
-            scheduler: config.comfyuiScheduler,
-            scale: built.scale,
-            seed: built.seed,
+        return this._buildComfyUIOutputResult({
+            baseUrl,
+            mediaRef,
             promptId,
-            positivePrompt: built.positivePrompt,
-            negativePrompt: built.negativePrompt,
-            nodeMapping: null,
-            missingReferenceSubmitted: built.missingReferenceSubmitted,
-            imageData,
-            imageUrl: imageData
-        };
+            prompt,
+            config,
+            built,
+            signal: options.signal
+        });
     }
 
     async _generateNovelAI(options, config) {

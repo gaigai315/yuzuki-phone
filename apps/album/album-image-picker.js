@@ -22,50 +22,57 @@ export class AlbumImagePicker {
         document.head.appendChild(link);
     }
 
-    chooseSource() {
+    chooseSource(options = {}) {
+        const title = String(options.title || '选择头像来源').trim() || '选择头像来源';
+        const albumLabel = String(options.albumLabel || '从相册 App 选择').trim() || '从相册 App 选择';
+        const deviceLabel = String(options.deviceLabel || '从设备相册上传').trim() || '从设备相册上传';
         this.loadCSS();
         return this._open((overlay) => {
             overlay.className = 'album-image-picker-overlay album-image-source-overlay';
             overlay.innerHTML = `
-                <div class="album-image-source-sheet" role="dialog" aria-modal="true" aria-label="选择头像来源">
-                    <div class="album-image-source-title">选择头像来源</div>
-                    <button type="button" class="album-image-source-option" data-avatar-source="album">
+                <div class="album-image-source-sheet" role="dialog" aria-modal="true" aria-label="${this._escapeAttr(title)}">
+                    <div class="album-image-source-title">${this._escapeHtml(title)}</div>
+                    <button type="button" class="album-image-source-option" data-image-source="album">
                         <i class="fa-regular fa-images" aria-hidden="true"></i>
-                        <span>从相册 App 选择</span>
+                        <span>${this._escapeHtml(albumLabel)}</span>
                     </button>
-                    <button type="button" class="album-image-source-option" data-avatar-source="device">
+                    <button type="button" class="album-image-source-option" data-image-source="device">
                         <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
-                        <span>从设备相册上传</span>
+                        <span>${this._escapeHtml(deviceLabel)}</span>
                     </button>
-                    <button type="button" class="album-image-source-cancel" data-avatar-picker-close>取消</button>
+                    <button type="button" class="album-image-source-cancel" data-image-picker-close>取消</button>
                 </div>
             `;
 
             overlay.addEventListener('click', (event) => {
-                const sourceButton = event.target.closest('[data-avatar-source]');
+                const sourceButton = event.target.closest('[data-image-source]');
                 if (sourceButton) {
-                    this._close(sourceButton.dataset.avatarSource || null);
+                    this._close(sourceButton.dataset.imageSource || null);
                     return;
                 }
-                if (event.target === overlay || event.target.closest('[data-avatar-picker-close]')) {
+                if (event.target === overlay || event.target.closest('[data-image-picker-close]')) {
                     this._close(null);
                 }
             });
         });
     }
 
-    chooseImage() {
+    chooseImage(options = {}) {
         this.loadCSS();
         const images = this.albumData?.getImages?.() || [];
         if (images.length === 0) return Promise.resolve(null);
         this._activeSource = 'all';
+        const pickerOptions = {
+            title: String(options.title || '选择头像').trim() || '选择头像'
+        };
 
         return this._open((overlay) => {
-            this._renderImagePicker(overlay, images);
+            this._renderImagePicker(overlay, images, pickerOptions);
         });
     }
 
-    _renderImagePicker(overlay, images) {
+    _renderImagePicker(overlay, images, options = {}) {
+        const title = String(options.title || '选择头像').trim() || '选择头像';
         const allGroups = this.albumData?.groupImagesBySource?.(images) || [];
         if (this._activeSource !== 'all' && !allGroups.some(group => group.key === this._activeSource)) {
             this._activeSource = 'all';
@@ -84,12 +91,12 @@ export class AlbumImagePicker {
 
         overlay.className = 'album-image-picker-overlay';
         overlay.innerHTML = `
-            <div class="album-image-picker-panel" role="dialog" aria-modal="true" aria-label="从相册选择头像">
+            <div class="album-image-picker-panel" role="dialog" aria-modal="true" aria-label="${this._escapeAttr(title)}">
                 <header class="album-image-picker-header">
-                    <button type="button" class="album-image-picker-close" data-avatar-picker-close aria-label="关闭">
+                    <button type="button" class="album-image-picker-close" data-image-picker-close aria-label="关闭">
                         <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                     </button>
-                    <div class="album-image-picker-title">选择头像</div>
+                    <div class="album-image-picker-title">${this._escapeHtml(title)}</div>
                     <button type="button" class="album-image-picker-filter" aria-haspopup="menu" aria-expanded="false">
                         <span>${this._escapeHtml(activeLabel)}</span>
                         <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
@@ -162,16 +169,16 @@ export class AlbumImagePicker {
         panel?.querySelectorAll('[data-picker-source]').forEach(option => {
             option.addEventListener('click', () => {
                 this._activeSource = option.dataset.pickerSource || 'all';
-                this._renderImagePicker(overlay, images);
+                this._renderImagePicker(overlay, images, options);
             });
         });
         panel?.querySelectorAll('[data-picker-source-focus]').forEach(heading => {
             heading.addEventListener('click', () => {
                 this._activeSource = heading.dataset.pickerSourceFocus || 'all';
-                this._renderImagePicker(overlay, images);
+                this._renderImagePicker(overlay, images, options);
             });
         });
-        panel?.querySelector('[data-avatar-picker-close]')?.addEventListener('click', () => this._close(null));
+        panel?.querySelector('[data-image-picker-close]')?.addEventListener('click', () => this._close(null));
         panel?.querySelectorAll('[data-album-image-index]').forEach(tile => {
             tile.addEventListener('click', () => {
                 const index = Number.parseInt(tile.dataset.albumImageIndex || '', 10);
