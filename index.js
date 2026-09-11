@@ -22,7 +22,7 @@ import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.5.5';
-const ST_PHONE_CSS_REVISION = '20260909-comfyui-workflow-isolation';
+const ST_PHONE_CSS_REVISION = '20260911-contact-generation-error-modal';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260902-avatar-gender';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
@@ -5482,7 +5482,7 @@ if (window.GGP_Loaded) {
 
     async function ensureWechatAppForBackground() {
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260906-global-chat-background-sync');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260911-contact-generation-error-modal');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             if (!window.VirtualPhone.wechatApp) {
                 window.VirtualPhone.wechatApp = new module.WechatApp(phoneShell, storage);
@@ -8475,7 +8475,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260906-global-chat-background-sync');
+            const module = await import('./apps/wechat/wechat-app.js?v=20260911-contact-generation-error-modal');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             // 单例复用
@@ -9318,7 +9318,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.settingsApp.render();
                     });
                 } else if (appId === 'wechat') {
-                    import('./apps/wechat/wechat-app.js?v=20260906-global-chat-background-sync')
+                    import('./apps/wechat/wechat-app.js?v=20260911-contact-generation-error-modal')
                         .then(module => {
                             try {
                                 // 🔥 单例模式：只在第一次打开时创建微信实例，拒绝重复绑定事件

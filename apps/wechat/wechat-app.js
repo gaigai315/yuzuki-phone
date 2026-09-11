@@ -4109,6 +4109,128 @@ export class WechatApp {
     background: #fff;
 }
 
+#phone-panel-content .phone-screen .wechat-contact-generation-error-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.42);
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-dialog {
+    width: 100%;
+    max-width: 320px;
+    max-height: 82%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.24);
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-header {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 12px 0 16px;
+    border-bottom: 0.5px solid #ececec;
+    flex-shrink: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    color: #c62828;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-close {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: #f2f2f2;
+    color: #666;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px 16px 16px;
+    box-sizing: border-box;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-summary {
+    margin-bottom: 14px;
+    padding: 10px 11px;
+    border-left: 3px solid #ff5a52;
+    background: #fff5f4;
+    color: #7c2d28;
+    font-size: 12px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-label {
+    margin-bottom: 7px;
+    color: #666;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-response {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #333;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 10px;
+    line-height: 1.55;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-footer {
+    padding: 10px 16px 14px;
+    border-top: 0.5px solid #ececec;
+    background: #fff;
+    flex-shrink: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-contact-generation-error-confirm {
+    width: 100%;
+    min-height: 38px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: #07c160;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
 /* ========================================
    其他组件样式保持原样
    ======================================== */
@@ -7586,6 +7708,50 @@ export class WechatApp {
         });
     }
 
+    _showContactGenerationErrorModal(message = '生成失败', rawResponse = '') {
+        const host = document.querySelector('.phone-view-current') || document.querySelector('.phone-screen') || document.body;
+        document.getElementById('wechat-contact-generation-error-modal')?.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'wechat-contact-generation-error-modal';
+        modal.className = 'wechat-contact-generation-error-overlay';
+        modal.innerHTML = `
+            <div class="wechat-contact-generation-error-dialog" role="dialog" aria-modal="true" aria-labelledby="wechat-contact-generation-error-title">
+                <div class="wechat-contact-generation-error-header">
+                    <div class="wechat-contact-generation-error-title" id="wechat-contact-generation-error-title">
+                        <i class="fa-solid fa-circle-exclamation"></i>
+                        <span>联系人生成失败</span>
+                    </div>
+                    <button type="button" class="wechat-contact-generation-error-close" data-action="close" aria-label="关闭">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="wechat-contact-generation-error-body">
+                    <div class="wechat-contact-generation-error-summary"></div>
+                    <div class="wechat-contact-generation-error-label">AI 实际返回</div>
+                    <pre class="wechat-contact-generation-error-response"></pre>
+                </div>
+                <div class="wechat-contact-generation-error-footer">
+                    <button type="button" class="wechat-contact-generation-error-confirm" data-action="close">关闭</button>
+                </div>
+            </div>
+        `;
+
+        modal.querySelector('.wechat-contact-generation-error-summary').textContent = String(message || '生成失败');
+        modal.querySelector('.wechat-contact-generation-error-response').textContent = String(rawResponse || '').trim() || '未收到可显示的 API 原始返回。';
+        host.appendChild(modal);
+
+        const closeModal = () => modal.remove();
+        modal.querySelectorAll('[data-action="close"]').forEach(button => button.addEventListener('click', closeModal));
+        modal.addEventListener('click', event => {
+            if (event.target === modal) closeModal();
+        });
+        modal.addEventListener('keydown', event => {
+            if (event.key === 'Escape') closeModal();
+        });
+        modal.querySelector('.wechat-contact-generation-error-close')?.focus?.();
+    }
+
     // 📋 显示智能加载联系人确认界面
     showLoadContactsConfirm() {
         const shellBg = this._getMainShellBackgroundConfig();
@@ -7623,32 +7789,6 @@ export class WechatApp {
                         cursor: pointer;
                     ">开始生成</button>
 
-                    <div id="contact-generation-error" style="
-                        display: none;
-                        margin-top: 20px;
-                        padding: 12px;
-                        border: 1px solid rgba(255, 59, 48, 0.28);
-                        border-radius: 8px;
-                        background: rgba(255, 59, 48, 0.06);
-                        text-align: left;
-                    ">
-                        <div style="font-size: 12px; font-weight: 600; color: #c62828; margin-bottom: 8px;">API 实际返回</div>
-                        <pre id="contact-generation-raw-response" style="
-                            margin: 0;
-                            max-height: 260px;
-                            overflow: auto;
-                            white-space: pre-wrap;
-                            overflow-wrap: anywhere;
-                            touch-action: pan-y;
-                            overscroll-behavior: contain;
-                            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-                            font-size: 10px;
-                            line-height: 1.5;
-                            color: #333;
-                            user-select: text;
-                            -webkit-user-select: text;
-                        "></pre>
-                    </div>
                 </div>
             </div>
         </div>
@@ -7663,11 +7803,8 @@ export class WechatApp {
         document.getElementById('confirm-load')?.addEventListener('click', async () => {
             const shouldClear = confirm('智能加载联系人前，是否先清空当前微信里的所有联系人、群聊和聊天记录？\n\n点击“确定”会先清空再生成，避免重复联系人/群聊；点击“取消”则保留现有数据并继续追加补全。');
             const confirmBtn = document.getElementById('confirm-load');
-            const errorPanel = document.getElementById('contact-generation-error');
-            const rawResponseEl = document.getElementById('contact-generation-raw-response');
             if (confirmBtn?.dataset?.loading === '1') return;
-            if (errorPanel) errorPanel.style.display = 'none';
-            if (rawResponseEl) rawResponseEl.textContent = '';
+            document.getElementById('wechat-contact-generation-error-modal')?.remove();
             if (confirmBtn) {
                 confirmBtn.dataset.loading = '1';
                 confirmBtn.disabled = true;
@@ -7704,11 +7841,7 @@ export class WechatApp {
                     }, 800);
                 } else {
                     this.phoneShell.showNotification('❌ 生成失败', result.message, '❌');
-                    const rawResponse = String(result.rawResponse || '').trim();
-                    if (errorPanel && rawResponseEl && rawResponse) {
-                        rawResponseEl.textContent = rawResponse;
-                        errorPanel.style.display = 'block';
-                    }
+                    this._showContactGenerationErrorModal(result.message, result.rawResponse);
                     if (confirmBtn) {
                         confirmBtn.dataset.loading = '0';
                         confirmBtn.disabled = false;
@@ -7721,6 +7854,7 @@ export class WechatApp {
             } catch (error) {
                 console.error('❌ 加载联系人失败:', error);
                 this.phoneShell.showNotification('❌ 错误', error.message, '❌');
+                this._showContactGenerationErrorModal(error.message, '');
                 if (confirmBtn) {
                     confirmBtn.dataset.loading = '0';
                     confirmBtn.disabled = false;
