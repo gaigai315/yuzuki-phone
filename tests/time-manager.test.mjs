@@ -33,6 +33,76 @@ test('modern global time parsing keeps date, weekday, and clock behavior', () =>
     assert.equal(parsed.isAncient, false);
 });
 
+test('all supported modern formats parse with or without supported wrappers', () => {
+    const manager = createTimeManager();
+    const formats = [
+        '2021年01月01日14:30星期二',
+        '2021年 01月 01日 14:30 星期二',
+        '2021年|01月|01日|14:30|星期二',
+        '2021年-01月-01日-14:30-星期二',
+        '2021年/01月/01日/14:30/星期二',
+        '2021-01-01 14:30 星期二',
+        '2021/01/01/14:30/星期二'
+    ];
+    const wrappers = [
+        value => value,
+        value => `<globalTime>${value}</globalTime>`,
+        value => `<Time>${value}</Time>`,
+        value => `<time>${value}</time>`,
+        value => `<statusbar>${value}</statusbar>`
+    ];
+
+    for (const format of formats) {
+        for (const wrap of wrappers) {
+            const input = wrap(format);
+            const parsed = manager.parseStatusbar(input);
+            assert.ok(parsed, `expected format to parse: ${input}`);
+            assert.equal(parsed.date, '2021年01月01日');
+            assert.equal(parsed.time, '14:30');
+            assert.equal(parsed.weekday, '星期二');
+            assert.equal(parsed.isAncient, false);
+        }
+    }
+});
+
+test('fixed phone global status bars parse in modern and ancient forms', () => {
+    const manager = createTimeManager();
+    const modernHoliday = manager.parseStatusbar(
+        '2021年01月01日·🌸·星期二·14:30·晴天·8°C·{元旦}'
+    );
+    const modernWeather = manager.parseStatusbar(
+        '<globalTime>2021年01月02日·🌸·星期二·14:30·小雨·2°C</globalTime>'
+    );
+    const ancient = manager.parseStatusbar(
+        '<globalTime>大明永乐十二年九月初八日·🍂·辰时(07:30)·晴天·22°C</globalTime>'
+    );
+
+    assert.deepEqual(
+        { date: modernHoliday.date, time: modernHoliday.time, weekday: modernHoliday.weekday },
+        { date: '2021年01月01日', time: '14:30', weekday: '星期二' }
+    );
+    assert.deepEqual(
+        { date: modernWeather.date, time: modernWeather.time, weekday: modernWeather.weekday },
+        { date: '2021年01月02日', time: '14:30', weekday: '星期二' }
+    );
+    assert.deepEqual(
+        {
+            date: ancient.date,
+            time: ancient.time,
+            weekday: ancient.weekday,
+            traditionalTime: ancient.traditionalTime,
+            isAncient: ancient.isAncient
+        },
+        {
+            date: '大明永乐十二年九月初八日',
+            time: '07:30',
+            weekday: '',
+            traditionalTime: '辰时',
+            isAncient: true
+        }
+    );
+});
+
 test('ancient global time parsing preserves reign date and hides weekday', () => {
     const manager = createTimeManager();
     const parsed = manager.parseStatusbar(

@@ -129,7 +129,11 @@ export class TimeManager {
             monthTokenValue = eraMatch[2];
             dayTokenValue = eraMatch[3];
         } else {
-            const genericPattern = new RegExp(`(${numberToken})[-/年]\\s*(${monthToken})[-/月]\\s*(${dayToken})\\s*日?`);
+            // 现代日期统一兼容：YYYY年MM月DD日、YYYY年|MM月|DD日、
+            // YYYY年-MM月-DD日、YYYY年/MM月/DD日、YYYY-MM-DD、YYYY/MM/DD。
+            const yearSeparator = '(?:[-/]\\s*|年\\s*(?:[|\\-/]\\s*)?)';
+            const monthSeparator = '(?:[-/]\\s*|月\\s*(?:[|\\-/]\\s*)?)';
+            const genericPattern = new RegExp(`(${numberToken})${yearSeparator}(${monthToken})${monthSeparator}(${dayToken})\\s*日?`);
             const genericMatch = source.match(genericPattern);
             if (!genericMatch) return null;
             [fullMatch, yearToken, monthTokenValue, dayTokenValue] = genericMatch;
@@ -471,6 +475,9 @@ export class TimeManager {
      * - <time>2044年06月11日·🍦·星期三·14:30</time>
      * - 无标签正文：417年11月7日|星期三|21:28
      * - 无标签正文：417/11/7 21:28
+     * - 无标签或标签正文：2021年|01月|01日|14:30|星期二
+     * - 无标签或标签正文：2021年-01月-01日-14:30-星期二
+     * - 无标签或标签正文：2021年/01月/01日/14:30/星期二
      */
     parseStatusbar(text) {
         const rawText = String(text || '');

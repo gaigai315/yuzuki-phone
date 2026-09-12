@@ -250,6 +250,7 @@ export class PhoneShell {
                 '.phone-image-viewer-overlay', '.phone-image-viewer-stage',
                 '.phone-image-viewer-workflow-picker', '.phone-image-viewer-workflow-dialog', '.phone-image-viewer-workflow-list',
                 '#st-phone-update-modal', '.st-phone-update-dialog', '.st-phone-update-content', '.st-phone-update-list',
+                '#phone-time-format-info-modal', '.phone-time-format-info-dialog', '.phone-time-format-info-body',
                 '#phone-image-preset-share-modal', '#phone-image-preset-share-modal > div', '#phone-image-preset-share-text',
                 '#phone-image-preset-export-chooser', '.phone-image-preset-export-dialog', '.phone-image-preset-export-list',
                 '#phone-image-comfyui-lora-modal', '.phone-image-comfyui-lora-dialog', '.phone-image-comfyui-lora-picker-list',

@@ -2064,25 +2064,168 @@ export class SettingsApp {
                         justify-content: flex-end;
                         gap: 6px;
                     }
-                    .settings-app .phone-version-info-btn {
-                        width: 20px;
-                        height: 20px;
-                        padding: 0;
-                        display: inline-flex;
-                        align-items: center;
-                        justify-content: center;
-                        border: none;
-                        border-radius: 999px;
-                        background: rgba(0, 122, 255, 0.12);
-                        color: #007aff;
-                        font-size: 12px;
-                        line-height: 1;
+                    #phone-panel-content .phone-screen #yzp-settings-app.settings-app button.phone-version-info-btn {
+                        width: 18px !important;
+                        min-width: 18px !important;
+                        height: 18px !important;
+                        min-height: 18px !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        display: inline-flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        border: none !important;
+                        border-radius: 50% !important;
+                        background: transparent !important;
+                        background-image: none !important;
+                        box-shadow: none !important;
+                        backdrop-filter: none !important;
+                        -webkit-backdrop-filter: none !important;
+                        color: #222 !important;
+                        font-size: 14px !important;
+                        line-height: 1 !important;
                         cursor: pointer;
+                        appearance: none;
+                        -webkit-appearance: none;
                         -webkit-tap-highlight-color: transparent;
                     }
-                    .settings-app .phone-version-info-btn:active {
+                    #phone-panel-content .phone-screen #yzp-settings-app.settings-app button.phone-version-info-btn > i,
+                    #phone-panel-content .phone-screen #yzp-settings-app.settings-app button.phone-version-info-btn > i::before {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        border: none !important;
+                        background: transparent !important;
+                        background-color: transparent !important;
+                        background-image: none !important;
+                        box-shadow: none !important;
+                        filter: none !important;
+                    }
+                    #phone-panel-content .phone-screen #yzp-settings-app.settings-app button.phone-version-info-btn:hover {
+                        background: transparent !important;
+                        opacity: 0.72;
+                    }
+                    #phone-panel-content .phone-screen #yzp-settings-app.settings-app button.phone-version-info-btn:active {
                         transform: scale(0.94);
-                        background: rgba(0, 122, 255, 0.2);
+                        background: transparent !important;
+                        opacity: 0.58;
+                    }
+                    .settings-app .phone-setting-label-with-info {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-modal {
+                        position: absolute;
+                        inset: 0;
+                        z-index: 10050;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        box-sizing: border-box;
+                        padding: 14px;
+                        background: rgba(0, 0, 0, 0.38);
+                        backdrop-filter: blur(8px);
+                        -webkit-backdrop-filter: blur(8px);
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-dialog {
+                        width: min(330px, 100%);
+                        max-height: min(620px, calc(100% - 12px));
+                        display: flex;
+                        flex-direction: column;
+                        overflow: hidden;
+                        border: 1px solid rgba(255,255,255,0.72);
+                        border-radius: 14px;
+                        background: rgba(255,255,255,0.97);
+                        color: #1f2329;
+                        box-shadow: 0 16px 38px rgba(0,0,0,0.28);
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-header {
+                        flex: 0 0 auto;
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 12px;
+                        padding: 14px 14px 12px;
+                        border-bottom: 1px solid rgba(0,0,0,0.08);
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-kicker {
+                        color: #767d88;
+                        font-size: 10px;
+                        font-weight: 700;
+                        line-height: 1.3;
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-title {
+                        margin-top: 2px;
+                        color: #1f2329;
+                        font-size: 16px;
+                        font-weight: 800;
+                        line-height: 1.3;
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-close {
+                        width: 28px !important;
+                        min-width: 28px !important;
+                        height: 28px !important;
+                        padding: 0 !important;
+                        display: inline-flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        border: none !important;
+                        border-radius: 50% !important;
+                        background: rgba(0,0,0,0.06) !important;
+                        color: #333 !important;
+                        box-shadow: none !important;
+                        font-size: 14px !important;
+                        cursor: pointer;
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-body {
+                        min-height: 0;
+                        flex: 1 1 auto;
+                        overflow-y: auto;
+                        padding: 4px 14px 16px;
+                        touch-action: pan-y;
+                        overscroll-behavior: contain;
+                        -webkit-overflow-scrolling: touch;
+                        scrollbar-width: none;
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-body::-webkit-scrollbar {
+                        width: 0;
+                        height: 0;
+                        display: none;
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-section {
+                        padding: 12px 0;
+                        border-bottom: 1px solid rgba(0,0,0,0.07);
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-section:last-child {
+                        padding-bottom: 0;
+                        border-bottom: none;
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-section-title {
+                        margin-bottom: 7px;
+                        color: #31363f;
+                        font-size: 12px;
+                        font-weight: 800;
+                        line-height: 1.4;
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-note {
+                        margin-bottom: 8px;
+                        color: #68707c;
+                        font-size: 11px;
+                        line-height: 1.55;
+                    }
+                    #phone-panel-content .phone-screen .phone-time-format-info-code {
+                        display: block;
+                        margin: 5px 0;
+                        padding: 7px 8px;
+                        border-left: 3px solid #222;
+                        background: rgba(0,0,0,0.045);
+                        color: #252a31;
+                        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                        font-size: 10px;
+                        line-height: 1.5;
+                        letter-spacing: 0;
+                        white-space: normal;
+                        overflow-wrap: anywhere;
                     }
                     .settings-app .phone-api-config-section:has(#phone-api-enabled:checked) #phone-api-profile-details,
                     .settings-app .phone-api-config-section:has(#phone-api-enabled:checked) #phone-api-details {
@@ -2195,7 +2338,7 @@ export class SettingsApp {
                         border-color: rgba(255,255,255,0.56) !important;
                         color: #111 !important;
                     }
-                    .settings-app.settings-has-wallpaper button:not(.settings-tab-btn),
+                    .settings-app.settings-has-wallpaper button:not(.settings-tab-btn):not(.phone-version-info-btn),
                     .settings-app.settings-has-wallpaper .setting-btn {
                         background-color: rgba(255,255,255,0.72) !important;
                         border-color: rgba(255,255,255,0.48) !important;
@@ -2203,7 +2346,7 @@ export class SettingsApp {
                     .settings-app.settings-has-wallpaper .toggle-switch,
                     .settings-app.settings-has-wallpaper .toggle-switch *,
                     .settings-app.settings-has-wallpaper .phone-version-info-btn {
-                        background-color: initial;
+                        background-color: transparent !important;
                     }
                     .settings-app {
                         --settings-muted-text-color: var(--settings-text-color);
@@ -2245,8 +2388,7 @@ export class SettingsApp {
                     .settings-app .setting-btn[style*="color: #ff"],
                     .settings-app .setting-btn[style*="color:#ff"],
                     .settings-app .setting-btn[style*="color: #d9"],
-                    .settings-app .setting-btn[style*="color:#d9"],
-                    .settings-app .phone-version-info-btn {
+                    .settings-app .setting-btn[style*="color:#d9"] {
                         color: revert !important;
                     }
                     #yzp-settings-app.settings-app.yzp-settings-app.yzp-settings-safe-render.settings-has-wallpaper *,
@@ -2823,7 +2965,12 @@ export class SettingsApp {
 
                             <div class="setting-item">
                                 <div>
-                                    <div class="setting-label">当前剧情时间</div>
+                                    <div class="setting-label phone-setting-label-with-info">
+                                        <span>当前剧情时间</span>
+                                        <button type="button" class="phone-version-info-btn" id="phone-time-format-info-btn" aria-label="查看支持的剧情时间格式" title="查看支持格式">
+                                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
                                     <div class="setting-desc" id="current-phone-time">加载中...</div>
                                 </div>
                             </div>
@@ -5117,6 +5264,99 @@ export class SettingsApp {
         });
     }
 
+    _showTimeFormatInfo(preferredHost = null) {
+        this._timeFormatInfoAbortController?.abort();
+        const host = preferredHost
+            || document.querySelector('.phone-view-current')
+            || document.querySelector('.settings-app')
+            || document.body;
+        host.querySelector?.('#phone-time-format-info-modal')?.remove();
+        if (host !== document.body && window.getComputedStyle(host).position === 'static') {
+            host.style.position = 'relative';
+        }
+
+        const overlay = document.createElement('div');
+        const eventController = new AbortController();
+        const returnFocus = document.activeElement;
+        this._timeFormatInfoAbortController = eventController;
+        overlay.id = 'phone-time-format-info-modal';
+        overlay.className = 'phone-time-format-info-modal';
+        overlay.innerHTML = `
+            <div class="phone-time-format-info-dialog" role="dialog" aria-modal="true" aria-labelledby="phone-time-format-info-title">
+                <div class="phone-time-format-info-header">
+                    <div>
+                        <div class="phone-time-format-info-kicker">剧情时间解析</div>
+                        <div class="phone-time-format-info-title" id="phone-time-format-info-title">支持的时间格式</div>
+                    </div>
+                    <button type="button" class="phone-time-format-info-close" aria-label="关闭时间格式说明" title="关闭">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="phone-time-format-info-body">
+                    <section class="phone-time-format-info-section">
+                        <div class="phone-time-format-info-section-title">现代时间</div>
+                        <div class="phone-time-format-info-note">星期* 可填写星期一至星期日、星期天、周一至周日或周天；省略星期时会根据日期自动计算。</div>
+                        <code class="phone-time-format-info-code">YYYY年MM月DD日HH:MM星期*</code>
+                        <code class="phone-time-format-info-code">YYYY年 MM月 DD日 HH:MM 星期*</code>
+                        <code class="phone-time-format-info-code">YYYY年|MM月|DD日|HH:MM|星期*</code>
+                        <code class="phone-time-format-info-code">YYYY年-MM月-DD日-HH:MM-星期*</code>
+                        <code class="phone-time-format-info-code">YYYY年/MM月/DD日/HH:MM/星期*</code>
+                        <code class="phone-time-format-info-code">YYYY-MM-DD HH:MM 星期*</code>
+                        <code class="phone-time-format-info-code">YYYY/MM/DD/HH:MM/星期*</code>
+                    </section>
+                    <section class="phone-time-format-info-section">
+                        <div class="phone-time-format-info-section-title">可选包裹标签</div>
+                        <div class="phone-time-format-info-note">上述格式可直接出现在正文中，也可以放进以下任一标签。</div>
+                        <code class="phone-time-format-info-code">&lt;globalTime&gt;时间内容&lt;/globalTime&gt;</code>
+                        <code class="phone-time-format-info-code">&lt;Time&gt;时间内容&lt;/Time&gt;</code>
+                        <code class="phone-time-format-info-code">&lt;time&gt;时间内容&lt;/time&gt;</code>
+                        <code class="phone-time-format-info-code">&lt;statusbar&gt;时间内容&lt;/statusbar&gt;</code>
+                        <code class="phone-time-format-info-code">&lt;horae&gt;时间内容&lt;/horae&gt;</code>
+                    </section>
+                    <section class="phone-time-format-info-section">
+                        <div class="phone-time-format-info-section-title">兼容时刻写法</div>
+                        <div class="phone-time-format-info-note">标准格式推荐使用 HH:MM，同时兼容中文冒号、中文时分和三至四位紧凑时刻。</div>
+                        <code class="phone-time-format-info-code">7:30 / 07:30 / 7：30</code>
+                        <code class="phone-time-format-info-code">7时30 / 7时30分</code>
+                        <code class="phone-time-format-info-code">730 / 0730 / 2128</code>
+                    </section>
+                    <section class="phone-time-format-info-section">
+                        <div class="phone-time-format-info-section-title">小手机固定全局状态栏</div>
+                        <code class="phone-time-format-info-code">2021年01月01日·🌸·星期二·14:30·晴天·8°C·{元旦}</code>
+                        <code class="phone-time-format-info-code">2021年01月02日·🌸·星期二·14:30·小雨·2°C</code>
+                        <code class="phone-time-format-info-code">大明永乐十二年九月初八日·🍂·辰时(07:30)·晴天·22°C</code>
+                    </section>
+                    <section class="phone-time-format-info-section">
+                        <div class="phone-time-format-info-section-title">古代时间</div>
+                        <div class="phone-time-format-info-note">支持朝代或年号、中文年月日及十二时辰。时辰后的数字时间可以省略。</div>
+                        <code class="phone-time-format-info-code">大明永乐十二年九月初八日·辰时(07:30)</code>
+                        <code class="phone-time-format-info-code">大清乾隆三年正月初一日·子时</code>
+                        <code class="phone-time-format-info-code">十二年冬月廿一日·亥時</code>
+                    </section>
+                </div>
+            </div>
+        `;
+
+        const close = () => {
+            eventController.abort();
+            overlay.remove();
+            if (this._timeFormatInfoAbortController === eventController) {
+                this._timeFormatInfoAbortController = null;
+            }
+            returnFocus?.focus?.();
+        };
+        const onKeydown = (event) => {
+            if (event.key === 'Escape') close();
+        };
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) close();
+        }, { signal: eventController.signal });
+        overlay.querySelector('.phone-time-format-info-close')?.addEventListener('click', close, { signal: eventController.signal });
+        document.addEventListener('keydown', onKeydown, { signal: eventController.signal });
+        host.appendChild(overlay);
+        overlay.querySelector('.phone-time-format-info-close')?.focus();
+    }
+
     _extractLastAssistantRawText(context) {
         if (!context?.chat || !Array.isArray(context.chat)) return '';
 
@@ -5637,13 +5877,24 @@ export class SettingsApp {
             });
         });
 
-        // 上传壁纸 - 支持裁剪
+        // 版本更新说明
         document.querySelectorAll('.settings-app #phone-version-info-btn').forEach((versionInfoBtn) => versionInfoBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             if (typeof window.VirtualPhone?.showCurrentUpdateInfo === 'function') {
                 window.VirtualPhone.showCurrentUpdateInfo();
             }
+        }));
+
+        // 剧情时间支持格式说明
+        document.querySelectorAll('.settings-app #phone-time-format-info-btn').forEach((timeFormatInfoBtn) => timeFormatInfoBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._showTimeFormatInfo(
+                e.currentTarget?.closest?.('.phone-view-current')
+                || e.currentTarget?.closest?.('.settings-app')
+                || null
+            );
         }));
 
         const formatImageUploadError = (err) => {
@@ -11492,7 +11743,7 @@ export class SettingsApp {
         }
 
         // 兜底本地解析
-        const tagMatch = rawText.match(/<(statusbar|globalTime|time)>([\s\S]*?)<\/\1>/i);
+        const tagMatch = rawText.match(/<(statusbar|globalTime|time|horae)>([\s\S]*?)<\/\1>/i);
         const baseContent = tagMatch ? tagMatch[2] : rawText;
         const content = String(baseContent)
             .replace(/<[^>]*>/g, ' ')
@@ -11500,7 +11751,7 @@ export class SettingsApp {
             .replace(/｜/g, '|')
             .replace(/／/g, '/');
 
-        const dateMatch = content.match(/(\d{1,6})[-\/年]\s*(\d{1,2})[-\/月]\s*(\d{1,2})\s*日?/);
+        const dateMatch = content.match(/(\d{1,6})(?:[-\/]\s*|年\s*(?:[|\-\/]\s*)?)(\d{1,2})(?:[-\/]\s*|月\s*(?:[|\-\/]\s*)?)(\d{1,2})\s*日?/);
         const dateToken = dateMatch?.[0] || '';
         const afterDateContent = dateToken ? content.slice(content.indexOf(dateToken) + dateToken.length) : content;
         const standardTimeMatch = afterDateContent.match(/(\d{1,2})\s*[:：时]\s*(\d{1,2})(?:\s*分)?/);
