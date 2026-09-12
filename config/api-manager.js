@@ -17,6 +17,10 @@
 
 import { getMemoryTagFilterInfo } from './tag-filter.js';
 
+const OPENCODE_GO_PROVIDER = 'opencode_go';
+const OPENCODE_GO_BASE_URL = 'https://opencode.ai/zen/go/v1';
+const OPENCODE_SESSION_SALT_STORAGE_KEY = 'yzp_phone_opencode_session_salt';
+
 export class ApiManager {
     constructor(storage) {
         this.storage = storage;
@@ -27,6 +31,7 @@ export class ApiManager {
         this._tavernSettingsCache = null;
         this._tavernSettingsCacheAt = 0;
         this._tavernSettingsCacheTTL = 30000;
+        this._cachedOpenCodeSessionSalt = '';
     }
 
     getActiveRequestCount() {
@@ -35,6 +40,140 @@ export class ApiManager {
 
     isBusy() {
         return this.getActiveRequestCount() > 0;
+    }
+
+    _isOfficialOpenCodeGoUrl(apiUrl = '') {
+        try {
+            const url = new URL(String(apiUrl || '').trim());
+            const path = url.pathname.replace(/\/+$/, '').toLowerCase();
+            return url.protocol === 'https:'
+                && url.hostname.toLowerCase() === 'opencode.ai'
+                && (path === '/zen/go' || path.startsWith('/zen/go/'));
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    _isSupportedOpenCodeGoBaseUrl(apiUrl = '') {
+        if (!this._isOfficialOpenCodeGoUrl(apiUrl)) return false;
+        try {
+            const path = new URL(apiUrl).pathname.replace(/\/+$/, '').toLowerCase();
+            return path === '/zen/go/v1' || path === '/zen/go/v1/chat/completions';
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    _stripChatCompletionsPath(apiUrl = '') {
+        return String(apiUrl || '').trim().replace(/\/chat\/completions\/?$/i, '').replace(/\/+$/, '');
+    }
+
+    _createRandomHex(byteLength = 16) {
+        const bytes = new Uint8Array(byteLength);
+        const cryptoApi = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+        if (typeof cryptoApi?.getRandomValues === 'function') {
+            cryptoApi.getRandomValues(bytes);
+        } else {
+            for (let index = 0; index < bytes.length; index += 1) {
+                bytes[index] = Math.floor(Math.random() * 256);
+            }
+        }
+        return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+    }
+
+    _getOpenCodeSessionSalt() {
+        if (this._cachedOpenCodeSessionSalt) return this._cachedOpenCodeSessionSalt;
+        try {
+            const stored = String(localStorage.getItem(OPENCODE_SESSION_SALT_STORAGE_KEY) || '').trim();
+            if (/^[a-f0-9]{32,128}$/i.test(stored)) {
+                this._cachedOpenCodeSessionSalt = stored.toLowerCase();
+                return this._cachedOpenCodeSessionSalt;
+            }
+        } catch (_error) {
+            // localStorage 不可用时，本次页面会话仍保持同一个随机盐。
+        }
+
+        this._cachedOpenCodeSessionSalt = this._createRandomHex(24);
+        try {
+            localStorage.setItem(OPENCODE_SESSION_SALT_STORAGE_KEY, this._cachedOpenCodeSessionSalt);
+        } catch (_error) {
+            // ignore
+        }
+        return this._cachedOpenCodeSessionSalt;
+    }
+
+    _hashOpaqueSession(value = '') {
+        const source = String(value || '');
+        let h1 = 1779033703;
+        let h2 = 3144134277;
+        let h3 = 1013904242;
+        let h4 = 2773480762;
+        for (let index = 0; index < source.length; index += 1) {
+            const code = source.charCodeAt(index);
+            h1 = Math.imul(h1 ^ code, 597399067);
+            h2 = Math.imul(h2 ^ code, 2869860233);
+            h3 = Math.imul(h3 ^ code, 951274213);
+            h4 = Math.imul(h4 ^ code, 2716044179);
+        }
+        h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067);
+        h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233);
+        h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213);
+        h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179);
+        h1 ^= h2 ^ h3 ^ h4;
+        h2 ^= h1;
+        h3 ^= h1;
+        h4 ^= h1;
+        const hex = [h1, h2, h3, h4]
+            .map((part) => (part >>> 0).toString(16).padStart(8, '0'))
+            .join('');
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+
+    _getOpenCodeSessionIdentity() {
+        try {
+            const memorySessionId = String(window.YuzukiMemory?.Storage?.getCurrentSessionId?.() || '').trim();
+            if (memorySessionId) return memorySessionId;
+        } catch (_error) {
+            // 记忆插件未加载时使用小手机自己的酒馆会话标识。
+        }
+
+        let context = null;
+        try {
+            context = this.storage?.getContext?.()
+                || ((typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function')
+                    ? SillyTavern.getContext()
+                    : null);
+        } catch (_error) {
+            context = null;
+        }
+        const chatId = String(context?.chatMetadata?.file_name || context?.chatId || context?.chat?.file_name || '').trim();
+        if (!chatId) return 'no-active-chat';
+
+        const groupId = String(context?.groupId ?? context?.group?.id ?? '').trim();
+        if (groupId) return `group:${groupId}:${chatId}`;
+
+        const character = Array.isArray(context?.characters) ? context.characters[context.characterId] : null;
+        const characterId = [
+            context?.characterId,
+            character?.avatar,
+            character?.name,
+            context?.name2,
+            context?.characterName
+        ].map((value) => String(value ?? '').trim()).find(Boolean) || 'unknown-character';
+        return `char:${characterId}:${chatId}`;
+    }
+
+    _getOpenCodeSessionId() {
+        return this._hashOpaqueSession(`${this._getOpenCodeSessionSalt()}\u0000${this._getOpenCodeSessionIdentity()}`);
+    }
+
+    _buildIndependentUpstreamHeaders(provider, authHeader = '') {
+        const headers = { 'Content-Type': 'application/json' };
+        if (authHeader) headers.Authorization = authHeader;
+        if (provider === OPENCODE_GO_PROVIDER) {
+            headers['x-opencode-session'] = this._getOpenCodeSessionId();
+        }
+        return headers;
     }
 
     _getProxyHintKey(provider, apiUrl) {
@@ -849,10 +988,19 @@ export class ApiManager {
             : (Number.isFinite(configTemperature) ? configTemperature : 1.0);
         const enableStream = apiConfig.useStream !== false;
 
+        if (provider === OPENCODE_GO_PROVIDER) {
+            if (!this._isOfficialOpenCodeGoUrl(apiUrl)) {
+                return { success: false, error: `OpenCode Go 类型仅支持官方地址 ${OPENCODE_GO_BASE_URL}。` };
+            }
+            if (!this._isSupportedOpenCodeGoBaseUrl(apiUrl)) {
+                return { success: false, error: `OpenCode Go 仅支持 /chat/completions 协议，Base URL 请填写 ${OPENCODE_GO_BASE_URL}。` };
+            }
+        }
+
         const sourceMessages = Array.isArray(messages)
             ? messages
             : [{ role: 'user', content: String(messages || '') }];
-        const preserveSystem = ['openai', 'deepseek', 'claude', 'gemini', 'siliconflow', 'proxy_only', 'compatible'].includes(provider);
+        const preserveSystem = ['openai', 'deepseek', 'claude', 'gemini', 'siliconflow', 'proxy_only', 'compatible', OPENCODE_GO_PROVIDER].includes(provider);
         let cleanMessages = sourceMessages.map((m, idx) => {
             const rawContent = this._replacePhoneImageTokens(m?.content, { consume: true });
             const sanitizedRawContent = this._sanitizeContentForModel(rawContent, { provider, model });
@@ -961,7 +1109,7 @@ export class ApiManager {
         ]);
 
         let proxyError = null;
-        const useProxy = ['local', 'openai', 'claude', 'proxy_only', 'deepseek', 'siliconflow', 'compatible', 'gemini'].includes(provider);
+        const useProxy = ['local', 'openai', 'claude', 'proxy_only', 'deepseek', 'siliconflow', 'compatible', 'gemini', OPENCODE_GO_PROVIDER].includes(provider);
         if (useProxy) {
             try {
                 const apiUrlLower = apiUrl.toLowerCase();
@@ -973,7 +1121,7 @@ export class ApiManager {
                 let targetSource = 'openai';
                 if (provider === 'claude') targetSource = 'claude';
                 if (provider === 'gemini') targetSource = 'makersuite';
-                if (provider === 'proxy_only' || provider === 'local') targetSource = 'custom';
+                if (provider === 'proxy_only' || provider === 'local' || provider === OPENCODE_GO_PROVIDER) targetSource = 'custom';
                 if (useProxyGeminiCompat) targetSource = 'makersuite';
                 if (provider === 'proxy_only' || provider === 'compatible') {
                     const hinted = this._getProxyRouteHint(provider, apiUrl);
@@ -983,6 +1131,9 @@ export class ApiManager {
                 }
 
                 let cleanBaseUrl = apiUrl;
+                if (provider === OPENCODE_GO_PROVIDER) {
+                    cleanBaseUrl = this._stripChatCompletionsPath(cleanBaseUrl);
+                }
                 if (targetSource === 'openai' && cleanBaseUrl.endsWith('/chat/completions')) {
                     cleanBaseUrl = cleanBaseUrl.replace(/\/chat\/completions\/?$/, '');
                 }
@@ -993,7 +1144,7 @@ export class ApiManager {
                 const proxyPayload = {
                     chat_completion_source: targetSource,
                     reverse_proxy: cleanBaseUrl,
-                    custom_url: apiUrl,
+                    custom_url: provider === OPENCODE_GO_PROVIDER ? cleanBaseUrl : apiUrl,
                     proxy_password: apiKey,
                     model,
                     messages: cleanMessages,
@@ -1014,10 +1165,9 @@ export class ApiManager {
                 // custom_include_headers 只属于 custom 路由，并且酒馆后端要求它是 YAML 字符串。
                 // JSON 是合法 YAML；直接传对象会被 yaml.parse 静默忽略，导致 Authorization 丢失。
                 if (targetSource === 'custom') {
-                    proxyPayload.custom_include_headers = JSON.stringify({
-                        'Content-Type': 'application/json',
-                        ...(authHeader ? { Authorization: authHeader } : {})
-                    });
+                    proxyPayload.custom_include_headers = JSON.stringify(
+                        this._buildIndependentUpstreamHeaders(provider, authHeader)
+                    );
                 }
                 if (modelLower.includes('gemini')) {
                     const safetyConfig = buildSafetyConfig();
@@ -1056,10 +1206,9 @@ export class ApiManager {
                             reverse_proxy: apiUrl,
                             custom_url: apiUrl,
                             proxy_password: apiKey,
-                            custom_include_headers: JSON.stringify({
-                                'Content-Type': 'application/json',
-                                ...(authHeader ? { Authorization: authHeader } : {})
-                            }),
+                            custom_include_headers: JSON.stringify(
+                                this._buildIndependentUpstreamHeaders(provider, authHeader)
+                            ),
                             model,
                             messages: cleanMessages,
                             temperature,
@@ -1140,8 +1289,7 @@ export class ApiManager {
                 directUrl += '/chat/completions';
             }
 
-            const headers = { 'Content-Type': 'application/json' };
-            if (authHeader) headers.Authorization = authHeader;
+            const headers = this._buildIndependentUpstreamHeaders(provider, authHeader);
 
             let requestBody;
             if (isGeminiOfficial) {
@@ -1241,6 +1389,17 @@ export class ApiManager {
 
         let normalized = String(url).trim().replace(/\/+$/, '');
         normalized = normalized.replace(/0\.0\.0\.0/g, '127.0.0.1');
+        if (provider === OPENCODE_GO_PROVIDER && this._isOfficialOpenCodeGoUrl(normalized)) {
+            try {
+                const openCodeUrl = new URL(normalized);
+                if (openCodeUrl.pathname.replace(/\/+$/, '').toLowerCase() === '/zen/go') {
+                    openCodeUrl.pathname = `${openCodeUrl.pathname.replace(/\/+$/, '')}/v1`;
+                    normalized = openCodeUrl.href.replace(/\/+$/, '');
+                }
+            } catch (_error) {
+                // 后续由 OpenCode Go 专属校验返回明确错误。
+            }
+        }
         if (provider !== 'gemini' && provider !== 'claude' && provider !== 'local') {
             const urlParts = normalized.split('/');
             const isRootDomain = urlParts.length <= 3;

@@ -21,7 +21,7 @@ import { PhoneFloatingEntry } from './phone/floating-entry.js';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.5';
+const ST_PHONE_VERSION = '1.5.6';
 const ST_PHONE_CSS_REVISION = '20260911-contact-generation-error-modal';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260902-avatar-gender';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -58,14 +58,10 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-09-08',
+    date: '2026-09-12',
     items: [
-        '【修复】修复电子小猫存档未按酒馆会话隔离，切换角色或会话后错误共用同一只小猫的问题。',
-        '【优化】旧版全局猫盒存档会自动迁移到当前会话，并清理遗留全局数据，避免继续跨会话串档。',
-        '【优化】重做手机边框与全局文字颜色选择器，支持色相、饱和度、明度、RGB 和 HEX 精细调色，并在拖动时实时预览效果。',
-        '【修复】合并边框与文字颜色设置入口，修复移动端色相滑杆出现双轨道以及原生颜色面板不直观的问题。',
-        '【修复】修复部分 Android 高分屏设备上传头像或壁纸时，裁剪预览与最终保存结果缩放不一致的问题。',
-        '【优化】更新六套悬浮图标资源，优化图标显示效果与文件体积。'
+        '【优化】兼容 OpenCode Go 服务商；独立 API 新增专用选项，自动注入稳定的 x-opencode-session 请求头，无需手动配置，并同步支持模型列表与连接测试，其他服务商不受影响。',
+        '【修复】增强小手机设置页的主题样式隔离，修复部分美化主题强制显示隐藏下拉框，导致模型输入区域出现两个输入框的问题。'
     ]
 };
 

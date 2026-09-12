@@ -40,6 +40,8 @@ const PHONE_FONT_SCALE_MAX = 130;
 const PHONE_FONT_SCALE_DEFAULT = 100;
 const PHONE_FRAME_COLOR_DEFAULT = '#1a1a1a';
 const PHONE_GLOBAL_TEXT_COLOR_DEFAULT = '#000000';
+const OPENCODE_GO_PROVIDER = 'opencode_go';
+const OPENCODE_GO_BASE_URL = 'https://opencode.ai/zen/go/v1';
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const CARD_LAYOUT_CUSTOM_CSS_KEY = 'phone-card-layout-custom-css';
@@ -1454,6 +1456,7 @@ export class SettingsApp {
                     }
                     #yzp-settings-app.yzp-settings-safe-render #phone-api-model,
                     #yzp-settings-app.yzp-settings-safe-render #phone-api-model-select {
+                        display: block !important;
                         width: 100% !important;
                         min-width: 0 !important;
                         max-width: 100% !important;
@@ -1465,6 +1468,10 @@ export class SettingsApp {
                         font-size: 13px !important;
                         line-height: 20px !important;
                         flex: 0 0 auto !important;
+                    }
+                    #yzp-settings-app.yzp-settings-safe-render #phone-api-model[hidden],
+                    #yzp-settings-app.yzp-settings-safe-render #phone-api-model-select[hidden] {
+                        display: none !important;
                     }
                     .settings-fold-arrow {
                         width: 26px;
@@ -2662,6 +2669,7 @@ export class SettingsApp {
                                         <option value="openai">OpenAI 官方</option>
                                         <option value="proxy_only">OpenAI 兼容反代 / Build 本地</option>
                                         <option value="compatible">OP兼容端点 / 中转站（推荐）</option>
+                                        <option value="opencode_go">OpenCode Go</option>
                                         <option value="deepseek">DeepSeek 官方</option>
                                         <option value="claude">Claude 官方</option>
                                         <option value="gemini">Google Gemini 官方</option>
@@ -2691,7 +2699,7 @@ export class SettingsApp {
                                         <button id="phone-api-fetch-models" style="background: none; border: 1px solid #07c160; color: #07c160; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;">🔄 拉取列表</button>
                                     </div>
                                     <input type="text" id="phone-api-model" placeholder="例如: gpt-4o" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; background: #fff; box-sizing: border-box;">
-                                    <select id="phone-api-model-select" style="display:none; width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; line-height: 20px; background: #fff; box-sizing: border-box; margin: 0;"></select>
+                                    <select id="phone-api-model-select" hidden style="width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; line-height: 20px; background: #fff; box-sizing: border-box; margin: 0;"></select>
                                 </div>
 
                                 <div style="display: flex; gap: 10px; margin-bottom: 12px;">
@@ -10470,6 +10478,13 @@ export class SettingsApp {
             useStream: document.getElementById('phone-api-stream')?.checked !== false
         });
 
+        const setModelControlMode = (showSelect) => {
+            const modelInput = document.getElementById('phone-api-model');
+            const modelSelect = document.getElementById('phone-api-model-select');
+            if (modelInput) modelInput.hidden = showSelect;
+            if (modelSelect) modelSelect.hidden = !showSelect;
+        };
+
         const applyConfigToForm = (config) => {
             const enabledCb = document.getElementById('phone-api-enabled');
             if (enabledCb) enabledCb.checked = config.useIndependentAPI || false;
@@ -10490,9 +10505,8 @@ export class SettingsApp {
             if (modelInput) modelInput.value = config.model || '';
             const modelSelect = document.getElementById('phone-api-model-select');
             if (modelInput && modelSelect) {
-                modelSelect.style.display = 'none';
                 modelSelect.innerHTML = '';
-                modelInput.style.display = 'block';
+                setModelControlMode(false);
             }
 
             const tokensInput = document.getElementById('phone-api-tokens');
@@ -10553,7 +10567,7 @@ export class SettingsApp {
                 .filter(Boolean);
         };
 
-        const updateProviderPlaceholders = (provider) => {
+        const updateProviderPlaceholders = (provider, options = {}) => {
             const urlInput = document.getElementById('phone-api-url');
             const modelInput = document.getElementById('phone-api-model');
             if (!urlInput || !modelInput) return;
@@ -10570,6 +10584,12 @@ export class SettingsApp {
             } else if (provider === 'compatible') {
                 urlInput.setAttribute('placeholder', '例如: https://api.xxx.com/v1 或 OP兼容端点');
                 modelInput.setAttribute('placeholder', '例如: gpt-4o, deepseek-chat');
+            } else if (provider === OPENCODE_GO_PROVIDER) {
+                urlInput.setAttribute('placeholder', OPENCODE_GO_BASE_URL);
+                modelInput.setAttribute('placeholder', '例如: deepseek-v4-flash');
+                if (options.applyDefault === true || !String(urlInput.value || '').trim()) {
+                    urlInput.value = OPENCODE_GO_BASE_URL;
+                }
             } else if (provider === 'openai') {
                 urlInput.setAttribute('placeholder', '例如: https://api.openai.com/v1');
                 modelInput.setAttribute('placeholder', '例如: gpt-4o');
@@ -10612,13 +10632,12 @@ export class SettingsApp {
         const apiProviderSelect = document.getElementById('phone-api-provider');
         if (apiProviderSelect) {
             apiProviderSelect.onchange = () => {
-                updateProviderPlaceholders(apiProviderSelect.value || 'openai');
+                updateProviderPlaceholders(apiProviderSelect.value || 'openai', { applyDefault: true });
                 const modelSelect = document.getElementById('phone-api-model-select');
                 const modelInput = document.getElementById('phone-api-model');
                 if (modelSelect && modelInput) {
-                    modelSelect.style.display = 'none';
                     modelSelect.innerHTML = '';
-                    modelInput.style.display = 'block';
+                    setModelControlMode(false);
                 }
             };
         }
@@ -10846,6 +10865,19 @@ export class SettingsApp {
                 }
 
                 try {
+                    if (provider === OPENCODE_GO_PROVIDER) {
+                        if (!apiManager || typeof apiManager._isOfficialOpenCodeGoUrl !== 'function') {
+                            throw new Error('ApiManager 未初始化，无法配置 OpenCode Go');
+                        }
+                        if (!apiManager._isOfficialOpenCodeGoUrl(apiUrl)) {
+                            throw new Error(`OpenCode Go 类型仅支持官方地址 ${OPENCODE_GO_BASE_URL}`);
+                        }
+                        if (!apiManager._isSupportedOpenCodeGoBaseUrl(apiUrl)) {
+                            throw new Error(`OpenCode Go Base URL 请填写 ${OPENCODE_GO_BASE_URL}`);
+                        }
+                        apiUrl = apiManager._stripChatCompletionsPath(apiUrl);
+                    }
+
                     const displayModelSelect = (models) => {
                         const select = document.getElementById('phone-api-model-select');
                         const input = document.getElementById('phone-api-model');
@@ -10856,12 +10888,10 @@ export class SettingsApp {
                         const currentVal = input.value.trim();
                         const modelIds = models.map((m) => m.id);
                         select.value = modelIds.includes(currentVal) ? currentVal : '__manual__';
-                        input.style.display = 'none';
-                        select.style.display = 'block';
+                        setModelControlMode(true);
                         select.onchange = (e) => {
                             if (e.target.value === '__manual__') {
-                                select.style.display = 'none';
-                                input.style.display = 'block';
+                                setModelControlMode(false);
                                 input.focus();
                             } else {
                                 input.value = e.target.value;
@@ -10892,10 +10922,13 @@ export class SettingsApp {
                             targetSource = 'openai';
                         }
 
-                        const customHeaders = JSON.stringify({
-                            'Content-Type': 'application/json',
-                            ...(targetSource === 'custom' && authHeader ? { Authorization: authHeader } : {})
-                        });
+                        const upstreamHeaders = typeof apiManager._buildIndependentUpstreamHeaders === 'function'
+                            ? apiManager._buildIndependentUpstreamHeaders(provider, targetSource === 'custom' ? authHeader : '')
+                            : {
+                                'Content-Type': 'application/json',
+                                ...(targetSource === 'custom' && authHeader ? { Authorization: authHeader } : {})
+                            };
+                        const customHeaders = JSON.stringify(upstreamHeaders);
 
                         const proxyPayload = {
                             chat_completion_source: targetSource,
@@ -10968,7 +11001,15 @@ export class SettingsApp {
                         }
                     };
 
-                    const forceProxy = (provider === 'local' || provider === 'openai' || provider === 'claude' || provider === 'proxy_only' || provider === 'deepseek' || provider === 'siliconflow');
+                    const forceProxy = (
+                        provider === 'local'
+                        || provider === 'openai'
+                        || provider === 'claude'
+                        || provider === 'proxy_only'
+                        || provider === 'deepseek'
+                        || provider === 'siliconflow'
+                        || provider === OPENCODE_GO_PROVIDER
+                    );
                     if (forceProxy || provider === 'compatible') {
                         try {
                             models = await runProxyRequest();
@@ -10980,7 +11021,10 @@ export class SettingsApp {
                     if (models.length === 0) {
                         try {
                             let directUrl = `${apiUrl}/models`;
-                            const headers = { 'Content-Type': 'application/json' };
+                            const headers = provider === OPENCODE_GO_PROVIDER
+                                && typeof apiManager?._buildIndependentUpstreamHeaders === 'function'
+                                ? apiManager._buildIndependentUpstreamHeaders(provider, authHeader)
+                                : { 'Content-Type': 'application/json' };
 
                             if (provider === 'gemini') {
                                 if (apiUrl.includes('googleapis.com') && !apiUrl.toLowerCase().includes('/v1')) {
