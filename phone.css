@@ -34,6 +34,10 @@
     --phone-app-name-shadow: 0 2px 8px rgba(0, 0, 0, 0.7), 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
+#phone-panel-content .phone-screen {
+    --phone-toggle-active-color: var(--SmartThemeQuoteColor, #30c46b);
+}
+
 /* ========================================
    虚拟手机 - 无背景精简版 v3.3
    ======================================== */
@@ -3543,11 +3547,10 @@ body > .st-phone-honey-invite-modal.honey-live-collab-modal {
 }
 
 input:checked + .toggle-slider {
-    /* 🎨 优化：渐变绿色 */
-    background: linear-gradient(135deg, #34c759 0%, #30d158 100%);
+    background: var(--phone-toggle-active-color);
     box-shadow:
         inset 0 1px 3px rgba(0, 0, 0, 0.1),
-        0 0 8px rgba(52, 199, 89, 0.3);
+        0 0 8px color-mix(in srgb, var(--phone-toggle-active-color) 30%, transparent);
 }
 
 input:checked + .toggle-slider:before {
@@ -3559,7 +3562,7 @@ input:checked + .toggle-slider:before {
    防止酒馆主题/其他插件覆盖 checkbox 与 switch 外观
    ======================================== */
 
-.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):not(.phone-worldbook-source-toggle):not(.phone-worldbook-entry-select-all-input):not(.phone-worldbook-entry-choice) {
+.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):not(.phone-worldbook-source-toggle):not(.phone-worldbook-entry-select-all-input):not(.phone-worldbook-entry-choice):not(.phone-api-stream-checkbox) {
     -webkit-appearance: checkbox !important;
     appearance: auto !important;
     position: relative !important;
@@ -3587,17 +3590,17 @@ input:checked + .toggle-slider:before {
     vertical-align: middle !important;
 }
 
-.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):not(.phone-worldbook-source-toggle):not(.phone-worldbook-entry-select-all-input):not(.phone-worldbook-entry-choice):checked {
+.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):not(.phone-worldbook-source-toggle):not(.phone-worldbook-entry-select-all-input):not(.phone-worldbook-entry-choice):not(.phone-api-stream-checkbox):checked {
     -webkit-appearance: checkbox !important;
     appearance: auto !important;
     accent-color: #30c46b !important;
 }
 
-.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):not(.phone-worldbook-source-toggle):not(.phone-worldbook-entry-select-all-input):not(.phone-worldbook-entry-choice)::after {
+.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):not(.phone-worldbook-source-toggle):not(.phone-worldbook-entry-select-all-input):not(.phone-worldbook-entry-choice):not(.phone-api-stream-checkbox)::after {
     content: none !important;
 }
 
-.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):not(.phone-worldbook-source-toggle):not(.phone-worldbook-entry-select-all-input):not(.phone-worldbook-entry-choice):checked::after {
+.phone-screen input[type="checkbox"]:not(.st-phone-toggle-input):not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):not(.phone-worldbook-source-toggle):not(.phone-worldbook-entry-select-all-input):not(.phone-worldbook-entry-choice):not(.phone-api-stream-checkbox):checked::after {
     content: none !important;
 }
 
@@ -3673,8 +3676,8 @@ input:checked + .toggle-slider:before {
 }
 
 .phone-screen .st-phone-toggle-switch input:checked + .st-phone-toggle-slider {
-    background: linear-gradient(135deg, #34c759 0%, #30d158 100%) !important;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1), 0 0 8px rgba(52, 199, 89, 0.3) !important;
+    background: var(--phone-toggle-active-color) !important;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1), 0 0 8px color-mix(in srgb, var(--phone-toggle-active-color) 30%, transparent) !important;
 }
 
 .phone-screen .st-phone-toggle-switch input:checked + .st-phone-toggle-slider::before {
@@ -3770,8 +3773,8 @@ input:checked + .toggle-slider:before {
 }
 
 .phone-screen .toggle-switch input:checked + .toggle-slider {
-    background: linear-gradient(135deg, #34c759 0%, #30d158 100%) !important;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1), 0 0 8px rgba(52, 199, 89, 0.3) !important;
+    background: var(--phone-toggle-active-color) !important;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1), 0 0 8px color-mix(in srgb, var(--phone-toggle-active-color) 30%, transparent) !important;
 }
 
 .phone-screen .toggle-switch input:checked + .toggle-slider::before {
@@ -3807,11 +3810,12 @@ input:checked + .toggle-slider:before {
 }
 
 .phone-screen .honey-toggle-switch input:checked + .honey-toggle-slider {
-    background: rgba(255, 71, 133, 0.65) !important;
+    background: var(--phone-toggle-active-color) !important;
+    border-color: var(--phone-toggle-active-color) !important;
 }
 
 .phone-screen .phone-call-toggle input:checked + .phone-call-toggle-slider {
-    background: #34c759 !important;
+    background: var(--phone-toggle-active-color) !important;
 }
 
 .phone-screen .honey-toggle-switch input:checked + .honey-toggle-slider::before,
@@ -7615,7 +7619,7 @@ input:checked + .toggle-slider:before {
 }
 
 .phone-call-toggle input:checked + .phone-call-toggle-slider {
-    background: #34c759;
+    background: var(--phone-toggle-active-color);
 }
 
 .phone-call-toggle input:checked + .phone-call-toggle-slider::before {

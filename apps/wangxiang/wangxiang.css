@@ -531,8 +531,8 @@
 }
 
 #phone-panel-content .phone-screen .wangxiang-settings-toggle input:checked + span {
-    border-color: #49cfff;
-    background: rgba(24, 137, 184, 0.72);
+    border-color: var(--phone-toggle-active-color);
+    background: var(--phone-toggle-active-color);
 }
 
 #phone-panel-content .phone-screen .wangxiang-settings-toggle input:checked + span::after {

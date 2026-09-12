@@ -3116,7 +3116,7 @@ export class WechatApp {
 }
 
 .toggle-switch input:checked + .toggle-slider {
-    background-color: #07c160;
+    background-color: var(--phone-toggle-active-color);
 }
 
 .toggle-switch input:checked + .toggle-slider:before {

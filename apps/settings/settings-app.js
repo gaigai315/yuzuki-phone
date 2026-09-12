@@ -1400,7 +1400,7 @@ export class SettingsApp {
                         word-break: break-word !important;
                         overflow-wrap: anywhere !important;
                     }
-                    .settings-app input[type="checkbox"]:not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check) {
+                    .settings-app input[type="checkbox"]:not(.phone-memory-perm):not(.phone-image-provider-app-bind):not(.phone-lobby-group-check):not(.phone-lobby-character-check):not(.phone-api-stream-checkbox) {
                         -webkit-appearance: checkbox !important;
                         appearance: auto !important;
                         opacity: 1 !important;
@@ -1472,6 +1472,270 @@ export class SettingsApp {
                     #yzp-settings-app.yzp-settings-safe-render #phone-api-model[hidden],
                     #yzp-settings-app.yzp-settings-safe-render #phone-api-model-select[hidden] {
                         display: none !important;
+                    }
+                    #yzp-settings-app #tab-llm {
+                        box-sizing: border-box;
+                        width: 100%;
+                        max-width: 760px;
+                        margin: 0 auto;
+                    }
+                    #yzp-settings-app .phone-api-config-section {
+                        overflow: visible !important;
+                        background: transparent !important;
+                        border: 0 !important;
+                        box-shadow: none !important;
+                    }
+                    #yzp-settings-app.yzp-settings-safe-render .phone-api-config-section {
+                        box-shadow: none !important;
+                    }
+                    #yzp-settings-app.yzp-settings-safe-render .phone-api-panel {
+                        box-shadow: 0 6px 18px rgba(0,0,0,0.08) !important;
+                    }
+                    #yzp-settings-app .phone-api-panel {
+                        box-sizing: border-box;
+                        width: 100%;
+                        margin: 0 0 12px;
+                        overflow: hidden;
+                        border: 1px solid #ececec;
+                        border-radius: 12px;
+                        background: #fff;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+                    }
+                    #yzp-settings-app .phone-api-panel-title {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        min-height: 38px;
+                        padding: 10px 12px 4px;
+                        color: #333;
+                        font-size: 13px;
+                        font-weight: 700;
+                        line-height: 1.35;
+                    }
+                    #yzp-settings-app .phone-api-panel-title i,
+                    #yzp-settings-app .phone-api-field-label i {
+                        width: 16px;
+                        flex: 0 0 16px;
+                        text-align: center;
+                    }
+                    #yzp-settings-app .phone-api-toggle-title {
+                        min-height: 52px;
+                        justify-content: space-between;
+                        padding: 10px 12px;
+                    }
+                    #yzp-settings-app .phone-api-toggle-heading {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 8px;
+                        min-width: 0;
+                        flex: 1 1 auto;
+                    }
+                    #yzp-settings-app #phone-api-profile-details {
+                        box-sizing: border-box;
+                        padding: 0;
+                    }
+                    #yzp-settings-app .phone-api-profile-body {
+                        padding: 0 12px 12px;
+                    }
+                    #yzp-settings-app #phone-api-details {
+                        box-sizing: border-box;
+                        padding: 0 !important;
+                        background: transparent !important;
+                        border: 0 !important;
+                    }
+                    #yzp-settings-app .phone-api-profile-field,
+                    #yzp-settings-app .phone-api-field {
+                        min-width: 0;
+                    }
+                    #yzp-settings-app .phone-api-field {
+                        margin: 0 0 12px;
+                    }
+                    #yzp-settings-app .phone-api-field-label {
+                        display: flex;
+                        align-items: center;
+                        gap: 7px;
+                        min-height: 20px;
+                        margin: 0 0 6px;
+                        color: #666;
+                        font-size: 12px;
+                        line-height: 1.35;
+                    }
+                    #yzp-settings-app .phone-api-field-label-row {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 10px;
+                        min-height: 24px;
+                        margin: 0 0 6px;
+                    }
+                    #yzp-settings-app .phone-api-field-label-row .phone-api-field-label {
+                        min-width: 0;
+                        margin: 0;
+                    }
+                    #yzp-settings-app .phone-api-control,
+                    #yzp-settings-app #phone-api-model,
+                    #yzp-settings-app #phone-api-model-select,
+                    #yzp-settings-app #phone-api-tokens,
+                    #yzp-settings-app .phone-api-secret-field {
+                        box-sizing: border-box !important;
+                        width: 100% !important;
+                        min-width: 0 !important;
+                        height: 36px !important;
+                        min-height: 36px !important;
+                        max-height: 36px !important;
+                        margin: 0 !important;
+                        border-radius: 8px !important;
+                        font-size: 13px !important;
+                        line-height: 20px !important;
+                    }
+                    #yzp-settings-app select.phone-api-control,
+                    #yzp-settings-app #phone-api-model-select,
+                    #yzp-settings-app input.phone-api-control,
+                    #yzp-settings-app #phone-api-model,
+                    #yzp-settings-app #phone-api-tokens {
+                        padding: 0 10px !important;
+                    }
+                    #yzp-settings-app .phone-api-secret-field .phone-secret-input {
+                        height: 34px !important;
+                        min-height: 34px !important;
+                        max-height: 34px !important;
+                        padding-top: 0 !important;
+                        padding-bottom: 0 !important;
+                        line-height: 34px !important;
+                    }
+                    #yzp-settings-app .phone-api-profile-actions {
+                        display: grid !important;
+                        grid-template-columns: repeat(3, minmax(0, 1fr));
+                        gap: 8px;
+                        margin: 10px 0 0;
+                    }
+                    #yzp-settings-app .phone-api-action-button,
+                    #yzp-settings-app .phone-api-footer-button {
+                        box-sizing: border-box !important;
+                        display: inline-flex !important;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 6px;
+                        min-width: 0 !important;
+                        margin: 0 !important;
+                        cursor: pointer;
+                    }
+                    #yzp-settings-app .phone-api-action-button {
+                        width: 100% !important;
+                        height: 36px !important;
+                        min-height: 36px !important;
+                        padding: 0 6px !important;
+                        border-radius: 8px !important;
+                        font-size: 11px !important;
+                        white-space: nowrap;
+                    }
+                    #yzp-settings-app .phone-api-route-panel,
+                    #yzp-settings-app .phone-api-endpoint-panel {
+                        padding: 0 12px 12px;
+                    }
+                    #yzp-settings-app .phone-api-route-panel > .phone-api-panel-title {
+                        padding-left: 0;
+                        padding-right: 0;
+                    }
+                    #yzp-settings-app .phone-api-route-desc {
+                        margin: 0 0 10px 23px;
+                        color: #888;
+                        font-size: 11px;
+                        line-height: 1.5;
+                    }
+                    #yzp-settings-app .phone-api-route-row {
+                        display: grid;
+                        grid-template-columns: 54px minmax(0, 1fr);
+                        gap: 10px;
+                        align-items: center;
+                        margin: 0 0 8px;
+                    }
+                    #yzp-settings-app .phone-api-route-row:last-child {
+                        margin-bottom: 0;
+                    }
+                    #yzp-settings-app .phone-api-route-label {
+                        color: #666;
+                        font-size: 12px;
+                        line-height: 1.35;
+                    }
+                    #yzp-settings-app .phone-api-fetch-models {
+                        display: inline-flex !important;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 4px;
+                        min-width: 0 !important;
+                        height: 26px !important;
+                        min-height: 26px !important;
+                        margin: 0 !important;
+                        padding: 0 2px !important;
+                        border: 0 !important;
+                        border-radius: 0 !important;
+                        background: transparent !important;
+                        box-shadow: none !important;
+                        white-space: nowrap;
+                    }
+                    #yzp-settings-app .phone-api-options-row {
+                        display: grid !important;
+                        grid-template-columns: minmax(0, 1fr) minmax(132px, 1fr);
+                        gap: 12px;
+                        align-items: end;
+                        margin: 0 0 12px;
+                    }
+                    #yzp-settings-app .phone-api-options-row .phone-api-field {
+                        margin: 0;
+                    }
+                    #yzp-settings-app .phone-api-stream-option {
+                        box-sizing: border-box;
+                        min-width: 0;
+                        min-height: 56px;
+                        display: flex;
+                        align-items: flex-end;
+                        padding: 0 0 7px;
+                    }
+                    #yzp-settings-app .phone-api-stream-option label {
+                        display: flex;
+                        align-items: center;
+                        gap: 7px;
+                        min-width: 0;
+                        margin: 0;
+                        color: #333;
+                        font-size: 12px;
+                        line-height: 1.35;
+                    }
+                    #yzp-settings-app .phone-api-footer-actions {
+                        display: grid !important;
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                        gap: 10px;
+                        margin: 2px 0 0;
+                    }
+                    #yzp-settings-app .phone-api-footer-button {
+                        width: 100% !important;
+                        height: 42px !important;
+                        min-height: 42px !important;
+                        padding: 0 10px !important;
+                        border-radius: 9px !important;
+                        font-size: 13px !important;
+                    }
+                    .settings-app.settings-has-wallpaper .phone-api-panel {
+                        background: var(--settings-glass-bg) !important;
+                        border-color: var(--settings-glass-border) !important;
+                        backdrop-filter: blur(12px) saturate(135%) !important;
+                        -webkit-backdrop-filter: blur(12px) saturate(135%) !important;
+                        box-shadow: 0 8px 22px rgba(0,0,0,0.08) !important;
+                    }
+                    @media (max-width: 360px) {
+                        #yzp-settings-app .phone-api-options-row {
+                            grid-template-columns: minmax(0, 1fr) minmax(118px, 0.9fr);
+                            gap: 8px;
+                        }
+                        #yzp-settings-app .phone-api-profile-actions {
+                            gap: 6px;
+                        }
+                        #yzp-settings-app .phone-api-action-button {
+                            gap: 4px;
+                            padding: 0 4px !important;
+                            font-size: 10px !important;
+                        }
                     }
                     .settings-fold-arrow {
                         width: 26px;
@@ -1788,8 +2052,8 @@ export class SettingsApp {
                         transition: transform .2s ease !important;
                     }
                     .settings-app .toggle-switch input:checked + .toggle-slider {
-                        background: #30c46b !important;
-                        box-shadow: inset 0 1px 2px rgba(0,0,0,0.12), 0 0 0 1px rgba(48,196,107,0.16) !important;
+                        background: var(--phone-toggle-active-color) !important;
+                        box-shadow: inset 0 1px 2px rgba(0,0,0,0.12), 0 0 0 1px color-mix(in srgb, var(--phone-toggle-active-color) 16%, transparent) !important;
                     }
                     .settings-app .toggle-switch input:checked + .toggle-slider::before {
                         transform: translateX(16px) !important;
@@ -1820,7 +2084,8 @@ export class SettingsApp {
                         transform: scale(0.94);
                         background: rgba(0, 122, 255, 0.2);
                     }
-                    .settings-app .setting-section:has(#phone-api-enabled:checked) #phone-api-details {
+                    .settings-app .phone-api-config-section:has(#phone-api-enabled:checked) #phone-api-profile-details,
+                    .settings-app .phone-api-config-section:has(#phone-api-enabled:checked) #phone-api-details {
                         display: block !important;
                     }
                     .settings-app.settings-has-wallpaper #phone-api-details {
@@ -2618,54 +2883,58 @@ export class SettingsApp {
                     </div>
 
                     <div class="phone-settings-tab-content ${this.currentTab === 'llm' ? 'is-active' : 'is-hidden'}" id="tab-llm" role="tabpanel" ${this.currentTab === 'llm' ? '' : 'hidden'}>
-                        <!-- 🤖 大模型 API 配置 (独立聊天) -->
-                        <div class="setting-section">
-                            <div class="setting-section-title">🤖 大模型 API 配置</div>
-
-                            <div class="setting-item setting-toggle">
-                                <div>
-                                    <div class="setting-label">启用手机独立 API</div>
-                                    <div class="setting-desc">开启后手机回复不走酒馆，极大提升速度并防止串味</div>
+                        <!-- 独立 API 配置 -->
+                        <div class="setting-section phone-api-config-section">
+                            <div class="phone-api-panel phone-api-switch-panel">
+                                <div class="phone-api-panel-title phone-api-toggle-title">
+                                    <span class="phone-api-toggle-heading"><i class="fa-solid fa-power-off" aria-hidden="true"></i><span>独立 API 配置</span></span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="phone-api-enabled">
+                                        <span class="toggle-slider"></span>
+                                    </label>
                                 </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="phone-api-enabled">
-                                    <span class="toggle-slider"></span>
-                                </label>
                             </div>
 
-                            <div id="phone-api-details" style="display: none; padding: 10px; background: #f9f9f9; border-top: 1px solid #f0f0f0;">
-                                <div style="margin-bottom: 12px;">
-                                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">API 预设</div>
-                                    <select id="phone-api-profile-select" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; background: #fff; box-sizing: border-box;">
-                                        <option value="">-- 选择预设 --</option>
-                                    </select>
-                                    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px;">
-                                        <button id="phone-api-profile-save-current" style="padding: 8px 4px; background: #fff; color: #333; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;">保存当前</button>
-                                        <button id="phone-api-profile-save" style="padding: 8px 4px; background: #fff; color: #333; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;">新建预设</button>
-                                        <button id="phone-api-profile-delete" style="padding: 8px 4px; background: #fff; color: #d93025; border: 1px solid #f1c7c3; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;">删除预设</button>
+                            <div id="phone-api-profile-details" class="phone-api-panel phone-api-profile-panel" style="display: none;">
+                                <div class="phone-api-panel-title"><span>API 预设</span></div>
+                                <div class="phone-api-profile-body">
+                                    <div class="phone-api-profile-field">
+                                        <div class="phone-api-field-label">预设名称</div>
+                                        <select id="phone-api-profile-select" class="phone-api-control" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
+                                            <option value="">-- 选择预设 --</option>
+                                        </select>
+                                    </div>
+                                    <div class="phone-api-profile-actions">
+                                        <button id="phone-api-profile-save-current" class="phone-api-action-button" style="background: #fff; color: #333; border: 1px solid #dcdfe6; font-weight: 600;"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>保存当前</span></button>
+                                        <button id="phone-api-profile-save" class="phone-api-action-button" style="background: #fff; color: #333; border: 1px solid #dcdfe6; font-weight: 600;"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>新建预设</span></button>
+                                        <button id="phone-api-profile-delete" class="phone-api-action-button" style="background: #fff; color: #d93025; border: 1px solid #f1c7c3; font-weight: 600;"><i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>删除预设</span></button>
                                     </div>
                                 </div>
+                            </div>
 
-                                <div style="margin-bottom: 12px; padding: 10px; background: #fff; border: 1px solid #ececec; border-radius: 8px;">
-                                    <div style="font-size: 12px; color: #333; font-weight: 700; margin-bottom: 4px;">App API 路由</div>
-                                    <div style="font-size: 11px; color: #888; line-height: 1.5; margin-bottom: 8px;">可让蜜语、微信分别使用不同 API 预设；不选则使用上方当前预设。</div>
-                                    <div style="display: grid; grid-template-columns: 54px 1fr; gap: 8px; align-items: center; margin-bottom: 8px;">
-                                        <div style="font-size: 12px; color: #666;">微信</div>
-                                        <select id="phone-api-route-wechat" data-api-route-app="wechat" style="width: 100%; padding: 7px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 12px; background: #fff; box-sizing: border-box;">
+                            <div id="phone-api-details" style="display: none;">
+
+                                <div class="phone-api-panel phone-api-route-panel">
+                                    <div class="phone-api-panel-title"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i><span>App API 路由</span></div>
+                                    <div class="phone-api-route-desc">支持蜜语/微信APP指定单独API。</div>
+                                    <div class="phone-api-route-row">
+                                        <div class="phone-api-route-label">微信</div>
+                                        <select id="phone-api-route-wechat" class="phone-api-control" data-api-route-app="wechat" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
                                             <option value="">跟随当前预设</option>
                                         </select>
                                     </div>
-                                    <div style="display: grid; grid-template-columns: 54px 1fr; gap: 8px; align-items: center;">
-                                        <div style="font-size: 12px; color: #666;">蜜语</div>
-                                        <select id="phone-api-route-honey" data-api-route-app="honey" style="width: 100%; padding: 7px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 12px; background: #fff; box-sizing: border-box;">
+                                    <div class="phone-api-route-row">
+                                        <div class="phone-api-route-label">蜜语</div>
+                                        <select id="phone-api-route-honey" class="phone-api-control" data-api-route-app="honey" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
                                             <option value="">跟随当前预设</option>
                                         </select>
                                     </div>
                                 </div>
 
-                                <div style="margin-bottom: 12px;">
-                                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">API 提供商</div>
-                                    <select id="phone-api-provider" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; background: #fff;">
+                                <div class="phone-api-panel phone-api-endpoint-panel">
+                                <div class="phone-api-field">
+                                    <div class="phone-api-field-label"><i class="fa-solid fa-cube" aria-hidden="true"></i><span>API 提供商</span></div>
+                                    <select id="phone-api-provider" class="phone-api-control" style="border: 1px solid #e0e0e0; background: #fff;">
                                         <option value="openai">OpenAI 官方</option>
                                         <option value="proxy_only">OpenAI 兼容反代 / Build 本地</option>
                                         <option value="compatible">OP兼容端点 / 中转站（推荐）</option>
@@ -2678,45 +2947,46 @@ export class SettingsApp {
                                     </select>
                                 </div>
 
-                                <div style="margin-bottom: 12px;">
-                                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">API 地址 (Base URL)</div>
-                                    <input type="text" id="phone-api-url" placeholder="例如: https://api.openai.com/v1" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; background: #fff; box-sizing: border-box;">
+                                <div class="phone-api-field">
+                                    <div class="phone-api-field-label"><i class="fa-solid fa-link" aria-hidden="true"></i><span>API 地址 (Base URL)</span></div>
+                                    <input type="text" id="phone-api-url" class="phone-api-control" placeholder="例如: https://api.openai.com/v1" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
                                 </div>
 
-                                <div style="margin-bottom: 12px;">
-                                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">API 密钥 (Key)</div>
-                                    <div class="phone-secret-field" style="width: 100%; border: 1px solid #e0e0e0; border-radius: 6px; background: #fff;">
-                                        <input type="text" class="phone-secret-input phone-secret-masked" id="phone-api-key" placeholder="sk-..." style="width: 100%; min-width: 0; padding: 8px 36px 8px 8px; border: none; outline: none; font-size: 13px; background: transparent; box-sizing: border-box;">
+                                <div class="phone-api-field">
+                                    <div class="phone-api-field-label"><i class="fa-solid fa-key" aria-hidden="true"></i><span>API 密钥 (Key)</span></div>
+                                    <div class="phone-secret-field phone-api-secret-field" style="border: 1px solid #e0e0e0; background: #fff;">
+                                        <input type="text" class="phone-secret-input phone-secret-masked" id="phone-api-key" placeholder="sk-..." style="width: 100%; min-width: 0; padding: 0 36px 0 10px; border: none; outline: none; font-size: 13px; background: transparent; box-sizing: border-box;">
                                         <button type="button" class="phone-password-toggle" data-toggle-password-target="phone-api-key" aria-label="显示 API Key" title="显示 API Key">
                                             <i class="fa-regular fa-eye"></i>
                                         </button>
                                     </div>
                                 </div>
 
-                                <div style="margin-bottom: 12px;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                        <div style="font-size: 12px; color: #666;">模型名称 (Model)</div>
-                                        <button id="phone-api-fetch-models" style="background: none; border: 1px solid #07c160; color: #07c160; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;">🔄 拉取列表</button>
+                                <div class="phone-api-field">
+                                    <div class="phone-api-field-label-row">
+                                        <div class="phone-api-field-label"><i class="fa-solid fa-robot" aria-hidden="true"></i><span>模型名称 (Model)</span></div>
+                                        <button id="phone-api-fetch-models" class="phone-api-fetch-models" style="background: transparent; border: none; color: #07c160; font-size: 11px; cursor: pointer;"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span>拉取列表</span></button>
                                     </div>
-                                    <input type="text" id="phone-api-model" placeholder="例如: gpt-4o" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; background: #fff; box-sizing: border-box;">
-                                    <select id="phone-api-model-select" hidden style="width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 10px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; line-height: 20px; background: #fff; box-sizing: border-box; margin: 0;"></select>
+                                    <input type="text" id="phone-api-model" class="phone-api-control" placeholder="例如: gpt-4o" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
+                                    <select id="phone-api-model-select" hidden class="phone-api-control" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;"></select>
                                 </div>
 
-                                <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-                                    <div style="flex: 1;">
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">最大输出 (Tokens)</div>
-                                        <input type="number" id="phone-api-tokens" value="8192" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; background: #fff; box-sizing: border-box;">
+                                <div class="phone-api-options-row">
+                                    <div class="phone-api-field">
+                                        <div class="phone-api-field-label"><i class="fa-solid fa-database" aria-hidden="true"></i><span>最大输出 (Tokens)</span></div>
+                                        <input type="number" id="phone-api-tokens" class="phone-api-control" value="8192" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
                                     </div>
-                                    <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding-top: 14px;">
-                                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #333;">
-                                            <input type="checkbox" id="phone-api-stream" checked style="width: 16px; height: 16px;"> 开启流式传输
+                                    <div class="phone-api-stream-option">
+                                        <label>
+                                            <input type="checkbox" id="phone-api-stream" class="phone-api-stream-checkbox" checked> <span>开启流式传输</span>
                                         </label>
                                     </div>
                                 </div>
 
-                                <div style="display: flex; gap: 10px; margin-top: 15px;">
-                                    <button id="phone-api-test" style="flex: 1; padding: 10px; background: #e3f2fd; color: #1976d2; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">🧪 测试连接</button>
-                                    <button id="phone-api-save" style="flex: 1; padding: 10px; background: #07c160; color: #111 !important; -webkit-text-fill-color: #111 !important; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">💾 保存配置</button>
+                                <div class="phone-api-footer-actions">
+                                    <button id="phone-api-test" class="phone-api-footer-button" style="background: #e3f2fd; color: #1976d2; border: none; font-weight: 600; cursor: pointer;"><i class="fa-solid fa-play" aria-hidden="true"></i><span>测试连接</span></button>
+                                    <button id="phone-api-save" class="phone-api-footer-button" style="background: #07c160; color: #111 !important; -webkit-text-fill-color: #111 !important; border: none; font-weight: 600; cursor: pointer;"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>保存配置</span></button>
+                                </div>
                                 </div>
                             </div>
                         </div>
@@ -10395,7 +10665,7 @@ export class SettingsApp {
     }
 
     // ==========================================
-    // 🤖 大模型 API 配置面板逻辑 (独立方法)
+    // 独立 API 配置面板逻辑
     // ==========================================
     bindApiConfigEvents() {
         const document = this._createSettingsScopedDocument();
@@ -10485,12 +10755,18 @@ export class SettingsApp {
             if (modelSelect) modelSelect.hidden = !showSelect;
         };
 
+        const setApiDetailsVisibility = (visible) => {
+            ['phone-api-profile-details', 'phone-api-details'].forEach((id) => {
+                const panel = document.getElementById(id);
+                if (panel) panel.style.display = visible ? 'block' : 'none';
+            });
+        };
+
         const applyConfigToForm = (config) => {
             const enabledCb = document.getElementById('phone-api-enabled');
             if (enabledCb) enabledCb.checked = config.useIndependentAPI || false;
 
-            const details = document.getElementById('phone-api-details');
-            if (details) details.style.display = config.useIndependentAPI ? 'block' : 'none';
+            setApiDetailsVisibility(config.useIndependentAPI || false);
 
             const providerSel = document.getElementById('phone-api-provider');
             if (providerSel) providerSel.value = config.provider || 'openai';
@@ -10620,8 +10896,7 @@ export class SettingsApp {
         if (apiEnabledCb) {
             apiEnabledCb.onchange = async (e) => {
                 const isChecked = e.target.checked;
-                const details = document.getElementById('phone-api-details');
-                if (details) details.style.display = isChecked ? 'block' : 'none';
+                setApiDetailsVisibility(isChecked);
 
                 const config = readApiConfig();
                 config.useIndependentAPI = isChecked;
@@ -10802,7 +11077,7 @@ export class SettingsApp {
                 if (isTesting) return;
                 isTesting = true;
                 
-                const originalText = apiTestBtn.innerText;
+                const originalContent = apiTestBtn.innerHTML;
                 apiTestBtn.innerText = '测试中...';
                 
                 const tempConfig = {
@@ -10835,7 +11110,7 @@ export class SettingsApp {
                 } catch (error) {
                     alert('❌ 连接异常：\n' + error.message);
                 } finally {
-                    apiTestBtn.innerText = originalText;
+                    apiTestBtn.innerHTML = originalContent;
                     isTesting = false;
                 }
             };
@@ -10849,7 +11124,7 @@ export class SettingsApp {
                 if (isFetching) return;
                 isFetching = true;
 
-                const originalText = apiFetchBtn.innerText;
+                const originalContent = apiFetchBtn.innerHTML;
                 apiFetchBtn.innerText = '拉取中...';
 
                 const apiManager = window.VirtualPhone?.apiManager;
@@ -11076,7 +11351,7 @@ export class SettingsApp {
                     const baseMsg = `❌ 拉取失败: ${error.message}`;
                     alert(baseMsg + '\n\n您可以直接在下方输入框手动填写模型名。');
                 } finally {
-                    apiFetchBtn.innerText = originalText;
+                    apiFetchBtn.innerHTML = originalContent;
                     isFetching = false;
                 }
             };

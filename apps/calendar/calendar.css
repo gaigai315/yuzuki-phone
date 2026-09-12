@@ -287,7 +287,7 @@
 }
 
 #phone-panel-content .phone-screen .yzp-calendar-switch input:checked + span {
-    background: var(--yzp-cal-accent) !important;
+    background: var(--phone-toggle-active-color) !important;
 }
 
 #phone-panel-content .phone-screen .yzp-calendar-switch input:checked + span::before {

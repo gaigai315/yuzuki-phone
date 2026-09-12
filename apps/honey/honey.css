@@ -4323,7 +4323,8 @@ body.phone-input-active .honey-page-live .honey-input-bar {
 }
 
 .honey-toggle-switch input:checked + .honey-toggle-slider {
-    background: rgba(255, 71, 133, 0.65);
+    background: var(--phone-toggle-active-color);
+    border-color: var(--phone-toggle-active-color);
 }
 
 .honey-toggle-switch input:checked + .honey-toggle-slider::before {
