@@ -34,6 +34,7 @@ export class WeiboData {
         this._recommendCache = null;
         this._hotSearchCache = null;
         this._userPostsCache = null;
+        this._lastAIResponse = null;
 
         // 批量生成控制
         this.stopBatch = false;
@@ -956,7 +957,40 @@ export class WeiboData {
 
         const rawSummary = String(result.summary || result.content || result.text || '');
         const filteredSummary = applyPhoneTagFilter(rawSummary, { storage: this.storage });
-        return filteredSummary || rawSummary;
+        const effectiveSummary = String(filteredSummary || rawSummary).trim();
+        this._lastAIResponse = {
+            rawText: rawSummary.trim(),
+            cleanedText: effectiveSummary
+        };
+        return effectiveSummary;
+    }
+
+    _createParseFailureError(options = {}) {
+        const parsedText = String(options.parsedText || '').trim();
+        const lastResponse = this._lastAIResponse || {};
+        const cleanedText = parsedText || String(lastResponse.cleanedText || '').trim();
+        const rawText = String(
+            lastResponse.cleanedText === cleanedText
+                ? (lastResponse.rawText || cleanedText)
+                : cleanedText
+        ).trim();
+        const expectedPattern = options.expectedPattern instanceof RegExp ? options.expectedPattern : null;
+        const matchesExpected = (value) => {
+            if (!expectedPattern) return false;
+            expectedPattern.lastIndex = 0;
+            return expectedPattern.test(String(value || ''));
+        };
+        const error = new Error(options.message || '微博内容解析失败，请检查模型回复');
+        error.weiboParseFailure = {
+            kind: String(options.kind || '微博内容'),
+            expectedFormat: String(options.expectedFormat || '<Weibo>...</Weibo>'),
+            rawText,
+            cleanedText,
+            rawHasExpected: matchesExpected(rawText),
+            cleanedHasExpected: matchesExpected(cleanedText)
+        };
+        if (options.cause) error.cause = options.cause;
+        return error;
     }
 
     // 生成推荐内容
@@ -977,7 +1011,13 @@ export class WeiboData {
             const rawResponse = await this._callAI(recommendPromptWithFollowers, contextMessages);
             const parsed = this.parseWeiboContent(rawResponse);
             if (!Array.isArray(parsed.posts) || parsed.posts.length === 0) {
-                throw new Error('微博推荐解析失败，AI返回内容不完整，请重试');
+                throw this._createParseFailureError({
+                    kind: '推荐微博',
+                    message: '微博推荐解析失败，请检查弹窗中的模型回复',
+                    parsedText: rawResponse,
+                    expectedFormat: '<Weibo>...</Weibo>',
+                    expectedPattern: /<\s*Weibo\s*>[\s\S]*?<\s*\/\s*Weibo\s*>/i
+                });
             }
 
             // 为每条微博添加ID
@@ -1021,6 +1061,15 @@ export class WeiboData {
 
             const rawResponse = await this._callAI(hotSearchPrompt, contextMessages);
             const parsed = this.parseWeiboContent(rawResponse);
+            if (!Array.isArray(parsed.posts) || parsed.posts.length === 0) {
+                throw this._createParseFailureError({
+                    kind: '热搜详情',
+                    message: '热搜详情解析失败，请检查弹窗中的模型回复',
+                    parsedText: rawResponse,
+                    expectedFormat: '<Weibo>...</Weibo>',
+                    expectedPattern: /<\s*Weibo\s*>[\s\S]*?<\s*\/\s*Weibo\s*>/i
+                });
+            }
 
             // 为每条微博添加ID
             parsed.posts.forEach((post, idx) => {
@@ -1080,6 +1129,15 @@ export class WeiboData {
 
             const rawResponse = await this._callAI(hotSearchPrompt, contextMessages);
             const parsed = this.parseWeiboContent(rawResponse);
+            if (!Array.isArray(parsed.posts) || parsed.posts.length === 0) {
+                throw this._createParseFailureError({
+                    kind: '热搜追加内容',
+                    message: '热搜追加内容解析失败，请检查弹窗中的模型回复',
+                    parsedText: rawResponse,
+                    expectedFormat: '<Weibo>...</Weibo>',
+                    expectedPattern: /<\s*Weibo\s*>[\s\S]*?<\s*\/\s*Weibo\s*>/i
+                });
+            }
 
             parsed.posts.forEach((post, idx) => {
                 post.id = Date.now().toString(36) + idx.toString(36) + Math.random().toString(36).substr(2, 4);
@@ -1829,11 +1887,24 @@ export class WeiboData {
                     return this._normalizeUserPostReactionResult(JSON.parse(jsonStr), post, currentFollowers);
                 } catch (err) {
                     console.error('🔥 AI返回数据解析失败，已拦截卡死:', err);
-                    return { comments: [], likes: [] };
+                    throw this._createParseFailureError({
+                        kind: '微博互动',
+                        message: '微博互动解析失败，请检查弹窗中的模型回复',
+                        parsedText: response,
+                        expectedFormat: 'JSON（comments、likes、likeCount、forwardCount）',
+                        expectedPattern: /\{[\s\S]*\}/,
+                        cause: err
+                    });
                 }
             }
 
-            return { comments: [], likes: [] };
+            throw this._createParseFailureError({
+                kind: '微博互动',
+                message: '微博互动解析失败，请检查弹窗中的模型回复',
+                parsedText: response,
+                expectedFormat: 'JSON（comments、likes、likeCount、forwardCount）',
+                expectedPattern: /\{[\s\S]*\}/
+            });
         });
     }
 
@@ -1915,11 +1986,24 @@ export class WeiboData {
                     return JSON.parse(jsonStr);
                 } catch (err) {
                     console.error('🔥 AI回复解析失败，已拦截卡死:', err);
-                    return { comments: [] };
+                    throw this._createParseFailureError({
+                        kind: '评论回复',
+                        message: '评论回复解析失败，请检查弹窗中的模型回复',
+                        parsedText: response,
+                        expectedFormat: 'JSON（comments）',
+                        expectedPattern: /\{[\s\S]*\}/,
+                        cause: err
+                    });
                 }
             }
 
-            return { comments: [] };
+            throw this._createParseFailureError({
+                kind: '评论回复',
+                message: '评论回复解析失败，请检查弹窗中的模型回复',
+                parsedText: response,
+                expectedFormat: 'JSON（comments）',
+                expectedPattern: /\{[\s\S]*\}/
+            });
         });
     }
 
@@ -1998,7 +2082,13 @@ export class WeiboData {
             // 解析评论
             const newComments = this._parseCommentsFromResponse(rawResponse);
             if (newComments.length === 0) {
-                throw new Error('评论解析失败，AI未返回有效评论，请重试');
+                throw this._createParseFailureError({
+                    kind: '更多评论',
+                    message: '评论解析失败，请检查弹窗中的模型回复',
+                    parsedText: rawResponse,
+                    expectedFormat: '<Weibo>...</Weibo> 或“昵称（IP属地）：评论”列表',
+                    expectedPattern: /(?:<\s*Weibo\s*>[\s\S]*?<\s*\/\s*Weibo\s*>|[^\n：:]+[：:]\s*[^\n]+)/i
+                });
             }
 
             if (newComments.length > 0) {

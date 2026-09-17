@@ -44,7 +44,7 @@ export class WangxiangView {
         const link = existingLink || document.createElement('link');
         link.id = 'wangxiang-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./wangxiang.css?v=20260712-order-arrival', import.meta.url).href;
+        link.href = new URL('./wangxiang.css?v=20260917-response-debug', import.meta.url).href;
         this._cssLoadingPromise = new Promise(resolve => {
             let settled = false;
             const finish = () => {
@@ -150,6 +150,62 @@ export class WangxiangView {
         const close = () => root.remove();
         root.querySelector('.wangxiang-progress-popup-confirm')?.addEventListener('click', close, { once: true });
         root.querySelector('.wangxiang-progress-popup-confirm')?.focus?.();
+    }
+
+    async showGenerationParseFailurePopup(details = {}) {
+        const kind = String(details.kind || '内容').trim() || '内容';
+        const expectedTag = String(details.expectedTag || '').trim();
+        const rawText = String(details.rawText || '').trim();
+        const cleanedText = String(details.cleanedText || '').trim();
+        if (!rawText && !cleanedText) return;
+
+        await this.loadCSS();
+        document.getElementById('wangxiang-progress-popup-root')?.remove();
+
+        const rawHasWrapper = details.rawHasWrapper === true;
+        const cleanedHasWrapper = details.cleanedHasWrapper === true;
+        const filterChanged = rawText !== cleanedText;
+        let diagnosis = `${kind}回复中缺少完整的 ${expectedTag || '外层标签'}。`;
+        if (rawHasWrapper && !cleanedHasWrapper) {
+            diagnosis = `原始回复包含 ${expectedTag}，但标签过滤后外层标签消失。`;
+        } else if (cleanedHasWrapper) {
+            diagnosis = `回复包含 ${expectedTag}，但内部字段、分类名称或分隔格式未被识别。`;
+        }
+
+        const clip = value => {
+            const text = String(value || '');
+            return text.length > 30000 ? `${text.slice(0, 30000)}\n\n[内容过长，已截取前 30000 个字符]` : text;
+        };
+        const root = document.createElement('div');
+        root.id = 'wangxiang-progress-popup-root';
+        root.innerHTML = `
+            <div class="wangxiang-progress-popup wangxiang-response-debug-popup" role="dialog" aria-modal="true" aria-labelledby="wangxiang-response-debug-title" tabindex="-1" style="background-image:url('${WANGXIANG_TASK_PANEL_BACKGROUND_URL}')">
+                <div class="wangxiang-progress-popup-head">
+                    <span><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>
+                    <div>
+                        <strong id="wangxiang-response-debug-title">${this._escapeHtml(kind)}解析失败</strong>
+                        <small>API 已返回正文，但万象没有解析出有效${this._escapeHtml(kind)}</small>
+                    </div>
+                </div>
+                <p class="wangxiang-response-debug-note">${this._escapeHtml(diagnosis)}</p>
+                <section class="wangxiang-response-debug-section">
+                    <strong>模型原始回复</strong>
+                    <pre>${this._escapeHtml(clip(rawText || cleanedText))}</pre>
+                </section>
+                ${filterChanged ? `
+                    <section class="wangxiang-response-debug-section">
+                        <strong>标签过滤后内容</strong>
+                        <pre>${this._escapeHtml(clip(cleanedText))}</pre>
+                    </section>
+                ` : ''}
+                <button type="button" class="wangxiang-progress-popup-confirm">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i><span>关闭</span>
+                </button>
+            </div>`;
+        document.body.appendChild(root);
+        const close = () => root.remove();
+        root.querySelector('.wangxiang-progress-popup-confirm')?.addEventListener('click', close, { once: true });
+        root.querySelector('.wangxiang-response-debug-popup')?.focus?.();
     }
 
     _renderLoadingView() {

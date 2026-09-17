@@ -239,6 +239,7 @@ export class PhoneShell {
                 '.weibo-app', '.weibo-tab-content', '.weibo-detail-posts', '.weibo-settings-content', '.weibo-detail-page-body',
                 '.weibo-profile-wrapper', '.weibo-recommend-container', '.weibo-pull-refresh-indicator',
                 '.weibo-forward-overlay', '.weibo-forward-dialog', '.weibo-forward-dialog-compose', '.weibo-forward-list',
+                '.weibo-ai-parse-error-overlay', '.weibo-ai-parse-error-dialog', '.weibo-ai-parse-error-body', '.weibo-ai-parse-error-response',
                 '#wechat-weibo-preview-modal', '#wechat-weibo-preview-modal > div',
                 '#wechat-poker-preview-modal', '#wechat-poker-preview-modal > div', '.wechat-poker-preview-body',
                 '#wechat-wangxiang-task-modal', '#wechat-wangxiang-task-modal > div', '.wechat-wangxiang-task-modal-body',

@@ -40,7 +40,7 @@ export class WeiboApp {
         const link = document.createElement('link');
         link.id = 'weibo-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./weibo.css?v=1.0.0', import.meta.url).href;
+        link.href = new URL('./weibo.css?v=20260917-ai-parse-debug', import.meta.url).href;
         document.head.appendChild(link);
     }
 

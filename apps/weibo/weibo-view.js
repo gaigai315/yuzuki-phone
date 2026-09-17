@@ -50,9 +50,78 @@ export class WeiboView {
         const link = document.createElement('link');
         link.id = 'weibo-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./weibo.css?v=1.0.0', import.meta.url).href;
+        link.href = new URL('./weibo.css?v=20260917-ai-parse-debug', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
+    }
+
+    _showAIParseFailure(error) {
+        const details = error?.weiboParseFailure;
+        if (!details) return false;
+        if (!document.querySelector('.phone-view-current .weibo-app')) return false;
+
+        const phoneScreen = document.querySelector('#phone-panel-content .phone-screen');
+        if (!phoneScreen) return false;
+        document.querySelector('.weibo-ai-parse-error-overlay')?.remove();
+
+        const kind = String(details.kind || '微博内容');
+        const expectedFormat = String(details.expectedFormat || '<Weibo>...</Weibo>');
+        const rawText = String(details.rawText || '').trim();
+        const cleanedText = String(details.cleanedText || '').trim();
+        const filterChanged = rawText !== cleanedText;
+        let diagnosis = `模型回复中缺少可识别的 ${expectedFormat}。`;
+        if (details.rawHasExpected === true && details.cleanedHasExpected !== true) {
+            diagnosis = `原始回复包含 ${expectedFormat}，但标签过滤后关键格式消失。`;
+        } else if (details.cleanedHasExpected === true) {
+            diagnosis = `回复看起来包含 ${expectedFormat}，但内部字段、分隔符或语法未被解析器识别。`;
+        }
+
+        const clip = value => {
+            const text = String(value || '');
+            return text.length > 30000 ? `${text.slice(0, 30000)}\n\n[内容过长，已截取前 30000 个字符]` : text;
+        };
+        const overlay = document.createElement('div');
+        overlay.className = 'weibo-ai-parse-error-overlay';
+        overlay.innerHTML = `
+            <section class="weibo-ai-parse-error-dialog" role="dialog" aria-modal="true" aria-labelledby="weibo-ai-parse-error-title" tabindex="-1">
+                <header class="weibo-ai-parse-error-header">
+                    <div>
+                        <span>AI 回复诊断</span>
+                        <h3 id="weibo-ai-parse-error-title">${this._escapeHtml(kind)}解析失败</h3>
+                    </div>
+                    <button type="button" class="weibo-ai-parse-error-close" aria-label="关闭" title="关闭">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </header>
+                <div class="weibo-ai-parse-error-body">
+                    <p class="weibo-ai-parse-error-note">${this._escapeHtml(diagnosis)}</p>
+                    <section class="weibo-ai-parse-error-section">
+                        <strong>模型原始回复</strong>
+                        <pre class="weibo-ai-parse-error-response">${this._escapeHtml(clip(rawText || cleanedText))}</pre>
+                    </section>
+                    ${filterChanged ? `
+                        <section class="weibo-ai-parse-error-section">
+                            <strong>标签过滤后内容</strong>
+                            <pre class="weibo-ai-parse-error-response">${this._escapeHtml(clip(cleanedText))}</pre>
+                        </section>
+                    ` : ''}
+                </div>
+                <footer class="weibo-ai-parse-error-footer">
+                    <button type="button" class="weibo-ai-parse-error-confirm">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i><span>关闭</span>
+                    </button>
+                </footer>
+            </section>`;
+        phoneScreen.appendChild(overlay);
+
+        const close = () => overlay.remove();
+        overlay.querySelector('.weibo-ai-parse-error-close')?.addEventListener('click', close, { once: true });
+        overlay.querySelector('.weibo-ai-parse-error-confirm')?.addEventListener('click', close, { once: true });
+        overlay.addEventListener('click', event => {
+            if (event.target === overlay) close();
+        });
+        overlay.querySelector('.weibo-ai-parse-error-dialog')?.focus?.();
+        return true;
     }
 
     // ========================================
@@ -688,6 +757,7 @@ export class WeiboView {
             this.app.phoneShell.showNotification('微博', '热搜内容已生成', '✅');
         } catch (error) {
             console.error('热搜生成失败:', error);
+            this._showAIParseFailure(error);
             this.app.phoneShell.showNotification('微博', error.message || '热搜生成失败', '❌');
             const hint = document.getElementById('weibo-auto-gen-hint');
             if (hint) hint.textContent = '生成失败，请下拉加载更新';
@@ -854,6 +924,7 @@ export class WeiboView {
                 this.app.phoneShell.showNotification('微博', '新评论已加载', '💬');
             } catch (error) {
                 console.error('加载评论失败:', error);
+                this._showAIParseFailure(error);
                 this.app.phoneShell.showNotification('微博', error.message || '加载评论失败', '❌');
             } finally {
                 if (btn.isConnected) {
@@ -1583,6 +1654,7 @@ export class WeiboView {
             }
         } catch (error) {
             console.error('微博AI互动失败:', error);
+            this._showAIParseFailure(error);
         }
     }
 
@@ -2151,6 +2223,7 @@ export class WeiboView {
             }
         } catch (e) {
             console.error('AI回复评论失败:', e);
+            this._showAIParseFailure(e);
         }
     }
 
@@ -2919,6 +2992,7 @@ export class WeiboView {
         } catch (error) {
             this._hotDetailRefreshStatus = 'error';
             this._syncHotDetailRefreshIndicatorByState();
+            this._showAIParseFailure(error);
             this.app.phoneShell.showNotification('微博', error.message || '加载更新失败', '❌');
         } finally {
             this._generatingHotSearches.delete(title);
@@ -3769,6 +3843,7 @@ export class WeiboView {
             }
         } catch (error) {
             console.error('推荐生成失败:', error);
+            this._showAIParseFailure(error);
             this.app.phoneShell.showNotification('微博', error.message || '推荐刷新失败', '❌');
             this._recommendRefreshStatus = 'error';
             this._syncRecommendRefreshIndicatorByState();

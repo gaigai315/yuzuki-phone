@@ -1364,7 +1364,18 @@ export class WangxiangApp {
                 throw new Error('生成期间会话已切换，本次任务未写入任何聊天');
             }
             const tasks = this._parseTaskResponse(cleanedText);
-            if (!tasks.length) throw new Error('没有解析到有效任务，请重新下拉生成');
+            if (!tasks.length) {
+                const wrapperPattern = /<\s*任务\s*>[\s\S]*?<\s*\/\s*任务\s*>/i;
+                await this._showGenerationParseFailure({
+                    kind: '任务',
+                    expectedTag: '<任务>...</任务>',
+                    rawText,
+                    cleanedText,
+                    rawHasWrapper: wrapperPattern.test(rawText),
+                    cleanedHasWrapper: wrapperPattern.test(cleanedText)
+                });
+                throw new Error('没有解析到有效任务，请检查弹窗中的模型回复');
+            }
 
             const preservedTasks = this.managedTasks
                 .filter(task => task.status === 'active' || task.status === 'submit')
@@ -1415,7 +1426,18 @@ export class WangxiangApp {
                 throw new Error('生成期间会话已切换，本次商品未写入任何聊天');
             }
             const products = this._parseMarketplaceResponse(cleanedText);
-            if (!products.length) throw new Error('没有解析到有效商品，请重新下拉生成');
+            if (!products.length) {
+                const wrapperPattern = /<\s*商场\s*>[\s\S]*?<\s*\/\s*商场\s*>/i;
+                await this._showGenerationParseFailure({
+                    kind: '商品',
+                    expectedTag: '<商场>...</商场>',
+                    rawText,
+                    cleanedText,
+                    rawHasWrapper: wrapperPattern.test(rawText),
+                    cleanedHasWrapper: wrapperPattern.test(cleanedText)
+                });
+                throw new Error('没有解析到有效商品，请检查弹窗中的模型回复');
+            }
 
             this.marketplaceProducts = products;
             await this._saveMarketplaceProducts();
@@ -1591,6 +1613,14 @@ export class WangxiangApp {
             source: 'wangxiang_task_hall',
             maxTasks: 10
         });
+    }
+
+    async _showGenerationParseFailure(details = {}) {
+        try {
+            await this.wangxiangView?.showGenerationParseFailurePopup?.(details);
+        } catch (error) {
+            console.warn('[Wangxiang] 显示生成回复诊断弹窗失败:', error);
+        }
     }
 
     _normalizeLoadedTask(task, index = 0) {
