@@ -85,3 +85,95 @@ test('JSON responses carried through the stream reader are not misreported as un
     assert.equal(result.summary, 'plain JSON');
     assert.equal(result.streamEndReason, '响应体关闭（非 SSE 响应）');
 });
+
+test('non-stream responses can carry the final reply in emit_complete_response tool arguments', () => {
+    const manager = new ApiManager({ get: () => null });
+    const result = manager._parseApiResponse({
+        choices: [{
+            message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{
+                    index: 0,
+                    type: 'function',
+                    function: {
+                        name: 'emit_complete_response_test',
+                        arguments: JSON.stringify({ content: '工具中的非流式回复' })
+                    }
+                }]
+            },
+            finish_reason: 'stop'
+        }]
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.summary, '工具中的非流式回复');
+});
+
+test('stream reader assembles emit_complete_response arguments even when finish reason is stop', async () => {
+    const manager = new ApiManager({ get: () => null });
+    const argumentsJson = JSON.stringify({ content: '工具中的流式回复\n第二行' });
+    const splitAt = Math.ceil(argumentsJson.length / 2);
+    const chunks = [
+        {
+            choices: [{
+                delta: {
+                    role: 'assistant',
+                    tool_calls: [{
+                        index: 0,
+                        id: 'call_test',
+                        type: 'function',
+                        function: {
+                            name: 'emit_complete_response_test',
+                            arguments: argumentsJson.slice(0, splitAt)
+                        }
+                    }]
+                }
+            }]
+        },
+        {
+            choices: [{
+                delta: {
+                    tool_calls: [{
+                        index: 0,
+                        function: { arguments: argumentsJson.slice(splitAt) }
+                    }]
+                }
+            }]
+        },
+        { choices: [{ delta: {}, finish_reason: 'stop' }] }
+    ];
+    const sse = chunks.map(chunk => 'data: ' + JSON.stringify(chunk) + '\n\n').join('') + 'data: [DONE]\n\n';
+    const body = new ReadableStream({
+        start(controller) {
+            controller.enqueue(new TextEncoder().encode(sse));
+            controller.close();
+        }
+    });
+
+    const result = await manager._readUniversalStream(body);
+    assert.equal(result.success, true);
+    assert.equal(result.summary, '工具中的流式回复\n第二行');
+    assert.equal(result.streamEndReason, '收到 [DONE]');
+});
+
+test('native Gemini functionCall parts can carry the final reply', () => {
+    const manager = new ApiManager({ get: () => null });
+    const result = manager._parseApiResponse({
+        candidates: [{
+            content: {
+                role: 'model',
+                parts: [{
+                    functionCall: {
+                        name: 'emit_complete_response_native',
+                        args: { content: 'Gemini 原生工具回复' }
+                    }
+                }, { text: '' }]
+            },
+            finishReason: 'STOP'
+        }]
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.summary, 'Gemini 原生工具回复');
+});

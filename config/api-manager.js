@@ -1466,11 +1466,103 @@ export class ApiManager {
             || (payload.object !== 'chat.completion.chunk' ? normalizeContent(payload.content) : '')
             || '';
 
-        return { content, reasoning, finishReason, error: null };
+        return {
+            content,
+            reasoning,
+            finishReason,
+            error: null,
+            toolCalls: this._extractToolCallFragments(payload)
+        };
     }
 
     _isTokenLimitFinishReason(finishReason = '') {
         return /^(?:length|max[_\s-]?(?:output[_\s-]?)?tokens?)$/i.test(String(finishReason || '').trim());
+    }
+
+    _extractToolCallFragments(payload) {
+        if (!payload || typeof payload !== 'object') return [];
+
+        const fragments = [];
+        const append = (calls, complete = false) => {
+            if (!Array.isArray(calls)) return;
+            calls.forEach((call, position) => {
+                if (!call || typeof call !== 'object') return;
+                const fn = call.function && typeof call.function === 'object'
+                    ? call.function
+                    : (call.functionCall && typeof call.functionCall === 'object' ? call.functionCall : call);
+                const argsValue = fn.arguments ?? fn.args ?? call.arguments ?? call.args;
+                const name = String(fn.name || call.name || '').trim();
+                if (!name && argsValue === undefined) return;
+
+                let args = '';
+                if (typeof argsValue === 'string') {
+                    args = argsValue;
+                } else if (argsValue !== undefined && argsValue !== null) {
+                    try { args = JSON.stringify(argsValue); } catch (_error) { args = String(argsValue || ''); }
+                }
+
+                fragments.push({
+                    index: Number.isInteger(call.index) ? call.index : position,
+                    name,
+                    arguments: args,
+                    complete
+                });
+            });
+        };
+
+        const choice = payload.choices?.[0] || payload.data?.choices?.[0];
+        append(choice?.delta?.tool_calls, false);
+        append(choice?.message?.tool_calls, true);
+        if (choice?.delta?.function_call) append([choice.delta.function_call], false);
+        if (choice?.message?.function_call) append([choice.message.function_call], true);
+
+        const parts = Array.isArray(payload.candidates?.[0]?.content?.parts)
+            ? payload.candidates[0].content.parts
+            : [];
+        append(parts.filter(part => part?.functionCall).map(part => part.functionCall), true);
+        return fragments;
+    }
+
+    _mergeToolCallFragments(state, fragments = []) {
+        fragments.forEach((fragment, position) => {
+            const index = Number.isInteger(fragment?.index) ? fragment.index : position;
+            const current = state.get(index) || { name: '', arguments: '' };
+            const nextArgs = String(fragment?.arguments || '');
+            current.name = fragment?.name || current.name;
+            if (fragment?.complete) {
+                if (nextArgs) current.arguments = nextArgs;
+            } else if (nextArgs) {
+                current.arguments += nextArgs;
+            }
+            state.set(index, current);
+        });
+    }
+
+    _extractFinalResponseToolContent(payloadOrState) {
+        const state = payloadOrState instanceof Map ? payloadOrState : new Map();
+        if (!(payloadOrState instanceof Map)) {
+            this._mergeToolCallFragments(state, this._extractToolCallFragments(payloadOrState));
+        }
+
+        for (const call of state.values()) {
+            if (!/^emit_complete_response(?:_|$)/i.test(String(call?.name || '').trim())) continue;
+            const rawArgs = String(call?.arguments || '').trim();
+            if (!rawArgs) continue;
+            try {
+                const parsed = JSON.parse(rawArgs);
+                const content = parsed?.content;
+                if (typeof content === 'string' && content.trim()) return content.trim();
+                if (Array.isArray(content)) {
+                    const normalized = content.map(part => (
+                        typeof part === 'string' ? part : String(part?.text || part?.content || '')
+                    )).join('').trim();
+                    if (normalized) return normalized;
+                }
+            } catch (_error) {
+                // 流式参数尚未完整时继续等待后续分片。
+            }
+        }
+        return '';
     }
 
     async _getCsrfToken(forceRefresh = false) {
@@ -1652,9 +1744,14 @@ export class ApiManager {
             throw new Error(data.error.message || JSON.stringify(data.error));
         }
         if (this._looksLikeStreamChunk(data)) {
-            const { content, reasoning, finishReason, error } = this._extractStreamContent(data);
+            const { content, reasoning, finishReason, error, toolCalls } = this._extractStreamContent(data);
             if (error) throw new Error(error);
-            const summary = String(content || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
+            const toolCallState = new Map();
+            this._mergeToolCallFragments(toolCallState, toolCalls);
+            const summary = String(content || this._extractFinalResponseToolContent(toolCallState) || '')
+                .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                .replace(/^[\s\S]*?<\/think>/i, '')
+                .trim();
             if (summary) {
                 const truncated = this._isTokenLimitFinishReason(finishReason);
                 return {
@@ -1691,6 +1788,7 @@ export class ApiManager {
             data?.output_text ||
             data?.response ||
             normalizedArrayContent ||
+            this._extractFinalResponseToolContent(data) ||
             '';
 
         content = String(content || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
@@ -1741,19 +1839,24 @@ export class ApiManager {
         let sawChunk = false;
         let fullText = '';
         let fullReasoning = '';
+        const toolCallState = new Map();
         let isTruncated = false;
         for (const chunk of chunks) {
             if (!this._looksLikeStreamChunk(chunk)) continue;
             sawChunk = true;
-            const { content, reasoning, finishReason, error } = this._extractStreamContent(chunk);
+            const { content, reasoning, finishReason, error, toolCalls } = this._extractStreamContent(chunk);
             if (error) throw new Error(error);
             if (this._isTokenLimitFinishReason(finishReason)) isTruncated = true;
             if (content) fullText += content;
             if (reasoning) fullReasoning += reasoning;
+            this._mergeToolCallFragments(toolCallState, toolCalls);
         }
         if (!sawChunk) return null;
 
-        let summary = String(fullText || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
+        let summary = String(fullText || this._extractFinalResponseToolContent(toolCallState) || '')
+            .replace(/<think>[\s\S]*?<\/think>/gi, '')
+            .replace(/^[\s\S]*?<\/think>/i, '')
+            .trim();
         if (summary) {
             if (isTruncated) summary += '\n\n[⚠️ 内容已因达到最大Token限制而截断]';
             return { success: true, summary, truncated: isTruncated };
@@ -1773,6 +1876,7 @@ export class ApiManager {
         const streamReadStartedAt = Date.now();
         let fullText = '';
         let fullReasoning = '';
+        const toolCallState = new Map();
         let isTruncated = false;
         let buffer = '';
         let rawResponse = '';
@@ -1814,11 +1918,12 @@ export class ApiManager {
 
                     try {
                         const chunk = JSON.parse(rawData);
-                        const { content, reasoning, finishReason, error } = this._extractStreamContent(chunk);
+                        const { content, reasoning, finishReason, error, toolCalls } = this._extractStreamContent(chunk);
                         if (error) throw new Error(`${logPrefix} ${error}`.trim());
                         if (this._isTokenLimitFinishReason(finishReason)) isTruncated = true;
                         if (reasoning) fullReasoning += reasoning;
                         if (content) fullText += content;
+                        this._mergeToolCallFragments(toolCallState, toolCalls);
                     } catch (error) {
                         if (/安全策略|内容被|unauthori|csrf|forbidden/i.test(String(error?.message || ''))) throw error;
                         // 坏分片留给原始响应兜底；不因单个兼容分片触发整次请求重试。
@@ -1844,7 +1949,10 @@ export class ApiManager {
                 console.log(`⏱️ [ApiManager]${logPrefix} 收到 [DONE]: ${Date.now() - streamReadStartedAt}ms`);
             }
 
-            let summary = String(fullText || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').trim();
+            let summary = String(fullText || this._extractFinalResponseToolContent(toolCallState) || '')
+                .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                .replace(/^[\s\S]*?<\/think>/i, '')
+                .trim();
             if (!summary && !fullReasoning && rawResponse.trim() && !/(^|\r?\n)\s*data:/.test(rawResponse)) {
                 return {
                     ...this._parseApiResponse(rawResponse),
