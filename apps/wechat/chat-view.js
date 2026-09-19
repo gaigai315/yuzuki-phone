@@ -34,6 +34,22 @@ const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const WECHAT_STICKER_ALAPI_CACHE_KEY = 'phone_wechat_alapi_sticker_cache_v1';
 const WECHAT_STICKER_ALAPI_CACHE_MAX = 240;
 const WECHAT_STICKER_ALAPI_CACHE_TTL = 90 * 24 * 60 * 60 * 1000;
+
+export function resolveWechatPromptIdentity(targetChat = null, context = {}) {
+    const chatName = String(targetChat?.name || context?.name2 || '角色').trim() || '角色';
+    const characterId = context?.characterId;
+    const character = characterId !== undefined
+        ? context?.characters?.[characterId]
+        : null;
+    const cardName = String(character?.name || (character ? context?.name2 : chatName) || chatName).trim() || chatName;
+
+    return {
+        chatName,
+        cardName,
+        characterName: targetChat?.type === 'group' ? cardName : chatName
+    };
+}
+
 // 聊天界面视图
 export class ChatView {
     constructor(wechatApp) {
@@ -10325,7 +10341,7 @@ renderChatRoom(chat) {
             wechatMessages.forEach(msg => {
                 const speaker = msg.from === 'me'
                     ? (context.name1 || '用户')
-                    : (context.name2 || savedChatName);
+                    : (savedChatName || context.name2 || '角色');
 
                 chatHistory.push({
                     speaker: speaker,
@@ -10571,7 +10587,7 @@ renderChatRoom(chat) {
                             const wangxiangTaskSpecial = wangxiangTaskTokens.tokenMap.get(line);
                             if (wangxiangTaskSpecial) {
                                 extractedMsgs.push({
-                                    sender: wangxiangTaskSpecial.sender || pendingSender || (isTargetCurrentChat ? (context.name2 || targetName) : targetName),
+                                    sender: wangxiangTaskSpecial.sender || pendingSender || (isTargetCurrentChat ? (savedChatName || targetName || context.name2) : targetName),
                                     content: wangxiangTaskSpecial.content,
                                     specialMessage: wangxiangTaskSpecial
                                 });
@@ -10582,7 +10598,7 @@ renderChatRoom(chat) {
                             const weiboSpecial = weiboTokenResult.tokenMap.get(line);
                             if (weiboSpecial) {
                                 extractedMsgs.push({
-                                    sender: pendingSender || (isTargetCurrentChat ? (context.name2 || targetName) : targetName),
+                                    sender: pendingSender || (isTargetCurrentChat ? (savedChatName || targetName || context.name2) : targetName),
                                     content: weiboSpecial.content || '[微博分享]',
                                     specialMessage: weiboSpecial
                                 });
@@ -10631,9 +10647,9 @@ renderChatRoom(chat) {
                                 quote = consumeDeferredQuote(simpleMsgMatch[1].trim(), quote);
                                 extractedMsgs.push({ sender: simpleMsgMatch[1].trim(), content: simpleMsgMatch[2].trim(), quote });
                             } else if (line) {
-                                const fallbackSender = isTargetCurrentChat ? (context.name2 || targetName) : targetName;
+                                const fallbackSender = isTargetCurrentChat ? (savedChatName || targetName || context.name2) : targetName;
                                 quote = consumeDeferredQuote(fallbackSender, quote);
-                                extractedMsgs.push({ sender: isTargetCurrentChat ? (context.name2 || targetName) : targetName, content: line, quote });
+                                extractedMsgs.push({ sender: fallbackSender, content: line, quote });
                             }
                             pendingSender = '';
                         });
@@ -10727,7 +10743,7 @@ renderChatRoom(chat) {
                         const wangxiangTaskSpecial = wangxiangTaskTokens.tokenMap.get(line);
                         if (wangxiangTaskSpecial) {
                             parsedMessages.push({
-                                sender: wangxiangTaskSpecial.sender || pendingSender || (context.name2 || savedChatName),
+                                sender: wangxiangTaskSpecial.sender || pendingSender || (savedChatName || context.name2),
                                 content: wangxiangTaskSpecial.content,
                                 specialMessage: wangxiangTaskSpecial
                             });
@@ -10738,7 +10754,7 @@ renderChatRoom(chat) {
                         const weiboSpecial = weiboTokenResult.tokenMap.get(line);
                         if (weiboSpecial) {
                             parsedMessages.push({
-                                sender: pendingSender || (context.name2 || savedChatName),
+                                sender: pendingSender || (savedChatName || context.name2),
                                 content: weiboSpecial.content || '[微博分享]',
                                 specialMessage: weiboSpecial
                             });
@@ -10787,9 +10803,9 @@ renderChatRoom(chat) {
                             quote = consumeDeferredQuote(simpleMsgMatch[1].trim(), quote);
                             parsedMessages.push({ sender: simpleMsgMatch[1].trim(), content: simpleMsgMatch[2].trim(), quote });
                         } else if (line) {
-                            const fallbackSender = context.name2 || savedChatName;
+                            const fallbackSender = savedChatName || context.name2;
                             quote = consumeDeferredQuote(fallbackSender, quote);
-                            parsedMessages.push({ sender: context.name2 || savedChatName, content: line, quote });
+                            parsedMessages.push({ sender: fallbackSender, content: line, quote });
                         }
                         pendingSender = '';
                     });
@@ -11460,15 +11476,11 @@ renderChatRoom(chat) {
                 isPhoneMessage: true
             });
         }
-        let charName = targetChat?.name || context.name2 || '角色';
-
-        // 优先使用 characterId 获取真实角色名
-        if (context.characterId !== undefined && context.characters && context.characters[context.characterId]) {
-            charName = context.characters[context.characterId].name || context.name2 || '角色';
-        }
-
         // 🔥🔥🔥 检测是否是群聊
         const isGroupChat = targetChat?.type === 'group';
+        const promptIdentity = resolveWechatPromptIdentity(targetChat, context);
+        const currentChatName = promptIdentity.chatName;
+        const charName = promptIdentity.characterName;
         const groupName = isGroupChat ? targetChat?.name : '';
         const profileContextEnabled = isGroupChat
             || this.app.wechatData.isProfileContextInjectionEnabledForChat?.(targetChat?.id) !== false;
@@ -11485,7 +11497,7 @@ renderChatRoom(chat) {
         // ========================================
         if (profileContextEnabled && context.characterId !== undefined && context.characters && context.characters[context.characterId]) {
             const char = context.characters[context.characterId];
-            let charInfo = `【角色信息】\n角色名: ${char.name || charName}\n`;
+            let charInfo = `【角色信息】\n角色名: ${charName}\n`;
 
             // 基础字段
             if (char.description) {
@@ -11576,11 +11588,11 @@ renderChatRoom(chat) {
         if (!isGroupChat) {
             const currentContact = targetChat?.contactId
                 ? this.app.wechatData.getContact(targetChat.contactId)
-                : this.app.wechatData.getContactByName(targetChat?.name || charName);
+                : this.app.wechatData.getContactByName(currentChatName);
             if (currentContact) {
                 const contactNotes = [
                     `【当前聊天对象档案】`,
-                    `联系人：${currentContact.name || targetChat?.name || charName}`
+                    `联系人：${currentContact.name || currentChatName}`
                 ];
 
                 if (currentContact.relation) {
@@ -11732,7 +11744,6 @@ renderChatRoom(chat) {
                 .replace(/[（(][^（）()]*[）)]/g, '')
                 .toLowerCase();
             const groupChatLimit = this._readNonNegativeLimit('wechat-group-chat-limit', 200);
-            const currentChatName = targetChat?.name || charName;
             const currentChatKey = normalizeCommonGroupName(currentChatName);
             const relatedGroupChats = allChats.filter((chat) => {
                 if (chat?.type !== 'group') return false;
@@ -11854,8 +11865,8 @@ renderChatRoom(chat) {
         let systemPrompt = '';
         const overrideReplacements = {
             user: userName,
-            chatName: targetChat?.name || charName,
-            char: targetChat?.name || charName,
+            chatName: currentChatName,
+            char: currentChatName,
             groupName,
             groupMembers,
             customEmojiList,
@@ -11894,9 +11905,8 @@ renderChatRoom(chat) {
                     // 单聊模式
                     systemPrompt = promptManager.getPromptForFeature('wechat', 'online') || '';
                     // 🔥 替换单聊窗口名变量
-                    const chatName = targetChat?.name || charName;
                     systemPrompt = systemPrompt
-                        .replace(/\{\{chatName\}\}/g, chatName)
+                        .replace(/\{\{chatName\}\}/g, currentChatName)
                         .replace(/\{\{commonGroupNames\}\}/g, commonGroupNamesForSingleChat.length > 0 ? commonGroupNamesForSingleChat.join('、') : '无')
                         .replace(/\{\{commonGroupList\}\}/g, commonGroupListForSingleChat || '无')
                         .replace(/\{\{customEmojiList\}\}/g, customEmojiList)
@@ -11962,7 +11972,7 @@ renderChatRoom(chat) {
             ? this._buildMusicListeningContext(targetChat, userName)
             : '';
         const catboxCoAdoptContext = !callMode && !isGroupChat
-            ? String(this._getCatboxData().getCoAdoptContextForChat?.(targetChat?.id, targetChat?.name || charName) || '').replace(/\{\{user\}\}/g, userName)
+            ? String(this._getCatboxData().getCoAdoptContextForChat?.(targetChat?.id, currentChatName) || '').replace(/\{\{user\}\}/g, userName)
             : '';
 
         const timeManager = window.VirtualPhone?.timeManager;
@@ -12337,8 +12347,8 @@ renderChatRoom(chat) {
                     ? '\n- 消息时间必须按当前现实时间或当前窗口最后一条已存在消息之后自然推进。'
                     : '\n- 消息时间必须按当前剧情时间或当前窗口最后一条已存在消息之后自然推进。';
             } else if (!isGroupChat) {
-                finalUserContent += `\n- 【方向锁定】当前微信单聊窗口是“${targetChat?.name || charName}”；手机主人/用户本人是“${userName}”。你只能扮演“${targetChat?.name || charName}”给“${userName}”发新增微信消息。`;
-                finalUserContent += `\n- 即使角色卡主角、酒馆 assistant 或正文叙事视角不是“${targetChat?.name || charName}”，当前微信单聊也必须以“${targetChat?.name || charName}”的身份和口吻回复；角色卡和正文只作为背景参考。`;
+                finalUserContent += `\n- 【方向锁定】当前微信单聊窗口是“${currentChatName}”；手机主人/用户本人是“${userName}”。你只能扮演“${currentChatName}”给“${userName}”发新增微信消息。`;
+                finalUserContent += `\n- 即使角色卡主角、酒馆 assistant 或正文叙事视角不是“${currentChatName}”，当前微信单聊也必须以“${currentChatName}”的身份和口吻回复；角色卡和正文只作为背景参考。`;
                 finalUserContent += `\n- 【用户最新输入】是“${userName}”刚刚发出的消息，只能作为被回复的内容；禁止把“${userName}”当成聊天对象、联系人、窗口名或回复发送者，禁止输出“${userName}:”、用户:、玩家:。`;
                 finalUserContent += '\n- 微信消息内容必须是角色真实打进聊天框里的文字；禁止写动作、环境、神态、写字过程、语气说明，禁止出现“顿了顿/指尖悬停/又补了一条/语气里”等叙事句。';
             }
