@@ -937,6 +937,250 @@ export class WechatApp {
     border-right: 0;
 }
 
+#phone-panel-content .phone-screen .wechat-translation-card {
+    width: max-content;
+    max-width: min(100%, calc(100vw - 82px));
+    padding: 0 !important;
+    overflow: visible;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.62);
+    border-radius: 8px !important;
+    background: rgba(255, 255, 255, 0.62) !important;
+    color: #242424 !important;
+    box-shadow: 0 7px 20px rgba(64, 45, 32, 0.14) !important;
+    backdrop-filter: blur(14px) saturate(125%);
+    -webkit-backdrop-filter: blur(14px) saturate(125%);
+    text-align: left;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-card.wechat-inner-os-bubble {
+    padding-right: 0 !important;
+    border-bottom-right-radius: 0 !important;
+}
+
+#phone-panel-content .phone-screen .message-left .message-text.wechat-translation-card::before {
+    border-right-color: rgba(255, 255, 255, 0.62);
+}
+
+#phone-panel-content .phone-screen .message-right .message-text.wechat-translation-card::before {
+    border-left-color: rgba(255, 255, 255, 0.62);
+}
+
+#phone-panel-content .phone-screen .wechat-translation-source {
+    position: relative;
+    padding: 11px 38px 11px 13px;
+    min-height: 42px;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-source-text,
+#phone-panel-content .phone-screen .wechat-translation-target-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    letter-spacing: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-source-text {
+    font-size: 14px;
+    line-height: 1.45;
+    font-weight: 500;
+    color: #26211f;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-heart {
+    position: absolute;
+    right: 14px;
+    bottom: 8px;
+    color: rgba(215, 111, 115, 0.82);
+    font-size: 17px;
+    line-height: 1;
+    text-shadow: 0 1px 4px rgba(174, 77, 82, 0.14);
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-target {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    margin: 0 12px;
+    padding: 11px 2px 12px;
+    border-top: 1px dashed rgba(112, 91, 75, 0.24);
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-card.wechat-inner-os-bubble .wechat-translation-target {
+    padding-right: 18px;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-target-text {
+    font-size: 13px;
+    line-height: 1.45;
+    color: rgba(48, 42, 39, 0.88);
+}
+
+#phone-panel-content .phone-screen .wechat-translation-badge {
+    width: 14px;
+    height: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    box-sizing: border-box;
+    border: 1px solid rgba(126, 104, 83, 0.42);
+    border-radius: 2px;
+    color: rgba(103, 83, 65, 0.82);
+    background: rgba(255, 255, 255, 0.28);
+    font-style: normal;
+    line-height: 1;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-badge b {
+    font-size: 8px;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-badge small {
+    position: absolute;
+    right: -4px;
+    bottom: -3px;
+    min-width: 9px;
+    height: 9px;
+    padding: 0 1px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    background: rgba(150, 127, 102, 0.9);
+    color: #fff;
+    font-size: 6px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+#phone-panel-content .phone-screen .wechat-translation-card .wechat-inner-os-fold::after {
+    border-color: rgba(193, 178, 163, 0.9) rgba(255, 255, 255, 0.46) transparent transparent;
+}
+
+#phone-panel-content .phone-screen .wechat-call-translation-card {
+    width: max-content;
+    max-width: 100%;
+    padding: 8px !important;
+    box-sizing: border-box;
+    overflow: visible;
+    border: 1px solid rgba(255, 255, 255, 0.66);
+    border-radius: 8px !important;
+    background: rgba(255, 255, 255, 0.84) !important;
+    color: #292525 !important;
+    box-shadow: 0 4px 14px rgba(61, 45, 38, 0.11) !important;
+    backdrop-filter: blur(10px) saturate(115%);
+    -webkit-backdrop-filter: blur(10px) saturate(115%);
+    text-align: left;
+}
+
+#phone-panel-content .phone-screen .wechat-call-translation-card.wechat-inner-os-bubble {
+    padding-right: 8px !important;
+    border-bottom-right-radius: 0 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-call-translation-source {
+    position: relative;
+    padding: 0 28px 7px 4px;
+    font-size: 13px;
+    line-height: 1.42;
+    font-weight: 500;
+    color: #292525;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    letter-spacing: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-call-spoken-bubble:not(.wechat-call-translation-card) {
+    padding-right: 34px !important;
+}
+
+#phone-panel-content .phone-screen .wechat-call-speech-wave {
+    position: absolute;
+    top: 9px;
+    right: 10px;
+    width: 18px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    color: rgba(177, 132, 119, 0.78);
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .wechat-call-translation-source .wechat-call-speech-wave {
+    top: 1px;
+    right: 4px;
+}
+
+#phone-panel-content .phone-screen .wechat-call-speech-wave i {
+    display: block !important;
+    width: 1.5px;
+    min-width: 1.5px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    background: currentColor;
+}
+
+#phone-panel-content .phone-screen .wechat-call-speech-wave i:nth-child(1),
+#phone-panel-content .phone-screen .wechat-call-speech-wave i:nth-child(5) {
+    height: 5px;
+}
+
+#phone-panel-content .phone-screen .wechat-call-speech-wave i:nth-child(2),
+#phone-panel-content .phone-screen .wechat-call-speech-wave i:nth-child(4) {
+    height: 10px;
+}
+
+#phone-panel-content .phone-screen .wechat-call-speech-wave i:nth-child(3) {
+    height: 14px;
+}
+
+#phone-panel-content .phone-screen .wechat-call-translation-target {
+    display: flex;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+    padding: 6px 9px;
+    border-radius: 6px;
+    background: rgba(234, 231, 228, 0.82);
+    box-sizing: border-box;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+#phone-panel-content .phone-screen .wechat-call-translation-card.wechat-inner-os-bubble .wechat-call-translation-target {
+    padding-right: 22px;
+}
+
+#phone-panel-content .phone-screen .wechat-call-translation-label {
+    flex: 0 0 auto;
+    color: rgba(91, 80, 74, 0.56);
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-call-translation-text {
+    min-width: 0;
+    color: rgba(54, 48, 45, 0.86);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    letter-spacing: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-call-translation-card .wechat-inner-os-fold::after {
+    border-color: rgba(194, 188, 183, 0.92) rgba(255, 255, 255, 0.68) transparent transparent;
+}
+
 .wechat-inner-os-wrapper {
     position: relative;
     display: inline-block;

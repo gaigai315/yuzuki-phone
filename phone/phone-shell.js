@@ -235,6 +235,7 @@ export class PhoneShell {
                 '.honey-recharge-modal', '.honey-recharge-panel','#honey-ui-scene-modal','.honey-scene-modal-card',
                 '.honey-live-visibility-modal', '.honey-live-visibility-panel',
                 '.honey-settings-content', '.honey-prompt-editor', '#honey-prompt-editor',
+                '.honey-ai-error-body', '.honey-ai-error-response',
                 '#wallet-eval-modal', '.wallet-eval-modal-panel', '.wallet-eval-modal-body', '.wallet-eval-reasoning',
                 '.weibo-app', '.weibo-tab-content', '.weibo-detail-posts', '.weibo-settings-content', '.weibo-detail-page-body',
                 '.weibo-profile-wrapper', '.weibo-recommend-container', '.weibo-pull-refresh-indicator',

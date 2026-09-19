@@ -861,12 +861,15 @@ export class ApiManager {
                     response = await sendGenerateRequest(true);
                     if (response.ok) {
                         if (enableStream && response.body) {
-                            return await this._readUniversalStream(response.body, '[酒馆原生流式]');
+                            return await this._readUniversalStream(response.body, '[酒馆原生流式]', options.onResponseChunk, options.onStreamEnd);
                         }
-                        return this._parseApiResponse(await response.text());
+                        const text = await response.text();
+                        options.onResponseChunk?.(text);
+                        return this._parseApiResponse(text);
                     }
                     errText = await response.text();
                 }
+                options.onResponseChunk?.(errText);
                 console.error('[ApiManager] 后端返回错误:', response.status, errText);
                 if (
                     response.status === 502 &&
@@ -883,10 +886,11 @@ export class ApiManager {
             }
 
             if (enableStream && response.body) {
-                return await this._readUniversalStream(response.body, '[酒馆原生流式]');
+                return await this._readUniversalStream(response.body, '[酒馆原生流式]', options.onResponseChunk, options.onStreamEnd);
             }
 
             const responseText = await response.text();
+            options.onResponseChunk?.(responseText);
             if (!responseText) return { success: false, error: '原生 API 失败: 响应体为空' };
             return this._parseApiResponse(responseText);
 
@@ -1041,6 +1045,7 @@ export class ApiManager {
         const parseProxyResponse = async (response, requestStream, label) => {
             if (!response.ok) {
                 const errText = await response.text();
+                options.onResponseChunk?.(errText);
                 const tip = response.status === 401
                     ? ' (鉴权失败，请检查 API Key / Bearer 前缀)'
                     : response.status === 404
@@ -1059,9 +1064,10 @@ export class ApiManager {
             // 按流读取，否则 response.text() 会一直等待上游物理断开连接。
             try {
                 if (requestStream && response.body) {
-                    return await this._readUniversalStream(response.body, `[${label}]`);
+                    return await this._readUniversalStream(response.body, `[${label}]`, options.onResponseChunk, options.onStreamEnd);
                 }
                 const text = await response.text();
+                options.onResponseChunk?.(text);
                 const chunkedResult = this._parseChunkedApiText(text);
                 if (chunkedResult) return chunkedResult;
                 return this._parseApiResponse(text);
@@ -1334,6 +1340,7 @@ export class ApiManager {
 
             if (!directResponse.ok) {
                 const errText = await directResponse.text();
+                options.onResponseChunk?.(errText);
                 let statusTip = '';
                 if (directResponse.status === 401) statusTip = ' (API密钥无效)';
                 else if (directResponse.status === 404) statusTip = ' (接口地址错误)';
@@ -1344,10 +1351,11 @@ export class ApiManager {
             }
 
             if (streamEnabled && directResponse.body) {
-                return await this._readUniversalStream(directResponse.body, '[浏览器直连]');
+                return await this._readUniversalStream(directResponse.body, '[浏览器直连]', options.onResponseChunk, options.onStreamEnd);
             }
 
             const text = await directResponse.text();
+            options.onResponseChunk?.(text);
             return this._parseApiResponse(text);
         };
 
@@ -1759,7 +1767,7 @@ export class ApiManager {
         throw new Error('API 返回流式分片但正文为空');
     }
 
-    async _readUniversalStream(body, logPrefix = '') {
+    async _readUniversalStream(body, logPrefix = '', onResponseChunk = null, onStreamEnd = null) {
         const reader = body.getReader();
         const decoder = new TextDecoder('utf-8');
         const streamReadStartedAt = Date.now();
@@ -1770,6 +1778,7 @@ export class ApiManager {
         let rawResponse = '';
         let sawFirstChunk = false;
         let reachedProtocolEnd = false;
+        let streamEndReason = '读取失败或中断';
 
         try {
             while (true) {
@@ -1781,6 +1790,7 @@ export class ApiManager {
                 const decoded = value
                     ? decoder.decode(value, { stream: !done })
                     : (done ? decoder.decode() : '');
+                if (decoded) onResponseChunk?.(decoded);
                 buffer += decoded;
                 rawResponse += decoded;
 
@@ -1824,6 +1834,12 @@ export class ApiManager {
                 if (done || reachedProtocolEnd) break;
             }
 
+            const isSseResponse = /(^|\r?\n)\s*(?:data:|event:)/.test(rawResponse);
+            streamEndReason = reachedProtocolEnd
+                ? '收到 [DONE]'
+                : (isSseResponse ? '响应体关闭（未收到 [DONE]）' : '响应体关闭（非 SSE 响应）');
+            onStreamEnd?.(streamEndReason);
+
             if (reachedProtocolEnd) {
                 console.log(`⏱️ [ApiManager]${logPrefix} 收到 [DONE]: ${Date.now() - streamReadStartedAt}ms`);
             }
@@ -1832,7 +1848,8 @@ export class ApiManager {
             if (!summary && !fullReasoning && rawResponse.trim() && !/(^|\r?\n)\s*data:/.test(rawResponse)) {
                 return {
                     ...this._parseApiResponse(rawResponse),
-                    streamCompletedAt: Date.now()
+                    streamCompletedAt: Date.now(),
+                    streamEndReason
                 };
             }
             if (!summary && fullReasoning && String(fullReasoning).trim()) {
@@ -1846,9 +1863,11 @@ export class ApiManager {
                 success: true,
                 summary,
                 truncated: isTruncated,
-                streamCompletedAt: Date.now()
+                streamCompletedAt: Date.now(),
+                streamEndReason
             };
         } finally {
+            if (streamEndReason === '读取失败或中断') onStreamEnd?.(streamEndReason);
             if (reachedProtocolEnd) {
                 try {
                     // [DONE] 已确认协议层完成。取消仍未物理结束的响应体，通知酒馆后端

@@ -582,6 +582,7 @@ export class ContactsView {
         const currentTtsProvider = this._getCurrentTtsProvider();
         const contactTtsVoices = this._getContactTtsVoices(contact);
         const contactTtsProvider = String(contact.ttsProvider || '').trim();
+        const contactTtsLanguageBoost = String(contact.ttsLanguageBoost || 'auto').trim() || 'auto';
         const legacyTtsVoice = String(contact.ttsVoice || '').trim();
         const contactGender = String(this.app.wechatData?.getContactGender?.(safeContactId) || 'unknown').trim();
         const contactAvatarGroup = String(this.app.wechatData?.getContactAvatarGroup?.(safeContactId) || '').trim();
@@ -818,6 +819,25 @@ export class ContactsView {
                                             <option value="${option.id}" ${contactTtsProvider === option.id ? 'selected' : ''}>${option.label}</option>
                                         `).join('')}
                                     </select>
+                                </label>
+                                <label style="display: block; margin-bottom: 7px;">
+                                    <div style="font-size: 11px; color: #666; margin-bottom: 3px;">朗读语言（MiniMax）</div>
+                                    <select id="edit-contact-tts-language-select" style="
+                                        width: 100%;
+                                        height: 30px;
+                                        padding: 0 8px;
+                                        ${softFieldStyle}
+                                        border-radius: 6px;
+                                        font-size: 12px;
+                                        box-sizing: border-box;
+                                    ">
+                                        <option value="auto" ${contactTtsLanguageBoost === 'auto' ? 'selected' : ''}>自动识别</option>
+                                        <option value="Chinese" ${contactTtsLanguageBoost === 'Chinese' ? 'selected' : ''}>普通话</option>
+                                        <option value="Chinese,Yue" ${contactTtsLanguageBoost === 'Chinese,Yue' ? 'selected' : ''}>粤语</option>
+                                        <option value="English" ${contactTtsLanguageBoost === 'English' ? 'selected' : ''}>英语</option>
+                                        <option value="Japanese" ${contactTtsLanguageBoost === 'Japanese' ? 'selected' : ''}>日语</option>
+                                    </select>
+                                    <div style="font-size: 10px; color: #999; line-height: 1.35; margin-top: 4px;">仅 MiniMax 使用此项；其他服务商仍按自身语言能力处理。</div>
                                 </label>
                                 <div style="display: flex; flex-direction: column; gap: 7px;">
                                     ${this._getTtsProviderOptions().map(option => {
@@ -1189,6 +1209,7 @@ export class ContactsView {
             const ttsVoices = {};
             let currentProviderTtsVoice = '';
             const ttsProvider = String(query('#edit-contact-tts-provider-select')?.value || '').trim();
+            const ttsLanguageBoost = String(query('#edit-contact-tts-language-select')?.value || 'auto').trim() || 'auto';
             queryAll('.edit-contact-tts-provider-input').forEach((input) => {
                 const provider = String(input.dataset.provider || '').trim();
                 const value = String(input.value || '').trim();
@@ -1210,6 +1231,7 @@ export class ContactsView {
                 ttsVoice: ttsVoice, // 🔥 旧字段兜底
                 ttsVoices: ttsVoices, // 🔥 按服务商保存音色
                 ttsProvider: ttsProvider, // 🔥 该角色默认服务商；空值表示跟随全局
+                ttsLanguageBoost,
                 naiReferenceImage: selectedReferenceImage,
                 naiReferenceEnabled: !!selectedReferenceImage && !!query('#edit-contact-reference-enabled')?.checked,
                 naiReferenceStrength: referenceStrengthValue,

@@ -132,6 +132,25 @@ export class TtsManager {
         return String(modelType || '4') === '4' ? 'seed-icl-2.0' : 'seed-icl-1.0';
     }
 
+    _resolveMiniMaxLanguageBoost(languageBoost = '') {
+        const raw = String(languageBoost || '').trim();
+        if (!raw) return 'auto';
+        const aliases = {
+            auto: 'auto',
+            zh: 'Chinese',
+            chinese: 'Chinese',
+            mandarin: 'Chinese',
+            yue: 'Chinese,Yue',
+            cantonese: 'Chinese,Yue',
+            'chinese,yue': 'Chinese,Yue',
+            en: 'English',
+            english: 'English',
+            ja: 'Japanese',
+            japanese: 'Japanese'
+        };
+        return aliases[raw.toLowerCase()] || raw;
+    }
+
     _readFileAsBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -827,7 +846,7 @@ export class TtsManager {
                     model: model || (provider === 'minimax_intl' ? 'speech-2.8-hd' : 'speech-02-hd'),
                     text: inputText,
                     stream: false,
-                    language_boost: 'auto',
+                    language_boost: this._resolveMiniMaxLanguageBoost(options.languageBoost),
                     output_format: 'hex',
                     voice_setting: { voice_id: voice || 'female-shaonv', speed: 1.0, vol: 1.0, pitch: 0 },
                     audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }

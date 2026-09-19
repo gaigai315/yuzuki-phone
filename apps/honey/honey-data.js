@@ -4172,6 +4172,71 @@ export class HoneyData {
         };
     }
 
+    async _requestHoneySceneText(messages, { validPattern, timeoutMs = 240000 } = {}) {
+        const apiManager = window.VirtualPhone?.apiManager;
+        if (!apiManager) throw new Error('API Manager 未初始化');
+
+        const context = this._getContext();
+        const controller = new AbortController();
+        const startedAt = Date.now();
+        let rawResponse = '';
+        let rawText = '';
+        let filteredText = '';
+        let streamEndReason = '';
+        let result = null;
+        let timedOut = false;
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => {
+                timedOut = true;
+                reject(new Error('蜜语AI请求超时，已取消本次请求'));
+                controller.abort();
+            }, timeoutMs);
+        });
+
+        try {
+            result = await Promise.race([
+                apiManager.callAI(messages, {
+                    max_tokens: Number.parseInt(context?.max_response_length, 10)
+                        || Number.parseInt(context?.max_length, 10)
+                        || Number.parseInt(context?.maxContextLength, 10)
+                        || 8192,
+                    preserve_roles: false,
+                    appId: 'honey',
+                    signal: controller.signal,
+                    onResponseChunk: chunk => { rawResponse += chunk; },
+                    onStreamEnd: reason => { streamEndReason = reason; }
+                }),
+                timeoutPromise
+            ]);
+            if (!result?.success) throw new Error(result?.error || 'AI 返回为空');
+
+            rawText = String(result.summary || result.content || result.text || '');
+            filteredText = String(applyPhoneTagFilter(rawText, { storage: this.storage }) || rawText);
+            const responseText = filteredText.trim();
+            if (!responseText) throw new Error('AI 返回为空');
+            if (!validPattern.test(responseText)) {
+                const interruptedStream = streamEndReason.includes('未收到 [DONE]');
+                throw new Error(interruptedStream
+                    ? '流在 [DONE] 前关闭，未收到有效 Honey 内容'
+                    : 'AI 未返回有效 Honey 内容');
+            }
+            return responseText;
+        } catch (error) {
+            error.honeyResponseDetails = {
+                rawText,
+                filteredText,
+                rawResponse,
+                timedOut,
+                streamEndReason: result?.streamEndReason || streamEndReason,
+                elapsedMs: Date.now() - startedAt
+            };
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
     async generateUserLiveScene(onProgress, options = {}) {
         if (onProgress) onProgress('正在搭建你的直播间...');
 
@@ -4303,39 +4368,9 @@ export class HoneyData {
             });
         }
 
-        const apiManager = window.VirtualPhone?.apiManager;
-        if (!apiManager) throw new Error('API Manager 未初始化');
-
-        const context = this._getContext();
-        const timeoutMs = 240000;
-        let timeoutId = null;
-        const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error('蜜语AI请求超时，请重试')), timeoutMs);
+        const responseText = await this._requestHoneySceneText(messages, {
+            validPattern: /<Honey>[\s\S]*?<\/Honey>|(?:在线人数|粉丝数|榜单|打赏记录|好友申请|互动记录|直播剧情描写|评论区)[：:]/i
         });
-
-        const result = await Promise.race([
-            apiManager.callAI(messages, {
-                max_tokens: Number.parseInt(context?.max_response_length, 10)
-                    || Number.parseInt(context?.max_length, 10)
-                    || Number.parseInt(context?.maxContextLength, 10)
-                    || 8192,
-                preserve_roles: false,
-                appId: 'honey'
-            }),
-            timeoutPromise
-        ]).finally(() => {
-            if (timeoutId) clearTimeout(timeoutId);
-        });
-        if (!result?.success) throw new Error(result?.error || 'AI 返回为空');
-
-        const rawText = result.summary || result.content || result.text || '';
-        const filteredText = applyPhoneTagFilter(rawText, { storage: this.storage });
-        const responseText = String(filteredText || rawText || '').trim();
-        if (!responseText) throw new Error('AI 返回为空');
-        if (!/<Honey>[\s\S]*?<\/Honey>/i.test(responseText)
-            && !/(?:在线人数|粉丝数|榜单|打赏记录|好友申请|互动记录|直播剧情描写|评论区)[：:]/.test(responseText)) {
-            throw new Error('AI 未返回有效 Honey 内容');
-        }
         const parsed = this.parseHoneyUserLiveContent(responseText);
         this._syncHoneyUserProfileFromUserLiveScene(parsed);
         const responseContext = this._buildHoneyInteractionHistoryContext(parsed);
@@ -4547,10 +4582,6 @@ export class HoneyData {
             extraMessages.push({ role: 'user', content: `【当前目标推荐主题】${safeTopic}` });
         }
 
-        const apiManager = window.VirtualPhone?.apiManager;
-        if (!apiManager) throw new Error('API Manager 未初始化');
-
-        const context = this._getContext();
         const messages = [];
         if (overridePrompt) {
             messages.push({ role: 'system', content: overridePrompt, isPhoneMessage: true });
@@ -4589,38 +4620,9 @@ export class HoneyData {
             content: '好的我严格按照要求生成，且直接开始输出标签的内容。',
             isPhoneMessage: true
         });
-        const timeoutMs = 240000;
-        let timeoutId = null;
-        const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error('蜜语AI请求超时，请重试')), timeoutMs);
+        const responseText = await this._requestHoneySceneText(messages, {
+            validPattern: /<Honey>[\s\S]*?<\/Honey>|---\s*(?:热门推荐|当前\s*激情直播|激情直播)\s*---/i
         });
-
-        const result = await Promise.race([
-            apiManager.callAI(messages, {
-                // 兼容所有版本的 ST 获取最大回复长度
-                max_tokens: Number.parseInt(context?.max_response_length, 10)
-                    || Number.parseInt(context?.max_length, 10)
-                    || Number.parseInt(context?.maxContextLength, 10)
-                    || 8192,
-                // 取消强制要求，允许 API 管理器在 GPT 环境下安全降级
-                preserve_roles: false,
-                appId: 'honey'
-            }),
-            timeoutPromise
-        ]).finally(() => {
-            if (timeoutId) clearTimeout(timeoutId);
-        });
-
-        if (!result.success) throw new Error(result.error || 'AI 返回为空');
-
-        const rawText = result.summary || result.content || result.text || '';
-        const filteredText = applyPhoneTagFilter(rawText, { storage: this.storage });
-        const responseText = String(filteredText || rawText || '').trim();
-        if (!responseText) throw new Error('AI 返回为空');
-        if (!/<Honey>[\s\S]*?<\/Honey>/i.test(responseText)
-            && !/---\s*(?:热门推荐|当前\s*激情直播|激情直播)\s*---/i.test(responseText)) {
-            throw new Error('AI 未返回有效 Honey 内容');
-        }
         const parsed = this.parseHoneyContent(responseText);
         const responseContext = this._buildHoneyInteractionHistoryContext(parsed);
         if (mode === 'continue') {

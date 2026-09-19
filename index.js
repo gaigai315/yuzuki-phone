@@ -58,12 +58,9 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-09-12',
+    date: '2026-09-19',
     items: [
-        '【优化】兼容 OpenCode Go 服务商；独立 API 新增专用选项，自动注入稳定的 x-opencode-session 请求头，无需手动配置，并同步支持模型列表与连接测试，其他服务商不受影响。',
-        '【修复】增强小手机设置页的主题样式隔离，修复部分美化主题强制显示隐藏下拉框，导致模型输入区域出现两个输入框的问题。',
-        '【优化】统一扩展剧情时间解析，支持无标签或 <globalTime>/<Time>/<time>/<statusbar> 包裹的多种年月日分隔格式，并兼容小手机现代与古代固定全局状态栏。',
-        '【新增】设置页当前剧情时间新增支持格式说明入口，集中展示现代、古代、标签及兼容时刻写法；同时修复版本与时间信息图标被主题添加白色方形背景的问题。'
+        '【新增】TTS 支持双语翻译；微信外语或方言消息可同时显示原文与中文翻译，语音条及音视频通话仅朗读原文，并支持为 MiniMax 联系人单独指定普通话、粤语、英语或日语。'
     ]
 };
 
@@ -2095,20 +2092,38 @@ if (window.GGP_Loaded) {
         };
     }
 
+    function normalizeUpdateLogEntry(version, entry) {
+        if (!entry || typeof entry !== 'object') return null;
+        const legacyItems = Array.isArray(entry.items)
+            ? entry.items.map(item => String(item || '')).filter(Boolean)
+            : [];
+        const updates = (Array.isArray(entry.updates) ? entry.updates : [])
+            .map(group => ({
+                date: String(group?.date || '').trim(),
+                items: Array.isArray(group?.items)
+                    ? group.items.map(item => String(item || '')).filter(Boolean)
+                    : []
+            }))
+            .filter(group => group.items.length)
+            .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+        const latest = updates[0] || null;
+        const items = latest?.items?.length ? latest.items : legacyItems;
+        if (!items.length) return null;
+        return {
+            version: String(version || ST_PHONE_VERSION),
+            date: String(latest?.date || entry.date || ''),
+            items
+        };
+    }
+
     async function fetchLocalUpdateNotes(version = ST_PHONE_VERSION, cacheBust = Date.now()) {
         if (!window.fetch) return getKnownUpdateNotes(version);
         try {
             const resp = await fetch(`${ST_PHONE_LOCAL_UPDATE_LOG_URL}?_=${cacheBust}`, { cache: 'no-store' });
             if (!resp.ok) return getKnownUpdateNotes(version);
             const log = await resp.json();
-            const entry = log?.versions?.[version];
-            if (entry && Array.isArray(entry.items) && entry.items.length) {
-                return {
-                    version: String(version || ST_PHONE_VERSION),
-                    date: String(entry.date || ''),
-                    items: entry.items.map(item => String(item || '')).filter(Boolean)
-                };
-            }
+            const notes = normalizeUpdateLogEntry(version, log?.versions?.[version]);
+            if (notes) return notes;
         } catch (_e) {
             // 本地更新日志读取失败时使用内置兜底文案，避免影响插件启动。
         }
@@ -2165,7 +2180,7 @@ if (window.GGP_Loaded) {
         const close = async () => {
             const rememberKey = String(options.rememberKey || '');
             if (rememberKey && storage?.set) {
-                await storage.set(rememberKey, version);
+                await storage.set(rememberKey, String(options.rememberValue || version));
             }
             viewportController.abort();
             overlay.remove();
@@ -2189,11 +2204,13 @@ if (window.GGP_Loaded) {
 
     async function showLocalUpdateAnnouncementIfNeeded(options = {}) {
         if (!storage?.get || !storage?.set) return;
-        const seenVersion = String(storage.get('phone-update-announcement-seen-version') || '');
-        if (seenVersion === ST_PHONE_VERSION) return false;
         const notes = await fetchLocalUpdateNotes(ST_PHONE_VERSION);
+        const announcementId = `${ST_PHONE_VERSION}@${String(notes?.date || '').trim()}`;
+        const seenAnnouncement = String(storage.get('phone-update-announcement-seen-release') || '');
+        if (seenAnnouncement === announcementId) return false;
         showPhoneUpdateModal('local', notes, {
-            rememberKey: 'phone-update-announcement-seen-version',
+            rememberKey: 'phone-update-announcement-seen-release',
+            rememberValue: announcementId,
             onClose: options.onClose
         });
         return true;
@@ -2235,14 +2252,8 @@ if (window.GGP_Loaded) {
                 const resp = await fetch(`${url}?_=${cacheBust}`, { cache: 'no-store' });
                 if (!resp.ok) continue;
                 const log = await resp.json();
-                const entry = log?.versions?.[version];
-                if (entry && Array.isArray(entry.items) && entry.items.length) {
-                    return {
-                        version,
-                        date: String(entry.date || ''),
-                        items: entry.items.map(item => String(item || '')).filter(Boolean)
-                    };
-                }
+                const notes = normalizeUpdateLogEntry(version, log?.versions?.[version]);
+                if (notes) return notes;
             } catch (_e) {
                 // 更新日志不可达时使用内置兜底文案。
             }

@@ -651,6 +651,7 @@ export class HoneyView {
             console.error('蜜语推荐刷新失败:', err);
             this._recommendRefreshStatus = 'error';
             this._syncRecommendRefreshIndicatorByState();
+            this._showHoneyAiFailure(err);
             this.app.phoneShell.showNotification('错误', err?.message || String(err), '❌');
         } finally {
             clearTimeout(this._recommendRefreshTimer);
@@ -1016,6 +1017,7 @@ export class HoneyView {
             console.error('蜜语直播下拉刷新失败:', err);
             this._liveRefreshStatus = 'error';
             this._syncLiveRefreshIndicatorByState(liveRoot);
+            this._showHoneyAiFailure(err);
             this.app.phoneShell.showNotification('错误', err?.message || String(err), '❌');
         } finally {
             clearTimeout(this._liveRefreshTimer);
@@ -6049,6 +6051,65 @@ export class HoneyView {
         btn.innerHTML = isFollowed ? '已关注' : '关注';
     }
 
+    _showHoneyAiFailure(error) {
+        const details = error?.honeyResponseDetails;
+        if (!details || !document.querySelector('.phone-view-current .honey-app')) return false;
+        const host = document.querySelector('#phone-panel-content .phone-screen');
+        if (!host) return false;
+        host.querySelector('.honey-ai-error-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'honey-ai-error-overlay';
+        overlay.innerHTML = `
+            <section class="honey-ai-error-dialog" role="dialog" aria-modal="true" aria-labelledby="honey-ai-error-title" tabindex="-1">
+                <header class="honey-ai-error-header">
+                    <h3 id="honey-ai-error-title">蜜语 AI 回复诊断</h3>
+                    <button type="button" class="honey-ai-error-close" title="关闭" aria-label="关闭"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                </header>
+                <div class="honey-ai-error-body">
+                    <p class="honey-ai-error-message"></p>
+                    <p class="honey-ai-error-status"></p>
+                    <strong>模型正文</strong>
+                    <pre class="honey-ai-error-response" data-response="model"></pre>
+                    <div class="honey-ai-error-filtered" hidden>
+                        <strong>标签过滤后</strong>
+                        <pre class="honey-ai-error-response" data-response="filtered"></pre>
+                    </div>
+                    <strong>原始响应体</strong>
+                    <pre class="honey-ai-error-response" data-response="raw"></pre>
+                </div>
+                <footer class="honey-ai-error-footer">
+                    <button type="button" class="honey-ai-error-copy" title="复制原始响应"><i class="fa-solid fa-copy" aria-hidden="true"></i> 复制响应</button>
+                    <button type="button" class="honey-ai-error-confirm">关闭</button>
+                </footer>
+            </section>`;
+        const rawText = String(details.rawText || '');
+        const filteredText = String(details.filteredText || '');
+        const rawResponse = String(details.rawResponse || '');
+        const duration = Number.isFinite(details.elapsedMs) ? `，耗时 ${(details.elapsedMs / 1000).toFixed(1)} 秒` : '';
+        const status = details.timedOut
+            ? '前端等待超时，已发出取消请求；后端是否停止仍需查看后端日志'
+            : (details.streamEndReason || (rawResponse ? '已收到响应，结束方式未知' : '未收到响应体'));
+        overlay.querySelector('.honey-ai-error-message').textContent = error?.message || '请求失败';
+        overlay.querySelector('.honey-ai-error-status').textContent = `请求状态：${status}${duration}`;
+        overlay.querySelector('[data-response="model"]').textContent = rawText || '（未收到可解析的模型正文）';
+        overlay.querySelector('[data-response="raw"]').textContent = rawResponse || '（未收到原始响应体）';
+        if (filteredText !== rawText) {
+            overlay.querySelector('.honey-ai-error-filtered').hidden = false;
+            overlay.querySelector('[data-response="filtered"]').textContent = filteredText || '（过滤后为空）';
+        }
+        const close = () => overlay.remove();
+        overlay.querySelector('.honey-ai-error-close').addEventListener('click', close);
+        overlay.querySelector('.honey-ai-error-confirm').addEventListener('click', close);
+        overlay.querySelector('.honey-ai-error-copy').addEventListener('click', () => {
+            navigator.clipboard?.writeText(rawResponse || rawText || '').catch(error => console.warn('复制蜜语响应失败:', error));
+        });
+        overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+        host.appendChild(overlay);
+        overlay.querySelector('.honey-ai-error-dialog').focus();
+        return true;
+    }
+
     _showHoneyImageErrorModal(message = '生成失败', { title = '生图失败' } = {}) {
         const host = document.querySelector('.phone-view-current .honey-app') ||
             document.querySelector('.phone-view-current') ||
@@ -8974,16 +9035,8 @@ export class HoneyView {
                     isPrivateLive: this._isPrivateLiveScene(workingScene || this.currentSceneData || this.selectedTopic)
                 }));
             } catch (err) {
-                const errMsg = String(err?.message || err || '').trim();
-                const isEmptyLikeError = /返回为空|empty|null|无内容|空响应|未返回有效内容/i.test(errMsg);
-                if (isEmptyLikeError) {
-                    restoreSceneSnapshot();
-                    if (isRequestStillActive()) {
-                        this.app?.phoneShell?.showNotification?.('蜜语', 'AI未返回有效更新，已保留当前内容', 'ℹ️');
-                    }
-                    return;
-                }
                 restoreSceneSnapshot();
+                this._showHoneyAiFailure(err);
                 throw err;
             }
 

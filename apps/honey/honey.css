@@ -619,6 +619,118 @@
     transform: translateY(0);
 }
 
+#phone-panel-content .phone-screen .honey-ai-error-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    box-sizing: border-box;
+    background: rgba(9, 5, 14, 0.72);
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 370px);
+    max-height: min(80%, 620px);
+    min-height: 0;
+    border: 1px solid rgba(255, 194, 223, 0.36);
+    border-radius: 8px;
+    background: #281c2a;
+    color: #fff1f7;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-header,
+#phone-panel-content .phone-screen .honey-ai-error-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px;
+    flex: none;
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-header h3 {
+    margin: 0;
+    font-size: 15px;
+    color: #fff1f7;
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-body {
+    padding: 10px 12px;
+    min-height: 0;
+    overflow-y: auto;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-message {
+    margin: 0 0 6px;
+    color: #ffc2cb;
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-status {
+    margin: 0 0 12px;
+    color: #e9d6e5;
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-body strong {
+    display: block;
+    margin: 10px 0 4px;
+    color: #ffe1ed;
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-response {
+    margin: 0;
+    padding: 9px;
+    max-height: 190px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font: 11px/1.5 monospace;
+    color: #f6edf4;
+    background: #18151e;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-footer button,
+#phone-panel-content .phone-screen .honey-ai-error-close {
+    border: 0;
+    border-radius: 4px;
+    padding: 7px 10px;
+    color: #fff1f7;
+    background: #604057;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-close {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+}
+
+#phone-panel-content .phone-screen .honey-ai-error-footer .honey-ai-error-confirm {
+    background: #bc4c80;
+}
+
 .honey-search-modal {
     position: absolute;
     inset: 0;

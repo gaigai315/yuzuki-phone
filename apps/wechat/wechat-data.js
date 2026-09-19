@@ -2624,7 +2624,8 @@ export class WechatData {
         return {
             contact,
             voice,
-            provider
+            provider,
+            languageBoost: String(contact?.ttsLanguageBoost || 'auto').trim() || 'auto'
         };
     }
 
@@ -2786,7 +2787,7 @@ export class WechatData {
                 message.type = 'voice';
                 message.voiceText = parsedVoice.voiceText;
                 message.innerThought = parsedVoice.innerThought;
-                let seconds = Math.ceil((message.voiceText || '语音').length / 3);
+                let seconds = Math.ceil((parsedVoice.ttsText || message.voiceText || '语音').length / 3);
                 seconds = Math.max(2, Math.min(seconds, 60));
                 message.duration = seconds + '"';
             }

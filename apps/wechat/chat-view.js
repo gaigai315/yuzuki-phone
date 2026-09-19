@@ -15,7 +15,13 @@ import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { readPhoneContextLimit } from '../../config/context-settings.js';
 import { CatboxData } from '../games/catbox/catbox-data.js';
 import { parseWangxiangTaskTags, tokenizeWangxiangTaskTags } from '../wangxiang/wangxiang-task-parser.js';
-import { parseWechatVoiceContent } from './voice-text.js';
+import {
+    parseWechatInnerThoughtContent,
+    parseWechatTranslationContent,
+    parseWechatVoiceContent,
+    stripWechatTranslationContent,
+    stripWechatTtsNonSpeechContent
+} from './voice-text.js';
 import { detectImageMime, normalizeImageDataUrlMime, resolveImageMime } from '../../config/image-mime.js';
 import {
     getPhoneInlineEmoji,
@@ -1403,11 +1409,12 @@ export class ChatView {
         return globalConfig;
     }
 
-    _buildWechatTtsCacheKey({ messageId = '', provider = '', voice = '', text = '' } = {}) {
+    _buildWechatTtsCacheKey({ messageId = '', provider = '', voice = '', languageBoost = '', text = '' } = {}) {
         return [
             String(messageId || '').trim(),
             String(provider || '').trim(),
             String(voice || '').trim(),
+            String(languageBoost || '').trim(),
             String(text || '').trim()
         ].join('\u001f');
     }
@@ -1445,6 +1452,7 @@ export class ChatView {
             return {
                 voice,
                 provider: String(resolved?.provider || '').trim(),
+                languageBoost: String(resolved?.languageBoost || 'auto').trim() || 'auto',
                 contact: resolved.contact || null,
                 source: 'bound'
             };
@@ -1473,6 +1481,7 @@ export class ChatView {
             return {
                 voice: String(fallback.voice || '').trim(),
                 provider: String(fallback.provider || resolved?.provider || '').trim(),
+                languageBoost: String(resolved?.languageBoost || 'auto').trim() || 'auto',
                 contact: resolvedContact || looseContact || null,
                 source: fallback.source || 'global'
             };
@@ -1483,6 +1492,7 @@ export class ChatView {
             return {
                 voice: fallback.voice,
                 provider: fallback.provider,
+                languageBoost: String(resolved?.languageBoost || 'auto').trim() || 'auto',
                 contact: resolved?.contact || null,
                 source: fallback.source
             };
@@ -1491,6 +1501,7 @@ export class ChatView {
         return {
             voice: '',
             provider: String(resolved?.provider || '').trim(),
+            languageBoost: String(resolved?.languageBoost || 'auto').trim() || 'auto',
             contact: resolved?.contact || null
         };
     }
@@ -3454,9 +3465,11 @@ renderChatRoom(chat) {
                 }
                 const parsedVoice = parseWechatVoiceContent(voiceText);
                 voiceText = parsedVoice.voiceText;
+                const voiceTtsText = parsedVoice.ttsText;
+                const voiceDisplay = this._parseWechatBubbleDisplay(voiceText);
                 if (!innerThought) innerThought = parsedVoice.innerThought;
                 if (!hasExplicitLegacyDuration) {
-                    durationNum = Math.max(2, Math.min(Math.ceil((voiceText || '语音').length / 3), 60));
+                    durationNum = Math.max(2, Math.min(Math.ceil((voiceTtsText || voiceText || '语音').length / 3), 60));
                     durationStr = durationNum + '"';
                 }
 
@@ -3470,7 +3483,7 @@ renderChatRoom(chat) {
                 const voiceSvgLeft = `<svg class="voice-wave-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: -1px;"><path d="M8 12h.01"/><path class="voice-arc-1" d="M12 8.5a5 5 0 0 1 0 7"/><path class="voice-arc-2" d="M16 5a10 10 0 0 1 0 14"/></svg>`;
                 const voiceSvgRight = `<svg class="voice-wave-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: scaleX(-1); flex-shrink: 0; margin-top: -1px;"><path d="M8 12h.01"/><path class="voice-arc-1" d="M12 8.5a5 5 0 0 1 0 7"/><path class="voice-arc-2" d="M16 5a10 10 0 0 1 0 14"/></svg>`;
 
-                const showInnerThought = !!innerThought && !isGroupChat;
+                const showInnerThought = !!innerThought;
                 if (showInnerThought) {
                     messageBody = '<div class="wechat-inner-os-wrapper">';
                 }
@@ -3481,7 +3494,7 @@ renderChatRoom(chat) {
                 // 🔥 1. 语音条：【完全复用 .message-text 类】，保证 padding、颜色、圆角、小尾巴和纯文字框 100% 像素级一致！
                 // 使用 display: flex 实现左右对齐
                 messageBody += `
-                <div class="message-text voice-bubble-playable" id="voice-bubble-${this.escapeInlineStickerAttr(msg.id || Math.random().toString(36).substr(2, 9))}" data-text="${this.escapeInlineStickerAttr(voiceText || '')}" style="width: ${dynamicWidth}px; display: flex; justify-content: space-between; align-items: center; box-sizing: border-box; cursor: pointer;">
+                <div class="message-text voice-bubble-playable" id="voice-bubble-${this.escapeInlineStickerAttr(msg.id || Math.random().toString(36).substr(2, 9))}" data-text="${this.escapeInlineStickerAttr(voiceTtsText || '')}" style="width: ${dynamicWidth}px; display: flex; justify-content: space-between; align-items: center; box-sizing: border-box; cursor: pointer;">
                     ${isMe
                         ? `<span>${this._escapeHtml(durationStr)}</span> ${voiceSvgRight}`
                         : `${voiceSvgLeft} <span>${this._escapeHtml(durationStr)}</span>`}
@@ -3492,7 +3505,7 @@ renderChatRoom(chat) {
                 // 🔥 2. 语音转文字：仿照文本框手写样式，但不加 .message-text 类（为了避免小尾巴重复出现）
                 if (voiceText) {
                     messageBody += `
-                    <div${showInnerThought ? ' class="wechat-inner-os-bubble"' : ''} style="
+                    <div class="${[voiceDisplay.hasTranslation ? 'wechat-translation-card' : '', showInnerThought ? 'wechat-inner-os-bubble' : ''].filter(Boolean).join(' ')}" style="
                         position: relative;
                         padding: 7px 10px;
                         border-radius: 4px;
@@ -3506,7 +3519,9 @@ renderChatRoom(chat) {
                         max-width: 100%;
                         box-sizing: border-box;
                         text-align: left;
-                    ">${this._escapeHtml(voiceText)}${showInnerThought ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}</div>
+                    ">${voiceDisplay.hasTranslation
+                        ? this._renderWechatTranslationContent(voiceDisplay.originalText, voiceDisplay.translationText, { hasInnerThought: showInnerThought })
+                        : `${this._escapeHtml(voiceText)}${showInnerThought ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}`}</div>
                 `;
                 }
                 messageBody += `</div>`;
@@ -4030,40 +4045,162 @@ renderChatRoom(chat) {
     }
 
     extractInnerThought(content) {
-        const source = String(content ?? '');
-        const thoughts = [];
-        const visibleContent = source.replace(/\[\s*内心\s*\]\s*[（(]\s*([\s\S]*?)\s*[）)]/g, (_match, thought) => {
-            const text = String(thought || '').trim();
-            if (text) thoughts.push(text);
-            return '';
-        }).replace(/[ \t]{2,}/g, ' ').trim();
+        return parseWechatInnerThoughtContent(content);
+    }
 
+    _renderInnerThoughtPopup(innerThought = '') {
+        const safeThought = String(innerThought || '').trim();
+        if (!safeThought) return '';
+        return `
+            <div class="wechat-inner-os-popup" role="note">
+                <div class="wechat-inner-os-title">INNER THOUGHTS</div>
+                <div class="wechat-inner-os-content">${this._escapeHtml(safeThought)}</div>
+            </div>
+        `;
+    }
+
+    _parseWechatBubbleDisplay(content = '', { stripSpeechPrefix = false } = {}) {
+        const rawText = String(content || '').trim();
+        const parsedInnerThought = this.extractInnerThought(rawText);
+        let visibleText = parsedInnerThought.visibleContent || (parsedInnerThought.innerThought ? '...' : rawText);
+        if (stripSpeechPrefix) visibleText = this._stripCallSpeechPrefix(visibleText);
+
+        const parsedTranslation = parseWechatTranslationContent(visibleText);
         return {
-            visibleContent,
-            innerThought: thoughts.join('\n')
+            rawText,
+            originalText: parsedTranslation.speechText || (parsedTranslation.translationText ? '...' : visibleText),
+            translationText: parsedTranslation.translationText,
+            innerThought: parsedInnerThought.innerThought,
+            hasTranslation: !!parsedTranslation.translationText
         };
     }
 
-    renderTextMessageBubble(content, { isGroupChat = false } = {}) {
-        const parsed = this.extractInnerThought(content);
-        const cleanContent = parsed.visibleContent || (parsed.innerThought ? '...' : content);
-        const visibleText = this._stripCallSpeechPrefix(cleanContent);
-        const visibleHtml = this.parseEmoji(visibleText);
+    _renderWechatTranslationContent(originalText = '', translationText = '', {
+        parseEmoji = false,
+        hasInnerThought = false
+    } = {}) {
+        const renderText = (value) => parseEmoji
+            ? this.parseEmoji(String(value || ''))
+            : this._escapeHtml(String(value || ''));
 
-        if (!parsed.innerThought || isGroupChat) {
-            return `<div class="message-text">${visibleHtml}</div>`;
+        return `
+            <div class="wechat-translation-source">
+                <div class="wechat-translation-source-text">${renderText(originalText)}</div>
+                <span class="wechat-translation-heart" aria-hidden="true">♥</span>
+            </div>
+            <div class="wechat-translation-target">
+                <span class="wechat-translation-badge" aria-hidden="true"><b>A</b><small>文</small></span>
+                <div class="wechat-translation-target-text">${renderText(translationText)}</div>
+            </div>
+            ${hasInnerThought ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}
+        `;
+    }
+
+    _renderWechatCallTranslationContent(originalText = '', translationText = '', {
+        hasInnerThought = false
+    } = {}) {
+        return `
+            <div class="wechat-call-translation-source">${this._escapeHtml(String(originalText || ''))}${this._renderWechatCallSpeechWave()}</div>
+            <div class="wechat-call-translation-target">
+                <span class="wechat-call-translation-label">翻译：</span>
+                <span class="wechat-call-translation-text">${this._escapeHtml(String(translationText || ''))}</span>
+            </div>
+            ${hasInnerThought ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}
+        `;
+    }
+
+    _renderWechatCallSpeechWave() {
+        return '<span class="wechat-call-speech-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>';
+    }
+
+    _renderWechatCallAiBubbleMarkup({
+        text = '',
+        bubbleId = '',
+        messageIndex = -1,
+        callType = 'voice',
+        roundId = '',
+        sender = ''
+    } = {}) {
+        const rawText = String(text || '').trim();
+        const parsed = this._parseWechatBubbleDisplay(rawText);
+        const hasInnerThought = !!parsed.innerThought;
+        const isVideo = callType === 'video';
+        const basePaddingRight = isVideo ? 12 : 10;
+        const verticalPadding = isVideo ? 8 : 6;
+        const bubbleRadius = isVideo ? 12 : 10;
+        const fontSize = isVideo ? 13 : 12;
+        const shadow = isVideo ? '0 1px 3px rgba(0,0,0,0.1)' : '0 1px 2px rgba(0,0,0,0.1)';
+
+        return `
+            <div class="wechat-inner-os-wrapper wechat-call-inner-os-wrapper">
+                <div class="wechat-call-ai-bubble call-msg-bubble wechat-call-spoken-bubble${parsed.hasTranslation ? ' wechat-call-translation-card' : ''}${hasInnerThought ? ' wechat-inner-os-bubble' : ''}"
+                     id="${this.escapeInlineStickerAttr(bubbleId)}"
+                     data-msg-idx="${Number(messageIndex)}"
+                     data-call-type="${this.escapeInlineStickerAttr(callType)}"
+                     data-round-id="${this.escapeInlineStickerAttr(roundId)}"
+                     data-sender="${this.escapeInlineStickerAttr(sender)}"
+                     data-text="${this.escapeInlineStickerAttr(rawText)}"
+                     data-base-padding-right="${basePaddingRight}"
+                     style="max-width:100%; padding:${verticalPadding}px ${hasInnerThought ? 22 : basePaddingRight}px ${verticalPadding}px ${isVideo ? 12 : 10}px; background:rgba(255,255,255,0.85); color:#333; border-radius:${bubbleRadius}px; font-size:${fontSize}px; box-shadow:${shadow}; cursor:pointer; transition:all 0.3s; position:relative; box-sizing:border-box; word-break:break-word;">
+                    ${parsed.hasTranslation
+                        ? this._renderWechatCallTranslationContent(parsed.originalText, parsed.translationText, { hasInnerThought })
+                        : `${this._escapeHtml(parsed.originalText)}${this._renderWechatCallSpeechWave()}${hasInnerThought ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}`}
+                </div>
+                ${this._renderInnerThoughtPopup(parsed.innerThought)}
+            </div>
+        `;
+    }
+
+    _syncWechatCallBubbleInnerThought(bubble, text = '') {
+        if (!bubble) return;
+        const rawText = String(text || '').trim();
+        const parsed = this._parseWechatBubbleDisplay(rawText);
+        const hasInnerThought = !!parsed.innerThought;
+        const basePaddingRight = Math.max(0, Number(bubble.dataset.basePaddingRight) || 10);
+
+        bubble.dataset.text = rawText;
+        bubble.classList.add('wechat-call-spoken-bubble');
+        bubble.classList.remove('wechat-translation-card');
+        bubble.classList.toggle('wechat-call-translation-card', parsed.hasTranslation);
+        bubble.classList.toggle('wechat-inner-os-bubble', hasInnerThought);
+        bubble.style.paddingRight = `${hasInnerThought ? 22 : basePaddingRight}px`;
+        bubble.innerHTML = parsed.hasTranslation
+            ? this._renderWechatCallTranslationContent(parsed.originalText, parsed.translationText, { hasInnerThought })
+            : `${this._escapeHtml(parsed.originalText)}${this._renderWechatCallSpeechWave()}${hasInnerThought ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}`;
+
+        const wrapper = bubble.closest('.wechat-call-inner-os-wrapper');
+        if (!wrapper) return;
+        Array.from(wrapper.children).forEach(child => {
+            if (child.classList?.contains('wechat-inner-os-popup')) child.remove();
+        });
+        if (hasInnerThought) {
+            wrapper.insertAdjacentHTML('beforeend', this._renderInnerThoughtPopup(parsed.innerThought));
+        }
+    }
+
+    renderTextMessageBubble(content, { isGroupChat = false } = {}) {
+        const parsed = this._parseWechatBubbleDisplay(content, { stripSpeechPrefix: true });
+        const showInnerThought = !!parsed.innerThought;
+        const bubbleClasses = [
+            'message-text',
+            parsed.hasTranslation ? 'wechat-translation-card' : '',
+            showInnerThought ? 'wechat-inner-os-bubble' : ''
+        ].filter(Boolean).join(' ');
+        const bubbleContent = parsed.hasTranslation
+            ? this._renderWechatTranslationContent(parsed.originalText, parsed.translationText, {
+                parseEmoji: true,
+                hasInnerThought: showInnerThought
+            })
+            : `${this.parseEmoji(parsed.originalText)}${showInnerThought ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}`;
+
+        if (!showInnerThought) {
+            return `<div class="${bubbleClasses}">${bubbleContent}</div>`;
         }
 
         return `
             <div class="wechat-inner-os-wrapper">
-                <div class="message-text wechat-inner-os-bubble">
-                    ${visibleHtml}
-                    <button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>
-                </div>
-                <div class="wechat-inner-os-popup" role="note">
-                    <div class="wechat-inner-os-title">INNER THOUGHTS</div>
-                    <div class="wechat-inner-os-content">${this._escapeHtml(parsed.innerThought)}</div>
-                </div>
+                <div class="${bubbleClasses}">${bubbleContent}</div>
+                ${this._renderInnerThoughtPopup(parsed.innerThought)}
             </div>
         `;
     }
@@ -7871,27 +8008,26 @@ renderChatRoom(chat) {
         this.scheduleInlineStickerHydration();
     }
 
-    bindInnerThoughtEvents() {
+    bindInnerThoughtEvents(rootOverride = null) {
         const currentView = this.getCurrentWechatView();
-        const root = currentView?.querySelector('#chat-messages') || currentView;
-        if (!root) return;
+        const root = rootOverride || currentView?.querySelector('#chat-messages') || currentView;
+        if (!root || root._innerThoughtEventsBound) return;
+        root._innerThoughtEventsBound = true;
 
-        root.querySelectorAll('.wechat-inner-os-fold').forEach(btn => {
-            if (btn.dataset.innerOsBound === '1') return;
-            btn.dataset.innerOsBound = '1';
-            btn.addEventListener('click', (e) => {
-                if (this._isMessageSelectionActiveForCurrentChat()) return;
-                e.preventDefault();
-                e.stopPropagation();
+        root.addEventListener('click', (e) => {
+            const btn = e.target.closest?.('.wechat-inner-os-fold');
+            if (!btn || !root.contains(btn)) return;
+            if (this._isMessageSelectionActiveForCurrentChat()) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
 
-                const wrapper = btn.closest('.wechat-inner-os-wrapper');
-                if (!wrapper) return;
-                const shouldOpen = !wrapper.classList.contains('show-os');
-                root.querySelectorAll('.wechat-inner-os-wrapper.show-os').forEach(el => {
-                    if (el !== wrapper) el.classList.remove('show-os');
-                });
-                wrapper.classList.toggle('show-os', shouldOpen);
+            const wrapper = btn.closest('.wechat-inner-os-wrapper');
+            if (!wrapper) return;
+            const shouldOpen = !wrapper.classList.contains('show-os');
+            root.querySelectorAll('.wechat-inner-os-wrapper.show-os').forEach(el => {
+                if (el !== wrapper) el.classList.remove('show-os');
             });
+            wrapper.classList.toggle('show-os', shouldOpen);
         });
     }
 
@@ -9414,7 +9550,7 @@ renderChatRoom(chat) {
                     return;
                 }
 
-                const textToSpeak = bubble.dataset.text;
+                const textToSpeak = stripWechatTranslationContent(bubble.dataset.text);
                 if (!textToSpeak) return;
 
                 // 如果点击正在播放的音频，则停止
@@ -9430,6 +9566,7 @@ renderChatRoom(chat) {
                 const userVoice = this._resolveWechatUserVoice();
                 let finalVoice = userVoice.voice;
                 let finalProvider = userVoice.provider;
+                let finalLanguageBoost = 'auto';
                 const msgNode = bubble.closest('.chat-message');
                 const isMe = msgNode && msgNode.classList.contains('message-right');
 
@@ -9440,10 +9577,11 @@ renderChatRoom(chat) {
                     const senderEl = msgNode.querySelector('.message-sender');
                     if (senderEl) senderName = senderEl.innerText;
 
-                    const { voice, provider } = this._resolveWechatBoundVoiceByName(senderName, { allowGenderFallback: true });
+                    const { voice, provider, languageBoost } = this._resolveWechatBoundVoiceByName(senderName, { allowGenderFallback: true });
                     if (voice) {
                         finalVoice = voice;
                         finalProvider = provider || finalProvider;
+                        finalLanguageBoost = languageBoost || 'auto';
                         this._clearMissingBoundVoiceWarn(senderName, { scene: 'chat' });
                     } else {
                         // 没有绑定音色且兜底音色也未配置时才拦截
@@ -9453,11 +9591,13 @@ renderChatRoom(chat) {
                 }
                 const voice = finalVoice;
                 const provider = finalProvider;
+                const languageBoost = finalLanguageBoost;
                 const messageId = String(bubble.id || '').replace(/^voice-bubble-/, '');
                 const cacheKey = this._buildWechatTtsCacheKey({
                     messageId,
                     provider,
                     voice,
+                    languageBoost,
                     text: textToSpeak
                 });
 
@@ -9472,7 +9612,11 @@ renderChatRoom(chat) {
                     if (blobUrl) {
                         this._touchWechatTtsCacheKey(cacheKey);
                     } else {
-                        blobUrl = await ttsManager.requestTTS(textToSpeak, { provider: provider || undefined, voice: voice || undefined });
+                        blobUrl = await ttsManager.requestTTS(textToSpeak, {
+                            provider: provider || undefined,
+                            voice: voice || undefined,
+                            languageBoost
+                        });
                         this._storeWechatTtsCache(cacheKey, blobUrl);
                     }
 
@@ -13429,21 +13573,29 @@ renderChatRoom(chat) {
 
             const isMe = from === 'me' || from === userName;
             const speaker = isMe ? userName : from;
+            const parsed = this._parseWechatBubbleDisplay(text);
+            const hasInnerThought = !!parsed.innerThought;
 
             return `
                 <div style="display:flex; ${isMe ? 'justify-content:flex-end;' : 'justify-content:flex-start;'} margin-bottom:8px;">
                     <div style="max-width:82%; display:flex; flex-direction:column; ${isMe ? 'align-items:flex-end;' : 'align-items:flex-start;'}">
                         <div style="font-size:10px; color:#888; margin-bottom:2px;">${this._escapeHtml(speaker)}</div>
-                        <div style="
-                            background:${isMe ? '#95ec69' : '#fff'};
-                            color:#222;
-                            border-radius:10px;
-                            padding:7px 10px;
-                            font-size:12px;
-                            line-height:1.45;
-                            box-shadow:${isMe ? 'none' : '0 1px 2px rgba(0,0,0,0.08)'};
-                            word-break:break-word;
-                        ">${this._escapeHtml(text)}</div>
+                        <div class="wechat-inner-os-wrapper">
+                            <div class="${['wechat-call-spoken-bubble', parsed.hasTranslation ? 'wechat-call-translation-card' : '', hasInnerThought ? 'wechat-inner-os-bubble' : ''].filter(Boolean).join(' ')}" style="
+                                position:relative;
+                                background:${isMe ? '#95ec69' : '#fff'};
+                                color:#222;
+                                border-radius:10px;
+                                padding:7px ${hasInnerThought ? '22px' : '10px'} 7px 10px;
+                                font-size:12px;
+                                line-height:1.45;
+                                box-shadow:${isMe ? 'none' : '0 1px 2px rgba(0,0,0,0.08)'};
+                                word-break:break-word;
+                            ">${parsed.hasTranslation
+                                ? this._renderWechatCallTranslationContent(parsed.originalText, parsed.translationText, { hasInnerThought })
+                                : `${this._escapeHtml(parsed.originalText)}${this._renderWechatCallSpeechWave()}${hasInnerThought ? '<button class="wechat-inner-os-fold" type="button" aria-label="查看内心OS"></button>' : ''}`}</div>
+                            ${this._renderInnerThoughtPopup(parsed.innerThought)}
+                        </div>
                     </div>
                 </div>
             `;
@@ -13497,6 +13649,7 @@ renderChatRoom(chat) {
 
         const host = document.querySelector('.phone-view-current') || document.body;
         host.insertAdjacentHTML('beforeend', html);
+        this.bindInnerThoughtEvents(document.getElementById('wechat-call-transcript-modal'));
 
         const close = () => {
             document.getElementById('wechat-call-transcript-modal')?.remove();
@@ -14514,12 +14667,18 @@ renderChatRoom(chat) {
                 const senderLabelHtml = isGroupCall
                     ? `<div class="call-msg-sender-label" style="font-size:10px; color:rgba(255,255,255,0.86); margin:0 0 4px 2px;">${this._escapeHtml(entry.sender)}</div>`
                     : '';
-                const safeEntryText = this._escapeHtml(entry.text);
                 const aiMsgHtml = `
                     <div class="call-msg-row" style="display: flex; justify-content: flex-start;">
                         <div style="max-width: 75%; display:flex; flex-direction:column; align-items:flex-start;">
                             ${senderLabelHtml}
-                            <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="video" data-round-id="${roundId}" data-sender="${this._escapeHtml(entry.sender)}" data-text="${safeEntryText}" style="max-width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.85); color: #333; border-radius: 12px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${safeEntryText}</div>
+                            ${this._renderWechatCallAiBubbleMarkup({
+                                text: entry.text,
+                                bubbleId,
+                                messageIndex: chatMessages.length,
+                                callType: 'video',
+                                roundId,
+                                sender: entry.sender
+                            })}
                         </div>
                     </div>
                 `;
@@ -14536,7 +14695,9 @@ renderChatRoom(chat) {
         // 聊天消息记录
         const chatMessages = [];
         // 🔥 激活视频通话的长按菜单
-        this.bindCallMessageLongPressEvents(document.getElementById('video-chat-messages'), chatMessages);
+        const videoCallMessages = document.getElementById('video-chat-messages');
+        this.bindCallMessageLongPressEvents(videoCallMessages, chatMessages);
+        this.bindInnerThoughtEvents(videoCallMessages);
 
         // 🔥 AI主动发第一句话（支持多条消息）
         if (aiFirstMessage && aiFirstMessage.trim()) {
@@ -15854,12 +16015,18 @@ ${callTranscript}`;
                 const senderLabelHtml = isGroupCall
                     ? `<div class="call-msg-sender-label" style="font-size:10px; color:rgba(0,0,0,0.48); margin:0 0 4px 2px;">${this._escapeHtml(entry.sender)}</div>`
                     : '';
-                const safeEntryText = this._escapeHtml(entry.text);
                 const aiMsgHtml = `
                     <div class="call-msg-row" style="display: flex; justify-content: flex-start;">
                         <div style="max-width: 80%; display:flex; flex-direction:column; align-items:flex-start;">
                             ${senderLabelHtml}
-                            <div class="wechat-call-ai-bubble call-msg-bubble" id="${bubbleId}" data-msg-idx="${chatMessages.length}" data-call-type="voice" data-round-id="${roundId}" data-sender="${this._escapeHtml(entry.sender)}" data-text="${safeEntryText}" style="max-width: 100%; padding: 6px 10px; background: rgba(255,255,255,0.85); color: #333; border-radius: 10px; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.3s; position: relative;">${safeEntryText}</div>
+                            ${this._renderWechatCallAiBubbleMarkup({
+                                text: entry.text,
+                                bubbleId,
+                                messageIndex: chatMessages.length,
+                                callType: 'voice',
+                                roundId,
+                                sender: entry.sender
+                            })}
                         </div>
                     </div>
                 `;
@@ -15888,7 +16055,9 @@ ${callTranscript}`;
         // 聊天消息记录
         const chatMessages = [];
         // 🔥 激活语音通话的长按菜单
-        this.bindCallMessageLongPressEvents(document.getElementById('voice-chat-messages'), chatMessages);
+        const voiceCallMessages = document.getElementById('voice-chat-messages');
+        this.bindCallMessageLongPressEvents(voiceCallMessages, chatMessages);
+        this.bindInnerThoughtEvents(voiceCallMessages);
 
         // 🔥 如果有AI开场白，显示（支持多条消息）
         if (aiGreeting && aiGreeting.trim()) {
@@ -17626,6 +17795,7 @@ ${callTranscript}`;
 
     _resolveCallTTSContent(text, callType = 'voice') {
         let raw = this._stripCallSpeechPrefix(this._decodeHtmlEntities(text));
+        raw = stripWechatTtsNonSpeechContent(raw);
         if (callType === 'video') {
             // 视频通话：只读对白，跳过括号内的画面描写（支持中英文括号）
             let prev = '';
@@ -17672,10 +17842,13 @@ ${callTranscript}`;
         const storage = window.VirtualPhone?.storage;
         const ttsManager = window.VirtualPhone?.ttsManager;
         if (!storage) return;
+        const textToSpeak = this._resolveCallTTSContent(text, bubble?.dataset?.callType || 'voice');
+        if (!textToSpeak) return;
         // 对方必须使用绑定音色；自己的语音优先使用个人资料中的专属配置。
         const userVoice = this._resolveWechatUserVoice();
         let finalVoice = userVoice.voice;
         let finalProvider = userVoice.provider;
+        let finalLanguageBoost = 'auto';
         const row = bubble?.closest?.('.call-msg-row');
         const isMe = !!(bubble && !bubble.classList.contains('wechat-call-ai-bubble')) ||
             (row && String(row.style?.justifyContent || '').trim() === 'flex-end');
@@ -17684,10 +17857,11 @@ ${callTranscript}`;
             // 通话中对方说话，优先使用气泡绑定的发送者，再回退到发送者标签
             const senderName = this._resolveCallBubbleSenderName(bubble);
             if (senderName) {
-                const { voice, provider } = this._resolveWechatBoundVoiceByName(senderName, { allowGenderFallback: true });
+                const { voice, provider, languageBoost } = this._resolveWechatBoundVoiceByName(senderName, { allowGenderFallback: true });
                 if (voice) {
                     finalVoice = voice;
                     finalProvider = provider || finalProvider;
+                    finalLanguageBoost = languageBoost || 'auto';
                     this._clearMissingBoundVoiceWarn(senderName, { scene: 'call' });
                 } else {
                     // 未绑定音色且兜底音色也未配置时，跳过当前语音的生成
@@ -17698,6 +17872,7 @@ ${callTranscript}`;
         }
         const voice = finalVoice;
         const provider = finalProvider;
+        const languageBoost = finalLanguageBoost;
 
         if (!ttsManager) return;
 
@@ -17708,7 +17883,11 @@ ${callTranscript}`;
                 if (prevBubble) prevBubble.classList.remove('voice-playing');
             }
 
-            const blobUrl = await ttsManager.requestTTS(text, { provider: provider || undefined, voice: voice || undefined });
+            const blobUrl = await ttsManager.requestTTS(textToSpeak, {
+                provider: provider || undefined,
+                voice: voice || undefined,
+                languageBoost
+            });
 
             this.audioPlayer.src = blobUrl;
             this.currentPlayingCallMsgId = bubble ? bubble.id : null;
@@ -17740,6 +17919,7 @@ ${callTranscript}`;
         if (!messagesDiv || messagesDiv._callEventBound) return;
         messagesDiv._callEventBound = true;
         messagesDiv.addEventListener('click', async (e) => {
+            if (e.target.closest?.('.wechat-inner-os-fold, .wechat-inner-os-popup')) return;
             const bubble = e.target.closest('.wechat-call-ai-bubble');
             if (!bubble) return;
             
@@ -17835,6 +18015,7 @@ ${callTranscript}`;
                         const originalText = chatMessages[index].text;
                         const isMe = chatMessages[index].from === 'me';
                         this._setMessageInlineEditMode(true, this.app.currentChat?.id);
+                        bubbleEl.closest('.wechat-inner-os-wrapper')?.classList.remove('show-os');
                         
                         // 🔥 修复1：记录原宽度，并在编辑时强行撑满气泡（不超过 max-width 75% 的限制）
                         const originalWidth = bubbleEl.style.width;
@@ -17876,7 +18057,11 @@ ${callTranscript}`;
                             // 🔥 恢复气泡原来的宽度
                             bubbleEl.style.width = originalWidth;
                             bubbleEl.style.minWidth = '';
-                            bubbleEl.innerHTML = this._escapeHtml(chatMessages[index].text);
+                            if (bubbleEl.classList.contains('wechat-call-ai-bubble')) {
+                                this._syncWechatCallBubbleInnerThought(bubbleEl, chatMessages[index].text);
+                            } else {
+                                bubbleEl.innerHTML = this._escapeHtml(chatMessages[index].text);
+                            }
                             delete bubbleEl.dataset.isEditing;
                             this._setMessageInlineEditMode(false, this.app.currentChat?.id);
                         };
@@ -17890,13 +18075,17 @@ ${callTranscript}`;
                             
                             if (newText) {
                                 chatMessages[index].text = newText;
-                                bubbleEl.innerHTML = this._escapeHtml(newText);
-                                // 同步更新 TTS 朗读的文本
-                                if(bubbleEl.classList.contains('wechat-call-ai-bubble')) {
-                                    bubbleEl.dataset.text = newText;
+                                if (bubbleEl.classList.contains('wechat-call-ai-bubble')) {
+                                    this._syncWechatCallBubbleInnerThought(bubbleEl, newText);
+                                } else {
+                                    bubbleEl.innerHTML = this._escapeHtml(newText);
                                 }
                             } else {
-                                bubbleEl.innerHTML = this._escapeHtml(chatMessages[index].text);
+                                if (bubbleEl.classList.contains('wechat-call-ai-bubble')) {
+                                    this._syncWechatCallBubbleInnerThought(bubbleEl, chatMessages[index].text);
+                                } else {
+                                    bubbleEl.innerHTML = this._escapeHtml(chatMessages[index].text);
+                                }
                             }
                             delete bubbleEl.dataset.isEditing;
                             this._setMessageInlineEditMode(false, this.app.currentChat?.id);
@@ -17917,6 +18106,7 @@ ${callTranscript}`;
         };
 
         const handleStart = (e) => {
+            if (e.target.closest?.('.wechat-inner-os-fold, .wechat-inner-os-popup')) return;
             const bubble = e.target.closest('.call-msg-bubble');
             if (!bubble || bubble.dataset.isEditing === "true") return;
             touchStartTarget = bubble;
