@@ -21,7 +21,7 @@ import { PhoneFloatingEntry } from './phone/floating-entry.js';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.6';
+const ST_PHONE_VERSION = '1.5.7';
 const ST_PHONE_CSS_REVISION = '20260911-contact-generation-error-modal';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260902-avatar-gender';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -58,9 +58,9 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-09-19',
+    date: '2026-09-20',
     items: [
-        '【新增】TTS 支持双语翻译；微信外语或方言消息可同时显示原文与中文翻译，语音条及音视频通话仅朗读原文，并支持为 MiniMax 联系人单独指定普通话、粤语、英语或日语。'
+        '【优化】优化部分渲染 CSS。'
     ]
 };
 
@@ -6836,6 +6836,24 @@ if (window.GGP_Loaded) {
             return;
         }
 
+        // 兼容历史/上下文摘要被 AI 原样复述的格式：[转账 ¥100.00]（状态：未收款）
+        const transferSummaryMatch = String(content || '').trim().match(/^\[\s*转账\s*[¥￥]\s*([\d,]+(?:\.\d+)?)\s*元?\s*\]\s*(?:[（(]\s*状态\s*[：:]\s*(未收款|待收款|已收款|已退回)\s*[）)])?\s*$/);
+        if (transferSummaryMatch) {
+            const amount = Number.parseFloat(String(transferSummaryMatch[1] || '').replace(/,/g, ''));
+            const statusText = String(transferSummaryMatch[2] || '').trim();
+            if (Number.isFinite(amount)) {
+                msgObj.type = 'transfer';
+                msgObj.amount = amount.toFixed(2);
+                msgObj.status = statusText === '已收款'
+                    ? 'received'
+                    : (statusText === '已退回' ? 'refunded' : 'sent');
+                msgObj.desc = '转账给你';
+                msgObj.remark = msgObj.desc;
+                msgObj.content = `[转账] ¥${amount.toFixed(2)}`;
+                return;
+            }
+        }
+
         // [转账] (支持多种格式)
         if (content.startsWith('[转账]')) {
             msgObj.type = 'transfer';
@@ -8569,6 +8587,7 @@ if (window.GGP_Loaded) {
             if (!window.VirtualPhone.phoneApp) {
                 window.VirtualPhone.phoneApp = new module.PhoneApp(phoneShell, storage);
             }
+            window.VirtualPhone.phoneApp.attachEnvironment?.(phoneShell, storage);
             currentApp = 'phone';
 
             // 派发来电事件
@@ -9402,6 +9421,7 @@ if (window.GGP_Loaded) {
                                 if (!window.VirtualPhone.phoneApp) {
                                     window.VirtualPhone.phoneApp = new module.PhoneApp(phoneShell, storage);
                                 }
+                                window.VirtualPhone.phoneApp.attachEnvironment?.(phoneShell, storage);
                                 window.VirtualPhone.phoneApp.render();
                             } catch (initError) {
                                 console.error('❌ [调试] 创建/调用 PhoneApp 失败:', initError);

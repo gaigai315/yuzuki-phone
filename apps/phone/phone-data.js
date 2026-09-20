@@ -64,17 +64,11 @@ export class PhoneCallData {
     // 获取通话记录（lazy load）
     getCallHistory() {
         if (!this._callHistory) {
-            const saved = this.storage.get('phone_call_history', null);
-            if (saved) {
-                try {
-                    this._callHistory = typeof saved === 'string' ? JSON.parse(saved) : saved;
-                } catch (e) {
-                    console.error('[PhoneCallData] 解析通话记录失败:', e);
-                    this._callHistory = [];
-                }
-            } else {
-                this._callHistory = [];
-            }
+            this._callHistory = this._readStoredArray(
+                'phone_call_history',
+                'call history',
+                record => this._normalizeCallRecord(record)
+            );
         }
         return this._callHistory;
     }
@@ -108,19 +102,13 @@ export class PhoneCallData {
 
     getContacts() {
         if (!this._contacts) {
-            const saved = this.storage.get('phone_call_contacts', null);
-            if (saved) {
-                try {
-                    this._contacts = typeof saved === 'string' ? JSON.parse(saved) : saved;
-                } catch (e) {
-                    console.error('[PhoneCallData] 解析通话联系人失败:', e);
-                    this._contacts = [];
-                }
-            } else {
-                this._contacts = [];
-            }
+            this._contacts = this._readStoredArray(
+                'phone_call_contacts',
+                'phone contacts',
+                (contact, index) => this._normalizeContact(contact, index)
+            );
         }
-        return Array.isArray(this._contacts) ? this._contacts : [];
+        return this._contacts;
     }
 
     saveContacts() {
@@ -157,19 +145,15 @@ export class PhoneCallData {
 
     getSmsConversations() {
         if (!this._smsConversations) {
-            const saved = this.storage.get('phone_call_sms_conversations', null);
-            if (saved) {
-                try {
-                    this._smsConversations = typeof saved === 'string' ? JSON.parse(saved) : saved;
-                } catch (e) {
-                    console.error('[PhoneCallData] 解析短信会话失败:', e);
-                    this._smsConversations = [];
-                }
-            } else {
-                this._smsConversations = [];
-            }
+            this._smsConversations = this._readStoredArray(
+                'phone_call_sms_conversations',
+                'SMS conversations',
+                conversation => conversation && typeof conversation === 'object' && !Array.isArray(conversation)
+                    ? conversation
+                    : null
+            );
         }
-        return Array.isArray(this._smsConversations) ? this._smsConversations : [];
+        return this._smsConversations;
     }
 
     saveSmsConversations() {
@@ -178,19 +162,13 @@ export class PhoneCallData {
 
     getSmsProcessedBatches() {
         if (!this._smsProcessedBatches) {
-            const saved = this.storage.get('phone_call_sms_processed_batches', null);
-            if (saved) {
-                try {
-                    this._smsProcessedBatches = typeof saved === 'string' ? JSON.parse(saved) : saved;
-                } catch (e) {
-                    console.error('[PhoneCallData] 解析短信批次记录失败:', e);
-                    this._smsProcessedBatches = [];
-                }
-            } else {
-                this._smsProcessedBatches = [];
-            }
+            this._smsProcessedBatches = this._readStoredArray(
+                'phone_call_sms_processed_batches',
+                'SMS batch records',
+                record => record && typeof record === 'object' && !Array.isArray(record) ? record : null
+            );
         }
-        return Array.isArray(this._smsProcessedBatches) ? this._smsProcessedBatches : [];
+        return this._smsProcessedBatches;
     }
 
     hasProcessedSmsBatch(batchId, parserVersion) {
@@ -395,5 +373,81 @@ export class PhoneCallData {
         this._contacts = null;
         this._smsConversations = null;
         this._smsProcessedBatches = null;
+    }
+
+    _readStoredArray(key, label, normalizeItem = item => item) {
+        let saved = null;
+        let parsed = null;
+        let needsRepair = false;
+
+        try {
+            saved = this.storage?.get?.(key, null);
+            parsed = saved;
+            if (typeof parsed === 'string') {
+                parsed = parsed.trim() ? JSON.parse(parsed) : [];
+            }
+        } catch (error) {
+            console.warn(`[PhoneCallData] Failed to parse ${label}; isolating invalid data:`, error);
+            parsed = [];
+            needsRepair = saved !== null && saved !== undefined && saved !== '';
+        }
+
+        if (!Array.isArray(parsed)) {
+            const hadStoredValue = saved !== null && saved !== undefined && saved !== '';
+            if (hadStoredValue) needsRepair = true;
+            if (parsed !== null && parsed !== undefined && parsed !== '') {
+                console.warn(`[PhoneCallData] ${label} is not an array; resetting to a safe value.`);
+            }
+            parsed = [];
+        }
+
+        const normalized = [];
+        parsed.forEach((item, index) => {
+            const safeItem = normalizeItem(item, index);
+            if (safeItem === null || safeItem === undefined) {
+                needsRepair = true;
+                return;
+            }
+            if (safeItem !== item) needsRepair = true;
+            normalized.push(safeItem);
+        });
+
+        if (needsRepair) {
+            try {
+                this.storage?.set?.(key, normalized);
+            } catch (error) {
+                console.warn(`[PhoneCallData] Failed to save repaired ${label}:`, error);
+            }
+        }
+        return normalized;
+    }
+
+    _normalizeCallRecord(record) {
+        if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+
+        const rawTranscript = Array.isArray(record.transcript) ? record.transcript : [];
+        const transcript = rawTranscript.flatMap(message => {
+            if (typeof message === 'string') {
+                const text = message.trim();
+                return text ? [{ from: 'ai', text }] : [];
+            }
+            return message && typeof message === 'object' && !Array.isArray(message) ? [message] : [];
+        });
+        if (record.transcript === rawTranscript && transcript.length === rawTranscript.length
+            && transcript.every((message, index) => message === rawTranscript[index])) {
+            return record;
+        }
+        return { ...record, transcript };
+    }
+
+    _normalizeContact(contact, index) {
+        if (typeof contact === 'string') {
+            const name = contact.trim();
+            return name ? { id: `phone_contact_legacy_${index}`, name } : null;
+        }
+        if (!contact || typeof contact !== 'object' || Array.isArray(contact)) return null;
+        const name = String(contact.name || '').trim();
+        if (!name) return null;
+        return contact.name === name ? contact : { ...contact, name };
     }
 }

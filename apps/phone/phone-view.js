@@ -149,9 +149,10 @@ export class PhoneCallView {
         this._bindCallHistoryEvents(history);
 
         // 点击空白处关闭删除按钮
-        document.querySelector('.phone-call-main')?.addEventListener('click', (e) => {
+        const root = this._getCurrentPhoneViewRoot('.phone-call-main');
+        root?.addEventListener('click', (e) => {
             if (!e.target.closest('.phone-call-history-item')) {
-                document.querySelectorAll('.phone-call-delete-btn').forEach(btn => btn.remove());
+                root.querySelectorAll('.phone-call-delete-btn').forEach(btn => btn.remove());
             }
         });
     }
@@ -1480,7 +1481,9 @@ export class PhoneCallView {
 
     _bindCallHistoryEvents(history) {
         const reversedHistory = [...history].reverse();
-        document.querySelectorAll('.phone-call-history-item').forEach(item => {
+        const root = this._getCurrentPhoneViewRoot('.phone-call-main');
+        if (!root) return;
+        root.querySelectorAll('.phone-call-history-item').forEach(item => {
             const idx = parseInt(item.dataset.recordIdx, 10);
             const record = reversedHistory[idx];
             if (!record) return;
@@ -1577,7 +1580,8 @@ export class PhoneCallView {
     }
 
     _showCallRecordDeleteButton(item, record) {
-        document.querySelectorAll('.phone-call-delete-btn').forEach(btn => btn.remove());
+        const root = this._getCurrentPhoneViewRoot('.phone-call-main');
+        root?.querySelectorAll('.phone-call-delete-btn').forEach(btn => btn.remove());
         if (!item || !record) return;
 
         const deleteBtn = document.createElement('button');
@@ -3356,6 +3360,12 @@ export class PhoneCallView {
     // 工具方法
     // ========================================
 
+    _getCurrentPhoneViewRoot(selector = '') {
+        const currentView = this.app?.phoneShell?.screen?.querySelector?.('.phone-view-current');
+        if (!currentView) return null;
+        return selector ? currentView.querySelector(selector) : currentView;
+    }
+
     _setPhoneShellContent(html, viewId, { replaceViewIds = [] } = {}) {
         const idsToReplace = Array.isArray(replaceViewIds)
             ? replaceViewIds.map(id => String(id || '').trim()).filter(Boolean)
@@ -3402,13 +3412,13 @@ export class PhoneCallView {
 
         if (!wallpaper) {
             return {
-                appClass: baseClass,
+                appClass: `${baseClass} yzp-phone-app-root`,
                 appStyle: ''
             };
         }
 
         return {
-            appClass: `${baseClass} phone-call-wallpaper-shell`,
+            appClass: `${baseClass} yzp-phone-app-root phone-call-wallpaper-shell`,
             appStyle: `background-image: url('${this._escapeAttr(wallpaper)}'); background-size: cover; background-position: center;`
         };
     }

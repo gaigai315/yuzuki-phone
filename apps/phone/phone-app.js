@@ -41,7 +41,25 @@ export class PhoneApp {
     }
 
     render() {
+        const liveShell = window.VirtualPhone?.home?.phoneShell;
+        if ((!this.phoneShell?.screen?.isConnected || this.phoneShell !== liveShell) && liveShell) {
+            this.attachEnvironment(liveShell, window.VirtualPhone?.storage || this.storage);
+        }
         this.phoneCallView.render();
+    }
+
+    attachEnvironment(phoneShell, storage) {
+        if (phoneShell) this.phoneShell = phoneShell;
+        if (!storage || this.storage === storage) return;
+
+        this.storage = storage;
+        const cachedPhoneCallData = window.VirtualPhone?.cachedPhoneCallData;
+        this.phoneCallData = cachedPhoneCallData?.storage === storage
+            ? cachedPhoneCallData
+            : new PhoneCallData(storage);
+        if (window.VirtualPhone) {
+            window.VirtualPhone.cachedPhoneCallData = this.phoneCallData;
+        }
     }
 
     handleSwipeBack(e) {

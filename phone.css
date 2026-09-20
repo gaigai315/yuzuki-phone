@@ -5492,6 +5492,32 @@ input:checked + .toggle-slider:before {
 }
 
 /* 通话记录首页 */
+#phone-panel-content .phone-screen .yzp-phone-app-root {
+    isolation: isolate;
+    contain: layout paint style;
+    min-width: 0;
+    min-height: 0;
+}
+
+#phone-panel-content .phone-screen .yzp-phone-app-root,
+#phone-panel-content .phone-screen .yzp-phone-app-root *,
+#phone-panel-content .phone-screen .yzp-phone-app-root *::before,
+#phone-panel-content .phone-screen .yzp-phone-app-root *::after {
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .yzp-phone-app-root :is(button, input, textarea, select) {
+    min-width: 0;
+    max-width: 100%;
+    font-family: inherit;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+#phone-panel-content .phone-screen .yzp-phone-app-root [hidden] {
+    display: none !important;
+}
+
 .phone-call-main {
     display: flex;
     flex-direction: column;
