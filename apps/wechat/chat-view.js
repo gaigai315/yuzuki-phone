@@ -26,7 +26,8 @@ import { detectImageMime, normalizeImageDataUrlMime, resolveImageMime } from '..
 import {
     getPhoneInlineEmoji,
     renderPhoneInlineEmoji,
-    replacePhoneInlineEmojiTokens
+    replacePhoneInlineEmojiTokens,
+    replacePhoneNamedEmojiTokens
 } from '../../config/phone-emoji.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
@@ -6236,29 +6237,6 @@ renderChatRoom(chat) {
     }
 
     parseEmoji(text) {
-        const emojiMap = {
-            '[微笑]': '😊',
-            '[撇嘴]': '😥',
-            '[色]': '😍',
-            '[发呆]': '😳',
-            '[得意]': '😏',
-            '[流泪]': '😭',
-            '[害羞]': '😊',
-            '[闭嘴]': '🤐',
-            '[睡]': '😴',
-            '[大哭]': '😭',
-            '[尴尬]': '😅',
-            '[发怒]': '😠',
-            '[调皮]': '😜',
-            '[呲牙]': '😁',
-            '[惊讶]': '😮',
-            '[难过]': '😔',
-            '[酷]': '😎',
-            '[冷汗]': '😰',
-            '[抓狂]': '😤',
-            '[吐]': '🤮'
-        };
-
         let result = this._escapeHtml(text);
         result = replacePhoneInlineEmojiTokens(result, {
             size: 16,
@@ -6302,10 +6280,8 @@ renderChatRoom(chat) {
             </span>`;
         });
 
-        // 1️⃣ 替换系统表情
-        for (let emoji in emojiMap) {
-            result = result.split(emoji).join(emojiMap[emoji]);
-        }
+        // 1️⃣ 兼容 AI 误用的 [偷笑]、[傲慢]、[加油] 等文字表情格式
+        result = replacePhoneNamedEmojiTokens(result);
 
         // 2️⃣ 替换自定义表情
         const customEmojis = this.app.wechatData.getCustomEmojis();
