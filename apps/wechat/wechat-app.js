@@ -5081,16 +5081,15 @@ export class WechatApp {
         const female = Array.isArray(this._avatarPool?.female) ? this._avatarPool.female : [];
         const maleElder = Array.isArray(this._avatarPool?.male_elder) ? this._avatarPool.male_elder : [];
         const femaleElder = Array.isArray(this._avatarPool?.female_elder) ? this._avatarPool.female_elder : [];
-        const all = Array.isArray(this._avatarPool?.all) ? this._avatarPool.all : [];
 
-        if (safeGroup === 'male_elder' && maleElder.length > 0) return maleElder;
-        if (safeGroup === 'female_elder' && femaleElder.length > 0) return femaleElder;
-        if ((safeGroup === 'male_elder' || safeGroup === 'male') && male.length > 0) return male;
-        if ((safeGroup === 'female_elder' || safeGroup === 'female') && female.length > 0) return female;
-        if (safeGender === 'male' && male.length > 0) return male;
-        if (safeGender === 'female' && female.length > 0) return female;
-        if (all.length > 0) return all;
-        if (male.length > 0 || female.length > 0 || maleElder.length > 0 || femaleElder.length > 0) return [...male, ...female, ...maleElder, ...femaleElder];
+        if (safeGroup === 'male_elder') return maleElder.length > 0 ? maleElder : male;
+        if (safeGroup === 'female_elder') return femaleElder.length > 0 ? femaleElder : female;
+        if (safeGroup === 'male') return male.length > 0 ? male : maleElder;
+        if (safeGroup === 'female') return female.length > 0 ? female : femaleElder;
+        if (safeGender === 'male') return male.length > 0 ? male : maleElder;
+        if (safeGender === 'female') return female.length > 0 ? female : femaleElder;
+
+        // 未识别性别时保留文字头像，避免从男女混合池抽到明显不匹配的头像。
         return [];
     }
 

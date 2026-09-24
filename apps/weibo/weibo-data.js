@@ -159,6 +159,7 @@ export class WeiboData {
     }
 
     saveRecommendPosts(posts) {
+        this._syncRecognizedUserPosts(posts);
         this._recommendCache = posts;
         this.storage.set('weibo_recommend_posts', JSON.stringify(posts));
     }
@@ -182,6 +183,88 @@ export class WeiboData {
     saveUserPosts(posts) {
         this._userPostsCache = posts;
         this.storage.set(this._userPostsKey, JSON.stringify(posts));
+    }
+
+    _normalizeWeiboIdentityName(name = '') {
+        const raw = String(name || '').trim();
+        const normalized = typeof raw.normalize === 'function' ? raw.normalize('NFKC') : raw;
+        return normalized
+            .replace(/^@+/, '')
+            .replace(/\s+/g, '')
+            .toLocaleLowerCase('zh-CN');
+    }
+
+    _isCurrentUserBlogger(blogger = '') {
+        const bloggerKey = this._normalizeWeiboIdentityName(blogger);
+        const currentUserKey = this._normalizeWeiboIdentityName(this._getCurrentWeiboNickname());
+        return !!bloggerKey && !!currentUserKey && bloggerKey === currentUserKey;
+    }
+
+    _getUserPostMirrorFingerprint(post = {}) {
+        const blogger = this._normalizeWeiboIdentityName(post?.blogger);
+        const content = String(post?.content || '').replace(/\s+/g, ' ').trim();
+        const images = (Array.isArray(post?.images) ? post.images : [])
+            .map(item => String(item || '').trim())
+            .filter(Boolean)
+            .join('|');
+        if (!blogger || (!content && !images)) return '';
+        return `${blogger}\n${content}\n${images}`;
+    }
+
+    _syncRecognizedUserPosts(posts = []) {
+        const candidates = (Array.isArray(posts) ? posts : []).filter((post) => {
+            if (!post || typeof post !== 'object') return false;
+            if (post.isUserPost === true) return true;
+            if (!this._isCurrentUserBlogger(post.blogger)) return false;
+            post.isUserPost = true;
+            post.aiAuthoredUserPost = true;
+            return true;
+        });
+        if (candidates.length === 0) return 0;
+
+        const userPosts = [...this.getUserPosts()];
+        let addedCount = 0;
+        let changed = false;
+
+        [...candidates].reverse().forEach((post) => {
+            const postId = String(post?.id || '').trim();
+            const fingerprint = this._getUserPostMirrorFingerprint(post);
+            const allowFingerprintMatch = post?.aiAuthoredUserPost === true;
+            const existingIndex = userPosts.findIndex((item) => {
+                const itemId = String(item?.id || '').trim();
+                if (postId && itemId === postId) return true;
+                return allowFingerprintMatch
+                    && item?.aiAuthoredUserPost === true
+                    && !!fingerprint
+                    && this._getUserPostMirrorFingerprint(item) === fingerprint;
+            });
+
+            if (existingIndex >= 0) {
+                userPosts[existingIndex] = {
+                    ...userPosts[existingIndex],
+                    ...post,
+                    isUserPost: true
+                };
+                changed = true;
+                return;
+            }
+
+            userPosts.unshift({ ...post, isUserPost: true });
+            addedCount += 1;
+            changed = true;
+        });
+
+        if (changed) {
+            this.saveUserPosts(userPosts);
+        }
+
+        const profile = this.getProfile();
+        if ((parseInt(profile.posts, 10) || 0) !== userPosts.length) {
+            profile.posts = userPosts.length;
+            this.saveProfile(profile);
+        }
+
+        return addedCount;
     }
 
     _replaceOrInsertPost(posts, nextPost) {
@@ -517,6 +600,7 @@ export class WeiboData {
     }
 
     saveHotSearchDetail(title, data) {
+        this._syncRecognizedUserPosts(data?.posts);
         const key = this._getHotDetailKey(title);
         this.storage.set(key, JSON.stringify(data));
     }

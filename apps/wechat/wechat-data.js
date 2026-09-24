@@ -3112,8 +3112,13 @@ getWeekday(date) {
         if (!key) return false;
         const safeGender = this._normalizeGenderValue(gender);
         const map = this.getContactGenderMap();
-        const previousGender = this._normalizeGenderValue(map[key]);
+        const previousGender = this.getContactGender(contactIdOrName);
         map[key] = safeGender;
+        const contact = this.data.contacts.find(c => c.id === key)
+            || this.findContactByAlias(contactIdOrName);
+        if (contact) {
+            contact.gender = safeGender;
+        }
         if (previousGender !== safeGender) {
             delete this.getContactAutoAvatarMap()[key];
         }
@@ -4120,22 +4125,57 @@ parseAIResponse(text) {
         if (/^(女|女性|女生|女孩|female|f|girl)$/.test(raw)) return 'female';
         return 'unknown';
     };
+    const genderTokenPattern = '(男|男性|男生|男孩|女|女性|女生|女孩|male|female|m|f|boy|girl)';
+    const extractGenderToken = (value = '') => {
+        const raw = String(value || '').trim();
+        if (!raw) return 'unknown';
+        const direct = raw.match(new RegExp(`^(?:性别\\s*[:：=＝]?\\s*)?${genderTokenPattern}$`, 'i'));
+        return direct ? normalizeParsedGender(direct[1]) : 'unknown';
+    };
     const stripInlineGender = (value = '') => {
         let textValue = String(value || '').trim();
-        textValue = textValue.replace(/\s*(?:-|—|–|：|:|=|＝)\s*(?:性别\s*[:：]?\s*)?(男|男性|男生|男孩|女|女性|女生|女孩|male|female|m|f|boy|girl)\s*$/i, '').trim();
-        textValue = textValue.replace(/\s*(?:性别\s*[:：]\s*)(男|男性|男生|男孩|女|女性|女生|女孩|male|female|m|f|boy|girl)\s*$/i, '').trim();
+        textValue = textValue.replace(new RegExp(`\\s*[（(【\\[]\\s*(?:性别\\s*[:：=＝]?\\s*)?${genderTokenPattern}\\s*[）)】\\]]\\s*$`, 'i'), '').trim();
+        textValue = textValue.replace(new RegExp(`\\s*(?:-|—|–|：|:|=|＝|\\||｜|/|、|,|，)\\s*(?:性别\\s*[:：=＝]?\\s*)?${genderTokenPattern}\\s*$`, 'i'), '').trim();
+        textValue = textValue.replace(new RegExp(`\\s*(?:性别\\s*[:：=＝]\\s*)${genderTokenPattern}\\s*$`, 'i'), '').trim();
         textValue = textValue.replace(/\s*性别\s*$/i, '').trim();
         return textValue;
+    };
+    const extractTrailingGender = (value = '') => {
+        const raw = String(value || '').trim();
+        const patterns = [
+            new RegExp(`\\s*[（(【\\[]\\s*(?:性别\\s*[:：=＝]?\\s*)?${genderTokenPattern}\\s*[）)】\\]]\\s*$`, 'i'),
+            new RegExp(`\\s*(?:-|—|–|：|:|=|＝|\\||｜|/|、|,|，)\\s*(?:性别\\s*[:：=＝]?\\s*)?${genderTokenPattern}\\s*$`, 'i'),
+            new RegExp(`\\s*(?:性别\\s*[:：=＝]\\s*)${genderTokenPattern}\\s*$`, 'i')
+        ];
+        for (const pattern of patterns) {
+            const match = raw.match(pattern);
+            if (match) return normalizeParsedGender(match[1]);
+        }
+        return 'unknown';
+    };
+    const extractGenderFromRelation = (value = '') => {
+        const parts = String(value || '')
+            .split(/[、,，/|｜；;]/)
+            .map(part => part.trim())
+            .filter(Boolean);
+        let gender = 'unknown';
+        const relationParts = [];
+        parts.forEach((part) => {
+            const partGender = extractGenderToken(part);
+            if (partGender !== 'unknown') {
+                gender = partGender;
+            } else {
+                relationParts.push(part);
+            }
+        });
+        return { gender, relation: relationParts.join('、') };
     };
     const parseContactLine = (line = '') => {
         let rawLine = String(line || '').trim();
         if (!rawLine) return null;
 
-        let gender = 'unknown';
-        const genderMatch = rawLine.match(/\s*(?:-|—|–|：|:|=|＝)\s*(?:性别\s*[:：]?\s*)?(男|男性|男生|男孩|女|女性|女生|女孩|male|female|m|f|boy|girl)\s*$/i)
-            || rawLine.match(/\s*(?:性别\s*[:：]\s*)(男|男性|男生|男孩|女|女性|女生|女孩|male|female|m|f|boy|girl)\s*$/i);
-        if (genderMatch) {
-            gender = normalizeParsedGender(genderMatch[1]);
+        let gender = extractTrailingGender(rawLine);
+        if (gender !== 'unknown') {
             rawLine = stripInlineGender(rawLine);
         }
 
@@ -4146,6 +4186,9 @@ parseAIResponse(text) {
             name = relationMatch[1].trim();
             relation = relationMatch[2].trim();
         }
+        const relationGender = extractGenderFromRelation(relation);
+        if (gender === 'unknown') gender = relationGender.gender;
+        relation = relationGender.relation;
         name = stripInlineGender(name);
         relation = stripInlineGender(relation);
         if (!name) return null;
