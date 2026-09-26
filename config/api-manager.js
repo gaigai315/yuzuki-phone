@@ -326,7 +326,7 @@ export class ApiManager {
         }
 
         if (usesGeminiNativeApi) return false;
-        if (/gemini-3\.(?:6|7)-flash(?:-|$)/.test(model)) return false;
+        if (/gemini-3\.[5-8]-flash(?:-|$)/.test(model)) return false;
         return true;
     }
 
@@ -732,7 +732,7 @@ export class ApiManager {
 
         try {
             const sourceMessages = Array.isArray(messages) ? messages : [];
-            const cleanMessages = sourceMessages
+            let cleanMessages = sourceMessages
                 .map((m, idx) => {
                     const role = m?.role === 'system' || m?.role === 'assistant' ? m.role : 'user';
                     const content = this._replacePhoneImageTokens(m?.content, { consume: true });
@@ -790,6 +790,12 @@ export class ApiManager {
                 reverseProxy = oai.reverse_proxy || document.getElementById('openai_reverse_proxy')?.value;
                 apiKey = oai.openai_key;
             }
+
+            cleanMessages = this._removeUnsupportedAssistantPrefill(cleanMessages, {
+                provider: chatSource,
+                model,
+                apiUrl: reverseProxy
+            });
 
             // 跟随酒馆时只使用酒馆当前响应长度，不接受业务调用覆盖。
             const maxTokens = this._resolveResponseLength(parsedSettings);

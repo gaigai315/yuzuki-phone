@@ -9,10 +9,10 @@ const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'ut
 test('current version keeps separate update batches by date', () => {
     const current = updateLog.versions[manifest.version];
 
-    assert.equal(manifest.version, '1.5.7');
-    assert.equal(current.date, '2026-09-20');
-    assert.equal(current.updates[0].date, '2026-09-20');
-    assert.match(current.updates[0].items[0], /优化部分渲染 CSS/);
+    assert.equal(manifest.version, '1.5.8');
+    assert.equal(current.date, '2026-09-26');
+    assert.equal(current.updates[0].date, '2026-09-26');
+    assert.match(current.updates[0].items[0], /Gemini 3\.5 至 3\.8 Flash/);
 });
 
 test('local update announcements are acknowledged by version and date', () => {

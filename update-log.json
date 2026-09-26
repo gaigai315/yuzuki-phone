@@ -1,5 +1,19 @@
 {
     "versions": {
+        "1.5.8": {
+            "date": "2026-09-26",
+            "items": [
+                "【修复】兼容 Gemini 3.5 至 3.8 Flash 系列模型不支持末尾 assistant 预填充的问题；覆盖无后缀及 low、medium、high、tiered 变体，并统一处理独立 API 与跟随酒馆请求。"
+            ],
+            "updates": [
+                {
+                    "date": "2026-09-26",
+                    "items": [
+                        "【修复】兼容 Gemini 3.5 至 3.8 Flash 系列模型不支持末尾 assistant 预填充的问题；覆盖无后缀及 low、medium、high、tiered 变体，并统一处理独立 API 与跟随酒馆请求。"
+                    ]
+                }
+            ]
+        },
         "1.5.7": {
             "date": "2026-09-20",
             "items": [

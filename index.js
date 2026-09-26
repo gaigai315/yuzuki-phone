@@ -21,7 +21,7 @@ import { PhoneFloatingEntry } from './phone/floating-entry.js';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.7';
+const ST_PHONE_VERSION = '1.5.8';
 const ST_PHONE_CSS_REVISION = '20260911-contact-generation-error-modal';
 const ST_PHONE_HONEY_ASSET_REVISION = '20260902-avatar-gender';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
@@ -58,9 +58,9 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-09-20',
+    date: '2026-09-26',
     items: [
-        '【优化】优化部分渲染 CSS。'
+        '【修复】兼容 Gemini 3.5 至 3.8 Flash 系列模型不支持末尾 assistant 预填充的问题；覆盖无后缀及 low、medium、high、tiered 变体，并统一处理独立 API 与跟随酒馆请求。'
     ]
 };
 
