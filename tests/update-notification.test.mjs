@@ -10,9 +10,11 @@ test('current version keeps separate update batches by date', () => {
     const current = updateLog.versions[manifest.version];
 
     assert.equal(manifest.version, '1.5.8');
-    assert.equal(current.date, '2026-09-26');
-    assert.equal(current.updates[0].date, '2026-09-26');
-    assert.match(current.updates[0].items[0], /Gemini 3\.5 至 3\.8 Flash/);
+    assert.equal(current.date, '2026-09-28');
+    assert.equal(current.updates[0].date, '2026-09-28');
+    assert.match(current.updates[0].items[0], /酒馆标准宏变量接口/);
+    assert.equal(current.updates[1].date, '2026-09-26');
+    assert.match(current.updates[1].items[0], /Gemini 3\.5 至 3\.8 Flash/);
 });
 
 test('local update announcements are acknowledged by version and date', () => {

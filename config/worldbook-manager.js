@@ -1040,14 +1040,48 @@ export class WorldbookManager {
         return Promise.all(selectedSources.map((source) => this._loadWorldContent(source)));
     }
 
+    async _resolveMacroSubstituter() {
+        try {
+            const windowContext = this._getContext();
+            if (typeof windowContext?.substituteParams === 'function') {
+                return windowContext.substituteParams.bind(windowContext);
+            }
+
+            const stContextModule = await this._loadStContextModule();
+            const moduleContext = stContextModule?.getContext?.();
+            if (typeof moduleContext?.substituteParams === 'function') {
+                return moduleContext.substituteParams.bind(moduleContext);
+            }
+        } catch (error) {
+            console.warn('[WorldbookManager] 获取酒馆宏变量接口失败，将保留世界书原文:', error);
+        }
+        return null;
+    }
+
+    _substituteWorldbookContent(content, substituteParams) {
+        const rawContent = String(content ?? '');
+        if (!rawContent || typeof substituteParams !== 'function') return rawContent;
+
+        try {
+            const substituted = substituteParams(rawContent);
+            return substituted === undefined || substituted === null
+                ? rawContent
+                : String(substituted);
+        } catch (error) {
+            console.warn('[WorldbookManager] 世界书宏变量替换失败，将保留条目原文:', error);
+            return rawContent;
+        }
+    }
+
     async buildWorldbookMessages(appKey, options = {}) {
         const loadedSources = await this._loadSelectedWorldbookSources(appKey, options);
         const selection = this.getSelectionState(appKey);
+        const substituteParams = await this._resolveMacroSubstituter();
         return loadedSources.flatMap((source) => this._resolveSourceEntrySelection(selection, source)
             .selectedEntries
             .map((entry) => ({
                 role: 'system',
-                content: entry.content,
+                content: this._substituteWorldbookContent(entry.content, substituteParams),
                 name: 'SYSTEM (世界书)',
                 isPhoneMessage: true
             })));
@@ -1065,11 +1099,12 @@ export class WorldbookManager {
     async buildWorldbookMessage(appKey, options = {}) {
         const loadedSources = await this._loadSelectedWorldbookSources(appKey, options);
         const selection = this.getSelectionState(appKey);
+        const substituteParams = await this._resolveMacroSubstituter();
 
         const parts = loadedSources
             .flatMap((source) => this._resolveSourceEntrySelection(selection, source)
                 .selectedEntries
-                .map((entry) => entry.content))
+                .map((entry) => this._substituteWorldbookContent(entry.content, substituteParams)))
             .filter(Boolean);
         if (parts.length === 0) return null;
 
