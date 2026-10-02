@@ -13,7 +13,7 @@
 // 微博视图渲染 - 所有UI界面
 // ========================================
 import { ImageCropper } from '../settings/image-cropper.js';
-import { replacePhoneInlineEmojiTokens } from '../../config/phone-emoji.js';
+import { replacePhoneEmojiTokens } from '../../config/phone-emoji.js';
 
 export class WeiboView {
     constructor(weiboApp) {
@@ -1687,7 +1687,7 @@ export class WeiboView {
         }
 
         const targetMap = new Map(forwardTargets.map(target => [target.name, target]));
-        const previewDesc = replacePhoneInlineEmojiTokens(
+        const previewDesc = replacePhoneEmojiTokens(
             this._escapeHtml((post.content || '').substring(0, 50)),
             { size: 16, className: 'weibo-inline-emoji' }
         );
@@ -1866,7 +1866,7 @@ export class WeiboView {
         try {
             let wechatApp = window.currentWechatApp || window.ggp_currentWechatApp || window.VirtualPhone?.wechatApp || null;
             if (!wechatApp) {
-                const module = await import('../wechat/wechat-app.js?v=20260906-global-chat-background-sync');
+                const module = await import('../wechat/wechat-app.js?v=20261002-x-forward-card');
                 const phoneShell = window.VirtualPhone?.phoneShell || this.app.phoneShell;
                 const storage = window.VirtualPhone?.storage || this.app.storage;
                 if (!phoneShell || !storage) return;
@@ -4067,7 +4067,7 @@ export class WeiboView {
         result = result.replace(/#([^#]+)#/g, '<span class="weibo-topic-link">#$1#</span>');
         // @提及 高亮
         result = result.replace(/@([\u4e00-\u9fa5\w]+)/g, '<span class="weibo-mention">@$1</span>');
-        return replacePhoneInlineEmojiTokens(result, {
+        return replacePhoneEmojiTokens(result, {
             size: 16,
             className: 'weibo-inline-emoji'
         });

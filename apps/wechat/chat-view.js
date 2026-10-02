@@ -91,6 +91,7 @@ export class ChatView {
         this.currentPlayingCallMsgId = null;
         this.currentTtsRound = null;
         this._suppressWeiboCardClickUntil = 0;
+        this._suppressXCardClickUntil = 0;
         this._suppressWangxiangCardClickUntil = 0;
         this._suppressPokerCardClickUntil = 0;
         this._suppressWerewolfCardClickUntil = 0;
@@ -1959,6 +1960,139 @@ export class ChatView {
         return filtered;
     }
 
+    _resolveGroupMemberIdentity(rawMember = '') {
+        const rawName = String(rawMember || '').trim();
+        if (!rawName || rawName === 'me' || rawName === 'system') return null;
+
+        const contactById = this.app.wechatData?.getContact?.(rawName);
+        const contactByName = this.app.wechatData?.findContactByNameLoose?.(rawName, { includeChats: false });
+        const contact = contactById || contactByName || null;
+        const aliases = [rawName, contact?.id, contact?.name, contact?.remark, contact?.nickname]
+            .map(value => String(value || '').trim())
+            .filter(Boolean);
+
+        if (aliases.some(alias => this._isCurrentWechatUserName(alias))) return null;
+
+        const displayName = String(contact?.name || rawName).trim();
+        const normalizedName = this._normalizeLookupName(displayName);
+        if (!normalizedName) return null;
+
+        return {
+            key: contact?.id ? `contact:${String(contact.id).trim()}` : `name:${normalizedName}`,
+            name: displayName,
+            aliases
+        };
+    }
+
+    _collectGroupMemberIdentityMap(chat = null, context = null) {
+        if (!chat || chat.type !== 'group') return new Map();
+
+        const identities = new Map();
+        const explicitMembers = Array.isArray(chat.members)
+            ? chat.members.map(member => String(member || '').trim()).filter(Boolean)
+            : [];
+        const memberSource = explicitMembers.length > 0
+            ? explicitMembers
+            : this._collectGroupParticipantsForFilter(chat, context);
+        memberSource.forEach((member) => {
+            const identity = this._resolveGroupMemberIdentity(member);
+            if (!identity?.key) return;
+
+            const existing = identities.get(identity.key);
+            if (!existing) {
+                identities.set(identity.key, identity);
+                return;
+            }
+            identity.aliases.forEach((alias) => {
+                if (!existing.aliases.includes(alias)) existing.aliases.push(alias);
+            });
+        });
+        return identities;
+    }
+
+    _buildCrossGroupSharedHistoryContext(currentGroup = null, allChats = [], context = null, userName = '用户', historyLimit = null) {
+        if (!currentGroup || currentGroup.type !== 'group') return '';
+
+        const currentMembers = this._collectGroupMemberIdentityMap(currentGroup, context);
+        if (currentMembers.size === 0) return '';
+
+        const parsedLimit = historyLimit === null || historyLimit === undefined
+            ? this._readNonNegativeLimit('wechat-group-chat-limit', 200)
+            : Math.max(0, Number.parseInt(historyLimit, 10) || 0);
+        const currentId = String(currentGroup.id || '').trim();
+        const currentNameKey = this._normalizeLookupName(currentGroup.name);
+        const relatedGroups = (Array.isArray(allChats) ? allChats : [])
+            .filter((chat) => {
+                if (!chat || chat.type !== 'group' || chat === currentGroup) return false;
+                const chatId = String(chat.id || '').trim();
+                if (currentId && chatId && chatId === currentId) return false;
+                if (!currentId && currentNameKey && this._normalizeLookupName(chat.name) === currentNameKey) return false;
+                return true;
+            })
+            .map((chat) => {
+                const sourceMembers = this._collectGroupMemberIdentityMap(chat, context);
+                const sharedKeys = [...currentMembers.keys()].filter(key => sourceMembers.has(key));
+                if (sharedKeys.length === 0) return null;
+
+                const visibleMessages = parsedLimit > 0
+                    ? (this.app.wechatData?.getMessages?.(chat.id) || [])
+                        .filter(msg => !(msg?.hiddenFromPrompt === true || msg?.isTimeMarker === true || msg?.type === 'time_marker'))
+                        .slice(-parsedLimit)
+                    : [];
+                return { chat, sharedKeys, visibleMessages };
+            })
+            .filter(Boolean);
+
+        if (relatedGroups.length === 0) return '';
+
+        const lines = [
+            '【其他共同群聊记录与知情权限】',
+            `以下记录来自当前群“${String(currentGroup.name || '当前群聊').trim()}”以外的微信群，不是当前群已经公开说过的话。`,
+            '必须按每个来源群单独执行知情权限：只有“当前群中同时属于该来源群的知情成员”可以记得、提及或依据该群记录作出反应；当前群其他成员没有加入该来源群，绝对不得知道、复述、猜测、暗示、总结或回应其中任何内容。',
+            `手机主人“${userName}”可以看到自己手机里的群记录；下列成员名单专门限制你所扮演的当前群成员，禁止把模型已读到的信息自动视为所有群成员都知道。`
+        ];
+
+        relatedGroups.forEach(({ chat, sharedKeys, visibleMessages }) => {
+            const informedNames = sharedKeys.map(key => currentMembers.get(key)?.name).filter(Boolean);
+            const uninformedNames = [...currentMembers.entries()]
+                .filter(([key]) => !sharedKeys.includes(key))
+                .map(([, identity]) => identity?.name)
+                .filter(Boolean);
+
+            lines.push('', `--- 来源群：${String(chat.name || '未命名群聊').trim()} ---`);
+            lines.push(`当前群中同时属于该群的知情成员：${informedNames.join('、')}`);
+            lines.push(`当前群中未加入该群、绝不知情的成员：${uninformedNames.length > 0 ? uninformedNames.join('、') : '无'}`);
+            lines.push(`权限硬约束：只有 ${informedNames.join('、')} 可以保留并使用下面的记忆；其他当前群成员不得表现出知道该来源群存在或知道其中内容。`);
+
+            if (visibleMessages.length === 0) {
+                lines.push('该来源群当前没有可注入的历史消息。');
+                return;
+            }
+
+            lines.push('该来源群历史：');
+            let lastDate = null;
+            visibleMessages.forEach((message) => {
+                if (message.date && message.date !== lastDate) {
+                    lines.push(`[${message.date}]`);
+                    lastDate = message.date;
+                }
+
+                const senderIdentity = this._resolveGroupMemberIdentity(message.from);
+                const speaker = message.from === 'me'
+                    ? userName
+                    : (message.from === 'system' || message.type === 'system')
+                        ? '系统'
+                        : (senderIdentity?.name || String(message.from || '群成员').trim());
+                let content = this._formatMessageContentForPrompt(message, chat);
+                if (message.quote) content = `「引用 ${message.quote.sender}: ${message.quote.content}」 ${content}`;
+                const timeText = message.time ? `[${message.time}] ` : '';
+                lines.push(`${timeText}${speaker}: ${content || ''}`);
+            });
+        });
+
+        return lines.join('\n').trim();
+    }
+
     _collectSingleChatAliasesForFilter(chat = null, context = null) {
         const targetChat = chat || this.app.currentChat;
         if (!targetChat || targetChat.type === 'group') return [];
@@ -2040,18 +2174,23 @@ export class ChatView {
         if (!Array.isArray(moments) || moments.length === 0) return '';
 
         const targetViewer = contactById || contactByName || targetChat;
-        const userViewer = this.app.wechatData?.getUserInfo?.() || { name: userName };
+        const targetChatId = String(targetChat?.id || '').trim();
+        const targetContactId = String(contactById?.id || contactByName?.id || targetChat?.contactId || '').trim();
         const relevantMoments = moments
             .filter((moment) => {
                 const authorKey = this._normalizeLookupName(moment?.name);
-                if (!authorKey) return false;
                 if (userKeys.has(authorKey)) {
                     return this.app.wechatData?.canContactViewMoment?.(moment, targetViewer) !== false;
                 }
-                if (targetKeys.has(authorKey)) {
-                    return this.app.wechatData?.canContactViewMoment?.(moment, userViewer) !== false;
-                }
-                return false;
+
+                const sourceChatId = String(moment?.sourceChatId || '').trim();
+                const momentContact = authorKey
+                    ? this.app.wechatData?.findContactByNameLoose?.(moment?.name, { includeChats: false })
+                    : null;
+                const momentContactId = String(momentContact?.id || '').trim();
+                return targetKeys.has(authorKey)
+                    || (!!targetChatId && sourceChatId === targetChatId)
+                    || (!!targetContactId && momentContactId === targetContactId);
             })
             .slice(0, limit);
         if (relevantMoments.length === 0) return '';
@@ -2080,7 +2219,8 @@ export class ChatView {
 
         const lines = [
             '【当前单聊双方朋友圈】',
-            `以下仅包含当前微信好友“${targetChat.name || contactById?.name || contactByName?.name || '当前好友'}”有权查看的双方近期朋友圈及其真实互动。未向该好友开放的动态已被系统剔除，禁止猜测、提及、回应或暗示其内容。评论和回复属于对应动态，只作为双方已知的社交背景，不要将其误当成本轮新微信消息。`
+            `以下仅包含当前微信好友“${targetChat.name || contactById?.name || contactByName?.name || '当前好友'}”有权查看的双方近期朋友圈及其真实互动。未向该好友开放的动态已被系统剔除，禁止猜测、提及、回应或暗示其内容。评论和回复属于对应动态，只作为双方已知的社交背景，不要将其误当成本轮新微信消息。`,
+            '【朋友圈去重硬约束】下列动态均已真实发布。生成新的 moments JSON 前必须逐条对照发布者、正文、配图和发布时间；严禁再次生成内容相同或高度相似的朋友圈。当前没有合理的新动态时，必须省略 moments JSON，只回复微信消息。'
         ];
 
         relevantMoments.forEach((moment, index) => {
@@ -3714,6 +3854,50 @@ renderChatRoom(chat) {
                 break;
             }
 
+            case 'x_card': {
+                const xData = msg.xData && typeof msg.xData === 'object' ? msg.xData : {};
+                const author = xData.author && typeof xData.author === 'object' ? xData.author : {};
+                const authorName = this._escapeHtml(author.name || 'X 用户');
+                const accountType = String(author.accountType || '').trim().toLowerCase();
+                const accountLabel = accountType === 'official'
+                    ? '<span style="color:#1d9bf0; font-size:10px; margin-left:3px;">官方认证</span>'
+                    : accountType === 'advertiser'
+                        ? '<span style="color:#d4a72c; font-size:10px; margin-left:3px;">广告账号</span>'
+                        : '';
+                const contentPreview = this._escapeHtml(String(xData.content || msg.content || '').trim().slice(0, 100));
+                const imageStates = Array.isArray(xData.imageGenerationStates) ? xData.imageGenerationStates : [];
+                const images = Array.isArray(xData.images) ? xData.images : [];
+                let thumbnail = '';
+                for (let index = 0; index < Math.max(images.length, imageStates.length); index += 1) {
+                    const stateUrl = String(imageStates[index]?.generatedImageUrl || '').trim();
+                    const rawImage = String(images[index] || '').trim();
+                    const rawMatch = rawImage.match(/((?:https?:\/\/|\/backgrounds\/)[^\s)）]+)/i);
+                    const imageUrl = stateUrl || String(rawMatch?.[1] || '').trim();
+                    if (imageUrl) {
+                        thumbnail = `<img src="${this._escapeHtml(imageUrl)}" alt="" style="width:56px;height:56px;object-fit:cover;flex:0 0 56px;background:#eff3f4;">`;
+                        break;
+                    }
+                }
+                messageBody = `
+                <div class="message-x-card" data-msg-id="${this._escapeHtml(msg.id || '')}" style="width:230px;max-width:100%;overflow:hidden;border:1px solid #e7e9ea;border-radius:8px;background:#fff;box-shadow:0 1px 2px rgba(15,20,25,0.06);cursor:pointer;">
+                    <div style="display:flex;min-height:72px;">
+                        <div style="min-width:0;flex:1;padding:10px;">
+                            <div style="display:flex;align-items:center;min-width:0;margin-bottom:4px;white-space:nowrap;overflow:hidden;">
+                                <strong style="min-width:0;overflow:hidden;text-overflow:ellipsis;color:#0f1419;font-size:13px;">${authorName}</strong>${accountLabel}
+                            </div>
+                            <div style="display:-webkit-box;overflow:hidden;color:#536471;font-size:12px;line-height:1.45;-webkit-box-orient:vertical;-webkit-line-clamp:2;word-break:break-word;">${contentPreview || '分享了一条 X 帖子'}</div>
+                        </div>
+                        ${thumbnail}
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-top:1px solid #eff3f4;background:#f7f9f9;">
+                        <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;background:#0f1419;color:#fff;font-size:10px;font-weight:700;">X</span>
+                        <span style="color:#536471;font-size:11px;">X 分享</span>
+                    </div>
+                </div>
+                `;
+                break;
+            }
+
             case 'wangxiang_task_card':
             case 'wangxiang_task_confirmation':
             case 'wangxiang_task_invitation': {
@@ -5282,6 +5466,84 @@ renderChatRoom(chat) {
         return isPlaceholderOnly(fullContent) ? '[微博分享]' : (fullContent || '[微博分享]');
     }
 
+    _formatXCardForPrompt(msg = {}) {
+        const normalizeText = (value) => this.cleanAbnormalSpaces(String(value || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/\u00a0/g, ' ')
+            .replace(/\u3000/g, ' ')
+            .split('\n')
+            .map(line => line.trim())
+            .join('\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim());
+        const xData = msg?.xData && typeof msg.xData === 'object' ? msg.xData : {};
+        const fullContent = normalizeText(msg.content);
+        if (Object.keys(xData).length === 0) {
+            return fullContent || '[X分享]';
+        }
+
+        const author = xData.author && typeof xData.author === 'object' ? xData.author : {};
+        const authorName = normalizeText(author.name || 'X 用户') || 'X 用户';
+        const accountType = String(author.accountType || '').trim().toLowerCase();
+        const accountLabel = accountType === 'official'
+            ? '（官方认证）'
+            : accountType === 'advertiser'
+                ? '（广告账号）'
+                : '';
+        const body = normalizeText(xData.content || '');
+        const time = normalizeText(xData.originalTime || xData.time || '');
+        const imageStates = Array.isArray(xData.imageGenerationStates) ? xData.imageGenerationStates : [];
+        const mediaLines = (Array.isArray(xData.images) ? xData.images : [])
+            .map((raw, index) => {
+                const state = imageStates[index] || {};
+                const description = normalizeText(state.description || '');
+                if (description) return `[图片${index ? index + 1 : ''}]（${description}）`;
+                const text = normalizeText(raw);
+                if (!text) return '';
+                const tagged = text.match(/^\[(用户照片|个人图片|图片|视频)\]\s*([\s\S]*)$/);
+                if (tagged) return tagged[2] ? `[${tagged[1]}${index ? index + 1 : ''}]${tagged[2]}` : `[${tagged[1]}${index ? index + 1 : ''}]`;
+                if (/^(?:https?:|data:image|blob:|\/backgrounds\/)/i.test(text) || /\.(?:png|jpe?g|gif|webp|avif)(?:[?#].*)?$/i.test(text)) {
+                    return `[图片${index ? index + 1 : ''}]`;
+                }
+                return text;
+            })
+            .filter(Boolean);
+        imageStates.slice((Array.isArray(xData.images) ? xData.images.length : 0)).forEach((state, offset) => {
+            const index = (Array.isArray(xData.images) ? xData.images.length : 0) + offset;
+            const description = normalizeText(state?.description || '');
+            if (description || state?.generatedImageUrl) {
+                mediaLines.push(description ? `[图片${index ? index + 1 : ''}]（${description}）` : `[图片${index ? index + 1 : ''}]`);
+            }
+        });
+
+        const comments = Array.isArray(xData.commentList) ? xData.commentList : [];
+        const namesByTarget = new Map();
+        comments.forEach(comment => {
+            const name = normalizeText(comment?.name || 'X 用户') || 'X 用户';
+            if (comment?.id) namesByTarget.set(String(comment.id), name);
+            if (comment?.handle) namesByTarget.set(String(comment.handle), name);
+        });
+        const commentLines = comments.map(comment => {
+            const text = normalizeText(comment?.text || '');
+            if (!text) return '';
+            const name = normalizeText(comment?.name || 'X 用户') || 'X 用户';
+            const rawReplyTo = String(comment?.replyTo || '').trim();
+            const replyTo = namesByTarget.get(rawReplyTo) || normalizeText(rawReplyTo.replace(/^@/, ''));
+            return `${name}${replyTo ? ` 回复 ${replyTo}` : ''}：${text}`;
+        }).filter(Boolean);
+
+        const commentsCount = Math.max(Number.parseInt(xData.comments, 10) || 0, comments.length);
+        const likes = Math.max(0, Number.parseInt(xData.likes, 10) || 0);
+        const lines = [`[X分享] ${authorName}${accountLabel}`];
+        if (time) lines.push(`时间：${time}`);
+        if (body) lines.push(`正文：${body}`);
+        if (mediaLines.length > 0) lines.push(`配图：${mediaLines.join(' ')}`);
+        if (commentsCount || likes) lines.push(`数据：回复 ${commentsCount} | 喜欢 ${likes}`);
+        if (commentLines.length > 0) lines.push('评论区：', ...commentLines);
+        return lines.join('\n').trim() || fullContent || '[X分享]';
+    }
+
     _formatWangxiangTaskForPrompt(msg = {}) {
         const fullContent = String(msg.content || '').trim();
         const task = msg.wangxiangTaskData && typeof msg.wangxiangTaskData === 'object'
@@ -5370,6 +5632,18 @@ renderChatRoom(chat) {
             const stickerValue = String(msg.stickerUrl || msg.keyword || msg.content || '表情包').trim() || '表情包';
             return `[表情包]（${stickerValue}）`;
         }
+        if (msg.type === 'voice') {
+            let voiceSource = String(msg.voiceText || '').trim();
+            if (!voiceSource) {
+                const rawContent = String(msg.content || '').trim();
+                const taggedVoiceMatch = /^(?:\[\s*(?:语音条|语音)\s*\]|【\s*(?:语音条|语音)\s*】)\s*[:：]?\s*(.+)$/i.exec(rawContent);
+                const legacyVoiceMatch = /^\[语音\s*\d+秒?\]\(?([^)]*)\)?$/i.exec(rawContent);
+                voiceSource = taggedVoiceMatch?.[1] || legacyVoiceMatch?.[1] || rawContent;
+            }
+
+            const voiceText = parseWechatVoiceContent(voiceSource).voiceText;
+            return voiceText ? `[语音条]（${voiceText}）` : '[语音条]';
+        }
         if (msg.type === 'call_record') {
             const isGroupCall = targetChat?.type === 'group';
             const callTypeName = msg.callType === 'video' ? '视频通话' : '语音通话';
@@ -5406,6 +5680,9 @@ renderChatRoom(chat) {
         }
         if (msg.type === 'weibo_card') {
             return this._formatWeiboCardForPrompt(msg);
+        }
+        if (msg.type === 'x_card') {
+            return this._formatXCardForPrompt(msg);
         }
         if (msg.type === 'wangxiang_task_card' || msg.type === 'wangxiang_task_confirmation' || msg.type === 'wangxiang_task_invitation') {
             return this._formatWangxiangTaskForPrompt(msg);
@@ -7895,6 +8172,18 @@ renderChatRoom(chat) {
                 if (messageId) this.openWeiboCard(messageId);
             });
         });
+        currentView.querySelectorAll('.message-x-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                if (this._isMessageSelectionActiveForCurrentChat()) return;
+                if (Date.now() < (this._suppressXCardClickUntil || 0)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                const messageId = e.currentTarget.dataset.msgId;
+                if (messageId) this.openXCard(messageId);
+            });
+        });
         currentView.querySelectorAll('.message-wangxiang-task-card').forEach(card => {
             card.addEventListener('click', (e) => {
                 if (this._isMessageSelectionActiveForCurrentChat()) return;
@@ -8484,6 +8773,20 @@ renderChatRoom(chat) {
         }
     }
 
+    openXCard(messageId) {
+        try {
+            const chatId = this.app.currentChat?.id;
+            if (!chatId) return;
+            const messages = this.app.wechatData.getMessages(chatId) || [];
+            const target = messages.find(message => message.id === messageId);
+            if (!target || target.type !== 'x_card' || !target.xData) return;
+            this.showXCardPreviewModal(target.xData);
+        } catch (error) {
+            console.error('打开 X 卡片失败:', error);
+            this.app.phoneShell?.showNotification?.('提示', 'X 卡片打开失败', '⚠️');
+        }
+    }
+
     openPokerCard(messageId) {
         try {
             const chatId = this.app.currentChat?.id;
@@ -8906,6 +9209,105 @@ renderChatRoom(chat) {
             if (e.target === modal) close();
         });
         modal.querySelector('#wechat-weibo-preview-close')?.addEventListener('click', close);
+    }
+
+    showXCardPreviewModal(xData = {}) {
+        const esc = value => this._escapeHtml(String(value || ''));
+        const author = xData.author && typeof xData.author === 'object' ? xData.author : {};
+        const authorNameRaw = String(author.name || 'X 用户').trim() || 'X 用户';
+        const authorName = esc(authorNameRaw);
+        const accountType = String(author.accountType || '').trim().toLowerCase();
+        const accountLabel = accountType === 'official' ? '官方认证' : accountType === 'advertiser' ? '广告账号' : '';
+        const accountColor = accountType === 'official' ? '#1d9bf0' : '#d4a72c';
+        const avatarChar = esc(Array.from(authorNameRaw.replace(/^@/, ''))[0] || 'X');
+        const content = esc(String(xData.content || '').replace(/\r\n/g, '\n').trim());
+        const time = esc(String(xData.originalTime || xData.time || '').trim());
+        const imageStates = Array.isArray(xData.imageGenerationStates) ? xData.imageGenerationStates : [];
+        const imageItems = (Array.isArray(xData.images) ? xData.images : []).map((raw, index) => {
+            const state = imageStates[index] || {};
+            const stateUrl = String(state.generatedImageUrl || '').trim();
+            const rawText = String(raw || '').trim();
+            const rawMatch = rawText.match(/((?:https?:\/\/|\/backgrounds\/)[^\s)）]+)/i);
+            const url = stateUrl || String(rawMatch?.[1] || '').trim();
+            const description = String(state.description || '').trim()
+                || String(rawText.match(/[（(]\s*([^）)]+)\s*[)）]/)?.[1] || '').trim()
+                || `配图 ${index + 1}`;
+            return { url, description };
+        });
+        imageStates.slice(imageItems.length).forEach((state, offset) => {
+            const url = String(state?.generatedImageUrl || '').trim();
+            const description = String(state?.description || '').trim() || `配图 ${imageItems.length + offset + 1}`;
+            if (url || description) imageItems.push({ url, description });
+        });
+
+        const comments = Array.isArray(xData.commentList) ? xData.commentList : [];
+        const namesByTarget = new Map();
+        comments.forEach(comment => {
+            const name = String(comment?.name || 'X 用户').trim() || 'X 用户';
+            if (comment?.id) namesByTarget.set(String(comment.id), name);
+            if (comment?.handle) namesByTarget.set(String(comment.handle), name);
+        });
+        const commentsHtml = comments.slice(0, 40).map(comment => {
+            const text = String(comment?.text || '').trim();
+            if (!text) return '';
+            const name = String(comment?.name || 'X 用户').trim() || 'X 用户';
+            const rawReplyTo = String(comment?.replyTo || '').trim();
+            const replyTo = namesByTarget.get(rawReplyTo) || rawReplyTo.replace(/^@/, '');
+            return `
+                <div style="padding:7px 0;border-bottom:1px solid #eff3f4;font-size:11px;line-height:1.5;text-align:left;word-break:break-word;">
+                    <strong style="color:#0f1419;">${esc(name)}</strong>
+                    ${replyTo ? `<span style="color:#536471;"> 回复 </span><span style="color:#1d9bf0;">${esc(replyTo)}</span>` : ''}
+                    <span style="color:#536471;">：${esc(text)}</span>
+                </div>`;
+        }).filter(Boolean).join('');
+        const commentsCount = Math.max(Number.parseInt(xData.comments, 10) || 0, comments.length);
+        const likes = Math.max(0, Number.parseInt(xData.likes, 10) || 0);
+
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const host = currentView.querySelector('.wechat-app') || currentView;
+        if (!host) return;
+        currentView.querySelector('#wechat-x-preview-modal')?.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'wechat-x-preview-modal';
+        modal.style.cssText = 'position:absolute;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;background:rgba(0,0,0,0.52);';
+        modal.innerHTML = `
+            <div style="display:flex;flex-direction:column;width:100%;max-width:320px;max-height:84%;overflow:hidden;border-radius:10px;background:#fff;box-sizing:border-box;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px;border-bottom:1px solid #eff3f4;">
+                    <strong style="color:#0f1419;font-size:13px;">X 分享</strong>
+                    <button id="wechat-x-preview-close" type="button" aria-label="关闭" style="width:28px;height:28px;padding:0;border:0;border-radius:50%;background:transparent;color:#536471;font-size:14px;cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="wechat-x-preview-body" style="flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;padding:13px 14px 14px;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;">
+                    <div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">
+                        <div style="display:flex;align-items:center;justify-content:center;flex:0 0 34px;width:34px;height:34px;border-radius:50%;background:#0f1419;color:#fff;font-size:13px;font-weight:700;">${avatarChar}</div>
+                        <div style="min-width:0;flex:1;">
+                            <div style="display:flex;align-items:center;min-width:0;gap:4px;color:#0f1419;font-size:13px;font-weight:700;">
+                                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${authorName}</span>
+                                ${accountLabel ? `<span style="flex:0 0 auto;color:${accountColor};font-size:10px;font-weight:600;">${accountLabel}</span>` : ''}
+                            </div>
+                            ${time ? `<div style="margin-top:2px;color:#8b98a5;font-size:10px;">${time}</div>` : ''}
+                        </div>
+                    </div>
+                    <div style="margin-bottom:10px;color:#0f1419;font-size:13px;line-height:1.6;text-align:left;white-space:pre-wrap;word-break:break-word;">${content || '分享了一条 X 帖子'}</div>
+                    ${imageItems.length > 0 ? `<div style="display:grid;grid-template-columns:${imageItems.length === 1 ? '1fr' : 'repeat(2,minmax(0,1fr))'};gap:5px;margin-bottom:10px;">${imageItems.slice(0, 4).map(item => item.url
+                        ? `<button class="wechat-x-preview-image" type="button" data-image-url="${esc(item.url)}" style="position:relative;display:block;aspect-ratio:1/1;overflow:hidden;padding:0;border:1px solid #e7e9ea;border-radius:7px;background:#eff3f4;cursor:pointer;"><img src="${esc(item.url)}" alt="${esc(item.description)}" style="display:block;width:100%;height:100%;object-fit:cover;"></button>`
+                        : `<div style="display:flex;align-items:center;justify-content:center;min-height:66px;padding:8px;border:1px solid #e7e9ea;border-radius:7px;background:#f7f9f9;color:#536471;font-size:10.5px;line-height:1.4;text-align:center;word-break:break-word;">${esc(item.description)}</div>`).join('')}</div>` : ''}
+                    <div style="display:flex;gap:18px;padding:7px 0;border-top:1px solid #eff3f4;color:#536471;font-size:11px;"><span>回复 ${commentsCount}</span><span>喜欢 ${likes}</span></div>
+                    ${commentsHtml ? `<div style="margin-top:4px;padding-top:4px;border-top:4px solid #f7f9f9;"><div style="padding:6px 0 2px;color:#0f1419;font-size:12px;font-weight:700;">评论 ${comments.length}</div>${commentsHtml}</div>` : ''}
+                </div>
+            </div>`;
+        host.appendChild(modal);
+        const close = () => modal.remove();
+        modal.addEventListener('click', event => {
+            if (event.target === modal) close();
+        });
+        modal.querySelector('#wechat-x-preview-close')?.addEventListener('click', close);
+        modal.querySelectorAll('.wechat-x-preview-image[data-image-url]').forEach(button => {
+            button.addEventListener('click', () => {
+                const imageUrl = String(button.dataset.imageUrl || '').trim();
+                if (imageUrl) this.app.phoneShell?.showImageViewer?.(imageUrl, { alt: 'X 帖子图片' });
+            });
+        });
     }
 
     compressChatImage(file) {
@@ -9727,7 +10129,7 @@ renderChatRoom(chat) {
         const currentView = this.getCurrentWechatView();
         const messagesDiv = currentView?.querySelector('#chat-messages');
         if (!messagesDiv) return;
-        const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-undercover-card, .message-music-card, .message-music-listen-card';
+        const longPressBubbleSelector = '.message-text, .message-voice, .message-image-box, .message-redpacket, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-x-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-undercover-card, .message-music-card, .message-music-listen-card';
         const resolveMessageIndexFromElement = (msgElement) => {
             const messages = this.app?.wechatData?.getMessages?.(this.app?.currentChat?.id) || [];
             const domIndex = Number.parseInt(msgElement?.dataset?.messageIndex || '', 10);
@@ -9781,6 +10183,9 @@ renderChatRoom(chat) {
                     longPressTriggered = true;
                     if (targetBubble.closest('.message-weibo-card')) {
                         this._suppressWeiboCardClickUntil = Date.now() + 800;
+                    }
+                    if (targetBubble.closest('.message-x-card')) {
+                        this._suppressXCardClickUntil = Date.now() + 800;
                     }
                     if (targetBubble.closest('.message-wangxiang-task-card')) {
                         this._suppressWangxiangCardClickUntil = Date.now() + 800;
@@ -10351,10 +10756,11 @@ renderChatRoom(chat) {
                 const speaker = msg.from === 'me'
                     ? (context.name1 || '用户')
                     : (context.name2 || savedChatName);
+                const formattedContent = this._formatMessageContentForPrompt(msg, targetChat);
 
                 chatHistory.push({
                     speaker: speaker,
-                    message: msg.content || '',
+                    message: formattedContent || '',
                     source: 'wechat'
                 });
             });
@@ -11726,6 +12132,7 @@ renderChatRoom(chat) {
         // ========================================
         const allChats = this.app.wechatData.getChatList();
         let relatedContextStr = '';
+        let crossGroupSharedHistoryContext = '';
         let commonGroupNamesForSingleChat = [];
         let commonGroupListForSingleChat = '';
         const normalizeRelatedWechatName = (value) => String(value || '')
@@ -11788,6 +12195,12 @@ renderChatRoom(chat) {
                 });
             }
         } else if (!callMode && isGroupChat) {
+            crossGroupSharedHistoryContext = this._buildCrossGroupSharedHistoryContext(
+                targetChat,
+                allChats,
+                context,
+                userName
+            );
             const singleChatLimit = this._readNonNegativeLimit('wechat-single-chat-limit', 200);
             const memberKeys = new Set(groupMembersArray.map(member => normalizeRelatedWechatName(member)).filter(Boolean));
             if (singleChatLimit > 0 && memberKeys.size > 0) {
@@ -11836,6 +12249,15 @@ renderChatRoom(chat) {
             });
         }
 
+        if (crossGroupSharedHistoryContext) {
+            messages.push({
+                role: 'system',
+                content: crossGroupSharedHistoryContext,
+                name: 'SYSTEM (其他共同群聊记录与知情权限)',
+                isPhoneMessage: true
+            });
+        }
+
         if (isGroupChat) {
             const groupHoneyHostSummaryMessage = await this._buildGroupHoneyHostSummaryMessage(targetChat, groupMembersArray);
             if (groupHoneyHostSummaryMessage) {
@@ -11844,7 +12266,7 @@ renderChatRoom(chat) {
 
             messages.push({
                 role: 'system',
-                content: '【当前窗口隔离规则】你现在只能回复当前这个微信群窗口。系统若提供了【群成员单聊参考】，只表示这些群成员与{{user}}在私聊中已经发生过的共同经历，可作为该成员在群聊中的关系、记忆和语气参考；没有提供单聊参考的群成员就不要假装知道私聊内容。绝对禁止提及、猜测、影射、总结、回应任何非群成员私聊、未读消息或其他无关窗口内容。',
+                content: '【当前窗口与跨群知情权限】你现在只能回复当前这个微信群窗口。系统若提供了【群成员单聊参考】，只表示对应群成员与{{user}}在私聊中已经发生过的共同经历；没有提供单聊参考的成员不得假装知道私聊内容。系统若提供了【其他共同群聊记录与知情权限】，必须逐个来源群遵守其中的知情成员名单：只有同时加入来源群和当前群的成员可以使用对应记录，当前群其他成员即使与你处于同一窗口也绝对不得知道、复述、暗示或依据该记录作出反应。未列出的其他群、非群成员私聊、未读消息和无关窗口内容一律禁止提及、猜测、影射、总结或回应。',
                 name: 'SYSTEM (窗口隔离)',
                 isPhoneMessage: true
             });
@@ -13404,7 +13826,7 @@ renderChatRoom(chat) {
         if (!contentEl) return;
 
         // 找到气泡元素（包括图片）
-        const bubbleEl = contentEl.querySelector('.message-text, .message-voice, .message-redpacket, .message-image-box, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-undercover-card, .message-music-card, .message-music-listen-card');
+        const bubbleEl = contentEl.querySelector('.message-text, .message-voice, .message-redpacket, .message-image-box, .message-transfer, .message-location, .message-call-record, .message-call-text, .message-sticker-box, .message-weibo-card, .message-x-card, .message-wangxiang-task-card, .message-poker-card, .message-werewolf-card, .message-undercover-card, .message-music-card, .message-music-listen-card');
         if (!bubbleEl) return;
 
         const isTextMessage = message.type === 'text' || !message.type;

@@ -16,7 +16,7 @@ export class CalendarApp {
         this.isGeneratingSchedule = false;
         this._lastReminderStoryTime = null;
 
-        window.addEventListener('phone:swipeBack', () => this.handleSwipeBack());
+        window.addEventListener('phone:swipeBack', (event) => this.handleSwipeBack(event));
     }
 
     render() {
@@ -34,9 +34,13 @@ export class CalendarApp {
         if (this.calendarView) this.calendarView.app = this;
     }
 
-    handleSwipeBack() {
+    handleSwipeBack(event) {
         const domCurrentView = document.querySelector('.phone-view-current');
-        if (!domCurrentView?.querySelector?.('.yzp-calendar-app')) return;
+        if (!domCurrentView?.querySelector?.('.yzp-calendar-app')) return false;
+
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
 
         const isSettingsView = this.calendarView?.currentView === 'settings'
             || domCurrentView?.dataset?.viewId === 'calendar-settings'
@@ -47,19 +51,10 @@ export class CalendarApp {
             this.calendarView.monthPickerOpen = false;
             this.calendarView.typePickerOpen = false;
             this.calendarView.render();
-            this.blockGhostClick();
-            return;
+            return true;
         }
         window.dispatchEvent(new CustomEvent('phone:goHome'));
-    }
-
-    blockGhostClick() {
-        const phoneScreen = document.querySelector('.phone-screen');
-        if (!phoneScreen) return;
-        phoneScreen.style.pointerEvents = 'none';
-        setTimeout(() => {
-            phoneScreen.style.pointerEvents = '';
-        }, 400);
+        return true;
     }
 
     clearCache() {

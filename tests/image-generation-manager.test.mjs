@@ -12,6 +12,83 @@ const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString('b
 const { ImageGenerationManager } = await import(moduleUrl);
 const manager = new ImageGenerationManager(null);
 
+test('provider bindings accept the story image app', () => {
+    const storyManager = new ImageGenerationManager({
+        get: key => key === 'phone-image-provider-app-bindings'
+            ? JSON.stringify({ story: 'comfyui', unknown: 'openai' })
+            : null
+    });
+
+    assert.equal(storyManager.getBoundProviderForApp('story'), 'comfyui');
+    assert.equal(storyManager.resolveProvider({ app: 'story' }), 'comfyui');
+    assert.equal(storyManager.getBoundProviderForApp('unknown'), '');
+});
+
+test('story image generation reads its independent prompt preset scope', () => {
+    const values = {
+        'phone-image-provider': 'novelai',
+        'phone-image-novelai-key': 'test-key',
+        'phone-image-story-fixed-prompt': 'story fixed prompt',
+        'phone-image-story-fixed-prompt-end': 'story ending prompt',
+        'phone-image-story-negative-prompt': 'story negative prompt'
+    };
+    const storyManager = new ImageGenerationManager({
+        get: key => values[key] ?? null
+    });
+
+    const config = storyManager.getConfig({ app: 'story', enabled: true });
+    assert.equal(config.fixedPrompt, 'story fixed prompt');
+    assert.equal(config.fixedPromptEnd, 'story ending prompt');
+    assert.equal(config.negativePrompt, 'story negative prompt');
+});
+
+test('X image generation uses independent provider, size, preset, and ComfyUI workflow scopes', () => {
+    const values = {
+        'phone-image-provider': 'novelai',
+        'phone-image-provider-app-bindings': JSON.stringify({ x: 'comfyui' }),
+        'phone-image-x-width': 896,
+        'phone-image-x-height': 1152,
+        'phone-image-comfyui-x-active-workflow': 'workflow-x',
+        'phone-image-comfyui-weibo-active-workflow': 'workflow-weibo',
+        'phone-image-openai-x-active-preset': 'preset-x',
+        'phone-image-openai-presets-by-app': JSON.stringify({
+            x: [{
+                id: 'preset-x',
+                name: 'X 专用',
+                fixedPrompt: 'x fixed',
+                negativePrompt: 'x negative',
+                xWidth: 768,
+                xHeight: 1024
+            }],
+            weibo: [{ id: 'preset-weibo', name: '微博专用', fixedPrompt: 'weibo fixed' }]
+        })
+    };
+    const xManager = new ImageGenerationManager({
+        get: key => values[key] ?? null
+    });
+
+    assert.equal(xManager.getBoundProviderForApp('x'), 'comfyui');
+    assert.equal(xManager.resolveProvider({ app: 'x' }), 'comfyui');
+    assert.deepEqual(xManager.getSizeForApp('x'), { width: 896, height: 1152 });
+    assert.equal(xManager._normalizeImagePresetScope('x'), 'x');
+    assert.equal(xManager._getComfyUIActiveWorkflowId('x'), 'workflow-x');
+    assert.equal(xManager._getComfyUIActiveWorkflowId('weibo'), 'workflow-weibo');
+    assert.deepEqual(xManager._normalizeComfyUIPromptSettingsByApp({
+        x: { fixedPrompt: 'x workflow prompt' }
+    }).x, {
+        promptSettingsInitialized: true,
+        fixedPrompt: 'x workflow prompt',
+        fixedPromptEnd: '',
+        negativePrompt: ''
+    });
+
+    const preset = xManager._getActiveOpenAIImagePromptPreset('x');
+    assert.equal(preset.name, 'X 专用');
+    assert.equal(preset.fixedPrompt, 'x fixed');
+    assert.equal(preset.xWidth, 768);
+    assert.equal(preset.xHeight, 1024);
+});
+
 test('NovelAI character parser supports foreground and background depth positions', () => {
     const parsed = manager._parseNovelAICharacterPromptSyntax(
         '{人物 1girl, black hair, {位置前} 人物}, {人物 1boy, blond hair, {位置后} 人物}'
@@ -41,6 +118,18 @@ test('NovelAI character parser keeps existing upper and lower positions unchange
     assert.deepEqual(parsed.characters.map(item => item.center), [
         { x: 0.5, y: 0.3 },
         { x: 0.5, y: 0.7 }
+    ]);
+});
+
+test('NovelAI character parser accepts center-qualified Chinese positions', () => {
+    const parsed = manager._parseNovelAICharacterPromptSyntax(
+        '{人物 1girl, {位置中下} 人物}, {人物 1boy, {位置中上} 人物}'
+    );
+
+    assert.equal(parsed.useCoords, true);
+    assert.deepEqual(parsed.characters.map(item => item.center), [
+        { x: 0.5, y: 0.7 },
+        { x: 0.5, y: 0.3 }
     ]);
 });
 

@@ -10,7 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 设置APP
-import { ImageUploadManager } from './image-upload.js';
+import { ImageUploadManager } from './image-upload.js?v=20261002-x-image-cleanup';
 import { ImageCropper } from './image-cropper.js';
 import { AlbumData } from '../album/album-data.js';
 import { AlbumImagePicker } from '../album/album-image-picker.js';
@@ -217,9 +217,9 @@ export class SettingsApp {
         // 🔥 监听滑动返回事件 (防止实例重建导致重复绑定)
         if (!window._settingsSwipeBackBound) {
             window._settingsSwipeBackBound = true;
-            window.addEventListener('phone:swipeBack', () => {
+            window.addEventListener('phone:swipeBack', (event) => {
                 if (window.VirtualPhone && window.VirtualPhone.settingsApp) {
-                    window.VirtualPhone.settingsApp.handleSwipeBack();
+                    window.VirtualPhone.settingsApp.handleSwipeBack(event);
                 }
             });
         }
@@ -239,6 +239,7 @@ export class SettingsApp {
         return [
             { id: 'wechat', name: '微信', icon: '💬', color: '#07c160', defaultIcon: DEFAULT_APP_ICONS.wechat },
             { id: 'weibo', name: '微博', icon: '👁️‍🗨️', color: '#ff8200', defaultIcon: DEFAULT_APP_ICONS.weibo },
+            { id: 'x', name: 'X', icon: 'X', color: '#000000', defaultIcon: DEFAULT_APP_ICONS.x },
             { id: 'honey', name: '蜜语', icon: '💕', color: '#ff6b9d', defaultIcon: DEFAULT_APP_ICONS.honey },
             { id: 'games', name: '游戏', icon: '🎮', color: '#722ed1', defaultIcon: DEFAULT_APP_ICONS.games },
             { id: 'mofo', name: '魔坊', icon: '🪄', color: '#1677ff', defaultIcon: DEFAULT_APP_ICONS.mofo },
@@ -1060,13 +1061,18 @@ export class SettingsApp {
     }
 
     // 🔥 处理滑动返回
-    handleSwipeBack() {
+    handleSwipeBack(event) {
         // 仅当前前台图层是设置页时才响应，避免历史隐藏层误触发
         const currentView = document.querySelector('.phone-view-current');
-        if (!currentView?.querySelector('.settings-app')) return;
+        if (!currentView?.querySelector('.settings-app')) return false;
+
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
 
         // 设置页面没有子页面，直接返回主屏幕
         window.dispatchEvent(new CustomEvent('phone:goHome'));
+        return true;
     }
 
     render() {
@@ -3484,8 +3490,14 @@ export class SettingsApp {
             { id: 'honey', name: '蜜语' },
             { id: 'wechat', name: '微信' },
             { id: 'weibo', name: '微博' },
-            { id: 'diary', name: '日记' }
+            { id: 'x', name: 'X' },
+            { id: 'diary', name: '日记' },
+            { id: 'story', name: '正文' }
         ];
+    }
+
+    _getImageProviderBindingAppDefs() {
+        return this._getImagePromptAppDefs();
     }
 
     _normalizeImagePromptApp(app) {
@@ -3496,6 +3508,11 @@ export class SettingsApp {
     _normalizeImagePresetScope(app) {
         const appKey = this._normalizeImagePromptApp(app);
         return appKey === 'diary' ? 'wechat' : appKey;
+    }
+
+    _normalizeImageProviderBindingApp(app) {
+        const value = String(app || '').trim().toLowerCase();
+        return this._getImageProviderBindingAppDefs().some(def => def.id === value) ? value : '';
     }
 
     _getImageProviderAppBindings() {
@@ -3510,7 +3527,7 @@ export class SettingsApp {
         const allowedProviders = new Set(['novelai', 'openai', 'siliconflow', 'sd', 'comfyui']);
         const bindings = {};
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            this._getImagePromptAppDefs().forEach((def) => {
+            this._getImageProviderBindingAppDefs().forEach((def) => {
                 const provider = String(parsed[def.id] || '').trim().toLowerCase();
                 if (allowedProviders.has(provider)) bindings[def.id] = provider;
             });
@@ -3520,7 +3537,7 @@ export class SettingsApp {
 
     _renderImageProviderAppBinding(providerKey, bindings = this._getImageProviderAppBindings()) {
         const safeProvider = String(providerKey || '').trim().toLowerCase();
-        const options = this._getImagePromptAppDefs().map((def) => {
+        const options = this._getImageProviderBindingAppDefs().map((def) => {
             const safeApp = this._escapeHtml(def.id);
             const safeName = this._escapeHtml(def.name);
             const checked = bindings?.[def.id] === safeProvider ? 'checked' : '';
@@ -3536,7 +3553,7 @@ export class SettingsApp {
             <div class="setting-item phone-image-provider-app-binding" data-provider-binding-panel="${this._escapeHtml(safeProvider)}">
                 <div class="setting-label">固定 App 绑定</div>
                 <div class="setting-desc">勾选后，对应 App 生图优先使用本供应商配置；未绑定的 App 继续使用上面的全局供应商。</div>
-                <div style="display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:8px; margin-top:8px;">
+                <div style="display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:8px; margin-top:8px;">
                     ${options}
                 </div>
             </div>
@@ -3597,6 +3614,8 @@ export class SettingsApp {
                 wechatHeight: preset?.wechatHeight,
                 weiboWidth: preset?.weiboWidth,
                 weiboHeight: preset?.weiboHeight,
+                xWidth: preset?.xWidth,
+                xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
                 width: preset?.width,
@@ -3664,6 +3683,8 @@ export class SettingsApp {
                 wechatHeight: preset?.wechatHeight,
                 weiboWidth: preset?.weiboWidth,
                 weiboHeight: preset?.weiboHeight,
+                xWidth: preset?.xWidth,
+                xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
                 width: preset?.width,
@@ -3734,7 +3755,7 @@ export class SettingsApp {
             ? settingsByApp
             : {};
         const normalized = {};
-        ['honey', 'wechat', 'weibo'].forEach((scope) => {
+        ['honey', 'wechat', 'weibo', 'x', 'story'].forEach((scope) => {
             const settings = this._normalizeComfyUIPromptSettings(raw[scope]);
             if (settings) normalized[scope] = settings;
         });
@@ -4072,6 +4093,7 @@ export class SettingsApp {
         const honeySize = readImageSizePair('phone-image-honey-width', 'phone-image-honey-height', 832, 1216);
         const wechatSize = readImageSizePair('phone-image-wechat-width', 'phone-image-wechat-height', 512, 512);
         const weiboSize = readImageSizePair('phone-image-weibo-width', 'phone-image-weibo-height', 1024, 1024);
+        const xSize = readImageSizePair('phone-image-x-width', 'phone-image-x-height', 1024, 1024);
         const diarySize = readImageSizePair('phone-image-diary-width', 'phone-image-diary-height', 512, 512);
         const width = fallbackSize.width;
         const height = fallbackSize.height;
@@ -4081,6 +4103,8 @@ export class SettingsApp {
         const wechatHeight = wechatSize.height;
         const weiboWidth = weiboSize.width;
         const weiboHeight = weiboSize.height;
+        const xWidth = xSize.width;
+        const xHeight = xSize.height;
         const diaryWidth = diarySize.width;
         const diaryHeight = diarySize.height;
         const readStoredNumber = (key, fallback) => {
@@ -4306,7 +4330,7 @@ export class SettingsApp {
 
                 <div class="setting-item">
                     <div class="setting-label">NAI 生图预设</div>
-                    <div class="setting-desc">预设按蜜语、微信/日记、微博分别管理；微信和日记使用同一套当前预设。</div>
+                    <div class="setting-desc">预设按蜜语、微信/日记、微博、X、正文分别管理；微信和日记使用同一套当前预设。</div>
                     <select id="phone-image-prompt-app-select" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
                         ${imagePromptAppOptions}
                     </select>
@@ -4774,7 +4798,7 @@ export class SettingsApp {
                             i
                         </button>
                     </div>
-                    <div class="setting-desc">工作流按蜜语、微信/日记、微博分别记住当前选择；微信和日记使用同一套工作流。</div>
+                    <div class="setting-desc">工作流按蜜语、微信/日记、微博、X、正文分别记住当前选择；微信和日记使用同一套工作流。</div>
                     <select id="phone-image-comfyui-app-select" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
                         ${comfyuiAppOptions}
                     </select>
@@ -4819,7 +4843,7 @@ export class SettingsApp {
 
                 <div class="setting-item">
                     <div class="setting-label">各 App 生图尺寸</div>
-                    <div class="setting-desc">蜜语默认使用 NAI 竖图；微信和日记默认小方图；微博默认方图。</div>
+                    <div class="setting-desc">蜜语默认使用 NAI 竖图；微信和日记默认小方图；微博和 X 默认方图。</div>
                     <button type="button" id="phone-image-reset-app-sizes" class="setting-btn" style="width: 100%; height: 30px; margin-top: 8px; border: 1px solid #d8d8d8; border-radius: 8px; background: #f7f7f7; color: #333; font-size: 12px; cursor: pointer;">恢复默认尺寸</button>
                     <div style="display: grid; grid-template-columns: 72px 1fr 1fr; gap: 8px; align-items: center; margin-top: 8px;">
                         <div style="font-size: 11px; color: #777;">App</div>
@@ -4837,6 +4861,10 @@ export class SettingsApp {
                         <div style="font-size: 12px; color: #333;">微博</div>
                         <input type="number" id="phone-image-weibo-width" min="64" max="2048" step="64" value="${weiboWidth}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
                         <input type="number" id="phone-image-weibo-height" min="64" max="2048" step="64" value="${weiboHeight}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
+
+                        <div style="font-size: 12px; color: #333;">X</div>
+                        <input type="number" id="phone-image-x-width" min="64" max="2048" step="64" value="${xWidth}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
+                        <input type="number" id="phone-image-x-height" min="64" max="2048" step="64" value="${xHeight}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
 
                         <div style="font-size: 12px; color: #333;">日记</div>
                         <input type="number" id="phone-image-diary-width" min="64" max="2048" step="64" value="${diaryWidth}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
@@ -5017,6 +5045,7 @@ export class SettingsApp {
         const defaultsByApp = {
             wechat: { allowSummary: true, allowVector: true },
             weibo: { allowSummary: true, allowVector: true },
+            x: { allowSummary: true, allowVector: true },
             diary: { allowSummary: true, allowVector: true },
             wangxiang: { allowSummary: true, allowTable: true, allowVector: true },
             honey: { allowSummary: false, allowTable: false, allowVector: false },
@@ -5053,6 +5082,7 @@ export class SettingsApp {
         const appDefs = [
             { id: 'wechat', name: '微信', desc: '聊天与社交场景' },
             { id: 'weibo', name: '微博', desc: '动态与评论场景' },
+            { id: 'x', name: 'X', desc: '公开动态与评论场景' },
             { id: 'diary', name: '日记', desc: '日记生成场景' },
             { id: 'wangxiang', name: '万象', desc: '任务大厅生成场景' },
             { id: 'honey', name: '蜜语', desc: '直播互动场景' },
@@ -6915,6 +6945,8 @@ export class SettingsApp {
                 'phone-image-wechat-height': 512,
                 'phone-image-weibo-width': 1024,
                 'phone-image-weibo-height': 1024,
+                'phone-image-x-width': 1024,
+                'phone-image-x-height': 1024,
                 'phone-image-diary-width': 512,
                 'phone-image-diary-height': 512,
                 'phone-image-width': 832,
@@ -6938,6 +6970,8 @@ export class SettingsApp {
             wechatHeight: readPresetNumber('phone-image-wechat-height', 512, 64, 2048, true),
             weiboWidth: readPresetNumber('phone-image-weibo-width', 1024, 64, 2048, true),
             weiboHeight: readPresetNumber('phone-image-weibo-height', 1024, 64, 2048, true),
+            xWidth: readPresetNumber('phone-image-x-width', 1024, 64, 2048, true),
+            xHeight: readPresetNumber('phone-image-x-height', 1024, 64, 2048, true),
             diaryWidth: readPresetNumber('phone-image-diary-width', 512, 64, 2048, true),
             diaryHeight: readPresetNumber('phone-image-diary-height', 512, 64, 2048, true),
             width: readPresetNumber('phone-image-width', 832, 64, 2048, true),
@@ -6971,6 +7005,7 @@ export class SettingsApp {
             await setPresetDimensionPair('phone-image-honey-width', 'phone-image-honey-height', preset.honeyWidth, preset.honeyHeight, 832, 1216);
             await setPresetDimensionPair('phone-image-wechat-width', 'phone-image-wechat-height', preset.wechatWidth, preset.wechatHeight, 512, 512);
             await setPresetDimensionPair('phone-image-weibo-width', 'phone-image-weibo-height', preset.weiboWidth, preset.weiboHeight, 1024, 1024);
+            await setPresetDimensionPair('phone-image-x-width', 'phone-image-x-height', preset.xWidth, preset.xHeight, 1024, 1024);
             await setPresetDimensionPair('phone-image-diary-width', 'phone-image-diary-height', preset.diaryWidth, preset.diaryHeight, 512, 512);
             await setPresetDimensionPair('phone-image-width', 'phone-image-height', preset.width, preset.height, 832, 1216);
             await setPresetNumber('phone-image-steps', preset.steps, 28, 1, 50, true);
@@ -6991,6 +7026,8 @@ export class SettingsApp {
             wechatHeight: readPresetNumber('phone-image-wechat-height', 512, 64, 2048, true),
             weiboWidth: readPresetNumber('phone-image-weibo-width', 1024, 64, 2048, true),
             weiboHeight: readPresetNumber('phone-image-weibo-height', 1024, 64, 2048, true),
+            xWidth: readPresetNumber('phone-image-x-width', 1024, 64, 2048, true),
+            xHeight: readPresetNumber('phone-image-x-height', 1024, 64, 2048, true),
             diaryWidth: readPresetNumber('phone-image-diary-width', 512, 64, 2048, true),
             diaryHeight: readPresetNumber('phone-image-diary-height', 512, 64, 2048, true),
             width: readPresetNumber('phone-image-width', 832, 64, 2048, true),
@@ -7029,6 +7066,7 @@ export class SettingsApp {
             await setPresetDimensionPair('phone-image-honey-width', 'phone-image-honey-height', preset.honeyWidth, preset.honeyHeight, 832, 1216);
             await setPresetDimensionPair('phone-image-wechat-width', 'phone-image-wechat-height', preset.wechatWidth, preset.wechatHeight, 512, 512);
             await setPresetDimensionPair('phone-image-weibo-width', 'phone-image-weibo-height', preset.weiboWidth, preset.weiboHeight, 1024, 1024);
+            await setPresetDimensionPair('phone-image-x-width', 'phone-image-x-height', preset.xWidth, preset.xHeight, 1024, 1024);
             await setPresetDimensionPair('phone-image-diary-width', 'phone-image-diary-height', preset.diaryWidth, preset.diaryHeight, 512, 512);
             await setPresetDimensionPair('phone-image-width', 'phone-image-height', preset.width, preset.height, 832, 1216);
         };
@@ -7512,6 +7550,8 @@ export class SettingsApp {
                 wechatHeight: preset?.wechatHeight,
                 weiboWidth: preset?.weiboWidth,
                 weiboHeight: preset?.weiboHeight,
+                xWidth: preset?.xWidth,
+                xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
                 width: preset?.width,
@@ -7541,6 +7581,8 @@ export class SettingsApp {
                 wechatHeight: preset?.wechatHeight,
                 weiboWidth: preset?.weiboWidth,
                 weiboHeight: preset?.weiboHeight,
+                xWidth: preset?.xWidth,
+                xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
                 width: preset?.width,
@@ -7597,6 +7639,8 @@ export class SettingsApp {
                 wechatHeight: preset?.wechatHeight,
                 weiboWidth: preset?.weiboWidth,
                 weiboHeight: preset?.weiboHeight,
+                xWidth: preset?.xWidth,
+                xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
                 width: preset?.width,
@@ -7669,6 +7713,8 @@ export class SettingsApp {
                 wechatHeight: preset?.wechatHeight,
                 weiboWidth: preset?.weiboWidth,
                 weiboHeight: preset?.weiboHeight,
+                xWidth: preset?.xWidth,
+                xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
                 width: preset?.width,
@@ -8304,8 +8350,9 @@ export class SettingsApp {
         imageProviderAppBindInputs.forEach((input) => {
             input.addEventListener('change', async (e) => {
                 const target = e.currentTarget;
-                const appKey = this._normalizeImagePromptApp(target.dataset.app);
+                const appKey = this._normalizeImageProviderBindingApp(target.dataset.app);
                 const providerKey = String(target.dataset.provider || '').trim().toLowerCase();
+                if (!appKey || !providerKey) return;
                 const bindings = getImageProviderAppBindings();
                 if (target.checked) {
                     bindings[appKey] = providerKey;
@@ -8826,7 +8873,7 @@ export class SettingsApp {
             const presetMap = this._getOpenAIImagePresetMap();
             const scopes = Array.from(new Set(this._getImagePromptAppDefs().map(def => this._normalizeImagePresetScope(def.id))));
             const totalCount = scopes.reduce((sum, scope) => sum + this._getOpenAIImagePresets(scope).length, 0);
-            if (totalCount > 0 && !confirm(`确定删除全部 ${totalCount} 套 GPT 生图预设吗？\n\n会清空蜜语、微信/日记、微博的 GPT 预设和当前选择；NAI 预设、API Key、模型和连接设置不会删除。`)) return;
+            if (totalCount > 0 && !confirm(`确定删除全部 ${totalCount} 套 GPT 生图预设吗？\n\n会清空蜜语、微信/日记、微博、X、正文的 GPT 预设和当前选择；NAI 预设、API Key、模型和连接设置不会删除。`)) return;
 
             scopes.forEach(scope => {
                 presetMap[scope] = [];
@@ -9045,7 +9092,7 @@ export class SettingsApp {
                 this.phoneShell?.showNotification?.('NAI 预设', '没有可删除的 NAI 预设，已恢复默认尺寸', '✅');
                 return;
             }
-            if (!confirm(`确定删除全部 ${totalCount} 套 NAI 生图预设吗？\n\n会清空蜜语、微信/日记、微博的 NAI 预设和当前选择，并恢复默认初始尺寸；API Key、模型和连接设置不会删除。`)) return;
+            if (!confirm(`确定删除全部 ${totalCount} 套 NAI 生图预设吗？\n\n会清空蜜语、微信/日记、微博、X、正文的 NAI 预设和当前选择，并恢复默认初始尺寸；API Key、模型和连接设置不会删除。`)) return;
 
             scopes.forEach(scope => {
                 presetMap[scope] = [];
@@ -9378,7 +9425,7 @@ export class SettingsApp {
 
             const nextWorkflows = workflows.filter(workflow => workflow.id !== activeId);
             await this._saveComfyUIWorkflows(nextWorkflows);
-            for (const appScope of ['honey', 'wechat', 'weibo']) {
+            for (const appScope of ['honey', 'wechat', 'weibo', 'x', 'story']) {
                 const storageKey = this._getComfyUIActiveWorkflowStorageKey(appScope);
                 if (String(this.storage.get(storageKey) || '').trim() === activeId) {
                     await this.storage.set(storageKey, '');
@@ -9856,6 +9903,8 @@ export class SettingsApp {
             ['phone-image-wechat-height', 512, 64, 2048, true],
             ['phone-image-weibo-width', 1024, 64, 2048, true],
             ['phone-image-weibo-height', 1024, 64, 2048, true],
+            ['phone-image-x-width', 1024, 64, 2048, true],
+            ['phone-image-x-height', 1024, 64, 2048, true],
             ['phone-image-diary-width', 512, 64, 2048, true],
             ['phone-image-diary-height', 512, 64, 2048, true],
             ['phone-image-width', 832, 64, 2048, true],
@@ -9876,6 +9925,8 @@ export class SettingsApp {
             'phone-image-wechat-height',
             'phone-image-weibo-width',
             'phone-image-weibo-height',
+            'phone-image-x-width',
+            'phone-image-x-height',
             'phone-image-diary-width',
             'phone-image-diary-height',
             'phone-image-width',

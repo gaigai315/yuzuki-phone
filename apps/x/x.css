@@ -1,0 +1,3009 @@
+#phone-panel-content .phone-screen .xapp-root {
+    --xapp-black: #0f1419;
+    --xapp-muted: #536471;
+    --xapp-border: #eff3f4;
+    --xapp-blue: #1d9bf0;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: #fff;
+    color: var(--xapp-black);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    letter-spacing: 0;
+    isolation: isolate;
+}
+
+#phone-panel-content .phone-screen .xapp-root,
+#phone-panel-content .phone-screen .xapp-root * {
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .xapp-root button {
+    appearance: none;
+    -webkit-appearance: none;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+    box-shadow: none;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .xapp-root input {
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: 0;
+    box-shadow: none;
+}
+
+#phone-panel-content .phone-screen .xapp-page {
+    position: absolute;
+    inset: 0;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-top-glass {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 5;
+    overflow: hidden;
+    border-bottom: 1px solid rgba(83, 100, 113, 0.14);
+    background: rgba(255, 255, 255, 0.56);
+    box-shadow: 0 8px 24px rgba(15, 20, 25, 0.055);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+#phone-panel-content .phone-screen .xapp-topbar {
+    display: grid;
+    grid-template-columns: 44px 1fr 44px;
+    align-items: center;
+    width: 100%;
+    height: 68px;
+    padding: 27px 13px 3px;
+    background: transparent;
+}
+
+#phone-panel-content .phone-screen .xapp-avatar-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 38px;
+    height: 38px;
+}
+
+#phone-panel-content .phone-screen .xapp-avatar {
+    display: block;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: center;
+    background: #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-avatar-user {
+    border: 1px solid #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-logo {
+    justify-self: center;
+    font-family: "Times New Roman", Georgia, serif;
+    font-size: 29px;
+    font-weight: 600;
+    line-height: 1;
+    color: #000;
+}
+
+#phone-panel-content .phone-screen .xapp-feed-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    height: 44px;
+    background: transparent;
+}
+
+#phone-panel-content .phone-screen .xapp-feed-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    color: var(--xapp-muted);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-feed-tab.is-active {
+    color: var(--xapp-black);
+    font-weight: 700;
+}
+
+#phone-panel-content .phone-screen .xapp-feed-tab.is-active::after {
+    content: "";
+    position: absolute;
+    left: 34%;
+    right: 34%;
+    bottom: 0;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--xapp-blue);
+}
+
+#phone-panel-content .phone-screen .xapp-feed-scroll {
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-top: 112px;
+    padding-bottom: 48px;
+    scroll-padding-top: 112px;
+    scroll-padding-bottom: 48px;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #phone-panel-content .phone-screen .xapp-top-glass,
+    #phone-panel-content .phone-screen .xapp-profile-header {
+        background: rgba(255, 255, 255, 0.96);
+    }
+}
+
+#phone-panel-content .phone-screen .xapp-feed-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-following-accounts {
+    padding: 12px 14px 11px;
+    border-bottom: 1px solid var(--xapp-border);
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-following-accounts-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 10px;
+    color: var(--xapp-black);
+}
+
+#phone-panel-content .phone-screen .xapp-following-accounts-heading strong {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+#phone-panel-content .phone-screen .xapp-following-accounts-heading span {
+    color: var(--xapp-muted);
+    font-size: 10px;
+}
+
+#phone-panel-content .phone-screen .xapp-following-account-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px 14px;
+}
+
+#phone-panel-content .phone-screen .xapp-following-account {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-avatar.xapp-following-account-avatar {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+    font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .xapp-following-account-name {
+    max-width: 112px;
+    overflow: hidden;
+    color: var(--xapp-black);
+    font-size: 11.5px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-post {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 9px;
+    padding: 11px 13px 8px;
+    border-bottom: 1px solid var(--xapp-border);
+    background: #fff;
+    cursor: pointer;
+    outline: none;
+}
+
+#phone-panel-content .phone-screen .xapp-post:focus-visible {
+    box-shadow: inset 0 0 0 2px rgba(29, 155, 240, 0.45);
+}
+
+#phone-panel-content .phone-screen .xapp-post-avatar {
+    display: block;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: center;
+    background: #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-brand-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    background: #000;
+    color: #fff;
+    font-family: "Times New Roman", Georgia, serif;
+    font-size: 25px;
+}
+
+#phone-panel-content .phone-screen .xapp-post-main {
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .xapp-post-header,
+#phone-panel-content .phone-screen .xapp-post-identity,
+#phone-panel-content .phone-screen .xapp-post-side {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .xapp-post-header {
+    justify-content: space-between;
+    gap: 6px;
+    min-height: 21px;
+}
+
+#phone-panel-content .phone-screen .xapp-post-identity {
+    gap: 3px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-post-identity strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--xapp-black);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+}
+
+#phone-panel-content .phone-screen .xapp-verified {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: var(--xapp-blue);
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-verified-official {
+    color: var(--xapp-blue);
+}
+
+#phone-panel-content .phone-screen .xapp-verified-advertiser {
+    color: #f4c430;
+}
+
+#phone-panel-content .phone-screen .xapp-post-time,
+#phone-panel-content .phone-screen .xapp-promoted-label {
+    color: var(--xapp-muted);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.25;
+}
+
+#phone-panel-content .phone-screen .xapp-post-time {
+    flex: 0 0 auto;
+}
+
+#phone-panel-content .phone-screen .xapp-post-side {
+    flex: 0 0 auto;
+    gap: 8px;
+}
+
+#phone-panel-content .phone-screen .xapp-more-button,
+#phone-panel-content .phone-screen .xapp-delete-post-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    color: var(--xapp-muted);
+    font-size: 13px;
+}
+
+#phone-panel-content .phone-screen .xapp-delete-post-button:hover,
+#phone-panel-content .phone-screen .xapp-delete-post-button:focus-visible {
+    color: #f4212e;
+}
+
+#phone-panel-content .phone-screen .xapp-post-copy {
+    margin-top: 1px;
+    color: var(--xapp-black);
+    font-size: 13.5px;
+    font-weight: 400;
+    line-height: 1.42;
+    overflow-wrap: anywhere;
+}
+
+#phone-panel-content .phone-screen .xapp-post-images {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px;
+    width: 100%;
+    margin-top: 8px;
+    overflow: hidden;
+    border: 1px solid #cfd9de;
+    border-radius: 14px;
+    background: #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-post-images.xapp-image-grid-1 {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+#phone-panel-content .phone-screen .xapp-image-card {
+    position: relative;
+    min-width: 0;
+    aspect-ratio: 1;
+    overflow: hidden;
+    background: #e7edf1;
+}
+
+#phone-panel-content .phone-screen .xapp-image-grid-1 .xapp-image-card {
+    aspect-ratio: 16 / 10;
+}
+
+#phone-panel-content .phone-screen .xapp-image-front,
+#phone-panel-content .phone-screen .xapp-image-back {
+    position: absolute;
+    inset: 0;
+    min-width: 0;
+    min-height: 0;
+}
+
+#phone-panel-content .phone-screen .xapp-image-front.is-hidden,
+#phone-panel-content .phone-screen .xapp-image-back.is-hidden {
+    display: none !important;
+}
+
+#phone-panel-content .phone-screen .xapp-image-open,
+#phone-panel-content .phone-screen .xapp-image-generate {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+}
+
+#phone-panel-content .phone-screen .xapp-post-image-real {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    background: #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-image-placeholder {
+    background: #dfe7ec;
+}
+
+#phone-panel-content .phone-screen .xapp-image-card.is-failed .xapp-image-placeholder {
+    background: #ece5e5;
+}
+
+#phone-panel-content .phone-screen .xapp-image-generate {
+    flex-direction: column;
+    gap: 7px;
+    padding: 12px;
+    color: #3f4f5a;
+    font-size: 10.5px;
+    font-weight: 650;
+    line-height: 1.25;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-image-generate:disabled {
+    cursor: progress;
+}
+
+#phone-panel-content .phone-screen .xapp-image-generate small {
+    display: -webkit-box;
+    max-width: 100%;
+    overflow: hidden;
+    color: #8f3b3b;
+    font-size: 9px;
+    font-weight: 500;
+    line-height: 1.25;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+#phone-panel-content .phone-screen .xapp-image-generate-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(83, 100, 113, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--xapp-black);
+    font-size: 15px;
+}
+
+#phone-panel-content .phone-screen .xapp-image-info {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    z-index: 2;
+    height: 22px;
+    padding: 0 8px !important;
+    border-radius: 11px !important;
+    background: rgba(15, 20, 25, 0.68) !important;
+    color: #fff !important;
+    font-size: 9.5px !important;
+    line-height: 22px !important;
+}
+
+#phone-panel-content .phone-screen .xapp-image-regenerate {
+    position: absolute;
+    bottom: 5px;
+    left: 5px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 22px;
+    border-radius: 11px !important;
+    background: rgba(15, 20, 25, 0.68) !important;
+    color: #fff !important;
+    font-size: 9px !important;
+}
+
+#phone-panel-content .phone-screen .xapp-image-regenerate:disabled {
+    cursor: progress;
+    opacity: 0.78;
+}
+
+#phone-panel-content .phone-screen .xapp-image-back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 11px 12px 28px;
+    background: #f7f9f9;
+    color: var(--xapp-black);
+}
+
+#phone-panel-content .phone-screen .xapp-image-description {
+    display: flex;
+    min-width: 0;
+    max-height: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-image-description strong {
+    margin-top: 3px;
+    font-size: 9px;
+    line-height: 1.2;
+}
+
+#phone-panel-content .phone-screen .xapp-image-description span {
+    display: -webkit-box;
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--xapp-muted);
+    font-size: 9px;
+    line-height: 1.32;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+#phone-panel-content .phone-screen .xapp-image-restore {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 22px;
+    border-radius: 11px !important;
+    background: rgba(15, 20, 25, 0.68) !important;
+    color: #fff !important;
+    font-size: 9px !important;
+}
+
+#phone-panel-content .phone-screen .xapp-post-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-items: center;
+    width: 100%;
+    height: 34px;
+    margin-top: 5px;
+}
+
+#phone-panel-content .phone-screen .xapp-post-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 5px;
+    height: 34px;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+}
+
+#phone-panel-content .phone-screen .xapp-post-action i {
+    font-size: 15px;
+}
+
+#phone-panel-content .phone-screen .xapp-post-action:hover,
+#phone-panel-content .phone-screen .xapp-comment-reply:hover {
+    color: var(--xapp-blue);
+}
+
+#phone-panel-content .phone-screen .xapp-post-action:nth-child(2) {
+    justify-content: center;
+}
+
+#phone-panel-content .phone-screen .xapp-post-action-share {
+    justify-content: flex-end;
+    padding-right: 4px;
+}
+
+#phone-panel-content .phone-screen .xapp-media-card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    margin-top: 9px;
+    overflow: hidden;
+    border: 1px solid #cfd9de;
+    border-radius: 14px;
+}
+
+#phone-panel-content .phone-screen .xapp-media-card-dark {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background:
+        radial-gradient(circle at 18% 24%, rgba(29, 155, 240, 0.32), transparent 28%),
+        radial-gradient(circle at 84% 72%, rgba(255, 255, 255, 0.14), transparent 25%),
+        #030303;
+    color: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-media-kicker {
+    color: #b8c2cc;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 1.6px;
+}
+
+#phone-panel-content .phone-screen .xapp-media-title {
+    margin-top: 6px;
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+#phone-panel-content .phone-screen .xapp-media-footer {
+    position: absolute;
+    right: 11px;
+    bottom: 8px;
+    left: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 9px;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-button {
+    position: absolute;
+    right: 12px;
+    bottom: 60px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 50% !important;
+    background: var(--xapp-blue) !important;
+    color: #fff !important;
+    font-size: 18px;
+    box-shadow: 0 5px 14px rgba(29, 155, 240, 0.34) !important;
+    transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-button:hover {
+    background: #168bd2 !important;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-button:active {
+    transform: scale(0.94);
+    box-shadow: 0 3px 9px rgba(29, 155, 240, 0.28) !important;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-button i {
+    display: block;
+    line-height: 1;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-page {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-header {
+    position: relative;
+    z-index: 3;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) 56px;
+    align-items: center;
+    width: 100%;
+    height: 69px;
+    min-height: 69px;
+    flex: 0 0 69px;
+    padding: 27px 10px 5px;
+    border-bottom: 1px solid rgba(83, 100, 113, 0.14);
+    background: rgba(255, 255, 255, 0.62);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+#phone-panel-content .phone-screen .xapp-compose-header h1 {
+    margin: 0;
+    color: var(--xapp-black);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    color: var(--xapp-black);
+    font-size: 16px;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-publish {
+    min-width: 52px;
+    height: 30px;
+    padding: 0 12px !important;
+    border-radius: 15px !important;
+    background: var(--xapp-black) !important;
+    color: #fff !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-publish:disabled {
+    background: #aeb6bc !important;
+    cursor: default;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-scroll {
+    min-height: 0;
+    flex: 1;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 14px 14px 22px;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-author {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-avatar {
+    display: block;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-author > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-author strong {
+    overflow: hidden;
+    color: var(--xapp-black);
+    font-size: 12.5px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-author span,
+#phone-panel-content .phone-screen .xapp-compose-meta {
+    color: var(--xapp-muted);
+    font-size: 9.5px;
+    line-height: 1.2;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-text {
+    display: block;
+    width: 100%;
+    min-height: 128px;
+    margin-top: 10px;
+    padding: 4px 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--xapp-black);
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.48;
+    resize: none;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-text::placeholder {
+    color: #8b98a5;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-meta {
+    text-align: right;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-preview {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+    margin-top: 9px;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-preview:empty {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-preview-item {
+    position: relative;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 6px;
+    background: #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-preview-item img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-remove-image {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50% !important;
+    background: rgba(15, 20, 25, 0.72) !important;
+    color: #fff !important;
+    font-size: 10px !important;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-image-input {
+    display: none !important;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-add-image {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    align-items: center;
+    width: 100%;
+    min-height: 40px;
+    margin-top: 14px;
+    padding: 0 11px !important;
+    border: 1px solid var(--xapp-border) !important;
+    border-radius: 6px !important;
+    background: #f7f9f9 !important;
+    color: var(--xapp-black) !important;
+    font-size: 11.5px !important;
+    text-align: left;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-add-image i {
+    color: var(--xapp-blue);
+    font-size: 16px;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-add-image small {
+    color: var(--xapp-muted);
+    font-size: 9.5px;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-add-image:disabled {
+    opacity: 0.54;
+}
+
+#phone-panel-content .phone-screen .xapp-feed-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100%;
+    padding: 30px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-feed-empty-icon {
+    margin-bottom: 18px;
+    font-size: 44px;
+}
+
+#phone-panel-content .phone-screen .xapp-feed-empty strong {
+    font-size: 18px;
+    line-height: 1.25;
+}
+
+#phone-panel-content .phone-screen .xapp-feed-empty span {
+    margin-top: 8px;
+    color: var(--xapp-muted);
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-page {
+    padding-top: 26px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-header {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    height: 58px;
+    padding: 7px 13px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-header h1 {
+    min-width: 0;
+    margin: 0;
+    color: var(--xapp-black);
+    font-size: 20px;
+    font-weight: 750;
+    line-height: 1.1;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+#phone-panel-content .phone-screen .xapp-generated-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 750;
+}
+
+#phone-panel-content .phone-screen .xapp-generated-avatar-rose { background: #c95c73; }
+#phone-panel-content .phone-screen .xapp-generated-avatar-sky { background: #3f7f9f; }
+#phone-panel-content .phone-screen .xapp-generated-avatar-mint { background: #3f806f; }
+#phone-panel-content .phone-screen .xapp-generated-avatar-violet { background: #70609d; }
+#phone-panel-content .phone-screen .xapp-generated-avatar-amber { background: #956831; }
+
+#phone-panel-content .phone-screen .xapp-pull-refresh-indicator {
+    display: flex;
+    height: 0;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+    transition: height 150ms ease;
+}
+
+#phone-panel-content .phone-screen .xapp-pull-refresh-inner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 36px;
+}
+
+#phone-panel-content .phone-screen .xapp-pull-refresh-indicator.is-ready,
+#phone-panel-content .phone-screen .xapp-pull-refresh-indicator.is-success {
+    color: var(--xapp-black);
+}
+
+#phone-panel-content .phone-screen .xapp-pull-refresh-indicator.is-ready i {
+    transform: rotate(180deg);
+}
+
+#phone-panel-content .phone-screen .xapp-pull-refresh-indicator.is-error {
+    color: #d93025;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #f7f9f9;
+    font-size: 15px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 42px;
+    margin: 3px 13px 0;
+    padding: 0 14px;
+    border-radius: 22px;
+    background: #f7f9f9;
+    color: #8b98a5;
+    font-size: 13px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-search i {
+    font-size: 14px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-empty {
+    position: absolute;
+    inset: 126px 20px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 54px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 88px;
+    height: 88px;
+    margin-bottom: 22px;
+    color: var(--xapp-black);
+    font-size: 76px;
+    line-height: 1;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-empty h2 {
+    margin: 0;
+    color: #000;
+    font-size: 25px;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-empty p {
+    margin: 8px 0 0;
+    color: #71767b;
+    font-size: 13px;
+    line-height: 1.2;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-page {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    padding-bottom: 48px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-header {
+    flex: 0 0 58px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-header-spacer {
+    width: 36px;
+    height: 36px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-search {
+    flex: 0 0 42px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-search input {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--xapp-black);
+    font-size: 13px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-search input::placeholder {
+    color: #8b98a5;
+    opacity: 1;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-list {
+    min-height: 0;
+    margin-top: 7px;
+    flex: 1 1 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-top: 1px solid var(--xapp-border);
+    background: #fff;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-list::-webkit-scrollbar,
+#phone-panel-content .phone-screen .xapp-dm-messages::-webkit-scrollbar {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread {
+    display: grid;
+    grid-template-columns: 45px minmax(0, 1fr) 14px;
+    align-items: center;
+    width: 100%;
+    min-height: 66px;
+    gap: 10px;
+    padding: 9px 13px !important;
+    border-bottom: 1px solid var(--xapp-border) !important;
+    background: #fff !important;
+    text-align: left;
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread:active,
+#phone-panel-content .phone-screen .xapp-chat-thread.is-long-pressing {
+    background: #f7f9f9 !important;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread[hidden] {
+    display: none !important;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    overflow: hidden;
+    flex: 0 0 42px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: center;
+    background: #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-avatar.xapp-generated-avatar-rose { background: #c95c73; }
+#phone-panel-content .phone-screen .xapp-dm-avatar.xapp-generated-avatar-sky { background: #3f7f9f; }
+#phone-panel-content .phone-screen .xapp-dm-avatar.xapp-generated-avatar-mint { background: #3f806f; }
+#phone-panel-content .phone-screen .xapp-dm-avatar.xapp-generated-avatar-violet { background: #70609d; }
+#phone-panel-content .phone-screen .xapp-dm-avatar.xapp-generated-avatar-amber { background: #956831; }
+
+#phone-panel-content .phone-screen .xapp-dm-brand-avatar {
+    border-radius: 6px;
+    background: #000;
+    color: #fff;
+    font-family: "Times New Roman", Georgia, serif;
+    font-size: 24px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread-main,
+#phone-panel-content .phone-screen .xapp-chat-thread-heading {
+    display: flex;
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread-main {
+    flex-direction: column;
+    gap: 5px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread-heading {
+    align-items: center;
+    gap: 4px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--xapp-black);
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread-heading time {
+    margin-left: auto;
+    color: var(--xapp-muted);
+    font-size: 9.5px;
+    font-weight: 400;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread-preview {
+    overflow: hidden;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-thread-chevron {
+    color: #a4adb4;
+    font-size: 10px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-search-empty {
+    padding: 28px 16px;
+    color: var(--xapp-muted);
+    font-size: 12px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-search-empty.is-hidden {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-empty {
+    position: static;
+    min-height: 0;
+    flex: 1 1 auto;
+    padding: 22px 20px 54px;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-empty h2 {
+    font-size: 20px;
+    font-weight: 650;
+}
+
+#phone-panel-content .phone-screen .xapp-chat-empty p {
+    max-width: 220px;
+    line-height: 1.45;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-page {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    background: #f7f9f9;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-header {
+    z-index: 4;
+    display: grid;
+    grid-template-columns: 34px 36px minmax(0, 1fr);
+    align-items: end;
+    min-height: 69px;
+    flex: 0 0 69px;
+    gap: 7px;
+    padding: 27px 12px 7px;
+    border-bottom: 1px solid rgba(83, 100, 113, 0.14);
+    background: rgba(255, 255, 255, 0.68);
+    box-shadow: 0 8px 24px rgba(15, 20, 25, 0.045);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+#phone-panel-content .phone-screen .xapp-dm-back {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 34px;
+    height: 34px;
+    font-size: 17px;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-header-avatar {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-header-copy {
+    display: flex;
+    min-width: 0;
+    height: 34px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-header-copy > span {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 4px;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-header-copy strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13.5px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-header-copy small {
+    color: var(--xapp-muted);
+    font-size: 9.5px;
+    line-height: 1.2;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-messages {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 16px 12px 18px;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-empty {
+    display: flex;
+    min-height: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 22px 60px;
+    color: var(--xapp-muted);
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-empty-avatar {
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
+    margin-bottom: 10px;
+    font-size: 18px;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-empty strong {
+    color: var(--xapp-black);
+    font-size: 14px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-empty span {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-message-row {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    margin: 6px 0;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-message-row.is-me {
+    align-items: flex-end;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-bubble {
+    max-width: 78%;
+    padding: 9px 11px;
+    border: 1px solid #e4e9ec;
+    border-radius: 5px 14px 14px 14px;
+    background: #fff;
+    color: var(--xapp-black);
+    font-size: 12.5px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    box-shadow: 0 2px 8px rgba(15, 20, 25, 0.035);
+}
+
+#phone-panel-content .phone-screen .xapp-dm-message-row.is-me .xapp-dm-bubble {
+    border-color: var(--xapp-black);
+    border-radius: 14px 5px 14px 14px;
+    background: var(--xapp-black);
+    color: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-message-row time {
+    margin-top: 3px;
+    padding: 0 3px;
+    color: #8b98a5;
+    font-size: 8.5px;
+    line-height: 1.2;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-typing .xapp-dm-bubble {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 48px;
+    min-height: 34px;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-typing .xapp-dm-bubble span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #8b98a5;
+    animation: xapp-dm-typing-dot 900ms ease-in-out infinite;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-typing .xapp-dm-bubble span:nth-child(2) { animation-delay: 120ms; }
+#phone-panel-content .phone-screen .xapp-dm-typing .xapp-dm-bubble span:nth-child(3) { animation-delay: 240ms; }
+
+@keyframes xapp-dm-typing-dot {
+    0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-2px); }
+}
+
+#phone-panel-content .phone-screen .xapp-dm-composer {
+    z-index: 4;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    min-height: 54px;
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 7px 11px 10px;
+    border-top: 1px solid rgba(83, 100, 113, 0.14);
+    background: rgba(255, 255, 255, 0.74);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+#phone-panel-content .phone-screen .xapp-dm-input {
+    width: 100%;
+    height: 38px;
+    min-width: 0;
+    padding: 0 13px;
+    border: 1px solid #dfe4e7;
+    border-radius: 19px;
+    outline: none;
+    background: rgba(247, 249, 249, 0.92);
+    color: var(--xapp-black);
+    font-size: 12.5px;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-input:focus {
+    border-color: rgba(15, 20, 25, 0.4);
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-input::placeholder {
+    color: #8b98a5;
+    opacity: 1;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-send {
+    min-width: 42px;
+    height: 34px;
+    color: var(--xapp-black) !important;
+    font-size: 12px !important;
+    font-weight: 750 !important;
+}
+
+#phone-panel-content .phone-screen .xapp-dm-send:disabled {
+    color: #a7b0b6 !important;
+    cursor: default;
+}
+
+#phone-panel-content .phone-screen .xapp-post-menu-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 10020;
+    background: transparent;
+    overscroll-behavior: contain;
+    touch-action: none;
+}
+
+#phone-panel-content .phone-screen .xapp-post-menu-sheet {
+    position: absolute;
+    width: min(220px, calc(100% - 16px));
+    max-height: calc(100% - 16px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 6px 0;
+    border: 1px solid rgba(83, 100, 113, 0.15);
+    border-radius: 10px;
+    background: #fff !important;
+    box-shadow: 0 8px 24px rgba(15, 20, 25, 0.18), 0 1px 4px rgba(15, 20, 25, 0.08);
+    color: var(--xapp-black) !important;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+#phone-panel-content .phone-screen .xapp-post-menu-action {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    margin: 0 !important;
+    gap: 7px;
+    padding: 0 12px !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: #fff !important;
+    color: var(--xapp-black) !important;
+    box-shadow: none !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif !important;
+    font-size: 12.5px !important;
+    font-weight: 700 !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0 !important;
+    text-align: left;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .xapp-post-menu-action:hover,
+#phone-panel-content .phone-screen .xapp-post-menu-action:focus-visible,
+#phone-panel-content .phone-screen .xapp-post-menu-action:active {
+    background: #f2f5f6 !important;
+}
+
+#phone-panel-content .phone-screen .xapp-post-menu-action > i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    color: var(--xapp-black) !important;
+    font-size: 14px;
+}
+
+#phone-panel-content .phone-screen .xapp-post-menu-action > span {
+    min-width: 0;
+    display: block;
+    overflow: hidden;
+    color: inherit !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #phone-panel-content .phone-screen .xapp-dm-header,
+    #phone-panel-content .phone-screen .xapp-dm-composer,
+    #phone-panel-content .phone-screen .xapp-post-menu-sheet {
+        background: rgba(255, 255, 255, 0.97);
+    }
+}
+
+#phone-panel-content .phone-screen .xapp-profile-page {
+    display: flex;
+    flex-direction: column;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-header {
+    z-index: 4;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+    align-items: end;
+    width: 100%;
+    height: 69px;
+    flex: 0 0 69px;
+    padding: 27px 12px 8px;
+    border-bottom: 1px solid rgba(83, 100, 113, 0.14);
+    background: rgba(255, 255, 255, 0.56);
+    box-shadow: 0 8px 24px rgba(15, 20, 25, 0.055);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+#phone-panel-content .phone-screen .xapp-profile-back {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 38px;
+    height: 32px;
+    font-size: 17px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-settings-button {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    width: 38px;
+    height: 32px;
+    color: var(--xapp-black);
+    font-size: 17px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-header h1 {
+    align-self: center;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-cover {
+    height: 108px;
+    background: #d7e0e5;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-summary {
+    min-height: 126px;
+    padding: 0 14px 14px;
+    border-bottom: 1px solid var(--xapp-border);
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-avatar-row {
+    height: 45px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-avatar-button {
+    position: relative;
+    display: block;
+    width: 82px;
+    height: 82px;
+    transform: translateY(-41px);
+    border: 4px solid #fff;
+    border-radius: 50%;
+    background: #eff3f4;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-avatar {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: center;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-avatar-edit {
+    position: absolute;
+    right: -2px;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 25px;
+    height: 25px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: var(--xapp-black);
+    color: #fff;
+    font-size: 10px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-avatar-input {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-name-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 7px;
+    margin-top: 3px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-name-text {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--xapp-black);
+    font-size: 19px;
+    font-weight: 750;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    border-radius: 50% !important;
+    color: var(--xapp-muted);
+    font-size: 14px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-button:hover,
+#phone-panel-content .phone-screen .xapp-profile-edit-button:focus-visible {
+    background: rgba(29, 155, 240, 0.1) !important;
+    color: var(--xapp-blue);
+    outline: none;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-stats {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-top: 11px;
+    color: var(--xapp-muted);
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-stats strong {
+    color: var(--xapp-black);
+    font-weight: 700;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-tabs {
+    display: flex;
+    align-items: stretch;
+    height: 45px;
+    border-bottom: 1px solid var(--xapp-border);
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 88px;
+    color: var(--xapp-muted);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-tab.is-active {
+    color: var(--xapp-black);
+    font-weight: 700;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-tab.is-active::after {
+    content: "";
+    position: absolute;
+    right: 22px;
+    bottom: 0;
+    left: 22px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--xapp-blue);
+}
+
+#phone-panel-content .phone-screen .xapp-profile-posts {
+    min-height: 170px;
+    background: #fff;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-empty {
+    display: flex;
+    min-height: 180px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 28px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-empty strong {
+    font-size: 16px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-empty span {
+    margin-top: 6px;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px 16px 18px;
+    background: rgba(15, 20, 25, 0.34);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-overlay.is-hidden {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-dialog {
+    width: min(100%, 330px);
+    max-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 16px;
+    border: 1px solid rgba(83, 100, 113, 0.16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 18px 48px rgba(15, 20, 25, 0.22);
+    backdrop-filter: blur(22px) saturate(165%);
+    -webkit-backdrop-filter: blur(22px) saturate(165%);
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scrollbar-width: none;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-dialog::-webkit-scrollbar {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 32px;
+    margin-bottom: 15px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-header h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 750;
+    line-height: 1.25;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50% !important;
+    color: var(--xapp-muted);
+    font-size: 14px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-field {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-field input {
+    width: 100%;
+    height: 42px;
+    min-width: 0;
+    padding: 0 11px;
+    border: 1px solid #cfd9de;
+    border-radius: 6px;
+    outline: none;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--xapp-black);
+    font-size: 14px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-field input:focus {
+    border-color: var(--xapp-blue);
+    box-shadow: 0 0 0 2px rgba(29, 155, 240, 0.13);
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-counts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+    margin-top: 18px;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-cancel,
+#phone-panel-content .phone-screen .xapp-profile-edit-save {
+    min-width: 66px;
+    height: 34px;
+    padding: 0 14px !important;
+    border-radius: 17px !important;
+    font-size: 12.5px !important;
+    font-weight: 700 !important;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-cancel {
+    border: 1px solid #cfd9de !important;
+    background: rgba(255, 255, 255, 0.7) !important;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-save {
+    background: var(--xapp-black) !important;
+    color: #fff !important;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #phone-panel-content .phone-screen .xapp-profile-edit-dialog {
+        background: #fff;
+    }
+}
+
+#phone-panel-content .phone-screen .xapp-settings-page {
+    display: flex;
+    flex-direction: column;
+    background: #f4f5f6;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-header {
+    z-index: 4;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+    align-items: end;
+    width: 100%;
+    height: 69px;
+    flex: 0 0 69px;
+    padding: 27px 12px 8px;
+    border-bottom: 1px solid rgba(83, 100, 113, 0.14);
+    background: rgba(255, 255, 255, 0.66);
+    box-shadow: 0 8px 24px rgba(15, 20, 25, 0.045);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+#phone-panel-content .phone-screen .xapp-settings-back {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 38px;
+    height: 32px;
+    font-size: 17px;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-header h1 {
+    align-self: center;
+    min-width: 0;
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: 18px;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-section {
+    width: 100%;
+    margin-top: 8px;
+    padding: 14px 13px;
+    border-top: 1px solid rgba(83, 100, 113, 0.08);
+    border-bottom: 1px solid rgba(83, 100, 113, 0.08);
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-section h2 {
+    margin: 0 0 12px;
+    color: var(--xapp-black);
+    font-size: 14px;
+    font-weight: 750;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 12px;
+    min-height: 64px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--xapp-border);
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-row + .xapp-settings-toggle-row {
+    padding-top: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-row-copy,
+#phone-panel-content .phone-screen .xapp-settings-fold-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-row-copy strong,
+#phone-panel-content .phone-screen .xapp-settings-fold-copy strong {
+    color: var(--xapp-black);
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-row-copy span,
+#phone-panel-content .phone-screen .xapp-settings-fold-copy span {
+    margin-top: 4px;
+    color: var(--xapp-muted);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle {
+    position: relative;
+    display: block;
+    width: 44px;
+    height: 26px;
+    border-radius: 13px !important;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-input {
+    position: absolute !important;
+    z-index: 2;
+    inset: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    border: 0 !important;
+    border-radius: 13px !important;
+    outline: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    opacity: 0 !important;
+    cursor: pointer !important;
+    touch-action: manipulation;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-input::before,
+#phone-panel-content .phone-screen .xapp-settings-toggle-input::after {
+    content: none !important;
+    display: none !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-track {
+    position: absolute;
+    inset: 0;
+    border-radius: 13px;
+    background: #c7cdd2;
+    transition: background-color 140ms ease;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-track::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(15, 20, 25, 0.24);
+    transition: transform 140ms ease;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-input:checked + .xapp-settings-toggle-track {
+    background: var(--xapp-black);
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-input:checked + .xapp-settings-toggle-track::before {
+    transform: translateX(18px);
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-input:focus-visible + .xapp-settings-toggle-track {
+    outline: 0 !important;
+    box-shadow: none !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-input:disabled {
+    cursor: wait !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-toggle-input:disabled + .xapp-settings-toggle-track {
+    opacity: 0.72;
+    cursor: wait;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-fold {
+    margin-top: 12px;
+    overflow: hidden;
+    border: 1px solid #dfe3e6;
+    border-radius: 8px;
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-fold-trigger {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 62px;
+    padding: 10px 12px !important;
+    text-align: left;
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-fold-trigger::-webkit-details-marker {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-fold-trigger > i {
+    justify-self: end;
+    color: var(--xapp-muted);
+    font-size: 12px;
+    transition: transform 140ms ease;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-fold[open] .xapp-settings-fold-trigger > i {
+    transform: rotate(90deg);
+}
+
+#phone-panel-content .phone-screen .xapp-settings-fold-content {
+    display: none;
+    padding: 0 11px 12px;
+    border-top: 1px solid var(--xapp-border);
+}
+
+#phone-panel-content .phone-screen .xapp-settings-fold[open] .xapp-settings-fold-content {
+    display: block;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-status {
+    padding: 12px 2px 2px;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-worldbook-list {
+    min-width: 0;
+    padding-top: 7px;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-prompt-section .phone-prompt-preset-tools {
+    margin: 10px 0 8px !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-prompt-section .phone-prompt-preset-select {
+    height: 36px !important;
+    border-radius: 6px !important;
+    color: var(--xapp-black) !important;
+    font-size: 12px !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-prompt-section .phone-prompt-preset-tools > div {
+    gap: 6px !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-prompt-section .phone-prompt-preset-tools button {
+    height: 32px !important;
+    border-radius: 6px !important;
+    font-size: 11.5px !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-prompt {
+    width: 100%;
+    min-height: 190px;
+    resize: vertical;
+    padding: 10px;
+    border: 1px solid #cfd9de;
+    border-radius: 6px;
+    outline: none;
+    background: #fff;
+    color: var(--xapp-black);
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.55;
+    letter-spacing: 0;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-prompt:focus {
+    border-color: var(--xapp-blue);
+    box-shadow: 0 0 0 2px rgba(29, 155, 240, 0.12);
+}
+
+#phone-panel-content .phone-screen .xapp-settings-reset-prompt {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    height: 36px;
+    margin-top: 8px !important;
+    border: 1px solid #cfd9de !important;
+    border-radius: 6px !important;
+    background: #f7f9f9 !important;
+    color: var(--xapp-black);
+    font-size: 12px !important;
+    font-weight: 650 !important;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #phone-panel-content .phone-screen .xapp-settings-header {
+        background: rgba(255, 255, 255, 0.96);
+    }
+}
+
+#phone-panel-content .phone-screen .xapp-detail-page {
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-header {
+    z-index: 3;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+    align-items: end;
+    width: 100%;
+    height: 69px;
+    padding: 27px 12px 8px;
+    border-bottom: 1px solid var(--xapp-border);
+    background: rgba(255, 255, 255, 0.98);
+}
+
+#phone-panel-content .phone-screen .xapp-detail-back {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 38px;
+    height: 32px;
+    font-size: 17px;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-header h1 {
+    align-self: center;
+    min-width: 0;
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: 90px;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-scroll::-webkit-scrollbar,
+#phone-panel-content .phone-screen .xapp-comments::-webkit-scrollbar {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-post {
+    padding: 12px 14px 0;
+    border-bottom: 1px solid var(--xapp-border);
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-author-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 28px;
+    align-items: center;
+    gap: 10px;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-avatar {
+    width: 44px;
+    height: 44px;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-author {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-author-name {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 4px;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-author-name strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-copy {
+    margin-top: 13px;
+    color: var(--xapp-black);
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.48;
+    overflow-wrap: anywhere;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-time {
+    margin-top: 12px;
+    color: var(--xapp-muted);
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-stats {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    min-height: 37px;
+    margin-top: 8px;
+    border-top: 1px solid var(--xapp-border);
+    color: var(--xapp-muted);
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-detail-stats strong {
+    color: var(--xapp-black);
+    font-weight: 700;
+}
+
+#phone-panel-content .phone-screen .xapp-post-actions-detail {
+    height: 43px;
+    margin-top: 0;
+    border-top: 1px solid var(--xapp-border);
+}
+
+#phone-panel-content .phone-screen .xapp-post-actions-detail .xapp-post-action {
+    height: 42px;
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-post-actions-detail .xapp-post-action i {
+    font-size: 17px;
+}
+
+#phone-panel-content .phone-screen .xapp-thread-section {
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-thread-section > h2 {
+    height: 38px;
+    margin: 0;
+    padding: 12px 14px 8px;
+    border-bottom: 1px solid var(--xapp-border);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+#phone-panel-content .phone-screen .xapp-comments {
+    overflow: visible;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+#phone-panel-content .phone-screen .xapp-comment {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 9px;
+    padding: 11px 14px 8px;
+    border-bottom: 1px solid var(--xapp-border);
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    object-fit: cover;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-avatar-rose {
+    background: #d85c75;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-avatar-sky {
+    background: #4285a8;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-avatar-mint {
+    background: #438b78;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-avatar-violet {
+    background: #7563a8;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-avatar-amber {
+    background: #a06d32;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-main {
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-header {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 3px;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-header strong {
+    max-width: 70%;
+    overflow: hidden;
+    color: var(--xapp-black);
+    font-size: 13px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-replying {
+    margin-top: 3px;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-replying span {
+    color: var(--xapp-blue);
+}
+
+#phone-panel-content .phone-screen .xapp-comment-text {
+    margin-top: 3px;
+    color: var(--xapp-black);
+    font-size: 13px;
+    line-height: 1.42;
+    overflow-wrap: anywhere;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-actions {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    height: 28px;
+    margin-top: 3px;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-reply,
+#phone-panel-content .phone-screen .xapp-comment-like {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    color: var(--xapp-muted);
+    font-size: 10.5px;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-reply i,
+#phone-panel-content .phone-screen .xapp-comment-like i {
+    font-size: 13px;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-replies {
+    margin: 4px 0 -8px -28px;
+    padding-left: 14px;
+    border-left: 2px solid #cfd9de;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-nested {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px 0 4px 0;
+    border-bottom: 0;
+}
+
+#phone-panel-content .phone-screen .xapp-comment-nested .xapp-comment-avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .xapp-comments-empty {
+    display: flex;
+    min-height: 150px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-comments-empty strong {
+    font-size: 15px;
+}
+
+#phone-panel-content .phone-screen .xapp-comments-empty span {
+    margin-top: 5px;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-composer {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 5;
+    padding: 6px 11px 10px;
+    border-top: 1px solid var(--xapp-border);
+    background: rgba(255, 255, 255, 0.98);
+}
+
+#phone-panel-content .phone-screen .xapp-reply-context {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 24px;
+    padding: 0 3px 5px 43px;
+    color: var(--xapp-muted);
+    font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-context.is-hidden {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-cancel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 20px;
+    color: var(--xapp-muted);
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-avatar {
+    display: block;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-input {
+    width: 100%;
+    height: 38px;
+    min-width: 0;
+    padding: 0 13px;
+    border: 1px solid transparent;
+    border-radius: 19px;
+    outline: none;
+    background: #eff3f4;
+    font-size: 12.5px;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-input:focus {
+    border-color: rgba(29, 155, 240, 0.55);
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-input::placeholder {
+    color: #82909b;
+    opacity: 1;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-send {
+    height: 34px;
+    padding: 0 4px;
+    color: var(--xapp-blue);
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+#phone-panel-content .phone-screen .xapp-reply-send:disabled {
+    color: #9bcdf0;
+    cursor: default;
+}
+
+#phone-panel-content .phone-screen .xapp-root.xapp-forward-lock {
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen.xapp-forward-open {
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 12px;
+    box-sizing: border-box;
+    background: rgba(15, 20, 25, 0.46);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    touch-action: none;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 340px);
+    max-height: 90%;
+    overflow: hidden;
+    border: 1px solid rgba(83, 100, 113, 0.16);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 18px 48px rgba(15, 20, 25, 0.24);
+    color: var(--xapp-black);
+    transform: translateZ(0);
+    touch-action: auto;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-dialog-compose {
+    max-height: 84%;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-header {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
+    align-items: center;
+    min-height: 46px;
+    padding: 4px 8px;
+    border-bottom: 1px solid rgba(83, 100, 113, 0.12);
+    box-sizing: border-box;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-header > span:first-child:last-of-type {
+    grid-column: 2;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-header > .xapp-forward-icon-button:last-child {
+    grid-column: 3;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    outline: 0;
+    background: transparent;
+    color: #536471;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-icon-button:active {
+    background: #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-preview {
+    padding: 10px 12px;
+    background: #f7f9f9;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-preview.is-compact {
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-preview-card {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid #e7e9ea;
+    border-radius: 8px;
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-x-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+    background: #0f1419;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-preview-copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+    text-align: left;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-preview-copy strong,
+#phone-panel-content .phone-screen .xapp-forward-preview-copy span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-preview-copy strong {
+    color: #0f1419;
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-preview-copy span {
+    color: #536471;
+    font-size: 10.5px;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-list {
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 5px 0;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y !important;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-contact {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) 16px;
+    align-items: center;
+    width: 100%;
+    min-height: 50px;
+    gap: 10px;
+    padding: 7px 12px;
+    border: 0;
+    border-radius: 0;
+    outline: 0;
+    background: transparent;
+    color: #0f1419;
+    text-align: left;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-contact:active {
+    background: #f7f9f9;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-contact-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    overflow: hidden;
+    border: 1px solid #e7e9ea;
+    border-radius: 50%;
+    background: #eff3f4;
+    color: #536471;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-contact-avatar img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: cover;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-contact-name {
+    overflow: hidden;
+    color: #0f1419;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-contact > i {
+    color: #b8c0c5;
+    font-size: 10px;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-recipient {
+    display: flex;
+    align-items: center;
+    min-height: 54px;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(83, 100, 113, 0.1);
+}
+
+#phone-panel-content .phone-screen .xapp-forward-recipient strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #0f1419;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-note-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px;
+    padding: 8px 10px;
+    border-radius: 9px;
+    background: #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-note {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #0f1419;
+    font: inherit;
+    font-size: 12.5px;
+    -webkit-user-select: text;
+    user-select: text;
+    touch-action: auto;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-note::placeholder {
+    color: #8b98a5;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-note-wrap > i {
+    color: #536471;
+    font-size: 16px;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: auto 12px 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-action {
+    height: 36px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 18px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-cancel {
+    background: #eff3f4;
+    color: #0f1419;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-send {
+    background: #07c160;
+    color: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-forward-send:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+#phone-panel-content .phone-screen .xapp-bottom-nav {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 4;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    align-items: start;
+    height: 48px;
+    padding: 5px 28px 7px;
+    border-top: 1px solid rgba(83, 100, 113, 0.14);
+    background: rgba(255, 255, 255, 0.56);
+    box-shadow: 0 -8px 24px rgba(15, 20, 25, 0.055);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+#phone-panel-content .phone-screen .xapp-bottom-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 34px;
+    color: var(--xapp-black);
+    font-size: 21px;
+}
+
+#phone-panel-content .phone-screen .xapp-bottom-item:not(.is-active) .xapp-home-icon::before {
+    color: transparent !important;
+    -webkit-text-fill-color: transparent;
+    -webkit-text-stroke: 1.2px var(--xapp-black);
+}
+
+#phone-panel-content .phone-screen .xapp-bottom-item.is-active .xapp-home-icon::before {
+    color: var(--xapp-black) !important;
+    -webkit-text-fill-color: currentColor;
+    -webkit-text-stroke: 0;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #phone-panel-content .phone-screen .xapp-bottom-nav {
+        background: rgba(255, 255, 255, 0.96);
+    }
+}
+
+@media (max-width: 360px) {
+    #phone-panel-content .phone-screen .xapp-post {
+        grid-template-columns: 38px minmax(0, 1fr);
+        gap: 8px;
+        padding-right: 10px;
+        padding-left: 10px;
+    }
+
+    #phone-panel-content .phone-screen .xapp-post-avatar {
+        width: 38px;
+        height: 38px;
+    }
+
+    #phone-panel-content .phone-screen .xapp-post-copy {
+        font-size: 12.5px;
+    }
+
+    #phone-panel-content .phone-screen .xapp-detail-copy {
+        font-size: 15px;
+    }
+
+    #phone-panel-content .phone-screen .xapp-comment {
+        padding-right: 10px;
+        padding-left: 10px;
+    }
+
+    #phone-panel-content .phone-screen .xapp-comment-replies {
+        margin-left: -24px;
+    }
+
+}

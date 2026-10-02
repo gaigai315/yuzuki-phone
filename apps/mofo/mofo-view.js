@@ -237,22 +237,6 @@ export class MofoView {
             }
             this.render();
         };
-        const mofoRoot = currentView.querySelector('.mofo-app');
-        if (mofoRoot) {
-            let rootStartX = 0;
-            let rootStartY = 0;
-            mofoRoot.addEventListener('pointerdown', (e) => {
-                rootStartX = Number(e.clientX || 0);
-                rootStartY = Number(e.clientY || 0);
-            });
-            mofoRoot.addEventListener('pointermove', (e) => {
-                const dx = Math.abs(Number(e.clientX || 0) - rootStartX);
-                const dy = Math.abs(Number(e.clientY || 0) - rootStartY);
-                if (dx > dy && dx > 4) {
-                    e.stopPropagation();
-                }
-            });
-        }
         const backBtn = currentView.querySelector('.mofo-back-btn');
 
         if (backBtn) {

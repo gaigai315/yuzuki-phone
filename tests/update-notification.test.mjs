@@ -6,15 +6,18 @@ const updateLog = JSON.parse(fs.readFileSync(new URL('../update-log.json', impor
 const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 
-test('current version keeps separate update batches by date', () => {
+test('current version keeps all notices under the latest date', () => {
     const current = updateLog.versions[manifest.version];
 
-    assert.equal(manifest.version, '1.5.8');
-    assert.equal(current.date, '2026-09-28');
-    assert.equal(current.updates[0].date, '2026-09-28');
-    assert.match(current.updates[0].items[0], /酒馆标准宏变量接口/);
-    assert.equal(current.updates[1].date, '2026-09-26');
-    assert.match(current.updates[1].items[0], /Gemini 3\.5 至 3\.8 Flash/);
+    assert.equal(manifest.version, '1.5.9');
+    assert.equal(current.date, '2026-10-02');
+    assert.equal(current.items.length, 5);
+    assert.match(current.items[0], /微信语音条/);
+    assert.match(current.items[1], /当前好友的朋友圈历史记录/);
+    assert.match(current.items[2], /新增 X APP/);
+    assert.match(current.items[3], /设置入口划分为相册 APP/);
+    assert.match(current.items[4], /优化电脑端手机关闭逻辑/);
+    assert.equal(current.updates, undefined);
 });
 
 test('local update announcements are acknowledged by version and date', () => {
@@ -23,4 +26,21 @@ test('local update announcements are acknowledged by version and date', () => {
     assert.match(indexSource, /const announcementId = `\$\{ST_PHONE_VERSION\}@\$\{String\(notes\?\.date/);
     assert.match(indexSource, /rememberValue: announcementId/);
     assert.match(indexSource, /options\.rememberValue \|\| version/);
+});
+
+test('fallback announcement preserves all 1.5.9 notices', () => {
+    const start = indexSource.indexOf('const ST_PHONE_CURRENT_UPDATE =');
+    const end = indexSource.indexOf('\n};', start);
+    assert.ok(start >= 0 && end > start, 'fallback update block should exist');
+
+    const block = indexSource.slice(start, end);
+    assert.match(block, /date: '2026-10-02'/);
+    assert.match(block, /优化电脑端手机关闭逻辑/);
+    assert.match(block, /单击机身外部即可关闭/);
+    assert.match(block, /三击打开方式保持不变/);
+    assert.doesNotMatch(block, /正文生图设置入口位于相册 APP 内/);
+    assert.match(block, /微信语音条发送后/);
+    assert.match(block, /当前好友的朋友圈历史记录/);
+    assert.match(block, /新增 X APP/);
+    assert.match(block, /设置入口划分为相册 APP/);
 });

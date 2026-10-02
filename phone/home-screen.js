@@ -71,6 +71,19 @@ export class HomeScreen {
         this.bindEvents();
     }
 
+    restore() {
+        if (!this.phoneShell?.restoreView?.('home')) {
+            this.render();
+            return false;
+        }
+
+        this.updateWallpaperDisplay();
+        this.updateTimeDisplay();
+        this.updateAppBadges();
+        this.bindEvents();
+        return true;
+    }
+
     getHomeLayout() {
         const layout = String(window.VirtualPhone?.storage?.get('phone-home-layout') || 'icons');
         return layout === 'cards' ? 'cards' : 'icons';
@@ -342,7 +355,7 @@ export class HomeScreen {
     }
 
     renderClusterApps() {
-        const clusterIds = ['honey', 'games', 'phone', 'diary', 'calendar', 'mofo'];
+        const clusterIds = ['x', 'honey', 'games', 'phone', 'diary', 'calendar', 'mofo'];
         return clusterIds
             .map(id => this.getAppById(id))
             .filter(Boolean)
@@ -572,9 +585,14 @@ export class HomeScreen {
     }
     
     openApp(appId) {
+        const globalGuardUntil = Number(window.VirtualPhone?._homeReturnGuardUntil || 0);
+        if (this.phoneShell?.isHomeReturnGuardActive?.() || Date.now() < globalGuardUntil) {
+            return false;
+        }
         window.dispatchEvent(new CustomEvent('phone:openApp', { 
             detail: { appId } 
         }));
+        return true;
     }
 
     _isLobbyMode(context = null) {
@@ -705,6 +723,46 @@ export class HomeScreen {
             el.hidden = cardDate.isAncient;
         });
 
+        return true;
+    }
+
+    updateWallpaperDisplay() {
+        const wallpaperElement = this.phoneShell?.screen?.querySelector('.home-screen .wallpaper');
+        if (!wallpaperElement) return false;
+
+        const wallpaper = String(this._getWallpaperImage() || '').trim();
+        wallpaperElement.style.backgroundImage = wallpaper
+            ? `url("${wallpaper.replace(/"/g, '\\"')}")`
+            : '';
+        wallpaperElement.style.backgroundSize = wallpaper ? 'cover' : '';
+        wallpaperElement.style.backgroundPosition = wallpaper ? 'center' : '';
+        return true;
+    }
+
+    updateAppBadges() {
+        const root = this.phoneShell?.screen?.querySelector('.home-screen');
+        if (!root) return false;
+
+        root.querySelectorAll('.yzp-home-app-action[data-app]').forEach(element => {
+            const app = this.getAppById(element.dataset.app);
+            const badgeCount = Math.max(0, Number.parseInt(app?.badge, 10) || 0);
+            let badge = Array.from(element.children || [])
+                .find(child => child.classList?.contains('app-badge'));
+
+            if (badgeCount <= 0) {
+                badge?.remove();
+                return;
+            }
+
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = root.classList.contains('home-layout-cards')
+                    ? 'app-badge yzp-home-app-badge'
+                    : 'app-badge';
+                element.appendChild(badge);
+            }
+            badge.textContent = String(badgeCount);
+        });
         return true;
     }
 

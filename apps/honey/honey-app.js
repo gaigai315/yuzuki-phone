@@ -18,15 +18,14 @@ export class HoneyApp {
         this.storage = storage;
         this.honeyData = new HoneyData(storage);
         this.honeyView = new HoneyView(this);
-        this._lastSwipeTime = 0;
 
         // 监听滑动返回事件 (防止实例重建导致重复绑定)
         if (!window._honeySwipeBackBound) {
             window._honeySwipeBackBound = true;
-            window.addEventListener('phone:swipeBack', () => {
+            window.addEventListener('phone:swipeBack', (event) => {
                 const honeyApp = window.VirtualPhone?.honeyApp;
                 if (honeyApp && typeof honeyApp.handleSwipeBack === 'function') {
-                    honeyApp.handleSwipeBack();
+                    honeyApp.handleSwipeBack(event);
                 }
             });
         }
@@ -69,13 +68,13 @@ export class HoneyApp {
         return this.honeyView?.openFollowedHostLive?.(hostName, options);
     }
 
-    handleSwipeBack() {
-        const now = Date.now();
-        if (this._lastSwipeTime && now - this._lastSwipeTime < 400) return;
-        this._lastSwipeTime = now;
-
+    handleSwipeBack(event) {
         const currentView = document.querySelector('.phone-view-current');
-        if (!currentView || !currentView.querySelector('.honey-app')) return;
+        if (!currentView || !currentView.querySelector('.honey-app')) return false;
+
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
 
         // 自动寻址：如果有统一格式的后退按钮，直接触发它即可
         const backBtn = currentView.querySelector('.honey-back-btn');
@@ -85,13 +84,7 @@ export class HoneyApp {
             this.honeyView?.removePhoneChromeTheme?.();
             window.dispatchEvent(new CustomEvent('phone:goHome'));
         }
-
-        // Ghost Click Buster：短时间禁用点击，避免双触发
-        const screen = document.querySelector('.phone-screen');
-        if (screen) {
-            screen.style.pointerEvents = 'none';
-            setTimeout(() => { screen.style.pointerEvents = ''; }, 400);
-        }
+        return true;
     }
 
     destroy() {

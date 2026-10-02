@@ -76,3 +76,26 @@ test('settings wallpaper and time-card image selectors reuse album paths without
     assert.doesNotMatch(block, /deleteManagedBackgroundByPath|deleteWallpaper\(/);
     assert.match(block, /原图仍保留在相册 App/);
 });
+
+test('every image provider binding includes independent X and story app options', () => {
+    const promptDefsStart = settingsSource.indexOf('_getImagePromptAppDefs()');
+    const promptDefsEnd = settingsSource.indexOf('_getImageProviderBindingAppDefs()', promptDefsStart);
+    assert.ok(promptDefsStart >= 0 && promptDefsEnd > promptDefsStart, 'image prompt app definitions should exist');
+    const promptDefsBlock = settingsSource.slice(promptDefsStart, promptDefsEnd);
+    assert.match(promptDefsBlock, /id: 'x', name: 'X'/);
+    assert.match(promptDefsBlock, /id: 'story', name: '正文'/);
+
+    const defsStart = settingsSource.indexOf('_getImageProviderBindingAppDefs()');
+    const defsEnd = settingsSource.indexOf('_normalizeImagePromptApp', defsStart);
+    assert.ok(defsStart >= 0 && defsEnd > defsStart, 'provider binding app definitions should exist');
+    const defsBlock = settingsSource.slice(defsStart, defsEnd);
+
+    assert.match(defsBlock, /return this\._getImagePromptAppDefs\(\)/);
+    assert.match(settingsSource, /_normalizeImageProviderBindingApp\(target\.dataset\.app\)/);
+    ['novelai', 'openai', 'siliconflow', 'sd', 'comfyui'].forEach(provider => {
+        assert.match(settingsSource, new RegExp(`_renderImageProviderAppBinding\\('${provider}'`));
+    });
+    assert.match(settingsSource, /phone-image-x-width/);
+    assert.match(settingsSource, /phone-image-x-height/);
+    assert.match(settingsSource, /\['honey', 'wechat', 'weibo', 'x', 'story'\]/);
+});

@@ -31,7 +31,7 @@ export class MusicApp {
         if (window._musicSwipeBackHandler) {
             window.removeEventListener('phone:swipeBack', window._musicSwipeBackHandler);
         }
-        window._musicSwipeBackHandler = (e) => window.VirtualPhone?.musicApp?.handleSwipeBack?.(e);
+        window._musicSwipeBackHandler = (event) => window.VirtualPhone?.musicApp?.handleSwipeBack?.(event);
         window.addEventListener('phone:swipeBack', window._musicSwipeBackHandler);
 
         if (window._musicGoHomeHandler) {
@@ -84,15 +84,14 @@ export class MusicApp {
         this.view.updateDisplay();
     }
 
-    handleSwipeBack(e) {
-        // 防抖
-        const now = Date.now();
-        if (this._lastSwipeTime && now - this._lastSwipeTime < 400) return;
-        this._lastSwipeTime = now;
-
+    handleSwipeBack(event) {
         // 领地保护：检查当前是否在音乐APP界面
         const currentView = document.querySelector('.phone-view-current');
-        if (!currentView || !currentView.querySelector('.music-app')) return;
+        if (!currentView || !currentView.querySelector('.music-app')) return false;
+
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
 
         // 模拟点击返回按钮（与微信一致）
         const backBtn = currentView.querySelector('.music-back-btn');
@@ -101,13 +100,7 @@ export class MusicApp {
         } else {
             window.dispatchEvent(new CustomEvent('phone:goHome'));
         }
-
-        // Ghost Click Buster
-        const screen = document.querySelector('.phone-screen');
-        if (screen) {
-            screen.style.pointerEvents = 'none';
-            setTimeout(() => { screen.style.pointerEvents = ''; }, 400);
-        }
+        return true;
     }
 
     // 初始化悬浮窗（在手机面板外部调用）

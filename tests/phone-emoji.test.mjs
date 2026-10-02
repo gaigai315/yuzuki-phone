@@ -5,6 +5,7 @@ import {
     getPhoneInlineEmoji,
     getPhoneNamedUnicodeEmoji,
     renderPhoneInlineEmoji,
+    replacePhoneEmojiTokens,
     replacePhoneInlineEmojiTokens,
     replacePhoneNamedEmojiTokens
 } from '../config/phone-emoji.js';
@@ -37,12 +38,27 @@ test('common named emoji tokens map to the phone default emoji set', () => {
     assert.equal(getPhoneNamedUnicodeEmoji('[偷笑]'), '🤭');
     assert.equal(getPhoneNamedUnicodeEmoji('[傲慢]'), '😤');
     assert.equal(getPhoneNamedUnicodeEmoji('[加油]'), '💪');
+    assert.equal(getPhoneNamedUnicodeEmoji('[崩溃]'), '😭');
+    assert.equal(getPhoneNamedUnicodeEmoji('[吃瓜]'), '🍉');
+    assert.equal(getPhoneNamedUnicodeEmoji('[恶魔]'), '😈');
+    assert.equal(getPhoneNamedUnicodeEmoji('[心]'), '❤️');
     assert.equal(
-        replacePhoneNamedEmojiTokens('周末见[偷笑] 我会加油的[加油]'),
-        '周末见🤭 我会加油的💪'
+        replacePhoneNamedEmojiTokens('周末见[偷笑] 我会加油的[加油] 先吃瓜[吃瓜]'),
+        '周末见🤭 我会加油的💪 先吃瓜🍉'
     );
 });
 
 test('special image tokens stay separate from named unicode emoji tokens', () => {
     assert.equal(replacePhoneNamedEmojiTokens('[狗头][未知]'), '[狗头][未知]');
+});
+
+test('combined phone emoji replacement handles image and named tokens together', () => {
+    const html = replacePhoneEmojiTokens('绷不住了[崩溃][狗头][未知]', {
+        size: 16,
+        className: 'social-inline-emoji'
+    });
+
+    assert.match(html, /^绷不住了😭<img /);
+    assert.match(html, /class="phone-inline-emoji social-inline-emoji"/);
+    assert.match(html, /\[未知\]$/);
 });

@@ -37,7 +37,7 @@ export class PhoneApp {
         });
 
         // 监听滑动返回
-        window.addEventListener('phone:swipeBack', (e) => this.handleSwipeBack(e));
+        window.addEventListener('phone:swipeBack', (event) => this.handleSwipeBack(event));
     }
 
     render() {
@@ -62,13 +62,8 @@ export class PhoneApp {
         }
     }
 
-    handleSwipeBack(e) {
-        // 1. 400ms 防抖
-        const now = Date.now();
-        if (this._lastSwipeTime && now - this._lastSwipeTime < 400) return;
-        this._lastSwipeTime = now;
-
-        // 2. 领地保护：确认当前视图属于通话APP
+    handleSwipeBack(event) {
+        // 领地保护：确认当前视图属于通话APP
         const domCurrentView = document.querySelector('.phone-view-current');
         if (!domCurrentView || (!domCurrentView.querySelector('.phone-call-main') &&
             !domCurrentView.querySelector('.phone-sms-main') &&
@@ -78,9 +73,13 @@ export class PhoneApp {
             !domCurrentView.querySelector('.phone-call-settings') &&
             !domCurrentView.querySelector('.phone-call-dialing') &&
             !domCurrentView.querySelector('.phone-call-incoming') &&
-            !domCurrentView.querySelector('.phone-call-active'))) return;
+            !domCurrentView.querySelector('.phone-call-active'))) return false;
 
-        // 3. 根据当前视图处理返回
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
+
+        // 根据当前视图处理返回
         const view = this.phoneCallView.currentView;
         if (view === 'transcript') {
             const btn = domCurrentView.querySelector('#phone-call-transcript-back');
@@ -110,13 +109,7 @@ export class PhoneApp {
             const btn = domCurrentView.querySelector('#phone-call-hangup');
             if (btn) btn.click();
         }
-
-        // 4. Ghost Click Buster：400ms 内禁止点击
-        const screen = document.querySelector('.phone-screen');
-        if (screen) {
-            screen.style.pointerEvents = 'none';
-            setTimeout(() => { screen.style.pointerEvents = ''; }, 400);
-        }
+        return true;
     }
 
     clearCache() {

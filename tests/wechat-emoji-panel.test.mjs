@@ -22,7 +22,8 @@ test('custom emoji manager switches away from the default tab before opening', (
 
 test('global touch handling exempts interactive controls and the emoji panel', () => {
     assert.match(phoneShellSource, /\[role="tab"\]/);
-    assert.match(phoneShellSource, /resolveGestureControlHost\(target\) \|\| resolveInteractiveHost\(target\)/);
+    assert.match(phoneShellSource, /resolveGestureControlHost\(target\) \|\| shouldBlockSwipeBackStart\(target\)/);
+    assert.match(phoneShellSource, /\[data-no-swipe-back\]/);
     assert.match(phoneShellSource, /'\.emoji-panel', '\.emoji-scroll'/);
 });
 

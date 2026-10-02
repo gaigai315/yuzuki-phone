@@ -10,10 +10,10 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20260906-chat-background-sync-fix';
+import { ChatView } from './chat-view.js?v=20261002-x-forward-card';
 import { ContactsView } from './contacts-view.js';
 import { MomentsView } from './moments-view.js?v=20260802-chat-moments-feed';
-import { WechatData } from './wechat-data.js?v=20260906-global-chat-background-sync';
+import { WechatData } from './wechat-data.js?v=20261002-x-forward-card';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
 import {
@@ -59,39 +59,32 @@ export class WechatApp {
         // 🔥 监听滑动返回事件 (防止切换聊天导致重复绑定)
         if (!window._wechatSwipeBackBound) {
             window._wechatSwipeBackBound = true;
-            window.addEventListener('phone:swipeBack', () => {
+            window.addEventListener('phone:swipeBack', (event) => {
                 if (window.VirtualPhone && window.VirtualPhone.wechatApp) {
-                    window.VirtualPhone.wechatApp.handleSwipeBack();
+                    window.VirtualPhone.wechatApp.handleSwipeBack(event);
                 }
             });
         }
     }
 
     // 🔥 处理滑动返回（智能模拟点击原生返回按钮）
-    handleSwipeBack() {
-        // 1. 400ms 防抖
-        const now = Date.now();
-        if (this._lastSwipeTime && now - this._lastSwipeTime < 400) return;
-        this._lastSwipeTime = now;
-
-        // 2. 领地保护
+    handleSwipeBack(event) {
+        // 1. 领地保护
         const currentView = document.querySelector('.phone-view-current');
-        if (!currentView || !currentView.querySelector('.wechat-app')) return;
+        if (!currentView || !currentView.querySelector('.wechat-app')) return false;
 
-        // 3. 模拟点击返回按钮
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
+
+        // 2. 模拟点击返回按钮
         const backBtn = currentView.querySelector('.wechat-back-btn');
         if (backBtn) {
             backBtn.click();
         } else {
             window.dispatchEvent(new CustomEvent('phone:goHome'));
         }
-
-        // 4. Ghost Click Buster：400ms 内禁止点击
-        const screen = document.querySelector('.phone-screen');
-        if (screen) {
-            screen.style.pointerEvents = 'none';
-            setTimeout(() => { screen.style.pointerEvents = ''; }, 400);
-        }
+        return true;
     }
 
     deactivate() {
@@ -6397,6 +6390,8 @@ export class WechatApp {
     }
 
     openChat(chatId) {
+        if (this.phoneShell?.isHomeReturnGuardActive?.()) return false;
+
         const chat = this.wechatData.getChat(chatId);
         if (chat) {
             if (String(this.currentChat?.id || '') !== String(chatId || '')) {
@@ -6406,7 +6401,9 @@ export class WechatApp {
             this.wechatData.getMessages(chatId);
             this.currentChat = chat;
             this.render();
+            return true;
         }
+        return false;
     }
 
     enqueueExternalMessageForAI(chatId) {

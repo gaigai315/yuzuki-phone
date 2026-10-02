@@ -19,17 +19,22 @@ import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data
 import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
 import { PhoneFloatingEntry } from './phone/floating-entry.js';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
+import { StoryImageAutoScheduler } from './apps/album/story-image-auto-scheduler.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.8';
-const ST_PHONE_CSS_REVISION = '20260911-contact-generation-error-modal';
-const ST_PHONE_HONEY_ASSET_REVISION = '20260902-avatar-gender';
+const ST_PHONE_VERSION = '1.5.9';
+const ST_PHONE_CSS_REVISION = '20261002-swipe-programmatic-click';
+const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
+const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
+const ST_PHONE_X_MODULE_REVISION = '20261002-x-dm-back-stack';
+const ST_PHONE_HONEY_ASSET_REVISION = ST_PHONE_APP_SWIPE_REVISION;
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
+const ST_PHONE_REGULAR_FONT_URL = new URL('./assets/vendor/fontawesome/fa-regular-400.woff2', import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_CSS_URL = new URL(`./apps/honey/honey.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_LOGO_URL = new URL('./apps/honey/honey.png', import.meta.url).href;
 const ST_PHONE_HONEY_THEME_URL = new URL('./apps/honey/honeyzt.png', import.meta.url).href;
-const ST_PHONE_GAMES_MODULE_URL = new URL('./apps/games/games-app.js', import.meta.url).href;
+const ST_PHONE_GAMES_MODULE_URL = new URL(`./apps/games/games-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`, import.meta.url).href;
 const ST_PHONE_GAMES_CSS_URL = new URL('./apps/games/poker/poker.css?v=1.0.2', import.meta.url).href;
 const ST_PHONE_UPDATE_MANIFEST_URLS = [
     'https://raw.githubusercontent.com/gaigai315/yuzuki-phone/main/manifest.json',
@@ -50,6 +55,7 @@ const LOBBY_WECHAT_ONLINE_PROACTIVE_LAST_AT_KEY = 'phone_lobby_wechat_online_pro
 const LOBBY_WECHAT_ONLINE_PROACTIVE_PENDING_KEY = 'phone_lobby_wechat_online_proactive_pending_at';
 const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
+const STORY_IMAGE_AUTO_ENABLED_KEY = 'phone-story-image-auto-enabled';
 const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
     'offline-wechat-prompt-enabled',
     'offline-single-chat-enabled',
@@ -58,9 +64,13 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-09-28',
+    date: '2026-10-02',
     items: [
-        '【优化】手机世界书注入统一接入酒馆标准宏变量接口，支持 {{user}}、{{char}}、局部/全局变量及其他已注册宏；宏解析失败时保留条目原文，微信、微博、蜜语、日历、游戏、万象和日记等共用入口同步生效。'
+        '【修复】修复微信语音条发送后，文字内容没有正确转入聊天上下文的问题。',
+        '【优化】优化微信单聊上下文注入，聊天时会同时注入当前好友的朋友圈历史记录，避免串入其他好友内容。',
+        '【新增】新增 X APP，支持公开信息流、帖子图片、评论与回复、个人主页、生成设置及按聊天窗口独立存储。',
+        '【新增】新增正文生图功能，设置入口划分为相册 APP；双击手机悬浮图标可进入手动正文生图界面。',
+        '【优化】优化电脑端手机关闭逻辑，手机打开后单击机身外部即可关闭，三击打开方式保持不变。'
     ]
 };
 
@@ -104,6 +114,7 @@ if (window.GGP_Loaded) {
     let imageGenerationManager = null;
     let worldbookManager = null;
     let phoneFloatingEntry = null;
+    let storyImageAutoScheduler = null;
     let modulesLoaded = false;
     let _lastWechatConversationId = null; // 防串味：角色卡 + 酒馆聊天文件联合标识
     let _globalCssLoadingPromise = null;
@@ -288,7 +299,7 @@ if (window.GGP_Loaded) {
                 <i class="fa-solid fa-spinner fa-spin" style="font-size:22px;color:#ff5aa5;"></i>
                 <div style="font-weight:700;letter-spacing:0;">蜜语加载中...</div>
             </div>
-        `, 'honey-loading');
+        `, 'honey-main');
     }
 
     function ensureGamesCSSPreloaded() {
@@ -320,7 +331,7 @@ if (window.GGP_Loaded) {
 
     function loadGamesModule() {
         if (!_gamesModulePromise) {
-            _gamesModulePromise = import('./apps/games/games-app.js').catch(error => {
+            _gamesModulePromise = import(ST_PHONE_GAMES_MODULE_URL).catch(error => {
                 _gamesModulePromise = null;
                 throw error;
             });
@@ -1241,9 +1252,9 @@ if (window.GGP_Loaded) {
             import('./config/storage.js'),
             import('./config/api-manager.js'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20260802-moments-named-images'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20261002-x-follower-sync'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
-        import('./config/image-generation-manager.js?v=20260828-nai-prompt-preserve'),
+        import('./config/image-generation-manager.js?v=20261002-x-image-scope'),
             import('./config/worldbook-manager.js')
         ]);
 
@@ -1291,8 +1302,8 @@ if (window.GGP_Loaded) {
             imageUploadModule
         ] = await Promise.all([
             import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
-            import('./phone/home-screen.js'),
-            import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20260902-image-mime`)
+            import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
+            import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261002-x-image-cleanup`)
         ]);
 
         PhoneShell = phoneShellModule.PhoneShell;
@@ -1320,7 +1331,7 @@ if (window.GGP_Loaded) {
     // 🔥 按需加载设置模块
     async function loadSettingsModule() {
         if (!SettingsApp) {
-            const module = await import('./apps/settings/settings-app.js?v=20260909-comfyui-workflow-isolation');
+            const module = await import(`./apps/settings/settings-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
             SettingsApp = module.SettingsApp;
         }
         return SettingsApp;
@@ -1883,7 +1894,7 @@ if (window.GGP_Loaded) {
             if (!latestTime?.date || !latestTime?.time) return;
 
             if (!window.VirtualPhone?._calendarReminderApp) {
-                const module = await import('./apps/calendar/calendar-app.js?v=20260527-calendar-polish');
+                const module = await import(`./apps/calendar/calendar-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
                 window.VirtualPhone._calendarReminderApp = new module.CalendarApp(null, storage);
             }
 
@@ -4958,6 +4969,37 @@ if (window.GGP_Loaded) {
         await toggleDrawer(drawerIcon, drawerPanel);
     }
 
+    async function ensureStoryImageAlbumApp() {
+        await loadUIModules();
+        if (!window.VirtualPhone) window.VirtualPhone = {};
+        if (!window.VirtualPhone.imageManager) {
+            window.VirtualPhone.imageManager = new ImageUploadManager(storage);
+        }
+        const module = await import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
+        if (!window.VirtualPhone.albumApp) {
+            window.VirtualPhone.albumApp = new module.AlbumApp(phoneShell, storage);
+        }
+        return window.VirtualPhone.albumApp.attachRuntime?.(phoneShell, storage)
+            || window.VirtualPhone.albumApp;
+    }
+
+    async function activateStoryImageBrowserFromFloatingEntry() {
+        if (!isPhoneFeatureEnabled()) {
+            showUnifiedPhoneNotification('提示', '手机已休眠，请从魔法棒长按开启', '⚠️');
+            return;
+        }
+        if (!checkBetaLock()) return;
+
+        try {
+            await ensureGlobalPhoneCSS();
+            const albumApp = await ensureStoryImageAlbumApp();
+            albumApp.openStoryImageBrowser();
+        } catch (error) {
+            console.error('❌ 打开正文生图悬浮卡片失败:', error);
+            showUnifiedPhoneNotification('正文生图', '悬浮卡片加载失败，请稍后重试', '❌');
+        }
+    }
+
     function syncPhoneFloatingEntry() {
         if (!storage) return;
         if (!phoneFloatingEntry) {
@@ -4965,6 +5007,7 @@ if (window.GGP_Loaded) {
                 storage,
                 baseUrl: ST_PHONE_BASE_URL,
                 onActivate: activatePhoneFromFloatingEntry,
+                onDoubleActivate: activateStoryImageBrowserFromFloatingEntry,
                 isPanelOpen: () => document.getElementById('phone-panel')?.classList?.contains('phone-panel-open') === true
             });
         }
@@ -5256,6 +5299,32 @@ if (window.GGP_Loaded) {
         tryRun();
     }
 
+    function ensureAutoDiaryState() {
+        if (!window.VirtualPhone) window.VirtualPhone = {};
+        if (!(window.VirtualPhone._autoDiaryQueuedKeys instanceof Set)) {
+            window.VirtualPhone._autoDiaryQueuedKeys = new Set();
+        }
+        if (!(window.VirtualPhone._autoDiaryRunningKeys instanceof Set)) {
+            window.VirtualPhone._autoDiaryRunningKeys = new Set();
+        }
+        if (typeof window.VirtualPhone._autoDiaryGeneration !== 'number') {
+            window.VirtualPhone._autoDiaryGeneration = 0;
+        }
+        if (typeof window.VirtualPhone._autoDiaryProbeCount !== 'number') {
+            window.VirtualPhone._autoDiaryProbeCount = 0;
+        }
+        return window.VirtualPhone;
+    }
+
+    function resetAutoDiaryQueue(reason = 'reset') {
+        const state = ensureAutoDiaryState();
+        state._autoDiaryGeneration += 1;
+        state._autoDiaryQueuedKeys.clear();
+        state._autoDiaryRunningKeys.clear();
+        state._autoDiaryProbeCount = 0;
+        console.log(`[Diary][AutoQueue] 已重置: ${reason}`);
+    }
+
     function ensureAutoWeiboQueueState() {
         if (!window.VirtualPhone) window.VirtualPhone = {};
 
@@ -5279,6 +5348,9 @@ if (window.GGP_Loaded) {
         }
         if (typeof window.VirtualPhone._autoWeiboSuppressUntil !== 'number') {
             window.VirtualPhone._autoWeiboSuppressUntil = 0;
+        }
+        if (typeof window.VirtualPhone._autoWeiboProbeCount !== 'number') {
+            window.VirtualPhone._autoWeiboProbeCount = 0;
         }
 
         return window.VirtualPhone;
@@ -5310,6 +5382,7 @@ if (window.GGP_Loaded) {
         state._autoWeiboQueuedKeys.clear();
         state._autoWeiboRunningKeys.clear();
         state._autoWeiboPending = false;
+        state._autoWeiboProbeCount = 0;
         console.log(`[Weibo][AutoQueue] 已重置: ${reason}`);
     }
 
@@ -5491,7 +5564,7 @@ if (window.GGP_Loaded) {
 
     async function ensureWechatAppForBackground() {
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260911-contact-generation-error-modal');
+            const module = await import(`./apps/wechat/wechat-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
             if (!window.VirtualPhone) window.VirtualPhone = {};
             if (!window.VirtualPhone.wechatApp) {
                 window.VirtualPhone.wechatApp = new module.WechatApp(phoneShell, storage);
@@ -5526,7 +5599,9 @@ if (window.GGP_Loaded) {
 
     function isPhoneApiBusy() {
         const apiManager = window.VirtualPhone?.apiManager;
-        return !!(apiManager?.isBusy?.() || (apiManager?.getActiveRequestCount?.() > 0));
+        return !!(window.VirtualPhone?._storyImageAutoRunning
+            || apiManager?.isBusy?.()
+            || (apiManager?.getActiveRequestCount?.() > 0));
     }
 
     function syncWechatHomeBadge() {
@@ -5764,6 +5839,9 @@ if (window.GGP_Loaded) {
         if (typeof window.VirtualPhone._autoCalendarQueued !== 'boolean') {
             window.VirtualPhone._autoCalendarQueued = false;
         }
+        if (typeof window.VirtualPhone._autoCalendarProbeCount !== 'number') {
+            window.VirtualPhone._autoCalendarProbeCount = 0;
+        }
         return window.VirtualPhone;
     }
 
@@ -5794,7 +5872,7 @@ if (window.GGP_Loaded) {
             if (!idleReady) return false;
             if (task.chatId && task.chatId !== getCurrentChatIdForQueue()) return false;
 
-            const module = await import('./apps/calendar/calendar-app.js?v=20260527-calendar-polish');
+            const module = await import(`./apps/calendar/calendar-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
             const calendarApp = window.VirtualPhone.calendarApp || window.VirtualPhone._calendarReminderApp || new module.CalendarApp(null, storage);
             window.VirtualPhone._calendarReminderApp = calendarApp;
 
@@ -5833,6 +5911,7 @@ if (window.GGP_Loaded) {
             const chatLength = Array.isArray(ctx?.chat) ? ctx.chat.length : 0;
             if (chatLength <= 0 && !options.forceCheck) return false;
 
+            state._autoCalendarProbeCount += 1;
             import('./apps/calendar/calendar-data.js?v=20260527-calendar-polish').then(dataModule => {
                 const calendarData = window.VirtualPhone?.calendarApp?.calendarData
                     || window.VirtualPhone?._calendarReminderApp?.calendarData
@@ -5851,7 +5930,10 @@ if (window.GGP_Loaded) {
                     chatId,
                     delay: Math.max(0, parseInt(options.delay, 10) || 2500)
                 });
-            }).catch(e => console.warn('[Calendar] 自动补全日程模块加载失败:', e));
+            }).catch(e => console.warn('[Calendar] 自动补全日程模块加载失败:', e))
+                .finally(() => {
+                    state._autoCalendarProbeCount = Math.max(0, state._autoCalendarProbeCount - 1);
+                });
             return true;
         } catch (e) {
             console.warn('[Calendar] 自动补全日程检测异常:', e);
@@ -5870,6 +5952,7 @@ if (window.GGP_Loaded) {
             const chatLength = Array.isArray(ctx?.chat) ? ctx.chat.length : 0;
             if (chatLength <= 0) return;
 
+            state._autoWeiboProbeCount += 1;
             import('./apps/weibo/weibo-data.js').then(module => {
                 const weiboData = window.VirtualPhone?.weiboApp?.weiboData || new module.WeiboData(storage);
                 const floorSettings = weiboData.getFloorSettings();
@@ -5901,10 +5984,182 @@ if (window.GGP_Loaded) {
                     baseBackoffMs: 3000,
                     run: async () => weiboData.autoGenerateWeibo()
                 });
-            }).catch(e => console.warn('[Weibo] 自动微博模块加载失败:', e));
+            }).catch(e => console.warn('[Weibo] 自动微博模块加载失败:', e))
+                .finally(() => {
+                    state._autoWeiboProbeCount = Math.max(0, state._autoWeiboProbeCount - 1);
+                });
         } catch (err) {
             console.warn('[Weibo] 自动微博检测异常:', err);
         }
+    }
+
+    function getStoryImageChatId(context = getContext()) {
+        return String(context?.chatMetadata?.file_name || context?.chatId || 'default_chat').trim() || 'default_chat';
+    }
+
+    function getStoryImageMessageText(message = {}) {
+        const swipeIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : 0;
+        if (Array.isArray(message?.swipes) && message.swipes.length > 0) {
+            return String(message.swipes[swipeIndex] || message.swipes[0] || '').trim();
+        }
+        return String(message?.mes || message?.message || '').trim();
+    }
+
+    function hashStoryImageText(text = '') {
+        let hash = 2166136261;
+        const source = String(text || '');
+        for (let index = 0; index < source.length; index += 1) {
+            hash ^= source.charCodeAt(index);
+            hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(36);
+    }
+
+    function getStoryImageMessageSignature(message = {}) {
+        const swipeIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : 0;
+        const text = getStoryImageMessageText(message);
+        return `${swipeIndex}:${text.length}:${hashStoryImageText(text)}`;
+    }
+
+    function isStoryImageAutoEnabled() {
+        const raw = storage?.get?.(STORY_IMAGE_AUTO_ENABLED_KEY, false);
+        return raw === true || raw === 'true' || raw === 1 || raw === '1';
+    }
+
+    function hasStoryImageOnMessage(message = {}) {
+        const meta = message?.extra?.phone_story_image;
+        const sourceFingerprint = String(meta?.sourceFingerprint || '').trim();
+        return !!String(meta?.imageUrl || '').trim()
+            && (!sourceFingerprint || sourceFingerprint === getStoryImageMessageSignature(message));
+    }
+
+    function validateStoryImageAutoTask(task = {}) {
+        const context = getContext();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        const currentMessage = chat[task.floor];
+        return getStoryImageChatId(context) === task.chatId
+            && currentMessage === task.message
+            && currentMessage?.is_user !== true
+            && currentMessage?.is_system !== true
+            && getStoryImageMessageSignature(currentMessage) === task.signature
+            && !hasStoryImageOnMessage(currentMessage);
+    }
+
+    function isPhoneStoryBackgroundWorkPending() {
+        const state = window.VirtualPhone || {};
+        const apiManager = state.apiManager;
+        const phoneApiRunning = !!(apiManager?.isBusy?.() || (apiManager?.getActiveRequestCount?.() > 0));
+        return isTavernPrimaryGenerationBusy()
+            || phoneApiRunning
+            || Number(state._autoDiaryProbeCount || 0) > 0
+            || (state._autoDiaryQueuedKeys?.size || 0) > 0
+            || (state._autoDiaryRunningKeys?.size || 0) > 0
+            || state.isDiaryBatchRunning === true
+            || Number(state._autoWeiboProbeCount || 0) > 0
+            || state._autoWeiboPending === true
+            || state._autoWeiboWorkerRunning === true
+            || (state._autoWeiboQueue?.length || 0) > 0
+            || (state._autoWeiboQueuedKeys?.size || 0) > 0
+            || (state._autoWeiboRunningKeys?.size || 0) > 0
+            || state.isWeiboBatchRunning === true
+            || Number(state._autoCalendarProbeCount || 0) > 0
+            || state._autoCalendarQueued === true
+            || state._autoCalendarRunning === true;
+    }
+
+    function isMemoryStoryBackgroundWorkPending() {
+        const memory = window.YuzukiMemory;
+        try {
+            return memory?.TaskRunner?.isForegroundGenerationBusy?.() === true
+                || memory?.TaskRunner?.isBackgroundWorkPending?.() === true
+                || memory?.StoryDirectorRuntime?.isRunning?.() === true;
+        } catch (error) {
+            console.warn('[StoryImageAuto] 读取记忆插件后台状态失败:', error);
+            return true;
+        }
+    }
+
+    function isStoryImageBackgroundWorkPending() {
+        return isPhoneStoryBackgroundWorkPending() || isMemoryStoryBackgroundWorkPending();
+    }
+
+    async function runStoryImageAutoTask(task, runtime = {}) {
+        if (!runtime.isStillValid?.()) return { skipped: true, reason: 'stale-floor' };
+        window.VirtualPhone._storyImageAutoRunning = true;
+        try {
+            const albumApp = await ensureStoryImageAlbumApp();
+            if (!runtime.isStillValid?.()) return { skipped: true, reason: 'stale-floor' };
+            const target = albumApp.albumData.getStoryFloor(task.floor);
+            if (!target || target.message !== task.message) return { skipped: true, reason: 'stale-floor' };
+            if (target.imageUrl) return { skipped: true, reason: 'image-exists' };
+
+            const tagsResult = await albumApp.generateStoryTags(task.floor, {
+                signal: runtime.signal,
+                expectedMessage: task.message,
+                isStillValid: runtime.isStillValid,
+                notifySuccess: false
+            });
+            if (!tagsResult?.success) {
+                return { skipped: true, reason: tagsResult?.reason || 'tags-failed', retry: tagsResult?.busy === true };
+            }
+            if (!runtime.isStillValid?.()) return { skipped: true, reason: 'stale-floor' };
+
+            const imageResult = await albumApp.generateStoryImage(task.floor, tagsResult.tags, {
+                signal: runtime.signal,
+                expectedMessage: task.message,
+                isStillValid: runtime.isStillValid
+            });
+            if (!imageResult?.success) {
+                return { skipped: true, reason: imageResult?.reason || 'image-failed', retry: imageResult?.busy === true };
+            }
+            return imageResult;
+        } finally {
+            if (window.VirtualPhone) window.VirtualPhone._storyImageAutoRunning = false;
+        }
+    }
+
+    function ensureStoryImageAutoScheduler() {
+        if (storyImageAutoScheduler) return storyImageAutoScheduler;
+        storyImageAutoScheduler = new StoryImageAutoScheduler({
+            getAutoEnabled: isStoryImageAutoEnabled,
+            isBackgroundWorkPending: isStoryImageBackgroundWorkPending,
+            validateTask: validateStoryImageAutoTask,
+            runTask: runStoryImageAutoTask,
+            pollIntervalMs: 500,
+            stableIdleMs: 2800,
+            logger: console
+        });
+        if (window.VirtualPhone) window.VirtualPhone.storyImageAutoScheduler = storyImageAutoScheduler;
+        return storyImageAutoScheduler;
+    }
+
+    function scheduleStoryImageAutoForMessage(context, floor, message) {
+        if (!isPhoneFeatureEnabled() || !isStoryImageAutoEnabled()) return false;
+        if (!message || message.is_user === true || message.is_system === true) return false;
+        const chatId = getStoryImageChatId(context);
+        const signature = getStoryImageMessageSignature(message);
+        return ensureStoryImageAutoScheduler().enqueue({
+            key: `story-image:auto:${chatId}:${floor}:${signature}`,
+            chatId,
+            floor,
+            message,
+            signature
+        });
+    }
+
+    function invalidateStoryImageAutoFromFloor(floor, reason = 'branch-changed') {
+        const safeFloor = Number.parseInt(String(floor), 10);
+        if (!Number.isInteger(safeFloor)) return false;
+        return storyImageAutoScheduler?.invalidateFromFloor?.(getStoryImageChatId(), safeFloor, reason) === true;
+    }
+
+    function interruptStoryImageAutoForForegroundGeneration(type, _params = {}, isDryRun = false) {
+        const generationType = String(type || 'normal').trim().toLowerCase();
+        if (isDryRun || generationType === 'quiet') return false;
+        return storyImageAutoScheduler?.interruptCurrent?.(
+            `foreground-generation:${generationType || 'normal'}`,
+            { retry: true }
+        ) === true;
     }
 
     // 🔥 新增：解析微信消息标签
@@ -6958,7 +7213,7 @@ if (window.GGP_Loaded) {
         const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card').then(module => {
             let wechatData;
 
             if (getCurrentTavernConversationIdentity() !== conversationId) {
@@ -7666,7 +7921,7 @@ if (window.GGP_Loaded) {
             const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card').then(async module => {
                 let wechatData;
                 if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                     console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
@@ -7943,7 +8198,7 @@ if (window.GGP_Loaded) {
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
-            const module = await import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             const context = getContext();
@@ -8034,7 +8289,7 @@ if (window.GGP_Loaded) {
     }
 
     async function ensureWangxiangApp() {
-        const module = await import('./apps/wangxiang/wangxiang-app.js');
+        const module = await import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
         if (!window.VirtualPhone.wangxiangApp) {
             window.VirtualPhone.wangxiangApp = new module.WangxiangApp(phoneShell, storage);
         }
@@ -8342,7 +8597,7 @@ if (window.GGP_Loaded) {
                     const parsed = parseMusicCard(latestMusicContent);
 
                     // 🔥 强制唤醒：不管音乐APP是否打开过，收到标签立刻初始化并塞入歌曲
-                    import('./apps/music/music-app.js').then(module => {
+                    import(`./apps/music/music-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`).then(module => {
                         if (!window.VirtualPhone.musicApp) {
                             window.VirtualPhone.musicApp = new module.MusicApp(phoneShell, storage);
                             window.VirtualPhone.musicApp.initFloatingWidget();
@@ -8440,6 +8695,9 @@ if (window.GGP_Loaded) {
                 const triggerChatId = String(triggerCtx?.chatMetadata?.file_name || triggerCtx?.chatId || 'default_chat');
                 const triggerChatLength = Array.isArray(triggerCtx?.chat) ? triggerCtx.chat.length : 0;
                 if (triggerChatLength > 0) {
+                    const autoDiaryState = ensureAutoDiaryState();
+                    const diaryGeneration = autoDiaryState._autoDiaryGeneration;
+                    autoDiaryState._autoDiaryProbeCount += 1;
                     // 懒加载 DiaryData 检查楼层差
                     import('./apps/diary/diary-data.js').then(module => {
                         const diaryData = window.VirtualPhone.diaryApp?.diaryData
@@ -8459,14 +8717,28 @@ if (window.GGP_Loaded) {
                         if ((latestFloor - lastIdx) >= autoFloor) {
                             // 🔥 延迟 5-8 秒执行，防止与其他扩展 API 并发冲突；执行前校验会话，避免切窗串写
                             const delay = 5000 + Math.random() * 3000;
-                            setTimeout(() => {
+                            const taskKey = `diary:auto:${triggerChatId}:${lastIdx}->${latestFloor}`;
+                            if (autoDiaryState._autoDiaryQueuedKeys.has(taskKey)
+                                || autoDiaryState._autoDiaryRunningKeys.has(taskKey)) return;
+                            autoDiaryState._autoDiaryQueuedKeys.add(taskKey);
+                            setTimeout(async () => {
+                                autoDiaryState._autoDiaryQueuedKeys.delete(taskKey);
+                                if (autoDiaryState._autoDiaryGeneration !== diaryGeneration) return;
                                 const currentCtx = getContext();
                                 const currentChatId = String(currentCtx?.chatMetadata?.file_name || currentCtx?.chatId || 'default_chat');
                                 if (currentChatId !== triggerChatId) return;
-                                diaryData.autoGenerateDiary({ chatId: triggerChatId });
+                                autoDiaryState._autoDiaryRunningKeys.add(taskKey);
+                                try {
+                                    await diaryData.autoGenerateDiary({ chatId: triggerChatId });
+                                } finally {
+                                    autoDiaryState._autoDiaryRunningKeys.delete(taskKey);
+                                }
                             }, delay);
                         }
-                    }).catch(e => console.warn('[Diary] 自动日记模块加载失败:', e));
+                    }).catch(e => console.warn('[Diary] 自动日记模块加载失败:', e))
+                        .finally(() => {
+                            autoDiaryState._autoDiaryProbeCount = Math.max(0, autoDiaryState._autoDiaryProbeCount - 1);
+                        });
                 }
             } catch (diaryErr) {
                 console.warn('[Diary] 自动日记检测异常:', diaryErr);
@@ -8475,6 +8747,9 @@ if (window.GGP_Loaded) {
             // 📱 自动微博生成检测（统一调度）
             scheduleAutoWeiboIfDue({ reason: 'ai_message' });
             scheduleAutoCalendarIfNeeded({ reason: 'ai_message' });
+            if (!isHistoryReplay) {
+                scheduleStoryImageAutoForMessage(context, index, message);
+            }
 
         } catch (e) {
             console.error('❌ 消息处理失败:', e);
@@ -8502,7 +8777,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            const module = await import('./apps/wechat/wechat-app.js?v=20260911-contact-generation-error-modal');
+            const module = await import(`./apps/wechat/wechat-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             // 单例复用
@@ -8583,7 +8858,7 @@ if (window.GGP_Loaded) {
         }
 
         // 动态加载 phone-app.js 并创建单例
-        import('./apps/phone/phone-app.js').then(module => {
+        import(`./apps/phone/phone-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`).then(module => {
             if (!window.VirtualPhone.phoneApp) {
                 window.VirtualPhone.phoneApp = new module.PhoneApp(phoneShell, storage);
             }
@@ -8602,6 +8877,8 @@ if (window.GGP_Loaded) {
     function onChatChanged() {
         // 🔄 切换会话时清空自动微博队列，避免旧会话任务串入新会话
         resetAutoWeiboQueue('chat_changed');
+        resetAutoDiaryQueue('chat_changed');
+        storyImageAutoScheduler?.reset?.('chat_changed');
         ensureWechatInteractionDefaults();
         window.VirtualPhone?.hideMofoUpdateBubble?.();
 
@@ -8622,6 +8899,10 @@ if (window.GGP_Loaded) {
             // 📱 清空微博缓存
             if (window.VirtualPhone.weiboApp) {
                 window.VirtualPhone.weiboApp.clearCache();
+            }
+            // 𝕏 清空帖子与评论缓存，切换后重新读取当前聊天数据
+            if (window.VirtualPhone.xApp) {
+                window.VirtualPhone.xApp.clearCache();
             }
             // 🌐 清空万象任务缓存，切换后重新读取当前聊天文件
             if (window.VirtualPhone.wangxiangApp) {
@@ -8693,7 +8974,7 @@ if (window.GGP_Loaded) {
 
         // 🎵 如果 musicApp 不存在但新会话开启了悬浮窗，需要创建
         if (!window.VirtualPhone?.musicApp && storage?.get('music_show_floating', false)) {
-            import('./apps/music/music-app.js').then(module => {
+            import(`./apps/music/music-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`).then(module => {
                 if (!window.VirtualPhone.musicApp) {
                     window.VirtualPhone.musicApp = new module.MusicApp(null, storage);
                     window.VirtualPhone.musicApp.initFloatingWidget();
@@ -9019,6 +9300,10 @@ if (window.GGP_Loaded) {
                 if (finalCssText.charCodeAt(0) === 0xFEFF) {
                     finalCssText = finalCssText.slice(1);
                 }
+                finalCssText = finalCssText.replaceAll(
+                    './assets/vendor/fontawesome/fa-regular-400.woff2',
+                    ST_PHONE_REGULAR_FONT_URL
+                );
 
                 const style = document.createElement('style');
                 style.id = styleId;
@@ -9117,8 +9402,24 @@ if (window.GGP_Loaded) {
                 _autoWeiboQueueGeneration: 0,
                 _autoWeiboWorkerRunning: false,
                 _autoWeiboPending: false,
-                _autoWeiboSuppressUntil: 0
+                _autoWeiboSuppressUntil: 0,
+                _autoWeiboProbeCount: 0,
+                _autoDiaryQueuedKeys: new Set(),
+                _autoDiaryRunningKeys: new Set(),
+                _autoDiaryGeneration: 0,
+                _autoDiaryProbeCount: 0,
+                _autoCalendarGeneration: 0,
+                _autoCalendarRunning: false,
+                _autoCalendarQueued: false,
+                _autoCalendarProbeCount: 0,
+                _storyImageAutoRunning: false
             };
+
+            window.addEventListener('phone:storyImageSettingsChanged', (event) => {
+                if (event?.detail?.settings?.autoEnabled === false) {
+                    storyImageAutoScheduler?.reset?.('auto-disabled');
+                }
+            });
 
             // 🔥 关键修复：启动时就预热 TimeManager / PromptManager，
             // 避免“未切会话、未打开手机面板”时线下注入因懒加载对象仍为 null 而失效。
@@ -9156,7 +9457,7 @@ if (window.GGP_Loaded) {
                     try {
                         const showFloating = storage?.get('music_show_floating', false);
                         if (showFloating) {
-                            import('./apps/music/music-app.js').then(module => {
+                            import(`./apps/music/music-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`).then(module => {
                                 // 即使 phoneShell 为 null，也创建 musicApp 实例来管理悬浮窗
                                 if (!window.VirtualPhone.musicApp) {
                                     window.VirtualPhone.musicApp = new module.MusicApp(null, storage);
@@ -9179,6 +9480,33 @@ if (window.GGP_Loaded) {
                 // 如果功能被禁用，直接退出
                 if (!isPhoneFeatureEnabled()) return;
 
+                const target = e.target;
+
+                // 【核心防误触】使用 composedPath 防止 DOM 刷新导致的误判
+                const path = e.composedPath();
+                const isInsidePhone = path.some(el => {
+                    if (!el) return false;
+                    if (el.id === 'phoneDrawerIcon' || el.id === 'phoneDrawerToolEntry' || el.id === 'phoneDrawerToolRow') return true;
+                    return !!(el.classList && el.classList.contains('phone-in-panel'));
+                });
+                const drawerIcon = document.getElementById('phoneDrawerIcon');
+                const drawerPanel = document.getElementById('phone-panel');
+                const isSwipeTrailingClick = Date.now() < Number(phoneShell?._swipeClickGuardUntil || 0);
+
+                // 桌面端手机是悬浮面板，打开后单击机身外部即可关闭；关闭状态仍保留三击唤醒。
+                if (
+                    drawerIcon
+                    && drawerPanel?.classList.contains('phone-panel-open')
+                    && isDesktopPhonePanelDragEnabled()
+                    && !isInsidePhone
+                ) {
+                    phoneTapCount = 0;
+                    phoneLastTapTime = 0;
+                    if (isSwipeTrailingClick) return;
+                    toggleDrawer(drawerIcon, drawerPanel);
+                    return;
+                }
+
                 // 用户可在设置中全局关闭三击唤醒，关闭后仅保留魔法棒入口
                 if (!isPhoneTripleTapEnabled()) {
                     phoneTapCount = 0;
@@ -9192,16 +9520,6 @@ if (window.GGP_Loaded) {
                     phoneTapCount = 0;
                     return;
                 }
-
-                const target = e.target;
-
-                // 【核心防误触】使用 composedPath 防止 DOM 刷新导致的误判
-                const path = e.composedPath();
-                const isInsidePhone = path.some(el => {
-                    if (!el) return false;
-                    if (el.id === 'phoneDrawerIcon' || el.id === 'phoneDrawerToolEntry' || el.id === 'phoneDrawerToolRow') return true;
-                    return !!(el.classList && el.classList.contains('phone-in-panel'));
-                });
 
                 // 如果点击的是特定元素或手机内部区域，则直接忽略
                 if (
@@ -9229,8 +9547,6 @@ if (window.GGP_Loaded) {
                 // 触发三击
                 if (phoneTapCount === 3) {
                     phoneTapCount = 0; // 重置连击
-                    const drawerIcon = document.getElementById('phoneDrawerIcon');
-                    const drawerPanel = document.getElementById('phone-panel');
 
                     // 🔥 核心修复：直接调用 toggleDrawer 函数，不再使用无效的 .click() 模拟
                     if (drawerIcon && drawerPanel) {
@@ -9258,6 +9574,7 @@ if (window.GGP_Loaded) {
                         ['games', phone.gamesApp],
                         ['music', phone.musicApp],
                         ['weibo', phone.weiboApp],
+                        ['x', phone.xApp],
                         ['diary', phone.diaryApp],
                         ['calendar', phone.calendarApp],
                         ['album', phone.albumApp],
@@ -9298,10 +9615,11 @@ if (window.GGP_Loaded) {
 
             // 监听返回主页
             window.addEventListener('phone:goHome', () => {
+                phoneShell?.prepareHomeReturn?.();
                 releasePhoneInactiveResources(null);
                 currentApp = null;
                 window.currentWechatApp = null;
-                if (homeScreen) homeScreen.render({ forceDomRefresh: true });
+                if (homeScreen) homeScreen.restore();
             });
 
             // 🔥 监听全局红点更新事件
@@ -9314,7 +9632,7 @@ if (window.GGP_Loaded) {
 
             // 监听打开APP
             window.addEventListener('phone:openApp', (e) => {
-                const { appId } = e.detail;
+                const { appId, view } = e.detail || {};
                 const homeGuardUntil = Number.parseInt(String(window.VirtualPhone?._homeReturnGuardUntil || '0'), 10) || 0;
                 if (Date.now() < homeGuardUntil) {
                     return;
@@ -9346,7 +9664,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.settingsApp.render();
                     });
                 } else if (appId === 'wechat') {
-                    import('./apps/wechat/wechat-app.js?v=20260911-contact-generation-error-modal')
+                    import(`./apps/wechat/wechat-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
                         .then(module => {
                             try {
                                 // 🔥 单例模式：只在第一次打开时创建微信实例，拒绝重复绑定事件
@@ -9398,7 +9716,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '微信模块加载失败', '❌');
                         });
                 } else if (appId === 'diary') {
-                    import('./apps/diary/diary-app.js')
+                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.diaryApp) {
@@ -9415,7 +9733,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '日记模块加载失败', '❌');
                         });
                 } else if (appId === 'phone') {
-                    import('./apps/phone/phone-app.js')
+                    import(`./apps/phone/phone-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.phoneApp) {
@@ -9433,7 +9751,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '通话模块加载失败', '❌');
                         });
                 } else if (appId === 'music') {
-                    import('./apps/music/music-app.js')
+                    import(`./apps/music/music-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
                         .then(module => {
                             try {
                                 // 检查是否已存在为悬浮窗创建的实例
@@ -9455,8 +9773,9 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '音乐模块加载失败', '❌');
                         });
                 } else if (appId === 'weibo') {
-                    import('./apps/weibo/weibo-app.js')
+                    import(`./apps/weibo/weibo-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_WEIBO_MODULE_REVISION}`)
                         .then(module => {
+                            if (currentApp !== 'weibo') return;
                             try {
                                 if (!window.VirtualPhone.weiboApp) {
                                     window.VirtualPhone.weiboApp = new module.WeiboApp(phoneShell, storage);
@@ -9468,17 +9787,38 @@ if (window.GGP_Loaded) {
                             }
                         })
                         .catch(importError => {
+                            if (currentApp !== 'weibo') return;
                             console.error('❌ 导入 weibo-app.js 失败:', importError);
                             phoneShell?.showNotification('错误', '微博模块加载失败', '❌');
+                        });
+                } else if (appId === 'x') {
+                    import(`./apps/x/x-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_X_MODULE_REVISION}`)
+                        .then(module => {
+                            try {
+                                if (!window.VirtualPhone.xApp) {
+                                    window.VirtualPhone.xApp = new module.XApp(phoneShell, storage);
+                                }
+                                window.VirtualPhone.xApp.attachRuntime?.(phoneShell, storage);
+                                window.VirtualPhone.xApp.render();
+                            } catch (initError) {
+                                console.error('❌ X APP初始化失败:', initError);
+                                phoneShell?.showNotification('错误', 'X 加载失败', '❌');
+                            }
+                        })
+                        .catch(importError => {
+                            console.error('❌ 导入 x-app.js 失败:', importError);
+                            phoneShell?.showNotification('错误', 'X 模块加载失败', '❌');
                         });
                 } else if (appId === 'honey') {
                     const honeyCssReady = ensureHoneyCSSPreloaded();
                     const honeyThemeReady = ensureHoneyThemePreloaded();
+                    const isHoneyStillActive = () => currentApp === 'honey';
                     if (!window.VirtualPhone.honeyApp) {
                         showHoneyLoadingView();
                     }
                     Promise.all([honeyCssReady, honeyThemeReady, loadHoneyModule()])
                         .then(([, , module]) => {
+                            if (!isHoneyStillActive()) return;
                             try {
                                 if (!window.VirtualPhone.honeyApp) {
                                     window.VirtualPhone.honeyApp = new module.HoneyApp(phoneShell, storage);
@@ -9491,11 +9831,12 @@ if (window.GGP_Loaded) {
                             }
                         })
                         .catch(importError => {
+                            if (!isHoneyStillActive()) return;
                             console.error('❌ 导入 honey-app.js 失败:', importError);
                             phoneShell?.showNotification('错误', '蜜语模块加载失败', '❌');
                         });
                 } else if (appId === 'mofo') {
-                    import('./apps/mofo/mofo-app.js')
+                    import(`./apps/mofo/mofo-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.mofoApp) {
@@ -9517,7 +9858,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '魔坊模块加载失败', '❌');
                         });
                 } else if (appId === 'wangxiang') {
-                    import('./apps/wangxiang/wangxiang-app.js')
+                    import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
                         .then(async module => {
                             try {
                                 if (!window.VirtualPhone.wangxiangApp) {
@@ -9562,13 +9903,20 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '游戏模块加载失败', '❌');
                         });
                 } else if (appId === 'album') {
-                    import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=20260802-album-toolbar`)
+                    import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.albumApp) {
                                     window.VirtualPhone.albumApp = new module.AlbumApp(phoneShell, storage);
                                 }
-                                window.VirtualPhone.albumApp.render();
+                                window.VirtualPhone.albumApp.attachRuntime?.(phoneShell, storage);
+                                if (view === 'story-images') {
+                                    window.VirtualPhone.albumApp.openStoryImageBrowser();
+                                } else if (view === 'story-image-settings') {
+                                    window.VirtualPhone.albumApp.openStoryImageSettings();
+                                } else {
+                                    window.VirtualPhone.albumApp.render();
+                                }
                             } catch (initError) {
                                 console.error('❌ 相册APP初始化失败:', initError);
                                 phoneShell?.showNotification('错误', '相册加载失败', '❌');
@@ -9579,7 +9927,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '相册模块加载失败', '❌');
                         });
                 } else if (appId === 'calendar') {
-                    import('./apps/calendar/calendar-app.js?v=20260527-calendar-polish')
+                    import(`./apps/calendar/calendar-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.calendarApp || !window.VirtualPhone.calendarApp.phoneShell?.setContent) {
@@ -9680,7 +10028,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -9724,6 +10072,7 @@ if (window.GGP_Loaded) {
                     if (window.VirtualPhone.phoneApp) window.VirtualPhone.phoneApp.clearCache();
                     window.VirtualPhone.cachedPhoneCallData?.clearCache?.();
                     if (window.VirtualPhone.weiboApp) window.VirtualPhone.weiboApp.clearCache();
+                    if (window.VirtualPhone.xApp) window.VirtualPhone.xApp.clearCache();
                     if (window.VirtualPhone.mofoApp) {
                         window.VirtualPhone.mofoApp.clearCache();
                         window.VirtualPhone.mofoApp = null;
@@ -9795,6 +10144,10 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.weiboApp.clearCache();
                         window.VirtualPhone.weiboApp = null;
                     }
+                    if (window.VirtualPhone.xApp) {
+                        window.VirtualPhone.xApp.clearCache();
+                        window.VirtualPhone.xApp = null;
+                    }
                     if (window.VirtualPhone.mofoApp) {
                         window.VirtualPhone.mofoApp.clearCache();
                         window.VirtualPhone.mofoApp = null;
@@ -9848,8 +10201,18 @@ if (window.GGP_Loaded) {
                 if (context.event_types.MESSAGE_DELETED) {
                     context.eventSource.on(context.event_types.MESSAGE_DELETED, (eventData) => {
                         const deletedFloor = Number(eventData?.messageId ?? eventData?.id ?? eventData);
-                        if (Number.isFinite(deletedFloor)) rollbackPhoneSmsToFloor(deletedFloor, false);
+                        if (Number.isFinite(deletedFloor)) {
+                            invalidateStoryImageAutoFromFloor(deletedFloor, 'message-deleted');
+                            rollbackPhoneSmsToFloor(deletedFloor, false);
+                        }
                     });
+                }
+
+                if (context.event_types.GENERATION_STARTED) {
+                    context.eventSource.on(
+                        context.event_types.GENERATION_STARTED,
+                        interruptStoryImageAutoForForegroundGeneration
+                    );
                 }
 
                 context.eventSource.on(
@@ -9860,6 +10223,7 @@ if (window.GGP_Loaded) {
                 // ⏪⏪⏪ 核心修复 1：监听滑动事件，斩杀废案，并完美防抢跑 ⏪⏪⏪
                 if (context.event_types.MESSAGE_SWIPED) {
                     context.eventSource.on(context.event_types.MESSAGE_SWIPED, function (id) {
+                        invalidateStoryImageAutoFromFloor(id, 'message-swiped');
                         markForcedReplayFloor(id, 180000);
                         markPromptCleanupFloor(id, 180000);
                         
@@ -9912,6 +10276,7 @@ if (window.GGP_Loaded) {
                     const mesEl = $(this).closest('.mes');
                     const mesId = parseInt(mesEl.attr('mesid'), 10);
                     if (!Number.isNaN(mesId)) {
+                        invalidateStoryImageAutoFromFloor(mesId, 'swipe-clicked');
                         markForcedReplayFloor(mesId, 180000);
                         markPromptCleanupFloor(mesId, 180000);
                     }
@@ -9922,6 +10287,7 @@ if (window.GGP_Loaded) {
                     const mesEl = $(this).closest('.mes');
                     const mesId = parseInt(mesEl.attr('mesid'), 10);
                     if (!Number.isNaN(mesId)) {
+                        invalidateStoryImageAutoFromFloor(mesId, 'message-edited');
                         markExactReplayFloor(mesId, 120000);
                         setTimeout(() => {
                             try {
@@ -9946,6 +10312,7 @@ if (window.GGP_Loaded) {
                     // 获取当前点击的重新生成按钮所在的楼层；底部全局“重新生成”按钮不在 .mes 内，需要兜底到最后一条 AI 楼层。
                     const mesId = getRegenerateTargetFloor(this);
                     if (!Number.isNaN(mesId)) {
+                        invalidateStoryImageAutoFromFloor(mesId, 'message-regenerated');
                         markForcedReplayFloor(mesId, 180000);
                         markPromptCleanupFloor(mesId, 180000);
                         setTimeout(() => {
@@ -10110,7 +10477,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js?v=20260906-global-chat-background-sync');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;
@@ -10368,6 +10735,70 @@ if (window.GGP_Loaded) {
                                             if (rebuilt && rebuilt !== '[微博分享]') return rebuilt;
                                             return isPlaceholderOnly(fullContent) ? '[微博分享]' : (fullContent || '[微博分享]');
                                         };
+                                        const formatXCardForOfflinePrompt = (msg = {}) => {
+                                            const xData = msg?.xData && typeof msg.xData === 'object' ? msg.xData : {};
+                                            const fullContent = normalizeWeiboCardText(msg.content);
+                                            if (Object.keys(xData).length === 0) return fullContent || '[X分享]';
+
+                                            const author = xData.author && typeof xData.author === 'object' ? xData.author : {};
+                                            const authorName = normalizeWeiboCardText(author.name || 'X 用户') || 'X 用户';
+                                            const accountType = String(author.accountType || '').trim().toLowerCase();
+                                            const accountLabel = accountType === 'official'
+                                                ? '（官方认证）'
+                                                : accountType === 'advertiser'
+                                                    ? '（广告账号）'
+                                                    : '';
+                                            const body = normalizeWeiboCardText(xData.content || '');
+                                            const time = normalizeWeiboCardText(xData.originalTime || xData.time || '');
+                                            const imageStates = Array.isArray(xData.imageGenerationStates) ? xData.imageGenerationStates : [];
+                                            const images = Array.isArray(xData.images) ? xData.images : [];
+                                            const mediaLines = images.map((raw, index) => {
+                                                const state = imageStates[index] || {};
+                                                const description = normalizeWeiboCardText(state.description || '');
+                                                if (description) return `[图片${index ? index + 1 : ''}]（${description}）`;
+                                                const text = normalizeWeiboCardText(raw);
+                                                if (!text) return '';
+                                                const tagged = text.match(/^\[(用户照片|个人图片|图片|视频)\]\s*([\s\S]*)$/);
+                                                if (tagged) return tagged[2] ? `[${tagged[1]}${index ? index + 1 : ''}]${tagged[2]}` : `[${tagged[1]}${index ? index + 1 : ''}]`;
+                                                if (/^(?:https?:|data:image|blob:|\/backgrounds\/)/i.test(text) || /\.(?:png|jpe?g|gif|webp|avif)(?:[?#].*)?$/i.test(text)) {
+                                                    return `[图片${index ? index + 1 : ''}]`;
+                                                }
+                                                return text;
+                                            }).filter(Boolean);
+                                            imageStates.slice(images.length).forEach((state, offset) => {
+                                                const index = images.length + offset;
+                                                const description = normalizeWeiboCardText(state?.description || '');
+                                                if (description || state?.generatedImageUrl) {
+                                                    mediaLines.push(description ? `[图片${index ? index + 1 : ''}]（${description}）` : `[图片${index ? index + 1 : ''}]`);
+                                                }
+                                            });
+
+                                            const comments = Array.isArray(xData.commentList) ? xData.commentList : [];
+                                            const namesByTarget = new Map();
+                                            comments.forEach(comment => {
+                                                const name = normalizeWeiboCardText(comment?.name || 'X 用户') || 'X 用户';
+                                                if (comment?.id) namesByTarget.set(String(comment.id), name);
+                                                if (comment?.handle) namesByTarget.set(String(comment.handle), name);
+                                            });
+                                            const commentLines = comments.map(comment => {
+                                                const text = normalizeWeiboCardText(comment?.text || '');
+                                                if (!text) return '';
+                                                const name = normalizeWeiboCardText(comment?.name || 'X 用户') || 'X 用户';
+                                                const rawReplyTo = String(comment?.replyTo || '').trim();
+                                                const replyTo = namesByTarget.get(rawReplyTo) || normalizeWeiboCardText(rawReplyTo.replace(/^@/, ''));
+                                                return `${name}${replyTo ? ` 回复 ${replyTo}` : ''}：${text}`;
+                                            }).filter(Boolean);
+
+                                            const commentsCount = Math.max(Number.parseInt(xData.comments, 10) || 0, comments.length);
+                                            const likes = Math.max(0, Number.parseInt(xData.likes, 10) || 0);
+                                            const lines = [`[X分享] ${authorName}${accountLabel}`];
+                                            if (time) lines.push(`时间：${time}`);
+                                            if (body) lines.push(`正文：${body}`);
+                                            if (mediaLines.length > 0) lines.push(`配图：${mediaLines.join(' ')}`);
+                                            if (commentsCount || likes) lines.push(`数据：回复 ${commentsCount} | 喜欢 ${likes}`);
+                                            if (commentLines.length > 0) lines.push('评论区：', ...commentLines);
+                                            return lines.join('\n').trim() || fullContent || '[X分享]';
+                                        };
                                         const formatWangxiangTaskForOfflinePrompt = (msg = {}) => {
                                             const fullContent = String(msg.content || '').trim();
                                             const task = msg.wangxiangTaskData && typeof msg.wangxiangTaskData === 'object'
@@ -10584,6 +11015,8 @@ if (window.GGP_Loaded) {
                                                             : (imgUrl ? `[发送了图片] 图片地址: ${imgUrl}` : '[发送了图片]');
                                                     } else if (msg.type === 'weibo_card') {
                                                         content = formatWeiboCardForOfflinePrompt(msg);
+                                                    } else if (msg.type === 'x_card') {
+                                                        content = formatXCardForOfflinePrompt(msg);
                                                     } else if (msg.type === 'wangxiang_task_card' || msg.type === 'wangxiang_task_confirmation' || msg.type === 'wangxiang_task_invitation') {
                                                         content = formatWangxiangTaskForOfflinePrompt(msg);
                                                     } else if (msg.type === 'poker_card') {
@@ -11057,7 +11490,7 @@ if (window.GGP_Loaded) {
                                                 const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
                                                 managedTasks = Array.isArray(parsed) ? parsed : [];
                                             }
-                                            const wangxiangModule = await import('./apps/wangxiang/wangxiang-app.js');
+                                            const wangxiangModule = await import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
                                             wangxiangTaskContent = wangxiangModule.buildWangxiangTaskInjectionContent(managedTasks);
                                         }
                                     } catch (e) {
@@ -11079,7 +11512,7 @@ if (window.GGP_Loaded) {
                                                 const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
                                                 orders = Array.isArray(parsed) ? parsed : [];
                                             }
-                                            const wangxiangModule = await import('./apps/wangxiang/wangxiang-app.js');
+                                            const wangxiangModule = await import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
                                             const currentUserName = String(SillyTavern?.getContext?.()?.name1 || '用户');
                                             wangxiangOrderContent = wangxiangModule.buildWangxiangOrderInjectionContent(orders, currentUserName);
                                         }

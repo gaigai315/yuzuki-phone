@@ -35,6 +35,7 @@ export class PhoneStorage {
         this.CHAT_DATA_PATTERNS = [
             /^wechat_/,           // 微信数据
             /^weibo_/,            // 微博数据
+            /^x_/,                // X 帖子与评论数据
             /^honey_/,            // 蜜语数据
             /^chat_games_/,        // 按聊天独立的游戏存档
             /^pending[_-]contacts$/, // 待处理联系人

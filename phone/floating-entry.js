@@ -31,9 +31,11 @@ export class PhoneFloatingEntry {
         this.storage = options.storage || null;
         this.baseUrl = options.baseUrl || './';
         this.onActivate = typeof options.onActivate === 'function' ? options.onActivate : () => {};
+        this.onDoubleActivate = typeof options.onDoubleActivate === 'function' ? options.onDoubleActivate : this.onActivate;
         this.isPanelOpen = typeof options.isPanelOpen === 'function' ? options.isPanelOpen : () => false;
         this.resizeController = null;
         this.visibilityTimer = null;
+        this.activationTimer = null;
         this._onPanelVisibility = event => {
             const open = event?.detail?.open;
             this.updateVisibility(typeof open === 'boolean' ? open : null);
@@ -200,7 +202,25 @@ export class PhoneFloatingEntry {
         const style = FLOATING_STYLE_MAP.get(this.getStyle()) || FLOATING_STYLE_MAP.get(PHONE_FLOATING_ENTRY_DEFAULT_STYLE);
         image.src = new URL(style.file, this.baseUrl).href;
         button.dataset.phoneFloatingStyle = style.id;
-        button.title = `打开柚月の手机（${style.label}悬浮图标）`;
+        button.title = `单击打开柚月の手机，双击打开正文生图（${style.label}悬浮图标）`;
+    }
+
+    queueActivation() {
+        if (this.activationTimer !== null) {
+            window.clearTimeout(this.activationTimer);
+            this.activationTimer = null;
+            Promise.resolve(this.onDoubleActivate()).catch(error => {
+                console.warn('[VirtualPhone] 悬浮入口打开正文生图失败:', error);
+            });
+            return;
+        }
+
+        this.activationTimer = window.setTimeout(() => {
+            this.activationTimer = null;
+            Promise.resolve(this.onActivate()).catch(error => {
+                console.warn('[VirtualPhone] 悬浮入口打开手机失败:', error);
+            });
+        }, 300);
     }
 
     bindDrag(button) {
@@ -223,9 +243,7 @@ export class PhoneFloatingEntry {
             } else {
                 event.preventDefault();
                 event.stopPropagation();
-                Promise.resolve(this.onActivate()).catch(error => {
-                    console.warn('[VirtualPhone] 悬浮入口打开手机失败:', error);
-                });
+                this.queueActivation();
             }
 
             window.setTimeout(() => {
@@ -278,7 +296,7 @@ export class PhoneFloatingEntry {
         button.id = FLOATING_BUTTON_ID;
         button.type = 'button';
         button.className = 'phone-floating-entry-button';
-        button.setAttribute('aria-label', '打开柚月の手机');
+        button.setAttribute('aria-label', '单击打开柚月の手机，双击打开正文生图');
 
         const image = document.createElement('img');
         image.className = 'phone-floating-entry-image';
@@ -339,6 +357,8 @@ export class PhoneFloatingEntry {
         this.resizeController = null;
         window.clearInterval(this.visibilityTimer);
         this.visibilityTimer = null;
+        window.clearTimeout(this.activationTimer);
+        this.activationTimer = null;
         document.getElementById(FLOATING_BUTTON_ID)?.remove();
         const root = document.getElementById(FLOATING_ROOT_ID);
         if (root && !root.childElementCount) root.remove();

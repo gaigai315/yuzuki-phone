@@ -24,27 +24,26 @@ export class DiaryApp {
         this.diaryView = new DiaryView(this);
 
         // 监听滑动返回
-        window.addEventListener('phone:swipeBack', (e) => this.handleSwipeBack(e));
+        window.addEventListener('phone:swipeBack', (event) => this.handleSwipeBack(event));
     }
 
     render() {
         this.diaryView.render();
     }
 
-    handleSwipeBack(e) {
-        // 1. 400ms 防抖
-        const now = Date.now();
-        if (this._lastSwipeTime && now - this._lastSwipeTime < 400) return;
-        this._lastSwipeTime = now;
-
-        // 2. 领地保护 (变量重命名为 domCurrentView 防止冲突)
+    handleSwipeBack(event) {
+        // 领地保护 (变量重命名为 domCurrentView 防止冲突)
         const domCurrentView = document.querySelector('.phone-view-current');
-        if (!domCurrentView || !domCurrentView.querySelector('.diary-app')) return;
+        if (!domCurrentView || !domCurrentView.querySelector('.diary-app')) return false;
 
-        // 3. 标记为返回导航，避免进场动画
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
+
+        // 标记为返回导航，避免进场动画
         this.diaryView.isBackNav = true;
 
-        // 4. 模拟点击对应的返回按钮
+        // 模拟点击对应的返回按钮
         let handled = false;
         const diaryState = this.diaryView.currentView;
 
@@ -66,13 +65,7 @@ export class DiaryApp {
         if (!handled && diaryState === 'cover') {
             window.dispatchEvent(new CustomEvent('phone:goHome'));
         }
-
-        // 5. Ghost Click Buster：400ms 内禁止点击
-        const screen = document.querySelector('.phone-screen');
-        if (screen) {
-            screen.style.pointerEvents = 'none';
-            setTimeout(() => { screen.style.pointerEvents = ''; }, 400);
-        }
+        return true;
     }
     
     // 清空缓存（切换聊天时调用）

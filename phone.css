@@ -9,6 +9,16 @@
  * 
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
+
+/* Font Awesome Free 6.5.2 Regular, bundled for phone-only outline icons. */
+@font-face {
+    font-family: "Yuzuki Phone Font Awesome 6 Free";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("./assets/vendor/fontawesome/fa-regular-400.woff2") format("woff2");
+}
+
 /* ========================================
    🎨 颜色变量系统（支持动态修改）
    ======================================== */
@@ -7444,7 +7454,7 @@ input:checked + .toggle-slider:before {
     overscroll-behavior-y: contain;
 }
 
-/* 魔坊主界面/编辑弹窗手势豁免：允许移动端纵向滚动，避免与全局侧滑冲突 */
+/* 魔坊主界面/编辑弹窗保持纵向滚动，同时允许手机外壳识别横向返回 */
 .phone-view-current .mofo-app,
 .mofo-app,
 .phone-view-current .mofo-editor-overlay,
@@ -7957,13 +7967,37 @@ input:checked + .toggle-slider:before {
 }
 
 #phone-panel-content .fa-solid,
-#phone-panel-content .fa-regular {
+#phone-panel-content .fa-regular,
+#phone-panel-content .far {
     background-image: none !important;
     width: auto !important;
     height: auto !important;
     opacity: 1 !important;
     margin: 0 !important;
     padding: 0 !important;
+}
+
+/* 酒馆默认只加载 Font Awesome Solid；手机内的空心图标使用插件自带字体。 */
+:is(
+    #phone-panel-content,
+    #music-floating-root,
+    #phone-story-image-overlay-root,
+    #phone-sms-popup-root
+) :is(.fa-regular, .far),
+:is(
+    #phone-panel-content,
+    #music-floating-root,
+    #phone-story-image-overlay-root,
+    #phone-sms-popup-root
+) :is(.fa-regular, .far)::before {
+    font-family: "Yuzuki Phone Font Awesome 6 Free" !important;
+    font-style: normal !important;
+    font-weight: 400 !important;
+    font-variant: normal !important;
+    line-height: 1;
+    text-rendering: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* 强行把被主题删掉的 FontAwesome 图标代码补回来 */

@@ -26,7 +26,7 @@ export class PokerApp {
         this._pokerChatHasPendingReply = false;
         this._pendingUserPokerActionContext = null;
 
-        window.addEventListener('phone:swipeBack', () => this.handleSwipeBack());
+        window.addEventListener('phone:swipeBack', (event) => this.handleSwipeBack(event));
     }
 
     getDefaultPokerPrompt() {
@@ -1164,9 +1164,13 @@ export class PokerApp {
         return this._escapeHtml(text);
     }
 
-    handleSwipeBack() {
+    handleSwipeBack(event) {
         const currentView = document.querySelector('.phone-view-current');
-        if (!currentView || !currentView.querySelector('.games-app')) return;
+        if (!currentView || !currentView.querySelector('.games-app')) return false;
+
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
 
         if (this.currentView === 'poker') {
             this.backToLobby();
@@ -1174,11 +1178,6 @@ export class PokerApp {
             this.removePhoneChromeTheme();
             window.dispatchEvent(new CustomEvent('phone:goHome'));
         }
-
-        const screen = document.querySelector('.phone-screen');
-        if (screen) {
-            screen.style.pointerEvents = 'none';
-            setTimeout(() => { screen.style.pointerEvents = ''; }, 400);
-        }
+        return true;
     }
 }

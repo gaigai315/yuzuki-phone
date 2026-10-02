@@ -577,7 +577,7 @@ export class ImageUploadManager {
             return { attempted: false, success: false, filename: null };
         }
 
-        if (options.skipIfReferenced === true && this._countManagedBackgroundReferences(pathLike) > 0) {
+        if (options.skipIfReferenced === true && this._countManagedBackgroundReferences(pathLike, options) > 0) {
             return { attempted: false, success: false, filename, skipped: 'referenced' };
         }
 
@@ -610,7 +610,7 @@ export class ImageUploadManager {
         return raw.split('?')[0].split('#')[0];
     }
 
-    _countManagedBackgroundReferences(pathLike) {
+    _countManagedBackgroundReferences(pathLike, options = {}) {
         const target = this._normalizeBackgroundPath(pathLike);
         if (!target) return 0;
 
@@ -630,15 +630,34 @@ export class ImageUploadManager {
             Object.values(value).forEach(item => visit(item, seen));
         };
 
-        try { visit(window.VirtualPhone?.wechatApp?.wechatData?.data); } catch (e) { }
+        const visitedWechatData = new Set();
+        const visitWechatData = (wechatData) => {
+            if (!wechatData || visitedWechatData.has(wechatData)) return;
+            visitedWechatData.add(wechatData);
+            visit(wechatData.data);
+            const chats = wechatData.getChatList?.() || [];
+            chats.forEach(chat => {
+                if (!chat?.id) return;
+                visit(wechatData.getMessages?.(chat.id));
+            });
+        };
+
+        try { visitWechatData(window.VirtualPhone?.wechatApp?.wechatData); } catch (e) { }
+        try { visitWechatData(window.VirtualPhone?.cachedWechatData); } catch (e) { }
         try { visit(window.VirtualPhone?.weiboApp?.weiboData?.getProfile?.()); } catch (e) { }
+        try { visit(window.VirtualPhone?.xApp?.xData?.getPosts?.()); } catch (e) { }
+        try { visit(window.VirtualPhone?.xApp?.xData?.getFollowingPosts?.()); } catch (e) { }
+        try { visit(window.VirtualPhone?.xApp?.xData?.getUserPosts?.()); } catch (e) { }
+        try { visit(window.VirtualPhone?.xApp?.xData?.getProfile?.()); } catch (e) { }
         try { visit(window.VirtualPhone?.honeyApp?.honeyData?.getHoneyUserProfile?.()); } catch (e) { }
         try { visit(this.cache); } catch (e) { }
         try { visit(this.storage?.get?.('phone-card-time-image')); } catch (e) { }
-        try {
-            const rawIndex = this.storage?.get?.('phone_album_upload_index', '[]');
-            visit(Array.isArray(rawIndex) ? rawIndex : JSON.parse(rawIndex || '[]'));
-        } catch (e) { }
+        if (options.ignoreAlbumIndex !== true) {
+            try {
+                const rawIndex = this.storage?.get?.('phone_album_upload_index', '[]');
+                visit(Array.isArray(rawIndex) ? rawIndex : JSON.parse(rawIndex || '[]'));
+            } catch (e) { }
+        }
 
         return count;
     }

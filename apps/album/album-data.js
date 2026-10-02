@@ -8,7 +8,20 @@
 const MANAGED_MEDIA_RE = /(https?:\/\/[^\s"'<>)]*\/backgrounds\/phone_[^\s"'<>)]*|\/backgrounds\/phone_[^\s"'<>)]*)/ig;
 const VIDEO_EXT_RE = /\.(?:mp4|webm|mov|m4v)$/i;
 
+const STORY_IMAGE_SETTING_KEYS = Object.freeze({
+    autoEnabled: 'phone-story-image-auto-enabled',
+    completionNoticeEnabled: 'phone-story-image-completion-notice-enabled'
+});
+
+const STORY_IMAGE_SETTING_DEFAULTS = Object.freeze({
+    autoEnabled: false,
+    completionNoticeEnabled: true
+});
+
+const STORY_IMAGE_META_KEY = 'phone_story_image';
+
 const ALBUM_SOURCE_CATALOG = Object.freeze([
+    { key: 'story-image', label: '正文生图', icon: 'fa-image' },
     { key: 'honey', label: '蜜语', icon: 'fa-comment-dots' },
     { key: 'wechat-chat', label: '微信聊天', icon: 'fa-comments' },
     { key: 'wechat-custom', label: '微信自定义表情', icon: 'fa-face-smile' },
@@ -27,6 +40,292 @@ export class AlbumData {
     constructor(storage) {
         this.storage = storage;
         this.deletedKey = 'phone_album_deleted_paths';
+    }
+
+    getStoryImageSettings() {
+        return Object.fromEntries(
+            Object.entries(STORY_IMAGE_SETTING_KEYS).map(([name, storageKey]) => [
+                name,
+                this._readBoolean(storageKey, STORY_IMAGE_SETTING_DEFAULTS[name])
+            ])
+        );
+    }
+
+    async setStoryImageSetting(name, value) {
+        const storageKey = STORY_IMAGE_SETTING_KEYS[name];
+        if (!storageKey) throw new Error(`未知的正文生图设置：${name}`);
+
+        await this.storage?.set?.(storageKey, !!value);
+        const settings = this.getStoryImageSettings();
+        window.dispatchEvent(new CustomEvent('phone:storyImageSettingsChanged', {
+            detail: { name, value: settings[name], settings }
+        }));
+        return settings;
+    }
+
+    _readBoolean(key, defaultValue = false) {
+        const value = this.storage?.get?.(key, defaultValue);
+        if (typeof value === 'string') {
+            if (value === 'true') return true;
+            if (value === 'false') return false;
+        }
+        return value === null || value === undefined ? !!defaultValue : !!value;
+    }
+
+    _getContext() {
+        try {
+            return this.storage?.getContext?.()
+                || ((typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function')
+                    ? SillyTavern.getContext()
+                    : null);
+        } catch (error) {
+            console.warn('[AlbumData] 获取正文楼层上下文失败:', error);
+            return null;
+        }
+    }
+
+    _readStoryMediaUrl(media) {
+        if (typeof media === 'string') return String(media).trim();
+        if (!media || typeof media !== 'object') return '';
+        if (String(media.type || '').trim().toLowerCase() === 'video') return '';
+        return String(media.url || media.src || media.image || '').trim();
+    }
+
+    _getStoryMessageText(message = {}) {
+        const swipeIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : 0;
+        if (Array.isArray(message?.swipes) && message.swipes.length > 0) {
+            return String(message.swipes[swipeIndex] || message.swipes[0] || '').trim();
+        }
+        return String(message?.mes || message?.message || '').trim();
+    }
+
+    _getStorySourceFingerprint(message = {}) {
+        const swipeIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : 0;
+        const text = this._getStoryMessageText(message);
+        let hash = 2166136261;
+        for (let index = 0; index < text.length; index += 1) {
+            hash ^= text.charCodeAt(index);
+            hash = Math.imul(hash, 16777619);
+        }
+        return `${swipeIndex}:${text.length}:${(hash >>> 0).toString(36)}`;
+    }
+
+    _getCurrentStoryMeta(message = {}) {
+        const storyMeta = message?.extra?.[STORY_IMAGE_META_KEY];
+        if (!storyMeta || typeof storyMeta !== 'object') return storyMeta;
+        const savedFingerprint = String(storyMeta.sourceFingerprint || '').trim();
+        if (savedFingerprint && savedFingerprint !== this._getStorySourceFingerprint(message)) return null;
+        return storyMeta;
+    }
+
+    _getStoryMessageImages(message = {}) {
+        const extra = message?.extra && typeof message.extra === 'object' ? message.extra : {};
+        const storyImage = this._readStoryMediaUrl(this._getCurrentStoryMeta(message)?.imageUrl);
+        const media = Array.isArray(extra.media)
+            ? extra.media.map(item => this._readStoryMediaUrl(item)).filter(Boolean)
+            : [];
+        const legacySwipes = Array.isArray(extra.image_swipes)
+            ? extra.image_swipes.map(item => this._readStoryMediaUrl(item)).filter(Boolean)
+            : [];
+        const legacyImage = this._readStoryMediaUrl(extra.image);
+        return [...new Set([...media, ...legacySwipes, legacyImage, storyImage].filter(Boolean))];
+    }
+
+    _getSelectedStoryImage(message = {}, images = this._getStoryMessageImages(message)) {
+        const extra = message?.extra && typeof message.extra === 'object' ? message.extra : {};
+        const storyImage = this._readStoryMediaUrl(this._getCurrentStoryMeta(message)?.imageUrl);
+        if (storyImage) return storyImage;
+        const selectedIndex = Number.parseInt(String(extra.media_index ?? ''), 10);
+        if (Array.isArray(extra.media) && Number.isInteger(selectedIndex) && selectedIndex >= 0 && selectedIndex < extra.media.length) {
+            const selectedUrl = this._readStoryMediaUrl(extra.media[selectedIndex]);
+            if (selectedUrl) return selectedUrl;
+        }
+        return images.at(-1) || '';
+    }
+
+    getStoryFloors() {
+        const context = this._getContext();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        return chat.flatMap((message, floor) => {
+            if (!message || typeof message !== 'object' || message.is_user === true || message.is_system === true) {
+                return [];
+            }
+            const messageText = this._getStoryMessageText(message);
+            const images = this._getStoryMessageImages(message);
+            const storyMeta = this._getCurrentStoryMeta(message);
+            const meta = storyMeta && typeof storyMeta === 'object' ? storyMeta : {};
+            const tags = typeof storyMeta === 'string'
+                ? storyMeta.trim()
+                : String(meta.tags || '').trim();
+            return [{
+                floor,
+                message,
+                messageText,
+                images,
+                imageUrl: this._getSelectedStoryImage(message, images),
+                tags,
+                provider: String(meta.provider || '').trim(),
+                model: String(meta.model || '').trim(),
+                generatedAt: Number(meta.generatedAt || 0) || 0
+            }];
+        });
+    }
+
+    getStoryFloor(floor) {
+        const targetFloor = Number.parseInt(String(floor), 10);
+        if (!Number.isInteger(targetFloor)) return null;
+        return this.getStoryFloors().find(item => item.floor === targetFloor) || null;
+    }
+
+    getStoryTagSource(floor) {
+        const target = this.getStoryFloor(floor);
+        if (!target) return null;
+
+        const context = this._getContext();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        let previousUserText = '';
+        for (let index = target.floor - 1; index >= 0; index -= 1) {
+            const message = chat[index];
+            if (!message || message.is_system === true) continue;
+            if (message.is_user === true) {
+                previousUserText = String(message.mes || message.message || '').trim();
+                break;
+            }
+        }
+
+        return {
+            ...target,
+            userName: String(context?.name1 || 'User').trim() || 'User',
+            characterName: String(context?.name2 || 'Character').trim() || 'Character',
+            previousUserText: previousUserText.slice(-6000),
+            messageText: target.messageText.slice(-12000)
+        };
+    }
+
+    async setStoryFloorTags(floor, tags, expectedMessage = null) {
+        const target = this.getStoryFloor(floor);
+        if (!target) throw new Error('正文楼层不存在或已被删除');
+        if (expectedMessage && target.message !== expectedMessage) {
+            throw new Error('正文楼层已变化，请重新生成 TAG');
+        }
+
+        const normalizedTags = String(tags || '').trim();
+        if (!normalizedTags) throw new Error('生图 TAG 不能为空');
+        const extra = target.message.extra && typeof target.message.extra === 'object'
+            ? target.message.extra
+            : (target.message.extra = {});
+        const previousMeta = extra[STORY_IMAGE_META_KEY];
+        const sourceFingerprint = this._getStorySourceFingerprint(target.message);
+        const previousFingerprint = String(previousMeta?.sourceFingerprint || '').trim();
+        const canReusePrevious = previousMeta && typeof previousMeta === 'object'
+            && (!previousFingerprint || previousFingerprint === sourceFingerprint);
+        extra[STORY_IMAGE_META_KEY] = {
+            ...(canReusePrevious ? previousMeta : {}),
+            tags: normalizedTags,
+            sourceFingerprint,
+            tagsUpdatedAt: Date.now()
+        };
+        await this._saveStoryChat();
+        return this.getStoryFloor(target.floor);
+    }
+
+    async attachStoryFloorImage(floor, imageUrl, details = {}, expectedMessage = null) {
+        const target = this.getStoryFloor(floor);
+        if (!target) throw new Error('正文楼层不存在或已被删除');
+        if (expectedMessage && target.message !== expectedMessage) {
+            throw new Error('正文楼层已变化，图片未写入聊天记录');
+        }
+
+        const safeImageUrl = String(imageUrl || '').trim();
+        if (!safeImageUrl) throw new Error('生成结果没有可用图片');
+        const extra = target.message.extra && typeof target.message.extra === 'object'
+            ? target.message.extra
+            : (target.message.extra = {});
+        const previousMeta = extra[STORY_IMAGE_META_KEY];
+        const sourceFingerprint = this._getStorySourceFingerprint(target.message);
+        const previousFingerprint = String(previousMeta?.sourceFingerprint || '').trim();
+        const canReusePrevious = previousMeta && typeof previousMeta === 'object'
+            && (!previousFingerprint || previousFingerprint === sourceFingerprint);
+        this._removeLegacyStoryInlineMedia(extra);
+        extra[STORY_IMAGE_META_KEY] = {
+            ...(canReusePrevious ? previousMeta : {}),
+            tags: String(details.tags || (canReusePrevious ? previousMeta?.tags : '') || '').trim(),
+            provider: String(details.provider || '').trim(),
+            model: String(details.model || '').trim(),
+            sourceFingerprint,
+            generatedAt: Date.now(),
+            imageUrl: safeImageUrl
+        };
+
+        await this._saveStoryChat();
+        return this.getStoryFloor(target.floor);
+    }
+
+    _removeLegacyStoryInlineMedia(extra) {
+        if (!extra || typeof extra !== 'object' || !Array.isArray(extra.media)) return false;
+
+        const storyImageUrl = this.normalizePath(extra[STORY_IMAGE_META_KEY]?.imageUrl);
+        const selectedIndex = Number.parseInt(String(extra.media_index ?? ''), 10);
+        const selectedUrl = this._readStoryMediaUrl(extra.media[selectedIndex]);
+        const nextMedia = extra.media.filter(item => {
+            const source = String(item?.source || '').trim();
+            const title = String(item?.title || '').trim();
+            const itemUrl = this.normalizePath(this._readStoryMediaUrl(item));
+            if (source === '正文生图') return false;
+            return !(storyImageUrl && itemUrl === storyImageUrl && /^正文第\s*\d+\s*楼$/.test(title));
+        });
+        if (nextMedia.length === extra.media.length) return false;
+
+        if (nextMedia.length === 0) {
+            delete extra.media;
+            delete extra.media_index;
+            delete extra.inline_image;
+            return true;
+        }
+
+        extra.media = nextMedia;
+        const nextSelectedIndex = nextMedia.findIndex(item => this._readStoryMediaUrl(item) === selectedUrl);
+        extra.media_index = nextSelectedIndex >= 0
+            ? nextSelectedIndex
+            : Math.min(Math.max(selectedIndex, 0), nextMedia.length - 1);
+        return true;
+    }
+
+    async migrateLegacyStoryInlineMedia() {
+        const context = this._getContext();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        let changed = false;
+
+        chat.forEach(message => {
+            const extra = message?.extra;
+            if (this._removeLegacyStoryInlineMedia(extra)) changed = true;
+            const storyMeta = extra?.[STORY_IMAGE_META_KEY];
+            if (storyMeta && typeof storyMeta === 'object' && !String(storyMeta.sourceFingerprint || '').trim()) {
+                storyMeta.sourceFingerprint = this._getStorySourceFingerprint(message);
+                changed = true;
+            }
+        });
+
+        if (changed) await this._saveStoryChat();
+        return changed;
+    }
+
+    async _saveStoryChat() {
+        const context = this._getContext();
+        if (!context) throw new Error('无法保存正文生图：酒馆聊天上下文不可用');
+        if (typeof window !== 'undefined' && typeof window.saveChatDebounced === 'function') {
+            window.saveChatDebounced();
+            return;
+        }
+        if (typeof context.saveChatDebounced === 'function') {
+            context.saveChatDebounced();
+            return;
+        }
+        if (typeof context.saveChat === 'function') {
+            await context.saveChat();
+            return;
+        }
+        this.storage?._debouncedSaveChat?.();
     }
 
     getMedia() {
@@ -96,6 +395,7 @@ export class AlbumData {
 
     getImageSourceKey(image = {}) {
         const path = String(image?.path || image?.src || '').toLowerCase();
+        if (/\/phone_(?:story|main_chat)_image(?:_|\.)/i.test(path)) return 'story-image';
         if (/\/phone_(?:[^/]*_)?emoji(?:_|\.)/i.test(path)) return 'wechat-custom';
         if (/\/phone_wechat_(?:img|sticker)(?:_|\.)/i.test(path)) return 'wechat-chat';
 
@@ -104,7 +404,8 @@ export class AlbumData {
         for (const source of sources) {
             const value = String(source || '').trim().toLowerCase();
             if (!value) continue;
-            if (/微信自定义表情|自定义表情|表情包|custom.?emoji/.test(value)) sourceKeys.add('wechat-custom');
+            if (/正文生图|story.?image|main.?chat.?image/.test(value)) sourceKeys.add('story-image');
+            else if (/微信自定义表情|自定义表情|表情包|custom.?emoji/.test(value)) sourceKeys.add('wechat-custom');
             else if (/微信聊天|微信消息|^微信$|wechat/.test(value)) sourceKeys.add('wechat-chat');
             else if (/蜜语|honey/.test(value)) sourceKeys.add('honey');
             else if (/日记|diary/.test(value)) sourceKeys.add('diary');
@@ -117,7 +418,7 @@ export class AlbumData {
             else if (/本地上传|本地备份|全局设置|聊天数据|小手机/.test(value)) sourceKeys.add('local-upload');
         }
         const priority = [
-            'wechat-custom', 'honey', 'wechat-chat', 'diary', 'weibo', 'wangxiang',
+            'story-image', 'wechat-custom', 'honey', 'wechat-chat', 'diary', 'weibo', 'wangxiang',
             'mofo', 'wallpaper', 'avatar', 'app-icon', 'local-upload'
         ];
         return priority.find(key => sourceKeys.has(key)) || 'other';
@@ -239,7 +540,54 @@ export class AlbumData {
 
         this._cleanupStorageStore(this.storage?._getChatMetadataStore?.(), target, 'chat');
         this._cleanupStorageStore(this.storage?._getExtensionSettingsStore?.(), target, 'settings');
+        await this._cleanupStoryMessageReferences(target);
         this._cleanupHoneyRuntimeReferences(target);
+    }
+
+    async _cleanupStoryMessageReferences(target) {
+        const context = this._getContext();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        let changed = false;
+
+        chat.forEach(message => {
+            const extra = message?.extra;
+            if (!extra || typeof extra !== 'object') return;
+
+            if (Array.isArray(extra.media)) {
+                const selectedUrl = this._readStoryMediaUrl(extra.media[Number.parseInt(String(extra.media_index ?? ''), 10)]);
+                const nextMedia = extra.media.filter(item => this.normalizePath(this._readStoryMediaUrl(item)) !== target);
+                if (nextMedia.length !== extra.media.length) {
+                    extra.media = nextMedia;
+                    const selectedIndex = nextMedia.findIndex(item => this._readStoryMediaUrl(item) === selectedUrl);
+                    extra.media_index = selectedIndex >= 0 ? selectedIndex : Math.max(0, nextMedia.length - 1);
+                    if (nextMedia.length === 0) {
+                        delete extra.media_index;
+                        delete extra.inline_image;
+                    }
+                    changed = true;
+                }
+            }
+
+            if (Array.isArray(extra.image_swipes)) {
+                const nextSwipes = extra.image_swipes.filter(item => this.normalizePath(this._readStoryMediaUrl(item)) !== target);
+                if (nextSwipes.length !== extra.image_swipes.length) {
+                    extra.image_swipes = nextSwipes;
+                    changed = true;
+                }
+            }
+            if (this.normalizePath(this._readStoryMediaUrl(extra.image)) === target) {
+                delete extra.image;
+                changed = true;
+            }
+            if (this.normalizePath(extra[STORY_IMAGE_META_KEY]?.imageUrl) === target) {
+                delete extra[STORY_IMAGE_META_KEY].imageUrl;
+                changed = true;
+            }
+        });
+
+        if (changed) {
+            await this._saveStoryChat();
+        }
     }
 
     _cleanupHoneyRuntimeReferences(target) {
@@ -406,6 +754,7 @@ export class AlbumData {
             return fallback;
         }
         if (value.includes('customemoji') || value.includes('custom_emoji')) return '微信自定义表情';
+        if (value.includes('storyimage') || value.includes('story_image') || value.includes('mainchatimage') || value.includes('main_chat_image')) return '正文生图';
         if (value.includes('appicons') || value.includes('app_icons')) return 'App图标';
         if (value.includes('avatar')) return '头像';
         if (value.includes('wechat')) return '微信聊天';
@@ -423,6 +772,7 @@ export class AlbumData {
 
     _labelFromUploadPrefix(prefix) {
         const value = String(prefix || '').toLowerCase();
+        if (value.includes('story_image') || value.includes('main_chat_image')) return '正文生图';
         if (value.includes('wallpaper')) return '手机壁纸';
         if (value.includes('card_time')) return '时间卡片背景';
         if (value.includes('icon_')) return 'App图标';

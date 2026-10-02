@@ -7,7 +7,7 @@
 
 import { PHONE_CONFIG } from '../../config/apps.js';
 
-export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.1&r=20260802-album-toolbar', import.meta.url).href;
+export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.3&r=20260929-story-image-empty-height', import.meta.url).href;
 
 export class AlbumView {
     constructor(app) {
@@ -22,6 +22,7 @@ export class AlbumView {
         this.isBulkDeleting = false;
         this.activeSource = 'all';
         this.sourceMenuOpen = false;
+        this.currentView = 'main';
     }
 
     loadCSS() {
@@ -40,6 +41,10 @@ export class AlbumView {
 
     render() {
         this.loadCSS();
+        if (this.currentView === 'settings') {
+            this.renderStoryImageSettings();
+            return;
+        }
         this.images = this.app.albumData.getMedia();
         const sourceGroups = this.app.albumData.groupImagesBySource(this.images);
         if (this.activeSource !== 'all' && !sourceGroups.some(group => group.key === this.activeSource)) {
@@ -72,7 +77,11 @@ export class AlbumView {
                             <button type="button" class="album-icon-btn album-danger-btn" id="album-delete-selected" aria-label="删除所选" ${selectedCount ? '' : 'disabled'}>
                                 <i class="fa-regular fa-trash-can"></i>
                             </button>
-                        ` : ''}
+                        ` : `
+                            <button type="button" class="album-icon-btn" id="album-open-settings" aria-label="正文生图设置" title="正文生图设置">
+                                <i class="fa-solid fa-gear" aria-hidden="true"></i>
+                            </button>
+                        `}
                     </div>
                 </header>
                 ${this.selectionMode ? '' : this.renderSourceMenu(sourceGroups)}
@@ -97,6 +106,148 @@ export class AlbumView {
 
         this.app.phoneShell.setContent(html, 'album-main');
         requestAnimationFrame(() => this.bindEvents());
+    }
+
+
+    renderStoryImageSettings() {
+        const settings = this.app.albumData.getStoryImageSettings();
+        const promptManager = window.VirtualPhone?.promptManager;
+        promptManager?.ensureLoaded?.();
+        const promptConfig = promptManager?.prompts?.story?.override
+            || promptManager?.getDefaultPrompts?.()?.story?.override
+            || {};
+        const promptContent = promptManager?.getPromptForFeature?.('story', 'override')
+            || promptConfig.content
+            || '';
+        const useStoryWorldbook = window.VirtualPhone?.worldbookManager?.getEnabled?.('story') ?? true;
+        const wallpaperStyle = this.getWallpaperStyle();
+        const html = `
+            <div class="album-app album-story-settings-page album-wallpaper-shell" style="${wallpaperStyle}">
+                <header class="album-header">
+                    <button type="button" class="album-icon-btn" id="album-settings-back" aria-label="返回相册">
+                        <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                    </button>
+                    <div class="album-title-wrap">
+                        <div class="album-title">正文生图</div>
+                    </div>
+                    <div class="album-header-actions"></div>
+                </header>
+                <main class="album-story-settings-body">
+                    <section class="album-story-settings-summary" aria-label="正文生图状态">
+                        <span class="album-story-settings-summary-icon" aria-hidden="true">
+                            <i class="fa-solid fa-image"></i>
+                        </span>
+                        <div class="album-story-settings-summary-copy">
+                            <strong>正文楼层生图</strong>
+                            <span>${settings.autoEnabled ? '自动生图已开启' : '当前为手动生成'}</span>
+                        </div>
+                    </section>
+
+                    <div class="album-story-settings-section-title">基础设置</div>
+                    <section class="album-story-settings-list">
+                        ${this.renderStoryImageSettingRow({
+                            id: 'album-story-image-auto-enabled',
+                            title: '开启自动正文生图',
+                            description: '新正文楼层的后台任务完成后，自动生成 Tags 和图片',
+                            icon: 'fa-wand-magic-sparkles',
+                            checked: settings.autoEnabled
+                        })}
+                        ${this.renderStoryImageSettingRow({
+                            id: 'album-story-image-completion-notice',
+                            title: '生成完成提醒',
+                            description: '图片完成后显示小手机通知',
+                            icon: 'fa-bell',
+                            checked: settings.completionNoticeEnabled
+                        })}
+                    </section>
+
+                    <div class="album-story-settings-section-title">生成上下文</div>
+                    <section class="album-story-settings-panel">
+                        <div class="album-story-settings-context-row">
+                            <span class="album-story-settings-row-icon" aria-hidden="true">
+                                <i class="fa-solid fa-address-card"></i>
+                            </span>
+                            <span class="album-story-settings-row-copy">
+                                <strong>角色卡与用户信息</strong>
+                                <small>生成 Tags 时自动带入当前角色卡和用户 Persona</small>
+                            </span>
+                            <span class="album-story-settings-state">已启用</span>
+                        </div>
+                        <label class="album-story-settings-context-row" for="album-story-use-worldbook">
+                            <span class="album-story-settings-row-icon" aria-hidden="true">
+                                <i class="fa-solid fa-book-open"></i>
+                            </span>
+                            <span class="album-story-settings-row-copy">
+                                <strong>使用酒馆世界书</strong>
+                                <small>只注入正文生图下方勾选的世界书条目</small>
+                            </span>
+                            <span class="st-phone-toggle-switch">
+                                <input type="checkbox" id="album-story-use-worldbook" ${useStoryWorldbook ? 'checked' : ''}>
+                                <span class="st-phone-toggle-slider"></span>
+                            </span>
+                        </label>
+                        <div class="phone-prompt-fold album-story-settings-fold album-story-worldbook-fold" data-default-open="false">
+                            <div class="phone-prompt-fold-header" role="button" tabindex="0" aria-expanded="false" aria-controls="album-story-worldbook-fold-content">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">世界书选择</div>
+                                    <div class="phone-prompt-fold-desc">展开后勾选正文生图可使用的世界书与条目</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow" aria-hidden="true"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content" id="album-story-worldbook-fold-content" aria-hidden="true">
+                                <div id="album-story-worldbook-list" class="album-story-worldbook-list">
+                                    <div class="phone-worldbook-status">正在读取当前可用世界书...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="album-story-settings-section-title">功能提示词</div>
+                    <section class="album-story-settings-panel album-story-prompt-section">
+                        <div class="phone-prompt-fold album-story-settings-fold album-story-prompt-fold" data-default-open="false">
+                            <div class="phone-prompt-fold-header" role="button" tabindex="0" aria-expanded="false" aria-controls="album-story-prompt-fold-content">
+                                <div class="phone-prompt-fold-main">
+                                    <div class="phone-prompt-fold-title">${this.escapeHtml(promptConfig.name || '🧩 正文生图破限词')}</div>
+                                    <div class="phone-prompt-fold-desc">${this.escapeHtml(promptConfig.description || '正文楼层生成 Tags 时优先注入')}</div>
+                                </div>
+                                <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow" aria-hidden="true"></i>
+                            </div>
+                            <div class="phone-prompt-fold-content" id="album-story-prompt-fold-content" aria-hidden="true">
+                                ${promptManager?.renderPromptPresetControls?.('story', 'override') || ''}
+                                <textarea class="album-story-prompt-editor" id="album-story-override-prompt" spellcheck="false">${this.escapeHtml(promptContent)}</textarea>
+                                <div class="album-story-prompt-actions">
+                                    <button type="button" class="album-story-prompt-reset" id="album-story-reset-prompt">
+                                        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                                        <span>恢复默认</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </main>
+            </div>
+        `;
+
+        this.app.phoneShell.setContent(html, 'album-story-settings');
+        requestAnimationFrame(() => this.bindEvents());
+    }
+
+    renderStoryImageSettingRow({ id, title, description, icon, checked = false, disabled = false }) {
+        return `
+            <label class="album-story-settings-row${disabled ? ' is-disabled' : ''}" for="${this.escapeAttr(id)}">
+                <span class="album-story-settings-row-icon" aria-hidden="true">
+                    <i class="fa-solid ${this.escapeAttr(icon)}"></i>
+                </span>
+                <span class="album-story-settings-row-copy">
+                    <strong>${this.escapeHtml(title)}</strong>
+                    <small>${this.escapeHtml(description)}</small>
+                </span>
+                <span class="st-phone-toggle-switch">
+                    <input type="checkbox" id="${this.escapeAttr(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+                    <span class="st-phone-toggle-slider"></span>
+                </span>
+            </label>
+        `;
     }
 
     getVisibleImages() {
@@ -210,6 +361,10 @@ export class AlbumView {
     bindEvents() {
         const root = (document.querySelector('.phone-view-current') || document).querySelector('.album-app');
         if (!root) return;
+        if (this.currentView === 'settings') {
+            this.bindStoryImageSettingsEvents(root);
+            return;
+        }
         root.querySelector('#album-back')?.addEventListener('click', () => {
             if (this.selectionMode) {
                 this.selectionMode = false;
@@ -223,6 +378,11 @@ export class AlbumView {
                 return;
             }
             window.dispatchEvent(new CustomEvent('phone:goHome'));
+        });
+        root.querySelector('#album-open-settings')?.addEventListener('click', () => {
+            this.sourceMenuOpen = false;
+            this.currentView = 'settings';
+            this.render();
         });
         root.querySelector('#album-source-filter')?.addEventListener('click', () => {
             this.sourceMenuOpen = !this.sourceMenuOpen;
@@ -276,6 +436,94 @@ export class AlbumView {
             }, { once: true });
         });
     }
+
+    bindStoryImageSettingsEvents(root) {
+        root.querySelector('#album-settings-back')?.addEventListener('click', () => {
+            this.currentView = 'main';
+            this.render();
+        });
+
+        const bindToggle = (selector, settingName, { rerender = false } = {}) => {
+            root.querySelector(selector)?.addEventListener('change', async (event) => {
+                const input = event.currentTarget;
+                input.disabled = true;
+                try {
+                    await this.app.albumData.setStoryImageSetting(settingName, !!input.checked);
+                } catch (error) {
+                    console.error('保存正文生图设置失败:', error);
+                    input.checked = !input.checked;
+                    this.app.phoneShell?.showNotification?.('正文生图', '设置保存失败', '⚠️');
+                } finally {
+                    input.disabled = false;
+                }
+                if (rerender) this.renderStoryImageSettings();
+            });
+        };
+
+        bindToggle('#album-story-image-auto-enabled', 'autoEnabled', { rerender: true });
+        bindToggle('#album-story-image-completion-notice', 'completionNoticeEnabled');
+
+        root.querySelectorAll('.album-story-settings-fold .phone-prompt-fold-header').forEach((header) => {
+            const toggleFold = () => {
+                const fold = header.closest('.album-story-settings-fold');
+                if (!fold) return;
+                const open = !fold.classList.contains('is-open');
+                fold.classList.toggle('is-open', open);
+                header.setAttribute('aria-expanded', String(open));
+                fold.querySelector('.phone-prompt-fold-content')?.setAttribute('aria-hidden', String(!open));
+            };
+            header.addEventListener('click', toggleFold);
+            header.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                toggleFold();
+            });
+        });
+
+        const worldbookManager = window.VirtualPhone?.worldbookManager;
+        const worldbookList = root.querySelector('#album-story-worldbook-list');
+        if (worldbookManager && worldbookList) {
+            worldbookManager.renderWorldbookSelector(worldbookList, 'story');
+        }
+        root.querySelector('#album-story-use-worldbook')?.addEventListener('change', async (event) => {
+            const input = event.currentTarget;
+            const enabled = !!input.checked;
+            input.disabled = true;
+            try {
+                await worldbookManager?.setEnabled?.('story', enabled);
+                if (worldbookManager && worldbookList) {
+                    await worldbookManager.renderWorldbookSelector(worldbookList, 'story');
+                }
+                this.app.phoneShell?.showNotification?.(
+                    '正文生图',
+                    enabled ? '已开启世界书注入' : '已关闭世界书注入',
+                    enabled ? '✅' : 'ℹ️'
+                );
+            } catch (error) {
+                console.error('保存正文生图世界书设置失败:', error);
+                input.checked = !enabled;
+                this.app.phoneShell?.showNotification?.('正文生图', '世界书设置保存失败', '⚠️');
+            } finally {
+                input.disabled = false;
+            }
+        });
+
+        const promptManager = window.VirtualPhone?.promptManager;
+        promptManager?.bindPromptPresetControls?.(root, 'story', 'override', '#album-story-override-prompt', {
+            notify: (title, message, icon) => this.app.phoneShell?.showNotification?.(title, message, icon)
+        });
+        root.querySelector('#album-story-reset-prompt')?.addEventListener('click', () => {
+            const defaultContent = promptManager?.resetPromptToDefault?.('story', 'override')
+                ?? promptManager?.getDefaultPrompts?.()?.story?.override?.content
+                ?? '';
+            const textarea = root.querySelector('#album-story-override-prompt');
+            if (textarea) textarea.value = defaultContent;
+            const select = root.querySelector('[data-prompt-app="story"][data-prompt-feature="override"] .phone-prompt-preset-select');
+            if (select) select.value = promptManager?.getActivePromptPresetId?.('story', 'override') || '';
+            this.app.phoneShell?.showNotification?.('正文生图', '已恢复默认破限提示词', '🔄');
+        });
+    }
+
 
     closeSourceMenu(root = null) {
         this.sourceMenuOpen = false;

@@ -13,6 +13,7 @@
 export const DEFAULT_APP_ICONS = Object.freeze({
     wechat: new URL('../phone/微信.png', import.meta.url).href,
     weibo: new URL('../phone/微博.png', import.meta.url).href,
+    x: new URL('../phone/X.png', import.meta.url).href,
     honey: new URL('../phone/蜜语.png', import.meta.url).href,
     mofo: new URL('../phone/魔坊.png', import.meta.url).href,
     wangxiang: new URL('../phone/万象.png', import.meta.url).href,
@@ -54,6 +55,15 @@ export const APPS = [
             recommends: [],
             cacheTopic: null // 用于记录当前打开的热搜词
         }
+    },
+    {
+        id: 'x',
+        name: 'X',
+        icon: 'X',
+        defaultIcon: DEFAULT_APP_ICONS.x,
+        color: '#000000',
+        badge: 0,
+        data: {}
     },
     {
         id: 'honey',

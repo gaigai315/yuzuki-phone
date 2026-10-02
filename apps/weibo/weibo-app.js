@@ -12,8 +12,8 @@
 // ========================================
 // 微博APP - 主控制器
 // ========================================
-import { WeiboData } from './weibo-data.js';
-import { WeiboView } from './weibo-view.js';
+import { WeiboData } from './weibo-data.js?v=20261002-social-emoji';
+import { WeiboView } from './weibo-view.js?v=20261002-social-emoji';
 
 export class WeiboApp {
     constructor(phoneShell, storage) {
@@ -26,12 +26,12 @@ export class WeiboApp {
         // 初始化数据和视图
         this.weiboData = new WeiboData(storage);
         this.weiboView = new WeiboView(this);
-
-        // 滑动返回防抖
-        this._lastSwipeTime = 0;
+        this._isActive = false;
+        this._renderRequestId = 0;
+        this._cssFallbackTimer = null;
 
         // 监听滑动返回事件
-        this._swipeHandler = () => this.handleSwipeBack();
+        this._swipeHandler = (event) => this.handleSwipeBack(event);
         window.addEventListener('phone:swipeBack', this._swipeHandler);
     }
 
@@ -49,23 +49,40 @@ export class WeiboApp {
     // ========================================
 
     render() {
+        this._isActive = true;
+        const renderRequestId = ++this._renderRequestId;
+        const isRenderRequestActive = () => this._isActive
+            && renderRequestId === this._renderRequestId;
+        const renderIfActive = () => {
+            if (!isRenderRequestActive()) return false;
+            this.weiboView.render();
+            return true;
+        };
+
+        if (this._cssFallbackTimer) {
+            clearTimeout(this._cssFallbackTimer);
+            this._cssFallbackTimer = null;
+        }
+
         // 确保CSS已加载后再渲染，防止闪烁与点击卡死
         const cssLink = document.getElementById('weibo-css');
         if (cssLink && !cssLink.sheet) {
-            cssLink.addEventListener('load', () => this.weiboView.render(), { once: true });
+            cssLink.addEventListener('load', renderIfActive, { once: true });
             cssLink.addEventListener('error', () => {
+                if (!isRenderRequestActive()) return;
                 console.error('Weibo CSS failed to load');
-                this.weiboView.render();
+                renderIfActive();
             }, { once: true });
 
-            setTimeout(() => {
+            this._cssFallbackTimer = setTimeout(() => {
+                this._cssFallbackTimer = null;
                 if (this.weiboView.currentView === 'home' && !document.querySelector('.weibo-app')) {
-                    this.weiboView.render();
+                    renderIfActive();
                 }
             }, 1500);
             return;
         }
-        this.weiboView.render();
+        renderIfActive();
     }
 
     handleExternalRecommendUpdate() {
@@ -145,15 +162,14 @@ export class WeiboApp {
         }, 80);
     }
 
-    handleSwipeBack() {
+    handleSwipeBack(event) {
         // 检查微博APP是否可见
         const currentView = document.querySelector('.phone-view-current');
-        if (!currentView?.querySelector('.weibo-app')) return;
+        if (!currentView?.querySelector('.weibo-app')) return false;
 
-        // 防抖 400ms
-        const now = Date.now();
-        if (now - this._lastSwipeTime < 400) return;
-        this._lastSwipeTime = now;
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
 
         this.weiboView.isBackNav = true;
 
@@ -193,15 +209,7 @@ export class WeiboApp {
                 window.dispatchEvent(new CustomEvent('phone:goHome'));
                 break;
         }
-
-        // 防止幽灵点击
-        const phoneScreen = document.querySelector('.phone-screen');
-        if (phoneScreen) {
-            phoneScreen.style.pointerEvents = 'none';
-            setTimeout(() => {
-                phoneScreen.style.pointerEvents = '';
-            }, 400);
-        }
+        return true;
     }
 
     // ========================================
@@ -215,11 +223,21 @@ export class WeiboApp {
         this.weiboView.currentHotSearchTitle = null;
     }
 
+    deactivate() {
+        this._isActive = false;
+        this._renderRequestId += 1;
+        if (this._cssFallbackTimer) {
+            clearTimeout(this._cssFallbackTimer);
+            this._cssFallbackTimer = null;
+        }
+    }
+
     // ========================================
     // 🗑️ 销毁
     // ========================================
 
     destroy() {
+        this.deactivate();
         window.removeEventListener('phone:swipeBack', this._swipeHandler);
     }
 }

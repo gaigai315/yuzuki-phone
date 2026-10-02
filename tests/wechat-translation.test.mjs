@@ -45,6 +45,62 @@ test('voice content keeps the translation for display but exposes original-only 
     assert.equal(parsed.translationText, '你好，还醒着吗？');
 });
 
+test('voice messages keep their transcript in the AI prompt format', () => {
+    assert.equal(
+        view._formatMessageContentForPrompt({
+            type: 'voice',
+            content: '[语音条]（滴滴）',
+            voiceText: '滴滴'
+        }),
+        '[语音条]（滴滴）'
+    );
+});
+
+test('legacy voice messages recover the transcript from content for AI prompts', () => {
+    assert.equal(
+        view._formatMessageContentForPrompt({
+            type: 'voice',
+            content: '[语音条]（在家乖乖等我。）'
+        }),
+        '[语音条]（在家乖乖等我。）'
+    );
+    assert.equal(
+        view._formatMessageContentForPrompt({
+            type: 'voice',
+            content: '[语音 4秒](马上回来)'
+        }),
+        '[语音条]（马上回来）'
+    );
+});
+
+test('X cards enter the online WeChat prompt as one complete message string', () => {
+    const formatted = view._formatMessageContentForPrompt({
+        type: 'x_card',
+        content: '[X分享]',
+        xData: {
+            author: { name: '活动中心', accountType: 'official' },
+            content: '今晚八点开始公开直播。',
+            images: ['/backgrounds/phone_x_img_live.png'],
+            imageGenerationStates: [{ description: '舞台和观众席' }],
+            comments: 2,
+            likes: 18,
+            time: '刚刚',
+            commentList: [
+                { id: 'c1', handle: '@luna', name: 'Luna', text: '会准时来', replyTo: null },
+                { id: 'c2', name: 'Kai', text: '一起去', replyTo: '@luna' }
+            ]
+        }
+    });
+
+    assert.equal(typeof formatted, 'string');
+    assert.match(formatted, /^\[X分享\] 活动中心（官方认证）/);
+    assert.match(formatted, /正文：今晚八点开始公开直播。/);
+    assert.match(formatted, /配图：\[图片\]（舞台和观众席）/);
+    assert.match(formatted, /数据：回复 2 \| 喜欢 18/);
+    assert.match(formatted, /Kai 回复 Luna：一起去/);
+    assert.doesNotMatch(formatted, /\/backgrounds\/phone_x_img_live\.png/);
+});
+
 test('multiple translation markers are excluded from TTS without changing ordinary text', () => {
     assert.equal(stripWechatTranslationContent('Hello[翻译：你好] world[翻译：世界]'), 'Hello world');
     assert.equal(stripWechatTranslationContent('普通中文和 English 都保留'), '普通中文和 English 都保留');

@@ -610,7 +610,7 @@ export class ImageGenerationManager {
         }
 
         const normalizedApp = String(appKey || '').trim().toLowerCase();
-        const appName = ['wechat', 'weibo'].includes(normalizedApp) ? normalizedApp : 'phone_online';
+        const appName = ['wechat', 'weibo', 'x'].includes(normalizedApp) ? normalizedApp : 'phone_online';
         const result = await apiManager.callAI([
             {
                 role: 'system',
@@ -651,7 +651,7 @@ export class ImageGenerationManager {
             return source;
         }
 
-        const appName = ['wechat', 'weibo'].includes(appKey) ? appKey : 'phone_online';
+        const appName = ['wechat', 'weibo', 'x'].includes(appKey) ? appKey : 'phone_online';
         const messages = [
             {
                 role: 'system',
@@ -688,7 +688,7 @@ export class ImageGenerationManager {
 
     async _prepareNovelAIOptions(options = {}) {
         const appKey = String(options?.app || '').trim().toLowerCase();
-        if (!['wechat', 'weibo'].includes(appKey)) return options;
+        if (!['wechat', 'weibo', 'x'].includes(appKey)) return options;
 
         const rawPrompt = String(options.prompt || '').trim();
         if (!this._containsCjk(rawPrompt)) return options;
@@ -712,6 +712,8 @@ export class ImageGenerationManager {
                 return { width: 512, height: 512 };
             case 'weibo':
                 return { width: 1024, height: 1024 };
+            case 'x':
+                return { width: 1024, height: 1024 };
             case 'diary':
                 return { width: 512, height: 512 };
             default:
@@ -728,7 +730,7 @@ export class ImageGenerationManager {
             parsed = {};
         }
 
-        const allowedApps = new Set(['honey', 'wechat', 'weibo', 'diary']);
+        const allowedApps = new Set(['honey', 'wechat', 'weibo', 'x', 'diary', 'story']);
         const allowedProviders = new Set(['novelai', 'openai', 'siliconflow', 'sd', 'comfyui']);
         const bindings = {};
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -830,6 +832,8 @@ export class ImageGenerationManager {
                 wechatHeight: preset.wechatHeight,
                 weiboWidth: preset.weiboWidth,
                 weiboHeight: preset.weiboHeight,
+                xWidth: preset.xWidth,
+                xHeight: preset.xHeight,
                 diaryWidth: preset.diaryWidth,
                 diaryHeight: preset.diaryHeight,
                 width: preset.width,
@@ -912,7 +916,7 @@ export class ImageGenerationManager {
     _normalizeImagePresetScope(app = '') {
         const appKey = String(app || '').trim().toLowerCase();
         if (appKey === 'diary') return 'wechat';
-        if (['honey', 'wechat', 'weibo'].includes(appKey)) return appKey;
+        if (['honey', 'wechat', 'weibo', 'x', 'story'].includes(appKey)) return appKey;
         return '';
     }
 
@@ -937,7 +941,7 @@ export class ImageGenerationManager {
             ? settingsByApp
             : {};
         const normalized = {};
-        ['honey', 'wechat', 'weibo'].forEach((scope) => {
+        ['honey', 'wechat', 'weibo', 'x', 'story'].forEach((scope) => {
             const settings = this._normalizeComfyUIPromptSettings(raw[scope]);
             if (settings) normalized[scope] = settings;
         });
@@ -2228,7 +2232,15 @@ export class ImageGenerationManager {
             ['左', [0.3, 0.5]],
             ['右', [0.7, 0.5]],
             ['上', [0.5, 0.3]],
+            ['中上', [0.5, 0.3]],
+            ['上中', [0.5, 0.3]],
             ['下', [0.5, 0.7]],
+            ['中下', [0.5, 0.7]],
+            ['下中', [0.5, 0.7]],
+            ['中左', [0.3, 0.5]],
+            ['左中', [0.3, 0.5]],
+            ['中右', [0.7, 0.5]],
+            ['右中', [0.7, 0.5]],
             ['前', [0.5, 0.7]],
             ['前方', [0.5, 0.7]],
             ['前景', [0.5, 0.7]],

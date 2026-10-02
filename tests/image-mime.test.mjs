@@ -57,3 +57,55 @@ test('managed image cleanup treats album history and the time card as active ref
         globalThis.window = originalWindow;
     }
 });
+
+test('managed image cleanup scans lazily loaded WeChat X cards before deleting a post image', () => {
+    const target = '/backgrounds/phone_x_img_forwarded.png';
+    const uploader = Object.create(ImageUploadManager.prototype);
+    uploader.cache = { wallpaper: null, appIcons: {}, avatars: {} };
+    uploader.storage = { get: (_key, fallback) => fallback };
+    const originalWindow = globalThis.window;
+    let getMessagesCalls = 0;
+    const wechatData = {
+        data: { messages: {} },
+        getChatList: () => [{ id: 'chat_x' }],
+        getMessages(chatId) {
+            assert.equal(chatId, 'chat_x');
+            getMessagesCalls += 1;
+            return [{ type: 'x_card', xData: { images: [target] } }];
+        }
+    };
+    globalThis.window = { VirtualPhone: { cachedWechatData: wechatData } };
+
+    try {
+        assert.equal(uploader._countManagedBackgroundReferences(target), 1);
+        assert.equal(getMessagesCalls, 1);
+    } finally {
+        globalThis.window = originalWindow;
+    }
+});
+
+test('managed image cleanup treats archived X following posts as active references', () => {
+    const target = '/backgrounds/phone_x_img_following.png';
+    const uploader = Object.create(ImageUploadManager.prototype);
+    uploader.cache = { wallpaper: null, appIcons: {}, avatars: {} };
+    uploader.storage = { get: (_key, fallback) => fallback };
+    const originalWindow = globalThis.window;
+    globalThis.window = {
+        VirtualPhone: {
+            xApp: {
+                xData: {
+                    getPosts: () => [],
+                    getFollowingPosts: () => [{ images: [target] }],
+                    getUserPosts: () => [],
+                    getProfile: () => ({})
+                }
+            }
+        }
+    };
+
+    try {
+        assert.equal(uploader._countManagedBackgroundReferences(target), 1);
+    } finally {
+        globalThis.window = originalWindow;
+    }
+});

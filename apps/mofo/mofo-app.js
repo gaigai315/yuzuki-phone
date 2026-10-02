@@ -26,10 +26,10 @@ export class MofoApp {
         // 防止实例重建后重复绑定
         if (!window._mofoSwipeBackBound) {
             window._mofoSwipeBackBound = true;
-            window.addEventListener('phone:swipeBack', () => {
+            window.addEventListener('phone:swipeBack', (event) => {
                 const mofoApp = window.VirtualPhone?.mofoApp;
                 if (mofoApp && typeof mofoApp.handleSwipeBack === 'function') {
-                    mofoApp.handleSwipeBack();
+                    mofoApp.handleSwipeBack(event);
                 }
             });
         }
@@ -39,13 +39,13 @@ export class MofoApp {
         this.mofoView.render();
     }
 
-    handleSwipeBack() {
-        const now = Date.now();
-        if (this._lastSwipeTime && now - this._lastSwipeTime < 400) return;
-        this._lastSwipeTime = now;
-
+    handleSwipeBack(event) {
         const currentView = document.querySelector('.phone-view-current');
-        if (!currentView || !currentView.querySelector('.mofo-app')) return;
+        if (!currentView || !currentView.querySelector('.mofo-app')) return false;
+
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
 
         const backBtn = currentView.querySelector('.mofo-back-btn, .app-back-btn');
         if (backBtn) {
@@ -53,12 +53,7 @@ export class MofoApp {
         } else {
             window.dispatchEvent(new CustomEvent('phone:goHome'));
         }
-
-        const screen = document.querySelector('.phone-screen');
-        if (screen) {
-            screen.style.pointerEvents = 'none';
-            setTimeout(() => { screen.style.pointerEvents = ''; }, 400);
-        }
+        return true;
     }
 
     clearCache() {

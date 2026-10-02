@@ -3024,6 +3024,8 @@ getMessagePreview(message) {
             return `${icon} ${stripSpeechPrefix(message.content || '')}`;
         case 'weibo_card':
             return '[微博分享]';
+        case 'x_card':
+            return '[X分享]';
         case 'wangxiang_task_card':
             return '[万象任务申请]';
         case 'wangxiang_task_confirmation':

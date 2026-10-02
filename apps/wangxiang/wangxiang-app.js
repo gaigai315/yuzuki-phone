@@ -168,7 +168,7 @@ export class WangxiangApp {
         this._reconcileGeneratedTaskStatuses();
         this._reconcilePersistedTaskAndInventoryState();
 
-        window.addEventListener('phone:swipeBack', () => this.handleSwipeBack());
+        window.addEventListener('phone:swipeBack', (event) => this.handleSwipeBack(event));
         window.addEventListener('phone:timeUpdated', () => {
             this._handlePhoneTimeUpdated().catch(error => console.warn('[Wangxiang] 配送状态检查失败:', error));
         });
@@ -1894,12 +1894,17 @@ export class WangxiangApp {
             : null;
     }
 
-    handleSwipeBack() {
+    handleSwipeBack(event) {
         const currentView = document.querySelector('.phone-view-current');
-        if (!currentView?.querySelector('.wangxiang-app')) return;
+        if (!currentView?.querySelector('.wangxiang-app')) return false;
 
-        if (this.wangxiangView.handleBack()) return;
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
+
+        if (this.wangxiangView.handleBack()) return true;
 
         window.dispatchEvent(new CustomEvent('phone:goHome'));
+        return true;
     }
 }

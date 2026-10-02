@@ -178,25 +178,51 @@ export class PhoneShell {
         };
         const resolveGestureControlHost = (node) => {
             if (!node || typeof node.closest !== 'function') return null;
-            return node.closest('input[type="range"], [role="slider"], .phone-gesture-control, .games-2048-board, .honey-live-visibility-modal, .mofo-app, #wechat-werewolf-preview-modal');
+            return node.closest('input[type="range"], [role="slider"], .phone-gesture-control, .games-2048-board, .honey-live-visibility-modal, #wechat-werewolf-preview-modal');
         };
         const resolveInteractiveHost = (node) => {
             if (!node || typeof node.closest !== 'function') return null;
             return node.closest('button, a, select, option, label, [role="button"], [role="tab"], [data-no-swipe-back]');
+        };
+        const allowsSwipeBackThroughControls = (node) => {
+            return !!node?.closest?.('[data-swipe-back-through-controls="true"]');
+        };
+        const shouldBlockSwipeBackStart = (node) => {
+            const interactiveHost = resolveInteractiveHost(node);
+            if (!interactiveHost) return false;
+            if (node.closest?.('[data-no-swipe-back]')) return true;
+            return !allowsSwipeBackThroughControls(node);
+        };
+        const armSwipeClickGuard = () => {
+            this._swipeClickGuardUntil = Date.now() + 1000;
         };
         const hasActiveSelection = () => {
             const selection = window.getSelection?.();
             return !!selection && !selection.isCollapsed && String(selection).length > 0;
         };
 
+        phoneBody.addEventListener('click', (event) => {
+            // Back handlers reuse native button logic through element.click().
+            // Suppress only trusted trailing clicks from the completed swipe.
+            if (!event.isTrusted) return;
+            if (Date.now() >= Number(this._swipeClickGuardUntil || 0)) return;
+            if (!event.target?.closest?.('.phone-screen')) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+        }, true);
+
         // 🔥 核心修复 1：移除屏幕宽度限制，全面接管虚拟手机的触摸滑动！
         phoneBody.addEventListener('touchmove', (e) => {
             const target = e.target;
             const touchEditableHost = resolveEditableHost(target);
             const activeEditableHost = resolveEditableHost(document.activeElement);
-            const hasFocusedTextInput = !!(activeEditableHost && isTextEditableElement(activeEditableHost) && phoneBody.contains(activeEditableHost));
+            const hasFocusedTextInput = !!(activeEditableHost
+                && isTextEditableElement(activeEditableHost)
+                && phoneBody.contains(activeEditableHost)
+                && !allowsSwipeBackThroughControls(target));
             if (isTextEditableElement(touchEditableHost) || hasFocusedTextInput) return;
-            if (resolveGestureControlHost(target) || resolveInteractiveHost(target)) return;
+            if (resolveGestureControlHost(target) || shouldBlockSwipeBackStart(target)) return;
 
             // 动态判断当前手势是否是明显的水平滑动
             let isHorizontalSwipe = false;
@@ -241,7 +267,11 @@ export class PhoneShell {
                 '.weibo-profile-wrapper', '.weibo-recommend-container', '.weibo-pull-refresh-indicator',
                 '.weibo-forward-overlay', '.weibo-forward-dialog', '.weibo-forward-dialog-compose', '.weibo-forward-list',
                 '.weibo-ai-parse-error-overlay', '.weibo-ai-parse-error-dialog', '.weibo-ai-parse-error-body', '.weibo-ai-parse-error-response',
+                '.xapp-root', '.xapp-feed-scroll', '.xapp-chat-page', '.xapp-chat-list', '.xapp-dm-messages', '.xapp-detail-scroll', '.xapp-comments', '.xapp-profile-scroll', '.xapp-profile-posts', '.xapp-profile-edit-dialog', '.xapp-settings-scroll', '.xapp-settings-prompt', '.xapp-compose-scroll', '.xapp-compose-text',
+                '.xapp-post-menu-overlay', '.xapp-post-menu-sheet',
+                '.xapp-forward-overlay', '.xapp-forward-dialog', '.xapp-forward-list',
                 '#wechat-weibo-preview-modal', '#wechat-weibo-preview-modal > div',
+                '#wechat-x-preview-modal', '#wechat-x-preview-modal > div', '.wechat-x-preview-body',
                 '#wechat-poker-preview-modal', '#wechat-poker-preview-modal > div', '.wechat-poker-preview-body',
                 '#wechat-wangxiang-task-modal', '#wechat-wangxiang-task-modal > div', '.wechat-wangxiang-task-modal-body',
                 '#wechat-werewolf-preview-modal', '#wechat-werewolf-preview-modal > div', '.wechat-werewolf-preview-body',
@@ -283,7 +313,9 @@ export class PhoneShell {
                 '.games-catbox-inventory-overlay', '.games-catbox-inventory-panel', '.games-catbox-inventory-list',
                 '.games-catbox-coadopt-overlay', '.games-catbox-coadopt-panel', '.games-catbox-coadopt-list',
                 '.games-catbox-letters-overlay', '.games-catbox-letter-paper', '.games-catbox-letter-list',
-                '.album-body', '.album-grid', '.album-source-menu', '.album-preview-panel',
+                '.album-body', '.album-grid', '.album-source-menu', '.album-preview-panel', '.album-story-settings-body',
+                '.album-story-worldbook-list', '.album-story-prompt-editor',
+                '.album-story-browser-body', '.album-story-tags-input',
                 '.album-image-picker-content', '.album-image-picker-grid', '.album-image-picker-menu',
                 '.wangxiang-content-scroll',
                 '.yzp-calendar-main', '.yzp-calendar-settings-body', '.yzp-calendar-prompt-editor',
@@ -314,8 +346,11 @@ export class PhoneShell {
             // 🔥 核心修复：输入中（含光标拖拽手柄）时放弃全局滑动判断，避免抢占文本光标拖动
             const touchEditableHost = resolveEditableHost(e.target);
             const activeEditableHost = resolveEditableHost(document.activeElement);
-            const hasFocusedTextInput = !!(activeEditableHost && isTextEditableElement(activeEditableHost) && phoneBody.contains(activeEditableHost));
-            if (isTextEditableElement(touchEditableHost) || hasFocusedTextInput || resolveGestureControlHost(e.target) || resolveInteractiveHost(e.target)) {
+            const hasFocusedTextInput = !!(activeEditableHost
+                && isTextEditableElement(activeEditableHost)
+                && phoneBody.contains(activeEditableHost)
+                && !allowsSwipeBackThroughControls(e.target));
+            if (isTextEditableElement(touchEditableHost) || hasFocusedTextInput || resolveGestureControlHost(e.target) || shouldBlockSwipeBackStart(e.target)) {
                 this.touchStartX = undefined;
                 return;
             }
@@ -418,6 +453,7 @@ export class PhoneShell {
                     }, 300);
                 } else if (action === 'back') {
                     // 🔥 APP内：页面滑出屏幕右侧，像真实手机一样
+                    armSwipeClickGuard();
                     target.style.transition = 'transform 0.25s ease-out';
                     target.style.transform = 'translate3d(100%, 0, 0)';
 
@@ -478,7 +514,7 @@ export class PhoneShell {
             }
 
             const pointerEditableHost = resolveEditableHost(e.target);
-            if (isTextEditableElement(pointerEditableHost) || resolveGestureControlHost(e.target) || resolveInteractiveHost(e.target)) {
+            if (isTextEditableElement(pointerEditableHost) || resolveGestureControlHost(e.target) || shouldBlockSwipeBackStart(e.target)) {
                 return;
             }
 
@@ -546,7 +582,7 @@ export class PhoneShell {
                     }
                 }
             }
-        });
+        }, true);
 
         document.addEventListener('pointerup', (e) => {
             if (!isPointerDown || activeSwipePointerId !== e.pointerId) return;
@@ -582,6 +618,7 @@ export class PhoneShell {
                     }, 300);
                 } else if (action === 'back') {
                     // 🔥 APP内：页面滑出屏幕右侧
+                    armSwipeClickGuard();
                     target.style.transition = 'transform 0.25s ease-out';
                     target.style.transform = 'translate3d(100%, 0, 0)';
 
@@ -626,10 +663,22 @@ export class PhoneShell {
         const startViewId = target?.getAttribute?.('data-view-id') || '';
         let poppedView = null;
         setTimeout(() => {
+            const previousView = this.viewHistory.length > 1
+                ? this.viewHistory[this.viewHistory.length - 2]
+                : null;
             if (this.viewHistory.length > 1) {
                 poppedView = this.viewHistory.pop();
             }
-            window.dispatchEvent(new CustomEvent('phone:swipeBack'));
+
+            // APP 根页面的上一层就是手机桌面。此时由手机壳直接完成返回，
+            // 不再依赖各 APP 的监听器，避免兜底逻辑把已滑走的 APP 图层重新拉回。
+            if (previousView?.id === 'home') {
+                this.goHome();
+                return;
+            }
+
+            const swipeDetail = { handled: false };
+            window.dispatchEvent(new CustomEvent('phone:swipeBack', { detail: swipeDetail }));
 
             setTimeout(() => {
                 if (!target || !target.isConnected) return;
@@ -780,13 +829,37 @@ export class PhoneShell {
         return this.viewHistory.length <= 1 && (this.viewHistory.length === 0 || this.viewHistory[0].id === 'home');
     }
 
-    goHome() {
+    prepareHomeReturn({ guardMs = 900 } = {}) {
         this.currentApp = null;
-        this.viewHistory = [];  // 🔥 清空视觉历史栈
-        if (window.VirtualPhone) {
-            // 返回桌面后短时间屏蔽一次图标点击导致的误 reopen
-            window.VirtualPhone._homeReturnGuardUntil = Date.now() + 500;
+        this.viewHistory = [];
+
+        const duration = Math.max(0, Number(guardMs) || 0);
+        const guardUntil = Date.now() + duration;
+        this._homeReturnGuardUntil = Math.max(Number(this._homeReturnGuardUntil || 0), guardUntil);
+
+        if (typeof window !== 'undefined') {
+            if (!window.VirtualPhone) window.VirtualPhone = {};
+            window.VirtualPhone._homeReturnGuardUntil = Math.max(
+                Number(window.VirtualPhone._homeReturnGuardUntil || 0),
+                guardUntil
+            );
         }
+        return guardUntil;
+    }
+
+    isHomeReturnGuardActive() {
+        const globalGuardUntil = typeof window !== 'undefined'
+            ? Number(window.VirtualPhone?._homeReturnGuardUntil || 0)
+            : 0;
+        return Date.now() < Math.max(
+            Number(this._homeReturnGuardUntil || 0),
+            Number(this._swipeClickGuardUntil || 0),
+            globalGuardUntil
+        );
+    }
+
+    goHome() {
+        this.prepareHomeReturn();
         window.dispatchEvent(new CustomEvent('phone:goHome'));
     }
     
@@ -1168,6 +1241,42 @@ export class PhoneShell {
         });
         window.VirtualPhone?.refreshGlobalTextColorStyle?.();
         window.VirtualPhone?.refreshGlobalFontScale?.();
+    }
+
+    restoreView(viewId) {
+        if (!this.screen) return false;
+        const safeViewId = String(viewId || '').trim();
+        if (!safeViewId) return false;
+
+        const stack = this.screen.querySelector('.view-stack-container');
+        if (!stack) return false;
+        const allViews = Array.from(stack.querySelectorAll('[data-view-id]'));
+        const targetView = allViews.find(view => view.getAttribute('data-view-id') === safeViewId);
+        if (!targetView) return false;
+
+        this.syncHomeLayoutChromeClass();
+        this._syncChromeThemeForView(
+            safeViewId,
+            targetView.getAttribute('data-raw-html') || targetView.innerHTML || ''
+        );
+        this.currentApp = null;
+        this.viewHistory = [{ id: safeViewId }];
+
+        targetView.className = 'phone-view-layer phone-view-current';
+        targetView.style.display = 'block';
+        targetView.style.zIndex = '10';
+        targetView.style.boxShadow = '-5px 0 20px rgba(0,0,0,0.15)';
+        targetView.style.transform = 'translate3d(0,0,0)';
+        targetView.style.transition = 'none';
+        targetView.style.opacity = '1';
+
+        allViews.forEach(view => {
+            if (view !== targetView) view.remove();
+        });
+
+        window.VirtualPhone?.refreshGlobalTextColorStyle?.();
+        window.VirtualPhone?.refreshGlobalFontScale?.();
+        return true;
     }
 
     syncHomeLayoutChromeClass() {

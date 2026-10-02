@@ -2607,14 +2607,21 @@ export class GamesApp extends PokerApp {
         this.undercoverView?.destroy?.();
     }
 
-    handleSwipeBack() {
+    handleSwipeBack(event) {
+        const currentView = document.querySelector('.phone-view-current');
+        if (!currentView?.querySelector('.games-app')) return false;
+
+        if (event?.detail && typeof event.detail === 'object') {
+            event.detail.handled = true;
+        }
+
         if (this.currentView === 'undercover' && this.undercoverView?.handleBack?.()) {
-            return;
+            return true;
         }
         if (this.currentView === 'game2048' || this.currentView === 'sudoku' || this.currentView === 'catbox' || this.currentView === 'werewolf' || this.currentView === 'undercover') {
             this.backToLobby();
-            return;
+            return true;
         }
-        super.handleSwipeBack();
+        return super.handleSwipeBack(event);
     }
 }
