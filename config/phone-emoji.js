@@ -3,6 +3,11 @@ const PHONE_INLINE_EMOJI_LIST = Object.freeze([
         token: '[狗头]',
         name: '狗头',
         image: new URL('../assets/emoji/goutou.webp', import.meta.url).href
+    }),
+    Object.freeze({
+        token: '[转圈]',
+        name: '转圈',
+        image: new URL('../assets/emoji/zhuanquan.png', import.meta.url).href
     })
 ]);
 
@@ -83,6 +88,8 @@ const PHONE_NAMED_UNICODE_EMOJI_MAP = Object.freeze({
     '[快哭了]': '😢',
     '[阴险]': '😏',
     '[亲亲]': '😘',
+    '[飞吻]': '😘',
+    '[献吻]': '😘',
     '[吓]': '😱',
     '[可怜]': '🥺',
     '[旺柴]': '🐶',

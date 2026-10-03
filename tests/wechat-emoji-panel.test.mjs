@@ -11,6 +11,10 @@ test('wechat emoji tabs expose interactive semantics for mobile webviews', () =>
     assert.match(chatViewSource, /data-tab="custom" role="tab" tabindex="0"/);
 });
 
+test('wechat system emoji picker includes named image emojis', () => {
+    assert.match(chatViewSource, /const emojis = \[\s*'\[狗头\]',\s*'\[转圈\]',/);
+});
+
 test('custom emoji manager switches away from the default tab before opening', () => {
     assert.match(
         chatViewSource,

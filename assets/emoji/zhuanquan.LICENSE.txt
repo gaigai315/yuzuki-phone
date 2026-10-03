@@ -1,0 +1,14 @@
+Source repository: https://github.com/koishijs/QFace
+Source file: public/assets/wechat_emoji/qqemoji/95.png
+Source commit: c96fa14ff894147ac0442dda0fce6a4523e5fcbd
+Retrieved: 2026-10-03
+
+Upstream resource notice:
+
+所有表情资源均来自腾讯官方，版权归腾讯公司所有。仅供学习交流使用，请勿用于商业用途。
+
+All emoji resources originate from Tencent. Copyright belongs to Tencent.
+For learning and communication only. Do not use for commercial purposes.
+
+The QFace repository code is distributed under the MIT License, but its README
+separately identifies the bundled emoji resources as Tencent-owned assets.

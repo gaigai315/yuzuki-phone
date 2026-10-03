@@ -17,6 +17,13 @@ test('dog head token resolves to the bundled WebP asset', () => {
     assert.match(emoji?.image || '', /assets\/emoji\/goutou\.webp$/);
 });
 
+test('WeChat twirl token resolves to the bundled classic image asset', () => {
+    const emoji = getPhoneInlineEmoji('[转圈]');
+
+    assert.equal(emoji?.name, '转圈');
+    assert.match(emoji?.image || '', /assets\/emoji\/zhuanquan\.png$/);
+});
+
 test('dog head token renders as a small inline image', () => {
     const html = replacePhoneInlineEmojiTokens('真的很合理[狗头]', {
         size: 16,
@@ -42,23 +49,25 @@ test('common named emoji tokens map to the phone default emoji set', () => {
     assert.equal(getPhoneNamedUnicodeEmoji('[吃瓜]'), '🍉');
     assert.equal(getPhoneNamedUnicodeEmoji('[恶魔]'), '😈');
     assert.equal(getPhoneNamedUnicodeEmoji('[心]'), '❤️');
+    assert.equal(getPhoneNamedUnicodeEmoji('[飞吻]'), '😘');
     assert.equal(
-        replacePhoneNamedEmojiTokens('周末见[偷笑] 我会加油的[加油] 先吃瓜[吃瓜]'),
-        '周末见🤭 我会加油的💪 先吃瓜🍉'
+        replacePhoneNamedEmojiTokens('周末见[偷笑] 我会加油的[加油] 先吃瓜[吃瓜][飞吻]'),
+        '周末见🤭 我会加油的💪 先吃瓜🍉😘'
     );
 });
 
 test('special image tokens stay separate from named unicode emoji tokens', () => {
-    assert.equal(replacePhoneNamedEmojiTokens('[狗头][未知]'), '[狗头][未知]');
+    assert.equal(replacePhoneNamedEmojiTokens('[狗头][转圈][未知]'), '[狗头][转圈][未知]');
 });
 
 test('combined phone emoji replacement handles image and named tokens together', () => {
-    const html = replacePhoneEmojiTokens('绷不住了[崩溃][狗头][未知]', {
+    const html = replacePhoneEmojiTokens('绷不住了[崩溃][狗头][转圈][未知]', {
         size: 16,
         className: 'social-inline-emoji'
     });
 
     assert.match(html, /^绷不住了😭<img /);
     assert.match(html, /class="phone-inline-emoji social-inline-emoji"/);
+    assert.match(html, /alt="转圈"/);
     assert.match(html, /\[未知\]$/);
 });
