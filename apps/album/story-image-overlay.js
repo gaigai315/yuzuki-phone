@@ -22,16 +22,11 @@ export class StoryImageOverlay {
         this.tagBackFloors = new Set();
         this.editingTagFloors = new Set();
         this.isOpen = false;
+        this._fitFrameIds = [];
         this._onKeyDown = event => {
             if (event.key === 'Escape') this.close();
         };
-        this._onResize = () => {
-            const root = document.getElementById(STORY_OVERLAY_ROOT_ID);
-            const stage = root?.querySelector('.phone-story-image-stage');
-            const image = stage?.querySelector('.phone-story-image-front img');
-            if (image?.complete && image.naturalWidth > 0) this.fitImageStage(image);
-            else if (stage) this.fitEmptyStage(stage);
-        };
+        this._onResize = () => this.scheduleStageFit();
     }
 
     getRoot() {
@@ -41,6 +36,9 @@ export class StoryImageOverlay {
         root = document.createElement('div');
         root.id = STORY_OVERLAY_ROOT_ID;
         root.setAttribute('aria-hidden', 'true');
+        const stopHostTouchGesture = event => event.stopPropagation();
+        root.addEventListener('touchstart', stopHostTouchGesture, { passive: true });
+        root.addEventListener('touchmove', stopHostTouchGesture, { passive: true });
         document.documentElement.appendChild(root);
         return root;
     }
@@ -50,6 +48,7 @@ export class StoryImageOverlay {
         this.setActiveFloor(options.floor);
         document.addEventListener('keydown', this._onKeyDown);
         window.addEventListener('resize', this._onResize);
+        window.visualViewport?.addEventListener?.('resize', this._onResize);
         this.render();
     }
 
@@ -57,6 +56,8 @@ export class StoryImageOverlay {
         this.isOpen = false;
         document.removeEventListener('keydown', this._onKeyDown);
         window.removeEventListener('resize', this._onResize);
+        window.visualViewport?.removeEventListener?.('resize', this._onResize);
+        this.cancelScheduledStageFit();
         document.getElementById(STORY_OVERLAY_ROOT_ID)?.remove();
     }
 
@@ -199,6 +200,36 @@ export class StoryImageOverlay {
 
         this.bindEvents(root, floors, floor, floorIndex);
         this.bindImageStage(root);
+        this.scheduleStageFit();
+    }
+
+    cancelScheduledStageFit() {
+        this._fitFrameIds.forEach(frameId => cancelAnimationFrame(frameId));
+        this._fitFrameIds = [];
+    }
+
+    scheduleStageFit() {
+        this.cancelScheduledStageFit();
+        if (!this.isOpen) return;
+
+        const fitCurrentStage = () => {
+            if (!this.isOpen) return;
+            const root = document.getElementById(STORY_OVERLAY_ROOT_ID);
+            const stage = root?.querySelector('.phone-story-image-stage');
+            const image = stage?.querySelector('.phone-story-image-front img');
+            if (image?.complete && image.naturalWidth > 0) this.fitImageStage(image);
+            else if (stage) this.fitEmptyStage(stage);
+        };
+
+        const firstFrame = requestAnimationFrame(() => {
+            fitCurrentStage();
+            const secondFrame = requestAnimationFrame(() => {
+                fitCurrentStage();
+                this._fitFrameIds = [];
+            });
+            this._fitFrameIds = [secondFrame];
+        });
+        this._fitFrameIds = [firstFrame];
     }
 
     bindImageStage(root) {
@@ -206,7 +237,7 @@ export class StoryImageOverlay {
         if (!stage) return;
         const image = root.querySelector('.phone-story-image-front img');
         if (!image) {
-            this.fitEmptyStage(stage);
+            this.scheduleStageFit();
             return;
         }
 
@@ -216,7 +247,7 @@ export class StoryImageOverlay {
         };
         image.addEventListener('load', fit, { once: true });
         image.addEventListener('error', () => this.fitEmptyStage(stage), { once: true });
-        if (image.complete) fit();
+        if (image.complete) this.scheduleStageFit();
     }
 
     getStageFitBounds(stage) {
@@ -226,7 +257,12 @@ export class StoryImageOverlay {
         const body = stage?.closest?.('.phone-story-image-card-body');
         if (!stage || !wrap || !root || !card || !body) return null;
 
-        const viewportHeight = Math.max(1, Number(window.innerHeight || document.documentElement?.clientHeight || 800));
+        const viewportHeight = Math.max(1, Number(
+            window.visualViewport?.height
+            || window.innerHeight
+            || document.documentElement?.clientHeight
+            || 800
+        ));
         const maxWidth = Math.max(1, Number(wrap.clientWidth || stage.clientWidth || 560));
         const readPixels = value => Number.parseFloat(String(value || '')) || 0;
         const outerHeight = element => {
@@ -245,7 +281,7 @@ export class StoryImageOverlay {
             + readPixels(bodyStyle.paddingBottom)
             + outerHeight(card.querySelector('.phone-story-image-actions'))
             + 12;
-        const availableHeight = Math.max(240, viewportHeight - reservedHeight);
+        const availableHeight = Math.max(160, viewportHeight - reservedHeight);
         const maxHeight = Math.min(availableHeight, 900);
         return { maxWidth, maxHeight };
     }

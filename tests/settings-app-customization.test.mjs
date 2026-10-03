@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const settingsSource = fs.readFileSync(new URL('../apps/settings/settings-app.js', import.meta.url), 'utf8');
 const appsSource = fs.readFileSync(new URL('../config/apps.js', import.meta.url), 'utf8');
+const apiManagerSource = fs.readFileSync(new URL('../config/api-manager.js', import.meta.url), 'utf8');
 
 test('X participates in app icon, name, and dock customization', () => {
     const start = settingsSource.indexOf('_getDefaultAppsForCustomization()');
@@ -22,7 +23,7 @@ test('X uses the bundled phone icon as its default', () => {
     assert.doesNotMatch(appsSource, /apps\/x\/assets\/x-icon\.png/);
 });
 
-test('X participates in memory linkage permissions with social defaults', () => {
+test('X memory linkage starts fully disabled and saved choices override defaults', () => {
     const defaultsStart = settingsSource.indexOf('_getMemoryPermissionDefaults(appId)');
     const renderStart = settingsSource.indexOf('renderMemoryPermissionSection()', defaultsStart);
     const bindStart = settingsSource.indexOf('bindMemoryPermissionEvents()', renderStart);
@@ -30,6 +31,10 @@ test('X participates in memory linkage permissions with social defaults', () => 
 
     const defaultsBlock = settingsSource.slice(defaultsStart, renderStart);
     const renderBlock = settingsSource.slice(renderStart, bindStart);
-    assert.match(defaultsBlock, /x:\s*\{\s*allowSummary:\s*true,\s*allowVector:\s*true\s*\}/);
+    assert.match(defaultsBlock, /x:\s*\{\s*allowSummary:\s*false,\s*allowTable:\s*false,\s*allowVector:\s*false\s*\}/);
     assert.match(renderBlock, /\{ id: 'x', name: 'X', desc: '公开动态与评论场景' \}/);
+    assert.match(renderBlock, /\.\.\.this\._getMemoryPermissionDefaults\(def\.id\),\s*\.\.\.\(allPerms\[def\.id\] \|\| \{\}\)/s);
+    assert.match(settingsSource.slice(bindStart), /allPerms\[appId\] = merged;[\s\S]*phone_memory_permissions/);
+    assert.match(apiManagerSource, /x:\s*\{\s*allowSummary:\s*false,\s*allowTable:\s*false,\s*allowVector:\s*false\s*\}/);
+    assert.match(apiManagerSource, /const currentPerms = \{ \.\.\.defaultPerms, \.\.\.\(allPerms\?\.\[appId\] \|\| \{\}\) \};/);
 });

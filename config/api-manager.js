@@ -571,7 +571,7 @@ export class ApiManager {
             const defaultPermsByApp = {
                 wechat: { allowSummary: true, allowVector: true },
                 weibo: { allowSummary: true, allowVector: true },
-                x: { allowSummary: true, allowVector: true },
+                x: { allowSummary: false, allowTable: false, allowVector: false },
                 diary: { allowSummary: true, allowVector: true },
                 wangxiang: { allowSummary: true, allowTable: true, allowVector: true },
                 games: { allowSummary: false, allowTable: false, allowVector: false },

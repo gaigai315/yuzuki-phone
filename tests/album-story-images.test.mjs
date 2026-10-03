@@ -225,6 +225,7 @@ test('floating double-click opens the standalone story image card without openin
     assert.doesNotMatch(handlerSource, /phone:openApp/);
     assert.match(appSource, /appId: 'story'/);
     assert.match(appSource, /app: 'story'/);
+    assert.match(appSource, /await this\._waitForCSS\(\)/);
     assert.match(appSource, /this\.storyImageOverlay\.open\(options\)/);
     assert.match(overlaySource, /document\.documentElement\.appendChild\(root\)/);
     assert.match(overlaySource, /phone-story-image-nav is-prev/);
@@ -242,6 +243,9 @@ test('floating double-click opens the standalone story image card without openin
     assert.match(overlaySource, /naturalWidth/);
     assert.match(overlaySource, /availableHeight/);
     assert.match(overlaySource, /fitEmptyStage\(stage\)/);
+    assert.match(overlaySource, /scheduleStageFit\(\)/);
+    assert.match(overlaySource, /window\.visualViewport\?\.height/);
+    assert.match(overlaySource, /stopHostTouchGesture/);
     assert.match(overlaySource, /--phone-story-image-empty-height/);
     assert.match(overlaySource, /outerHeight\(card\.querySelector\('\.phone-story-image-actions'\)\)/);
     assert.doesNotMatch(overlaySource, /viewportHeight \* 0\.64/);
@@ -258,6 +262,8 @@ test('story image settings own a dedicated worldbook selector and override promp
     assert.match(viewSource, /renderWorldbookSelector\(worldbookList, 'story'\)/);
     assert.match(viewSource, /setEnabled\?\.\('story', enabled\)/);
     assert.match(viewSource, /id="album-story-override-prompt"/);
+    assert.match(viewSource, /<button type="button" class="phone-prompt-fold-header" data-no-swipe-back/);
+    assert.match(viewSource, /event\.target\?\.closest\?\.\('button, label, input, select, textarea, \[role="button"\]'\)/);
     assert.match(viewSource, /renderPromptPresetControls\?\.\('story', 'override'\)/);
     assert.match(viewSource, /bindPromptPresetControls\?\.\(root, 'story', 'override'/);
     assert.match(shellSource, /\.album-story-worldbook-list/);

@@ -7,7 +7,7 @@
 
 import { PHONE_CONFIG } from '../../config/apps.js';
 
-export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.3&r=20260929-story-image-empty-height', import.meta.url).href;
+export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.3&r=20261003-story-image-mobile-fix', import.meta.url).href;
 
 export class AlbumView {
     constructor(app) {
@@ -173,7 +173,7 @@ export class AlbumView {
                             </span>
                             <span class="album-story-settings-state">已启用</span>
                         </div>
-                        <label class="album-story-settings-context-row" for="album-story-use-worldbook">
+                        <label class="album-story-settings-context-row" for="album-story-use-worldbook" data-no-swipe-back>
                             <span class="album-story-settings-row-icon" aria-hidden="true">
                                 <i class="fa-solid fa-book-open"></i>
                             </span>
@@ -187,13 +187,13 @@ export class AlbumView {
                             </span>
                         </label>
                         <div class="phone-prompt-fold album-story-settings-fold album-story-worldbook-fold" data-default-open="false">
-                            <div class="phone-prompt-fold-header" role="button" tabindex="0" aria-expanded="false" aria-controls="album-story-worldbook-fold-content">
-                                <div class="phone-prompt-fold-main">
-                                    <div class="phone-prompt-fold-title">世界书选择</div>
-                                    <div class="phone-prompt-fold-desc">展开后勾选正文生图可使用的世界书与条目</div>
-                                </div>
+                            <button type="button" class="phone-prompt-fold-header" data-no-swipe-back aria-expanded="false" aria-controls="album-story-worldbook-fold-content">
+                                <span class="phone-prompt-fold-main">
+                                    <span class="phone-prompt-fold-title">世界书选择</span>
+                                    <span class="phone-prompt-fold-desc">展开后勾选正文生图可使用的世界书与条目</span>
+                                </span>
                                 <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow" aria-hidden="true"></i>
-                            </div>
+                            </button>
                             <div class="phone-prompt-fold-content" id="album-story-worldbook-fold-content" aria-hidden="true">
                                 <div id="album-story-worldbook-list" class="album-story-worldbook-list">
                                     <div class="phone-worldbook-status">正在读取当前可用世界书...</div>
@@ -205,13 +205,13 @@ export class AlbumView {
                     <div class="album-story-settings-section-title">功能提示词</div>
                     <section class="album-story-settings-panel album-story-prompt-section">
                         <div class="phone-prompt-fold album-story-settings-fold album-story-prompt-fold" data-default-open="false">
-                            <div class="phone-prompt-fold-header" role="button" tabindex="0" aria-expanded="false" aria-controls="album-story-prompt-fold-content">
-                                <div class="phone-prompt-fold-main">
-                                    <div class="phone-prompt-fold-title">${this.escapeHtml(promptConfig.name || '🧩 正文生图破限词')}</div>
-                                    <div class="phone-prompt-fold-desc">${this.escapeHtml(promptConfig.description || '正文楼层生成 Tags 时优先注入')}</div>
-                                </div>
+                            <button type="button" class="phone-prompt-fold-header" data-no-swipe-back aria-expanded="false" aria-controls="album-story-prompt-fold-content">
+                                <span class="phone-prompt-fold-main">
+                                    <span class="phone-prompt-fold-title">${this.escapeHtml(promptConfig.name || '🧩 正文生图破限词')}</span>
+                                    <span class="phone-prompt-fold-desc">${this.escapeHtml(promptConfig.description || '正文楼层生成 Tags 时优先注入')}</span>
+                                </span>
                                 <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow" aria-hidden="true"></i>
-                            </div>
+                            </button>
                             <div class="phone-prompt-fold-content" id="album-story-prompt-fold-content" aria-hidden="true">
                                 ${promptManager?.renderPromptPresetControls?.('story', 'override') || ''}
                                 <textarea class="album-story-prompt-editor" id="album-story-override-prompt" spellcheck="false">${this.escapeHtml(promptContent)}</textarea>
@@ -234,7 +234,7 @@ export class AlbumView {
 
     renderStoryImageSettingRow({ id, title, description, icon, checked = false, disabled = false }) {
         return `
-            <label class="album-story-settings-row${disabled ? ' is-disabled' : ''}" for="${this.escapeAttr(id)}">
+            <label class="album-story-settings-row${disabled ? ' is-disabled' : ''}" for="${this.escapeAttr(id)}" data-no-swipe-back>
                 <span class="album-story-settings-row-icon" aria-hidden="true">
                     <i class="fa-solid ${this.escapeAttr(icon)}"></i>
                 </span>
@@ -438,6 +438,12 @@ export class AlbumView {
     }
 
     bindStoryImageSettingsEvents(root) {
+        root.addEventListener('touchstart', (event) => {
+            if (event.target?.closest?.('button, label, input, select, textarea, [role="button"]')) {
+                event.stopPropagation();
+            }
+        }, { passive: true });
+
         root.querySelector('#album-settings-back')?.addEventListener('click', () => {
             this.currentView = 'main';
             this.render();
@@ -473,11 +479,6 @@ export class AlbumView {
                 fold.querySelector('.phone-prompt-fold-content')?.setAttribute('aria-hidden', String(!open));
             };
             header.addEventListener('click', toggleFold);
-            header.addEventListener('keydown', (event) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                toggleFold();
-            });
         });
 
         const worldbookManager = window.VirtualPhone?.worldbookManager;

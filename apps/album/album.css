@@ -385,6 +385,7 @@
     box-sizing: border-box;
     color: #1f2328;
     cursor: pointer;
+    touch-action: manipulation;
 }
 
 #phone-panel-content .phone-screen .album-story-settings-row + .album-story-settings-row::before {
@@ -447,6 +448,7 @@
 
 #phone-panel-content .phone-screen label.album-story-settings-context-row {
     cursor: pointer;
+    touch-action: manipulation;
 }
 
 #phone-panel-content .phone-screen .album-story-settings-context-row + .album-story-settings-context-row::before {
@@ -478,18 +480,29 @@
 }
 
 #phone-panel-content .phone-screen .album-story-settings-fold .phone-prompt-fold-header {
+    width: 100% !important;
     min-height: 54px;
+    border: 0 !important;
+    border-radius: 0 !important;
+    display: flex !important;
     padding: 10px 12px;
     box-sizing: border-box;
+    background: transparent !important;
+    color: inherit !important;
+    box-shadow: none !important;
+    text-align: left !important;
+    touch-action: manipulation;
 }
 
 #phone-panel-content .phone-screen .album-story-settings-fold .phone-prompt-fold-title {
+    display: block;
     color: #272b31;
     font-size: 12px;
     letter-spacing: 0;
 }
 
 #phone-panel-content .phone-screen .album-story-settings-fold .phone-prompt-fold-desc {
+    display: block;
     color: #8a9098;
     font-size: 9px;
     letter-spacing: 0;
@@ -1107,6 +1120,7 @@
     font-size: 13px !important;
     line-height: 1 !important;
     cursor: pointer !important;
+    touch-action: manipulation !important;
     appearance: none !important;
     -webkit-appearance: none !important;
 }
@@ -1267,6 +1281,7 @@
     font-size: 12px !important;
     line-height: 1 !important;
     cursor: pointer !important;
+    touch-action: manipulation !important;
     appearance: none !important;
     -webkit-appearance: none !important;
 }
@@ -1321,6 +1336,7 @@
     font-size: 11px !important;
     line-height: 1 !important;
     cursor: pointer !important;
+    touch-action: manipulation !important;
     appearance: none !important;
     -webkit-appearance: none !important;
 }
@@ -1441,6 +1457,7 @@
     line-height: 1.1 !important;
     white-space: nowrap !important;
     cursor: pointer !important;
+    touch-action: manipulation !important;
     appearance: none !important;
     -webkit-appearance: none !important;
 }

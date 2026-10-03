@@ -6,8 +6,8 @@
  * ======================================================== */
 
 import { AlbumData } from './album-data.js?v=1.4.4&r=20260929-story-image-context';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20260929-story-image-empty-height';
-import { StoryImageOverlay } from './story-image-overlay.js?v=20260929-story-image-empty-height';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261003-story-image-mobile-fix';
+import { StoryImageOverlay } from './story-image-overlay.js?v=20261003-story-image-mobile-fix';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 export class AlbumApp {
@@ -15,7 +15,7 @@ export class AlbumApp {
         this.phoneShell = phoneShell;
         this.storage = storage;
         this._cssRenderPending = false;
-        this._cssFallbackTimer = null;
+        this._cssReadyPromise = null;
         this.storyTagBusyFloors = new Set();
         this.storyImageBusyFloors = new Set();
 
@@ -47,36 +47,55 @@ export class AlbumApp {
     }
 
     _preloadCSS() {
-        if (document.getElementById('album-css')) return;
+        const existing = document.getElementById('album-css');
+        if (existing) return existing;
         const link = document.createElement('link');
         link.id = 'album-css';
         link.rel = 'stylesheet';
         link.href = ALBUM_CSS_URL;
         document.head.appendChild(link);
+        return link;
+    }
+
+    _waitForCSS() {
+        const cssLink = this._preloadCSS();
+        if (!cssLink || cssLink.sheet || cssLink.dataset?.albumCssReady === 'true') {
+            return Promise.resolve();
+        }
+        if (this._cssReadyPromise) return this._cssReadyPromise;
+
+        this._cssReadyPromise = new Promise(resolve => {
+            let settled = false;
+            let fallbackTimer = null;
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                if (fallbackTimer) clearTimeout(fallbackTimer);
+                cssLink.removeEventListener('load', finish);
+                cssLink.removeEventListener('error', finish);
+                if (cssLink.dataset) cssLink.dataset.albumCssReady = 'true';
+                resolve();
+            };
+
+            cssLink.addEventListener('load', finish, { once: true });
+            cssLink.addEventListener('error', finish, { once: true });
+            fallbackTimer = setTimeout(finish, 1500);
+            requestAnimationFrame(() => {
+                if (cssLink.sheet) finish();
+            });
+        });
+        return this._cssReadyPromise;
     }
 
     render() {
         const cssLink = document.getElementById('album-css');
-        if (cssLink && !cssLink.sheet) {
+        if (cssLink && !cssLink.sheet && cssLink.dataset?.albumCssReady !== 'true') {
             if (this._cssRenderPending) return;
             this._cssRenderPending = true;
-
-            const renderAfterCSS = () => {
-                if (!this._cssRenderPending) return;
+            this._waitForCSS().finally(() => {
                 this._cssRenderPending = false;
-                if (this._cssFallbackTimer) {
-                    clearTimeout(this._cssFallbackTimer);
-                    this._cssFallbackTimer = null;
-                }
                 this.albumView.render();
-            };
-
-            cssLink.addEventListener('load', renderAfterCSS, { once: true });
-            cssLink.addEventListener('error', () => {
-                console.error('Album CSS failed to load');
-                renderAfterCSS();
-            }, { once: true });
-            this._cssFallbackTimer = setTimeout(renderAfterCSS, 1500);
+            });
             return;
         }
         this.albumView.render();
@@ -88,11 +107,13 @@ export class AlbumApp {
     }
 
     async openStoryImageBrowser(options = {}) {
+        await this._waitForCSS();
         try {
             await this.albumData.migrateLegacyStoryInlineMedia();
         } catch (error) {
             console.warn('[AlbumApp] 清理旧正文内联生图失败:', error);
         }
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         this.storyImageOverlay.open(options);
     }
 
