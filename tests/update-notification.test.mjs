@@ -10,13 +10,14 @@ test('current version keeps all notices under the latest date', () => {
     const current = updateLog.versions[manifest.version];
 
     assert.equal(manifest.version, '1.5.9');
-    assert.equal(current.date, '2026-10-02');
-    assert.equal(current.items.length, 5);
-    assert.match(current.items[0], /微信语音条/);
-    assert.match(current.items[1], /当前好友的朋友圈历史记录/);
-    assert.match(current.items[2], /新增 X APP/);
-    assert.match(current.items[3], /设置入口划分为相册 APP/);
-    assert.match(current.items[4], /优化电脑端手机关闭逻辑/);
+    assert.equal(current.date, '2026-10-03');
+    assert.equal(current.items.length, 6);
+    assert.match(current.items[0], /蜜语保存的主题视频失效/);
+    assert.match(current.items[1], /微信语音条/);
+    assert.match(current.items[2], /当前好友的朋友圈历史记录/);
+    assert.match(current.items[3], /新增 X APP/);
+    assert.match(current.items[4], /设置入口划分为相册 APP/);
+    assert.match(current.items[5], /优化电脑端手机关闭逻辑/);
     assert.equal(current.updates, undefined);
 });
 
@@ -34,7 +35,8 @@ test('fallback announcement preserves all 1.5.9 notices', () => {
     assert.ok(start >= 0 && end > start, 'fallback update block should exist');
 
     const block = indexSource.slice(start, end);
-    assert.match(block, /date: '2026-10-02'/);
+    assert.match(block, /date: '2026-10-03'/);
+    assert.match(block, /蜜语保存的主题视频失效/);
     assert.match(block, /优化电脑端手机关闭逻辑/);
     assert.match(block, /单击机身外部即可关闭/);
     assert.match(block, /三击打开方式保持不变/);

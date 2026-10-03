@@ -27,7 +27,7 @@ const ST_PHONE_CSS_REVISION = '20261002-swipe-programmatic-click';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261002-x-dm-back-stack';
-const ST_PHONE_HONEY_ASSET_REVISION = ST_PHONE_APP_SWIPE_REVISION;
+const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_REGULAR_FONT_URL = new URL('./assets/vendor/fontawesome/fa-regular-400.woff2', import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
@@ -64,8 +64,9 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-02',
+    date: '2026-10-03',
     items: [
+        '【修复】修复蜜语保存的主题视频失效后仍反复请求旧地址并误报自动播放失败的问题；失效媒体会自动清除并恢复默认背景。',
         '【修复】修复微信语音条发送后，文字内容没有正确转入聊天上下文的问题。',
         '【优化】优化微信单聊上下文注入，聊天时会同时注入当前好友的朋友圈历史记录，避免串入其他好友内容。',
         '【新增】新增 X APP，支持公开信息流、帖子图片、评论与回复、个人主页、生成设置及按聊天窗口独立存储。',

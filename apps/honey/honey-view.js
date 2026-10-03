@@ -69,6 +69,7 @@ export class HoneyView {
         this._lastLiveTurnRetry = null;
         this._isSceneTagHistoryOpen = false;
         this._isRetaggingSceneNai = false;
+        this._failedThemeMediaUrls = new Set();
         this._failedLiveMediaUrls = new Set();
         this._restoreSessionState();
         this._loadCSS();
@@ -160,10 +161,103 @@ export class HoneyView {
     _getHoneyThemeBackgroundMedia() {
         const rawUrl = this.app?.honeyData?.getRecommendBgMedia?.();
         const url = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+        if (this._isFailedThemeMediaUrl(url)) {
+            return { url: '', isVideo: false };
+        }
         return {
             url,
             isVideo: this._isVideoBackgroundUrl(url)
         };
+    }
+
+    _rememberFailedThemeMediaUrl(value) {
+        const key = this._getHoneyMediaUrlKey(value);
+        if (!key) return false;
+        if (!(this._failedThemeMediaUrls instanceof Set)) {
+            this._failedThemeMediaUrls = new Set();
+        }
+        const isNewFailure = !this._failedThemeMediaUrls.has(key);
+        this._failedThemeMediaUrls.add(key);
+        return isNewFailure;
+    }
+
+    _forgetFailedThemeMediaUrl(value) {
+        const key = this._getHoneyMediaUrlKey(value);
+        if (!key || !(this._failedThemeMediaUrls instanceof Set)) return;
+        this._failedThemeMediaUrls.delete(key);
+    }
+
+    _isFailedThemeMediaUrl(value) {
+        const key = this._getHoneyMediaUrlKey(value);
+        return !!key && this._failedThemeMediaUrls instanceof Set && this._failedThemeMediaUrls.has(key);
+    }
+
+    _handleHoneyThemeMediaFailure(mediaElement) {
+        const failedUrl = String(
+            mediaElement?.currentSrc
+            || mediaElement?.getAttribute?.('src')
+            || mediaElement?.src
+            || ''
+        ).trim();
+        const failedKey = this._getHoneyMediaUrlKey(failedUrl);
+        if (!failedKey) return false;
+
+        const isNewFailure = this._rememberFailedThemeMediaUrl(failedUrl);
+        const savedUrl = this.app?.honeyData?.getRecommendBgMedia?.() || '';
+        const clearedSavedReference = this._getHoneyMediaUrlKey(savedUrl) === failedKey;
+        if (clearedSavedReference) {
+            this.app?.honeyData?.saveRecommendBgMedia?.(null);
+        }
+
+        const matchingMedia = new Set();
+        if (mediaElement) matchingMedia.add(mediaElement);
+        if (typeof document !== 'undefined') {
+            document.querySelectorAll?.('.honey-theme-background').forEach((item) => {
+                const itemUrl = String(item.currentSrc || item.getAttribute?.('src') || item.src || '').trim();
+                if (this._getHoneyMediaUrlKey(itemUrl) === failedKey) matchingMedia.add(item);
+            });
+        }
+
+        const roots = new Set();
+        matchingMedia.forEach((item) => {
+            const root = item?.closest?.('.honey-app');
+            if (root) roots.add(root);
+            item?.pause?.();
+            item?.removeAttribute?.('src');
+            item?.remove?.();
+        });
+        roots.forEach((root) => root.querySelector?.('#honey-bg-sound-btn')?.remove?.());
+
+        if (isNewFailure && clearedSavedReference) {
+            this.app?.phoneShell?.showNotification?.('蜜语', '主题背景已失效或无法播放，已恢复默认背景', '⚠️');
+        }
+        return clearedSavedReference;
+    }
+
+    _bindHoneyThemeBackgroundMedia(root = null) {
+        const currentRoot = root
+            || (typeof document !== 'undefined'
+                ? (document.querySelector('.phone-view-current .honey-app') || document.querySelector('.honey-app'))
+                : null);
+        const mediaElement = currentRoot?.querySelector?.('.honey-theme-background');
+        if (!mediaElement || mediaElement.dataset.honeyThemeMediaBound === '1') return;
+
+        mediaElement.dataset.honeyThemeMediaBound = '1';
+        mediaElement.addEventListener?.('error', () => {
+            this._handleHoneyThemeMediaFailure(mediaElement);
+        }, { once: true });
+
+        const tagName = String(mediaElement.tagName || '').toLowerCase();
+        const alreadyFailed = !!mediaElement.error
+            || (tagName === 'img' && mediaElement.complete === true && Number(mediaElement.naturalWidth || 0) <= 0);
+        if (alreadyFailed) {
+            Promise.resolve().then(() => this._handleHoneyThemeMediaFailure(mediaElement));
+            return;
+        }
+        if (tagName === 'video') {
+            mediaElement.muted = true;
+            this._ensureRecommendVideoAutoplay(mediaElement);
+        }
     }
 
     _buildHoneyThemeBackgroundHtml(media = null) {
@@ -171,7 +265,7 @@ export class HoneyView {
         if (!themeMedia.url) return '';
         const safeUrl = this._escapeHtml(themeMedia.url);
         if (themeMedia.isVideo) {
-            return `<video src="${safeUrl}" class="honey-theme-background honey-bg-video" autoplay loop muted playsinline webkit-playsinline preload="metadata" aria-hidden="true"></video>`;
+            return `<video src="${safeUrl}" class="honey-theme-background honey-bg-video" loop muted playsinline webkit-playsinline preload="metadata" aria-hidden="true"></video>`;
         }
         return `<img src="${safeUrl}" class="honey-theme-background honey-bg-image" alt="" aria-hidden="true">`;
     }
@@ -3491,8 +3585,6 @@ export class HoneyView {
     bindRecommendEvents() {
         const root = document.querySelector('.phone-view-current .honey-page-recommend') || document.querySelector('.honey-page-recommend');
         if (!root) return;
-        const bgVideo = root.querySelector('.honey-theme-background.honey-bg-video');
-        this._ensureRecommendVideoAutoplay(bgVideo);
         this._bindRecommendTopicEntries(root);
         this._bindRecommendPullRefresh();
         this._syncRecommendRefreshIndicatorByState();
@@ -5367,6 +5459,7 @@ export class HoneyView {
                     const finalUrl = await window.VirtualPhone?.imageManager?.uploadBlob?.(file, 'honey_theme');
                     if (!finalUrl) throw new Error('图片上传管理器未初始化');
 
+                    this._forgetFailedThemeMediaUrl(finalUrl);
                     this.app.honeyData?.saveRecommendBgMedia?.(finalUrl);
                     if (oldUrl && oldUrl !== finalUrl && this._isManagedBackgroundUrl(oldUrl)) {
                         window.VirtualPhone?.imageManager?.deleteManagedBackgroundByPath?.(oldUrl, { quiet: true, skipIfReferenced: true });
@@ -6036,11 +6129,18 @@ export class HoneyView {
     }
 
     _ensureRecommendVideoAutoplay(bgVideo) {
-        if (!bgVideo) return;
-        const playPromise = bgVideo.play();
-        if (playPromise !== undefined) {
+        if (!bgVideo || bgVideo.dataset.honeyThemeAutoplayAttempted === '1') return;
+        bgVideo.dataset.honeyThemeAutoplayAttempted = '1';
+        const playPromise = bgVideo.play?.();
+        if (playPromise && typeof playPromise.catch === 'function') {
             playPromise.catch(error => {
-                console.warn('视频自动播放被浏览器拦截，正尝试重试:', error);
+                if (!bgVideo.isConnected) return;
+                if (error?.name === 'NotSupportedError' || bgVideo.error) {
+                    this._handleHoneyThemeMediaFailure(bgVideo);
+                    return;
+                }
+                if (error?.name === 'AbortError') return;
+                console.warn('蜜语主题视频自动播放被浏览器拦截:', error);
             });
         }
     }
@@ -9493,6 +9593,7 @@ export class HoneyView {
         document.querySelectorAll('.phone-body-panel-honey').forEach(el => el.classList.remove('phone-body-panel-honey'));
         const panel = document.querySelector('.phone-body-panel');
         panel?.classList.add('phone-body-panel-honey');
+        this._bindHoneyThemeBackgroundMedia();
     }
 
     removePhoneChromeTheme() {

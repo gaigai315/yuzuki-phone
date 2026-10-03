@@ -9,7 +9,7 @@
  * 
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
-import { HoneyView } from './honey-view.js?v=1.5.5&r=20260902-avatar-gender';
+import { HoneyView } from './honey-view.js?v=1.5.9&r=20261003-theme-media-recovery';
 import { HoneyData } from './honey-data.js?v=1.5.5&r=20260902-avatar-gender';
 
 export class HoneyApp {
