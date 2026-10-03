@@ -1186,9 +1186,9 @@ type:group
 群友A: [领取均分红包¥3.33]
 群友B: [收款]/[退回转账]/[退回红包]
 群友D: [语音条]（语音转化出的文字内容）
-群友B: [图片]（中文图片描述）（English NovelAI tags）
-群友B: [个人图片]（中文图片描述）（English NovelAI tags）
-群友B: [用户照片]（中文图片描述）（English NovelAI tags）
+群友B: [图片]（中文图片描述）（English tags）
+群友B: [个人图片]（中文图片描述）（English tags）
+群友B: [用户照片]（中文图片描述）（English tags）
 群友B: 😀（普通emoji必须直接输出Unicode符号，禁止写成[微笑]、[偷笑]、[加油]等文字标签；仅狗头这个特殊表情输出[狗头]）
 群友B: [表情包](表情包中文名称) （直接发送表情包）
 群友A: [拨打微信群语音]
@@ -1201,8 +1201,6 @@ type:group
 
 【当前群成员个人图片固定tag】
 {{personalImageTagInfo}}
-
-💡 图片描述规则：当你要发送图片时，必须使用 [图片]（中文图片描述）（English NovelAI tags）、[个人图片]（中文图片描述）（English NovelAI tags）或 [用户照片]（中文图片描述）（English NovelAI tags）格式。第一个括号必须写中文图片描述，供聊天界面展示；第二个括号只能写英文逗号分隔的 NAI 生图 tag，不要写中文、解释或完整句子，专门供生图使用；少写第二个括号会被系统判定为格式错误，图片不会生成；必须描述可见画面细节，如 subject count, gender, adult character, anime illustration, pose, expression, clothing, setting, camera angle, lighting。若图片画面包含发送该图片的群成员本人形象，必须使用 [个人图片]；若图片画面包含{{user}}本人，必须使用 [用户照片]，不要写成带用户姓名的标签。若【当前群成员个人图片固定tag】列出了专属生图Tag/固定tag，系统会在实际生图时自动拼接这些固定外观tag，[个人图片]/[用户照片] 第二个括号内不要重复固定外貌、发色、眼睛、体型等tag，只补充本次照片的动作、表情、服装变化、构图、场景、光线、镜头等动态画面tag；若图片不包含发送者或{{user}}自身形象，例如风景、食物、宠物、截图、物品、别人或无人物画面，必须使用 [图片]。若内容涉及人物或拟人对象，必须用 1girl/1boy/2girls/2boys、female focus/male focus 等英文 tag 明确主体。
 
 💬 引用消息格式（严禁引用后的内容留空）：
 群友B: 「引用 群友A: 被引用内容」回复内容
