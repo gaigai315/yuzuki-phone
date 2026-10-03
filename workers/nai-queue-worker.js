@@ -33,8 +33,9 @@ function normalizeTask(input = {}) {
     const keyHash = String(input.key_hash || input.keyHash || '').trim();
     const userId = String(input.user_id || input.userId || '').trim();
     const taskId = String(input.task_id || input.taskId || '').trim();
-    const token = String(input.token || input.queue_token || input.queueToken || '').trim();
-    return { keyHash, userId, taskId, token };
+    const token = String(input.token || input.queue_token || input.queueToken || input.lock_token || input.lockToken || '').trim();
+    const greeting = String(input.greeting || '').trim().slice(0, 15);
+    return { keyHash, userId, taskId, token, greeting };
 }
 
 export class NaiQueueDO extends DurableObject {
@@ -53,8 +54,10 @@ export class NaiQueueDO extends DurableObject {
         const path = url.pathname.replace(/\/+$/, '') || '/';
 
         try {
-            if (path === '/queue' && request.method === 'POST') {
-                return this.handleQueue(await readJson(request));
+            if ((path === '/queue' || path === '/join-queue') && request.method === 'POST') {
+                return this.handleQueue(await readJson(request), {
+                    heartbeatRequired: path === '/queue'
+                });
             }
             if (path === '/my-turn' && request.method === 'GET') {
                 return this.handleMyTurn(Object.fromEntries(url.searchParams.entries()));
@@ -69,7 +72,11 @@ export class NaiQueueDO extends DurableObject {
                 return this.handleLeave(await readJson(request));
             }
             if (path === '/' || path === '/health') {
-                return json({ ok: true, service: 'yuzuki-nai-queue' });
+                return json({
+                    ok: true,
+                    service: 'yuzuki-nai-queue',
+                    protocols: ['yuzuki-phone', 'st-chatu8']
+                });
             }
             return json({ success: false, error: 'Not found' }, { status: 404 });
         } catch (error) {
@@ -101,7 +108,8 @@ export class NaiQueueDO extends DurableObject {
             const activeAt = Number(state.active.activeAt || state.active.updatedAt || 0);
             const startedAt = Number(state.active.startedAt || activeAt || 0);
             const activeStillQueued = state.queue.some(item => item.taskId === state.active.taskId);
-            const leaseExpired = !activeAt || now - activeAt > ACTIVE_STALE_MS;
+            const heartbeatRequired = state.active.heartbeatRequired !== false;
+            const leaseExpired = heartbeatRequired && (!activeAt || now - activeAt > ACTIVE_STALE_MS);
             const exceededMaximum = !startedAt || now - startedAt > ACTIVE_MAX_MS;
             if (leaseExpired || exceededMaximum || !activeStillQueued) {
                 const abandonedTaskId = state.active.taskId;
@@ -119,6 +127,8 @@ export class NaiQueueDO extends DurableObject {
             taskId: first.taskId,
             userId: first.userId,
             token,
+            greeting: first.greeting || '',
+            heartbeatRequired: first.heartbeatRequired !== false,
             activeAt: Date.now(),
             startedAt: Date.now()
         };
@@ -129,17 +139,25 @@ export class NaiQueueDO extends DurableObject {
     buildStatus(state, taskId, token = '') {
         const index = state.queue.findIndex(item => item.taskId === taskId);
         const active = state.active && state.active.taskId === taskId;
+        const resolvedToken = active ? (state.active.token || token || '') : (token || '');
+        const activeEntry = state.active
+            ? state.queue.find(item => item.taskId === state.active.taskId)
+            : null;
         return {
             success: true,
             can_run: !!active,
+            is_my_turn: !!active,
             queued: index >= 0,
-            token: active ? (state.active.token || token || '') : (token || ''),
+            token: resolvedToken,
+            queue_token: resolvedToken,
+            lock_token: resolvedToken,
             position: index >= 0 ? index : null,
-            queue_size: state.queue.length
+            queue_size: state.queue.length,
+            current_greeting: activeEntry?.greeting || null
         };
     }
 
-    async handleQueue(input) {
+    async handleQueue(input, { heartbeatRequired = true } = {}) {
         const task = normalizeTask(input);
         if (!task.keyHash || !task.userId || !task.taskId) {
             return json({ success: false, error: 'Missing key_hash, user_id or task_id' }, { status: 400 });
@@ -167,12 +185,21 @@ export class NaiQueueDO extends DurableObject {
                 keyHash: task.keyHash,
                 userId: task.userId,
                 taskId: task.taskId,
+                greeting: task.greeting,
+                heartbeatRequired,
                 createdAt: now,
                 updatedAt: now
             };
             state.queue.push(existing);
         } else {
             existing.updatedAt = now;
+            existing.greeting = task.greeting;
+            existing.heartbeatRequired = heartbeatRequired;
+        }
+
+        if (state.active?.taskId === task.taskId) {
+            state.active.greeting = task.greeting;
+            state.active.heartbeatRequired = heartbeatRequired;
         }
 
         this.promote(state);
