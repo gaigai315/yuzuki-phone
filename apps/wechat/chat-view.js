@@ -2260,6 +2260,143 @@ export class ChatView {
         return lines.join('\n').trim();
     }
 
+    _buildGroupChatMomentsContext(chat = null, context = null) {
+        const targetChat = chat || this.app.currentChat;
+        if (!targetChat || targetChat.type !== 'group') return '';
+
+        const memberIdentities = this._collectGroupMemberIdentityMap(
+            targetChat,
+            context || this._safeGetContext?.()
+        );
+        if (memberIdentities.size === 0) return '';
+
+        const limit = this._readNonNegativeLimit('wechat-moments-context-limit', 30, 100);
+        if (limit <= 0) return '';
+
+        const moments = this.app.wechatData?.getMoments?.();
+        if (!Array.isArray(moments) || moments.length === 0) return '';
+
+        const identityByAlias = new Map();
+        const identityByContactId = new Map();
+        memberIdentities.forEach((identity) => {
+            (identity?.aliases || []).forEach((alias) => {
+                const key = this._normalizeLookupName(alias);
+                if (key && !identityByAlias.has(key)) identityByAlias.set(key, identity);
+            });
+            const contactId = String(identity?.key || '').startsWith('contact:')
+                ? String(identity.key).slice('contact:'.length).trim()
+                : '';
+            if (contactId) identityByContactId.set(contactId, identity);
+        });
+
+        const identityBySingleChatId = new Map();
+        const allChats = this.app.wechatData?.getChatList?.() || [];
+        (Array.isArray(allChats) ? allChats : []).forEach((item) => {
+            if (!item || item.type === 'group') return;
+            const chatId = String(item.id || '').trim();
+            if (!chatId) return;
+
+            const contactId = String(item.contactId || '').trim();
+            const contact = contactId
+                ? this.app.wechatData?.getContact?.(contactId)
+                : this.app.wechatData?.findContactByNameLoose?.(item.name, { includeChats: false });
+            const identity = identityByContactId.get(String(contact?.id || contactId || '').trim())
+                || identityByAlias.get(this._normalizeLookupName(contact?.name))
+                || identityByAlias.get(this._normalizeLookupName(item.name));
+            if (identity) identityBySingleChatId.set(chatId, identity);
+        });
+
+        const resolveMomentIdentity = (moment) => {
+            const authorName = String(moment?.name || '').trim();
+            const authorKey = this._normalizeLookupName(authorName);
+            if (authorKey && identityByAlias.has(authorKey)) return identityByAlias.get(authorKey);
+
+            const authorContact = authorName
+                ? this.app.wechatData?.findContactByNameLoose?.(authorName, { includeChats: false })
+                : null;
+            const authorContactId = String(authorContact?.id || '').trim();
+            if (authorContactId && identityByContactId.has(authorContactId)) {
+                return identityByContactId.get(authorContactId);
+            }
+
+            const sourceChatId = String(moment?.sourceChatId || '').trim();
+            return sourceChatId ? (identityBySingleChatId.get(sourceChatId) || null) : null;
+        };
+
+        const relevantMoments = moments
+            .map(moment => ({ moment, identity: resolveMomentIdentity(moment) }))
+            .filter(item => !!item.identity)
+            .slice(0, limit);
+        if (relevantMoments.length === 0) return '';
+
+        const formatMomentTime = (moment) => {
+            const date = String(moment?.date || '').trim();
+            const time = String(moment?.time || '').trim();
+            if (date && time) return `${date} ${time}`;
+            return time || date || '手机时间未知';
+        };
+        const formatMomentImage = (moment, image, index) => {
+            const state = Array.isArray(moment?.imageGenerationStates)
+                ? moment.imageGenerationStates[index]
+                : null;
+            const description = String(state?.description || state?.prompt || '').trim();
+            if (description) return `配图${index + 1}：${description}`;
+
+            const raw = typeof image === 'string'
+                ? image.trim()
+                : String(image?.description || image?.prompt || '').trim();
+            if (!raw || /^(?:data:|blob:|https?:\/\/|\/backgrounds\/)/i.test(raw)) {
+                return `配图${index + 1}：已发布图片`;
+            }
+            return `配图${index + 1}：${raw}`;
+        };
+
+        const matchedMemberNames = [...new Set(relevantMoments
+            .map(item => String(item.identity?.name || '').trim())
+            .filter(Boolean))];
+        const lines = [
+            '【当前微信群成员朋友圈】',
+            `以下仅包含当前微信群“${String(targetChat.name || '当前群聊').trim()}”内好友已经发布的近期朋友圈。命中的群好友：${matchedMemberNames.join('、')}。这些动态不是群聊消息，也不代表已经发到群内。`,
+            '【朋友圈知情边界】动态发布者、实际点赞者、实际评论者和手机用户可以知道对应动态；除非其他已注入记录明确证明，群内其余成员不得自动知道、复述、暗示或回应这些朋友圈内容。',
+            '【朋友圈去重硬约束】下列动态均已真实发布。生成新的 moments JSON 前必须逐条对照发布者、正文、配图和发布时间；严禁再次生成内容相同或高度相似的朋友圈。当前没有合理的新动态时，必须省略 moments JSON，只回复微信消息。'
+        ];
+
+        relevantMoments.forEach(({ moment, identity }, index) => {
+            const authorName = String(moment?.name || identity?.name || '').trim() || '未知发布者';
+            const memberName = String(identity?.name || authorName).trim();
+            const text = String(moment?.text || '').trim();
+            const images = Array.isArray(moment?.images) ? moment.images : [];
+            const likeList = (Array.isArray(moment?.likeList) ? moment.likeList : [])
+                .map(name => String(name || '').trim())
+                .filter(Boolean);
+            const comments = (Array.isArray(moment?.commentList) ? moment.commentList : [])
+                .map(comment => ({
+                    name: String(comment?.name || '').trim(),
+                    text: String(comment?.text || '').trim(),
+                    replyTo: String(comment?.replyTo || '').trim()
+                }))
+                .filter(comment => comment.name && comment.text);
+
+            lines.push('', `--- 群成员朋友圈 ${index + 1}（${memberName}）---`);
+            lines.push(`发布者：${authorName}`);
+            lines.push(`发布时间：${formatMomentTime(moment)}`);
+            lines.push(`正文：${text || (images.length > 0 ? '无文字，仅发布配图' : '无文字')}`);
+            images.forEach((image, imageIndex) => lines.push(formatMomentImage(moment, image, imageIndex)));
+            lines.push(`点赞：${likeList.length > 0 ? likeList.join('、') : '无'}`);
+            if (comments.length > 0) {
+                lines.push('评论：');
+                comments.forEach((comment) => {
+                    const replyText = comment.replyTo ? ` 回复 ${comment.replyTo}` : '';
+                    lines.push(`- ${comment.name}${replyText}：${comment.text}`);
+                });
+            } else {
+                lines.push('评论：无');
+            }
+        });
+
+        return lines.join('\n').trim();
+    }
+
     _buildPhoneCallHistoryContextForSingleChat(chat = null, userName = '用户') {
         const targetChat = chat || this.app.currentChat;
         if (!targetChat || targetChat.type === 'group') return '';
@@ -12552,6 +12689,9 @@ renderChatRoom(chat) {
         const singleChatMomentsContext = !isGroupChat
             ? this._buildSingleChatMomentsContext(targetChat, userName)
             : '';
+        const groupChatMomentsContext = isGroupChat
+            ? this._buildGroupChatMomentsContext(targetChat, context)
+            : '';
 
         if (!callMode && catboxCoAdoptContext) {
             messages.push({
@@ -12668,6 +12808,15 @@ renderChatRoom(chat) {
                 });
             }
 
+            if (groupChatMomentsContext) {
+                messages.push({
+                    role: 'system',
+                    content: groupChatMomentsContext,
+                    name: 'SYSTEM (群成员朋友圈记录)',
+                    isPhoneMessage: true
+                });
+            }
+
             if (wechatTranscript) {
                 messages.push({
                     role: 'system',
@@ -12709,6 +12858,14 @@ renderChatRoom(chat) {
                     role: 'system',
                     content: singleChatMomentsContext,
                     name: 'SYSTEM (朋友圈记录)',
+                    isPhoneMessage: true
+                });
+            }
+            if (groupChatMomentsContext) {
+                messages.push({
+                    role: 'system',
+                    content: groupChatMomentsContext,
+                    name: 'SYSTEM (群成员朋友圈记录)',
                     isPhoneMessage: true
                 });
             }
