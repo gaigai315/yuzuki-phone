@@ -67,6 +67,8 @@ test('active Moments image generation can be cancelled without a stale success w
         generationId: ''
     });
     let receivedSignal = null;
+    let resolvedApp = '';
+    let generatedApp = '';
     let markStarted;
     const started = new Promise(resolve => {
         markStarted = resolve;
@@ -75,9 +77,13 @@ test('active Moments image generation can be cancelled without a stale success w
         VirtualPhone: {
             imageGenerationManager: {
                 storage: null,
-                resolveProvider: () => 'novelai',
+                resolveProvider(options) {
+                    resolvedApp = options?.app || '';
+                    return 'novelai';
+                },
                 generate(options) {
                     receivedSignal = options.signal;
+                    generatedApp = options.app || '';
                     markStarted();
                     return new Promise((resolve, reject) => {
                         options.signal.addEventListener('abort', () => {
@@ -107,6 +113,8 @@ test('active Moments image generation can be cancelled without a stale success w
         await started;
 
         assert.equal(moment.imageGenerationStates[0].status, 'loading');
+        assert.equal(resolvedApp, 'wechat');
+        assert.equal(generatedApp, 'wechat');
         assert.equal(await view.cancelMomentImageGeneration(moment.id, 0), true);
         await generation;
 

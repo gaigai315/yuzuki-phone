@@ -121,6 +121,7 @@ export class StoryImageOverlay {
         const tagBusy = floor ? this.app.isStoryTagBusy(floor.floor) : false;
         const imageBusy = floor ? this.app.isStoryImageBusy(floor.floor) : false;
         const anyBusy = tagBusy || imageBusy;
+        const tagGenerationDisabled = anyBusy || floor?.promptExcluded === true;
         const showTagBack = floor && hasTags && this.tagBackFloors.has(floor.floor);
         const editingTags = !!floor && !anyBusy && this.editingTagFloors.has(floor.floor);
         const currentProvider = floor
@@ -177,7 +178,7 @@ export class StoryImageOverlay {
                             </button>
                         </div>
                         <div class="phone-story-image-actions">
-                            <button type="button" class="phone-story-image-action is-tag" ${anyBusy ? 'disabled' : ''}>
+                            <button type="button" class="phone-story-image-action is-tag" ${tagGenerationDisabled ? 'disabled' : ''} ${floor.promptExcluded ? 'title="该楼层已从提示词中排除"' : ''}>
                                 <span class="phone-story-image-action-icon">
                                     <i class="fa-solid ${tagBusy ? 'fa-spinner fa-spin' : 'fa-pencil'}" aria-hidden="true"></i>
                                 </span>

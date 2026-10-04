@@ -24,6 +24,30 @@ test('provider bindings accept the story image app', () => {
     assert.equal(storyManager.getBoundProviderForApp('unknown'), '');
 });
 
+test('unbound WeChat image generation falls back to the global provider', async () => {
+    const values = {
+        'phone-image-enabled': true,
+        'phone-image-provider': 'openai',
+        'phone-image-provider-app-bindings': JSON.stringify({}),
+        'phone-image-openai-key': 'test-key'
+    };
+    const wechatManager = new ImageGenerationManager({
+        get: key => values[key] ?? null
+    });
+    let receivedConfig = null;
+    wechatManager._generateOpenAIImage = async (options, config) => {
+        assert.equal(options.app, 'wechat');
+        receivedConfig = config;
+        return { provider: config.provider, imageUrl: 'data:image/png;base64,ZmFrZQ==' };
+    };
+
+    assert.equal(wechatManager.getBoundProviderForApp('wechat'), '');
+    assert.equal(wechatManager.resolveProvider({ app: 'wechat' }), 'openai');
+    assert.equal(wechatManager.getConfig({ app: 'wechat' }).provider, 'openai');
+    assert.equal((await wechatManager.generate({ app: 'wechat', prompt: 'sunset sky' })).provider, 'openai');
+    assert.equal(receivedConfig?.provider, 'openai');
+});
+
 test('story image generation reads its independent prompt preset scope', () => {
     const values = {
         'phone-image-provider': 'novelai',

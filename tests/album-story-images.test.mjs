@@ -29,7 +29,7 @@ function createFixture() {
                     media_index: 0
                 }
             },
-            { is_user: false, is_system: true, mes: 'System message.' },
+            { role: 'system', is_user: false, is_system: true, mes: 'System message.' },
             {
                 is_user: false,
                 mes: 'Legacy image floor.',
@@ -58,6 +58,49 @@ test('story floor browser keeps assistant floors without images and honors selec
     assert.equal(floors[2].imageUrl, '/images/legacy.png');
 });
 
+test('hidden assistant floors remain in image preview while internal system messages stay excluded', () => {
+    const context = {
+        chat: [
+            {
+                is_user: false,
+                is_system: true,
+                mes: 'Hidden assistant floor.',
+                extra: {
+                    phone_story_image: {
+                        imageUrl: '/backgrounds/phone_story_image_hidden.png',
+                        tags: 'hidden floor'
+                    }
+                }
+            },
+            {
+                is_user: false,
+                is_system: true,
+                mes: 'Hidden assistant floor without an image.',
+                extra: {}
+            },
+            {
+                role: 'system',
+                is_user: false,
+                is_system: true,
+                mes: 'Internal system message.',
+                extra: {
+                    phone_story_image: {
+                        imageUrl: '/backgrounds/phone_story_image_system.png'
+                    }
+                }
+            }
+        ]
+    };
+    const data = new AlbumData({ getContext: () => context });
+
+    const floors = data.getStoryFloors();
+    assert.deepEqual(floors.map(item => item.floor), [0]);
+    assert.equal(floors[0].imageUrl, '/backgrounds/phone_story_image_hidden.png');
+    assert.equal(floors[0].tags, 'hidden floor');
+    assert.equal(floors[0].promptExcluded, true);
+    assert.equal(data.getStoryTagSource(0), null);
+});
+
 test('story tag source includes the preceding user floor and selected assistant text', () => {
     const { data } = createFixture();
     const source = data.getStoryTagSource(3);
@@ -66,6 +109,23 @@ test('story tag source includes the preceding user floor and selected assistant 
     assert.equal(source.messageText, 'She turns around under warm light.');
     assert.equal(source.userName, 'User');
     assert.equal(source.characterName, 'Character');
+});
+
+test('hidden user floors remain excluded from the tag-generation context', () => {
+    const context = {
+        name1: 'User',
+        name2: 'Character',
+        chat: [
+            { is_user: true, mes: 'Visible user context.' },
+            { is_user: true, is_system: true, mes: 'Hidden user context.' },
+            { is_user: false, mes: 'Assistant target.', extra: {} }
+        ]
+    };
+    const data = new AlbumData({ getContext: () => context });
+
+    const source = data.getStoryTagSource(2);
+    assert.equal(source.previousUserText, 'Visible user context.');
+    assert.equal(source.messageText, 'Assistant target.');
 });
 
 test('story tags and generated image are saved into the target Tavern message', async () => {
@@ -128,6 +188,46 @@ test('story images and tags stop matching after the selected swipe changes', asy
     assert.equal(data.getStoryFloor(1).tags, 'fireplace, sitting');
     assert.equal(data.getStoryFloor(1).imageUrl, '');
     assert.equal(message.extra.phone_story_image.imageUrl, undefined);
+});
+
+test('deleting later floors keeps earlier story images after swipe indexes normalize', async () => {
+    const chat = Array.from({ length: 10 }, (_, floor) => {
+        const selectedText = `Selected branch for floor ${floor}`;
+        return {
+            is_user: false,
+            mes: selectedText,
+            swipes: [`Original branch for floor ${floor}`, selectedText],
+            swipe_id: 1,
+            extra: {}
+        };
+    });
+    const context = {
+        chat,
+        async saveChat() {}
+    };
+    const data = new AlbumData({ getContext: () => context });
+
+    for (let floor = 0; floor < chat.length; floor += 1) {
+        await data.attachStoryFloorImage(
+            floor,
+            `/backgrounds/phone_story_image_${floor}.png`,
+            { tags: `floor ${floor}` },
+            chat[floor]
+        );
+    }
+
+    context.chat.splice(6);
+    context.chat.forEach((message, floor) => {
+        delete message.swipe_id;
+        if (floor % 2 === 0) message.is_system = true;
+    });
+
+    const remainingFloors = data.getStoryFloors();
+    assert.deepEqual(remainingFloors.map(item => item.floor), [0, 1, 2, 3, 4, 5]);
+    assert.deepEqual(
+        remainingFloors.map(item => item.imageUrl),
+        [0, 1, 2, 3, 4, 5].map(floor => `/backgrounds/phone_story_image_${floor}.png`)
+    );
 });
 
 test('re-generating a story image replaces the phone-only floor image', async () => {

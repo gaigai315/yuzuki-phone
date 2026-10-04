@@ -93,16 +93,29 @@ export class AlbumData {
     }
 
     _getStoryMessageText(message = {}) {
+        const directText = String(message?.mes || message?.message || '').trim();
+        if (directText) return directText;
         const swipeIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : 0;
         if (Array.isArray(message?.swipes) && message.swipes.length > 0) {
             return String(message.swipes[swipeIndex] || message.swipes[0] || '').trim();
         }
-        return String(message?.mes || message?.message || '').trim();
+        return '';
+    }
+
+    _getStorySwipeIndex(message = {}, messageText = this._getStoryMessageText(message)) {
+        const swipes = Array.isArray(message?.swipes) ? message.swipes : [];
+        const explicitIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : -1;
+        if (explicitIndex >= 0 && (swipes.length === 0 || explicitIndex < swipes.length)) {
+            return explicitIndex;
+        }
+        const normalizedText = String(messageText || '').trim();
+        const matchedIndex = swipes.findIndex(item => String(item || '').trim() === normalizedText);
+        return matchedIndex >= 0 ? matchedIndex : 0;
     }
 
     _getStorySourceFingerprint(message = {}) {
-        const swipeIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : 0;
         const text = this._getStoryMessageText(message);
+        const swipeIndex = this._getStorySwipeIndex(message, text);
         let hash = 2166136261;
         for (let index = 0; index < text.length; index += 1) {
             hash ^= text.charCodeAt(index);
@@ -111,11 +124,20 @@ export class AlbumData {
         return `${swipeIndex}:${text.length}:${(hash >>> 0).toString(36)}`;
     }
 
+    _storySourceFingerprintsMatch(savedFingerprint = '', currentFingerprint = '') {
+        const saved = String(savedFingerprint || '').trim();
+        const current = String(currentFingerprint || '').trim();
+        if (!saved || !current) return false;
+        if (saved === current) return true;
+        return saved.replace(/^[^:]*:/, '') === current.replace(/^[^:]*:/, '');
+    }
+
     _getCurrentStoryMeta(message = {}) {
         const storyMeta = message?.extra?.[STORY_IMAGE_META_KEY];
         if (!storyMeta || typeof storyMeta !== 'object') return storyMeta;
         const savedFingerprint = String(storyMeta.sourceFingerprint || '').trim();
-        if (savedFingerprint && savedFingerprint !== this._getStorySourceFingerprint(message)) return null;
+        const currentFingerprint = this._getStorySourceFingerprint(message);
+        if (savedFingerprint && !this._storySourceFingerprintsMatch(savedFingerprint, currentFingerprint)) return null;
         return storyMeta;
     }
 
@@ -144,16 +166,25 @@ export class AlbumData {
         return images.at(-1) || '';
     }
 
+    _isStoryInternalSystemMessage(message = {}) {
+        return String(message?.role || '').trim().toLowerCase() === 'system'
+            || message?.isPhoneMessage === true
+            || message?.isGaigaiData === true
+            || message?.isGaigaiPrompt === true;
+    }
+
     getStoryFloors() {
         const context = this._getContext();
         const chat = Array.isArray(context?.chat) ? context.chat : [];
         return chat.flatMap((message, floor) => {
-            if (!message || typeof message !== 'object' || message.is_user === true || message.is_system === true) {
+            if (!message || typeof message !== 'object' || message.is_user === true || this._isStoryInternalSystemMessage(message)) {
                 return [];
             }
             const messageText = this._getStoryMessageText(message);
             const images = this._getStoryMessageImages(message);
             const storyMeta = this._getCurrentStoryMeta(message);
+            const promptExcluded = message.is_system === true;
+            if (promptExcluded && images.length === 0) return [];
             const meta = storyMeta && typeof storyMeta === 'object' ? storyMeta : {};
             const tags = typeof storyMeta === 'string'
                 ? storyMeta.trim()
@@ -167,7 +198,8 @@ export class AlbumData {
                 tags,
                 provider: String(meta.provider || '').trim(),
                 model: String(meta.model || '').trim(),
-                generatedAt: Number(meta.generatedAt || 0) || 0
+                generatedAt: Number(meta.generatedAt || 0) || 0,
+                promptExcluded
             }];
         });
     }
@@ -180,7 +212,7 @@ export class AlbumData {
 
     getStoryTagSource(floor) {
         const target = this.getStoryFloor(floor);
-        if (!target) return null;
+        if (!target || target.promptExcluded) return null;
 
         const context = this._getContext();
         const chat = Array.isArray(context?.chat) ? context.chat : [];
@@ -219,7 +251,7 @@ export class AlbumData {
         const sourceFingerprint = this._getStorySourceFingerprint(target.message);
         const previousFingerprint = String(previousMeta?.sourceFingerprint || '').trim();
         const canReusePrevious = previousMeta && typeof previousMeta === 'object'
-            && (!previousFingerprint || previousFingerprint === sourceFingerprint);
+            && (!previousFingerprint || this._storySourceFingerprintsMatch(previousFingerprint, sourceFingerprint));
         extra[STORY_IMAGE_META_KEY] = {
             ...(canReusePrevious ? previousMeta : {}),
             tags: normalizedTags,
@@ -246,7 +278,7 @@ export class AlbumData {
         const sourceFingerprint = this._getStorySourceFingerprint(target.message);
         const previousFingerprint = String(previousMeta?.sourceFingerprint || '').trim();
         const canReusePrevious = previousMeta && typeof previousMeta === 'object'
-            && (!previousFingerprint || previousFingerprint === sourceFingerprint);
+            && (!previousFingerprint || this._storySourceFingerprintsMatch(previousFingerprint, sourceFingerprint));
         this._removeLegacyStoryInlineMedia(extra);
         extra[STORY_IMAGE_META_KEY] = {
             ...(canReusePrevious ? previousMeta : {}),
@@ -301,9 +333,16 @@ export class AlbumData {
             const extra = message?.extra;
             if (this._removeLegacyStoryInlineMedia(extra)) changed = true;
             const storyMeta = extra?.[STORY_IMAGE_META_KEY];
-            if (storyMeta && typeof storyMeta === 'object' && !String(storyMeta.sourceFingerprint || '').trim()) {
-                storyMeta.sourceFingerprint = this._getStorySourceFingerprint(message);
-                changed = true;
+            if (storyMeta && typeof storyMeta === 'object') {
+                const savedFingerprint = String(storyMeta.sourceFingerprint || '').trim();
+                const currentFingerprint = this._getStorySourceFingerprint(message);
+                if (!savedFingerprint || (
+                    savedFingerprint !== currentFingerprint
+                    && this._storySourceFingerprintsMatch(savedFingerprint, currentFingerprint)
+                )) {
+                    storyMeta.sourceFingerprint = currentFingerprint;
+                    changed = true;
+                }
             }
         });
 

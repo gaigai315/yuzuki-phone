@@ -25,7 +25,7 @@ const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.5.9';
 const ST_PHONE_CSS_REVISION = '20261002-swipe-programmatic-click';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
-const ST_PHONE_ALBUM_MODULE_REVISION = '20261004-story-image-auto-preview';
+const ST_PHONE_ALBUM_MODULE_REVISION = '20261004-story-image-delete-history';
 const ST_PHONE_WECHAT_MODULE_REVISION = '20261004-moments-image-cancel';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261002-x-dm-back-stack';
@@ -6001,11 +6001,24 @@ if (window.GGP_Loaded) {
     }
 
     function getStoryImageMessageText(message = {}) {
+        const directText = String(message?.mes || message?.message || '').trim();
+        if (directText) return directText;
         const swipeIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : 0;
         if (Array.isArray(message?.swipes) && message.swipes.length > 0) {
             return String(message.swipes[swipeIndex] || message.swipes[0] || '').trim();
         }
-        return String(message?.mes || message?.message || '').trim();
+        return '';
+    }
+
+    function getStoryImageSwipeIndex(message = {}, messageText = getStoryImageMessageText(message)) {
+        const swipes = Array.isArray(message?.swipes) ? message.swipes : [];
+        const explicitIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : -1;
+        if (explicitIndex >= 0 && (swipes.length === 0 || explicitIndex < swipes.length)) {
+            return explicitIndex;
+        }
+        const normalizedText = String(messageText || '').trim();
+        const matchedIndex = swipes.findIndex(item => String(item || '').trim() === normalizedText);
+        return matchedIndex >= 0 ? matchedIndex : 0;
     }
 
     function hashStoryImageText(text = '') {
@@ -6019,9 +6032,17 @@ if (window.GGP_Loaded) {
     }
 
     function getStoryImageMessageSignature(message = {}) {
-        const swipeIndex = Number.isInteger(message?.swipe_id) ? message.swipe_id : 0;
         const text = getStoryImageMessageText(message);
+        const swipeIndex = getStoryImageSwipeIndex(message, text);
         return `${swipeIndex}:${text.length}:${hashStoryImageText(text)}`;
+    }
+
+    function storyImageSignaturesMatch(savedSignature = '', currentSignature = '') {
+        const saved = String(savedSignature || '').trim();
+        const current = String(currentSignature || '').trim();
+        if (!saved || !current) return false;
+        if (saved === current) return true;
+        return saved.replace(/^[^:]*:/, '') === current.replace(/^[^:]*:/, '');
     }
 
     function isStoryImageAutoEnabled() {
@@ -6033,7 +6054,10 @@ if (window.GGP_Loaded) {
         const meta = message?.extra?.phone_story_image;
         const sourceFingerprint = String(meta?.sourceFingerprint || '').trim();
         return !!String(meta?.imageUrl || '').trim()
-            && (!sourceFingerprint || sourceFingerprint === getStoryImageMessageSignature(message));
+            && (!sourceFingerprint || storyImageSignaturesMatch(
+                sourceFingerprint,
+                getStoryImageMessageSignature(message)
+            ));
     }
 
     function validateStoryImageAutoTask(task = {}) {
@@ -6044,7 +6068,7 @@ if (window.GGP_Loaded) {
             && currentMessage === task.message
             && currentMessage?.is_user !== true
             && currentMessage?.is_system !== true
-            && getStoryImageMessageSignature(currentMessage) === task.signature
+            && storyImageSignaturesMatch(getStoryImageMessageSignature(currentMessage), task.signature)
             && !hasStoryImageOnMessage(currentMessage);
     }
 
