@@ -344,6 +344,9 @@ test('floating double-click opens the standalone story image card without openin
     assert.match(overlaySource, /naturalWidth/);
     assert.match(overlaySource, /availableHeight/);
     assert.match(overlaySource, /fitEmptyStage\(stage\)/);
+    assert.match(overlaySource, /_preloadStoryImage\(target\.imageUrl\)/);
+    assert.match(overlaySource, /_preloadAdjacentStoryImages\(floors, floorIndex\)/);
+    assert.match(overlaySource, /fitImageStageDimensions/);
     assert.match(overlaySource, /scheduleStageFit\(\)/);
     assert.match(overlaySource, /window\.visualViewport\?\.height/);
     assert.match(overlaySource, /stopHostTouchGesture/);
@@ -352,6 +355,65 @@ test('floating double-click opens the standalone story image card without openin
     assert.doesNotMatch(overlaySource, /viewportHeight \* 0\.64/);
     assert.doesNotMatch(overlaySource, /\$\{floorIndex \+ 1\}\s*\/\s*\$\{floors\.length\}/);
     assert.match(viewSource, /id="album-open-settings"/);
+});
+
+test('story image navigation waits for target preload before replacing the current card', async () => {
+    const originalImage = globalThis.Image;
+    const originalDocument = globalThis.document;
+    let pendingImage = null;
+    const renderFloors = [];
+
+    class FakeImage {
+        constructor() {
+            pendingImage = this;
+            this.naturalWidth = 900;
+            this.naturalHeight = 1200;
+        }
+
+        set src(value) {
+            this.currentSrc = value;
+        }
+
+        decode() {
+            return Promise.resolve();
+        }
+    }
+
+    globalThis.Image = FakeImage;
+    globalThis.document = {
+        getElementById() { return null; }
+    };
+
+    try {
+        const { StoryImageOverlay } = await import(`../apps/album/story-image-overlay.js?test=preload-navigation-${Date.now()}`);
+        const overlay = new StoryImageOverlay({ albumData: { getStoryFloors: () => [] } });
+        overlay.isOpen = true;
+        overlay.activeFloor = 12;
+        overlay.render = () => renderFloors.push(overlay.activeFloor);
+
+        const navigation = overlay._navigateToStoryFloor({
+            floor: 10,
+            imageUrl: '/backgrounds/phone_story_image_10.png'
+        });
+
+        assert.equal(overlay.activeFloor, 12);
+        assert.deepEqual(renderFloors, []);
+        assert.equal(pendingImage.currentSrc, '/backgrounds/phone_story_image_10.png');
+
+        pendingImage.onload();
+        assert.equal(await navigation, true);
+        assert.equal(overlay.activeFloor, 10);
+        assert.deepEqual(renderFloors, [10]);
+        assert.deepEqual(overlay._getImageDimensions('/backgrounds/phone_story_image_10.png'), {
+            width: 900,
+            height: 1200
+        });
+    } finally {
+        if (originalImage === undefined) delete globalThis.Image;
+        else globalThis.Image = originalImage;
+        if (originalDocument === undefined) delete globalThis.document;
+        else globalThis.document = originalDocument;
+    }
 });
 
 test('story image browser returns to the latest floor when reopened without a requested floor', async () => {

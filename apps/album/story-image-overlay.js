@@ -23,6 +23,9 @@ export class StoryImageOverlay {
         this.editingTagFloors = new Set();
         this.isOpen = false;
         this._fitFrameIds = [];
+        this._imageDimensions = new Map();
+        this._imagePreloads = new Map();
+        this._navigationRequestId = 0;
         this._onKeyDown = event => {
             if (event.key === 'Escape') this.close();
         };
@@ -44,6 +47,7 @@ export class StoryImageOverlay {
     }
 
     open(options = {}) {
+        this._navigationRequestId += 1;
         this.isOpen = true;
         const requestedFloor = Number.parseInt(String(options.floor ?? ''), 10);
         if (!Number.isInteger(requestedFloor)) this.activeFloor = null;
@@ -55,6 +59,7 @@ export class StoryImageOverlay {
     }
 
     close() {
+        this._navigationRequestId += 1;
         this.isOpen = false;
         document.removeEventListener('keydown', this._onKeyDown);
         window.removeEventListener('resize', this._onResize);
@@ -64,7 +69,9 @@ export class StoryImageOverlay {
     }
 
     refresh() {
-        if (this.isOpen) this.render();
+        if (!this.isOpen) return;
+        this._navigationRequestId += 1;
+        this.render();
     }
 
     setActiveFloor(requestedFloor = null) {
@@ -108,6 +115,68 @@ export class StoryImageOverlay {
         return this.tagDrafts.has(targetFloor)
             ? this.tagDrafts.get(targetFloor)
             : String(fallback || '');
+    }
+
+    _getImageDimensions(imageUrl = '') {
+        return this._imageDimensions.get(String(imageUrl || '').trim()) || null;
+    }
+
+    _preloadStoryImage(imageUrl = '') {
+        const safeUrl = String(imageUrl || '').trim();
+        if (!safeUrl || typeof Image !== 'function') return Promise.resolve(null);
+
+        const cached = this._getImageDimensions(safeUrl);
+        if (cached) return Promise.resolve(cached);
+        const pending = this._imagePreloads.get(safeUrl);
+        if (pending) return pending;
+
+        let preloadPromise;
+        preloadPromise = new Promise(resolve => {
+            const image = new Image();
+            const finish = dimensions => resolve(dimensions);
+            image.decoding = 'async';
+            image.onload = () => {
+                const dimensions = {
+                    width: Number(image.naturalWidth || 0),
+                    height: Number(image.naturalHeight || 0)
+                };
+                if (dimensions.width > 0 && dimensions.height > 0) {
+                    this._imageDimensions.set(safeUrl, dimensions);
+                }
+                const decode = typeof image.decode === 'function'
+                    ? Promise.resolve(image.decode()).catch(() => {})
+                    : Promise.resolve();
+                decode.then(() => finish(this._getImageDimensions(safeUrl)));
+            };
+            image.onerror = () => finish(null);
+            image.src = safeUrl;
+        }).finally(() => {
+            if (this._imagePreloads.get(safeUrl) === preloadPromise) {
+                this._imagePreloads.delete(safeUrl);
+            }
+        });
+        this._imagePreloads.set(safeUrl, preloadPromise);
+        return preloadPromise;
+    }
+
+    _preloadAdjacentStoryImages(floors = [], floorIndex = -1) {
+        [floorIndex - 1, floorIndex, floorIndex + 1].forEach(index => {
+            const imageUrl = floors[index]?.imageUrl;
+            if (imageUrl) void this._preloadStoryImage(imageUrl);
+        });
+    }
+
+    async _navigateToStoryFloor(target, root = null) {
+        if (!target) return false;
+        const requestId = ++this._navigationRequestId;
+        root?.querySelectorAll?.('.phone-story-image-nav')?.forEach(button => {
+            button.disabled = true;
+        });
+        await this._preloadStoryImage(target.imageUrl);
+        if (!this.isOpen || requestId !== this._navigationRequestId) return false;
+        this.activeFloor = target.floor;
+        this.render();
+        return true;
     }
 
     render() {
@@ -201,9 +270,18 @@ export class StoryImageOverlay {
             </section>
         `;
 
+        const cachedDimensions = floor ? this._getImageDimensions(floor.imageUrl) : null;
+        if (cachedDimensions) {
+            this.fitImageStageDimensions(
+                root.querySelector('.phone-story-image-stage'),
+                cachedDimensions.width,
+                cachedDimensions.height
+            );
+        }
         this.bindEvents(root, floors, floor, floorIndex);
         this.bindImageStage(root);
         this.scheduleStageFit();
+        this._preloadAdjacentStoryImages(floors, floorIndex);
     }
 
     cancelScheduledStageFit() {
@@ -221,7 +299,10 @@ export class StoryImageOverlay {
             const stage = root?.querySelector('.phone-story-image-stage');
             const image = stage?.querySelector('.phone-story-image-front img');
             if (image?.complete && image.naturalWidth > 0) this.fitImageStage(image);
-            else if (stage) this.fitEmptyStage(stage);
+            else if (image && this._getImageDimensions(image.getAttribute('src'))) {
+                const dimensions = this._getImageDimensions(image.getAttribute('src'));
+                this.fitImageStageDimensions(stage, dimensions.width, dimensions.height);
+            } else if (stage) this.fitEmptyStage(stage);
         };
 
         const firstFrame = requestAnimationFrame(() => {
@@ -249,7 +330,10 @@ export class StoryImageOverlay {
             else this.fitEmptyStage(stage);
         };
         image.addEventListener('load', fit, { once: true });
-        image.addEventListener('error', () => this.fitEmptyStage(stage), { once: true });
+        image.addEventListener('error', () => {
+            this._imageDimensions.delete(String(image.getAttribute('src') || '').trim());
+            this.fitEmptyStage(stage);
+        }, { once: true });
         if (image.complete) this.scheduleStageFit();
     }
 
@@ -300,6 +384,14 @@ export class StoryImageOverlay {
         const stage = image?.closest?.('.phone-story-image-stage');
         const naturalWidth = Number(image?.naturalWidth || 0);
         const naturalHeight = Number(image?.naturalHeight || 0);
+        const imageUrl = String(image?.getAttribute?.('src') || '').trim();
+        if (imageUrl && naturalWidth > 0 && naturalHeight > 0) {
+            this._imageDimensions.set(imageUrl, { width: naturalWidth, height: naturalHeight });
+        }
+        this.fitImageStageDimensions(stage, naturalWidth, naturalHeight);
+    }
+
+    fitImageStageDimensions(stage, naturalWidth, naturalHeight) {
         const bounds = this.getStageFitBounds(stage);
         if (!stage || !bounds || naturalWidth <= 0 || naturalHeight <= 0) return;
 
@@ -320,8 +412,7 @@ export class StoryImageOverlay {
         const navigate = offset => {
             const target = floors[floorIndex + offset];
             if (!target) return;
-            this.activeFloor = target.floor;
-            this.render();
+            void this._navigateToStoryFloor(target, root);
         };
         root.querySelector('.phone-story-image-nav.is-prev')?.addEventListener('click', () => navigate(-1));
         root.querySelector('.phone-story-image-nav.is-next')?.addEventListener('click', () => navigate(1));
