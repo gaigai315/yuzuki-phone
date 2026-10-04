@@ -59,9 +59,10 @@ export class XData {
         const saved = this.storage?.get?.(STORAGE_KEY, null);
         const parsed = this._parsePosts(saved);
         if (Array.isArray(parsed)) {
+            const storedSnapshot = JSON.stringify(parsed);
             const migrated = parsed.filter((post) => !LEGACY_DEFAULT_POST_IDS.has(String(post?.id || '').trim()));
             this._posts = this._sanitizePostsForStorage(migrated);
-            if (migrated.length !== parsed.length || JSON.stringify(this._posts) !== JSON.stringify(parsed)) {
+            if (migrated.length !== parsed.length || JSON.stringify(this._posts) !== storedSnapshot) {
                 this.savePosts(this._posts);
             }
         } else {
@@ -151,10 +152,11 @@ export class XData {
 
         const saved = this.storage?.get?.(USER_POSTS_KEY, null);
         const parsed = this._parsePosts(saved);
+        const storedSnapshot = Array.isArray(parsed) ? JSON.stringify(parsed) : '';
         this._userPosts = Array.isArray(parsed)
             ? this._sanitizePostsForStorage(parsed).map((post) => ({ ...post, isUserPost: true }))
             : [];
-        if (Array.isArray(parsed) && JSON.stringify(this._userPosts) !== JSON.stringify(parsed)) {
+        if (Array.isArray(parsed) && JSON.stringify(this._userPosts) !== storedSnapshot) {
             this.saveUserPosts(this._userPosts);
         }
         return this._userPosts;
@@ -170,10 +172,25 @@ export class XData {
     }
 
     publishUserPost(content = '', images = []) {
-        const cleanContent = String(content || '').trim().slice(0, 280);
-        const cleanImages = (Array.isArray(images) ? images : [])
+        const textImages = [];
+        const mediaRegex = /\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
+        const cleanContent = String(content || '')
+            .replace(mediaRegex, (match) => {
+                textImages.push(String(match || '').trim());
+                return '';
+            })
+            .replace(/\n{3,}/g, '\n\n')
+            .trim()
+            .slice(0, 280);
+        const cleanImages = [
+            ...(Array.isArray(images) ? images : []),
+            ...textImages
+        ]
             .map((image) => String(image || '').trim())
-            .filter((image) => /^\/backgrounds\//i.test(image))
+            .filter((image) => (
+                /^\/backgrounds\//i.test(image)
+                || /^\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*[^)）]+?\s*[)）](?:\s*[（(]\s*[^)）]+?\s*[)）])?$/i.test(image)
+            ))
             .slice(0, 4);
         if (!cleanContent && cleanImages.length === 0) return null;
 
@@ -197,6 +214,609 @@ export class XData {
         posts.unshift(post);
         const savedPosts = this.saveUserPosts(posts);
         return savedPosts.find((item) => item.id === post.id) || post;
+    }
+
+    _normalizeReactionIdentity(value, fallback = '') {
+        const normalized = String(value || '')
+            .trim()
+            .replace(/^@+/, '')
+            .replace(/\s+/g, ' ')
+            .slice(0, 80);
+        return normalized || fallback;
+    }
+
+    _parseRelativeTimeToMinutes(value) {
+        const text = String(value || '').trim().replace(/\s+/g, '');
+        if (!text || /^(?:刚刚|现在)$/.test(text)) return 0;
+
+        const minuteMatch = text.match(/(\d+)(?:个)?(?:分钟|分)(?:前)?/);
+        if (minuteMatch) return Math.max(0, Number.parseInt(minuteMatch[1], 10) || 0);
+
+        const hourMatch = text.match(/(\d+)(?:个)?小时(?:前)?/);
+        if (hourMatch) return Math.max(0, (Number.parseInt(hourMatch[1], 10) || 0) * 60);
+
+        if (/昨天/.test(text)) return 24 * 60;
+        const dayMatch = text.match(/(\d+)(?:个)?天(?:前)?/);
+        if (dayMatch) return Math.max(0, (Number.parseInt(dayMatch[1], 10) || 0) * 24 * 60);
+
+        const weekMatch = text.match(/(\d+)(?:个)?(?:周|星期)(?:前)?/);
+        if (weekMatch) return Math.max(0, (Number.parseInt(weekMatch[1], 10) || 0) * 7 * 24 * 60);
+        return 0;
+    }
+
+    _formatRelativeTimeFromMinutes(value) {
+        const minutes = Math.max(0, Math.floor(Number(value) || 0));
+        if (minutes < 1) return '刚刚';
+        if (minutes < 60) return `${minutes}分钟前`;
+        if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}小时前`;
+        if (minutes < 7 * 24 * 60) return `${Math.floor(minutes / (24 * 60))}天前`;
+        return `${Math.floor(minutes / (7 * 24 * 60))}周前`;
+    }
+
+    _assignCommentTimes(post = {}, comments = []) {
+        const list = Array.isArray(comments) ? comments : [];
+        if (list.length === 0) return list;
+
+        const postAgeMinutes = this._parseRelativeTimeToMinutes(post?.time);
+        const commentsById = new Map();
+        const commentsByHandle = new Map();
+        const usedAges = new Set();
+        list.forEach((comment) => {
+            if (comment?.id) commentsById.set(String(comment.id), comment);
+            if (comment?.handle) commentsByHandle.set(String(comment.handle), comment);
+            const savedAge = Number(comment?.timeOffsetMinutes);
+            if (Number.isFinite(savedAge)) usedAges.add(Math.max(0, Math.floor(savedAge)));
+        });
+
+        const readAge = (comment) => {
+            const savedAge = Number(comment?.timeOffsetMinutes);
+            if (Number.isFinite(savedAge)) return Math.max(0, Math.floor(savedAge));
+            return this._parseRelativeTimeToMinutes(comment?.time);
+        };
+
+        list.forEach((comment, index) => {
+            if (!comment || typeof comment !== 'object') return;
+            const savedAge = Number(comment.timeOffsetMinutes);
+            if (Number.isFinite(savedAge)) {
+                comment.timeOffsetMinutes = Math.max(0, Math.floor(savedAge));
+                comment.time = this._formatRelativeTimeFromMinutes(comment.timeOffsetMinutes);
+                return;
+            }
+
+            const currentTime = String(comment.time || '').trim();
+            const isUserComment = comment.avatar === 'profile'
+                || String(comment.id || '').startsWith('x-comment-user-');
+            if (isUserComment || (currentTime && currentTime !== '刚刚')) {
+                comment.timeOffsetMinutes = this._parseRelativeTimeToMinutes(currentTime);
+                comment.time = currentTime || '刚刚';
+                usedAges.add(comment.timeOffsetMinutes);
+                return;
+            }
+
+            const target = commentsByHandle.get(String(comment.replyTo || ''))
+                || commentsById.get(String(comment.parentId || ''))
+                || null;
+            const targetAge = target ? readAge(target) : null;
+            const maxAge = target
+                ? Math.max(0, Math.min(postAgeMinutes, targetAge > 0 ? targetAge - 1 : 0))
+                : Math.max(0, postAgeMinutes - 1);
+            const seedText = `${post?.id || post?.content || post?.time || 'x'}|${comment.id || ''}|${comment.name || ''}|${comment.text || ''}|${index}`;
+            const seed = Number.parseInt(this._slugForText(seedText), 36) || index;
+            let age = maxAge > 0 ? seed % (maxAge + 1) : 0;
+
+            if (maxAge > 0 && usedAges.has(age)) {
+                for (let step = 1; step <= maxAge; step += 1) {
+                    const candidate = (age + step) % (maxAge + 1);
+                    if (!usedAges.has(candidate)) {
+                        age = candidate;
+                        break;
+                    }
+                }
+            }
+
+            comment.timeOffsetMinutes = age;
+            comment.time = this._formatRelativeTimeFromMinutes(age);
+            usedAges.add(age);
+        });
+        return list;
+    }
+
+    _readReactionMetric(...values) {
+        for (const value of values) {
+            const parsed = Number.parseInt(value, 10);
+            if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+        }
+        return null;
+    }
+
+    _normalizeGeneratedComments(rawComments = [], limit = 10) {
+        const profileName = this._normalizeReactionIdentity(
+            this.getProfile()?.nickname || this.getCurrentUserName()
+        ).toLowerCase();
+        return (Array.isArray(rawComments) ? rawComments : [])
+            .map((comment) => {
+                const name = this._normalizeReactionIdentity(comment?.name, 'X 用户');
+                return {
+                    name,
+                    text: String(comment?.text || '').trim().slice(0, 500),
+                    accountType: this._normalizeAccountType(comment?.accountType || comment?.type),
+                    replyTo: this._normalizeReactionIdentity(comment?.replyTo),
+                    likes: Math.max(0, Number.parseInt(comment?.likes, 10) || 0)
+                };
+            })
+            .filter((comment) => (
+                comment.text
+                && this._normalizeReactionIdentity(comment.name).toLowerCase() !== profileName
+            ))
+            .slice(0, Math.max(1, limit));
+    }
+
+    _normalizeUserPostReactionResult(rawResult = {}, post = {}, currentFollowers = this._getCurrentFollowersCount()) {
+        const result = rawResult && typeof rawResult === 'object' ? rawResult : {};
+        const profileName = this._normalizeReactionIdentity(
+            this.getProfile()?.nickname || this.getCurrentUserName()
+        ).toLowerCase();
+        const comments = this._normalizeGeneratedComments(result.comments, 10);
+        const likes = Array.from(new Set((Array.isArray(result.likes) ? result.likes : [])
+            .map((name) => this._normalizeReactionIdentity(name))
+            .filter((name) => name && name.toLowerCase() !== profileName)))
+            .slice(0, 8);
+
+        const seedText = `${post?.id || ''}|${post?.content || ''}|${post?.time || ''}`;
+        const seed = Number.parseInt(this._slugForText(seedText), 36) || 1;
+        const followerCount = Math.max(0, Number.parseInt(currentFollowers, 10) || 0);
+        const engagementRange = Math.max(4, Math.min(80, Math.round(Math.sqrt(followerCount + 1) * 1.8) + 5));
+        const hasVisibleActivity = comments.length > 0 || likes.length > 0;
+        const fallbackLikeCount = hasVisibleActivity
+            ? Math.max(likes.length, likes.length + 1 + (seed % engagementRange))
+            : 0;
+        const explicitLikeCount = this._readReactionMetric(result.likeCount, result.likesCount, result.totalLikes);
+        const explicitCommentCount = this._readReactionMetric(
+            result.commentCount,
+            result.commentsCount,
+            result.replyCount,
+            result.replies
+        );
+        const parsedFollowers = this._parseFollowerNumber(result.followers);
+
+        return {
+            comments,
+            likes,
+            likeCount: Math.max(likes.length, explicitLikeCount ?? fallbackLikeCount),
+            commentCount: Math.max(comments.length, explicitCommentCount ?? comments.length),
+            followers: parsedFollowers !== null && parsedFollowers > 0 ? parsedFollowers : null
+        };
+    }
+
+    async _urlToBase64(url) {
+        try {
+            const source = String(url || '').trim();
+            if (!source) return null;
+            if (/^data:image\//i.test(source)) return source;
+            if (typeof fetch !== 'function' || typeof FileReader === 'undefined') return null;
+
+            const response = await fetch(source, { cache: 'no-cache' });
+            if (!response.ok) return null;
+            const blob = await response.blob();
+            return await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        } catch (error) {
+            console.warn('[X] 图片转 Base64 供围观互动识别失败:', error);
+            return null;
+        }
+    }
+
+    async _buildPostInteractionDisplay(post = {}) {
+        const sections = [];
+        const content = String(post?.content || '').trim();
+        if (content) sections.push(content);
+
+        const images = (Array.isArray(post?.images) ? post.images : [])
+            .map((image) => String(image || '').trim())
+            .filter(Boolean)
+            .slice(0, 4);
+        if (images.length > 0) {
+            const descriptions = images.map((image, index) => {
+                const state = post?.imageGenerationStates?.[index];
+                const rawImage = String(image || '').trim();
+                const parts = [];
+                const bracketPattern = /[（(]\s*([\s\S]*?)\s*[)）]/g;
+                let match;
+                while ((match = bracketPattern.exec(rawImage)) !== null) {
+                    const part = String(match[1] || '').trim();
+                    if (part) parts.push(part);
+                }
+                return String(state?.description || state?.prompt || parts[0] || '').trim() || `配图${index + 1}`;
+            });
+            sections.push(`配图：${descriptions.join('；')}`);
+
+            if (typeof window !== 'undefined') {
+                if (!window.VirtualPhone) window.VirtualPhone = {};
+                if (!window.VirtualPhone._pendingImages) window.VirtualPhone._pendingImages = {};
+                const imageTokens = [];
+                for (const image of images) {
+                    if (!/^(?:data:image|https?:\/\/|\/backgrounds\/)/i.test(image)) continue;
+                    const base64 = await this._urlToBase64(image);
+                    if (!base64) continue;
+                    const tokenId = `__ST_PHONE_IMAGE_${Date.now()}_${Math.random().toString(36).slice(2, 7)}__`;
+                    window.VirtualPhone._pendingImages[tokenId] = base64;
+                    imageTokens.push(tokenId);
+                }
+                if (imageTokens.length > 0) {
+                    sections.push(`[帖子附带了以下真实图片，请结合画面细节进行公开互动]\n${imageTokens.join('\n')}`);
+                }
+            }
+        }
+
+        return sections.join('\n') || '[空白帖子]';
+    }
+
+    _renderXPrompt(promptManager, feature, variables = {}) {
+        const rawPrompt = promptManager?.getPromptForFeature?.('x', feature) || '';
+        if (typeof promptManager?.renderPromptForFeature === 'function') {
+            return promptManager.renderPromptForFeature('x', feature, variables);
+        }
+        return Object.entries(variables).reduce(
+            (contentText, [key, value]) => contentText.split(`{{${key}}}`).join(String(value ?? '')),
+            rawPrompt
+        );
+    }
+
+    async _requestXJson(prompt, options = {}) {
+        const runtime = typeof window !== 'undefined' ? window.VirtualPhone : null;
+        const apiManager = runtime?.apiManager;
+        if (!apiManager) throw new Error('API Manager 未初始化');
+
+        const contextMessages = await this._collectContextMessages(this.getGenerationContextSettings());
+        const messages = [
+            {
+                role: 'system',
+                name: options.systemName || 'SYSTEM (X 公开互动)',
+                content: options.systemContent
+                    || '你是 X 公开互动数据生成引擎。只根据公开帖子与允许注入的上下文生成互动，并严格返回请求指定的 JSON。',
+                isPhoneMessage: true
+            },
+            ...contextMessages,
+            { role: 'user', content: prompt, isPhoneMessage: true }
+        ];
+        const context = this._getContext();
+        const configuredMaxTokens = Number.parseInt(context?.max_response_length, 10)
+            || Number.parseInt(context?.max_length, 10)
+            || 1600;
+        const response = await this._withTimeout(
+            apiManager.callAI(messages, {
+                appId: 'x',
+                max_tokens: Math.max(Number(options.minTokens) || 1000, configuredMaxTokens)
+            }),
+            Number(options.timeoutMs) || 180000,
+            options.timeoutMessage || 'X 互动生成超时，请稍后重试'
+        );
+        if (!response?.success) throw new Error(response?.error || options.failureMessage || 'X 互动生成失败');
+
+        const rawText = String(response.summary || response.content || response.text || '').trim();
+        const filteredText = String(applyPhoneTagFilter(rawText, { storage: this.storage }) || '').trim();
+        const cleanedText = (filteredText || rawText).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        this._lastAIResponse = { kind: options.kind || 'interaction', rawText, cleanedText };
+
+        const codeBlockMatch = cleanedText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+        const jsonSource = String(codeBlockMatch?.[1] || cleanedText).trim();
+        const firstBrace = jsonSource.indexOf('{');
+        const lastBrace = jsonSource.lastIndexOf('}');
+        if (firstBrace < 0 || lastBrace <= firstBrace) {
+            const error = new Error(options.parseMessage || 'X 互动解析失败，模型未返回 JSON');
+            error.xReactionParseFailure = { rawText, cleanedText, kind: options.kind || 'interaction' };
+            throw error;
+        }
+
+        try {
+            const jsonText = jsonSource.slice(firstBrace, lastBrace + 1).replace(/,\s*([}\]])/g, '$1');
+            return JSON.parse(jsonText);
+        } catch (cause) {
+            const error = new Error(options.parseMessage || 'X 互动解析失败，请检查模型返回格式');
+            error.xReactionParseFailure = {
+                rawText,
+                cleanedText,
+                kind: options.kind || 'interaction',
+                cause
+            };
+            throw error;
+        }
+    }
+
+    async generateReactionForPost(post = {}) {
+        const runtime = typeof window !== 'undefined' ? window.VirtualPhone : null;
+        const promptManager = runtime?.promptManager;
+
+        promptManager?.ensureLoaded?.();
+        const profile = this.getProfile();
+        const userName = String(profile.nickname || this.getCurrentUserName() || 'X 用户').trim() || 'X 用户';
+        const currentFollowers = this._getCurrentFollowersCount();
+        const postContentDisplay = await this._buildPostInteractionDisplay(post);
+        const promptVariables = {
+            userName,
+            currentFollowers: String(currentFollowers),
+            postContentDisplay
+        };
+        const prompt = this._renderXPrompt(promptManager, 'interaction', promptVariables);
+        if (!prompt.trim()) throw new Error('X 围观互动提示词为空，请先在设置中填写');
+
+        const rawResult = await this._requestXJson(prompt, {
+            kind: 'reaction',
+            systemName: 'SYSTEM (X 围观互动)',
+            minTokens: 1200,
+            timeoutMessage: 'X 围观互动生成超时，请稍后重试',
+            failureMessage: 'X 围观互动生成失败',
+            parseMessage: 'X 围观互动解析失败，请检查模型返回格式'
+        });
+        const normalized = this._normalizeUserPostReactionResult(rawResult, post, currentFollowers);
+        if (normalized.comments.length === 0
+            && normalized.likes.length === 0
+            && normalized.likeCount === 0
+            && normalized.commentCount === 0) {
+            throw new Error('X 围观互动结果为空');
+        }
+        return normalized;
+    }
+
+    applyReactionToUserPost(postId, rawResult = {}) {
+        const safeId = String(postId || '').trim();
+        const posts = this.getUserPosts();
+        const post = posts.find((item) => String(item?.id || '') === safeId);
+        if (!post) return null;
+
+        const normalized = this._normalizeUserPostReactionResult(rawResult, post);
+        const existingComments = Array.isArray(post.commentList) ? post.commentList : [];
+        const startingDeclaredCount = Math.max(0, Number.parseInt(post.comments, 10) || 0);
+        const addedComments = [];
+        const identityOf = (value) => this._normalizeReactionIdentity(value).toLowerCase();
+
+        normalized.comments.forEach((comment, index) => {
+            const replyIdentity = identityOf(comment.replyTo);
+            const target = replyIdentity
+                ? [...existingComments].reverse().find((item) => (
+                    identityOf(item?.name) === replyIdentity || identityOf(item?.handle) === replyIdentity
+                ))
+                : null;
+            const duplicate = existingComments.some((item) => (
+                identityOf(item?.name) === identityOf(comment.name)
+                && String(item?.text || '').trim() === comment.text
+                && String(item?.replyTo || '') === String(target?.handle || '')
+            ));
+            if (duplicate) return;
+
+            const generated = {
+                id: `x-comment-ai-${Date.now().toString(36)}-${index.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+                name: comment.name,
+                handle: `@x_${this._slugForText(comment.name)}_${existingComments.length}`,
+                avatarText: Array.from(comment.name)[0]?.toUpperCase() || 'X',
+                avatarTone: this._toneForText(comment.name),
+                accountType: comment.accountType,
+                text: comment.text,
+                time: '刚刚',
+                likes: comment.likes,
+                parentId: target ? (target.parentId || target.id) : null,
+                replyTo: target?.handle || null
+            };
+            existingComments.push(generated);
+            addedComments.push(generated);
+        });
+
+        this._assignCommentTimes(post, existingComments);
+        post.commentList = existingComments;
+        post.comments = Math.max(
+            existingComments.length,
+            startingDeclaredCount + addedComments.length,
+            normalized.commentCount
+        );
+        post.likeList = Array.from(new Set([
+            ...(Array.isArray(post.likeList) ? post.likeList : []),
+            ...normalized.likes
+        ]));
+        const countedUserLike = post.likedByUser === true && post.userLikeCounted === true ? 1 : 0;
+        const existingPublicLikes = Math.max(0, this._parseCount(post.likes) - countedUserLike);
+        post.likes = countedUserLike + Math.max(
+            existingPublicLikes,
+            post.likeList.length,
+            normalized.likeCount
+        );
+        this.saveUserPosts(posts);
+
+        if (normalized.followers !== null) {
+            this.saveProfile({
+                ...this.getProfile(),
+                followers: normalized.followers
+            });
+        }
+
+        return { post, addedComments, reaction: normalized };
+    }
+
+    _resolvePostAuthorName(post = {}) {
+        if (post?.isUserPost) {
+            return String(this.getProfile()?.nickname || this.getCurrentUserName() || 'X 用户').trim() || 'X 用户';
+        }
+        return String(post?.author?.name || 'X 用户').trim() || 'X 用户';
+    }
+
+    _buildExistingCommentContext(post = {}, limit = 12) {
+        const comments = Array.isArray(post?.commentList) ? post.commentList : [];
+        if (comments.length === 0) return '暂无';
+
+        const namesByTarget = new Map();
+        comments.forEach((comment) => {
+            const name = this._normalizeReactionIdentity(comment?.name, 'X 用户');
+            if (comment?.id) namesByTarget.set(String(comment.id), name);
+            if (comment?.handle) namesByTarget.set(String(comment.handle), name);
+        });
+
+        return comments.slice(-Math.max(1, limit)).map((comment) => {
+            const name = this._normalizeReactionIdentity(comment?.name, 'X 用户');
+            const replyTo = namesByTarget.get(String(comment?.replyTo || ''))
+                || this._normalizeReactionIdentity(comment?.replyTo);
+            const text = String(comment?.text || '').trim();
+            return `- ${name}${replyTo ? ` 回复 ${replyTo}` : ''}：${text}`;
+        }).filter((line) => !line.endsWith('：')).join('\n') || '暂无';
+    }
+
+    _persistPostForSource(post, source = 'feed') {
+        const safeSource = source === 'user' ? 'user' : (source === 'following' ? 'following' : 'feed');
+        const posts = safeSource === 'user'
+            ? this.getUserPosts()
+            : (safeSource === 'following' ? this.getFollowingPosts() : this.getPosts());
+        const index = posts.findIndex((item) => String(item?.id || '') === String(post?.id || ''));
+        if (index >= 0) posts[index] = post;
+        if (safeSource === 'user') this.saveUserPosts(posts);
+        else if (safeSource === 'following') this.saveFollowingPosts(posts);
+        else this.savePosts(posts);
+        return post;
+    }
+
+    togglePostLike(postId, source = 'feed') {
+        const post = this.getPost(postId, source);
+        if (!post) return null;
+
+        const likes = this._parseCount(post.likes);
+        if (post.likedByUser === true) {
+            post.likedByUser = false;
+            post.likes = post.userLikeCounted === true ? Math.max(0, likes - 1) : likes;
+            post.userLikeCounted = false;
+        } else {
+            const shouldIncrement = likes < 10000;
+            post.likedByUser = true;
+            post.userLikeCounted = shouldIncrement;
+            post.likes = shouldIncrement ? likes + 1 : likes;
+        }
+
+        return this._persistPostForSource(post, source);
+    }
+
+    applyGeneratedComments(postId, rawComments = [], source = 'feed', options = {}) {
+        const post = this.getPost(postId, source);
+        if (!post) return null;
+
+        const comments = this._normalizeGeneratedComments(rawComments, Number(options.limit) || 10);
+        const existingComments = Array.isArray(post.commentList) ? post.commentList : [];
+        const startingDeclaredCount = Math.max(0, Number.parseInt(post.comments, 10) || 0);
+        const fixedTargetId = String(options.replyToCommentId || '').trim();
+        const fixedTarget = fixedTargetId
+            ? existingComments.find((comment) => String(comment?.id || '') === fixedTargetId) || null
+            : null;
+        const identityOf = (value) => this._normalizeReactionIdentity(value).toLowerCase();
+        const addedComments = [];
+
+        comments.forEach((comment, index) => {
+            const replyIdentity = identityOf(comment.replyTo);
+            const target = fixedTarget || (replyIdentity
+                ? [...existingComments].reverse().find((item) => (
+                    identityOf(item?.name) === replyIdentity || identityOf(item?.handle) === replyIdentity
+                ))
+                : null);
+            const duplicate = existingComments.some((item) => (
+                identityOf(item?.name) === identityOf(comment.name)
+                && String(item?.text || '').trim() === comment.text
+                && String(item?.replyTo || '') === String(target?.handle || '')
+            ));
+            if (duplicate) return;
+
+            const generated = {
+                id: `x-comment-ai-${Date.now().toString(36)}-${index.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+                name: comment.name,
+                handle: `@x_${this._slugForText(comment.name)}_${existingComments.length}`,
+                avatarText: Array.from(comment.name)[0]?.toUpperCase() || 'X',
+                avatarTone: this._toneForText(comment.name),
+                accountType: comment.accountType,
+                text: comment.text,
+                time: '刚刚',
+                likes: comment.likes,
+                parentId: target ? (target.parentId || target.id) : null,
+                replyTo: target?.handle || null
+            };
+            existingComments.push(generated);
+            addedComments.push(generated);
+        });
+
+        this._assignCommentTimes(post, existingComments);
+        post.commentList = existingComments;
+        post.comments = Math.max(
+            existingComments.length,
+            startingDeclaredCount + addedComments.length
+        );
+        this._persistPostForSource(post, source);
+        return { post, addedComments };
+    }
+
+    async generateMoreComments(postId, source = 'feed') {
+        const post = this.getPost(postId, source);
+        if (!post) throw new Error('没有找到这条 X 帖子');
+
+        const runtime = typeof window !== 'undefined' ? window.VirtualPhone : null;
+        const promptManager = runtime?.promptManager;
+        promptManager?.ensureLoaded?.();
+        const userName = String(this.getProfile()?.nickname || this.getCurrentUserName() || 'X 用户').trim() || 'X 用户';
+        const prompt = this._renderXPrompt(promptManager, 'moreComments', {
+            userName,
+            currentFollowers: String(this._getCurrentFollowersCount()),
+            postAuthor: this._resolvePostAuthorName(post),
+            postContentDisplay: await this._buildPostInteractionDisplay(post),
+            existingCommentContext: this._buildExistingCommentContext(post)
+        });
+        if (!prompt.trim()) throw new Error('X 加载更多回复提示词为空，请先在设置中填写');
+
+        const result = await this._requestXJson(prompt, {
+            kind: 'moreComments',
+            systemName: 'SYSTEM (X 加载更多回复)',
+            minTokens: 900,
+            timeoutMessage: 'X 加载更多回复超时，请稍后重试',
+            failureMessage: 'X 加载更多回复失败',
+            parseMessage: 'X 加载更多回复解析失败，请检查模型返回格式'
+        });
+        const comments = this._normalizeGeneratedComments(result?.comments, 5);
+        if (comments.length === 0) throw new Error('X 没有返回可用的新回复');
+        return this.applyGeneratedComments(postId, comments, source, { limit: 5 });
+    }
+
+    async generateReplyForUserComment(postId, userCommentId, source = 'feed') {
+        const post = this.getPost(postId, source);
+        const userComment = post?.commentList?.find((comment) => String(comment?.id || '') === String(userCommentId || ''));
+        if (!post || !userComment) throw new Error('没有找到用户刚发布的回复');
+
+        const runtime = typeof window !== 'undefined' ? window.VirtualPhone : null;
+        const promptManager = runtime?.promptManager;
+        promptManager?.ensureLoaded?.();
+        const userName = String(this.getProfile()?.nickname || this.getCurrentUserName() || 'X 用户').trim() || 'X 用户';
+        const replyTarget = post.commentList.find((comment) => (
+            String(comment?.id || '') === String(userComment.replyTo || '')
+            || String(comment?.handle || '') === String(userComment.replyTo || '')
+        ));
+        const userCommentContext = `${userName}${replyTarget ? ` 回复 ${replyTarget.name || '该用户'}` : ''}：${userComment.text}`;
+        const prompt = this._renderXPrompt(promptManager, 'commentInteraction', {
+            userName,
+            currentFollowers: String(this._getCurrentFollowersCount()),
+            postAuthor: this._resolvePostAuthorName(post),
+            postContentDisplay: await this._buildPostInteractionDisplay(post),
+            existingCommentContext: this._buildExistingCommentContext(post),
+            userCommentContext
+        });
+        if (!prompt.trim()) throw new Error('X 评论回评提示词为空，请先在设置中填写');
+
+        const result = await this._requestXJson(prompt, {
+            kind: 'commentInteraction',
+            systemName: 'SYSTEM (X 评论回评)',
+            minTokens: 700,
+            timeoutMessage: 'X 评论回评生成超时，请稍后重试',
+            failureMessage: 'X 评论回评生成失败',
+            parseMessage: 'X 评论回评解析失败，请检查模型返回格式'
+        });
+        const comments = this._normalizeGeneratedComments(result?.comments, 2);
+        if (comments.length === 0) throw new Error('X 没有返回可用的评论回评');
+        return this.applyGeneratedComments(postId, comments, source, {
+            limit: 2,
+            replyToCommentId: userComment.id
+        });
     }
 
     deleteUserPost(postId) {
@@ -251,6 +871,7 @@ export class XData {
 
         const saved = this.storage?.get?.(FOLLOWING_POSTS_KEY, null);
         const parsed = this._parsePosts(saved);
+        const storedSnapshot = Array.isArray(parsed) ? JSON.stringify(parsed) : '';
         const fallbackPosts = Array.isArray(this._posts)
             ? this._posts
             : (this._parsePosts(this.storage?.get?.(STORAGE_KEY, null)) || []);
@@ -261,7 +882,7 @@ export class XData {
             this._sanitizePostsForStorage(sourcePosts)
                 .filter((post) => this.isFollowingPostAuthor(post))
         );
-        if (!Array.isArray(parsed) || JSON.stringify(parsed) !== JSON.stringify(this._followingPosts)) {
+        if (!Array.isArray(parsed) || storedSnapshot !== JSON.stringify(this._followingPosts)) {
             this.storage?.set?.(FOLLOWING_POSTS_KEY, JSON.stringify(this._followingPosts));
         }
         return this._followingPosts;
@@ -306,6 +927,7 @@ export class XData {
             avatar: 'profile',
             text: cleanText,
             time: '刚刚',
+            timeOffsetMinutes: 0,
             likes: 0,
             parentId: rootId,
             replyTo: target?.handle || null
@@ -1118,7 +1740,7 @@ export class XData {
         if (!authorName || !content) return null;
         const commentList = this._parseTwitterComments(rawComments);
         const tone = this._toneForText(authorName);
-        return {
+        const post = {
             author: {
                 name: authorName,
                 handle: `@x_${this._slugForText(authorName)}`,
@@ -1135,6 +1757,8 @@ export class XData {
             images,
             imageGenerationStates: []
         };
+        this._assignCommentTimes(post, commentList);
+        return post;
     }
 
     _parseTwitterImages(value) {
@@ -1341,6 +1965,9 @@ export class XData {
                         }
                         return nextState;
                     });
+                }
+                if (Array.isArray(post.commentList)) {
+                    this._assignCommentTimes(normalized, post.commentList);
                 }
                 return normalized;
             });

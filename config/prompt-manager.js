@@ -721,6 +721,105 @@ date:{{STORY_DATE}}
 - 网友：评论内容
 </Twitter>`,
                 order: 2
+            },
+            interaction: {
+                enabled: true,
+                name: '🗨️ X 围观互动',
+                description: '用户发布 X 帖子后的陌生网友互动生成',
+                content: `【X 帖子围观互动任务】
+
+用户“{{userName}}”刚在 X 上发布了一条公开帖子。请模拟真实的 X 平台生态，生成陌生用户、认证账号或推广账号对这条帖子的公开互动。
+当前粉丝数量为：{{currentFollowers}}
+
+用户发布的帖子内容：
+{{postContentDisplay}}
+
+要求：
+1. 生成 5-9 条与帖子内容直接相关的公开回复，回复者必须是陌生网友、认证账号或推广账号，不得使用用户本人昵称。
+2. 回复风格要符合 X 平台：简短、直接、有网感，可包含 emoji、吐槽、争论、玩梗或认真讨论，但不要把所有回复写成同一种语气。
+3. 评论者名字必须自然且彼此不同；accountType 只能是 personal、official、advertiser 之一。
+4. replyTo 可选，用评论者 name 指向本批次中更早出现的评论，形成楼中楼；当 comments 数量不少于 7 条时至少生成 1 条楼中楼。
+5. 只能根据公开帖子正文和配图互动，严禁泄露未公开的私聊、角色卡或线下剧情。
+6. likes 数组只列出 2-6 个代表性点赞者名字；likeCount 是总点赞数，必须大于或等于 likes 数量，并结合帖子吸引力与当前粉丝数合理变化。
+7. commentCount 是总回复数，必须大于或等于 comments 数量。不同帖子不能固定返回同一组数字。
+8. 仅当本轮公开互动有明确关注或取关依据时，才返回变化后的 followers 最终总数；否则省略 followers，禁止返回增减量。
+
+只返回 JSON，不要输出 Markdown 代码块之外的解释。格式：
+\`\`\`json
+{
+  "comments": [
+    {"name": "评论者名字", "text": "回复内容", "accountType": "personal", "replyTo": "可选，被回复者名字"}
+  ],
+  "likes": ["点赞者名字1", "点赞者名字2"],
+  "likeCount": 18,
+  "commentCount": 7
+}
+\`\`\``,
+                order: 3
+            },
+            moreComments: {
+                enabled: true,
+                name: '💬 X 加载更多回复',
+                description: '为当前 X 帖子继续生成公开回复',
+                content: `【X 加载更多回复任务】
+
+请根据下面这条公开帖子和已有回复，继续生成 3-5 条新的 X 回复。
+
+帖子作者：{{postAuthor}}
+帖子内容：
+{{postContentDisplay}}
+
+已有回复：
+{{existingCommentContext}}
+
+要求：
+1. 新回复必须针对帖子或已有公开讨论，不得重复已有回复的观点和句式。
+2. 评论者必须是陌生网友、认证账号或推广账号，不得使用当前手机主人“{{userName}}”的昵称。
+3. accountType 只能是 personal、official、advertiser 之一。
+4. replyTo 可选，使用已有回复或本批次更早回复的 name，以便正确挂入对应楼层。
+5. 只返回 JSON，不要输出解释。
+
+\`\`\`json
+{
+  "comments": [
+    {"name": "评论者名字", "text": "回复内容", "accountType": "personal", "replyTo": "可选，被回复者名字"}
+  ]
+}
+\`\`\``,
+                order: 4
+            },
+            commentInteraction: {
+                enabled: true,
+                name: '↩️ X 评论回评',
+                description: '用户回复帖子或楼层评论后的网友回评',
+                content: `【X 评论回评任务】
+
+当前手机主人“{{userName}}”刚在 X 的公开评论区发了一条回复。请生成 1-2 条来自帖子作者或其他陌生网友的针对性回评。
+
+帖子作者：{{postAuthor}}
+帖子内容：
+{{postContentDisplay}}
+
+已有评论区上下文：
+{{existingCommentContext}}
+
+用户本次回复：
+{{userCommentContext}}
+
+要求：
+1. 每条回评都必须直接回应用户刚发的内容，不得另起无关话题。
+2. 如果用户回复了某层评论，回评仍属于该主楼；如果用户直接回复帖子，回评应挂在用户新建的主评论下面。
+3. name 必须是帖子作者或陌生网友，禁止使用当前手机主人昵称；accountType 只能是 personal、official、advertiser 之一。
+4. 只返回 JSON，不要输出解释。
+
+\`\`\`json
+{
+  "comments": [
+    {"name": "回评者名字", "text": "针对用户回复的内容", "accountType": "personal"}
+  ]
+}
+\`\`\``,
+                order: 5
             }
         },
 

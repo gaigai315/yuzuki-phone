@@ -3,8 +3,8 @@
  *  X app controller - visual prototype
  * ======================================================== */
 
-import { XData } from './x-data.js?v=20261002-x-dm-back-stack';
-import { XView } from './x-view.js?v=20261002-x-dm-back-stack';
+import { XData } from './x-data.js?v=20261005-x-comment-times';
+import { XView } from './x-view.js?v=20261005-x-comment-times';
 
 export class XApp {
     constructor(phoneShell, storage) {
@@ -35,7 +35,7 @@ export class XApp {
         const link = document.createElement('link');
         link.id = 'xapp-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./x.css?v=20261002-x-compose-safe-area', import.meta.url).href;
+        link.href = new URL('./x.css?v=20261005-x-comment-times', import.meta.url).href;
         document.head.appendChild(link);
     }
 
@@ -116,11 +116,18 @@ export class XApp {
         this.view.currentReplyCommentId = null;
         this.view.activeDirectMessageId = null;
         this.view._sendingDirectMessageThreadIds?.clear?.();
+        this.view._pendingReactionPostIds?.clear?.();
+        this.view._loadingMorePostIds?.clear?.();
+        this.view._pendingCommentReactionIds?.clear?.();
     }
 
     destroy() {
         this.view.closePostMenu();
         this.view.closeForwardDialog();
+        this.view._sendingDirectMessageThreadIds?.clear?.();
+        this.view._pendingReactionPostIds?.clear?.();
+        this.view._loadingMorePostIds?.clear?.();
+        this.view._pendingCommentReactionIds?.clear?.();
         window.removeEventListener('phone:swipeBack', this._swipeHandler);
     }
 }

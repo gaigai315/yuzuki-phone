@@ -37,6 +37,9 @@ export class XView {
         this._activePostMenuClose = null;
         this.activeDirectMessageId = null;
         this._sendingDirectMessageThreadIds = new Set();
+        this._pendingReactionPostIds = new Set();
+        this._loadingMorePostIds = new Set();
+        this._pendingCommentReactionIds = new Set();
         this._suppressDirectMessageThreadClickUntil = 0;
     }
 
@@ -146,7 +149,7 @@ export class XView {
                     </header>
                     <div class="xapp-post-copy">${this._renderText(post.content)}</div>
                     ${this.renderMedia(post, { source })}
-                    ${this.renderPostActions(post)}
+                    ${this.renderPostActions(post, false, source)}
                 </div>
             </article>
         `;
@@ -185,6 +188,11 @@ export class XView {
                         <span>添加图片</span>
                         <small>最多 4 张</small>
                     </button>
+                    <button class="xapp-compose-add-text-image" type="button">
+                        <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                        <span>文字图片</span>
+                        <small>最多 4 张</small>
+                    </button>
                 </div>
             </section>
         `;
@@ -200,6 +208,42 @@ export class XView {
                 </button>
             </div>
         `).join('');
+    }
+
+    _countComposeTextImages(rawText = '') {
+        const mediaRegex = /\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
+        return (String(rawText || '').match(mediaRegex) || []).length;
+    }
+
+    _insertComposeTextImageTemplate(textarea) {
+        if (!textarea) return false;
+        const uploadedCount = Array.isArray(this.pendingComposeImages) ? this.pendingComposeImages.length : 0;
+        const textImageCount = this._countComposeTextImages(textarea.value);
+        if (uploadedCount + textImageCount >= 4) {
+            this.app.phoneShell.showNotification?.('X', '上传图片和文字图片合计最多 4 张', '×');
+            return false;
+        }
+
+        const template = '[图片]（输入描述）';
+        const selectionStart = Number.isInteger(textarea.selectionStart) ? textarea.selectionStart : textarea.value.length;
+        const selectionEnd = Number.isInteger(textarea.selectionEnd) ? textarea.selectionEnd : selectionStart;
+        const before = textarea.value.slice(0, selectionStart);
+        const after = textarea.value.slice(selectionEnd);
+        const prefix = before && !before.endsWith('\n') ? '\n' : '';
+        const suffix = after && !after.startsWith('\n') ? '\n' : '';
+        const insertion = `${prefix}${template}${suffix}`;
+
+        if (typeof textarea.setRangeText === 'function') {
+            textarea.setRangeText(insertion, selectionStart, selectionEnd, 'end');
+        } else {
+            textarea.value = `${before}${insertion}${after}`;
+        }
+
+        const placeholderStart = selectionStart + prefix.length + '[图片]（'.length;
+        textarea.focus?.();
+        textarea.setSelectionRange?.(placeholderStart, placeholderStart + '输入描述'.length);
+        textarea.dispatchEvent?.(new Event('input', { bubbles: true }));
+        return true;
     }
 
     renderFeedIdentity(post, resolvedAuthor = null) {
@@ -593,16 +637,20 @@ export class XView {
         `;
     }
 
-    renderPostActions(post, detail = false) {
+    renderPostActions(post, detail = false, source = 'feed') {
         const safeId = this._escapeAttr(post.id);
+        const safeSource = this._escapeAttr(source);
         const detailClass = detail ? ' xapp-post-actions-detail' : '';
+        const liked = post.likedByUser === true;
+        const likedClass = liked ? ' is-liked' : '';
+        const heartClass = liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
         return `
             <footer class="xapp-post-actions${detailClass}">
                 <button class="xapp-post-action xapp-comment-action" type="button" data-post-id="${safeId}" aria-label="查看回复">
                     <i class="fa-regular fa-comment"></i><span data-xapp-comment-count>${this._formatCount(post.comments)}</span>
                 </button>
-                <button class="xapp-post-action" type="button" aria-label="喜欢">
-                    <i class="fa-regular fa-heart"></i><span>${this._formatCount(post.likes)}</span>
+                <button class="xapp-post-action xapp-like-action${likedClass}" type="button" data-post-id="${safeId}" data-post-source="${safeSource}" aria-label="${liked ? '取消喜欢' : '喜欢'}" aria-pressed="${liked}">
+                    <i class="${heartClass}" aria-hidden="true"></i><span data-xapp-like-count>${this._formatCount(post.likes)}</span>
                 </button>
                 <button class="xapp-post-action xapp-post-action-share" type="button" data-post-id="${safeId}" aria-label="转发到微信">
                     <i class="fa-regular fa-paper-plane"></i>
@@ -647,15 +695,21 @@ export class XView {
                         <div class="xapp-detail-time">${this._escapeHtml(post.time || '刚刚')}</div>
                         <div class="xapp-detail-stats">
                             <span><strong data-xapp-comment-count>${this._formatCount(post.comments)}</strong> 回复</span>
-                            <span><strong>${this._formatCount(post.likes)}</strong> 喜欢</span>
+                            <span><strong data-xapp-like-count>${this._formatCount(post.likes)}</strong> 喜欢</span>
                         </div>
-                        ${this.renderPostActions(post, true)}
+                        ${this.renderPostActions(post, true, this.currentPostSource)}
                     </article>
 
                     <section class="xapp-thread-section" aria-label="帖子回复">
                         <h2>回复</h2>
                         <div class="xapp-comments" id="xapp-comments">
                             ${this.renderComments(post)}
+                        </div>
+                        <div class="xapp-load-more-comments-wrap">
+                            <button class="xapp-load-more-comments" type="button" data-post-id="${this._escapeAttr(post.id)}" data-post-source="${this._escapeAttr(this.currentPostSource)}">
+                                <i class="fa-regular fa-comment-dots" aria-hidden="true"></i>
+                                <span>加载更多回复</span>
+                            </button>
                         </div>
                     </section>
                 </div>
@@ -974,6 +1028,19 @@ export class XView {
             });
         });
 
+        root.querySelectorAll('.xapp-like-action[data-post-id]').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const postElement = button.closest('.xapp-post');
+                const source = button.dataset.postSource
+                    || postElement?.dataset.postSource
+                    || (this.currentPage === 'detail' ? this.currentPostSource : 'feed');
+                const post = this.app.xData.togglePostLike(button.dataset.postId, source);
+                if (post) this.refreshPostLikeState(post, source);
+            });
+        });
+
         root.querySelectorAll('.xapp-post-action-share[data-post-id]').forEach((button) => {
             button.addEventListener('click', async (event) => {
                 event.preventDefault();
@@ -989,12 +1056,48 @@ export class XView {
         this.bindMediaEvents(root);
     }
 
+    refreshPostLikeState(post, source = 'feed') {
+        if (typeof document === 'undefined' || !post) return;
+        const root = document.querySelector('.phone-view-current .xapp-root');
+        if (!root) return;
+
+        const postId = String(post.id || '');
+        const liked = post.likedByUser === true;
+        root.querySelectorAll('.xapp-like-action[data-post-id]').forEach((button) => {
+            if (button.dataset.postId !== postId) return;
+            if ((button.dataset.postSource || 'feed') !== source) return;
+            button.classList.toggle('is-liked', liked);
+            button.setAttribute('aria-pressed', String(liked));
+            button.setAttribute('aria-label', liked ? '取消喜欢' : '喜欢');
+            const icon = button.querySelector('i');
+            if (icon) icon.className = liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
+            const count = button.querySelector('[data-xapp-like-count]');
+            if (count) count.textContent = this._formatCount(post.likes);
+        });
+
+        if (this.currentPage === 'detail'
+            && String(this.currentPostId || '') === postId
+            && this.currentPostSource === source) {
+            root.querySelectorAll('[data-xapp-like-count]').forEach((element) => {
+                element.textContent = this._formatCount(post.likes);
+            });
+            return;
+        }
+
+        root.querySelectorAll('.xapp-post[data-post-id]').forEach((article) => {
+            if (article.dataset.postId !== postId) return;
+            if ((article.dataset.postSource || 'feed') !== source) return;
+            article.querySelectorAll('[data-xapp-like-count]').forEach((element) => {
+                element.textContent = this._formatCount(post.likes);
+            });
+        });
+    }
+
     showPostMenu(post, anchorButton = null) {
         if (typeof document === 'undefined' || !post) return;
         this.closeForwardDialog();
         this.closePostMenu();
 
-        const author = this._resolvePostAuthor(post);
         const isFollowing = this.app.xData.isFollowingPostAuthor(post);
         const overlay = document.createElement('div');
         overlay.className = 'xapp-post-menu-overlay';
@@ -1002,11 +1105,11 @@ export class XView {
             <div class="xapp-post-menu-sheet" role="dialog" aria-label="帖子操作">
                 <button class="xapp-post-menu-action" type="button" data-xapp-post-follow>
                     <i class="fa-regular fa-user" aria-hidden="true"></i>
-                    <span>${isFollowing ? '取消关注' : '关注'} ${this._escapeHtml(author.name || 'X 用户')}</span>
+                    <span>${isFollowing ? '取消关注' : '关注'}</span>
                 </button>
                 <button class="xapp-post-menu-action" type="button" data-xapp-post-dm>
                     <i class="fa-regular fa-envelope" aria-hidden="true"></i>
-                    <span>私信 ${this._escapeHtml(author.name || 'X 用户')}</span>
+                    <span>私信</span>
                 </button>
             </div>
         `;
@@ -1547,6 +1650,11 @@ export class XView {
             this.clearReplyTarget(true);
         });
 
+        root.querySelector('.xapp-load-more-comments')?.addEventListener('click', async (event) => {
+            const button = event.currentTarget;
+            await this.loadMoreComments(button.dataset.postId, button.dataset.postSource || 'feed', button);
+        });
+
         const input = root.querySelector('#xapp-reply-input');
         const sendButton = root.querySelector('#xapp-reply-send');
         if (!input || !sendButton) return;
@@ -1605,6 +1713,9 @@ export class XView {
         root.querySelector('.xapp-compose-add-image')?.addEventListener('click', () => {
             if (!this.composeUploadInProgress) fileInput?.click();
         });
+        root.querySelector('.xapp-compose-add-text-image')?.addEventListener('click', () => {
+            if (!this.composeUploadInProgress) this._insertComposeTextImageTemplate(textarea);
+        });
         textarea?.addEventListener('input', () => this.syncComposeControls(root));
         fileInput?.addEventListener('change', async (event) => {
             const files = Array.from(event.currentTarget.files || []);
@@ -1629,9 +1740,10 @@ export class XView {
     async handleComposeFiles(files = [], root = document.querySelector('.phone-view-current .xapp-root')) {
         if (this.composeUploadInProgress || !Array.isArray(files) || files.length === 0) return;
         const sessionId = this.composeSessionId;
-        const remaining = Math.max(0, 4 - this.pendingComposeImages.length);
+        const textImageCount = this._countComposeTextImages(root?.querySelector('#xapp-compose-text')?.value || '');
+        const remaining = Math.max(0, 4 - this.pendingComposeImages.length - textImageCount);
         if (remaining <= 0) {
-            this.app.phoneShell.showNotification?.('X', '一条帖子最多添加 4 张图片', '×');
+            this.app.phoneShell.showNotification?.('X', '上传图片和文字图片合计最多 4 张', '×');
             return;
         }
 
@@ -1698,19 +1810,29 @@ export class XView {
         const countElement = root?.querySelector('#xapp-compose-count');
         const publishButton = root?.querySelector('.xapp-compose-publish');
         const addImageButton = root?.querySelector('.xapp-compose-add-image');
+        const addTextImageButton = root?.querySelector('.xapp-compose-add-text-image');
+        const mediaCount = this.pendingComposeImages.length + this._countComposeTextImages(textarea?.value || '');
         if (countElement) countElement.textContent = String(count);
         if (publishButton) {
             publishButton.disabled = this.composeUploadInProgress
                 || (!String(textarea?.value || '').trim() && this.pendingComposeImages.length === 0);
         }
         if (addImageButton) {
-            addImageButton.disabled = this.composeUploadInProgress || this.pendingComposeImages.length >= 4;
+            addImageButton.disabled = this.composeUploadInProgress || mediaCount >= 4;
+        }
+        if (addTextImageButton) {
+            addTextImageButton.disabled = this.composeUploadInProgress || mediaCount >= 4;
         }
     }
 
     publishComposePost(root = document.querySelector('.phone-view-current .xapp-root')) {
         if (this.composeUploadInProgress) return null;
         const content = String(root?.querySelector('#xapp-compose-text')?.value || '').trim();
+        const textImageCount = this._countComposeTextImages(content);
+        if (this.pendingComposeImages.length + textImageCount > 4) {
+            this.app.phoneShell.showNotification?.('X', '上传图片和文字图片合计最多 4 张', '×');
+            return null;
+        }
         const post = this.app.xData.publishUserPost(content, this.pendingComposeImages);
         if (!post) {
             this.app.phoneShell.showNotification?.('X', '请输入内容或添加图片', '×');
@@ -1724,7 +1846,114 @@ export class XView {
         this.currentFeed = 'for-you';
         this.app.phoneShell.showNotification?.('X', '帖子已发布', '✓');
         this.render();
+        void this.triggerXAIReaction(post);
         return post;
+    }
+
+    async triggerXAIReaction(post) {
+        const postId = String(post?.id || '').trim();
+        if (!postId || this._pendingReactionPostIds.has(postId)) return null;
+        this._pendingReactionPostIds.add(postId);
+        this.app.phoneShell.showNotification?.('X', '网友正在围观...', '👀');
+
+        try {
+            const result = await this.app.xData.generateReactionForPost(post);
+            const applied = this.app.xData.applyReactionToUserPost(postId, result);
+            if (!applied) return null;
+
+            this.refreshPostEngagement(applied.post, 'user');
+            this.app.phoneShell.showNotification?.('X', '收到新互动', '💬');
+            return applied;
+        } catch (error) {
+            console.error('[X] 用户帖子围观互动失败:', error);
+            this.app.phoneShell.showNotification?.('X', error?.message || '围观互动生成失败', '×');
+            return null;
+        } finally {
+            this._pendingReactionPostIds.delete(postId);
+        }
+    }
+
+    async loadMoreComments(postId, source = 'feed', button = null) {
+        const safePostId = String(postId || '').trim();
+        const key = `${source}:${safePostId}`;
+        if (!safePostId || this._loadingMorePostIds.has(key)) return null;
+        this._loadingMorePostIds.add(key);
+
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>正在加载...</span>';
+        }
+
+        try {
+            const result = await this.app.xData.generateMoreComments(safePostId, source);
+            const stillSameDetail = this.currentPage === 'detail'
+                && String(this.currentPostId || '') === safePostId
+                && this.currentPostSource === source;
+            if (stillSameDetail && result?.post) {
+                this.refreshDetailComments(result.post, result.addedComments?.[0]?.id || null);
+            }
+            this.app.phoneShell.showNotification?.('X', '新回复已加载', '💬');
+            return result;
+        } catch (error) {
+            console.error('[X] 加载更多回复失败:', error);
+            this.app.phoneShell.showNotification?.('X', error?.message || '加载更多回复失败', '×');
+            return null;
+        } finally {
+            this._loadingMorePostIds.delete(key);
+            if (button?.isConnected) {
+                button.disabled = false;
+                button.innerHTML = '<i class="fa-regular fa-comment-dots" aria-hidden="true"></i><span>加载更多回复</span>';
+            }
+        }
+    }
+
+    async triggerCommentAIReaction(postId, userCommentId, source = 'feed') {
+        const safeCommentId = String(userCommentId || '').trim();
+        if (!safeCommentId || this._pendingCommentReactionIds.has(safeCommentId)) return null;
+        this._pendingCommentReactionIds.add(safeCommentId);
+        this.app.phoneShell.showNotification?.('X', '网友正在回复...', '👀');
+
+        try {
+            const result = await this.app.xData.generateReplyForUserComment(postId, safeCommentId, source);
+            const stillSameDetail = this.currentPage === 'detail'
+                && String(this.currentPostId || '') === String(postId || '')
+                && this.currentPostSource === source;
+            if (stillSameDetail && result?.post) {
+                this.refreshDetailComments(result.post, result.addedComments?.[0]?.id || safeCommentId);
+            }
+            this.app.phoneShell.showNotification?.('X', '收到新回复', '💬');
+            return result;
+        } catch (error) {
+            console.error('[X] 评论回评生成失败:', error);
+            this.app.phoneShell.showNotification?.('X', error?.message || '评论回评生成失败', '×');
+            return null;
+        } finally {
+            this._pendingCommentReactionIds.delete(safeCommentId);
+        }
+    }
+
+    refreshPostEngagement(post, source = 'feed') {
+        if (typeof document === 'undefined' || !post) return;
+        const root = document.querySelector('.phone-view-current .xapp-root');
+        if (!root) return;
+
+        if (this.currentPage === 'detail'
+            && String(this.currentPostId || '') === String(post.id || '')
+            && this.currentPostSource === source) {
+            this.refreshDetailComments(post);
+            return;
+        }
+
+        root.querySelectorAll('.xapp-post[data-post-id]').forEach((article) => {
+            if (article.dataset.postId !== String(post.id || '')) return;
+            if ((article.dataset.postSource || 'feed') !== source) return;
+            article.querySelectorAll('[data-xapp-comment-count]').forEach((element) => {
+                element.textContent = this._formatCount(post.comments);
+            });
+            article.querySelectorAll('[data-xapp-like-count]').forEach((element) => {
+                element.textContent = this._formatCount(post.likes);
+            });
+        });
     }
 
     async _deleteManagedXImages(images = []) {
@@ -2010,19 +2239,19 @@ export class XView {
         const generationManager = runtime?.imageGenerationManager;
         const uploadManager = runtime?.imageManager;
         const parsed = this._parseXImageItem(post.images[index], currentState);
-        const prompt = String(parsed.prompt || promptText || '').trim();
-        const description = String(descriptionText || parsed.description || prompt || '帖子配图').trim();
+        const sourcePrompt = String(parsed.prompt || promptText || '').trim();
+        const description = String(descriptionText || parsed.description || sourcePrompt || '帖子配图').trim();
         const previousImagePath = clearPreviousImage
             ? this._getManagedXGeneratedImagePath(post, index)
             : '';
-        if (!prompt) return null;
+        if (!sourcePrompt) return null;
 
         if (!generationManager?.generate) {
             const errorMessage = '生图管理器未初始化';
             this._setXPostImageState(post, index, {
                 status: 'failed',
                 error: errorMessage,
-                prompt,
+                prompt: sourcePrompt,
                 description,
                 generatedImageUrl: ''
             });
@@ -2038,17 +2267,33 @@ export class XView {
         this._setXPostImageState(post, index, {
             status: 'loading',
             error: '',
-            prompt,
+            prompt: sourcePrompt,
             description,
             generatedImageUrl: ''
         });
         this._persistXPost(post, source);
         this._refreshXPostMedia(postId, source);
 
+        let generationPrompt = sourcePrompt;
         try {
+            const shouldTranslateUserPrompt = post.isUserPost === true
+                && this._hasCjkText(sourcePrompt)
+                && typeof generationManager.translatePromptToEnglish === 'function';
+            if (shouldTranslateUserPrompt) {
+                generationPrompt = String(
+                    await generationManager.translatePromptToEnglish(sourcePrompt, 'x') || sourcePrompt
+                ).trim();
+                this._setXPostImageState(post, index, {
+                    prompt: generationPrompt,
+                    description
+                });
+                this._persistXPost(post, source);
+                this._refreshXPostMedia(postId, source);
+            }
+
             const result = await generationManager.generate({
                 app: 'x',
-                prompt
+                prompt: generationPrompt
             });
             const rawImage = String(result?.imageUrl || result?.imageData || '').trim();
             const imagePath = await this._persistXGeneratedImage(rawImage, uploadManager);
@@ -2058,7 +2303,7 @@ export class XView {
             this._setXPostImageState(post, index, {
                 status: 'done',
                 error: '',
-                prompt,
+                prompt: generationPrompt,
                 description,
                 generatedImageUrl: imagePath,
                 imageProvider: String(result?.provider || '').trim(),
@@ -2076,7 +2321,7 @@ export class XView {
             this._setXPostImageState(post, index, {
                 status: 'failed',
                 error: message,
-                prompt,
+                prompt: generationPrompt,
                 description,
                 generatedImageUrl: previousImagePath
             });
@@ -2345,11 +2590,15 @@ export class XView {
         const text = input?.value?.trim();
         if (!input || !text) return;
 
+        const postId = this.currentPostId;
+        const source = this.currentPostSource;
+        const replyToCommentId = this.currentReplyCommentId;
+
         const result = this.app.xData.addComment(
-            this.currentPostId,
+            postId,
             text,
-            this.currentReplyCommentId,
-            this.currentPostSource
+            replyToCommentId,
+            source
         );
         if (!result) return;
 
@@ -2358,6 +2607,7 @@ export class XView {
         this.syncReplySendState();
         this.refreshDetailComments(result.post, result.rootId || result.comment.id);
         input.focus();
+        void this.triggerCommentAIReaction(postId, result.comment.id, source);
     }
 
     refreshDetailComments(post, focusCommentId = null) {
@@ -2366,6 +2616,9 @@ export class XView {
 
         document.querySelectorAll('.phone-view-current .xapp-root [data-xapp-comment-count]').forEach((element) => {
             element.textContent = this._formatCount(post.comments);
+        });
+        document.querySelectorAll('.phone-view-current .xapp-root [data-xapp-like-count]').forEach((element) => {
+            element.textContent = this._formatCount(post.likes);
         });
 
         if (!focusCommentId) return;
@@ -2476,6 +2729,10 @@ export class XView {
         const description = stateDescription || parts[0] || '';
         const prompt = statePrompt || (parts.length >= 2 ? parts.slice(1).join(', ') : (parts[0] || ''));
         return { realUrl, description, prompt };
+    }
+
+    _hasCjkText(value = '') {
+        return /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(String(value || ''));
     }
 
     _extractManagedXImagePath(value) {

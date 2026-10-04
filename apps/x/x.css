@@ -577,6 +577,12 @@
     color: var(--xapp-blue);
 }
 
+#phone-panel-content .phone-screen .xapp-like-action.is-liked,
+#phone-panel-content .phone-screen .xapp-like-action.is-liked:hover,
+#phone-panel-content .phone-screen .xapp-like-action.is-liked i {
+    color: #f91880 !important;
+}
+
 #phone-panel-content .phone-screen .xapp-post-action:nth-child(2) {
     justify-content: center;
 }
@@ -841,7 +847,8 @@
     display: none !important;
 }
 
-#phone-panel-content .phone-screen .xapp-compose-add-image {
+#phone-panel-content .phone-screen .xapp-compose-add-image,
+#phone-panel-content .phone-screen .xapp-compose-add-text-image {
     display: grid;
     grid-template-columns: 24px minmax(0, 1fr) auto;
     align-items: center;
@@ -857,17 +864,24 @@
     text-align: left;
 }
 
-#phone-panel-content .phone-screen .xapp-compose-add-image i {
+#phone-panel-content .phone-screen .xapp-compose-add-text-image {
+    margin-top: 8px;
+}
+
+#phone-panel-content .phone-screen .xapp-compose-add-image i,
+#phone-panel-content .phone-screen .xapp-compose-add-text-image i {
     color: var(--xapp-blue);
     font-size: 16px;
 }
 
-#phone-panel-content .phone-screen .xapp-compose-add-image small {
+#phone-panel-content .phone-screen .xapp-compose-add-image small,
+#phone-panel-content .phone-screen .xapp-compose-add-text-image small {
     color: var(--xapp-muted);
     font-size: 9.5px;
 }
 
-#phone-panel-content .phone-screen .xapp-compose-add-image:disabled {
+#phone-panel-content .phone-screen .xapp-compose-add-image:disabled,
+#phone-panel-content .phone-screen .xapp-compose-add-text-image:disabled {
     opacity: 0.54;
 }
 
@@ -2539,6 +2553,48 @@
     margin-top: 5px;
     color: var(--xapp-muted);
     font-size: 11.5px;
+}
+
+#phone-panel-content .phone-screen .xapp-load-more-comments-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 12px 14px 16px;
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .xapp-load-more-comments {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 118px;
+    height: 34px;
+    padding: 0 14px;
+    border: 1px solid #cfd9de !important;
+    border-radius: 18px !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    color: #536471 !important;
+    font-size: 10px !important;
+    line-height: 1 !important;
+}
+
+#phone-panel-content .phone-screen .xapp-load-more-comments:disabled {
+    opacity: 0.62;
+}
+
+#phone-panel-content .phone-screen .xapp-load-more-comments i {
+    color: inherit;
+    font-size: 10px !important;
+}
+
+#phone-panel-content .phone-screen .xapp-load-more-comments span {
+    font-size: 10px !important;
+    line-height: 1 !important;
+    letter-spacing: 0;
+    white-space: nowrap;
 }
 
 #phone-panel-content .phone-screen .xapp-reply-composer {

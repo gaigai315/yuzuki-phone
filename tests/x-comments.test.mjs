@@ -79,6 +79,63 @@ const createDataWithPost = (storage = new MemoryStorage(), overrides = {}) => {
     return { data, post: data.getPosts()[0], storage };
 };
 
+const parseRelativeMinutes = (value) => {
+    const text = String(value || '').replace(/\s+/g, '');
+    if (!text || text === '刚刚') return 0;
+    const minutes = text.match(/(\d+)分钟/);
+    if (minutes) return Number(minutes[1]);
+    const hours = text.match(/(\d+)小时/);
+    if (hours) return Number(hours[1]) * 60;
+    const days = text.match(/(\d+)天/);
+    if (days) return Number(days[1]) * 24 * 60;
+    return 0;
+};
+
+test('X post likes increment small counts and persist the red state', () => {
+    const { data, post, storage } = createDataWithPost(new MemoryStorage(), { likes: 359 });
+
+    const likedPost = data.togglePostLike(post.id);
+    assert.equal(likedPost.likes, 360);
+    assert.equal(likedPost.likedByUser, true);
+    assert.equal(likedPost.userLikeCounted, true);
+
+    const reloaded = new XData(storage);
+    const savedPost = reloaded.getPost(post.id);
+    assert.equal(savedPost.likes, 360);
+    assert.equal(savedPost.likedByUser, true);
+
+    const unlikedPost = reloaded.togglePostLike(post.id);
+    assert.equal(unlikedPost.likes, 359);
+    assert.equal(unlikedPost.likedByUser, false);
+    assert.equal(unlikedPost.userLikeCounted, false);
+});
+
+test('X post likes keep compact large counts unchanged', () => {
+    const { data, post } = createDataWithPost(new MemoryStorage(), { likes: '1.4万' });
+
+    const likedPost = data.togglePostLike(post.id);
+    assert.equal(likedPost.likes, 14000);
+    assert.equal(likedPost.likedByUser, true);
+    assert.equal(likedPost.userLikeCounted, false);
+
+    const unlikedPost = data.togglePostLike(post.id);
+    assert.equal(unlikedPost.likes, 14000);
+    assert.equal(unlikedPost.likedByUser, false);
+});
+
+test('X spectator reactions preserve the user like increment', () => {
+    const data = new XData(new MemoryStorage());
+    const post = data.publishUserPost('等待网友围观');
+
+    assert.equal(data.togglePostLike(post.id, 'user').likes, 1);
+    const applied = data.applyReactionToUserPost(post.id, { likeCount: 9 });
+    assert.equal(applied.post.likes, 10);
+
+    const unlikedPost = data.togglePostLike(post.id, 'user');
+    assert.equal(unlikedPost.likes, 9);
+    assert.equal(unlikedPost.likedByUser, false);
+});
+
 test('a fresh X feed starts empty and shows the refresh hint', () => {
     const data = new XData(new MemoryStorage());
     const view = new XView({ xData: data, phoneShell: { setContent() {} } });
@@ -86,6 +143,51 @@ test('a fresh X feed starts empty and shows the refresh hint', () => {
     assert.deepEqual(data.getPosts(), []);
     assert.match(view.renderForYouFeed(), /还没有帖子/);
     assert.match(view.renderForYouFeed(), /下拉/);
+});
+
+test('X comments receive varied times within the post age', () => {
+    const data = new XData(new MemoryStorage());
+    const [post] = data.parseTwitterContent(`<Twitter>
+博主：时间测试员（个人）
+时间：1小时前
+正文：测试评论时间。
+回复数：4
+点赞数：8
+评论：
+- 甲：第一条
+- 乙：第二条
+- 丙 回复 甲：回复第一条
+- 丁：第四条
+</Twitter>`);
+
+    const ages = post.commentList.map((comment) => parseRelativeMinutes(comment.time));
+    const root = post.commentList[0];
+    const nested = post.commentList[2];
+
+    assert.ok(ages.every((age) => age >= 0 && age < 60));
+    assert.ok(new Set(ages).size > 1);
+    assert.ok(parseRelativeMinutes(nested.time) <= parseRelativeMinutes(root.time));
+    assert.ok(post.commentList.every((comment) => Number.isFinite(comment.timeOffsetMinutes)));
+});
+
+test('X migrates stored AI comments away from an all-just-now timeline', () => {
+    const storage = new MemoryStorage();
+    storage.set('x_posts', JSON.stringify([createTestPost({
+        time: '1小时前',
+        commentList: [
+            { id: 'old-a', name: '甲', handle: '@a', text: '一', time: '刚刚', parentId: null, replyTo: null },
+            { id: 'old-b', name: '乙', handle: '@b', text: '二', time: '刚刚', parentId: null, replyTo: null },
+            { id: 'old-c', name: '丙', handle: '@c', text: '三', time: '刚刚', parentId: null, replyTo: null }
+        ]
+    })]));
+
+    const migrated = new XData(storage).getPosts()[0];
+    const migratedTimes = migrated.commentList.map((comment) => comment.time);
+    const reloadedTimes = new XData(storage).getPosts()[0].commentList.map((comment) => comment.time);
+
+    assert.ok(new Set(migratedTimes).size > 1);
+    assert.deepEqual(reloadedTimes, migratedTimes);
+    assert.match(storage.get('x_posts'), /timeOffsetMinutes/);
 });
 
 test('direct post replies are persisted with the X post', () => {
@@ -119,6 +221,38 @@ test('replies to comments stay inside the same root thread', () => {
     assert.equal(secondReply.comment.replyTo, firstReply.comment.handle);
     assert.ok(thread.replies.some((comment) => comment.id === firstReply.comment.id));
     assert.ok(thread.replies.some((comment) => comment.id === secondReply.comment.id));
+});
+
+test('generated X replies stay under the user comment root for both direct and nested replies', () => {
+    const { data, post } = createDataWithPost();
+    const originalRoot = post.commentList.find((comment) => !comment.parentId);
+    const nestedUserReply = data.addComment(post.id, '回复已有楼层', originalRoot.id);
+    const nestedReaction = data.applyGeneratedComments(post.id, [{
+        name: '围观网友',
+        text: '我来回你这条',
+        accountType: 'personal'
+    }], 'feed', { replyToCommentId: nestedUserReply.comment.id });
+    const nestedAIReply = nestedReaction.addedComments[0];
+
+    assert.equal(nestedUserReply.comment.parentId, originalRoot.id);
+    assert.equal(nestedAIReply.parentId, originalRoot.id);
+    assert.equal(nestedAIReply.replyTo, nestedUserReply.comment.handle);
+    assert.equal(nestedAIReply.time, '刚刚');
+
+    const directUserReply = data.addComment(post.id, '单独回复帖子');
+    const directReaction = data.applyGeneratedComments(post.id, [{
+        name: '另一位网友',
+        text: '回复你的主评论',
+        accountType: 'official'
+    }], 'feed', { replyToCommentId: directUserReply.comment.id });
+    const directAIReply = directReaction.addedComments[0];
+    const directThread = data.getCommentThreads(post).find((thread) => thread.id === directUserReply.comment.id);
+
+    assert.equal(directUserReply.comment.parentId, null);
+    assert.equal(directAIReply.parentId, directUserReply.comment.id);
+    assert.equal(directAIReply.replyTo, directUserReply.comment.handle);
+    assert.equal(directAIReply.time, '刚刚');
+    assert.ok(directThread.replies.some((comment) => comment.id === directAIReply.id));
 });
 
 test('invalid stored X data falls back to an empty feed', () => {
@@ -183,18 +317,22 @@ test('X chat header omits the unused All filter', () => {
     assert.doesNotMatch(block, />All\s*</);
 });
 
-test('X post more buttons identify the post and expose follow and private-message actions', () => {
+test('X post menu uses concise follow and private-message labels without repeating the author name', () => {
     const { data, post } = createDataWithPost();
     const view = new XView({ xData: data, phoneShell: { setContent() {} } });
     const feedHtml = view.renderFeedPost(post, { source: 'feed' });
     const source = fs.readFileSync(new URL('../apps/x/x-view.js', import.meta.url), 'utf8');
+    const menuStart = source.indexOf('showPostMenu(post');
+    const menuEnd = source.indexOf('const closeMenu', menuStart);
+    const menuMarkup = source.slice(menuStart, menuEnd);
 
     assert.match(feedHtml, /xapp-more-button[^>]+data-post-id="x-post-test"/);
     assert.match(feedHtml, /data-post-source="feed"/);
-    assert.match(source, /data-xapp-post-follow/);
-    assert.match(source, /data-xapp-post-dm/);
-    assert.match(source, /取消关注.*关注/);
-    assert.match(source, /<span>私信 /);
+    assert.match(menuMarkup, /data-xapp-post-follow/);
+    assert.match(menuMarkup, /data-xapp-post-dm/);
+    assert.match(menuMarkup, /<span>\$\{isFollowing \? '取消关注' : '关注'\}<\/span>/);
+    assert.match(menuMarkup, /<span>私信<\/span>/);
+    assert.doesNotMatch(menuMarkup, /author\.name/);
     assert.doesNotMatch(source, /xapp-post-menu-cancel/);
 });
 
@@ -431,16 +569,64 @@ test('X compose entry uses the compact outlined edit icon', () => {
     assert.doesNotMatch(homeHtml, /fa-feather-pointed/);
 });
 
-test('X compose page supports text and up to four server-backed image uploads', () => {
+test('X compose page supports uploads and Weibo-style text image templates within four media slots', () => {
     const view = new XView({ xData: new XData(new MemoryStorage()), phoneShell: { setContent() {} } });
     const composeHtml = view.renderCompose();
     const source = fs.readFileSync(new URL('../apps/x/x-view.js', import.meta.url), 'utf8');
 
     assert.match(composeHtml, /id="xapp-compose-text"/);
     assert.match(composeHtml, /id="xapp-compose-image-input"[^>]+multiple/);
+    assert.match(composeHtml, /class="xapp-compose-add-text-image"/);
+    assert.match(composeHtml, /fa-wand-magic-sparkles/);
+    assert.match(composeHtml, />文字图片</);
     assert.match(composeHtml, /最多 4 张/);
+    assert.match(source, /\[图片\]（输入描述）/);
+    assert.match(source, /上传图片和文字图片合计最多 4 张/);
     assert.match(source, /uploadDataUrl\?\.\(dataUrl, 'x_img'\)/);
     assert.match(source, /\/\^\\\/backgrounds\\\/phone_x_img_/);
+});
+
+test('X compose text image action inserts the template at the cursor and selects its description', () => {
+    const view = new XView({ xData: new XData(new MemoryStorage()), phoneShell: { showNotification() {} } });
+    const textarea = {
+        value: '正文',
+        selectionStart: 2,
+        selectionEnd: 2,
+        selectedRange: null,
+        setRangeText(insertion, start, end) {
+            this.value = `${this.value.slice(0, start)}${insertion}${this.value.slice(end)}`;
+        },
+        focus() {},
+        setSelectionRange(start, end) {
+            this.selectedRange = [start, end];
+        },
+        dispatchEvent() {}
+    };
+
+    assert.equal(view._insertComposeTextImageTemplate(textarea), true);
+    assert.equal(textarea.value, '正文\n[图片]（输入描述）');
+    assert.equal(textarea.value.slice(...textarea.selectedRange), '输入描述');
+});
+
+test('publishing an X compose post starts the spectator reaction flow', () => {
+    const data = new XData(new MemoryStorage());
+    const view = new XView({ xData: data, phoneShell: { setContent() {}, showNotification() {} } });
+    let triggeredPost = null;
+    view.render = () => {};
+    view.triggerXAIReaction = (post) => {
+        triggeredPost = post;
+        return Promise.resolve(post);
+    };
+    const root = {
+        querySelector(selector) {
+            return selector === '#xapp-compose-text' ? { value: '请大家看看这条帖子' } : null;
+        }
+    };
+
+    const post = view.publishComposePost(root);
+
+    assert.equal(triggeredPost?.id, post.id);
+    assert.equal(data.getUserPosts()[0].content, '请大家看看这条帖子');
 });
 
 test('X compose header reserves the phone status-bar safe area', () => {
@@ -476,6 +662,21 @@ test('X post detail uses a chevron-only back icon', () => {
 
     assert.match(detailHtml, /fa-chevron-left/);
     assert.doesNotMatch(detailHtml, /fa-arrow-left/);
+    assert.match(detailHtml, /class="xapp-load-more-comments"/);
+    assert.match(detailHtml, /加载更多回复/);
+    assert.match(detailHtml, /data-xapp-like-count/);
+});
+
+test('X load-more reply button keeps compact text under host themes', () => {
+    const cssSource = fs.readFileSync(new URL('../apps/x/x.css', import.meta.url), 'utf8');
+    const start = cssSource.indexOf('.xapp-load-more-comments {');
+    const end = cssSource.indexOf('.xapp-reply-composer', start);
+    const block = cssSource.slice(start, end);
+
+    assert.match(block, /gap:\s*4px/);
+    assert.match(block, /font-size:\s*10px\s*!important/);
+    assert.match(block, /\.xapp-load-more-comments span[\s\S]*?white-space:\s*nowrap/);
+    assert.match(block, /\.xapp-load-more-comments i[\s\S]*?font-size:\s*10px\s*!important/);
 });
 
 test('X account badges distinguish personal, official, and advertiser accounts', () => {
@@ -951,6 +1152,9 @@ test('X feed has a non-empty default prompt registered in PromptManager', () => 
     const manager = new PromptManager({ get: () => null, set: async () => {} });
     const overridePrompt = manager.getDefaultPrompts().x?.override;
     const prompt = manager.getDefaultPrompts().x?.feed;
+    const interactionPrompt = manager.getDefaultPrompts().x?.interaction;
+    const moreCommentsPrompt = manager.getDefaultPrompts().x?.moreComments;
+    const commentInteractionPrompt = manager.getDefaultPrompts().x?.commentInteraction;
 
     assert.equal(overridePrompt?.enabled, true);
     assert.equal(overridePrompt?.name, '🧩 X 破限词');
@@ -968,6 +1172,10 @@ test('X feed has a non-empty default prompt registered in PromptManager', () => 
     assert.match(prompt.content, /<Twitter>/);
     assert.match(prompt.content, /<\/Twitter>/);
     assert.match(prompt.content, /配图：\[图片\]（中文画面描述）（English tags）/);
+    assert.match(interactionPrompt?.content || '', /X 帖子围观互动任务/);
+    assert.match(interactionPrompt?.content || '', /likeCount/);
+    assert.match(moreCommentsPrompt?.content || '', /X 加载更多回复任务/);
+    assert.match(commentInteractionPrompt?.content || '', /X 评论回评任务/);
 });
 
 test('X parser reads posts, account types, counts, and nested replies from Twitter tags', () => {
@@ -1095,7 +1303,58 @@ test('X image generation uses the X app scope and persists only a backgrounds pa
     }
 });
 
-test('X user publishing keeps only backgrounds paths and stores posts per chat', () => {
+test('X user text images translate a Chinese description before generation', async () => {
+    const storage = new MemoryStorage();
+    const data = new XData(storage);
+    const post = data.publishUserPost('[图片]（雨后的街道）');
+    const view = new XView({
+        xData: data,
+        storage,
+        phoneShell: { setContent() {}, showNotification() {} }
+    });
+    const previousWindow = globalThis.window;
+    let translatedInput = null;
+    let generationOptions = null;
+
+    globalThis.window = {
+        VirtualPhone: {
+            imageGenerationManager: {
+                storage,
+                async translatePromptToEnglish(prompt, app) {
+                    translatedInput = { prompt, app };
+                    return 'wet street after rain, reflections, city night';
+                },
+                async generate(options) {
+                    generationOptions = options;
+                    return { imageData: 'data:image/png;base64,ZmFrZQ==' };
+                }
+            },
+            imageManager: {
+                async uploadDataUrl() {
+                    return '/backgrounds/phone_x_img_translated.png';
+                }
+            }
+        }
+    };
+
+    try {
+        const savedPath = await view.generatePostImage({
+            postId: post.id,
+            source: 'user',
+            index: 0
+        });
+
+        assert.deepEqual(translatedInput, { prompt: '雨后的街道', app: 'x' });
+        assert.equal(generationOptions.prompt, 'wet street after rain, reflections, city night');
+        assert.equal(savedPath, '/backgrounds/phone_x_img_translated.png');
+        assert.equal(data.getUserPosts()[0].imageGenerationStates[0].description, '雨后的街道');
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
+});
+
+test('X user publishing keeps only server-backed uploads and stores posts per chat', () => {
     const storage = new MemoryStorage();
     const data = new XData(storage);
     const post = data.publishUserPost('  新帖子  ', [
@@ -1117,6 +1376,115 @@ test('X user publishing keeps only backgrounds paths and stores posts per chat',
     ]);
     assert.equal(new XData(storage).getUserPosts()[0].id, post.id);
     assert.doesNotMatch(storage.get('x_user_posts'), /data:image|example\.com/);
+});
+
+test('X user publishing extracts Weibo-style text images from the visible post body', async () => {
+    const storage = new MemoryStorage();
+    const data = new XData(storage);
+    const post = data.publishUserPost(`正文内容
+[图片]（雨后的街道）
+[图片]（窗边咖啡）（coffee cup, window light）`, [
+        '/backgrounds/phone_x_img_manual.png'
+    ]);
+
+    assert.equal(post.content, '正文内容');
+    assert.deepEqual(post.images, [
+        '/backgrounds/phone_x_img_manual.png',
+        '[图片]（雨后的街道）',
+        '[图片]（窗边咖啡）（coffee cup, window light）'
+    ]);
+    assert.match(await data._buildPostInteractionDisplay(post), /配图：配图1；雨后的街道；窗边咖啡/);
+    assert.equal(new XData(storage).getUserPosts()[0].images[1], '[图片]（雨后的街道）');
+});
+
+test('X spectator, load-more, and user-reply APIs persist counts and thread targets', async () => {
+    const storage = new MemoryStorage();
+    const data = new XData(storage);
+    data.saveProfile({ nickname: '手机主人', followers: 12 });
+    const post = data.publishUserPost('公开讨论这件事');
+    const previousWindow = globalThis.window;
+    const promptFeatures = [];
+    const requests = [];
+    const responses = [
+        {
+            comments: [{ name: '第一位网友', text: '先来围观一下', accountType: 'personal' }],
+            likes: ['点赞路人'],
+            likeCount: 9,
+            commentCount: 4,
+            followers: 25
+        },
+        {
+            comments: [{
+                name: '接楼网友',
+                text: '回复一下前面的观点',
+                accountType: 'official',
+                replyTo: '第一位网友'
+            }]
+        },
+        {
+            comments: [{ name: '回评网友', text: '这条补充我看到了', accountType: 'personal' }]
+        }
+    ];
+    globalThis.window = {
+        VirtualPhone: {
+            promptManager: {
+                ensureLoaded() {},
+                getPromptForFeature(app, feature) {
+                    assert.equal(app, 'x');
+                    return `${feature}: {{postContentDisplay}}`;
+                },
+                renderPromptForFeature(app, feature, variables) {
+                    assert.equal(app, 'x');
+                    promptFeatures.push(feature);
+                    return `${feature}\n${variables.postContentDisplay}\n${variables.existingCommentContext || ''}\n${variables.userCommentContext || ''}`;
+                }
+            },
+            apiManager: {
+                async callAI(messages, options) {
+                    requests.push({ messages, options });
+                    return {
+                        success: true,
+                        content: `\`\`\`json\n${JSON.stringify(responses.shift())}\n\`\`\``
+                    };
+                }
+            }
+        }
+    };
+
+    try {
+        const reaction = await data.generateReactionForPost(post);
+        const appliedReaction = data.applyReactionToUserPost(post.id, reaction);
+        const firstAIComment = appliedReaction.addedComments[0];
+
+        assert.equal(appliedReaction.post.likes, 9);
+        assert.equal(appliedReaction.post.comments, 4);
+        assert.equal(data.getProfile().followers, 25);
+
+        const more = await data.generateMoreComments(post.id, 'user');
+        const loadedReply = more.addedComments[0];
+        assert.equal(loadedReply.parentId, firstAIComment.id);
+        assert.equal(loadedReply.replyTo, firstAIComment.handle);
+
+        const userReply = data.addComment(post.id, '我补充一句', loadedReply.id, 'user');
+        assert.equal(userReply.comment.parentId, firstAIComment.id);
+        assert.equal(userReply.comment.replyTo, loadedReply.handle);
+
+        const replyReaction = await data.generateReplyForUserComment(post.id, userReply.comment.id, 'user');
+        const generatedReply = replyReaction.addedComments[0];
+        assert.equal(generatedReply.parentId, firstAIComment.id);
+        assert.equal(generatedReply.replyTo, userReply.comment.handle);
+
+        assert.deepEqual(promptFeatures, ['interaction', 'moreComments', 'commentInteraction']);
+        assert.ok(requests.every((request) => request.options.appId === 'x'));
+        assert.match(requests[2].messages.at(-1).content, /手机主人.*我补充一句/);
+
+        const reloadedPost = new XData(storage).getUserPosts()[0];
+        assert.ok(reloadedPost.commentList.some((comment) => comment.id === generatedReply.id));
+        assert.equal(reloadedPost.comments, 7);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
 });
 
 test('X regenerated images replace and clean the previous managed image', async () => {
@@ -1421,6 +1789,31 @@ test('X post actions expose a dedicated WeChat forward control', () => {
     assert.match(html, /aria-label="转发到微信"/);
     assert.match(html, /fa-regular fa-paper-plane/);
     assert.doesNotMatch(html, /fa-arrow-up-from-bracket/);
+});
+
+test('X liked post actions render a solid red-state heart', () => {
+    const { data, post } = createDataWithPost(new MemoryStorage(), {
+        likes: 360,
+        likedByUser: true,
+        userLikeCounted: true
+    });
+    const view = new XView({ xData: data, phoneShell: { setContent() {} } });
+    const html = view.renderFeedPost(post);
+
+    assert.match(html, /xapp-like-action is-liked/);
+    assert.match(html, /data-post-source="feed"/);
+    assert.match(html, /aria-pressed="true"/);
+    assert.match(html, /fa-solid fa-heart/);
+    assert.match(html, /data-xapp-like-count>360</);
+});
+
+test('X liked heart color stays red under host themes', () => {
+    const cssSource = fs.readFileSync(new URL('../apps/x/x.css', import.meta.url), 'utf8');
+    const start = cssSource.indexOf('.xapp-like-action.is-liked');
+    const end = cssSource.indexOf('.xapp-post-action:nth-child(2)', start);
+    const block = cssSource.slice(start, end);
+
+    assert.match(block, /color:\s*#f91880\s*!important/);
 });
 
 test('X forwarding writes the optional note and one structured card to WeChat', async () => {
