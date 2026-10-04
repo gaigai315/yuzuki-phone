@@ -491,6 +491,7 @@ test('story image override prompt is registered in the default prompt manager', 
 
 test('story image card uses the natural image ratio without black side backgrounds', () => {
     const cssSource = fs.readFileSync(new URL('../apps/album/album.css', import.meta.url), 'utf8');
+    const viewSource = fs.readFileSync(new URL('../apps/album/album-view.js', import.meta.url), 'utf8');
 
     assert.match(cssSource, /\.phone-story-image-stage\.has-loaded-image/);
     assert.match(cssSource, /\.phone-story-image-stage\.has-fitted-empty\s*\{[^}]*height:\s*var\(--phone-story-image-empty-height\)/s);
@@ -499,6 +500,9 @@ test('story image card uses the natural image ratio without black side backgroun
     assert.doesNotMatch(cssSource, /\.phone-story-image-front img\s*\{[^}]*background:\s*#171a1e/s);
     assert.match(cssSource, /\.phone-story-image-card-header\s*\{[^}]*flex-basis:\s*34px[^}]*min-height:\s*34px/s);
     assert.match(cssSource, /\.phone-story-image-card-body\s*\{[^}]*padding:\s*0 12px 12px/s);
+    assert.match(cssSource, /\.phone-story-image-floor-label\s*\{[^}]*background:\s*rgba\(255, 255, 255, 0\.42\)[^}]*color:\s*var\(--SmartThemeBodyColor, var\(--phone-global-text, #333\)\)[^}]*backdrop-filter:\s*blur\(18px\) saturate\(125%\)/s);
+    assert.match(cssSource, /\.phone-story-image-floor-label::after\s*\{[^}]*color:\s*currentColor/s);
+    assert.match(viewSource, /story-image-header-glass/);
 });
 
 test('story image card is top-aligned below the tavern toolbar on mobile', () => {

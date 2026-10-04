@@ -1074,13 +1074,22 @@
 }
 
 #phone-story-image-overlay-root .phone-story-image-floor-label {
+    width: min(190px, 100%) !important;
     min-width: 0 !important;
     overflow: hidden !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
+    justify-self: center !important;
     gap: 12px !important;
-    color: #9a7541 !important;
+    padding: 8px 16px !important;
+    border: 1px solid rgba(255, 255, 255, 0.68) !important;
+    border-radius: 24px !important;
+    background: rgba(255, 255, 255, 0.42) !important;
+    color: var(--SmartThemeBodyColor, var(--phone-global-text, #333)) !important;
+    box-shadow: 0 12px 30px rgba(74, 60, 43, 0.16) !important;
+    backdrop-filter: blur(18px) saturate(125%) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(125%) !important;
     font-size: 14px !important;
     font-weight: 600 !important;
     line-height: 1.2 !important;
@@ -1092,7 +1101,7 @@
 #phone-story-image-overlay-root .phone-story-image-floor-label::before,
 #phone-story-image-overlay-root .phone-story-image-floor-label::after {
     content: "◆" !important;
-    color: #d8b166 !important;
+    color: currentColor !important;
     font-size: 6px !important;
     line-height: 1 !important;
 }
@@ -1551,6 +1560,14 @@
     #phone-story-image-overlay-root .phone-story-image-header-spacer {
         width: 32px !important;
         height: 32px !important;
+    }
+
+    #phone-story-image-overlay-root .phone-story-image-floor-label {
+        width: min(168px, 100%) !important;
+        gap: 10px !important;
+        padding: 6px 12px !important;
+        border-radius: 22px !important;
+        font-size: 13px !important;
     }
 
     #phone-story-image-overlay-root .phone-story-image-close {
