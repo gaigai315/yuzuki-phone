@@ -101,9 +101,10 @@ test('story image settings use the dedicated automatic key without migrating the
 
     assert.deepEqual(data.getStoryImageSettings(), {
         autoEnabled: false,
-        completionNoticeEnabled: true
+        autoPreviewEnabled: true
     });
     assert.ok(reads.includes('phone-story-image-auto-enabled'));
+    assert.ok(reads.includes('phone-story-image-completion-notice-enabled'));
     assert.ok(!reads.includes('phone-story-image-enabled'));
 });
 
@@ -253,11 +254,56 @@ test('floating double-click opens the standalone story image card without openin
     assert.match(viewSource, /id="album-open-settings"/);
 });
 
+test('story image browser returns to the latest floor when reopened without a requested floor', async () => {
+    const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+    let floors = [{ floor: 8 }, { floor: 10 }];
+    globalThis.window = {
+        addEventListener() {},
+        removeEventListener() {},
+        visualViewport: {
+            addEventListener() {},
+            removeEventListener() {}
+        }
+    };
+    globalThis.document = {
+        addEventListener() {},
+        removeEventListener() {},
+        getElementById() { return null; }
+    };
+
+    try {
+        const { StoryImageOverlay } = await import(`../apps/album/story-image-overlay.js?test=latest-floor-${Date.now()}`);
+        const overlay = new StoryImageOverlay({
+            albumData: {
+                getStoryFloors: () => floors
+            }
+        });
+        overlay.render = () => {};
+
+        overlay.open({ floor: 10 });
+        assert.equal(overlay.activeFloor, 10);
+        overlay.close();
+
+        floors = [...floors, { floor: 12 }];
+        overlay.open();
+        assert.equal(overlay.activeFloor, 12);
+    } finally {
+        if (originalWindow === undefined) delete globalThis.window;
+        else globalThis.window = originalWindow;
+        if (originalDocument === undefined) delete globalThis.document;
+        else globalThis.document = originalDocument;
+    }
+});
+
 test('story image settings own a dedicated worldbook selector and override prompt editor', () => {
     const viewSource = fs.readFileSync(new URL('../apps/album/album-view.js', import.meta.url), 'utf8');
     const shellSource = fs.readFileSync(new URL('../phone/phone-shell.js', import.meta.url), 'utf8');
 
     assert.match(viewSource, /id="album-story-use-worldbook"/);
+    assert.match(viewSource, /id: 'album-story-image-auto-preview'/);
+    assert.match(viewSource, /生成完成自动预览/);
+    assert.doesNotMatch(viewSource, /生成完成提醒/);
     assert.match(viewSource, /id="album-story-worldbook-list"/);
     assert.match(viewSource, /renderWorldbookSelector\(worldbookList, 'story'\)/);
     assert.match(viewSource, /setEnabled\?\.\('story', enabled\)/);
@@ -389,7 +435,7 @@ test('story tag generation uses the phone LLM API and stores returned tags', asy
         };
         const app = new AlbumApp({ showNotification() {} }, storage);
         app.albumData = {
-            getStoryImageSettings: () => ({ autoEnabled: false, completionNoticeEnabled: true }),
+            getStoryImageSettings: () => ({ autoEnabled: false, autoPreviewEnabled: true }),
             getStoryFloor: () => ({ floor: 7, message }),
             _getContext: () => ({
                 name1: 'User',
@@ -504,6 +550,8 @@ test('story image generation uses the story provider route, uploads the result, 
     const message = { is_user: false, mes: 'A rainy scene.', extra: {} };
     let generationOptions = null;
     let attached = null;
+    let openedFloor = null;
+    let notificationCount = 0;
     globalThis.window = {
         addEventListener() {},
         VirtualPhone: {
@@ -536,9 +584,16 @@ test('story image generation uses the story provider route, uploads the result, 
     try {
         const { AlbumApp } = await import(`../apps/album/album-app.js?test=image-${Date.now()}`);
         const storage = {};
-        const app = new AlbumApp({ showNotification() {} }, storage);
+        const app = new AlbumApp({
+            showNotification() {
+                notificationCount += 1;
+            }
+        }, storage);
+        app.openStoryImageBrowser = async ({ floor }) => {
+            openedFloor = floor;
+        };
         app.albumData = {
-            getStoryImageSettings: () => ({ autoEnabled: false, completionNoticeEnabled: false }),
+            getStoryImageSettings: () => ({ autoEnabled: false, autoPreviewEnabled: true }),
             getStoryFloor: () => ({ floor: 7, message, tags: '' }),
             async setStoryFloorTags(_floor, _tags, expectedMessage) {
                 assert.equal(expectedMessage, message);
@@ -560,6 +615,8 @@ test('story image generation uses the story provider route, uploads the result, 
         assert.equal(attached.details.provider, 'novelai');
         assert.equal(attached.expectedMessage, message);
         assert.equal(app.storyImageOverlay.tagBackFloors.has(7), false);
+        assert.equal(openedFloor, 7);
+        assert.equal(notificationCount, 0);
     } finally {
         if (originalWindow === undefined) delete globalThis.window;
         else globalThis.window = originalWindow;

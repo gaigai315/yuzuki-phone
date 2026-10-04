@@ -45,7 +45,9 @@ export class StoryImageOverlay {
 
     open(options = {}) {
         this.isOpen = true;
-        this.setActiveFloor(options.floor);
+        const requestedFloor = Number.parseInt(String(options.floor ?? ''), 10);
+        if (!Number.isInteger(requestedFloor)) this.activeFloor = null;
+        this.setActiveFloor(requestedFloor);
         document.addEventListener('keydown', this._onKeyDown);
         window.addEventListener('resize', this._onResize);
         window.visualViewport?.addEventListener?.('resize', this._onResize);

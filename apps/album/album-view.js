@@ -153,11 +153,11 @@ export class AlbumView {
                             checked: settings.autoEnabled
                         })}
                         ${this.renderStoryImageSettingRow({
-                            id: 'album-story-image-completion-notice',
-                            title: '生成完成提醒',
-                            description: '图片完成后显示小手机通知',
-                            icon: 'fa-bell',
-                            checked: settings.completionNoticeEnabled
+                            id: 'album-story-image-auto-preview',
+                            title: '生成完成自动预览',
+                            description: '图片生成完成后直接打开对应楼层预览',
+                            icon: 'fa-eye',
+                            checked: settings.autoPreviewEnabled
                         })}
                     </section>
 
@@ -467,7 +467,7 @@ export class AlbumView {
         };
 
         bindToggle('#album-story-image-auto-enabled', 'autoEnabled', { rerender: true });
-        bindToggle('#album-story-image-completion-notice', 'completionNoticeEnabled');
+        bindToggle('#album-story-image-auto-preview', 'autoPreviewEnabled');
 
         root.querySelectorAll('.album-story-settings-fold .phone-prompt-fold-header').forEach((header) => {
             const toggleFold = () => {

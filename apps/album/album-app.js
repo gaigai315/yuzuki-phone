@@ -5,9 +5,9 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 
-import { AlbumData } from './album-data.js?v=1.4.4&r=20260929-story-image-context';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261003-story-image-mobile-fix';
-import { StoryImageOverlay } from './story-image-overlay.js?v=20261003-story-image-mobile-fix';
+import { AlbumData } from './album-data.js?v=1.4.4&r=20261004-story-image-auto-preview';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261004-story-image-auto-preview';
+import { StoryImageOverlay } from './story-image-overlay.js?v=20261004-story-image-auto-preview';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 export class AlbumApp {
@@ -127,6 +127,19 @@ export class AlbumApp {
 
     _refreshStoryImageSurface() {
         this.storyImageOverlay?.refresh();
+    }
+
+    async _openGeneratedStoryImage(floor, expectedMessage) {
+        const current = this.albumData.getStoryFloor(floor);
+        if (!current || current.message !== expectedMessage) return false;
+
+        try {
+            await this.openStoryImageBrowser({ floor });
+            return true;
+        } catch (error) {
+            console.warn('[AlbumApp] 自动打开正文生图预览失败:', error);
+            return false;
+        }
     }
 
     isStoryTagBusy(floor) {
@@ -452,8 +465,8 @@ export class AlbumApp {
             imageAttached = true;
             this.storyImageOverlay.clearTagDraft(targetFloor);
             this.storyImageOverlay.showImageFront(targetFloor);
-            if (settings.completionNoticeEnabled) {
-                this._showStoryNotification('正文生图', `第 ${targetFloor} 楼图片已生成`, '✅');
+            if (settings.autoPreviewEnabled) {
+                await this._openGeneratedStoryImage(targetFloor, target.message);
             }
             return {
                 success: true,

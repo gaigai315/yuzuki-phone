@@ -25,6 +25,7 @@ const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.5.9';
 const ST_PHONE_CSS_REVISION = '20261002-swipe-programmatic-click';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
+const ST_PHONE_ALBUM_MODULE_REVISION = '20261004-story-image-auto-preview';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261002-x-dm-back-stack';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -4976,7 +4977,7 @@ if (window.GGP_Loaded) {
         if (!window.VirtualPhone.imageManager) {
             window.VirtualPhone.imageManager = new ImageUploadManager(storage);
         }
-        const module = await import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
+        const module = await import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_ALBUM_MODULE_REVISION}`);
         if (!window.VirtualPhone.albumApp) {
             window.VirtualPhone.albumApp = new module.AlbumApp(phoneShell, storage);
         }
@@ -9904,7 +9905,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '游戏模块加载失败', '❌');
                         });
                 } else if (appId === 'album') {
-                    import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
+                    import(`./apps/album/album-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_ALBUM_MODULE_REVISION}`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.albumApp) {

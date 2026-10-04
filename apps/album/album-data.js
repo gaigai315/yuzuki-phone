@@ -10,12 +10,13 @@ const VIDEO_EXT_RE = /\.(?:mp4|webm|mov|m4v)$/i;
 
 const STORY_IMAGE_SETTING_KEYS = Object.freeze({
     autoEnabled: 'phone-story-image-auto-enabled',
-    completionNoticeEnabled: 'phone-story-image-completion-notice-enabled'
+    // Keep the original storage key so existing user choices carry over.
+    autoPreviewEnabled: 'phone-story-image-completion-notice-enabled'
 });
 
 const STORY_IMAGE_SETTING_DEFAULTS = Object.freeze({
     autoEnabled: false,
-    completionNoticeEnabled: true
+    autoPreviewEnabled: true
 });
 
 const STORY_IMAGE_META_KEY = 'phone_story_image';
