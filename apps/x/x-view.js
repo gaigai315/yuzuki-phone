@@ -708,7 +708,7 @@ export class XView {
                         <div class="xapp-load-more-comments-wrap">
                             <button class="xapp-load-more-comments" type="button" data-post-id="${this._escapeAttr(post.id)}" data-post-source="${this._escapeAttr(this.currentPostSource)}">
                                 <i class="fa-regular fa-comment-dots" aria-hidden="true"></i>
-                                <span>加载更多回复</span>
+                                <span>加载更多回复...</span>
                             </button>
                         </div>
                     </section>
@@ -1902,7 +1902,7 @@ export class XView {
             this._loadingMorePostIds.delete(key);
             if (button?.isConnected) {
                 button.disabled = false;
-                button.innerHTML = '<i class="fa-regular fa-comment-dots" aria-hidden="true"></i><span>加载更多回复</span>';
+                button.innerHTML = '<i class="fa-regular fa-comment-dots" aria-hidden="true"></i><span>加载更多回复...</span>';
             }
         }
     }

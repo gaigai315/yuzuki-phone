@@ -168,6 +168,131 @@ test('NovelAI character parser disables all coordinates when one position is unk
     assert.equal(charCaptions.some(item => Object.hasOwn(item, 'centers')), false);
 });
 
+test('NovelAI V5 converts the first personal reference image to Image2Image parameters', async () => {
+    const v5Manager = new ImageGenerationManager(null);
+    v5Manager._resolveNovelAIVibeReferences = async () => [];
+    v5Manager._encodeNovelAIVibeItems = async () => {
+        throw new Error('A single V5 personal reference should use Image2Image');
+    };
+    const config = {
+        model: 'nai-diffusion-5-full',
+        width: 832,
+        height: 1216,
+        scale: 5,
+        sampler: 'k_euler',
+        steps: 28,
+        cfgRescale: 0,
+        schedule: 'karras',
+        seed: 123,
+        fixedPrompt: '',
+        fixedPromptEnd: '',
+        negativePrompt: '',
+        novelAISkipCfgCompat: false
+    };
+
+    const payload = await v5Manager._buildNovelAIPayload({
+        prompt: '1girl, portrait',
+        novelAIReferences: [{
+            image: 'ZmFrZS1pbWFnZQ==',
+            strength: 0.7,
+            informationExtracted: 1
+        }]
+    }, config);
+
+    assert.equal(Object.hasOwn(payload.parameters, 'director_reference_images'), false);
+    assert.equal(Object.hasOwn(payload.parameters, 'reference_image_multiple'), false);
+    assert.equal(payload.action, 'img2img');
+    assert.equal(payload.parameters.image, 'ZmFrZS1pbWFnZQ==');
+    assert.equal(payload.parameters.strength, 0.3);
+    assert.equal(payload.parameters.noise, 0);
+    assert.equal(payload.parameters.extra_noise_seed, 123);
+    assert.equal(payload.parameters.add_original_image, true);
+});
+
+test('NovelAI V5 converts additional personal references to Vibe Transfer parameters', async () => {
+    const v5Manager = new ImageGenerationManager(null);
+    v5Manager._resolveNovelAIVibeReferences = async () => [];
+    v5Manager._encodeNovelAIVibeItems = async items => items.map(item => ({
+        ...item,
+        image: `encoded:${item.image}`
+    }));
+    const config = {
+        model: 'nai-diffusion-5-full',
+        width: 832,
+        height: 1216,
+        scale: 5,
+        sampler: 'k_euler',
+        steps: 28,
+        cfgRescale: 0,
+        schedule: 'karras',
+        seed: 456,
+        fixedPrompt: '',
+        fixedPromptEnd: '',
+        negativePrompt: '',
+        novelAISkipCfgCompat: false
+    };
+
+    const payload = await v5Manager._buildNovelAIPayload({
+        prompt: '2girls, portrait',
+        novelAIReferences: [
+            { image: 'Zmlyc3QtaW1hZ2U=', strength: 0.8, informationExtracted: 1 },
+            { image: 'c2Vjb25kLWltYWdl', strength: 0.6, informationExtracted: 0.9 }
+        ]
+    }, config);
+
+    assert.equal(payload.action, 'img2img');
+    assert.equal(payload.parameters.image, 'Zmlyc3QtaW1hZ2U=');
+    assert.deepEqual(payload.parameters.reference_image_multiple, ['encoded:c2Vjb25kLWltYWdl']);
+    assert.deepEqual(payload.parameters.reference_strength_multiple, [0.6]);
+    assert.deepEqual(payload.parameters.reference_information_extracted_multiple, [0.9]);
+});
+
+test('NovelAI V4.5 keeps personal reference images as Precise Reference parameters', async () => {
+    const v45Manager = new ImageGenerationManager(null);
+    v45Manager._resolveNovelAIVibeReferences = async () => [];
+    v45Manager._encodeNovelAIVibeItems = async () => {
+        throw new Error('V4.5 personal references should not be encoded as Vibes');
+    };
+    const config = {
+        model: 'nai-diffusion-4-5-full',
+        width: 832,
+        height: 1216,
+        scale: 5,
+        sampler: 'k_euler',
+        steps: 28,
+        cfgRescale: 0,
+        schedule: 'native',
+        seed: 123,
+        fixedPrompt: '',
+        fixedPromptEnd: '',
+        negativePrompt: '',
+        novelAISkipCfgCompat: false
+    };
+
+    const payload = await v45Manager._buildNovelAIPayload({
+        prompt: '1girl, portrait',
+        novelAIReferences: [{
+            image: 'ZmFrZS1pbWFnZQ==',
+            strength: 0.7,
+            informationExtracted: 1
+        }]
+    }, config);
+
+    assert.deepEqual(payload.parameters.director_reference_images, ['ZmFrZS1pbWFnZQ==']);
+    assert.deepEqual(payload.parameters.director_reference_strength_values, [0.7]);
+    assert.equal(Object.hasOwn(payload.parameters, 'reference_image_multiple'), false);
+    assert.equal(payload.action, 'generate');
+});
+
+test('NovelAI debug payload redacts the V5 Image2Image source', () => {
+    const redacted = manager._redactNovelAIDebugPayload({
+        action: 'img2img',
+        parameters: { image: 'ZmFrZS1pbWFnZQ==' }
+    });
+
+    assert.equal(redacted.parameters.image, '[BASE64_IMG2IMG_SOURCE:16]');
+});
+
 test('ComfyUI LoRA options include standard and custom loader lists', () => {
     const options = manager._getComfyUILoraOptions({
         LoraLoader: {

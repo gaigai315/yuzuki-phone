@@ -408,6 +408,19 @@ export class ImageGenerationManager {
             .filter(Boolean);
     }
 
+    _mergeNovelAIVibeItems(...groups) {
+        const seen = new Set();
+        return groups
+            .flatMap(group => Array.isArray(group) ? group : [])
+            .filter((item) => {
+                const key = String(item?.cacheSecretKey || item?.image || '').trim();
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .slice(0, 16);
+    }
+
     _normalizeNovelAIVibeGroups(groups = []) {
         const seen = new Set();
         return (Array.isArray(groups) ? groups : [])
@@ -1258,6 +1271,7 @@ export class ImageGenerationManager {
                 : (Array.isArray(payload?.parameters?.director_reference_images)
                     ? payload.parameters.director_reference_images.length
                     : 0),
+            imageToImage: payload?.action === 'img2img' && !!payload?.parameters?.image,
             vibeCount: Array.isArray(payload?.parameters?.reference_image_multiple)
                 ? payload.parameters.reference_image_multiple.length
                 : 0,
@@ -1283,6 +1297,7 @@ export class ImageGenerationManager {
                 `自动兼容参数: ${debugInfo.novelAISkipCfgCompat ? '开启' : '关闭'}`,
                 `Seed: ${debugInfo.seed}`,
                 `参考图: ${debugInfo.referenceCount} 张`,
+                `图生图参考: ${debugInfo.imageToImage ? '已启用' : '未使用'}`,
                 `Vibe: ${debugInfo.vibeCount} 个`,
                 '',
                 'AI 画面 tag（原样）:',
@@ -1328,6 +1343,7 @@ export class ImageGenerationManager {
                 novelAISkipCfgCompat: debugInfo.novelAISkipCfgCompat,
                 seed: debugInfo.seed,
                 referenceCount: debugInfo.referenceCount,
+                imageToImage: debugInfo.imageToImage,
                 vibeCount: debugInfo.vibeCount
             });
             console.info('AI 画面 tag（原样）', debugInfo.originalPrompt);
@@ -1345,6 +1361,9 @@ export class ImageGenerationManager {
     _redactNovelAIDebugPayload(payload) {
         try {
             const clone = JSON.parse(JSON.stringify(payload || {}));
+            if (clone?.parameters?.image) {
+                clone.parameters.image = `[BASE64_IMG2IMG_SOURCE:${String(clone.parameters.image).length}]`;
+            }
             const refs = clone?.parameters?.reference_image_multiple;
             if (Array.isArray(refs)) {
                 clone.parameters.reference_image_multiple = refs.map((item, index) => {
@@ -2459,7 +2478,18 @@ export class ImageGenerationManager {
         let steps = Number(options.steps || config.steps);
         const cfgRescale = Number(options.cfgRescale ?? config.cfgRescale);
         const novelAIReferences = this._normalizeNovelAIReferences(options);
-        const novelAIVibes = await this._resolveNovelAIVibeReferences(options, config);
+        const configuredNovelAIVibes = await this._resolveNovelAIVibeReferences(options, config);
+        const supportsPreciseReference = this._isNovelAIV45Model(config.model);
+        const imageToImageReference = this._isNovelAIV5Model(config.model)
+            ? (novelAIReferences[0] || null)
+            : null;
+        const compatibilityReferenceItems = imageToImageReference
+            ? novelAIReferences.slice(1)
+            : (this._isNovelAIV4PlusModel(config.model) && !supportsPreciseReference ? novelAIReferences : []);
+        const compatibilityVibes = compatibilityReferenceItems.length > 0
+            ? await this._encodeNovelAIVibeItems(compatibilityReferenceItems, config, options.signal)
+            : [];
+        const novelAIVibes = this._mergeNovelAIVibeItems(compatibilityVibes, configuredNovelAIVibes);
         const resolvedSeed = Number.isFinite(seed) && seed >= 0
             ? Math.floor(seed)
             : Math.floor(Math.random() * 4294967295);
@@ -2516,7 +2546,7 @@ export class ImageGenerationManager {
                 }
             }
 
-            if (novelAIReferences.length > 0) {
+            if (supportsPreciseReference && novelAIReferences.length > 0) {
                 Object.assign(parameters, {
                     director_reference_images: novelAIReferences.map(item => item.image),
                     director_reference_descriptions: novelAIReferences.map(() => ({
@@ -2540,12 +2570,22 @@ export class ImageGenerationManager {
                     normalize_reference_strength_multiple: this._getBool('phone-image-novelai-vibe-normalize-strength', false)
                 });
             }
+
+            if (imageToImageReference) {
+                Object.assign(parameters, {
+                    image: imageToImageReference.image,
+                    strength: this._clampReferenceValue(1 - imageToImageReference.strength, 0.3, 0, 1),
+                    noise: 0,
+                    extra_noise_seed: resolvedSeed,
+                    add_original_image: true
+                });
+            }
         }
 
         return {
             input: prompt,
             model: config.model,
-            action: 'generate',
+            action: imageToImageReference ? 'img2img' : 'generate',
             parameters
         };
     }

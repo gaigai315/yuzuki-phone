@@ -28,7 +28,7 @@ const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261004-story-image-header-glass';
 const ST_PHONE_WECHAT_MODULE_REVISION = '20261004-moments-image-cancel';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
-const ST_PHONE_X_MODULE_REVISION = '20261005-x-comment-times';
+const ST_PHONE_X_MODULE_REVISION = '20261005-x-load-more-spacing';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_REGULAR_FONT_URL = new URL('./assets/vendor/fontawesome/fa-regular-400.woff2', import.meta.url).href;
@@ -1257,7 +1257,7 @@ if (window.GGP_Loaded) {
             import('./config/time-manager.js'),    // 👈 取消懒加载
         import('./config/prompt-manager.js?v=20261002-x-follower-sync'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
-        import('./config/image-generation-manager.js?v=20261002-x-image-scope'),
+        import('./config/image-generation-manager.js?v=20261005-nai5-img2img-reference'),
             import('./config/worldbook-manager.js')
         ]);
 

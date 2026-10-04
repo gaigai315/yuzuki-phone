@@ -667,16 +667,30 @@ test('X post detail uses a chevron-only back icon', () => {
     assert.match(detailHtml, /data-xapp-like-count/);
 });
 
-test('X load-more reply button keeps compact text under host themes', () => {
+test('X load-more reply button keeps a roomy Weibo-style pill under host themes', () => {
     const cssSource = fs.readFileSync(new URL('../apps/x/x.css', import.meta.url), 'utf8');
     const start = cssSource.indexOf('.xapp-load-more-comments {');
     const end = cssSource.indexOf('.xapp-reply-composer', start);
     const block = cssSource.slice(start, end);
+    const wrapStart = cssSource.indexOf('.xapp-load-more-comments-wrap {');
+    const wrapBlock = cssSource.slice(wrapStart, start);
+    const detailStart = cssSource.indexOf('.xapp-detail-scroll {');
+    const detailEnd = cssSource.indexOf('.xapp-detail-scroll::-webkit-scrollbar', detailStart);
+    const detailBlock = cssSource.slice(detailStart, detailEnd);
 
-    assert.match(block, /gap:\s*4px/);
-    assert.match(block, /font-size:\s*10px\s*!important/);
+    assert.match(block, /gap:\s*6px/);
+    assert.match(block, /width:\s*168px\s*!important/);
+    assert.match(block, /min-width:\s*168px\s*!important/);
+    assert.match(block, /max-width:\s*168px\s*!important/);
+    assert.match(block, /height:\s*38px/);
+    assert.match(block, /font-size:\s*11px\s*!important/);
+    assert.match(block, /padding:\s*0 18px\s*!important/);
+    assert.match(wrapBlock, /min-height:\s*88px/);
+    assert.match(wrapBlock, /background:\s*#f7f7f7/);
+    assert.match(detailBlock, /padding-bottom:\s*60px/);
+    assert.match(detailBlock, /background:\s*#f7f7f7/);
     assert.match(block, /\.xapp-load-more-comments span[\s\S]*?white-space:\s*nowrap/);
-    assert.match(block, /\.xapp-load-more-comments i[\s\S]*?font-size:\s*10px\s*!important/);
+    assert.match(block, /\.xapp-load-more-comments i[\s\S]*?font-size:\s*11px\s*!important/);
 });
 
 test('X account badges distinguish personal, official, and advertiser accounts', () => {
