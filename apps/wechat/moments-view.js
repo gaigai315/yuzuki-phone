@@ -30,6 +30,8 @@ export class MomentsView {
         this._postMomentDraftActive = false;
         this._postMomentDraftCommitted = false;
         this._postMomentDraftObserver = null;
+        this._momentImageTasks = new Map();
+        this._momentImageStateSavePending = false;
     }
 
     // 在wechat-app的renderDiscover中调用
@@ -161,7 +163,7 @@ export class MomentsView {
         const status = state?.status || '';
         const error = state?.error || '';
         const statusText = status === 'loading'
-            ? '正在生成...'
+            ? '正在生成，点击取消'
             : (status === 'failed' ? '生成失败，点击重试' : '生成图片');
         const icon = status === 'loading'
             ? '<i class="fa-solid fa-spinner fa-spin"></i>'
@@ -269,6 +271,12 @@ export class MomentsView {
                 const parsedPrompt = this._parsePromptDescriptionPair(btn.dataset.prompt || '');
                 const promptText = String(parsedPrompt.prompt || btn.dataset.prompt || '').trim();
                 const descriptionText = String(btn.dataset.description || '').trim();
+                const moment = this._getMomentById(momentId);
+                const state = this._getMomentImageState(moment, index);
+                if (state?.status === 'loading') {
+                    await this.cancelMomentImageGeneration(momentId, index);
+                    return;
+                }
                 await this.generateMomentImage({ momentId, index, promptText, descriptionText });
             });
         });
@@ -883,10 +891,55 @@ export class MomentsView {
         return Array.isArray(moments) ? moments.find(item => String(item?.id || '').trim() === safeId) : null;
     }
 
-    _getMomentImageState(moment, index) {
+    _getMomentImageTaskKey(momentOrId, index) {
+        const momentId = typeof momentOrId === 'object'
+            ? String(momentOrId?.id || '').trim()
+            : String(momentOrId || '').trim();
+        const safeIndex = Number.parseInt(String(index), 10);
+        if (!momentId || !Number.isInteger(safeIndex) || safeIndex < 0) return '';
+        return `${momentId}:${safeIndex}`;
+    }
+
+    _getRawMomentImageState(moment, index) {
         if (!moment || !Array.isArray(moment.imageGenerationStates)) return null;
         const state = moment.imageGenerationStates[index];
         return state && typeof state === 'object' ? state : null;
+    }
+
+    _isMomentImageTaskActive(moment, index, generationId = '') {
+        const key = this._getMomentImageTaskKey(moment, index);
+        const task = key ? this._momentImageTasks.get(key) : null;
+        return !!task
+            && task.generationId === String(generationId || '')
+            && task.controller?.signal?.aborted !== true;
+    }
+
+    _queueMomentImageStateSave() {
+        if (this._momentImageStateSavePending) return;
+        this._momentImageStateSavePending = true;
+        Promise.resolve().then(async () => {
+            this._momentImageStateSavePending = false;
+            await this.app?.wechatData?.saveData?.();
+        }).catch(error => {
+            this._momentImageStateSavePending = false;
+            console.warn('[Moments] 保存中断的生图状态失败:', error);
+        });
+    }
+
+    _getMomentImageState(moment, index) {
+        const state = this._getRawMomentImageState(moment, index);
+        if (state?.status !== 'loading') return state;
+        if (this._isMomentImageTaskActive(moment, index, state.generationId)) return state;
+
+        const interruptedState = {
+            ...state,
+            status: 'failed',
+            error: '生成已中断，点击重试',
+            generationId: ''
+        };
+        moment.imageGenerationStates[index] = interruptedState;
+        this._queueMomentImageStateSave();
+        return interruptedState;
     }
 
     _setMomentImageState(moment, index, nextState) {
@@ -898,6 +951,43 @@ export class MomentsView {
         }
         const prev = this._getMomentImageState(moment, index) || {};
         moment.imageGenerationStates[index] = { ...prev, ...nextState };
+    }
+
+    _createMomentImageAbortError() {
+        const error = new Error('朋友圈生图已取消');
+        error.name = 'AbortError';
+        return error;
+    }
+
+    _assertMomentImageTaskActive(momentId, index, generationId) {
+        const key = this._getMomentImageTaskKey(momentId, index);
+        const task = key ? this._momentImageTasks.get(key) : null;
+        if (!task || task.generationId !== generationId || task.controller?.signal?.aborted) {
+            throw this._createMomentImageAbortError();
+        }
+        return task;
+    }
+
+    async cancelMomentImageGeneration(momentId, index) {
+        const moment = this._getMomentById(momentId);
+        const state = this._getRawMomentImageState(moment, index);
+        if (!moment || state?.status !== 'loading') return false;
+
+        const key = this._getMomentImageTaskKey(momentId, index);
+        const task = key ? this._momentImageTasks.get(key) : null;
+        if (task && task.generationId === state.generationId) {
+            task.controller?.abort?.();
+            this._momentImageTasks.delete(key);
+        }
+
+        this._setMomentImageState(moment, index, {
+            status: 'failed',
+            error: task ? '生成已取消，点击重试' : '生成已中断，点击重试',
+            generationId: ''
+        });
+        await this.app.wechatData.saveData();
+        this._refreshMomentImageUI(momentId);
+        return true;
     }
 
     _refreshMomentImageUI(momentId) {
@@ -950,6 +1040,9 @@ export class MomentsView {
                 : `[${mediaType}]（${promptText}）`;
         }
         const generationId = `moment_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const taskKey = this._getMomentImageTaskKey(momentId, index);
+        const taskController = new AbortController();
+        this._momentImageTasks.set(taskKey, { generationId, controller: taskController });
 
         this._setMomentImageState(moment, index, {
             status: 'loading',
@@ -966,6 +1059,7 @@ export class MomentsView {
         await this.app.wechatData.saveData();
         this._refreshMomentImageUI(momentId);
 
+        let storedImageUrl = '';
         try {
             const shouldTranslateUserPrompt = moment?.isUserPost === true
                 && this._hasCjkText(promptText)
@@ -973,8 +1067,15 @@ export class MomentsView {
             const translatedPrompt = shouldTranslateUserPrompt
                 ? await imageManager.translatePromptToEnglish(promptText, 'wechat')
                 : promptText;
+            this._assertMomentImageTaskActive(momentId, index, generationId);
             promptText = String(translatedPrompt || promptText).trim();
-            const generationContext = await this._buildMomentImageGenerationContext(moment, index, promptText);
+            const generationContext = await this._buildMomentImageGenerationContext(
+                moment,
+                index,
+                promptText,
+                taskController.signal
+            );
+            this._assertMomentImageTaskActive(momentId, index, generationId);
             const generationPrompt = generationContext.prompt;
             const novelAIReferences = generationContext.references;
             const referenceNames = generationContext.referenceNames;
@@ -991,44 +1092,70 @@ export class MomentsView {
             const result = await imageManager.generate({
                 app: 'wechat',
                 prompt: generationPrompt,
-                novelAIReferences
+                novelAIReferences,
+                signal: taskController.signal
             });
+            this._assertMomentImageTaskActive(momentId, index, generationId);
             const rawImageUrl = String(result?.imageUrl || result?.imageData || '').trim();
-            const imageUrl = await this._persistMomentGeneratedImage(rawImageUrl, {
+            storedImageUrl = await this._persistMomentGeneratedImage(rawImageUrl, {
                 momentId,
                 index,
                 promptText,
-                generationId
+                generationId,
+                signal: taskController.signal
             });
-            if (!imageUrl) throw new Error('生图成功但未返回图片URL');
+            this._assertMomentImageTaskActive(momentId, index, generationId);
+            if (!storedImageUrl) throw new Error('生图成功但未返回图片URL');
 
             const latestMoment = this._getMomentById(momentId) || moment;
+            const latestState = this._getRawMomentImageState(latestMoment, index);
+            if (latestState?.generationId !== generationId) throw this._createMomentImageAbortError();
             if (!Array.isArray(latestMoment.images)) latestMoment.images = [];
-            latestMoment.images[index] = `[${mediaType}]${imageUrl}`;
+            latestMoment.images[index] = `[${mediaType}]${storedImageUrl}`;
             this._setMomentImageState(latestMoment, index, {
                 status: 'done',
                 error: '',
+                generationId: '',
                 prompt: promptText,
                 description: displayDescription,
                 mediaType,
                 useUserReference,
                 referenceNames,
-                generatedImageUrl: imageUrl,
+                generatedImageUrl: storedImageUrl,
                 imageModel: String(result?.model || '').trim(),
                 imageProvider: String(result?.provider || '').trim(),
                 imageGenerationWidth: Number(result?.width || result?.requestedWidth || 0) || '',
                 imageGenerationHeight: Number(result?.height || result?.requestedHeight || 0) || ''
             });
             await this.app.wechatData.saveData();
-            this._cleanupReplacedMomentGeneratedImage(previousImageUrl, imageUrl);
+            this._cleanupReplacedMomentGeneratedImage(previousImageUrl, storedImageUrl);
             this._refreshMomentImageUI(momentId);
             this.app.phoneShell.showNotification('成功', '朋友圈配图生成完成', '✅');
         } catch (error) {
+            const aborted = taskController.signal.aborted || error?.name === 'AbortError';
             const friendlyMessage = this._normalizeImageGenerationError(error);
             const latestMoment = this._getMomentById(momentId) || moment;
+            const latestState = this._getRawMomentImageState(latestMoment, index);
+            if (aborted) {
+                if (storedImageUrl) {
+                    this._cleanupManagedMomentImages([storedImageUrl], { skipIfReferenced: false });
+                }
+                if (latestState?.generationId === generationId && latestState?.status === 'loading') {
+                    this._setMomentImageState(latestMoment, index, {
+                        status: 'failed',
+                        error: '生成已取消，点击重试',
+                        generationId: ''
+                    });
+                    await this.app.wechatData.saveData();
+                    this._refreshMomentImageUI(momentId);
+                }
+                return;
+            }
+            if (latestState?.generationId !== generationId) return;
             this._setMomentImageState(latestMoment, index, {
                 status: 'failed',
                 error: friendlyMessage,
+                generationId: '',
                 prompt: promptText,
                 description: displayDescription,
                 mediaType,
@@ -1040,10 +1167,13 @@ export class MomentsView {
             await this.app.wechatData.saveData();
             this._refreshMomentImageUI(momentId);
             this.app.phoneShell.showNotification('生图失败', friendlyMessage, '❌');
+        } finally {
+            const activeTask = this._momentImageTasks.get(taskKey);
+            if (activeTask?.generationId === generationId) this._momentImageTasks.delete(taskKey);
         }
     }
 
-    async _persistMomentGeneratedImage(imageUrl, { momentId = '', index = 0, promptText = '', generationId = '' } = {}) {
+    async _persistMomentGeneratedImage(imageUrl, { momentId = '', index = 0, promptText = '', generationId = '', signal = null } = {}) {
         const safeUrl = String(imageUrl || '').trim();
         if (!safeUrl) return '';
         if (/^\/backgrounds\/phone_[^?#]+/i.test(safeUrl)) return safeUrl;
@@ -1053,10 +1183,10 @@ export class MomentsView {
             throw new Error('图片上传管理器未初始化，无法保存朋友圈生图');
         }
 
-        const blob = await this._loadGeneratedMomentImageBlob(safeUrl);
+        const blob = await this._loadGeneratedMomentImageBlob(safeUrl, signal);
         const uniquePart = String(generationId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '_');
         const seed = `${momentId || 'moment'}_${index}_${this._simpleImageHash(promptText || safeUrl).toString(36)}_${uniquePart}`;
-        const uploadedUrl = await imageUploader.uploadBlob(blob, `moment_img_${seed}`);
+        const uploadedUrl = await imageUploader.uploadBlob(blob, `moment_img_${seed}`, { signal });
         const normalized = String(uploadedUrl || '').trim();
         if (!/^\/backgrounds\/phone_[^?#]+/i.test(normalized)) {
             throw new Error('朋友圈生图保存失败：未得到有效本地图片路径');
@@ -1064,10 +1194,10 @@ export class MomentsView {
         return normalized;
     }
 
-    async _loadGeneratedMomentImageBlob(imageUrl) {
+    async _loadGeneratedMomentImageBlob(imageUrl, signal = null) {
         const safeUrl = String(imageUrl || '').trim();
         if (!safeUrl) throw new Error('生图结果为空');
-        const response = await fetch(safeUrl, { cache: 'no-store' });
+        const response = await fetch(safeUrl, { cache: 'no-store', signal });
         if (!response.ok) {
             throw new Error(`读取朋友圈生图失败（HTTP ${response.status}）`);
         }
@@ -1131,13 +1261,14 @@ export class MomentsView {
         this._cleanupManagedMomentImages([oldPath]);
     }
 
-    async _imageUrlToMomentReferenceDataUrl(url) {
+    async _imageUrlToMomentReferenceDataUrl(url, signal = null) {
         const safeUrl = String(url || '').trim();
         if (!safeUrl) return '';
         if (safeUrl.startsWith('data:image/')) return safeUrl;
         const response = await fetch(safeUrl, {
             credentials: 'include',
-            cache: 'no-store'
+            cache: 'no-store',
+            signal
         });
         if (!response.ok) {
             throw new Error(`个人形象参考图读取失败 (${response.status})`);
@@ -1188,7 +1319,7 @@ export class MomentsView {
             || null;
     }
 
-    async _buildMomentImageGenerationContext(moment = null, index = 0, promptText = '') {
+    async _buildMomentImageGenerationContext(moment = null, index = 0, promptText = '', signal = null) {
         const parsedPrompt = this._parsePromptDescriptionPair(promptText);
         const basePrompt = String(parsedPrompt.prompt || promptText || '').trim();
         const parsed = this._parseMomentImageItem(Array.isArray(moment?.images) ? moment.images[index] : '');
@@ -1228,7 +1359,7 @@ export class MomentsView {
 
             referenceTasks.push((async () => {
                 try {
-                    const image = await this._imageUrlToMomentReferenceDataUrl(referenceImage);
+                    const image = await this._imageUrlToMomentReferenceDataUrl(referenceImage, signal);
                     if (!image) throw new Error('参考图不是可用图片');
                     const rawStrength = Number(entity?.naiReferenceStrength ?? 0.7);
                     const rawInformation = Number(entity?.naiReferenceInformationExtracted ?? 1);
@@ -1241,6 +1372,7 @@ export class MomentsView {
                         }
                     };
                 } catch (error) {
+                    if (signal?.aborted || error?.name === 'AbortError') throw error;
                     return { name: entityName || fallbackName, error };
                 }
             })());

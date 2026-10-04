@@ -12,7 +12,7 @@
 // 微信APP主程序
 import { ChatView } from './chat-view.js?v=20261002-x-forward-card';
 import { ContactsView } from './contacts-view.js';
-import { MomentsView } from './moments-view.js?v=20260802-chat-moments-feed';
+import { MomentsView } from './moments-view.js?v=20261004-moments-image-cancel';
 import { WechatData } from './wechat-data.js?v=20261002-x-forward-card';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';

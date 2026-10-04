@@ -435,3 +435,66 @@ test('ComfyUI history recovery finds an image after non-media custom outputs', (
         priority: 110
     });
 });
+
+function createSdConfig() {
+    return {
+        sdUrl: 'http://127.0.0.1:7860',
+        width: 512,
+        height: 512,
+        steps: 20,
+        scale: 7,
+        seed: -1,
+        cfgRescale: 0,
+        model: '',
+        sdLora: '',
+        fixedPrompt: '',
+        fixedPromptEnd: '',
+        negativePrompt: '',
+        sampler: 'Euler a',
+        sdRestoreFaces: false,
+        sdVae: '',
+        sdClipSkip: 0,
+        sdScheduler: '',
+        sdHiresFix: false,
+        sdADetailer: false
+    };
+}
+
+test('Stable Diffusion proxy cancellation does not fall through to a direct request', async () => {
+    const sdManager = new ImageGenerationManager(null);
+    let directCalls = 0;
+    sdManager._isSillyTavern = () => true;
+    sdManager._sdProxyRequest = async () => {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        throw error;
+    };
+    sdManager._sdDirectRequest = async () => {
+        directCalls += 1;
+        throw new Error('direct request should not run');
+    };
+
+    await assert.rejects(
+        sdManager._generateStableDiffusion({ prompt: 'portrait' }, createSdConfig()),
+        error => error?.name === 'AbortError'
+    );
+    assert.equal(directCalls, 0);
+});
+
+test('Stable Diffusion direct cancellation stops endpoint fallback', async () => {
+    const sdManager = new ImageGenerationManager(null);
+    let directCalls = 0;
+    sdManager._isSillyTavern = () => false;
+    sdManager._sdDirectRequest = async () => {
+        directCalls += 1;
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        throw error;
+    };
+
+    await assert.rejects(
+        sdManager._generateStableDiffusion({ prompt: 'portrait' }, createSdConfig()),
+        error => error?.name === 'AbortError'
+    );
+    assert.equal(directCalls, 1);
+});

@@ -26,6 +26,7 @@ const ST_PHONE_VERSION = '1.5.9';
 const ST_PHONE_CSS_REVISION = '20261002-swipe-programmatic-click';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261004-story-image-auto-preview';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261004-moments-image-cancel';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261002-x-dm-back-stack';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -5566,7 +5567,7 @@ if (window.GGP_Loaded) {
 
     async function ensureWechatAppForBackground() {
         try {
-            const module = await import(`./apps/wechat/wechat-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
+            const module = await import(`./apps/wechat/wechat-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_WECHAT_MODULE_REVISION}`);
             if (!window.VirtualPhone) window.VirtualPhone = {};
             if (!window.VirtualPhone.wechatApp) {
                 window.VirtualPhone.wechatApp = new module.WechatApp(phoneShell, storage);
@@ -8779,7 +8780,7 @@ if (window.GGP_Loaded) {
         }
 
         try {
-            const module = await import(`./apps/wechat/wechat-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
+            const module = await import(`./apps/wechat/wechat-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_WECHAT_MODULE_REVISION}`);
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             // 单例复用
@@ -9666,7 +9667,7 @@ if (window.GGP_Loaded) {
                         window.VirtualPhone.settingsApp.render();
                     });
                 } else if (appId === 'wechat') {
-                    import(`./apps/wechat/wechat-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
+                    import(`./apps/wechat/wechat-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_WECHAT_MODULE_REVISION}`)
                         .then(module => {
                             try {
                                 // 🔥 单例模式：只在第一次打开时创建微信实例，拒绝重复绑定事件

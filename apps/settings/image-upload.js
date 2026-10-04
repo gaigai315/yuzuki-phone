@@ -108,27 +108,32 @@ export class ImageUploadManager {
         return `phone_${safePrefix}_${hash}.${ext}`;
     }
 
-    async _backgroundExists(pathLike) {
+    async _backgroundExists(pathLike, options = {}) {
         const url = String(pathLike || '').trim();
         if (!url) return false;
         try {
             const headResp = await fetch(url, {
                 method: 'HEAD',
                 credentials: 'include',
-                cache: 'no-store'
+                cache: 'no-store',
+                signal: options.signal
             });
             if (headResp.ok) return true;
             if (headResp.status !== 405 && headResp.status !== 501) return false;
-        } catch (e) { }
+        } catch (e) {
+            if (options.signal?.aborted) throw e;
+        }
 
         try {
             const getResp = await fetch(url, {
                 method: 'GET',
                 credentials: 'include',
-                cache: 'no-store'
+                cache: 'no-store',
+                signal: options.signal
             });
             return !!getResp.ok;
         } catch (e) {
+            if (options.signal?.aborted) throw e;
             return false;
         }
     }
@@ -141,7 +146,7 @@ export class ImageUploadManager {
         const uploadBlob = await this._normalizeImageBlobMime(blob);
         const filename = options.filename || await this._buildManagedFilename(uploadBlob, prefix);
         const finalUrl = `/backgrounds/${filename}`;
-        if (await this._backgroundExists(finalUrl)) {
+        if (await this._backgroundExists(finalUrl, options)) {
             await this._unmarkAlbumDeletedPath(finalUrl);
             await this._recordUploadedBackground(finalUrl, prefix);
             return finalUrl;
@@ -154,7 +159,8 @@ export class ImageUploadManager {
             method: 'POST',
             body: formData,
             headers,
-            credentials: options.credentials || 'include'
+            credentials: options.credentials || 'include',
+            signal: options.signal
         });
         if (response.ok) {
             await this._recordUploadedBackground(finalUrl, prefix);
@@ -170,7 +176,7 @@ export class ImageUploadManager {
 
     async uploadDataUrl(dataUrl, prefix, options = {}) {
         if (!dataUrl || !String(dataUrl).startsWith('data:image')) return dataUrl;
-        const response = await fetch(dataUrl);
+        const response = await fetch(dataUrl, { signal: options.signal });
         const blob = await response.blob();
         return this.uploadBlob(blob, prefix, options);
     }

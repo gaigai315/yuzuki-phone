@@ -201,6 +201,18 @@ export class ImageGenerationManager {
     _sdDirectRequest(url, options = {}) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
+            const signal = options.signal;
+            const cleanup = () => signal?.removeEventListener?.('abort', onAbort);
+            const makeAbortError = () => {
+                const error = new Error('请求已取消');
+                error.name = 'AbortError';
+                return error;
+            };
+            const onAbort = () => xhr.abort();
+            if (signal?.aborted) {
+                reject(makeAbortError());
+                return;
+            }
             xhr.open(options.method || 'GET', url, true);
             if (options.headers) {
                 Object.entries(options.headers).forEach(([key, value]) => {
@@ -210,6 +222,7 @@ export class ImageGenerationManager {
             xhr.responseType = 'text';
             xhr.timeout = Number(options.timeout || 120000);
             xhr.onload = () => {
+                cleanup();
                 resolve({
                     ok: xhr.status >= 200 && xhr.status < 300,
                     status: xhr.status,
@@ -224,8 +237,19 @@ export class ImageGenerationManager {
                     }
                 });
             };
-            xhr.onerror = () => reject(new Error(`请求失败: ${url}`));
-            xhr.ontimeout = () => reject(new Error(`请求超时: ${url}`));
+            xhr.onerror = () => {
+                cleanup();
+                reject(new Error(`请求失败: ${url}`));
+            };
+            xhr.ontimeout = () => {
+                cleanup();
+                reject(new Error(`请求超时: ${url}`));
+            };
+            xhr.onabort = () => {
+                cleanup();
+                reject(makeAbortError());
+            };
+            signal?.addEventListener?.('abort', onAbort, { once: true });
             xhr.send(options.body || null);
         });
     }
@@ -2544,7 +2568,7 @@ export class ImageGenerationManager {
         };
     }
 
-    async fetchSdModels(baseUrl) {
+    async fetchSdModels(baseUrl, options = {}) {
         const normalizedUrl = this._normalizeSdBaseUrl(baseUrl || this._get('phone-image-sd-url', 'http://127.0.0.1:7860'));
         if (!normalizedUrl) throw new Error('未配置 Stable Diffusion 服务地址');
 
@@ -2559,7 +2583,9 @@ export class ImageGenerationManager {
 
         if (this._isSillyTavern()) {
             try {
-                const response = await this._sdProxyRequest('models', { url: normalizedUrl });
+                const response = await this._sdProxyRequest('models', { url: normalizedUrl }, 'POST', {
+                    signal: options.signal
+                });
                 if (response.ok) {
                     const data = await response.json().catch(() => null);
                     let models = Array.isArray(data) ? data : [];
@@ -2579,6 +2605,7 @@ export class ImageGenerationManager {
                     }
                 }
             } catch (err) {
+                if (options.signal?.aborted || err?.name === 'AbortError') throw err;
                 console.warn('[SD] 代理获取模型列表失败，尝试直连:', err);
             }
         }
@@ -2589,7 +2616,8 @@ export class ImageGenerationManager {
             try {
                 const response = await this._sdDirectRequest(`${normalizedUrl}${endpoint}`, {
                     method: 'GET',
-                    headers: this._buildSdHeaders({ Accept: 'application/json' })
+                    headers: this._buildSdHeaders({ Accept: 'application/json' }),
+                    signal: options.signal
                 });
                 if (!response.ok) {
                     lastError = `HTTP ${response.status}: ${endpoint}`;
@@ -2604,6 +2632,7 @@ export class ImageGenerationManager {
                 }
                 lastError = `${endpoint} 返回格式不是数组`;
             } catch (err) {
+                if (options.signal?.aborted || err?.name === 'AbortError') throw err;
                 lastError = `${endpoint}: ${err?.message || err}`;
             }
         }
@@ -3868,10 +3897,10 @@ export class ImageGenerationManager {
         return map;
     }
 
-    async getSdModelHash(baseUrl, modelName) {
+    async getSdModelHash(baseUrl, modelName, options = {}) {
         const name = String(modelName || '').trim();
         if (!name) return null;
-        const models = await this.fetchSdModels(baseUrl);
+        const models = await this.fetchSdModels(baseUrl, options);
         const map = this.buildSdModelHashMap(models);
         return map.get(name) || map.get(name.toLowerCase()) || null;
     }
@@ -4335,7 +4364,12 @@ export class ImageGenerationManager {
         }
 
         const modelName = String(config.model || '').trim();
-        const modelHash = await this.getSdModelHash(baseUrl, modelName).catch(() => null);
+        const modelHash = await this.getSdModelHash(baseUrl, modelName, {
+            signal: options.signal
+        }).catch((error) => {
+            if (options.signal?.aborted || error?.name === 'AbortError') throw error;
+            return null;
+        });
         const loraPrompt = this._normalizeSdLoraPrompt(config.sdLora);
         const positivePrompt = this._joinPrompt([config.fixedPrompt, loraPrompt, prompt, config.fixedPromptEnd]);
         const negativePrompt = this._joinPrompt([config.negativePrompt, options.negativePrompt]);
@@ -4408,7 +4442,9 @@ export class ImageGenerationManager {
         let result = null;
         if (this._isSillyTavern() && !useImg2Img) {
             try {
-                const response = await this._sdProxyRequest('generate', { ...payload, url: baseUrl });
+                const response = await this._sdProxyRequest('generate', { ...payload, url: baseUrl }, 'POST', {
+                    signal: options.signal
+                });
                 if (response.ok) {
                     const proxyResult = await response.json().catch(() => null);
                     if (proxyResult && (proxyResult.images || proxyResult.image || proxyResult.result)) {
@@ -4419,6 +4455,7 @@ export class ImageGenerationManager {
                     console.warn('[SD] 代理生图失败，尝试直连:', response.status, text);
                 }
             } catch (err) {
+                if (options.signal?.aborted || err?.name === 'AbortError') throw err;
                 console.warn('[SD] 代理生图异常，尝试直连:', err);
             }
         }
@@ -4436,7 +4473,8 @@ export class ImageGenerationManager {
                             'Content-Type': 'application/json',
                             Accept: 'application/json'
                         }, config),
-                        body: JSON.stringify(payload)
+                        body: JSON.stringify(payload),
+                        signal: options.signal
                     });
                     const text = await response.text();
                     const parsed = text ? JSON.parse(text) : null;
@@ -4449,6 +4487,7 @@ export class ImageGenerationManager {
                         lastError += ` ${String(parsed.error?.message || parsed.message || parsed.error).slice(0, 180)}`;
                     }
                 } catch (err) {
+                    if (options.signal?.aborted || err?.name === 'AbortError') throw err;
                     lastError = `${endpoint}: ${err?.message || err}`;
                 }
             }
@@ -4778,7 +4817,8 @@ export class ImageGenerationManager {
                 batch_size: 1,
                 num_inference_steps: Number(options.steps || config.steps),
                 guidance_scale: Number(options.scale ?? config.scale)
-            })
+            }),
+            signal: options.signal
         });
         const text = await response.text();
         let payload = null;
