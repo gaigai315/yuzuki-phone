@@ -12,6 +12,7 @@
 import { ImageCropper } from '../settings/image-cropper.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { readPhoneContextLimit } from '../../config/context-settings.js';
+import { replacePhoneEmojiTokens } from '../../config/phone-emoji.js';
 
 // 朋友圈视图 - 高仿微信版
 export class MomentsView {
@@ -92,7 +93,7 @@ export class MomentsView {
                     <div class="moment-author">${moment.name}</div>
 
                     <!-- 文字内容 -->
-                    ${moment.text ? `<div class="moment-text">${moment.text}</div>` : ''}
+                    ${moment.text ? `<div class="moment-text">${this._renderEmojiText(moment.text)}</div>` : ''}
 
                     <!-- 图片 -->
                     ${this.renderImages(moment.images, moment)}
@@ -220,18 +221,18 @@ export class MomentsView {
                 ${hasLikes ? `
                     <div class="interaction-likes">
                         <i class="fa-solid fa-heart"></i>
-                        <span class="like-names">${moment.likeList.join('，')}</span>
+                        <span class="like-names">${moment.likeList.map(name => this._escapeHtml(name)).join('，')}</span>
                     </div>
                 ` : ''}
 
                 ${hasComments ? `
                     <div class="interaction-comments">
                         ${displayComments.map((comment, idx) => `
-                            <div class="comment-row" data-moment-id="${moment.id}" data-comment-idx="${idx}" data-author="${comment.name}">
-                                <span class="comment-author">${comment.name}</span>
-                                ${comment.visibleReplyTo ? `<span class="comment-reply">回复</span><span class="comment-author">${comment.visibleReplyTo}</span>` : ''}
+                            <div class="comment-row" data-moment-id="${this._escapeAttr(moment.id)}" data-comment-idx="${idx}" data-author="${this._escapeAttr(comment.name)}">
+                                <span class="comment-author">${this._escapeHtml(comment.name)}</span>
+                                ${comment.visibleReplyTo ? `<span class="comment-reply">回复</span><span class="comment-author">${this._escapeHtml(comment.visibleReplyTo)}</span>` : ''}
                                 <span class="comment-colon">：</span>
-                                <span class="comment-content">${comment.text}</span>
+                                <span class="comment-content">${this._renderEmojiText(comment.text, 15)}</span>
                             </div>
                         `).join('')}
                     </div>
@@ -588,6 +589,13 @@ export class MomentsView {
         }
         wrap.style.height = '0px';
         inner.innerHTML = '';
+    }
+
+    _renderEmojiText(value, size = 16) {
+        return replacePhoneEmojiTokens(this._escapeHtml(value), {
+            size,
+            className: 'wechat-inline-system-emoji'
+        }).replace(/\r?\n/g, '<br>');
     }
 
     _escapeHtml(value) {

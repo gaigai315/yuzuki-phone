@@ -50,9 +50,11 @@ test('common named emoji tokens map to the phone default emoji set', () => {
     assert.equal(getPhoneNamedUnicodeEmoji('[恶魔]'), '😈');
     assert.equal(getPhoneNamedUnicodeEmoji('[心]'), '❤️');
     assert.equal(getPhoneNamedUnicodeEmoji('[飞吻]'), '😘');
+    assert.equal(getPhoneNamedUnicodeEmoji('[比心]'), '🫰');
+    assert.equal(getPhoneNamedUnicodeEmoji('[委屈]'), '🥺');
     assert.equal(
-        replacePhoneNamedEmojiTokens('周末见[偷笑] 我会加油的[加油] 先吃瓜[吃瓜][飞吻]'),
-        '周末见🤭 我会加油的💪 先吃瓜🍉😘'
+        replacePhoneNamedEmojiTokens('周末见[偷笑] 我会加油的[加油] 先吃瓜[吃瓜][飞吻][比心][委屈]'),
+        '周末见🤭 我会加油的💪 先吃瓜🍉😘🫰🥺'
     );
 });
 

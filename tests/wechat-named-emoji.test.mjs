@@ -17,13 +17,15 @@ view._escapeHtml = value => String(value ?? '')
     .replace(/'/g, '&#39;');
 
 test('WeChat text bubbles map bracket tokens to native assets and Twemoji', () => {
-    const html = view.renderTextMessageBubble('嘿嘿，有你真好[转圈] 妈妈也是[爱心] 待会儿见[飞吻]');
+    const html = view.renderTextMessageBubble('嘿嘿，有你真好[转圈] 妈妈也是[爱心] 待会儿见[飞吻][比心][委屈]');
 
     assert.match(html, /alt="转圈"/);
     assert.match(html, /zhuanquan\.png/);
     assert.match(html, /alt="❤️"/);
     assert.match(html, /alt="😘"/);
-    assert.doesNotMatch(html, /\[(?:转圈|爱心|飞吻)\]/);
+    assert.match(html, /alt="🫰"/);
+    assert.match(html, /alt="🥺"/);
+    assert.doesNotMatch(html, /\[(?:转圈|爱心|飞吻|比心|委屈)\]/);
 });
 
 test('WeChat named emoji rendering preserves unknown tokens and escapes HTML', () => {

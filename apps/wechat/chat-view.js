@@ -26,6 +26,7 @@ import { detectImageMime, normalizeImageDataUrlMime, resolveImageMime } from '..
 import {
     getPhoneInlineEmoji,
     renderPhoneInlineEmoji,
+    replacePhoneEmojiTokens,
     replacePhoneInlineEmojiTokens,
     replacePhoneNamedEmojiTokens
 } from '../../config/phone-emoji.js';
@@ -3976,7 +3977,7 @@ renderChatRoom(chat) {
                             ${this._escapeHtml(wb.blogger || '微博')}
                         </div>
                         <div style="font-size: 12px; color: #666; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
-                            ${replacePhoneInlineEmojiTokens(this._escapeHtml((wb.content || '').substring(0, 80)), {
+                            ${replacePhoneEmojiTokens(this._escapeHtml((wb.content || '').substring(0, 80)), {
                                 size: 16,
                                 className: 'wechat-inline-system-emoji'
                             })}
@@ -4001,7 +4002,10 @@ renderChatRoom(chat) {
                     : accountType === 'advertiser'
                         ? '<span style="color:#d4a72c; font-size:10px; margin-left:3px;">广告账号</span>'
                         : '';
-                const contentPreview = this._escapeHtml(String(xData.content || msg.content || '').trim().slice(0, 100));
+                const contentPreview = replacePhoneEmojiTokens(
+                    this._escapeHtml(String(xData.content || msg.content || '').trim().slice(0, 100)),
+                    { size: 16, className: 'wechat-inline-system-emoji' }
+                );
                 const imageStates = Array.isArray(xData.imageGenerationStates) ? xData.imageGenerationStates : [];
                 const images = Array.isArray(xData.images) ? xData.images : [];
                 let thumbnail = '';
@@ -9203,7 +9207,7 @@ renderChatRoom(chat) {
             .join('\n')
             .replace(/\n{3,}/g, '\n\n')
             .trim();
-        const content = replacePhoneInlineEmojiTokens(esc(this.cleanAbnormalSpaces(rawContent)), {
+        const content = replacePhoneEmojiTokens(esc(this.cleanAbnormalSpaces(rawContent)), {
             size: 16,
             className: 'wechat-inline-system-emoji'
         });
@@ -9245,7 +9249,7 @@ renderChatRoom(chat) {
             const name = esc(comment.name || '网友');
             const replyTo = esc(comment.replyTo || '');
             const location = esc(comment.location || '');
-            const text = replacePhoneInlineEmojiTokens(esc(comment.text || ''), {
+            const text = replacePhoneEmojiTokens(esc(comment.text || ''), {
                 size: 15,
                 className: 'wechat-inline-system-emoji'
             });
@@ -9358,7 +9362,10 @@ renderChatRoom(chat) {
         const accountLabel = accountType === 'official' ? '官方认证' : accountType === 'advertiser' ? '广告账号' : '';
         const accountColor = accountType === 'official' ? '#1d9bf0' : '#d4a72c';
         const avatarChar = esc(Array.from(authorNameRaw.replace(/^@/, ''))[0] || 'X');
-        const content = esc(String(xData.content || '').replace(/\r\n/g, '\n').trim());
+        const content = replacePhoneEmojiTokens(
+            esc(String(xData.content || '').replace(/\r\n/g, '\n').trim()),
+            { size: 16, className: 'wechat-inline-system-emoji' }
+        );
         const time = esc(String(xData.originalTime || xData.time || '').trim());
         const imageStates = Array.isArray(xData.imageGenerationStates) ? xData.imageGenerationStates : [];
         const imageItems = (Array.isArray(xData.images) ? xData.images : []).map((raw, index) => {
@@ -9395,7 +9402,10 @@ renderChatRoom(chat) {
                 <div style="padding:7px 0;border-bottom:1px solid #eff3f4;font-size:11px;line-height:1.5;text-align:left;word-break:break-word;">
                     <strong style="color:#0f1419;">${esc(name)}</strong>
                     ${replyTo ? `<span style="color:#536471;"> 回复 </span><span style="color:#1d9bf0;">${esc(replyTo)}</span>` : ''}
-                    <span style="color:#536471;">：${esc(text)}</span>
+                    <span style="color:#536471;">：${replacePhoneEmojiTokens(esc(text), {
+                        size: 15,
+                        className: 'wechat-inline-system-emoji'
+                    })}</span>
                 </div>`;
         }).filter(Boolean).join('');
         const commentsCount = Math.max(Number.parseInt(xData.comments, 10) || 0, comments.length);
