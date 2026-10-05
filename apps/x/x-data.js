@@ -1593,6 +1593,46 @@ export class XData {
         };
     }
 
+    _buildFollowingAccountsMessage(accounts = this.getFollowedAccounts(), posts = this.getFollowingPosts()) {
+        const normalizedAccounts = (Array.isArray(accounts) ? accounts : [])
+            .filter((account) => account && typeof account === 'object')
+            .slice(0, 100);
+        const accountNames = normalizedAccounts
+            .map((account) => String(account.name || '').trim())
+            .filter(Boolean);
+        if (accountNames.length === 0) {
+            return {
+                role: 'system',
+                name: 'SYSTEM (X 正在关注账号)',
+                content: '【当前正在关注账号】\n暂无',
+                isPhoneMessage: true
+            };
+        }
+
+        const accountKeys = new Set(
+            normalizedAccounts.map((account) => String(account.key || '').trim()).filter(Boolean)
+        );
+        const recentPosts = (Array.isArray(posts) ? posts : [])
+            .filter((post) => accountKeys.has(this._resolveDirectMessageParticipant(post).key))
+            .filter((post) => String(post?.content || '').trim())
+            .slice(0, 5);
+        const historyText = recentPosts.length > 0
+            ? recentPosts.map((post, index) => {
+                const participant = this._resolveDirectMessageParticipant(post);
+                const time = String(post?.time || '未知').trim() || '未知';
+                const content = String(post?.content || '').trim();
+                return `${index + 1}. 昵称：${participant.name}\n时间：${time}\n正文：${content}`;
+            }).join('\n\n')
+            : '暂无历史帖子';
+
+        return {
+            role: 'system',
+            name: 'SYSTEM (X 正在关注账号)',
+            content: `【当前正在关注账号】\n${accountNames.map((name) => `- ${name}`).join('\n')}\n\n【关注账号最近 5 条历史帖子，仅用于账号延续与查重】\n${historyText}\n\n刷新推荐流时，请合理包含其中部分账号的新公开帖子，同时保持推荐流内容多样性。生成这些账号的新帖子时，可以延续其身份和表达风格，但不得重复上述帖子的相同内容、题材、事件、观点或创意，也不得仅改写措辞后再次发布。`,
+            isPhoneMessage: true
+        };
+    }
+
     async generateFeed() {
         if (this._refreshPromise) return this._refreshPromise;
 
@@ -1617,10 +1657,10 @@ export class XData {
         const currentNickname = String(profile.nickname || context.name1 || 'X 用户').trim() || 'X 用户';
         const currentGender = this._getProfileGenderLabel(profile.gender);
         const currentFollowers = this._getCurrentFollowersCount();
-        const followedAccountNames = this.getFollowedAccounts()
+        const followedAccounts = this.getFollowedAccounts().slice(0, 100);
+        const followedAccountNames = followedAccounts
             .map((account) => String(account?.name || '').trim())
-            .filter(Boolean)
-            .slice(0, 100);
+            .filter(Boolean);
         const followedAccountNamesText = followedAccountNames.join('、') || '暂无';
         const promptVariables = {
             CURRENT_PHONE_TIME: phoneTime.text,
@@ -1654,6 +1694,7 @@ export class XData {
         const contextMessages = await this._collectContextMessages(contextSettings);
         const feedResponseHistory = this.getFeedResponseHistory();
         const feedHistoryMessage = this._buildFeedHistoryMessage(feedResponseHistory);
+        const followingAccountsMessage = this._buildFollowingAccountsMessage(followedAccounts);
         const messages = [
             ...(overridePrompt.trim() ? [{
                 role: 'system',
@@ -1667,14 +1708,7 @@ export class XData {
                 content: `【当前 X 用户信息】\n昵称：${currentNickname}\n性别：${currentGender}\n粉丝：${currentFollowers}\n请以此粉丝数为唯一基准，并在 <Twitter> 内输出“用户粉丝数：变化后的最终总数”；无变化时原样返回。`,
                 isPhoneMessage: true
             },
-            {
-                role: 'system',
-                name: 'SYSTEM (X 正在关注账号)',
-                content: followedAccountNames.length > 0
-                    ? `【当前正在关注账号】\n${followedAccountNames.map((name) => `- ${name}`).join('\n')}\n刷新推荐流时，请合理包含其中部分账号的新公开帖子，同时保持推荐流内容多样性。`
-                    : '【当前正在关注账号】\n暂无',
-                isPhoneMessage: true
-            },
+            followingAccountsMessage,
             ...contextMessages,
             ...(feedHistoryMessage ? [feedHistoryMessage] : []),
             { role: 'user', content: prompt, isPhoneMessage: true }

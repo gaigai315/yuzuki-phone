@@ -2061,9 +2061,13 @@ test('X feed refresh calls the X API with worldbook context and saves parsed pos
 
     try {
         data.saveProfile({ nickname: '测试用户', gender: 'female', followers: 321 });
-        const followedPost = createTestPost();
-        data.savePosts([followedPost]);
-        data.toggleFollowPostAuthor(followedPost);
+        const followedPosts = Array.from({ length: 6 }, (_, index) => createTestPost({
+            id: `x-followed-history-${index + 1}`,
+            time: `${index + 1}分钟前`,
+            content: `关注账号历史帖子 ${index + 1}`
+        }));
+        data.savePosts(followedPosts);
+        data.toggleFollowPostAuthor(followedPosts[0]);
         const posts = await data.generateFeed();
         assert.equal(worldbookKey, 'x');
         assert.equal(requestOptions.appId, 'x');
@@ -2076,7 +2080,13 @@ test('X feed refresh calls the X API with worldbook context and saves parsed pos
             && /【当前 X 用户信息】\n昵称：测试用户\n性别：女\n粉丝：321/.test(message.content)
             && /用户粉丝数：变化后的最终总数/.test(message.content)
         )));
-        assert.ok(requestMessages.some((message) => message.name === 'SYSTEM (X 正在关注账号)' && /- Tibo/.test(message.content)));
+        const followingMessage = requestMessages.find((message) => message.name === 'SYSTEM (X 正在关注账号)');
+        assert.match(followingMessage.content, /【当前正在关注账号】\n- Tibo/);
+        assert.match(followingMessage.content, /【关注账号最近 5 条历史帖子，仅用于账号延续与查重】/);
+        assert.match(followingMessage.content, /昵称：Tibo\n时间：1分钟前\n正文：关注账号历史帖子 1/);
+        assert.match(followingMessage.content, /正文：关注账号历史帖子 5/);
+        assert.doesNotMatch(followingMessage.content, /关注账号历史帖子 6/);
+        assert.match(followingMessage.content, /不得重复上述帖子的相同内容、题材、事件、观点或创意/);
         assert.ok(!requestMessages.some((message) => message.name === 'SYSTEM (X 公开上下文边界)'));
         assert.ok(requestMessages.some((message) => message.content === '世界书公开背景'));
         assert.ok(requestMessages.some((message) => /当前手机时间：2044年09月05日 星期一 21:30/.test(message.content)));
@@ -2087,7 +2097,7 @@ test('X feed refresh calls the X API with worldbook context and saves parsed pos
         assert.equal(data.getProfile().followers, 456);
         assert.equal(new XData(storage).getProfile().followers, 456);
         assert.equal(new XData(storage).getPosts()[0].content, '公开活动将在今晚开始。');
-        assert.equal(new XData(storage).getFollowingPosts()[0].content, '测试帖子正文');
+        assert.equal(new XData(storage).getFollowingPosts()[0].content, '关注账号历史帖子 1');
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
         else globalThis.window = previousWindow;
