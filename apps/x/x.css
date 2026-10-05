@@ -998,23 +998,6 @@
     font-size: 15px;
 }
 
-#phone-panel-content .phone-screen .xapp-chat-search {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    height: 42px;
-    margin: 3px 13px 0;
-    padding: 0 14px;
-    border-radius: 22px;
-    background: #f7f9f9;
-    color: #8b98a5;
-    font-size: 13px;
-}
-
-#phone-panel-content .phone-screen .xapp-chat-search i {
-    font-size: 14px;
-}
-
 #phone-panel-content .phone-screen .xapp-chat-empty {
     position: absolute;
     inset: 126px 20px 0;
@@ -1069,30 +1052,8 @@
     height: 36px;
 }
 
-#phone-panel-content .phone-screen .xapp-chat-search {
-    flex: 0 0 42px;
-}
-
-#phone-panel-content .phone-screen .xapp-chat-search input {
-    width: 100%;
-    min-width: 0;
-    height: 100%;
-    padding: 0;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--xapp-black);
-    font-size: 13px;
-}
-
-#phone-panel-content .phone-screen .xapp-chat-search input::placeholder {
-    color: #8b98a5;
-    opacity: 1;
-}
-
 #phone-panel-content .phone-screen .xapp-chat-list {
     min-height: 0;
-    margin-top: 7px;
     flex: 1 1 auto;
     overflow-x: hidden;
     overflow-y: auto;
@@ -1210,17 +1171,6 @@
 #phone-panel-content .phone-screen .xapp-chat-thread-chevron {
     color: #a4adb4;
     font-size: 10px;
-}
-
-#phone-panel-content .phone-screen .xapp-chat-search-empty {
-    padding: 28px 16px;
-    color: var(--xapp-muted);
-    font-size: 12px;
-    text-align: center;
-}
-
-#phone-panel-content .phone-screen .xapp-chat-search-empty.is-hidden {
-    display: none;
 }
 
 #phone-panel-content .phone-screen .xapp-chat-empty {
@@ -1479,13 +1429,15 @@
 
 #phone-panel-content .phone-screen .xapp-post-menu-sheet {
     position: absolute;
-    width: min(220px, calc(100% - 16px));
+    display: grid;
+    width: max-content;
+    max-width: calc(100% - 16px);
     max-height: calc(100% - 16px);
     overflow-x: hidden;
     overflow-y: auto;
-    padding: 6px 0;
+    padding: 2px 0;
     border: 1px solid rgba(83, 100, 113, 0.15);
-    border-radius: 10px;
+    border-radius: 8px;
     background: #fff !important;
     box-shadow: 0 8px 24px rgba(15, 20, 25, 0.18), 0 1px 4px rgba(15, 20, 25, 0.08);
     color: var(--xapp-black) !important;
@@ -1495,13 +1447,13 @@
 
 #phone-panel-content .phone-screen .xapp-post-menu-action {
     display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
+    grid-template-columns: 18px minmax(0, 1fr);
     align-items: center;
     width: 100%;
-    min-height: 44px;
+    min-height: 34px;
     margin: 0 !important;
-    gap: 7px;
-    padding: 0 12px !important;
+    gap: 4px;
+    padding: 0 8px !important;
     appearance: none !important;
     -webkit-appearance: none !important;
     border: 0 !important;
@@ -1511,7 +1463,7 @@
     color: var(--xapp-black) !important;
     box-shadow: none !important;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif !important;
-    font-size: 12.5px !important;
+    font-size: 12px !important;
     font-weight: 700 !important;
     line-height: 1.25 !important;
     letter-spacing: 0 !important;
@@ -1529,10 +1481,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
     color: var(--xapp-black) !important;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 #phone-panel-content .phone-screen .xapp-post-menu-action > span {

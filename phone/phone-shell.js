@@ -829,6 +829,29 @@ export class PhoneShell {
         return this.viewHistory.length <= 1 && (this.viewHistory.length === 0 || this.viewHistory[0].id === 'home');
     }
 
+    releaseHomeTapGuard() {
+        const now = Date.now();
+        let released = false;
+
+        if (Number(this._homeReturnGuardUntil || 0) > now) {
+            this._homeReturnGuardUntil = now;
+            released = true;
+        }
+        if (Number(this._swipeClickGuardUntil || 0) > now) {
+            this._swipeClickGuardUntil = now;
+            released = true;
+        }
+
+        if (typeof window !== 'undefined') {
+            const globalGuardUntil = Number(window.VirtualPhone?._homeReturnGuardUntil || 0);
+            if (globalGuardUntil > now) {
+                window.VirtualPhone._homeReturnGuardUntil = now;
+                released = true;
+            }
+        }
+        return released;
+    }
+
     prepareHomeReturn({ guardMs = 900 } = {}) {
         this.currentApp = null;
         this.viewHistory = [];

@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const readSource = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 const phoneShellSource = readSource('../phone/phone-shell.js');
+const phoneCssSource = readSource('../phone.css');
 const mofoViewSource = readSource('../apps/mofo/mofo-view.js');
 const weiboAppSource = readSource('../apps/weibo/weibo-app.js');
 const controllers = new Map([
@@ -53,7 +54,7 @@ test('app swipe-back handlers never disable the whole phone screen', () => {
 
 test('controller imports share one cache revision after swipe routing changes', () => {
     const indexSource = readSource('../index.js');
-    assert.match(indexSource, /ST_PHONE_CSS_REVISION = '20261002-swipe-programmatic-click'/);
+    assert.match(indexSource, /ST_PHONE_CSS_REVISION = '20261005-home-icon-first-tap'/);
     assert.match(indexSource, /ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return'/);
     assert.doesNotMatch(indexSource, /20261002-swipe-back-routing|20261002-x-compose-safe-area/);
 });
@@ -209,6 +210,61 @@ test('home-return guard blocks the trailing click from reopening an app', async 
         if (previousWindow === undefined) delete globalThis.window;
         else globalThis.window = previousWindow;
     }
+});
+
+test('a fresh home icon press releases the return guard before the click', async () => {
+    const previousWindow = globalThis.window;
+    let openEvents = 0;
+    globalThis.window = {
+        VirtualPhone: {},
+        addEventListener() {},
+        dispatchEvent() {
+            openEvents += 1;
+        }
+    };
+
+    try {
+        const [{ PhoneShell }, { HomeScreen }] = await Promise.all([
+            import(`../phone/phone-shell.js?test=home-icon-press-${Date.now()}`),
+            import(`../phone/home-screen.js?test=home-icon-press-${Date.now()}`)
+        ]);
+        const shell = new PhoneShell();
+        const icon = { dataset: { app: 'wechat' } };
+        shell.screen = {
+            querySelectorAll() {
+                return [icon];
+            }
+        };
+        shell.prepareHomeReturn({ guardMs: 900 });
+        shell._swipeClickGuardUntil = Date.now() + 1000;
+
+        const home = new HomeScreen(shell, []);
+        home.bindEvents();
+
+        assert.equal(typeof icon.onpointerdown, 'function');
+        assert.equal(typeof icon.ontouchstart, 'function');
+        icon.ontouchstart();
+        assert.equal(shell.isHomeReturnGuardActive(), false);
+
+        icon.onclick({ stopPropagation() {} });
+        assert.equal(openEvents, 1);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
+});
+
+test('home icon hover lift is limited to fine pointer devices', () => {
+    assert.match(
+        phoneCssSource,
+        /@media \(hover: hover\) and \(pointer: fine\) \{\s*#phone-panel-content \.phone-screen \.app-icon:hover/
+    );
+    assert.match(
+        phoneCssSource,
+        /@media \(hover: hover\) and \(pointer: fine\) \{\s*#phone-panel-content \.phone-screen \.dock-app:hover/
+    );
+    assert.match(phoneCssSource, /\.app-icon \{[\s\S]*?touch-action: manipulation;/);
+    assert.match(phoneCssSource, /\.dock-app \{[\s\S]*?touch-action: manipulation;/);
 });
 
 test('every app root layer returns straight to home without the gray fallback rebound', async () => {

@@ -1906,8 +1906,10 @@
     transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
 }
 
-#phone-panel-content .phone-screen .home-dashboard .app-icon:hover {
-    transform: translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+    #phone-panel-content .phone-screen .home-dashboard .app-icon:hover {
+        transform: translateY(-2px);
+    }
 }
 
 #phone-panel-content .phone-screen .home-dashboard .app-icon:active {
@@ -2025,13 +2027,16 @@
     flex-direction: column;
     align-items: center;
     cursor: pointer;
+    touch-action: manipulation;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     width: 100%;
 }
 
-#phone-panel-content .phone-screen .app-icon:hover {
-    transform: translateY(-6px) scale(1.05);
+@media (hover: hover) and (pointer: fine) {
+    #phone-panel-content .phone-screen .app-icon:hover {
+        transform: translateY(-6px) scale(1.05);
+    }
 }
 
 #phone-panel-content .phone-screen .app-icon:active {
@@ -2087,16 +2092,18 @@
     transition: transform 0.6s;
 }
 
-#phone-panel-content .phone-screen .app-icon:hover .app-icon-bg {
-    transform: scale(1.1);
-    box-shadow: 
-        0 10px 30px rgba(0, 0, 0, 0.4),
-        0 5px 15px rgba(0, 0, 0, 0.3),
-        inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
+@media (hover: hover) and (pointer: fine) {
+    #phone-panel-content .phone-screen .app-icon:hover .app-icon-bg {
+        transform: scale(1.1);
+        box-shadow:
+            0 10px 30px rgba(0, 0, 0, 0.4),
+            0 5px 15px rgba(0, 0, 0, 0.3),
+            inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    }
 
-#phone-panel-content .phone-screen .app-icon:hover .app-icon-bg::after {
-    transform: translateX(100%);
+    #phone-panel-content .phone-screen .app-icon:hover .app-icon-bg::after {
+        transform: translateX(100%);
+    }
 }
 
 /* 🎨 自定义图标样式 - 移除默认背景效果，支持PNG透明 */
@@ -2558,6 +2565,7 @@
     /* 🔥 使用相对字号 */
     font-size: min(20px, 5.5vw, 2.6vh);
     cursor: pointer;
+    touch-action: manipulation;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow:
         0 3px 12px rgba(0, 0, 0, 0.2),
@@ -2581,15 +2589,17 @@
     transition: opacity 0.3s;
 }
 
-#phone-panel-content .phone-screen .dock-app:hover {
-    transform: translateY(-10px) scale(1.12);
-    box-shadow: 
-        0 12px 35px rgba(0, 0, 0, 0.45),
-        inset 0 1px 0 rgba(255, 255, 255, 0.4);
-}
+@media (hover: hover) and (pointer: fine) {
+    #phone-panel-content .phone-screen .dock-app:hover {
+        transform: translateY(-10px) scale(1.12);
+        box-shadow:
+            0 12px 35px rgba(0, 0, 0, 0.45),
+            inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    }
 
-#phone-panel-content .phone-screen .dock-app:hover::before {
-    opacity: 1;
+    #phone-panel-content .phone-screen .dock-app:hover::before {
+        opacity: 1;
+    }
 }
 
 #phone-panel-content .phone-screen .dock-app:active {

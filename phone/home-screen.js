@@ -546,6 +546,12 @@ export class HomeScreen {
     bindEvents() {
         const icons = this.phoneShell.screen.querySelectorAll('.yzp-home-app-action, .yzp-home-dock-app, .app-icon, .dock-app');
         icons.forEach(icon => {
+            const releaseGuardForNewPress = () => {
+                this.phoneShell?.releaseHomeTapGuard?.();
+            };
+            icon.onpointerdown = releaseGuardForNewPress;
+            icon.ontouchstart = releaseGuardForNewPress;
+            icon.onmousedown = releaseGuardForNewPress;
             icon.onclick = (e) => {
                 e.stopPropagation();
                 const appId = icon.dataset.app;

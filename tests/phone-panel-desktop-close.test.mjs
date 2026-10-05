@@ -6,6 +6,9 @@ const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'ut
 const listenerStart = indexSource.indexOf("document.body.addEventListener('click', (e) => {");
 const listenerEnd = indexSource.indexOf('function releasePhoneInactiveResources', listenerStart);
 const clickListenerSource = indexSource.slice(listenerStart, listenerEnd);
+const desktopDragStart = indexSource.indexOf('function bindPhonePanelDesktopDockDrag(panel)');
+const desktopDragEnd = indexSource.indexOf('function bindPhonePanelViewportGuards()', desktopDragStart);
+const desktopDragSource = indexSource.slice(desktopDragStart, desktopDragEnd);
 
 test('desktop phone panel closes on the first outside click before triple-tap handling', () => {
     const desktopCloseIndex = clickListenerSource.indexOf("drawerPanel?.classList.contains('phone-panel-open')");
@@ -29,4 +32,16 @@ test('desktop outside-click close excludes the phone body and phone entry contro
     assert.match(clickListenerSource, /phoneDrawerToolEntry/);
     assert.match(clickListenerSource, /phoneDrawerToolRow/);
     assert.match(clickListenerSource, /phone-in-panel/);
+});
+
+test('desktop drag release suppresses only its matching trailing click', () => {
+    assert.ok(desktopDragStart >= 0);
+    assert.ok(desktopDragEnd > desktopDragStart);
+    assert.match(desktopDragSource, /armNextClickSuppressor = \(pointerEvent = null\)/);
+    assert.match(desktopDragSource, /const releaseX = Number\(pointerEvent\?\.clientX\)/);
+    assert.match(desktopDragSource, /Math\.abs\(clickX - releaseX\) <= 8/);
+    assert.match(desktopDragSource, /Math\.abs\(clickY - releaseY\) <= 8/);
+    assert.match(desktopDragSource, /dragDoc\.addEventListener\('pointerdown', releaseForNewPress, true\)/);
+    assert.match(desktopDragSource, /dragDoc\.removeEventListener\('pointerdown', releaseForNewPress, true\)/);
+    assert.match(desktopDragSource, /armNextClickSuppressor\(event\)/);
 });

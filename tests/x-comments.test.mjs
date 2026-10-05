@@ -6,6 +6,7 @@ import { PromptManager } from '../config/prompt-manager.js';
 import {
     CONTEXT_SETTING_KEYS,
     DIRECT_MESSAGES_KEY,
+    FEED_RESPONSE_HISTORY_KEY,
     FOLLOWED_ACCOUNT_PROFILES_KEY,
     FOLLOWING_ACCOUNTS_KEY,
     FOLLOWING_POSTS_KEY,
@@ -343,8 +344,9 @@ test('X post actions open as an anchored popover instead of a bottom sheet', () 
     const block = cssSource.slice(overlayStart, overlayEnd);
 
     assert.match(block, /\.xapp-post-menu-overlay[\s\S]*?background:\s*transparent/);
-    assert.match(block, /\.xapp-post-menu-sheet[\s\S]*?position:\s*absolute/);
-    assert.match(block, /\.xapp-post-menu-action[\s\S]*?border:\s*0\s*!important/);
+    assert.match(block, /\.xapp-post-menu-sheet[\s\S]*?position:\s*absolute[\s\S]*?width:\s*max-content/);
+    assert.doesNotMatch(block, /\.xapp-post-menu-sheet[\s\S]*?width:\s*min\(116px/);
+    assert.match(block, /\.xapp-post-menu-action[\s\S]*?min-height:\s*34px[\s\S]*?border:\s*0\s*!important/);
     assert.doesNotMatch(block, /align-items:\s*flex-end|xapp-post-menu-handle|xapp-post-menu-cancel/);
 });
 
@@ -454,6 +456,54 @@ test('X direct-message generated avatars keep the same tone as the source post',
     assert.match(postAvatar, /xapp-generated-avatar-rose/);
     assert.match(directMessageAvatar, /xapp-generated-avatar-rose/);
     assert.match(cssSource, /\.xapp-dm-avatar\.xapp-generated-avatar-rose\s*\{\s*background:\s*#c95c73/);
+});
+
+test('X feed posts reuse a matching WeChat contact avatar', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+        VirtualPhone: {
+            cachedWechatData: {
+                getContacts() {
+                    return [{
+                        id: 'wechat-friend-1',
+                        name: '早八怨气比鬼重',
+                        remark: '早八好友',
+                        avatar: '/backgrounds/phone_contact_early.png'
+                    }];
+                },
+                getContactAutoAvatar() {
+                    return '';
+                }
+            }
+        }
+    };
+
+    try {
+        const view = new XView({ xData: new XData(new MemoryStorage()), phoneShell: { setContent() {} } });
+        const matchingPost = createTestPost({
+            author: {
+                name: '早八怨气比鬼重',
+                avatarText: '早',
+                avatarTone: 'sky',
+                accountType: 'personal'
+            }
+        });
+        const unrelatedPost = createTestPost({
+            author: {
+                name: '其他网友',
+                avatarText: '其',
+                avatarTone: 'mint',
+                accountType: 'personal'
+            }
+        });
+
+        assert.match(view.renderFeedPost(matchingPost), /src="\/backgrounds\/phone_contact_early\.png"/);
+        assert.doesNotMatch(view.renderFeedPost(matchingPost), /xapp-generated-avatar-sky/);
+        assert.match(view.renderFeedPost(unrelatedPost), /xapp-generated-avatar-mint/);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
 });
 
 test('X direct messages persist user text and one plain-text AI reply', async () => {
@@ -627,6 +677,42 @@ test('publishing an X compose post starts the spectator reaction flow', () => {
 
     assert.equal(triggeredPost?.id, post.id);
     assert.equal(data.getUserPosts()[0].content, '请大家看看这条帖子');
+    assert.match(view.renderForYouFeed(), /请大家看看这条帖子/);
+
+    view._visibleUserPostIds.clear();
+    assert.doesNotMatch(view.renderForYouFeed(), /请大家看看这条帖子/);
+    assert.match(view.renderProfile(), /请大家看看这条帖子/);
+});
+
+test('X user posts use the current phone story time', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+        VirtualPhone: {
+            timeManager: {
+                getCurrentStoryTime() {
+                    return {
+                        date: '2044年09月05日',
+                        weekday: '星期一',
+                        time: '21:30',
+                        timestamp: 2356714200000
+                    };
+                }
+            }
+        }
+    };
+
+    try {
+        const data = new XData(new MemoryStorage());
+        const post = data.publishUserPost('记录手机时间');
+
+        assert.equal(post.time, '21:30');
+        assert.equal(post.storyDate, '2044年09月05日');
+        assert.equal(post.storyWeekday, '星期一');
+        assert.equal(post.storyTimestamp, 2356714200000);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
 });
 
 test('X compose header reserves the phone status-bar safe area', () => {
@@ -1182,6 +1268,7 @@ test('X feed has a non-empty default prompt registered in PromptManager', () => 
     assert.equal(prompt?.name, '𝕏 信息流生成');
     assert.ok((prompt?.content || '').trim().length > 0);
     assert.match(prompt.content, /用户粉丝数动态计算规则/);
+    assert.match(prompt.content, /根据历史推荐帖子，请勿重复相同的帖子内容或题材/);
     assert.match(prompt.content, /用户粉丝数：/);
     assert.match(prompt.content, /<Twitter>/);
     assert.match(prompt.content, /<\/Twitter>/);
@@ -1226,6 +1313,65 @@ test('X parser reads posts, account types, counts, and nested replies from Twitt
     assert.equal(posts[0].commentList[1].replyTo, posts[0].commentList[0].handle);
     assert.equal(posts[1].author.accountType, 'advertiser');
     assert.equal(posts[1].promoted, true);
+});
+
+test('AI-authored posts using the current X identity are routed into user posts', () => {
+    const storage = new MemoryStorage();
+    const data = new XData(storage);
+    data.saveProfile({ nickname: '该该' });
+
+    const posts = data.parseTwitterContent(`<Twitter>
+博主：该该（个人）
+时间：刚刚
+正文：这是 AI 代替用户生成的帖子。
+回复数：2
+点赞数：5
+评论：
+- 路人甲：看到了
+---
+博主：普通网友（个人）
+时间：3分钟前
+正文：这是普通推荐帖。
+回复数：0
+点赞数：1
+评论：
+</Twitter>`).map((post, index) => ({ ...post, id: `x-ai-routing-${index}` }));
+
+    data.savePosts(posts);
+
+    assert.equal(data.getPosts().length, 1);
+    assert.equal(data.getPosts()[0].author.name, '普通网友');
+    assert.equal(data.getUserPosts().length, 1);
+    assert.equal(data.getUserPosts()[0].content, '这是 AI 代替用户生成的帖子。');
+    assert.equal(data.getUserPosts()[0].isUserPost, true);
+
+    const reloaded = new XData(storage);
+    assert.equal(reloaded.getPosts().length, 1);
+    assert.equal(reloaded.getUserPosts()[0].id, 'x-ai-routing-0');
+});
+
+test('X migrates previously stored feed posts authored by the current user into the profile', () => {
+    const storage = new MemoryStorage();
+    storage.set('x_profile', JSON.stringify({ nickname: '该该' }));
+    storage.set('x_posts', JSON.stringify([
+        createTestPost({
+            id: 'x-old-ai-user-post',
+            author: { name: '该该', accountType: 'personal' },
+            content: '旧数据里的用户帖子'
+        }),
+        createTestPost({
+            id: 'x-old-feed-post',
+            author: { name: '其他人', accountType: 'personal' },
+            content: '旧数据里的普通帖子'
+        })
+    ]));
+
+    const data = new XData(storage);
+
+    assert.deepEqual(data.getPosts().map((post) => post.id), ['x-old-feed-post']);
+    assert.deepEqual(data.getUserPosts().map((post) => post.id), ['x-old-ai-user-post']);
+    assert.doesNotMatch(storage.get('x_posts'), /x-old-ai-user-post/);
+    assert.match(storage.get('x_user_posts'), /x-old-ai-user-post/);
 });
 
 test('X follower parser accepts formatted totals and keeps the value scoped to Twitter output', () => {
@@ -1716,6 +1862,151 @@ test('X feed refresh calls the X API with worldbook context and saves parsed pos
         assert.equal(new XData(storage).getProfile().followers, 456);
         assert.equal(new XData(storage).getPosts()[0].content, '公开活动将在今晚开始。');
         assert.equal(new XData(storage).getFollowingPosts()[0].content, '测试帖子正文');
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+        if (previousDocument === undefined) delete globalThis.document;
+        else globalThis.document = previousDocument;
+        if (previousSillyTavern === undefined) delete globalThis.SillyTavern;
+        else globalThis.SillyTavern = previousSillyTavern;
+    }
+});
+
+test('X feed refresh injects only the two most recent successful AI responses', async () => {
+    const storage = new MemoryStorage();
+    const data = new XData(storage);
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    const previousSillyTavern = globalThis.SillyTavern;
+    const requests = [];
+    const makeResponse = (topic) => `<Twitter>
+用户粉丝数：10
+---
+博主：${topic}账号（个人）
+时间：刚刚
+正文：${topic}内容
+回复数：0
+点赞数：1
+评论：
+</Twitter>`;
+    const responses = ['第一轮', '第二轮', '第三轮', '第四轮'].map(makeResponse);
+    let responseIndex = 0;
+
+    globalThis.document = { getElementById: () => null };
+    globalThis.SillyTavern = {
+        getContext() {
+            return { name1: '用户', name2: '角色', max_response_length: 1800, chat: [] };
+        }
+    };
+    globalThis.window = {
+        VirtualPhone: {
+            storage,
+            promptManager: {
+                ensureLoaded() {},
+                getPromptForFeature(app, feature) {
+                    assert.equal(app, 'x');
+                    return feature === 'feed' ? '生成新的 X 推荐帖子' : '';
+                },
+                renderPromptForFeature(app, feature) {
+                    assert.equal(app, 'x');
+                    return feature === 'feed' ? '生成新的 X 推荐帖子' : '';
+                }
+            },
+            apiManager: {
+                async callAI(messages) {
+                    requests.push(messages);
+                    return { success: true, summary: responses[responseIndex++] };
+                }
+            }
+        }
+    };
+
+    try {
+        await data.generateFeed();
+        await data.generateFeed();
+        await data.generateFeed();
+        await data.generateFeed();
+
+        const getHistoryMessage = (messages) => messages.find(
+            (message) => message.name === 'SYSTEM (X 最近推荐历史)'
+        );
+        assert.equal(getHistoryMessage(requests[0]), undefined);
+        assert.match(getHistoryMessage(requests[1]).content, /第一轮内容/);
+        assert.doesNotMatch(getHistoryMessage(requests[1]).content, /第二轮内容/);
+
+        const thirdRequestHistory = getHistoryMessage(requests[2]).content;
+        assert.match(thirdRequestHistory, /根据历史推荐帖子，请勿重复相同的帖子内容或题材/);
+        assert.ok(thirdRequestHistory.indexOf('第一轮内容') < thirdRequestHistory.indexOf('第二轮内容'));
+
+        const fourthRequestHistory = getHistoryMessage(requests[3]).content;
+        assert.doesNotMatch(fourthRequestHistory, /第一轮内容/);
+        assert.match(fourthRequestHistory, /第二轮内容/);
+        assert.match(fourthRequestHistory, /第三轮内容/);
+        assert.deepEqual(JSON.parse(storage.get(FEED_RESPONSE_HISTORY_KEY)), responses.slice(-2));
+
+        const otherChatData = new XData(new MemoryStorage());
+        assert.deepEqual(otherChatData.getFeedResponseHistory(), []);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+        if (previousDocument === undefined) delete globalThis.document;
+        else globalThis.document = previousDocument;
+        if (previousSillyTavern === undefined) delete globalThis.SillyTavern;
+        else globalThis.SillyTavern = previousSillyTavern;
+    }
+});
+
+test('X feed does not save an AI response that fails Twitter parsing', async () => {
+    const storage = new MemoryStorage();
+    const data = new XData(storage);
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    const previousSillyTavern = globalThis.SillyTavern;
+    const validResponse = `<Twitter>
+用户粉丝数：10
+---
+博主：有效账号（个人）
+时间：刚刚
+正文：有效历史内容
+回复数：0
+点赞数：1
+评论：
+</Twitter>`;
+    const responses = [validResponse, '这轮没有按 Twitter 标签返回'];
+    let responseIndex = 0;
+
+    globalThis.document = { getElementById: () => null };
+    globalThis.SillyTavern = {
+        getContext() {
+            return { name1: '用户', name2: '角色', max_response_length: 1800, chat: [] };
+        }
+    };
+    globalThis.window = {
+        VirtualPhone: {
+            storage,
+            promptManager: {
+                ensureLoaded() {},
+                getPromptForFeature(app, feature) {
+                    assert.equal(app, 'x');
+                    return feature === 'feed' ? '生成新的 X 推荐帖子' : '';
+                },
+                renderPromptForFeature(app, feature) {
+                    assert.equal(app, 'x');
+                    return feature === 'feed' ? '生成新的 X 推荐帖子' : '';
+                }
+            },
+            apiManager: {
+                async callAI() {
+                    return { success: true, summary: responses[responseIndex++] };
+                }
+            }
+        }
+    };
+
+    try {
+        await data.generateFeed();
+        await assert.rejects(data.generateFeed(), /X 帖子解析失败/);
+        assert.deepEqual(JSON.parse(storage.get(FEED_RESPONSE_HISTORY_KEY)), [validResponse]);
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
         else globalThis.window = previousWindow;

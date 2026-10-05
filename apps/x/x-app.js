@@ -3,8 +3,8 @@
  *  X app controller - visual prototype
  * ======================================================== */
 
-import { XData } from './x-data.js?v=20261005-x-load-more-spacing';
-import { XView } from './x-view.js?v=20261005-x-load-more-spacing';
+import { XData } from './x-data.js?v=20261005-x-post-menu-auto-width';
+import { XView } from './x-view.js?v=20261005-x-post-menu-auto-width';
 
 export class XApp {
     constructor(phoneShell, storage) {
@@ -35,7 +35,7 @@ export class XApp {
         const link = document.createElement('link');
         link.id = 'xapp-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./x.css?v=20261005-x-load-more-spacing', import.meta.url).href;
+        link.href = new URL('./x.css?v=20261005-x-post-menu-auto-width', import.meta.url).href;
         document.head.appendChild(link);
     }
 
@@ -119,6 +119,7 @@ export class XApp {
         this.view._pendingReactionPostIds?.clear?.();
         this.view._loadingMorePostIds?.clear?.();
         this.view._pendingCommentReactionIds?.clear?.();
+        this.view._visibleUserPostIds?.clear?.();
     }
 
     destroy() {

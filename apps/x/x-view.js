@@ -40,6 +40,7 @@ export class XView {
         this._pendingReactionPostIds = new Set();
         this._loadingMorePostIds = new Set();
         this._pendingCommentReactionIds = new Set();
+        this._visibleUserPostIds = new Set();
         this._suppressDirectMessageThreadClickUntil = 0;
     }
 
@@ -114,7 +115,9 @@ export class XView {
     }
 
     renderForYouFeed() {
-        const userPosts = this.app.xData.getUserPosts();
+        const userPosts = this.app.xData.getUserPosts().filter((post) => (
+            this._visibleUserPostIds.has(String(post?.id || ''))
+        ));
         const feedPosts = this.app.xData.getPosts();
         if (!userPosts.length && !feedPosts.length) {
             return `
@@ -262,6 +265,16 @@ export class XView {
             return `<div class="xapp-post-avatar xapp-brand-avatar ${extraClass}" aria-hidden="true">𝕏</div>`;
         }
 
+        const avatar = String(author.avatar || '').trim();
+        if (avatar === 'profile') {
+            return `<img class="xapp-post-avatar ${extraClass}" src="${this._escapeAttr(this._getXDisplayAvatar())}" alt="">`;
+        }
+
+        const avatarSource = AVATAR_SOURCES[avatar] || this._normalizeWechatAvatarPath(avatar);
+        if (avatarSource) {
+            return `<img class="xapp-post-avatar ${extraClass}" src="${this._escapeAttr(avatarSource)}" alt="">`;
+        }
+
         if (author.avatarText) {
             const tone = ['rose', 'sky', 'mint', 'violet', 'amber'].includes(author.avatarTone)
                 ? author.avatarTone
@@ -269,10 +282,7 @@ export class XView {
             return `<div class="xapp-post-avatar xapp-generated-avatar xapp-generated-avatar-${tone} ${extraClass}" aria-hidden="true">${this._escapeHtml(author.avatarText)}</div>`;
         }
 
-        const source = author.avatar === 'profile'
-            ? this._getXDisplayAvatar()
-            : (AVATAR_SOURCES[author.avatar] || PROFILE_AVATAR);
-        return `<img class="xapp-post-avatar ${extraClass}" src="${this._escapeAttr(source)}" alt="">`;
+        return `<img class="xapp-post-avatar ${extraClass}" src="${this._escapeAttr(PROFILE_AVATAR)}" alt="">`;
     }
 
     renderVerified(type) {
@@ -809,15 +819,9 @@ export class XView {
                     <div class="xapp-chat-header-spacer" aria-hidden="true"></div>
                 </header>
 
-                <label class="xapp-chat-search" role="search">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input id="xapp-chat-search-input" type="search" placeholder="搜索私信" autocomplete="off">
-                </label>
-
                 ${threads.length > 0 ? `
                     <div class="xapp-chat-list" aria-label="私信列表">
                         ${threads.map((thread) => this.renderDirectMessageListItem(thread)).join('')}
-                        <div class="xapp-chat-search-empty is-hidden">没有找到对应私信</div>
                     </div>
                 ` : `
                     <div class="xapp-chat-empty">
@@ -833,9 +837,8 @@ export class XView {
     renderDirectMessageListItem(thread = {}) {
         const participant = thread.participant || {};
         const lastMessage = Array.isArray(thread.messages) ? thread.messages.at(-1) : null;
-        const searchText = `${participant.name || ''} ${lastMessage?.text || ''}`.toLowerCase();
         return `
-            <button class="xapp-chat-thread" type="button" data-thread-id="${this._escapeAttr(thread.id)}" data-search-text="${this._escapeAttr(searchText)}">
+            <button class="xapp-chat-thread" type="button" data-thread-id="${this._escapeAttr(thread.id)}">
                 ${this.renderDirectMessageAvatar(participant, 'xapp-chat-thread-avatar')}
                 <span class="xapp-chat-thread-main">
                     <span class="xapp-chat-thread-heading">
@@ -1144,8 +1147,8 @@ export class XView {
             if (!sheet || !anchorButton?.getBoundingClientRect || !phoneScreen.getBoundingClientRect) return;
             const phoneRect = phoneScreen.getBoundingClientRect();
             const anchorRect = anchorButton.getBoundingClientRect();
-            const menuWidth = sheet.offsetWidth || 220;
-            const menuHeight = sheet.offsetHeight || 92;
+            const menuWidth = sheet.offsetWidth || (isFollowing ? 86 : 64);
+            const menuHeight = sheet.offsetHeight || 74;
             const maxLeft = Math.max(8, phoneRect.width - menuWidth - 8);
             const left = Math.min(maxLeft, Math.max(8, anchorRect.right - phoneRect.left - menuWidth));
             const belowTop = anchorRect.bottom - phoneRect.top + 4;
@@ -1183,19 +1186,6 @@ export class XView {
     }
 
     bindDirectMessageEvents(root) {
-        const searchInput = root.querySelector('#xapp-chat-search-input');
-        const searchEmpty = root.querySelector('.xapp-chat-search-empty');
-        searchInput?.addEventListener('input', () => {
-            const query = String(searchInput.value || '').trim().toLowerCase();
-            let visibleCount = 0;
-            root.querySelectorAll('.xapp-chat-thread[data-thread-id]').forEach((button) => {
-                const visible = !query || String(button.dataset.searchText || '').includes(query);
-                button.hidden = !visible;
-                if (visible) visibleCount += 1;
-            });
-            searchEmpty?.classList.toggle('is-hidden', visibleCount > 0 || !query);
-        });
-
         root.querySelectorAll('.xapp-chat-thread[data-thread-id]').forEach((button) => {
             let holdTimer = null;
             let startX = 0;
@@ -1841,6 +1831,7 @@ export class XView {
 
         this.pendingComposeImages = [];
         this.composeSessionId += 1;
+        this._visibleUserPostIds.add(String(post.id));
         this.composeReturnPage = 'home';
         this.currentPage = 'home';
         this.currentFeed = 'for-you';
@@ -1987,6 +1978,7 @@ export class XView {
             this.app.phoneShell.showNotification?.('X', '没有找到要删除的帖子', '×');
             return false;
         }
+        this._visibleUserPostIds.delete(String(postId || ''));
         await this._deleteManagedXImages(result.images);
         this.app.phoneShell.showNotification?.('X', '帖子和托管图片已删除', '✓');
 
@@ -2198,6 +2190,7 @@ export class XView {
 
         try {
             await this.app.xData.generateFeed();
+            this._visibleUserPostIds.clear();
             this._refreshStatus = 'success';
             const activeRoot = document.querySelector('.phone-view-current .xapp-root[data-page="home"]');
             if (activeRoot && this.currentPage === 'home' && this.currentFeed === 'for-you') {
@@ -2706,7 +2699,70 @@ export class XView {
                 accountType: 'personal'
             };
         }
-        return post.author || {};
+        const author = post.author && typeof post.author === 'object' ? post.author : {};
+        const wechatAvatar = this._resolveWechatContactAvatar(author.name);
+        return wechatAvatar ? { ...author, avatar: wechatAvatar } : author;
+    }
+
+    _normalizeWechatContactName(value = '') {
+        return String(value || '')
+            .normalize('NFKC')
+            .trim()
+            .replace(/^@+/, '')
+            .replace(/\s+/g, '')
+            .replace(/[（(][^（）()]*[）)]/g, '')
+            .toLowerCase();
+    }
+
+    _normalizeWechatAvatarPath(value = '') {
+        const raw = String(value || '').trim();
+        if (!raw || raw === '👤' || raw === '👥') return '';
+        if (/^(?:data:image|https?:\/\/|\/|blob:)/i.test(raw)) return raw;
+        const cleaned = raw
+            .replace(/^["']|["']$/g, '')
+            .replace(/^\.?\/*/, '')
+            .replace(/^apps\/wechat\/avatars\//i, '')
+            .replace(/^wechat\/avatars\//i, '')
+            .replace(/^avatars\//i, '');
+        if (!cleaned || /\s/.test(cleaned)) return '';
+        if (/^(?:male|female)(?:_elder)?\d+$/i.test(cleaned)) {
+            return new URL(`../wechat/avatars/${cleaned}.png`, import.meta.url).href;
+        }
+        if (/^[a-z0-9._-]+\.(?:png|jpg|jpeg|webp|gif)$/i.test(cleaned)) {
+            return new URL(`../wechat/avatars/${cleaned}`, import.meta.url).href;
+        }
+        return '';
+    }
+
+    _resolveWechatContactAvatar(authorName = '') {
+        const targetName = this._normalizeWechatContactName(authorName);
+        if (!targetName || typeof window === 'undefined') return '';
+
+        const runtime = window.VirtualPhone || {};
+        const wechatApp = runtime.wechatApp || null;
+        const wechatData = wechatApp?.wechatData || runtime.cachedWechatData || null;
+        const contacts = Array.isArray(wechatData?.getContacts?.()) ? wechatData.getContacts() : [];
+        const contact = contacts.find((item) => (
+            [item?.name, item?.remark, item?.nickname]
+                .some((alias) => this._normalizeWechatContactName(alias) === targetName)
+        ));
+        if (!contact) return '';
+
+        const lookupKeys = [contact.id, contact.name, contact.remark].filter(Boolean);
+        const candidates = [contact.avatar];
+        lookupKeys.forEach((key) => candidates.push(wechatData?.getContactAutoAvatar?.(key)));
+
+        if (!candidates.some((value) => this._normalizeWechatAvatarPath(value))) {
+            const gender = wechatData?.getContactGender?.(contact.id || contact.name) || 'unknown';
+            const avatarGroup = wechatData?.getContactAvatarGroup?.(contact.id || contact.name) || '';
+            candidates.push(wechatApp?._resolveAutoAvatarForName?.(contact.name, gender, avatarGroup));
+        }
+
+        for (const candidate of candidates) {
+            const normalized = this._normalizeWechatAvatarPath(candidate);
+            if (normalized) return normalized;
+        }
+        return '';
     }
 
     _parseXImageItem(value, state = null) {

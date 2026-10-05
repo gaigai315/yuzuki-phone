@@ -13,6 +13,7 @@ const DIRECT_MESSAGES_KEY = 'x_direct_messages';
 const FOLLOWING_ACCOUNTS_KEY = 'x_following_accounts';
 const FOLLOWED_ACCOUNT_PROFILES_KEY = 'x_followed_account_profiles';
 const FOLLOWING_POSTS_KEY = 'x_following_posts';
+const FEED_RESPONSE_HISTORY_KEY = 'x_feed_response_history';
 const CONTEXT_SETTING_KEYS = Object.freeze({
     includeCharacterUser: 'x_include_character_user_context',
     includeTavernText: 'x_include_tavern_text_context'
@@ -61,9 +62,12 @@ export class XData {
         if (Array.isArray(parsed)) {
             const storedSnapshot = JSON.stringify(parsed);
             const migrated = parsed.filter((post) => !LEGACY_DEFAULT_POST_IDS.has(String(post?.id || '').trim()));
-            this._posts = this._sanitizePostsForStorage(migrated);
-            if (migrated.length !== parsed.length || JSON.stringify(this._posts) !== storedSnapshot) {
-                this.savePosts(this._posts);
+            const normalized = this._sanitizePostsForStorage(migrated);
+            const hasUserAuthoredPosts = normalized.some((post) => this._isCurrentUserPost(post));
+            if (migrated.length !== parsed.length || JSON.stringify(normalized) !== storedSnapshot || hasUserAuthoredPosts) {
+                this.savePosts(normalized);
+            } else {
+                this._posts = normalized;
             }
         } else {
             this._posts = clone(DEFAULT_POSTS);
@@ -88,6 +92,7 @@ export class XData {
         });
         this._profile = normalized;
         this.storage?.set?.(PROFILE_KEY, JSON.stringify(normalized));
+        if (Array.isArray(this._posts)) this.savePosts(this._posts);
         return normalized;
     }
 
@@ -171,6 +176,55 @@ export class XData {
         return this._userPosts;
     }
 
+    _normalizeUserPostIdentity(value) {
+        return String(value || '')
+            .normalize('NFKC')
+            .trim()
+            .replace(/^@+/, '')
+            .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+            .replace(/\s+/g, '')
+            .toLowerCase();
+    }
+
+    _getCurrentUserPostIdentities() {
+        const identities = new Set();
+        [
+            this.getProfile()?.nickname,
+            this.getCurrentUserName(),
+            '{{user}}',
+            '<user>'
+        ].forEach((value) => {
+            const normalized = this._normalizeUserPostIdentity(value);
+            if (normalized) identities.add(normalized);
+        });
+        return identities;
+    }
+
+    _isCurrentUserPost(post = {}) {
+        if (post?.isUserPost === true) return true;
+        const authorName = this._normalizeUserPostIdentity(post?.author?.name);
+        return !!authorName && this._getCurrentUserPostIdentities().has(authorName);
+    }
+
+    _mergeUserPostCollections(incoming = [], existing = []) {
+        const merged = [];
+        const seen = new Set();
+        [...incoming, ...existing].forEach((post) => {
+            if (!post || typeof post !== 'object' || Array.isArray(post)) return;
+            const id = String(post.id || '').trim();
+            const fallbackKey = [
+                String(post.content || '').trim(),
+                String(post.time || '').trim(),
+                (Array.isArray(post.images) ? post.images : []).join('|')
+            ].join('\n');
+            const key = id ? `id:${id}` : `content:${fallbackKey}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            merged.push({ ...post, isUserPost: true });
+        });
+        return merged;
+    }
+
     publishUserPost(content = '', images = []) {
         const textImages = [];
         const mediaRegex = /\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
@@ -194,6 +248,9 @@ export class XData {
             .slice(0, 4);
         if (!cleanContent && cleanImages.length === 0) return null;
 
+        const runtime = typeof window !== 'undefined' ? window.VirtualPhone : null;
+        const phoneTime = this._getCurrentPhoneTimeContext(runtime);
+
         const post = {
             id: `x-post-user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
             isUserPost: true,
@@ -201,7 +258,10 @@ export class XData {
                 avatar: 'profile',
                 accountType: 'personal'
             },
-            time: '刚刚',
+            time: phoneTime.time || '刚刚',
+            storyDate: phoneTime.date,
+            storyWeekday: phoneTime.weekday,
+            storyTimestamp: phoneTime.timestamp,
             content: cleanContent,
             comments: 0,
             likes: 0,
@@ -859,7 +919,16 @@ export class XData {
     }
 
     savePosts(posts = this._posts) {
-        const normalized = this._sanitizePostsForStorage(Array.isArray(posts) ? posts : []);
+        const sanitized = this._sanitizePostsForStorage(Array.isArray(posts) ? posts : []);
+        const routedUserPosts = [];
+        const normalized = [];
+        sanitized.forEach((post) => {
+            if (this._isCurrentUserPost(post)) routedUserPosts.push(post);
+            else normalized.push(post);
+        });
+        if (routedUserPosts.length > 0) {
+            this.saveUserPosts(this._mergeUserPostCollections(routedUserPosts, this.getUserPosts()));
+        }
         this._mergeFollowingPosts(normalized);
         this._posts = normalized;
         this.storage?.set?.(STORAGE_KEY, JSON.stringify(normalized));
@@ -1422,6 +1491,42 @@ export class XData {
         return value;
     }
 
+    getFeedResponseHistory() {
+        const parsed = this._parseArray(this.storage?.get?.(FEED_RESPONSE_HISTORY_KEY, null));
+        return (Array.isArray(parsed) ? parsed : [])
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+            .slice(-2);
+    }
+
+    saveFeedResponseHistory(history = []) {
+        const normalized = (Array.isArray(history) ? history : [])
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+            .slice(-2);
+        this.storage?.set?.(FEED_RESPONSE_HISTORY_KEY, JSON.stringify(normalized));
+        return normalized;
+    }
+
+    _buildFeedHistoryMessage(history = this.getFeedResponseHistory()) {
+        const normalized = (Array.isArray(history) ? history : [])
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+            .slice(-2);
+        if (normalized.length === 0) return null;
+
+        const entries = normalized.map((content, index) => {
+            const recency = index === normalized.length - 1 ? '最近一轮' : '前一轮';
+            return `【${recency}】\n${content}`;
+        });
+        return {
+            role: 'system',
+            name: 'SYSTEM (X 最近推荐历史)',
+            content: `【最近两轮 X 推荐历史，仅用于查重】\n以下内容按从旧到新排列。根据历史推荐帖子，请勿重复相同的帖子内容或题材；不得仅通过改写措辞复刻相同事件、观点或创意。\n\n${entries.join('\n\n')}`,
+            isPhoneMessage: true
+        };
+    }
+
     async generateFeed() {
         if (this._refreshPromise) return this._refreshPromise;
 
@@ -1475,6 +1580,8 @@ export class XData {
 
         const contextSettings = this.getGenerationContextSettings();
         const contextMessages = await this._collectContextMessages(contextSettings);
+        const feedResponseHistory = this.getFeedResponseHistory();
+        const feedHistoryMessage = this._buildFeedHistoryMessage(feedResponseHistory);
         const messages = [
             ...(overridePrompt.trim() ? [{
                 role: 'system',
@@ -1497,6 +1604,7 @@ export class XData {
                 isPhoneMessage: true
             },
             ...contextMessages,
+            ...(feedHistoryMessage ? [feedHistoryMessage] : []),
             { role: 'user', content: prompt, isPhoneMessage: true }
         ];
         const configuredMaxTokens = Number.parseInt(context.max_response_length, 10)
@@ -1540,6 +1648,7 @@ export class XData {
             id: `x-post-ai-${generatedAt.toString(36)}-${index.toString(36)}-${Math.random().toString(36).slice(2, 6)}`
         }));
         this.savePosts(normalizedPosts);
+        this.saveFeedResponseHistory([...feedResponseHistory, cleanedText]);
         return normalizedPosts;
     }
 
@@ -1757,6 +1866,7 @@ export class XData {
             images,
             imageGenerationStates: []
         };
+        if (this._isCurrentUserPost(post)) post.isUserPost = true;
         this._assignCommentTimes(post, commentList);
         return post;
     }
@@ -1879,10 +1989,15 @@ export class XData {
             const date = String(current.date || current.calendarDate || '').trim();
             const time = String(current.time || '').trim();
             const weekday = String(current.weekday || '').trim();
+            let timestamp = Number(current.timestamp ?? current._ts);
+            if (!Number.isFinite(timestamp) || timestamp <= 0) {
+                timestamp = Number(runtime?.timeManager?.parseTimeToTimestamp?.(current));
+            }
             return {
                 date,
                 time,
                 weekday,
+                timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now(),
                 text: [date, weekday, time].filter(Boolean).join(' ') || '手机时间未知'
             };
         }
@@ -1891,7 +2006,7 @@ export class XData {
         const date = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, '0')}月${String(now.getDate()).padStart(2, '0')}日`;
         const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const weekday = `星期${'日一二三四五六'[now.getDay()]}`;
-        return { date, time, weekday, text: `${date} ${weekday} ${time}` };
+        return { date, time, weekday, timestamp: now.getTime(), text: `${date} ${weekday} ${time}` };
     }
 
     _normalizeProfile(profile) {
@@ -2113,6 +2228,7 @@ export {
     DEFAULT_POSTS,
     DEFAULT_PROFILE,
     DIRECT_MESSAGES_KEY,
+    FEED_RESPONSE_HISTORY_KEY,
     FOLLOWED_ACCOUNT_PROFILES_KEY,
     FOLLOWING_ACCOUNTS_KEY,
     FOLLOWING_POSTS_KEY,

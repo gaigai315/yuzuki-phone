@@ -23,12 +23,12 @@ import { StoryImageAutoScheduler } from './apps/album/story-image-auto-scheduler
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.5.9';
-const ST_PHONE_CSS_REVISION = '20261002-swipe-programmatic-click';
+const ST_PHONE_CSS_REVISION = '20261005-home-icon-first-tap';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261004-story-image-header-glass';
 const ST_PHONE_WECHAT_MODULE_REVISION = '20261004-moments-image-cancel';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
-const ST_PHONE_X_MODULE_REVISION = '20261005-x-load-more-spacing';
+const ST_PHONE_X_MODULE_REVISION = '20261005-x-post-menu-auto-width';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_REGULAR_FONT_URL = new URL('./assets/vendor/fontawesome/fa-regular-400.woff2', import.meta.url).href;
@@ -854,13 +854,25 @@ if (window.GGP_Loaded) {
             return !!(target && typeof target.closest === 'function' && isPhonePanelDragHandle(target));
         };
 
-        const armNextClickSuppressor = () => {
+        const armNextClickSuppressor = (pointerEvent = null) => {
             suppressNextClick = true;
             suppressClickUntil = Date.now() + 350;
             if (suppressClickCleanup) suppressClickCleanup();
 
+            const releaseX = Number(pointerEvent?.clientX);
+            const releaseY = Number(pointerEvent?.clientY);
+            const hasReleasePoint = Number.isFinite(releaseX) && Number.isFinite(releaseY);
+
             const blockClick = (event) => {
-                if (!isDragHandleClick(event) || Date.now() > suppressClickUntil) return;
+                if (Date.now() > suppressClickUntil) return;
+                const clickX = Number(event?.clientX);
+                const clickY = Number(event?.clientY);
+                const matchesReleasePoint = hasReleasePoint
+                    && Number.isFinite(clickX)
+                    && Number.isFinite(clickY)
+                    && Math.abs(clickX - releaseX) <= 8
+                    && Math.abs(clickY - releaseY) <= 8;
+                if (!matchesReleasePoint && !isDragHandleClick(event)) return;
                 event.preventDefault();
                 event.stopPropagation();
                 event.stopImmediatePropagation?.();
@@ -869,7 +881,14 @@ if (window.GGP_Loaded) {
                 suppressClickCleanup?.();
             };
 
+            const releaseForNewPress = () => {
+                suppressNextClick = false;
+                suppressClickUntil = 0;
+                suppressClickCleanup?.();
+            };
+
             dragDoc.addEventListener('click', blockClick, true);
+            dragDoc.addEventListener('pointerdown', releaseForNewPress, true);
             const cleanupTimer = setTimeout(() => {
                 suppressNextClick = false;
                 suppressClickUntil = 0;
@@ -877,6 +896,7 @@ if (window.GGP_Loaded) {
             }, 360);
             suppressClickCleanup = () => {
                 dragDoc.removeEventListener('click', blockClick, true);
+                dragDoc.removeEventListener('pointerdown', releaseForNewPress, true);
                 clearTimeout(cleanupTimer);
                 suppressClickCleanup = null;
             };
@@ -1055,7 +1075,7 @@ if (window.GGP_Loaded) {
             resetDragState();
 
             if (shouldSave) {
-                armNextClickSuppressor();
+                armNextClickSuppressor(event);
                 savePhonePanelDesktopPosition(nextPosition);
             }
         };
