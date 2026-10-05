@@ -698,7 +698,7 @@ test('manual story tag edits persist and show the provider currently bound to st
         const result = await app.saveStoryTags(7, ' 1girl；雨夜\nlooking back ');
 
         assert.equal(result.success, true);
-        assert.equal(result.tags, '1girl, 雨夜, looking back');
+        assert.equal(result.tags, '1girl, 雨夜\nlooking back');
         assert.equal(savedTags, result.tags);
         assert.equal(app.getCurrentStoryImageProvider(), 'comfyui');
         assert.equal(window.VirtualPhone.imageGenerationManager.storage, storage);

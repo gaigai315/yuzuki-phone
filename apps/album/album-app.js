@@ -169,16 +169,24 @@ export class AlbumApp {
     }
 
     _cleanStoryTags(value = '') {
-        return String(value || '')
+        const cleaned = String(value || '')
             .replace(/<think>[\s\S]*?<\/think>/gi, '')
             .replace(/```[a-z]*|```/gi, '')
             .replace(/^\s*(?:prompt|positive prompt|tags?|nai tags?|english tags?|提示词|正面提示词)\s*[:：]/i, '')
-            .replace(/[\r\n;；]+/g, ', ')
+            .replace(/\r\n?/g, '\n')
+            .replace(/[;；]+/g, ', ')
             .replace(/[，、]/g, ', ')
-            .replace(/[。！？]/g, '')
-            .replace(/\s*,\s*/g, ', ')
-            .replace(/(?:,\s*){2,}/g, ', ')
-            .replace(/^['"“”‘’\s,]+|['"“”‘’\s,]+$/g, '')
+            .replace(/[。！？]/g, '');
+
+        return cleaned
+            .split('\n')
+            .map(line => line
+                .replace(/[ \t]*,[ \t]*/g, ', ')
+                .replace(/(?:,[ \t]*){2,}/g, ', ')
+                .replace(/^['"“”‘’\s,]+|['"“”‘’\s,]+$/g, '')
+                .trim())
+            .join('\n')
+            .replace(/\n{3,}/g, '\n\n')
             .trim();
     }
 
