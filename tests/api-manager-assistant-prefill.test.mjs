@@ -49,9 +49,16 @@ const geminiCompatibilityConfig = {
     apiUrl: 'https://example.com/v1'
 };
 
-test('Gemini 3.5 through 3.8 Flash variants reject assistant prefill', () => {
+test('all Gemini Flash variants reject assistant prefill', () => {
     const { manager } = createHarness();
     const unsupportedModels = [
+        'gemini-1.5-flash',
+        'gemini-2.0-flash-exp',
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-flash-latest',
+        'google/gemini-2.5-flash-preview-09-2025',
+        'GOOGLE/GEMINI-2.5-FLASH',
         'gemini-3.5-flash',
         'gemini-3.5-flash-low',
         'gemini-3.6-flash',
@@ -69,7 +76,7 @@ test('Gemini 3.5 through 3.8 Flash variants reject assistant prefill', () => {
             model
         );
     });
-    assert.equal(manager._supportsAssistantPrefill({ ...geminiCompatibilityConfig, model: 'gemini-3.4-flash' }), true);
+    assert.equal(manager._supportsAssistantPrefill({ ...geminiCompatibilityConfig, model: 'gemini-3.4-flash' }), false);
     assert.equal(manager._supportsAssistantPrefill({ ...geminiCompatibilityConfig, model: 'gemini-3.8-pro-agent' }), true);
 });
 
@@ -98,6 +105,54 @@ test('assistant prefill removal preserves history and moves phone metadata to th
     assert.deepEqual(cleaned[2].gaigaiPhoneSignal, { appId: 'honey' });
     assert.equal(cleaned[2].isPhoneMessage, true);
     assert.equal(cleaned[2].isVirtualPhoneApiCall, true);
+});
+
+test('consecutive trailing assistant messages retain history but finish with user', () => {
+    const { manager } = createHarness();
+    const messages = [
+        { role: 'system', content: 'system' },
+        { role: 'assistant', content: 'historical assistant reply' },
+        {
+            role: 'assistant',
+            content: 'prefill',
+            gaigaiPhoneSignal: { appId: 'honey' },
+            isPhoneMessage: true,
+            isVirtualPhoneApiCall: true
+        }
+    ];
+
+    const cleaned = manager._removeUnsupportedAssistantPrefill(messages, {
+        ...geminiCompatibilityConfig,
+        model: 'google/gemini-2.5-flash-preview'
+    });
+
+    assert.deepEqual(cleaned.map((message) => message.role), ['system', 'assistant', 'user']);
+    assert.equal(cleaned[1].content, 'historical assistant reply');
+    assert.match(cleaned[2].content, /继续完成当前请求/);
+    assert.deepEqual(cleaned[2].gaigaiPhoneSignal, { appId: 'honey' });
+    assert.equal(cleaned[2].isPhoneMessage, true);
+    assert.equal(cleaned[2].isVirtualPhoneApiCall, true);
+});
+
+test('single assistant message is preserved as history and followed by user', () => {
+    const { manager } = createHarness();
+    const cleaned = manager._removeUnsupportedAssistantPrefill([
+        {
+            role: 'assistant',
+            content: 'historical assistant reply',
+            gaigaiPhoneSignal: { appId: 'wechat' },
+            isPhoneMessage: true,
+            isVirtualPhoneApiCall: true
+        }
+    ], {
+        ...geminiCompatibilityConfig,
+        model: 'gemini-flash-latest'
+    });
+
+    assert.deepEqual(cleaned.map((message) => message.role), ['assistant', 'user']);
+    assert.equal(cleaned[0].content, 'historical assistant reply');
+    assert.equal(cleaned[0].gaigaiPhoneSignal, undefined);
+    assert.deepEqual(cleaned[1].gaigaiPhoneSignal, { appId: 'wechat' });
 });
 
 test('independent API payload removes Gemini 3.8 Flash assistant prefill', async () => {
@@ -141,4 +196,33 @@ test('tavern API payload applies the same Gemini assistant-prefill cleanup', asy
     assert.equal(result.success, true);
     const payload = JSON.parse(requests[0].init.body);
     assert.deepEqual(payload.messages.map((message) => message.role), ['system', 'user']);
+});
+
+test('generateRaw fallback also prevents Gemini Flash from ending with assistant', async () => {
+    const { manager } = createHarness();
+    let capturedPrompt = [];
+    globalThis.SillyTavern = {
+        getContext: () => ({
+            generateRaw: async ({ prompt }) => {
+                capturedPrompt = prompt;
+                return 'OK';
+            }
+        })
+    };
+
+    try {
+        const result = await manager._callTavernGenerateRawFallback([
+            { role: 'system', content: 'system' },
+            { role: 'assistant', content: 'historical assistant reply' },
+            { role: 'assistant', content: 'prefill' }
+        ], 128, {}, null, false, {
+            ...geminiCompatibilityConfig,
+            model: 'gemini-2.5-flash-lite'
+        });
+
+        assert.equal(result.success, true);
+        assert.deepEqual(capturedPrompt.map((message) => message.role), ['system', 'assistant', 'user']);
+    } finally {
+        delete globalThis.SillyTavern;
+    }
 });

@@ -4614,10 +4614,10 @@ export class HoneyData {
             .forEach(({ role, content }) => {
                 messages.push({ role, content, isPhoneMessage: true });
             });
-        // 预填充 assistant 起手，增强模型按标签直接输出的稳定性
+        // 使用 user 指令收尾，兼容所有不接受 assistant 预填充的 Gemini Flash 模型。
         messages.push({
-            role: 'assistant',
-            content: '好的我严格按照要求生成，且直接开始输出标签的内容。',
+            role: 'user',
+            content: '请立即严格按照以上要求生成，并直接输出规定标签内容。',
             isPhoneMessage: true
         });
         const responseText = await this._requestHoneySceneText(messages, {

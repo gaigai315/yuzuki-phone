@@ -177,3 +177,42 @@ test('native Gemini functionCall parts can carry the final reply', () => {
     assert.equal(result.success, true);
     assert.equal(result.summary, 'Gemini 原生工具回复');
 });
+
+test('Honey live generation always finishes its request messages with user', async () => {
+    let capturedMessages = [];
+    const data = Object.create(HoneyData.prototype);
+    data.maxStoredPromptTurns = 100;
+    data._getHoneyOverridePrompt = () => '';
+    data._buildLiveRuntimeContext = () => '';
+    data.getHoneyUserNickname = () => '用户';
+    data._sanitizeInlineText = value => String(value || '').trim();
+    data._normalizeContinuePromptTurns = () => [];
+    data._buildPreviousRecommendAvoidanceContext = () => '';
+    data._stripFollowStateSuffix = value => String(value || '');
+    data._buildHoneyPersonalImageTagInfo = () => '暂无';
+    data._isWechatLinkedHoneyHost = () => false;
+    data.getFollowedHosts = () => [];
+    data._requestHoneySceneText = async (messages) => {
+        capturedMessages = messages;
+        return '<Honey>测试内容</Honey>';
+    };
+    data.parseHoneyContent = () => ({});
+    data._buildHoneyInteractionHistoryContext = () => '';
+
+    globalThis.window = {
+        VirtualPhone: {
+            promptManager: {
+                ensureLoaded: () => {},
+                getPromptForFeature: () => '你是蜜语APP后台引擎，只返回 <Honey> 结构。'
+            },
+            worldbookManager: {
+                appendWorldbookMessages: async () => {}
+            }
+        }
+    };
+
+    await data.generateLiveScene(null, { requestMode: 'from_scratch' });
+
+    assert.equal(capturedMessages.at(-1)?.role, 'user');
+    assert.match(capturedMessages.at(-1)?.content || '', /直接输出规定标签内容/);
+});

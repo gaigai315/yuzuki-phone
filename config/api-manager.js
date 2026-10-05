@@ -326,25 +326,44 @@ export class ApiManager {
         }
 
         if (usesGeminiNativeApi) return false;
-        if (/gemini-3\.[5-8]-flash(?:-|$)/.test(model)) return false;
+        if (model.includes('flash')) return false;
         return true;
     }
 
     _removeUnsupportedAssistantPrefill(messages, config = {}) {
-        if (!Array.isArray(messages) || messages.length < 2 || this._supportsAssistantPrefill(config)) {
+        if (!Array.isArray(messages) || messages.length === 0 || this._supportsAssistantPrefill(config)) {
             return messages;
         }
 
         const prefill = messages[messages.length - 1];
         if (prefill?.role !== 'assistant') return messages;
 
-        const normalized = messages.slice(0, -1);
-        const lastMessage = normalized[normalized.length - 1];
+        const normalized = messages.length === 1
+            ? [{ ...prefill }]
+            : messages.slice(0, -1);
+        let lastMessage = normalized[normalized.length - 1];
+
+        // A lone assistant message may be history rather than an artificial prefill.
+        // Preserve its content, but move phone metadata to the final user message.
+        if (messages.length === 1) {
+            delete lastMessage.gaigaiPhoneSignal;
+            delete lastMessage.isPhoneMessage;
+            delete lastMessage.isVirtualPhoneApiCall;
+        }
+
+        if (!lastMessage || lastMessage.role !== 'user') {
+            lastMessage = {
+                role: 'user',
+                content: '请根据以上上下文继续完成当前请求，并直接输出结果。'
+            };
+            normalized.push(lastMessage);
+        }
+
         if (prefill.gaigaiPhoneSignal) lastMessage.gaigaiPhoneSignal = prefill.gaigaiPhoneSignal;
         if (prefill.isPhoneMessage) lastMessage.isPhoneMessage = true;
         if (prefill.isVirtualPhoneApiCall) lastMessage.isVirtualPhoneApiCall = true;
 
-        console.info(`ℹ️ [ApiManager] ${config.model || 'Gemini'} 不支持 assistant 预填充，已移除末条预填充消息`);
+        console.info(`ℹ️ [ApiManager] ${config.model || 'Gemini'} 不支持 assistant 结尾，已规范化末条请求消息`);
         return normalized;
     }
 
@@ -760,7 +779,8 @@ export class ApiManager {
                     this._resolveResponseLength(null),
                     options,
                     phoneSignal,
-                    enableStream
+                    enableStream,
+                    apiConfig
                 );
             }
             
@@ -792,11 +812,12 @@ export class ApiManager {
                 apiKey = oai.openai_key;
             }
 
-            cleanMessages = this._removeUnsupportedAssistantPrefill(cleanMessages, {
+            const assistantPrefillConfig = {
                 provider: chatSource,
                 model,
                 apiUrl: reverseProxy
-            });
+            };
+            cleanMessages = this._removeUnsupportedAssistantPrefill(cleanMessages, assistantPrefillConfig);
 
             // 跟随酒馆时只使用酒馆当前响应长度，不接受业务调用覆盖。
             const maxTokens = this._resolveResponseLength(parsedSettings);
@@ -883,11 +904,11 @@ export class ApiManager {
                     /invalid url|err_invalid_url|\/chat\/completions/i.test(String(errText || ''))
                 ) {
                     console.warn('⚠️ [ApiManager] 检测到后端 URL 解析失败，自动回退到 generateRaw 兜底');
-                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal, enableStream);
+                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal, enableStream, assistantPrefillConfig);
                 }
                 if (this._isUnauthorizedResponse(response.status, errText)) {
                     console.warn('⚠️ [ApiManager] 原生 API 鉴权仍失败，回退 generateRaw');
-                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal, enableStream);
+                    return await this._callTavernGenerateRawFallback(cleanMessages, maxTokens, options, phoneSignal, enableStream, assistantPrefillConfig);
                 }
                 return { success: false, error: `原生 API 失败: ${response.status} ${errText || ''}`.trim() };
             }
@@ -913,7 +934,7 @@ export class ApiManager {
         }
     }
 
-    async _callTavernGenerateRawFallback(cleanMessages, maxTokens, options = {}, phoneSignal = null, useStream = true) {
+    async _callTavernGenerateRawFallback(cleanMessages, maxTokens, options = {}, phoneSignal = null, useStream = true, apiConfig = null) {
         try {
             const resolvedMaxTokens = Number.parseInt(maxTokens, 10);
             if (!Number.isFinite(resolvedMaxTokens) || resolvedMaxTokens <= 0) {
@@ -926,8 +947,9 @@ export class ApiManager {
                 return { success: false, error: '原生 API 失败: 无可用 generateRaw 兜底' };
             }
 
-            const safeMessages = Array.isArray(cleanMessages)
-                ? cleanMessages.map((message) => ({
+            const normalizedMessages = this._removeUnsupportedAssistantPrefill(cleanMessages, apiConfig || {});
+            const safeMessages = Array.isArray(normalizedMessages)
+                ? normalizedMessages.map((message) => ({
                     ...message,
                     content: this._sanitizeContentForModel(message.content, { forceGifText: true })
                 }))
