@@ -1839,6 +1839,74 @@
     box-shadow: 0 0 0 2px rgba(29, 155, 240, 0.13);
 }
 
+#phone-panel-content .phone-screen .xapp-profile-edit-gender {
+    min-width: 0;
+    margin: 12px 0 0;
+    padding: 0;
+    border: 0;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-gender legend {
+    margin-bottom: 6px;
+    padding: 0;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-gender-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+    width: 100%;
+    min-height: 40px;
+    padding: 3px;
+    border-radius: 7px;
+    background: #eff3f4;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-gender-option {
+    position: relative;
+    display: block;
+    min-width: 0;
+    height: 34px;
+    margin: 0;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-gender-option input {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-gender-option span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    border-radius: 5px;
+    color: var(--xapp-muted);
+    font-size: 12.5px;
+    font-weight: 650;
+    line-height: 1;
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-gender-option input:checked + span {
+    background: #fff;
+    color: var(--xapp-black);
+    box-shadow: 0 1px 4px rgba(15, 20, 25, 0.12);
+}
+
+#phone-panel-content .phone-screen .xapp-profile-edit-gender-option input:focus-visible + span {
+    outline: 2px solid rgba(29, 155, 240, 0.45);
+    outline-offset: -2px;
+}
+
 #phone-panel-content .phone-screen .xapp-profile-edit-counts {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2190,6 +2258,47 @@
     color: var(--xapp-black);
     font-size: 12px !important;
     font-weight: 650 !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-danger-section {
+    margin-bottom: 8px;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-danger-section h2,
+#phone-panel-content .phone-screen .xapp-settings-danger-row strong {
+    color: #d1242f;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-danger-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-danger-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 76px;
+    height: 36px;
+    padding: 0 13px !important;
+    border: 1px solid rgba(209, 36, 47, 0.42) !important;
+    border-radius: 6px !important;
+    background: rgba(209, 36, 47, 0.06) !important;
+    color: #d1242f !important;
+    font-size: 12.5px !important;
+    font-weight: 700 !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-danger-button:active {
+    background: rgba(209, 36, 47, 0.13) !important;
+}
+
+#phone-panel-content .phone-screen .xapp-settings-danger-button:disabled {
+    opacity: 0.5;
+    cursor: wait;
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {

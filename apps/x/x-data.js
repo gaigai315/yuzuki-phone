@@ -22,6 +22,7 @@ const CONTEXT_SETTING_KEYS = Object.freeze({
 const DEFAULT_PROFILE = {
     avatar: '',
     nickname: '',
+    gender: 'unknown',
     following: 0,
     followers: 0
 };
@@ -46,6 +47,7 @@ export class XData {
         this._followedAccounts = null;
         this._followingPosts = null;
         this._refreshPromise = null;
+        this._feedGenerationEpoch = 0;
         this._lastAIResponse = null;
     }
 
@@ -1285,6 +1287,70 @@ export class XData {
         return this.addDirectMessage(thread.id, 'them', replyText);
     }
 
+    async clearAllPostRecords() {
+        this._feedGenerationEpoch += 1;
+        const allPosts = [
+            ...this.getPosts(),
+            ...this.getUserPosts(),
+            ...this.getFollowingPosts()
+        ];
+        const images = this._collectPostImageValues(allPosts);
+        const followedAccountCount = this.getFollowedAccountKeys().length;
+        const seenPosts = new Set();
+        allPosts.forEach((post) => {
+            const id = String(post?.id || '').trim();
+            const fallback = [
+                String(post?.author?.name || '').trim(),
+                String(post?.content || '').trim(),
+                String(post?.time || '').trim()
+            ].join('\n');
+            seenPosts.add(id ? `id:${id}` : `content:${fallback}`);
+        });
+
+        const profile = this._normalizeProfile({
+            ...this.getProfile(),
+            following: 0
+        });
+        this._posts = [];
+        this._userPosts = [];
+        this._followingPosts = [];
+        this._followedAccountKeys = [];
+        this._followedAccounts = [];
+        this._profile = profile;
+        this._lastAIResponse = null;
+
+        await Promise.all([
+            this.storage?.set?.(STORAGE_KEY, JSON.stringify([])),
+            this.storage?.set?.(USER_POSTS_KEY, JSON.stringify([])),
+            this.storage?.set?.(FOLLOWING_POSTS_KEY, JSON.stringify([])),
+            this.storage?.set?.(FOLLOWING_ACCOUNTS_KEY, JSON.stringify([])),
+            this.storage?.set?.(FOLLOWED_ACCOUNT_PROFILES_KEY, JSON.stringify([])),
+            this.storage?.set?.(FEED_RESPONSE_HISTORY_KEY, JSON.stringify([])),
+            this.storage?.set?.(PROFILE_KEY, JSON.stringify(profile))
+        ].map((operation) => Promise.resolve(operation)));
+
+        return {
+            success: true,
+            postCount: seenPosts.size,
+            followedAccountCount,
+            images
+        };
+    }
+
+    _collectPostImageValues(posts = []) {
+        const images = new Set();
+        const collect = (value) => {
+            const text = String(value || '').trim();
+            if (text) images.add(text);
+        };
+        (Array.isArray(posts) ? posts : []).forEach((post) => {
+            (Array.isArray(post?.images) ? post.images : []).forEach(collect);
+            (Array.isArray(post?.imageGenerationStates) ? post.imageGenerationStates : [])
+                .forEach((state) => collect(state?.generatedImageUrl));
+        });
+        return [...images];
+    }
+
     clearCache() {
         this._posts = null;
         this._profile = null;
@@ -1537,6 +1603,7 @@ export class XData {
     }
 
     async _generateFeed() {
+        const generationEpoch = this._feedGenerationEpoch;
         const runtime = typeof window !== 'undefined' ? window.VirtualPhone : null;
         const apiManager = runtime?.apiManager;
         const promptManager = runtime?.promptManager;
@@ -1546,6 +1613,9 @@ export class XData {
 
         promptManager?.ensureLoaded?.();
         const phoneTime = this._getCurrentPhoneTimeContext(runtime);
+        const profile = this.getProfile();
+        const currentNickname = String(profile.nickname || context.name1 || 'X 用户').trim() || 'X 用户';
+        const currentGender = this._getProfileGenderLabel(profile.gender);
         const currentFollowers = this._getCurrentFollowersCount();
         const followedAccountNames = this.getFollowedAccounts()
             .map((account) => String(account?.name || '').trim())
@@ -1557,6 +1627,8 @@ export class XData {
             STORY_DATE: phoneTime.date,
             STORY_TIME: phoneTime.time,
             STORY_WEEKDAY: phoneTime.weekday,
+            CURRENT_X_NICKNAME: currentNickname,
+            CURRENT_X_GENDER: currentGender,
             CURRENT_FOLLOWERS: String(currentFollowers),
             currentFollowers: String(currentFollowers),
             CURRENT_FOLLOWING_NAMES: followedAccountNamesText,
@@ -1591,8 +1663,8 @@ export class XData {
             }] : []),
             {
                 role: 'system',
-                name: 'SYSTEM (X 用户粉丝数)',
-                content: `【当前 X 用户粉丝数】\n当前粉丝数：${currentFollowers}\n请以此为唯一基准，并在 <Twitter> 内输出“用户粉丝数：变化后的最终总数”；无变化时原样返回。`,
+                name: 'SYSTEM (X 用户信息)',
+                content: `【当前 X 用户信息】\n昵称：${currentNickname}\n性别：${currentGender}\n粉丝：${currentFollowers}\n请以此粉丝数为唯一基准，并在 <Twitter> 内输出“用户粉丝数：变化后的最终总数”；无变化时原样返回。`,
                 isPhoneMessage: true
             },
             {
@@ -1620,6 +1692,7 @@ export class XData {
         );
 
         if (!result?.success) throw new Error(result?.error || 'X 帖子生成失败');
+        if (generationEpoch !== this._feedGenerationEpoch) return [];
 
         const rawText = String(result.summary || result.content || result.text || '').trim();
         const filteredText = String(applyPhoneTagFilter(rawText, { storage: this.storage }) || '').trim();
@@ -1725,7 +1798,7 @@ export class XData {
         if (settings.includeCharacterUser) {
             const profile = this.getProfile();
             pushSystem(
-                `【当前 X 账号】\n昵称：${profile.nickname || userName}\n关注：${profile.following}\n粉丝：${profile.followers}`,
+                `【当前 X 账号】\n昵称：${profile.nickname || userName}\n性别：${this._getProfileGenderLabel(profile.gender)}\n关注：${profile.following}\n粉丝：${profile.followers}`,
                 'SYSTEM (X 账号状态)'
             );
         }
@@ -2014,9 +2087,24 @@ export class XData {
             ...profile,
             avatar: String(profile?.avatar || '').trim(),
             nickname: String(profile?.nickname || '').trim(),
+            gender: this._normalizeProfileGender(profile?.gender),
             following: Math.max(0, Number.parseInt(profile?.following, 10) || 0),
             followers: Math.max(0, Number.parseInt(profile?.followers, 10) || 0)
         };
+    }
+
+    _normalizeProfileGender(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (['male', 'man', '男', '男性'].includes(normalized)) return 'male';
+        if (['female', 'woman', '女', '女性'].includes(normalized)) return 'female';
+        return 'unknown';
+    }
+
+    _getProfileGenderLabel(value) {
+        const normalized = this._normalizeProfileGender(value);
+        if (normalized === 'male') return '男';
+        if (normalized === 'female') return '女';
+        return '未知';
     }
 
     _resolveDirectMessageParticipant(post = {}) {

@@ -506,6 +506,23 @@ export class XView {
                             <span>昵称</span>
                             <input id="xapp-profile-edit-nickname" type="text" maxlength="30" value="${this._escapeAttr(nickname)}" autocomplete="off">
                         </label>
+                        <fieldset class="xapp-profile-edit-gender">
+                            <legend>性别</legend>
+                            <div class="xapp-profile-edit-gender-options" role="radiogroup" aria-label="性别">
+                                <label class="xapp-profile-edit-gender-option">
+                                    <input type="radio" name="xapp-profile-edit-gender" value="male" ${profile.gender === 'male' ? 'checked' : ''}>
+                                    <span>男</span>
+                                </label>
+                                <label class="xapp-profile-edit-gender-option">
+                                    <input type="radio" name="xapp-profile-edit-gender" value="female" ${profile.gender === 'female' ? 'checked' : ''}>
+                                    <span>女</span>
+                                </label>
+                                <label class="xapp-profile-edit-gender-option">
+                                    <input type="radio" name="xapp-profile-edit-gender" value="unknown" ${profile.gender === 'unknown' ? 'checked' : ''}>
+                                    <span>未知</span>
+                                </label>
+                            </div>
+                        </fieldset>
                         <div class="xapp-profile-edit-counts">
                             <label class="xapp-profile-edit-field">
                                 <span>关注</span>
@@ -641,6 +658,20 @@ export class XView {
                                 </button>
                             </div>
                         </details>
+                    </section>
+
+                    <section class="xapp-settings-section xapp-settings-danger-section">
+                        <h2>数据清理</h2>
+                        <div class="xapp-settings-danger-row">
+                            <div class="xapp-settings-row-copy">
+                                <strong>清空当前 X 记录</strong>
+                                <span>删除当前聊天的推荐帖、用户帖子、最近两轮推荐历史、关注列表及帖子绑定图片。</span>
+                            </div>
+                            <button id="xapp-clear-all-records" class="xapp-settings-danger-button" type="button">
+                                <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                                <span>清空</span>
+                            </button>
+                        </div>
                     </section>
                 </div>
             </section>
@@ -1684,6 +1715,7 @@ export class XView {
             event.preventDefault();
             const savedProfile = this.saveProfileEdits({
                 nickname: root.querySelector('#xapp-profile-edit-nickname')?.value,
+                gender: root.querySelector('input[name="xapp-profile-edit-gender"]:checked')?.value,
                 following: root.querySelector('#xapp-profile-edit-following')?.value,
                 followers: root.querySelector('#xapp-profile-edit-followers')?.value
             });
@@ -1990,8 +2022,33 @@ export class XView {
         return true;
     }
 
+    async clearAllXPostRecords(button = null) {
+        const confirmed = typeof confirm !== 'function' || confirm(
+            '确定清空当前 X 的全部帖子记录吗？\n\n将删除推荐流、用户帖子、最近两轮推荐历史、关注列表及相关托管图片。X 账号资料和私信会保留。\n\n此操作不可恢复！'
+        );
+        if (!confirmed) return false;
+
+        if (button) button.disabled = true;
+        try {
+            const result = await this.app.xData.clearAllPostRecords();
+            this._visibleUserPostIds.clear();
+            await this._deleteManagedXImages(result.images);
+            this.app.phoneShell.showNotification?.('X', '当前 X 帖子记录已清空', '✓');
+            return result;
+        } catch (error) {
+            console.error('[X] 清空帖子记录失败:', error);
+            this.app.phoneShell.showNotification?.('X', error?.message || '清空 X 记录失败', '×');
+            return false;
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
     bindSettingsEvents(root) {
         root.querySelector('.xapp-settings-back')?.addEventListener('click', () => this.returnFromSettings());
+        root.querySelector('#xapp-clear-all-records')?.addEventListener('click', (event) => {
+            this.clearAllXPostRecords(event.currentTarget);
+        });
 
         const runtime = typeof window !== 'undefined' ? window.VirtualPhone : null;
         const promptManager = runtime?.promptManager;
@@ -2453,6 +2510,9 @@ export class XView {
         return this.app.xData.saveProfile({
             ...profile,
             nickname: String(values.nickname || '').trim(),
+            gender: values.gender === undefined
+                ? profile.gender
+                : String(values.gender || 'unknown').trim(),
             following: Math.max(0, Number.parseInt(values.following, 10) || 0),
             followers: Math.max(0, Number.parseInt(values.followers, 10) || 0)
         });

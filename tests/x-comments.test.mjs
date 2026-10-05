@@ -802,6 +802,7 @@ test('X profile and user posts persist independently for each chat storage', () 
     firstChat.saveProfile({
         avatar: '/backgrounds/phone_x_avatar_first.png',
         nickname: '第一窗口',
+        gender: 'female',
         following: 12,
         followers: 34
     });
@@ -814,8 +815,10 @@ test('X profile and user posts persist independently for each chat storage', () 
     }]);
 
     assert.equal(new XData(firstChatStorage).getProfile().nickname, '第一窗口');
+    assert.equal(new XData(firstChatStorage).getProfile().gender, 'female');
     assert.equal(new XData(firstChatStorage).getUserPosts()[0].content, '只属于第一个聊天窗口');
     assert.equal(secondChat.getProfile().nickname, '');
+    assert.equal(secondChat.getProfile().gender, 'unknown');
     assert.equal(secondChat.getUserPosts().length, 0);
 });
 
@@ -894,12 +897,15 @@ test('comments on X profile posts are saved back to x_user_posts', () => {
 
 test('X profile page includes a compact editor for nickname and account counts', () => {
     const data = new XData(new MemoryStorage());
-    data.saveProfile({ nickname: '旧昵称', following: 3, followers: 4 });
+    data.saveProfile({ nickname: '旧昵称', gender: 'male', following: 3, followers: 4 });
     const view = new XView({ xData: data, phoneShell: { setContent() {} } });
     const profileHtml = view.renderProfile();
 
     assert.match(profileHtml, /xapp-profile-edit-button/);
     assert.match(profileHtml, /id="xapp-profile-edit-nickname"/);
+    assert.match(profileHtml, /name="xapp-profile-edit-gender" value="male" checked/);
+    assert.match(profileHtml, /name="xapp-profile-edit-gender" value="female"/);
+    assert.match(profileHtml, /name="xapp-profile-edit-gender" value="unknown"/);
     assert.match(profileHtml, /id="xapp-profile-edit-following"/);
     assert.match(profileHtml, /id="xapp-profile-edit-followers"/);
     assert.match(profileHtml, /class="xapp-profile-edit-overlay is-hidden"/);
@@ -912,11 +918,13 @@ test('X profile editor saves normalized values to the current chat profile', () 
 
     const saved = view.saveProfileEdits({
         nickname: '  新昵称  ',
+        gender: '女性',
         following: '-9',
         followers: '128.8'
     });
 
     assert.equal(saved.nickname, '新昵称');
+    assert.equal(saved.gender, 'female');
     assert.equal(saved.following, 0);
     assert.equal(saved.followers, 128);
     assert.deepEqual(new XData(storage).getProfile(), saved);
@@ -950,6 +958,9 @@ test('X settings page includes worldbook selection, jailbreak, and default promp
     assert.match(settingsHtml, /id="xapp-feed-prompt"/);
     assert.match(settingsHtml, /默认提示词/);
     assert.match(settingsHtml, /id="xapp-reset-feed-prompt"/);
+    assert.match(settingsHtml, /id="xapp-clear-all-records"/);
+    assert.match(settingsHtml, /清空当前 X 记录/);
+    assert.match(settingsHtml, /最近两轮推荐历史、关注列表及帖子绑定图片/);
     assert.match(settingsHtml, /<details class="xapp-settings-fold xapp-settings-worldbook-fold">/);
     assert.match(settingsHtml, /<summary class="xapp-settings-fold-trigger">/);
     assert.match(settingsHtml, /id="xapp-use-worldbook" class="xapp-settings-toggle-input" type="checkbox" role="switch" checked/);
@@ -961,11 +972,145 @@ test('X settings page includes worldbook selection, jailbreak, and default promp
     const worldbookSelectorIndex = settingsHtml.indexOf('xapp-settings-worldbook-fold');
     const overridePromptIndex = settingsHtml.indexOf('id="xapp-override-prompt"');
     const feedPromptIndex = settingsHtml.indexOf('id="xapp-feed-prompt"');
+    const clearRecordsIndex = settingsHtml.indexOf('id="xapp-clear-all-records"');
     assert.ok(characterIndex < tavernTextIndex);
     assert.ok(tavernTextIndex < worldbookToggleIndex);
     assert.ok(worldbookToggleIndex < worldbookSelectorIndex);
     assert.ok(worldbookSelectorIndex < overridePromptIndex);
     assert.ok(overridePromptIndex < feedPromptIndex);
+    assert.ok(feedPromptIndex < clearRecordsIndex);
+});
+
+test('X clear-all records removes every post collection and keeps profile identity and direct messages', async () => {
+    const storage = new MemoryStorage();
+    const data = new XData(storage);
+    const feedPost = createTestPost({
+        id: 'x-clear-feed',
+        images: ['/backgrounds/phone_x_img_feed.png'],
+        imageGenerationStates: [{ generatedImageUrl: '/backgrounds/phone_x_img_generated.png' }]
+    });
+    const userPost = createTestPost({
+        id: 'x-clear-user',
+        isUserPost: true,
+        author: { name: '保留资料', accountType: 'personal' },
+        images: ['/backgrounds/phone_x_img_user.png']
+    });
+
+    data.saveProfile({ nickname: '保留资料', gender: 'female', following: 0, followers: 88 });
+    data.savePosts([feedPost]);
+    data.saveUserPosts([userPost]);
+    data.toggleFollowPostAuthor(feedPost);
+    data.saveFeedResponseHistory(['第一轮历史', '第二轮历史']);
+    storage.set(DIRECT_MESSAGES_KEY, JSON.stringify([{
+        id: 'x-dm-keep',
+        participant: {
+            key: 'name:friend',
+            name: '好友',
+            accountType: 'personal'
+        },
+        sourcePost: { id: '', content: '' },
+        messages: [{
+            id: 'x-dm-message-keep',
+            from: 'them',
+            text: '保留私信',
+            time: '刚刚',
+            timestamp: 1
+        }],
+        updatedAt: 1
+    }]));
+
+    const result = await data.clearAllPostRecords();
+    const reloaded = new XData(storage);
+
+    assert.equal(result.success, true);
+    assert.equal(result.postCount, 2);
+    assert.equal(result.followedAccountCount, 1);
+    assert.deepEqual(result.images.sort(), [
+        '/backgrounds/phone_x_img_feed.png',
+        '/backgrounds/phone_x_img_generated.png',
+        '/backgrounds/phone_x_img_user.png'
+    ]);
+    assert.deepEqual(reloaded.getPosts(), []);
+    assert.deepEqual(reloaded.getUserPosts(), []);
+    assert.deepEqual(reloaded.getFollowingPosts(), []);
+    assert.deepEqual(reloaded.getFollowedAccountKeys(), []);
+    assert.deepEqual(reloaded.getFollowedAccounts(), []);
+    assert.deepEqual(reloaded.getFeedResponseHistory(), []);
+    assert.equal(reloaded.getProfile().nickname, '保留资料');
+    assert.equal(reloaded.getProfile().gender, 'female');
+    assert.equal(reloaded.getProfile().followers, 88);
+    assert.equal(reloaded.getProfile().following, 0);
+    assert.equal(reloaded.getDirectMessageThreads()[0].messages[0].text, '保留私信');
+});
+
+test('X clear-all records prevents an in-flight feed response from restoring deleted posts', async () => {
+    const storage = new MemoryStorage();
+    const data = new XData(storage);
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    const previousSillyTavern = globalThis.SillyTavern;
+    let resolveResponse;
+    const responsePromise = new Promise((resolve) => {
+        resolveResponse = resolve;
+    });
+
+    globalThis.document = { getElementById: () => null };
+    globalThis.SillyTavern = {
+        getContext() {
+            return { name1: '用户', name2: '角色', max_response_length: 1800, chat: [] };
+        }
+    };
+    globalThis.window = {
+        VirtualPhone: {
+            storage,
+            promptManager: {
+                ensureLoaded() {},
+                getPromptForFeature(app, feature) {
+                    assert.equal(app, 'x');
+                    return feature === 'feed' ? '生成新的 X 推荐帖子' : '';
+                },
+                renderPromptForFeature(app, feature) {
+                    assert.equal(app, 'x');
+                    return feature === 'feed' ? '生成新的 X 推荐帖子' : '';
+                }
+            },
+            apiManager: {
+                async callAI() {
+                    return responsePromise;
+                }
+            }
+        }
+    };
+
+    try {
+        const pendingRefresh = data.generateFeed();
+        await new Promise(resolve => setImmediate(resolve));
+        await data.clearAllPostRecords();
+        resolveResponse({
+            success: true,
+            summary: `<Twitter>
+用户粉丝数：1
+---
+博主：晚到账号（个人）
+时间：刚刚
+正文：不应在清空后恢复
+回复数：0
+点赞数：1
+评论：
+</Twitter>`
+        });
+
+        assert.deepEqual(await pendingRefresh, []);
+        assert.deepEqual(data.getPosts(), []);
+        assert.deepEqual(data.getFeedResponseHistory(), []);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+        if (previousDocument === undefined) delete globalThis.document;
+        else globalThis.document = previousDocument;
+        if (previousSillyTavern === undefined) delete globalThis.SillyTavern;
+        else globalThis.SillyTavern = previousSillyTavern;
+    }
 });
 
 test('X public context switches default off and persist per chat storage', async () => {
@@ -1747,6 +1892,79 @@ test('deleting an X user post removes data before cleaning all managed post imag
     }
 });
 
+test('X clear-all settings action clears records before deleting managed post images', async () => {
+    const storage = new MemoryStorage();
+    const data = new XData(storage);
+    const feedPost = createTestPost({
+        id: 'x-clear-action-feed',
+        images: ['/backgrounds/phone_x_img_clear_feed.png'],
+        imageGenerationStates: [{ generatedImageUrl: '/backgrounds/phone_x_img_clear_generated.png' }]
+    });
+    const userPost = createTestPost({
+        id: 'x-clear-action-user',
+        isUserPost: true,
+        images: ['/backgrounds/phone_x_img_clear_user.png']
+    });
+    data.savePosts([feedPost]);
+    data.saveUserPosts([userPost]);
+    data.toggleFollowPostAuthor(feedPost);
+    data.saveFeedResponseHistory(['旧推荐一', '旧推荐二']);
+
+    const deleted = [];
+    const notifications = [];
+    const previousWindow = globalThis.window;
+    const previousConfirm = globalThis.confirm;
+    globalThis.confirm = () => true;
+    globalThis.window = {
+        VirtualPhone: {
+            imageManager: {
+                async deleteManagedBackgroundByPath(path, options) {
+                    assert.deepEqual(data.getPosts(), []);
+                    assert.deepEqual(data.getUserPosts(), []);
+                    assert.deepEqual(data.getFollowingPosts(), []);
+                    assert.deepEqual(data.getFollowedAccountKeys(), []);
+                    assert.deepEqual(data.getFeedResponseHistory(), []);
+                    deleted.push({ path, options });
+                    return { success: true };
+                }
+            }
+        }
+    };
+    const view = new XView({
+        xData: data,
+        storage,
+        phoneShell: {
+            setContent() {},
+            showNotification(...args) { notifications.push(args); }
+        }
+    });
+    view._visibleUserPostIds.add(userPost.id);
+    const button = { disabled: false };
+
+    try {
+        const result = await view.clearAllXPostRecords(button);
+
+        assert.equal(result.success, true);
+        assert.equal(button.disabled, false);
+        assert.equal(view._visibleUserPostIds.size, 0);
+        assert.deepEqual(deleted.map((item) => item.path).sort(), [
+            '/backgrounds/phone_x_img_clear_feed.png',
+            '/backgrounds/phone_x_img_clear_generated.png',
+            '/backgrounds/phone_x_img_clear_user.png'
+        ]);
+        assert.ok(deleted.every((item) => (
+            item.options.skipIfReferenced === true
+            && item.options.ignoreAlbumIndex === true
+        )));
+        assert.deepEqual(notifications.at(-1), ['X', '当前 X 帖子记录已清空', '✓']);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+        if (previousConfirm === undefined) delete globalThis.confirm;
+        else globalThis.confirm = previousConfirm;
+    }
+});
+
 test('X parser ignores untagged model output', () => {
     const data = new XData(new MemoryStorage());
 
@@ -1799,6 +2017,8 @@ test('X feed refresh calls the X API with worldbook context and saves parsed pos
                 },
                 renderPromptForFeature(app, feature, variables) {
                     assert.equal(app, 'x');
+                    assert.equal(variables.CURRENT_X_NICKNAME, '测试用户');
+                    assert.equal(variables.CURRENT_X_GENDER, '女');
                     assert.equal(variables.CURRENT_FOLLOWERS, '321');
                     assert.equal(variables.currentFollowers, '321');
                     assert.equal(variables.CURRENT_FOLLOWING_NAMES, 'Tibo');
@@ -1838,7 +2058,7 @@ test('X feed refresh calls the X API with worldbook context and saves parsed pos
     };
 
     try {
-        data.saveProfile({ nickname: '测试用户', followers: 321 });
+        data.saveProfile({ nickname: '测试用户', gender: 'female', followers: 321 });
         const followedPost = createTestPost();
         data.savePosts([followedPost]);
         data.toggleFollowPostAuthor(followedPost);
@@ -1849,7 +2069,11 @@ test('X feed refresh calls the X API with worldbook context and saves parsed pos
         assert.equal(requestMessages[0].name, 'SYSTEM (X 破限词)');
         assert.match(requestMessages[0].content, /X 独立破限词/);
         assert.match(requestMessages[0].content, /2044年09月05日 星期一 21:30/);
-        assert.ok(requestMessages.some((message) => message.name === 'SYSTEM (X 用户粉丝数)' && /当前粉丝数：321/.test(message.content)));
+        assert.ok(requestMessages.some((message) => (
+            message.name === 'SYSTEM (X 用户信息)'
+            && /【当前 X 用户信息】\n昵称：测试用户\n性别：女\n粉丝：321/.test(message.content)
+            && /用户粉丝数：变化后的最终总数/.test(message.content)
+        )));
         assert.ok(requestMessages.some((message) => message.name === 'SYSTEM (X 正在关注账号)' && /- Tibo/.test(message.content)));
         assert.ok(!requestMessages.some((message) => message.name === 'SYSTEM (X 公开上下文边界)'));
         assert.ok(requestMessages.some((message) => message.content === '世界书公开背景'));
