@@ -662,16 +662,11 @@ export class XView {
 
                     <section class="xapp-settings-section xapp-settings-danger-section">
                         <h2>数据清理</h2>
-                        <div class="xapp-settings-danger-row">
-                            <div class="xapp-settings-row-copy">
-                                <strong>清空当前 X 记录</strong>
-                                <span>删除当前聊天的推荐帖、用户帖子、最近两轮推荐历史、关注列表及帖子绑定图片。</span>
-                            </div>
-                            <button id="xapp-clear-all-records" class="xapp-settings-danger-button" type="button">
-                                <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
-                                <span>清空</span>
-                            </button>
-                        </div>
+                        <p class="xapp-settings-danger-desc">删除当前聊天的推荐帖、用户帖子、最近两轮推荐历史、关注列表及帖子绑定图片。</p>
+                        <button id="xapp-clear-all-records" class="xapp-settings-danger-button" type="button">
+                            <i class="fa-solid fa-broom" aria-hidden="true"></i>
+                            <span>清空当前 X 记录</span>
+                        </button>
                     </section>
                 </div>
             </section>

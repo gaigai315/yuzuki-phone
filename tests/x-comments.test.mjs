@@ -961,6 +961,8 @@ test('X settings page includes worldbook selection, jailbreak, and default promp
     assert.match(settingsHtml, /id="xapp-clear-all-records"/);
     assert.match(settingsHtml, /清空当前 X 记录/);
     assert.match(settingsHtml, /最近两轮推荐历史、关注列表及帖子绑定图片/);
+    assert.match(settingsHtml, /class="fa-solid fa-broom"/);
+    assert.doesNotMatch(settingsHtml, /xapp-settings-danger-row/);
     assert.match(settingsHtml, /<details class="xapp-settings-fold xapp-settings-worldbook-fold">/);
     assert.match(settingsHtml, /<summary class="xapp-settings-fold-trigger">/);
     assert.match(settingsHtml, /id="xapp-use-worldbook" class="xapp-settings-toggle-input" type="checkbox" role="switch" checked/);

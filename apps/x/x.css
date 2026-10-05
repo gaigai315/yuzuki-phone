@@ -2264,16 +2264,11 @@
     margin-bottom: 8px;
 }
 
-#phone-panel-content .phone-screen .xapp-settings-danger-section h2,
-#phone-panel-content .phone-screen .xapp-settings-danger-row strong {
-    color: #d1242f;
-}
-
-#phone-panel-content .phone-screen .xapp-settings-danger-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 12px;
+#phone-panel-content .phone-screen .xapp-settings-danger-desc {
+    margin: -1px 0 9px;
+    color: var(--xapp-muted);
+    font-size: 11.5px;
+    line-height: 1.45;
 }
 
 #phone-panel-content .phone-screen .xapp-settings-danger-button {
@@ -2281,19 +2276,19 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    min-width: 76px;
+    width: 100%;
     height: 36px;
-    padding: 0 13px !important;
-    border: 1px solid rgba(209, 36, 47, 0.42) !important;
+    padding: 0 14px !important;
+    border: 0 !important;
     border-radius: 6px !important;
-    background: rgba(209, 36, 47, 0.06) !important;
-    color: #d1242f !important;
+    background: #ff4d4f !important;
+    color: #fff !important;
     font-size: 12.5px !important;
     font-weight: 700 !important;
 }
 
 #phone-panel-content .phone-screen .xapp-settings-danger-button:active {
-    background: rgba(209, 36, 47, 0.13) !important;
+    background: #e63f42 !important;
 }
 
 #phone-panel-content .phone-screen .xapp-settings-danger-button:disabled {
