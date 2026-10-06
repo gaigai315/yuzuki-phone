@@ -33,6 +33,13 @@ function normalizeAccessToken(accessToken = '') {
     return String(accessToken || '').trim().replace(/^Bearer\s*;?\s*/i, '');
 }
 
+function isAuthorizedCaller(request, env) {
+    const expectedSecret = env && env.WORKER_SHARED_SECRET;
+    if (!expectedSecret) return false;
+    const providedSecret = request.headers.get('X-Worker-Secret') || '';
+    return providedSecret === expectedSecret;
+}
+
 async function handleClone(request) {
     const { accessToken, appId, speakerId, audioBase64, audioFormat, modelType, language } = await request.json();
     const safeAccessToken = normalizeAccessToken(accessToken);
@@ -121,7 +128,7 @@ async function handleStatus(request) {
 }
 
 export default {
-    async fetch(request) {
+    async fetch(request, env) {
         if (request.method === 'OPTIONS') {
             return new Response(null, { headers: corsHeaders });
         }
@@ -132,6 +139,9 @@ export default {
                 return new Response('Yuzuki Phone Doubao clone worker is running.', {
                     headers: { 'Content-Type': 'text/plain;charset=UTF-8', ...corsHeaders }
                 });
+            }
+            if (!isAuthorizedCaller(request, env)) {
+                return jsonResponse({ success: false, error: 'Unauthorized' }, { status: 401 });
             }
             if (url.pathname === '/api/clone' && request.method === 'POST') {
                 return await handleClone(request);
