@@ -344,6 +344,19 @@ export class WechatData {
             .filter(Boolean);
     }
 
+    _notifyUnreadChanged() {
+        const unreadCount = (Array.isArray(this.data?.chats) ? this.data.chats : [])
+            .reduce((sum, chat) => sum + Math.max(0, Number.parseInt(chat?.unread || 0, 10) || 0), 0);
+        const hostWindow = globalThis.window;
+        const CustomEventCtor = hostWindow?.CustomEvent || globalThis.CustomEvent;
+        if (hostWindow?.dispatchEvent && typeof CustomEventCtor === 'function') {
+            hostWindow.dispatchEvent(new CustomEventCtor('phone:wechatUnreadChanged', {
+                detail: { count: unreadCount }
+            }));
+        }
+        return unreadCount;
+    }
+
     isOfflineHistoryInjectionEnabledForChat(chatId) {
         const chat = this.getChat(chatId);
         if (!chat) return true;
@@ -4533,6 +4546,7 @@ parseAIResponse(text) {
             window.VirtualPhone?.timeManager?.resetTime();
 
             this.saveData();
+            this._notifyUnreadChanged();
         }
     }
      
@@ -4611,6 +4625,7 @@ parseAIResponse(text) {
                 }
             }
             this.saveData();
+            this._notifyUnreadChanged();
             globalThis.window?.VirtualPhone?.wechatApp?.syncMomentsUnreadIndicator?.();
             window.VirtualPhone?.timeManager?.resetTime?.();
         }
@@ -4713,6 +4728,7 @@ parseAIResponse(text) {
                 }
             }
             this.saveData();
+            this._notifyUnreadChanged();
             globalThis.window?.VirtualPhone?.wechatApp?.syncMomentsUnreadIndicator?.();
             if (window.VirtualPhone?.timeManager) {
                 window.VirtualPhone.timeManager.resetTime();

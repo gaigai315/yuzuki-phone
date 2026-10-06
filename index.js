@@ -5643,18 +5643,33 @@ if (window.GGP_Loaded) {
             || (apiManager?.getActiveRequestCount?.() > 0));
     }
 
-    function syncWechatHomeBadge() {
+    function syncWechatHomeBadge(unreadCountOverride = null) {
         try {
             const wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
-            const apps = window.VirtualPhone?.home?.apps;
-            if (!wechatData || !Array.isArray(apps)) return;
+            const apps = Array.isArray(currentApps) ? currentApps : window.VirtualPhone?.home?.apps;
+            if (!Array.isArray(apps)) return 0;
             const wechatAppIcon = apps.find(a => a.id === 'wechat');
-            if (!wechatAppIcon) return;
-            const chatList = wechatData.getChatList?.() || [];
-            wechatAppIcon.badge = chatList.reduce((sum, c) => sum + (parseInt(c?.unread, 10) || 0), 0);
+            if (!wechatAppIcon) return 0;
+            const hasOverride = unreadCountOverride !== null && unreadCountOverride !== undefined
+                && Number.isFinite(Number(unreadCountOverride));
+            if (!hasOverride && !wechatData) return 0;
+            const chatList = wechatData?.getChatList?.() || [];
+            const unreadCount = hasOverride
+                ? Math.max(0, Number.parseInt(unreadCountOverride, 10) || 0)
+                : chatList.reduce((sum, c) => sum + Math.max(0, Number.parseInt(c?.unread || 0, 10) || 0), 0);
+            const changed = Number(wechatAppIcon.badge || 0) !== unreadCount;
+            wechatAppIcon.badge = unreadCount;
+            if (homeScreen) {
+                homeScreen.apps = apps;
+                if (currentApp === null) homeScreen.updateAppBadges?.();
+            }
+            totalNotifications = apps.reduce((sum, app) => sum + Math.max(0, Number(app?.badge || 0) || 0), 0);
+            updateNotificationBadge(totalNotifications);
+            if (changed) saveData();
             window.dispatchEvent(new CustomEvent('phone:updateGlobalBadge'));
+            return unreadCount;
         } catch (e) {
-            // ignore
+            return 0;
         }
     }
 
@@ -7645,11 +7660,9 @@ if (window.GGP_Loaded) {
                 const isViewingThisChat = isPhoneOpen && currentApp === 'wechat' && window.VirtualPhone?.wechatApp?.currentChat?.id === chat.id;
                 if (!isViewingThisChat) {
                     chat.unread = (chat.unread || 0) + newMessagesAdded;
-                    updateAppBadge('wechat', newMessagesAdded);
-                    totalNotifications += newMessagesAdded;
-                    updateNotificationBadge(totalNotifications);
                 }
                 wechatData.saveData();
+                syncWechatHomeBadge();
 
                 // 🔥 立即刷新手机状态栏时间显示
                 if (phoneShell && phoneShell.updateStatusBarTime) {
@@ -9689,6 +9702,10 @@ if (window.GGP_Loaded) {
                     totalNotifications = currentApps.reduce((sum, app) => sum + (app.badge || 0), 0);
                     updateNotificationBadge(totalNotifications);
                 }
+            });
+
+            window.addEventListener('phone:wechatUnreadChanged', (event) => {
+                syncWechatHomeBadge(event?.detail?.count);
             });
 
             // 监听打开APP
