@@ -33,11 +33,19 @@ function normalizeAccessToken(accessToken = '') {
     return String(accessToken || '').trim().replace(/^Bearer\s*;?\s*/i, '');
 }
 
+function isSafeString(value, maxLen) {
+    return typeof value === 'string' && value.length > 0 && value.length <= maxLen;
+}
+
 async function handleClone(request) {
     const { accessToken, appId, speakerId, audioBase64, audioFormat, modelType, language } = await request.json();
     const safeAccessToken = normalizeAccessToken(accessToken);
-    if (!safeAccessToken || !appId || !speakerId || !audioBase64) {
-        return jsonResponse({ success: false, error: '缺少必要参数' }, { status: 400 });
+    if (!safeAccessToken || !isSafeString(appId, 128) || !isSafeString(speakerId, 128) ||
+        !isSafeString(audioBase64, 15 * 1024 * 1024) ||
+        (audioFormat !== undefined && !isSafeString(audioFormat, 16)) ||
+        (modelType !== undefined && !/^\d{1,4}$/.test(String(modelType))) ||
+        (language !== undefined && !/^\d{1,4}$/.test(String(language)))) {
+        return jsonResponse({ success: false, error: '缺少必要参数或参数格式不合法' }, { status: 400 });
     }
 
     const model = Number.parseInt(modelType, 10) || 4;
