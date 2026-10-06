@@ -5037,6 +5037,19 @@ if (window.GGP_Loaded) {
         phoneFloatingEntry.sync();
     }
 
+    function blurExternalEditableBeforePhoneOpen(panel = null) {
+        const activeElement = document.activeElement;
+        if (!(activeElement instanceof HTMLElement)) return false;
+        if (panel?.contains?.(activeElement)) return false;
+
+        const isEditable = activeElement.matches?.('input, textarea, select')
+            || activeElement.isContentEditable;
+        if (!isEditable) return false;
+
+        activeElement.blur?.();
+        return document.activeElement !== activeElement;
+    }
+
     // 切换抽屉
     async function toggleDrawer(icon, panel) {
         const isOpen = panel.classList.contains('phone-panel-open');
@@ -5050,6 +5063,7 @@ if (window.GGP_Loaded) {
             panel.style.cssText = 'display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;';
             window.dispatchEvent(new CustomEvent('phone:panelVisibility', { detail: { open: false } }));
         } else {
+            blurExternalEditableBeforePhoneOpen(panel);
             await ensureGlobalPhoneCSS();
             initColors();
 
@@ -5085,6 +5099,7 @@ if (window.GGP_Loaded) {
     function openPhonePanelWithOutsideClose(panel, icon) {
         if (!panel || !icon) return;
 
+        blurExternalEditableBeforePhoneOpen(panel);
         updatePhonePanelViewportHeight({ force: true });
         applyPhonePanelDesktopPosition();
         bindPhonePanelDesktopDockDrag(panel);
@@ -9603,9 +9618,7 @@ if (window.GGP_Loaded) {
                         } catch (selectionError) {
                             console.warn('[VirtualPhone] 清理三击唤醒选区失败:', selectionError);
                         }
-                        if (document.activeElement?.blur && !drawerPanel.contains(document.activeElement)) {
-                            document.activeElement.blur();
-                        }
+                        blurExternalEditableBeforePhoneOpen(drawerPanel);
                         toggleDrawer(drawerIcon, drawerPanel);
                     }
                 }
