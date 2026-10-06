@@ -5031,6 +5031,7 @@ if (window.GGP_Loaded) {
                 baseUrl: ST_PHONE_BASE_URL,
                 onActivate: activatePhoneFromFloatingEntry,
                 onDoubleActivate: activateStoryImageBrowserFromFloatingEntry,
+                onPressStart: () => blurExternalEditableBeforePhoneOpen(document.getElementById('phone-panel')),
                 isPanelOpen: () => document.getElementById('phone-panel')?.classList?.contains('phone-panel-open') === true
             });
         }

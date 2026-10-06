@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+const floatingEntryStart = indexSource.indexOf('function syncPhoneFloatingEntry()');
 const helperStart = indexSource.indexOf('function blurExternalEditableBeforePhoneOpen(panel = null)');
+const floatingEntrySource = indexSource.slice(floatingEntryStart, helperStart);
 const helperEnd = indexSource.indexOf('// 切换抽屉', helperStart);
 const helperSource = indexSource.slice(helperStart, helperEnd);
 const toggleStart = indexSource.indexOf('async function toggleDrawer(icon, panel)');
@@ -21,6 +23,14 @@ test('phone opening blurs an editable element outside the phone panel', () => {
     assert.match(helperSource, /input, textarea, select/);
     assert.match(helperSource, /activeElement\.isContentEditable/);
     assert.match(helperSource, /activeElement\.blur\?\.\(\)/);
+});
+
+test('floating entry prepares focus synchronously on pointer press', () => {
+    assert.ok(floatingEntryStart >= 0);
+    assert.ok(helperStart > floatingEntryStart);
+    assert.ok(floatingEntrySource.includes(
+        "onPressStart: () => blurExternalEditableBeforePhoneOpen(document.getElementById('phone-panel'))"
+    ));
 });
 
 test('all phone panel opening paths apply the external focus guard', () => {

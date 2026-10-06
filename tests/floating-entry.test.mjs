@@ -51,3 +51,40 @@ test('floating entry separates single activation from double activation', () => 
         else globalThis.window = originalWindow;
     }
 });
+
+test('floating entry runs press preparation before preventing pointer defaults', () => {
+    const listeners = new Map();
+    const steps = [];
+    const entry = new PhoneFloatingEntry({
+        onPressStart: () => steps.push('press-start')
+    });
+    const button = {
+        addEventListener(type, handler) {
+            listeners.set(type, handler);
+        },
+        getBoundingClientRect() {
+            return { left: 10, top: 20 };
+        },
+        classList: {
+            add() {},
+            remove() {}
+        },
+        setPointerCapture() {}
+    };
+
+    entry.bindDrag(button);
+    listeners.get('pointerdown')({
+        button: 0,
+        pointerId: 7,
+        clientX: 30,
+        clientY: 40,
+        preventDefault() {
+            steps.push('prevent-default');
+        },
+        stopPropagation() {
+            steps.push('stop-propagation');
+        }
+    });
+
+    assert.deepEqual(steps, ['press-start', 'prevent-default', 'stop-propagation']);
+});

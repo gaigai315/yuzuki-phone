@@ -32,6 +32,7 @@ export class PhoneFloatingEntry {
         this.baseUrl = options.baseUrl || './';
         this.onActivate = typeof options.onActivate === 'function' ? options.onActivate : () => {};
         this.onDoubleActivate = typeof options.onDoubleActivate === 'function' ? options.onDoubleActivate : this.onActivate;
+        this.onPressStart = typeof options.onPressStart === 'function' ? options.onPressStart : () => {};
         this.isPanelOpen = typeof options.isPanelOpen === 'function' ? options.isPanelOpen : () => false;
         this.resizeController = null;
         this.visibilityTimer = null;
@@ -253,6 +254,11 @@ export class PhoneFloatingEntry {
 
         button.addEventListener('pointerdown', event => {
             if (event.button !== undefined && event.button !== 0) return;
+            try {
+                this.onPressStart(event);
+            } catch (error) {
+                console.warn('[VirtualPhone] 悬浮入口按下前处理失败:', error);
+            }
             event.preventDefault();
             event.stopPropagation();
             pointerId = event.pointerId;
