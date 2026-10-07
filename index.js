@@ -25,7 +25,7 @@ const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.5.9';
 const ST_PHONE_CSS_REVISION = '20261005-home-icon-first-tap';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
-const ST_PHONE_ALBUM_MODULE_REVISION = '20261004-story-image-header-glass';
+const ST_PHONE_ALBUM_MODULE_REVISION = '20261006-story-image-outside-close';
 const ST_PHONE_WECHAT_MODULE_REVISION = '20261004-moments-image-cancel';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261005-x-post-menu-auto-width';
@@ -1272,12 +1272,12 @@ if (window.GGP_Loaded) {
             worldbookManagerModule
         ] = await Promise.all([
             import('./config/apps.js'),
-            import('./config/storage.js'),
+            import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
             import('./config/api-manager.js'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
         import('./config/prompt-manager.js?v=20261002-x-follower-sync'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
-        import('./config/image-generation-manager.js?v=20261005-nai5-img2img-reference'),
+        import('./config/image-generation-manager.js?v=20261006-nai-queue-lock-retry'),
             import('./config/worldbook-manager.js')
         ]);
 
@@ -1326,7 +1326,7 @@ if (window.GGP_Loaded) {
         ] = await Promise.all([
             import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
             import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
-            import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261002-x-image-cleanup`)
+            import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261006-story-upload-console-cleanup`)
         ]);
 
         PhoneShell = phoneShellModule.PhoneShell;

@@ -141,6 +141,15 @@ export class AlbumData {
         return storyMeta;
     }
 
+    _readLegacyStoryExtraValue(extra, key) {
+        if (!extra || typeof extra !== 'object') return undefined;
+        try {
+            return Object.getOwnPropertyDescriptor(extra, key)?.value;
+        } catch (e) {
+            return undefined;
+        }
+    }
+
     _getStoryMessageImages(message = {}) {
         const extra = message?.extra && typeof message.extra === 'object' ? message.extra : {};
         const storyImage = this._readStoryMediaUrl(this._getCurrentStoryMeta(message)?.imageUrl);
@@ -150,7 +159,7 @@ export class AlbumData {
         const legacySwipes = Array.isArray(extra.image_swipes)
             ? extra.image_swipes.map(item => this._readStoryMediaUrl(item)).filter(Boolean)
             : [];
-        const legacyImage = this._readStoryMediaUrl(extra.image);
+        const legacyImage = this._readStoryMediaUrl(this._readLegacyStoryExtraValue(extra, 'image'));
         return [...new Set([...media, ...legacySwipes, legacyImage, storyImage].filter(Boolean))];
     }
 
@@ -615,7 +624,7 @@ export class AlbumData {
                     changed = true;
                 }
             }
-            if (this.normalizePath(this._readStoryMediaUrl(extra.image)) === target) {
+            if (this.normalizePath(this._readStoryMediaUrl(this._readLegacyStoryExtraValue(extra, 'image'))) === target) {
                 delete extra.image;
                 changed = true;
             }

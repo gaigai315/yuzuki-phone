@@ -1025,7 +1025,7 @@
     padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)) !important;
     overflow: visible !important;
     box-sizing: border-box !important;
-    pointer-events: none !important;
+    pointer-events: auto !important;
     transform: none !important;
     contain: none !important;
 }
@@ -1106,7 +1106,6 @@
     line-height: 1 !important;
 }
 
-#phone-story-image-overlay-root .phone-story-image-close,
 #phone-story-image-overlay-root .phone-story-image-nav {
     width: 36px !important;
     min-width: 36px !important;
@@ -1134,11 +1133,6 @@
     -webkit-appearance: none !important;
 }
 
-#phone-story-image-overlay-root .phone-story-image-close {
-    box-shadow: 0 4px 13px rgba(22, 29, 37, 0.1) !important;
-}
-
-#phone-story-image-overlay-root .phone-story-image-close:focus-visible,
 #phone-story-image-overlay-root .phone-story-image-nav:focus-visible,
 #phone-story-image-overlay-root .phone-story-image-flip:focus-visible,
 #phone-story-image-overlay-root .phone-story-image-action:focus-visible,
@@ -1568,15 +1562,6 @@
         padding: 6px 12px !important;
         border-radius: 22px !important;
         font-size: 13px !important;
-    }
-
-    #phone-story-image-overlay-root .phone-story-image-close {
-        width: 32px !important;
-        min-width: 32px !important;
-        max-width: 32px !important;
-        height: 32px !important;
-        min-height: 32px !important;
-        max-height: 32px !important;
     }
 
     #phone-story-image-overlay-root .phone-story-image-card-body {

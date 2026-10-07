@@ -5,9 +5,9 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 
-import { AlbumData } from './album-data.js?v=1.4.4&r=20261004-story-image-header-glass';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261004-story-image-header-glass';
-import { StoryImageOverlay } from './story-image-overlay.js?v=20261004-story-image-header-glass';
+import { AlbumData } from './album-data.js?v=1.4.4&r=20261006-story-image-outside-close';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261006-story-image-outside-close';
+import { StoryImageOverlay } from './story-image-overlay.js?v=20261006-story-image-outside-close';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 export class AlbumApp {
@@ -519,7 +519,11 @@ export class AlbumApp {
             if (typeof uploader._uploadToServer !== 'function') {
                 throw new Error('图片上传管理器不支持保存生图结果');
             }
-            storedUrl = await uploader._uploadToServer(safeUrl, prefix, { allowBase64Fallback: false });
+            storedUrl = await uploader._uploadToServer(safeUrl, prefix, {
+                allowBase64Fallback: false,
+                skipExistenceCheck: true,
+                signal: options.signal
+            });
         } else {
             if (typeof uploader.uploadBlob !== 'function') {
                 throw new Error('图片上传管理器不支持保存远程生图结果');
@@ -530,7 +534,10 @@ export class AlbumApp {
             if (!String(blob.type || '').toLowerCase().startsWith('image/')) {
                 throw new Error('生图接口返回的内容不是有效图片');
             }
-            storedUrl = await uploader.uploadBlob(blob, prefix);
+            storedUrl = await uploader.uploadBlob(blob, prefix, {
+                skipExistenceCheck: true,
+                signal: options.signal
+            });
         }
 
         const normalized = String(storedUrl || '').trim();

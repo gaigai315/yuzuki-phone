@@ -647,3 +647,54 @@ test('Stable Diffusion direct cancellation stops endpoint fallback', async () =>
     );
     assert.equal(directCalls, 1);
 });
+
+test('NovelAI concurrent generation lock waits and retries without releasing the request', async () => {
+    const originalFetch = globalThis.fetch;
+    const novelManager = new ImageGenerationManager(null);
+    const sleeps = [];
+    let fetchCalls = 0;
+    novelManager._buildNovelAIPayload = async () => ({
+        input: 'portrait',
+        parameters: { width: 832, height: 1216, steps: 28, scale: 5, seed: 123 }
+    });
+    novelManager._readNovelAIImageResponse = async () => 'data:image/png;base64,ZmFrZQ==';
+    novelManager._waitForImageDecode = async () => ({ width: 832, height: 1216 });
+    novelManager._sleep = async ms => {
+        sleeps.push(ms);
+    };
+    globalThis.fetch = async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+            return new Response(JSON.stringify({
+                statusCode: 429,
+                message: 'Concurrent generation is locked'
+            }), {
+                status: 429,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+        return new Response('fake-image', { status: 200 });
+    };
+
+    try {
+        const result = await novelManager._generateNovelAI({ prompt: 'portrait' }, {
+            apiKey: 'test-key',
+            site: 'official',
+            queueUrl: '',
+            model: 'nai-diffusion-5-full',
+            sampler: 'k_euler',
+            schedule: 'native',
+            width: 832,
+            height: 1216,
+            steps: 28,
+            scale: 5,
+            seed: 123
+        });
+
+        assert.equal(fetchCalls, 2);
+        assert.deepEqual(sleeps, [3000]);
+        assert.equal(result.imageUrl, 'data:image/png;base64,ZmFrZQ==');
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});

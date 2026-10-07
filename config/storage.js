@@ -19,6 +19,11 @@
 // 4. 自动迁移旧数据到新架构
 // ========================================
 
+const LOCAL_STORAGE_MIRROR_EXCLUDED_KEYS = new Set([
+    'phone_album_upload_index',
+    'phone_album_deleted_paths'
+]);
+
 export class PhoneStorage {
     constructor() {
         // ==================== 命名空间 ====================
@@ -454,7 +459,7 @@ export class PhoneStorage {
 
             // ==================== 同步写入 localStorage 作为兜底 ====================
             // 仅全局设置写入 localStorage，聊天专属数据禁止（防止数据回档）
-            if (!isChatData) {
+            if (!isChatData && !LOCAL_STORAGE_MIRROR_EXCLUDED_KEYS.has(String(key || ''))) {
                 this._setToLocalStorage(key, value, isChatData);
             }
 

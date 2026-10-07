@@ -10,7 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 设置APP
-import { ImageUploadManager } from './image-upload.js?v=20261002-x-image-cleanup';
+import { ImageUploadManager } from './image-upload.js?v=20261006-story-upload-console-cleanup';
 import { ImageCropper } from './image-cropper.js';
 import { AlbumData } from '../album/album-data.js';
 import { AlbumImagePicker } from '../album/album-image-picker.js';

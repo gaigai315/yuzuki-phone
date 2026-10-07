@@ -58,6 +58,38 @@ test('story floor browser keeps assistant floors without images and honors selec
     assert.equal(floors[2].imageUrl, '/images/legacy.png');
 });
 
+test('legacy story image reads and cleanup avoid the array-wrapped image getter', async () => {
+    let imageGetCount = 0;
+    let saveCount = 0;
+    const legacyExtra = {
+        image: '/images/legacy-proxy.png',
+        image_swipes: []
+    };
+    const proxiedExtra = new Proxy(legacyExtra, {
+        get(target, key, receiver) {
+            if (key === 'image') {
+                imageGetCount += 1;
+                throw new Error('array-wrapped image getter should not be used');
+            }
+            return Reflect.get(target, key, receiver);
+        }
+    });
+    const context = {
+        chat: [{ is_user: false, mes: 'Legacy proxy image.', extra: proxiedExtra }],
+        async saveChat() {
+            saveCount += 1;
+        }
+    };
+    const data = new AlbumData({ getContext: () => context });
+
+    assert.equal(data.getStoryFloor(0).imageUrl, '/images/legacy-proxy.png');
+    await data._cleanupStoryMessageReferences('/images/legacy-proxy.png');
+
+    assert.equal(imageGetCount, 0);
+    assert.equal(Object.hasOwn(legacyExtra, 'image'), false);
+    assert.equal(saveCount, 1);
+});
+
 test('hidden assistant floors remain in image preview while internal system messages stay excluded', () => {
     const context = {
         chat: [
@@ -316,6 +348,7 @@ test('floating double-click opens the standalone story image card without openin
     const appSource = fs.readFileSync(new URL('../apps/album/album-app.js', import.meta.url), 'utf8');
     const viewSource = fs.readFileSync(new URL('../apps/album/album-view.js', import.meta.url), 'utf8');
     const overlaySource = fs.readFileSync(new URL('../apps/album/story-image-overlay.js', import.meta.url), 'utf8');
+    const cssSource = fs.readFileSync(new URL('../apps/album/album.css', import.meta.url), 'utf8');
     const handlerStart = indexSource.indexOf('async function activateStoryImageBrowserFromFloatingEntry()');
     const handlerEnd = indexSource.indexOf('function syncPhoneFloatingEntry()', handlerStart);
     const handlerSource = indexSource.slice(handlerStart, handlerEnd);
@@ -329,6 +362,10 @@ test('floating double-click opens the standalone story image card without openin
     assert.match(appSource, /await this\._waitForCSS\(\)/);
     assert.match(appSource, /this\.storyImageOverlay\.open\(options\)/);
     assert.match(overlaySource, /document\.documentElement\.appendChild\(root\)/);
+    assert.doesNotMatch(overlaySource, /phone-story-image-close/);
+    assert.match(overlaySource, /root\.addEventListener\('click', this\._onRootClick\)/);
+    assert.match(overlaySource, /if \(event\.target === event\.currentTarget\) this\.close\(\)/);
+    assert.match(cssSource, /#phone-story-image-overlay-root\s*\{[^}]*pointer-events:\s*auto\s*!important;/s);
     assert.match(overlaySource, /phone-story-image-nav is-prev/);
     assert.match(overlaySource, /phone-story-image-nav is-next/);
     assert.match(overlaySource, /phone-story-image-back/);
@@ -414,6 +451,32 @@ test('story image navigation waits for target preload before replacing the curre
         if (originalDocument === undefined) delete globalThis.document;
         else globalThis.document = originalDocument;
     }
+});
+
+test('story image overlay closes only when the backdrop itself is clicked', async () => {
+    const { StoryImageOverlay } = await import(`../apps/album/story-image-overlay.js?test=outside-close-${Date.now()}`);
+    const overlay = new StoryImageOverlay({ albumData: { getStoryFloors: () => [] } });
+    let closeCount = 0;
+    let stopCount = 0;
+    const root = {};
+    overlay.close = () => {
+        closeCount += 1;
+    };
+
+    overlay._onRootClick({
+        target: {},
+        currentTarget: root,
+        stopPropagation() { stopCount += 1; }
+    });
+    assert.equal(closeCount, 0);
+
+    overlay._onRootClick({
+        target: root,
+        currentTarget: root,
+        stopPropagation() { stopCount += 1; }
+    });
+    assert.equal(closeCount, 1);
+    assert.equal(stopCount, 2);
 });
 
 test('story image browser returns to the latest floor when reopened without a requested floor', async () => {
@@ -502,7 +565,7 @@ test('story image card uses the natural image ratio without black side backgroun
     assert.match(cssSource, /\.phone-story-image-card-body\s*\{[^}]*padding:\s*0 12px 12px/s);
     assert.match(cssSource, /\.phone-story-image-floor-label\s*\{[^}]*background:\s*rgba\(255, 255, 255, 0\.42\)[^}]*color:\s*var\(--SmartThemeBodyColor, var\(--phone-global-text, #333\)\)[^}]*backdrop-filter:\s*blur\(18px\) saturate\(125%\)/s);
     assert.match(cssSource, /\.phone-story-image-floor-label::after\s*\{[^}]*color:\s*currentColor/s);
-    assert.match(viewSource, /story-image-header-glass/);
+    assert.match(viewSource, /story-image-outside-close/);
 });
 
 test('story image card is top-aligned below the tavern toolbar on mobile', () => {
@@ -715,6 +778,7 @@ test('story image generation uses the story provider route, uploads the result, 
     const originalDocument = globalThis.document;
     const message = { is_user: false, mes: 'A rainy scene.', extra: {} };
     let generationOptions = null;
+    let uploadOptions = null;
     let attached = null;
     let openedFloor = null;
     let notificationCount = 0;
@@ -733,7 +797,8 @@ test('story image generation uses the story provider route, uploads the result, 
                 }
             },
             imageManager: {
-                async _uploadToServer(_imageData, prefix) {
+                async _uploadToServer(_imageData, prefix, options) {
+                    uploadOptions = options;
                     return `/backgrounds/phone_${prefix}.png`;
                 }
             }
@@ -775,6 +840,11 @@ test('story image generation uses the story provider route, uploads the result, 
         assert.equal(generationOptions.app, 'story');
         assert.equal(generationOptions.prompt, '1girl, rainy street');
         assert.equal(generationOptions.signal, undefined);
+        assert.deepEqual(uploadOptions, {
+            allowBase64Fallback: false,
+            skipExistenceCheck: true,
+            signal: undefined
+        });
         assert.equal(window.VirtualPhone.imageGenerationManager.storage, storage);
         assert.equal(attached.floor, 7);
         assert.match(attached.imageUrl, /^\/backgrounds\/phone_story_image_7_/);

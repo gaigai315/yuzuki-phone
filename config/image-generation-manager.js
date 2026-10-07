@@ -1777,7 +1777,10 @@ export class ImageGenerationManager {
 
     async _waitForNovelAIQueueTurn(config, options = {}) {
         const baseUrl = this._resolveNovelAIQueueUrl(config);
-        if (!baseUrl) return null;
+        if (!baseUrl) {
+            console.warn('[NovelAI Queue] 未配置共享队列 URL，本次将直接请求 NovelAI');
+            return null;
+        }
 
         const keyHash = await this._hashQueueKey(config.apiKey);
         const userId = this._getQueueUserId();
@@ -1880,6 +1883,11 @@ export class ImageGenerationManager {
                 token: queueInfo.token
             }
         }).catch((err) => console.warn('[NovelAI Queue] 完成队列任务失败:', err));
+    }
+
+    _isNovelAIConcurrentLock(status, responseText = '') {
+        return Number(status) === 429
+            && /concurrent\s+generation\s+is\s+locked|generation\s+is\s+locked/i.test(String(responseText || ''));
     }
 
     _normalizeImageResultString(value, { allowUrl = true } = {}) {
@@ -4786,19 +4794,39 @@ export class ImageGenerationManager {
         try {
             const payload = await this._buildNovelAIPayload(options, config);
             this._debugNovelAIRequest({ endpoint, payload, config, options });
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${config.apiKey}`,
-                    'Content-Type': 'application/json',
-                    Accept: 'application/x-zip-compressed, image/png, application/json'
-                },
-                body: JSON.stringify(payload),
-                signal: requestController.signal
-            });
+            let response = null;
+            let concurrentLockRetries = 0;
+            while (!response?.ok) {
+                response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${config.apiKey}`,
+                        'Content-Type': 'application/json',
+                        Accept: 'application/x-zip-compressed, image/png, application/json'
+                    },
+                    body: JSON.stringify(payload),
+                    signal: requestController.signal
+                });
+                if (response.ok) break;
 
-            if (!response.ok) {
                 const text = await response.text().catch(() => '');
+                if (this._isNovelAIConcurrentLock(response.status, text)) {
+                    concurrentLockRetries += 1;
+                    if (concurrentLockRetries === 1) {
+                        console.warn(queueInfo
+                            ? '[NovelAI Queue] NovelAI 上游仍有生成任务，保持队列锁并在 3 秒后重试'
+                            : '[NovelAI Queue] NovelAI 上游仍有生成任务，等待 3 秒后重试');
+                        try {
+                            window.VirtualPhone?.phoneShell?.showNotification?.(
+                                queueInfo ? 'NAI 共享队列' : 'NovelAI',
+                                '上游任务仍在生成，正在等待并自动重试',
+                                '🎨'
+                            );
+                        } catch (e) {}
+                    }
+                    await this._sleep(NOVELAI_QUEUE_POLL_MS);
+                    continue;
+                }
                 const hint = response.status >= 500
                     ? `；当前参数 model=${config.model}, sampler=${config.sampler}, schedule=${config.schedule}，可先用 native + k_euler 测试`
                     : '';

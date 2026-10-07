@@ -4,7 +4,17 @@ import test from 'node:test';
 
 const source = fs.readFileSync(new URL('../phone/floating-entry.js', import.meta.url), 'utf8');
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const { PhoneFloatingEntry } = await import(moduleUrl);
+const { PHONE_FLOATING_ENTRY_STYLES, PhoneFloatingEntry } = await import(moduleUrl);
+
+test('floating entry exposes nine numbered styles with the renamed assets', () => {
+    assert.deepEqual(
+        PHONE_FLOATING_ENTRY_STYLES.map(({ label, file }) => ({ label, file })),
+        Array.from({ length: 9 }, (_, index) => ({
+            label: `样式${index + 1}`,
+            file: `phone/sjxf${index + 1}.png`
+        }))
+    );
+});
 
 test('floating entry separates single activation from double activation', () => {
     const scheduled = new Map();

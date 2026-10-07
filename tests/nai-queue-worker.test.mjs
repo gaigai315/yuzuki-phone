@@ -124,3 +124,51 @@ test('legacy phone token and ST-Chatu8 lock token are both accepted', async () =
     assert.equal(completed.status, 200);
     assert.equal(completed.body.success, true);
 });
+
+test('a new task from the same user does not release the active NovelAI lease', async () => {
+    const queue = createQueue();
+    const first = await request(queue, '/queue', {
+        method: 'POST',
+        body: {
+            key_hash: 'same-user-key',
+            user_id: 'phone-user',
+            task_id: 'first-task',
+        },
+    });
+    assert.equal(first.body.can_run, true);
+
+    const second = await request(queue, '/queue', {
+        method: 'POST',
+        body: {
+            key_hash: 'same-user-key',
+            user_id: 'phone-user',
+            task_id: 'second-task',
+        },
+    });
+    assert.equal(second.body.can_run, false);
+    assert.equal(second.body.position, 1);
+
+    const firstStillActive = await request(
+        queue,
+        '/my-turn?key_hash=same-user-key&user_id=phone-user&task_id=first-task'
+    );
+    assert.equal(firstStillActive.body.can_run, true);
+    assert.equal(firstStillActive.body.token, first.body.token);
+
+    await request(queue, '/complete', {
+        method: 'POST',
+        body: {
+            key_hash: 'same-user-key',
+            user_id: 'phone-user',
+            task_id: 'first-task',
+            token: first.body.token,
+        },
+    });
+
+    const secondTurn = await request(
+        queue,
+        '/my-turn?key_hash=same-user-key&user_id=phone-user&task_id=second-task'
+    );
+    assert.equal(secondTurn.body.can_run, true);
+    assert.ok(secondTurn.body.token);
+});

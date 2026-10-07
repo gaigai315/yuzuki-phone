@@ -167,16 +167,18 @@ export class NaiQueueDO extends DurableObject {
         this.cleanup(state);
 
         const now = Date.now();
+        const activeTaskId = String(state.active?.taskId || '');
         const supersededTaskIds = new Set(
             state.queue
-                .filter(item => item.userId === task.userId && item.taskId !== task.taskId)
+                .filter(item => (
+                    item.userId === task.userId
+                    && item.taskId !== task.taskId
+                    && item.taskId !== activeTaskId
+                ))
                 .map(item => item.taskId)
         );
         if (supersededTaskIds.size > 0) {
             state.queue = state.queue.filter(item => !supersededTaskIds.has(item.taskId));
-            if (state.active && supersededTaskIds.has(state.active.taskId)) {
-                state.active = null;
-            }
         }
 
         let existing = state.queue.find(item => item.taskId === task.taskId);

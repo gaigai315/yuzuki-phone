@@ -29,6 +29,10 @@ export class StoryImageOverlay {
         this._onKeyDown = event => {
             if (event.key === 'Escape') this.close();
         };
+        this._onRootClick = event => {
+            event.stopPropagation();
+            if (event.target === event.currentTarget) this.close();
+        };
         this._onResize = () => this.scheduleStageFit();
     }
 
@@ -40,6 +44,7 @@ export class StoryImageOverlay {
         root.id = STORY_OVERLAY_ROOT_ID;
         root.setAttribute('aria-hidden', 'true');
         const stopHostTouchGesture = event => event.stopPropagation();
+        root.addEventListener('click', this._onRootClick);
         root.addEventListener('touchstart', stopHostTouchGesture, { passive: true });
         root.addEventListener('touchmove', stopHostTouchGesture, { passive: true });
         document.documentElement.appendChild(root);
@@ -205,9 +210,7 @@ export class StoryImageOverlay {
                 <header class="phone-story-image-card-header">
                     <span class="phone-story-image-header-spacer" aria-hidden="true"></span>
                     <strong class="phone-story-image-floor-label">${floor ? `第${floor.floor}楼` : '正文生图'}</strong>
-                    <button type="button" class="phone-story-image-close" aria-label="关闭正文生图" title="关闭">
-                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-                    </button>
+                    <span class="phone-story-image-header-spacer" aria-hidden="true"></span>
                 </header>
                 <div class="phone-story-image-card-body">
                     ${floor ? `
@@ -406,7 +409,6 @@ export class StoryImageOverlay {
     }
 
     bindEvents(root, floors, floor, floorIndex) {
-        root.querySelector('.phone-story-image-close')?.addEventListener('click', () => this.close());
         if (!floor) return;
 
         const navigate = offset => {

@@ -146,7 +146,7 @@ export class ImageUploadManager {
         const uploadBlob = await this._normalizeImageBlobMime(blob);
         const filename = options.filename || await this._buildManagedFilename(uploadBlob, prefix);
         const finalUrl = `/backgrounds/${filename}`;
-        if (await this._backgroundExists(finalUrl, options)) {
+        if (options.skipExistenceCheck !== true && await this._backgroundExists(finalUrl, options)) {
             await this._unmarkAlbumDeletedPath(finalUrl);
             await this._recordUploadedBackground(finalUrl, prefix);
             return finalUrl;
@@ -399,7 +399,7 @@ export class ImageUploadManager {
         const allowBase64Fallback = options.allowBase64Fallback === true;
         if (!base64 || !base64.startsWith('data:image')) return base64;
         try {
-            return await this.uploadDataUrl(base64, prefix);
+            return await this.uploadDataUrl(base64, prefix, options);
         } catch (e) {
             console.error('[ImageUpload] 上传图片到服务端失败:', e);
             if (!allowBase64Fallback) {

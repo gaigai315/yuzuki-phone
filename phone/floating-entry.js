@@ -7,12 +7,15 @@ export const PHONE_FLOATING_ENTRY_POSITION_KEY = 'phone-floating-entry-position'
 export const PHONE_FLOATING_ENTRY_DEFAULT_STYLE = 'silver';
 
 export const PHONE_FLOATING_ENTRY_STYLES = Object.freeze([
-    { id: 'gold', label: '金色', file: 'phone/xfjs.png' },
-    { id: 'blue', label: '蓝色', file: 'phone/xfls.png' },
-    { id: 'green', label: '绿色', file: 'phone/xflvs.png' },
-    { id: 'silver', label: '银色', file: 'phone/xfys.png' },
-    { id: 'purple', label: '紫色', file: 'phone/xfzs.png' },
-    { id: 'black', label: '黑色', file: 'phone/xfhs.png' }
+    { id: 'gold', label: '样式1', file: 'phone/sjxf1.png' },
+    { id: 'blue', label: '样式2', file: 'phone/sjxf2.png' },
+    { id: 'green', label: '样式3', file: 'phone/sjxf3.png' },
+    { id: 'silver', label: '样式4', file: 'phone/sjxf4.png' },
+    { id: 'purple', label: '样式5', file: 'phone/sjxf5.png' },
+    { id: 'black', label: '样式6', file: 'phone/sjxf6.png' },
+    { id: 'style-7', label: '样式7', file: 'phone/sjxf7.png' },
+    { id: 'style-8', label: '样式8', file: 'phone/sjxf8.png' },
+    { id: 'style-9', label: '样式9', file: 'phone/sjxf9.png' }
 ]);
 
 const FLOATING_STYLE_MAP = new Map(PHONE_FLOATING_ENTRY_STYLES.map(item => [item.id, item]));

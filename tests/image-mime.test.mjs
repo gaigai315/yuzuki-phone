@@ -37,6 +37,55 @@ test('image uploader normalizes MIME before choosing the managed extension', asy
     assert.equal(uploader._getBlobExtension(normalizedBlob), 'webp');
 });
 
+test('image uploader can skip the existence probe for a newly generated unique file', async () => {
+    const uploader = Object.create(ImageUploadManager.prototype);
+    const originalFetch = globalThis.fetch;
+    let existenceProbeCount = 0;
+    const requests = [];
+    uploader._backgroundExists = async () => {
+        existenceProbeCount += 1;
+        return false;
+    };
+    uploader._buildRequestHeaders = async () => ({});
+    uploader._recordUploadedBackground = async () => {};
+    globalThis.fetch = async (url, options) => {
+        requests.push({ url, options });
+        return { ok: true, status: 200, text: async () => '' };
+    };
+
+    try {
+        const result = await uploader.uploadBlob(
+            new Blob([WEBP_BYTES], { type: 'image/webp' }),
+            'story_image_7_unique',
+            { filename: 'phone_story_image_7_unique.webp', skipExistenceCheck: true }
+        );
+
+        assert.equal(result, '/backgrounds/phone_story_image_7_unique.webp');
+        assert.equal(existenceProbeCount, 0);
+        assert.equal(requests.length, 1);
+        assert.equal(requests[0].url, '/api/backgrounds/upload');
+        assert.equal(requests[0].options.method, 'POST');
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('legacy upload helper forwards upload options to the data URL uploader', async () => {
+    const uploader = Object.create(ImageUploadManager.prototype);
+    const signal = new AbortController().signal;
+    let receivedOptions = null;
+    uploader.uploadDataUrl = async (_dataUrl, _prefix, options) => {
+        receivedOptions = options;
+        return '/backgrounds/phone_story_image_forwarded.png';
+    };
+
+    const options = { allowBase64Fallback: false, skipExistenceCheck: true, signal };
+    const result = await uploader._uploadToServer('data:image/png;base64,AAAA', 'story_image', options);
+
+    assert.equal(result, '/backgrounds/phone_story_image_forwarded.png');
+    assert.equal(receivedOptions, options);
+});
+
 test('managed image cleanup treats album history and the time card as active references', () => {
     const target = '/backgrounds/phone_card_time_test.png';
     const uploader = Object.create(ImageUploadManager.prototype);
