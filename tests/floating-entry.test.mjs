@@ -16,6 +16,12 @@ test('floating entry exposes nine numbered styles with the renamed assets', () =
     );
 });
 
+test('floating entry visibility correction is event-driven instead of polling', () => {
+    assert.doesNotMatch(source, /setInterval\(\(\) => this\.ensureVisible/);
+    assert.match(source, /addEventListener\('resize', reposition/);
+    assert.match(source, /visualViewport\?\.addEventListener\?\.\('scroll', reposition/);
+});
+
 test('floating entry separates single activation from double activation', () => {
     const scheduled = new Map();
     let nextTimerId = 1;

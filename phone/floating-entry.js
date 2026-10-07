@@ -38,7 +38,6 @@ export class PhoneFloatingEntry {
         this.onPressStart = typeof options.onPressStart === 'function' ? options.onPressStart : () => {};
         this.isPanelOpen = typeof options.isPanelOpen === 'function' ? options.isPanelOpen : () => false;
         this.resizeController = null;
-        this.visibilityTimer = null;
         this.activationTimer = null;
         this._onPanelVisibility = event => {
             const open = event?.detail?.open;
@@ -356,16 +355,12 @@ export class PhoneFloatingEntry {
             window.addEventListener('phone:floatingEntrySettingsChanged', this._onSettingsChanged, { signal });
         }
 
-        window.clearInterval(this.visibilityTimer);
-        this.visibilityTimer = window.setInterval(() => this.ensureVisible(button), 3000);
         this.updateVisibility();
     }
 
     unmount() {
         this.resizeController?.abort?.();
         this.resizeController = null;
-        window.clearInterval(this.visibilityTimer);
-        this.visibilityTimer = null;
         window.clearTimeout(this.activationTimer);
         this.activationTimer = null;
         document.getElementById(FLOATING_BUTTON_ID)?.remove();
