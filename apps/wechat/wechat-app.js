@@ -4222,7 +4222,7 @@ export class WechatApp {
 #phone-panel-content .phone-screen .wechat-wallet-ledger-filter:first-child select {
     flex: 0 1 auto !important;
     width: auto !important;
-    max-width: calc(100% - 14px) !important;
+    max-width: calc(100% - 20px) !important;
     padding-right: 3px !important;
 }
 
@@ -4244,7 +4244,7 @@ export class WechatApp {
 #phone-panel-content .phone-screen .wechat-wallet-ledger-filter:first-child i {
     position: static;
     flex: 0 0 auto;
-    margin-left: 8px;
+    margin-left: 14px;
     transform: none;
 }
 

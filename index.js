@@ -35,7 +35,7 @@ const ST_PHONE_VERSION = '1.6.0';
 const ST_PHONE_CSS_REVISION = '20261009-payment-store-right-shift';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261006-story-image-outside-close';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261004-moments-image-cancel';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261009-wallet-month-chevron-spacing';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261009-unified-sse-parser';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -75,10 +75,11 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-08',
+    date: '2026-10-09',
     items: [
         '【修复】修复桌面端通过悬浮图标打开手机时，面板因隐藏状态尺寸测量、重复定位与缩放动画产生快速闪缩抖动的问题。',
-        '【新增】微信线下模式新增用户微信昵称与微信零钱余额变量注入；AI 输出线上支付标签时会按商品金额扣减微信零钱并记录购物流水，同时支持重复解析防重及酒馆楼层回档。'
+        '【新增】微信线下模式新增用户微信昵称与微信零钱余额变量注入；AI 输出线上支付标签时会按商品金额扣减微信零钱并记录购物流水，同时支持重复解析防重及酒馆楼层回档。',
+        '【优化】优化 API 请求流式解析。'
     ]
 };
 

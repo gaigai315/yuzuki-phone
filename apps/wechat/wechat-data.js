@@ -2819,11 +2819,17 @@ export class WechatData {
             const msgType = String(message.type || 'text');
             const msgFrom = String(message.from || '');
             const msgContent = String(message.content || '');
-            const hasSamePayload = (existing) => (
-                String(existing?.from || '') === msgFrom
-                && String(existing?.content || '') === msgContent
-                && String(existing?.type || 'text') === msgType
-            );
+            const msgPaymentTargetId = String(message.paymentTargetId || '').trim();
+            const hasSamePayload = (existing) => {
+                const existingPaymentTargetId = String(existing?.paymentTargetId || '').trim();
+                const hasSamePaymentTarget = !msgPaymentTargetId && !existingPaymentTargetId
+                    ? true
+                    : existingPaymentTargetId === msgPaymentTargetId;
+                return String(existing?.from || '') === msgFrom
+                    && String(existing?.content || '') === msgContent
+                    && String(existing?.type || 'text') === msgType
+                    && hasSamePaymentTarget;
+            };
 
             const isDuplicate = recentMessages.some(m => {
                 if (!hasSamePayload(m)) return false;
@@ -4549,6 +4555,36 @@ parseAIResponse(text) {
             this._notifyUnreadChanged();
         }
     }
+
+    _collectRollbackPaymentTargetIds(predicate) {
+        const targetIds = new Set();
+        if (typeof predicate !== 'function') return targetIds;
+
+        Object.values(this.data.messages || {}).forEach(messages => {
+            if (!Array.isArray(messages)) return;
+            messages.forEach(message => {
+                if (!message || !['transfer', 'redpacket'].includes(String(message.type || ''))) return;
+                if (!predicate(message)) return;
+                const messageId = String(message.id || '').trim();
+                if (messageId) targetIds.add(messageId);
+            });
+        });
+
+        (Array.isArray(this.data.walletTransactions) ? this.data.walletTransactions : []).forEach(record => {
+            if (!record || !['transfer', 'redpacket'].includes(String(record.type || ''))) return;
+            if (!predicate(record)) return;
+            const messageId = String(record.messageId || '').trim();
+            if (messageId) targetIds.add(messageId);
+        });
+
+        return targetIds;
+    }
+
+    _isPaymentStatusLinkedToTargets(message, targetIds) {
+        if (!message || message.type !== 'system' || !(targetIds instanceof Set) || targetIds.size === 0) return false;
+        const paymentTargetId = String(message.paymentTargetId || '').trim();
+        return paymentTargetId !== '' && targetIds.has(paymentTargetId);
+    }
      
     // 精确替换某一酒馆楼层产出的微信正文消息，用于用户手动编辑正文 <wechat> 后重放该楼层。
     removeMainChatTagMessagesAtFloor(targetTavernIndex) {
@@ -4564,13 +4600,16 @@ parseAIResponse(text) {
 
         let isDirty = false;
         const deletedMessages = [];
+        const matchesTargetFloor = record => record?.fromMainChatTag === true
+            && Number(record.tavernMessageIndex) === targetIndex;
+        const rollbackPaymentTargetIds = this._collectRollbackPaymentTargetIds(matchesTargetFloor);
 
         for (const chatId in this.data.messages) {
             const messages = Array.isArray(this.data.messages[chatId]) ? this.data.messages[chatId] : [];
             const originalLen = messages.length;
             this.data.messages[chatId] = messages.filter(m => {
-                if (!m?.fromMainChatTag) return true;
-                const shouldDelete = Number(m.tavernMessageIndex) === targetIndex;
+                const shouldDelete = matchesTargetFloor(m)
+                    || this._isPaymentStatusLinkedToTargets(m, rollbackPaymentTargetIds);
                 if (shouldDelete) deletedMessages.push(m);
                 return !shouldDelete;
             });
@@ -4611,10 +4650,7 @@ parseAIResponse(text) {
             }
         }
 
-        const walletDirty = this._rollbackWalletTransactions(record =>
-            record?.fromMainChatTag === true
-            && Number(record.tavernMessageIndex) === targetIndex
-        );
+        const walletDirty = this._rollbackWalletTransactions(matchesTargetFloor);
         isDirty = isDirty || walletDirty;
 
         if (isDirty) {
@@ -4651,11 +4687,19 @@ parseAIResponse(text) {
 
         let isDirty = false;
         const deletedMessages = [];
+        const matchesRollbackRange = record => record?.fromMainChatTag === true
+            && Number.isFinite(Number(record.tavernMessageIndex))
+            && Number(record.tavernMessageIndex) >= Number(targetTavernIndex);
+        const rollbackPaymentTargetIds = this._collectRollbackPaymentTargetIds(matchesRollbackRange);
 
         for (const chatId in this.data.messages) {
             const originalLen = this.data.messages[chatId].length;
 
             this.data.messages[chatId] = this.data.messages[chatId].filter(m => {
+                if (this._isPaymentStatusLinkedToTargets(m, rollbackPaymentTargetIds)) {
+                    deletedMessages.push(m);
+                    return false;
+                }
                 // 首楼空会话的特殊保护：
                 // 用户先在小手机里发消息时，tavernMessageIndex 会兜底成 0。
                 // 首条 AI 正文生成/转线下也会触发 rollbackToFloor(0)，不能把这些本地手机消息误删。
@@ -4664,7 +4708,7 @@ parseAIResponse(text) {
                 }
                 // 只有正文 <wechat>/<回复> 标签同步出来的消息，才跟随酒馆楼层回滚。
                 // 小手机线上聊天是独立会话流，不能被正文生成/重抽/滑动清掉。
-                if (m.tavernMessageIndex !== undefined && m.tavernMessageIndex >= targetTavernIndex) {
+                if (matchesRollbackRange(m)) {
                     deletedMessages.push(m);
                     return false;
                 }
@@ -4709,11 +4753,7 @@ parseAIResponse(text) {
             }
         }
 
-        const walletDirty = this._rollbackWalletTransactions(record =>
-            record?.fromMainChatTag === true
-            && Number.isFinite(Number(record.tavernMessageIndex))
-            && Number(record.tavernMessageIndex) >= Number(targetTavernIndex)
-        );
+        const walletDirty = this._rollbackWalletTransactions(matchesRollbackRange);
         isDirty = isDirty || walletDirty;
 
         window.VirtualPhone?.wangxiangApp?.rollbackWechatAssignmentsToFloor?.(targetTavernIndex);

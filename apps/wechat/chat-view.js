@@ -8058,6 +8058,21 @@ renderChatRoom(chat) {
         return Math.max(1, claimCents) / 100;
     }
 
+    _buildPaymentStatusMessage(target = {}, content = '', targetType = '', action = 'accept', timelineSource = target) {
+        const source = timelineSource && typeof timelineSource === 'object' ? timelineSource : target;
+        return {
+            from: 'system',
+            type: 'system',
+            content,
+            paymentTargetId: String(target?.id || '').trim(),
+            paymentTargetType: targetType || String(target?.type || '').trim(),
+            paymentAction: action,
+            fromMainChatTag: source?.fromMainChatTag === true,
+            tavernMessageIndex: source?.tavernMessageIndex,
+            batchId: source?.batchId
+        };
+    }
+
     _applyWechatPaymentAction(chatId, action = {}, actorName = '', timelineSource = {}) {
         const safeChatId = String(chatId || '').trim();
         if (!safeChatId || !action || action.type !== 'payment_action') return null;
@@ -8184,14 +8199,13 @@ renderChatRoom(chat) {
                 : (targetType === 'redpacket'
                     ? (isGroupChat && recipientName ? `${actor || recipientName}领取了给${recipientName}的红包` : (isGroupChat ? `${actor || '群成员'}领取了红包` : '对方已领取'))
                     : '对方已收款');
-            this.app.wechatData.addMessage(safeChatId, {
-                from: 'system',
-                type: 'system',
-                content: statusText,
-                paymentTargetId: target.id,
-                paymentTargetType: targetType,
-                paymentAction: isRefund ? 'refund' : 'accept'
-            });
+            this.app.wechatData.addMessage(safeChatId, this._buildPaymentStatusMessage(
+                target,
+                statusText,
+                targetType,
+                isRefund ? 'refund' : 'accept',
+                timelineSource
+            ));
         }
 
         return updated;
@@ -17860,11 +17874,13 @@ ${callTranscript}`;
                 tavernMessageIndex: message.tavernMessageIndex,
                 batchId: message.batchId
             });
-            this.app.wechatData.addMessage(chatId, {
-                from: 'system',
-                type: 'system',
-                content: '你已收款'
-            });
+            this.app.wechatData.addMessage(chatId, this._buildPaymentStatusMessage(
+                message,
+                '你已收款',
+                'transfer',
+                'accept',
+                message
+            ));
         }
 
         const isTransferRefunded = resolvedStatus === 'refunded';

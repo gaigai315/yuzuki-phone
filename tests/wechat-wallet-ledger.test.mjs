@@ -14,6 +14,6 @@ test('wallet ledger resets to the latest month only when the page is entered aga
 
 test('wallet month chevron stays beside the selected month instead of the grid edge', () => {
     assert.match(source, /\.wechat-wallet-ledger-filter:first-child \{[\s\S]*?display: inline-flex !important;[\s\S]*?width: max-content !important;/);
-    assert.match(source, /\.wechat-wallet-ledger-filter:first-child select \{[\s\S]*?width: auto !important;[\s\S]*?padding-right: 3px !important;/);
-    assert.match(source, /\.wechat-wallet-ledger-filter:first-child i \{[\s\S]*?position: static;[\s\S]*?margin-left: 8px;[\s\S]*?transform: none;/);
+    assert.match(source, /\.wechat-wallet-ledger-filter:first-child select \{[\s\S]*?width: auto !important;[\s\S]*?max-width: calc\(100% - 20px\) !important;[\s\S]*?padding-right: 3px !important;/);
+    assert.match(source, /\.wechat-wallet-ledger-filter:first-child i \{[\s\S]*?position: static;[\s\S]*?margin-left: 14px;[\s\S]*?transform: none;/);
 });
