@@ -303,6 +303,7 @@ export class MofoView {
             let importedTotal = 0;
             let skippedTotal = 0;
             let renamedTotal = 0;
+            let replacedTotal = 0;
             let invalidFileCount = 0;
 
             for (const file of files) {
@@ -317,6 +318,7 @@ export class MofoView {
                     importedTotal += Number(result?.importedCount || 0);
                     skippedTotal += Number(result?.skippedCount || 0);
                     renamedTotal += Number(result?.renamedCount || 0);
+                    replacedTotal += Number(result?.replacedCount || 0);
                 } catch (err) {
                     invalidFileCount += 1;
                 }
@@ -326,10 +328,14 @@ export class MofoView {
                 this.selectionMode = false;
                 this.selectedIds.clear();
                 this.render();
+                window.VirtualPhone?.refreshMofoInlineMessages?.();
+                window.VirtualPhone?.syncMofoBubbleFromLatestMessage?.()
+                    ?.catch?.(error => console.warn('[Mofo] 导入后同步气泡失败:', error));
             }
 
             const summaryParts = [`导入 ${importedTotal} 条`];
             if (skippedTotal > 0) summaryParts.push(`跳过 ${skippedTotal} 条重复/无效项`);
+            if (replacedTotal > 0) summaryParts.push(`替换同标签旧模板 ${replacedTotal} 条`);
             if (renamedTotal > 0) summaryParts.push(`重命名ID ${renamedTotal} 条`);
             if (invalidFileCount > 0) summaryParts.push(`无效文件 ${invalidFileCount} 个`);
 
@@ -394,6 +400,9 @@ export class MofoView {
                 this.selectedIds.delete(id);
                 notify('删除成功', `已删除「${name}」`, '🗑️');
                 this.render();
+                window.VirtualPhone?.refreshMofoInlineMessages?.();
+                window.VirtualPhone?.syncMofoBubbleFromLatestMessage?.()
+                    ?.catch?.(error => console.warn('[Mofo] 删除后同步气泡失败:', error));
             });
             btn.addEventListener('click', (e) => {
                 e.preventDefault?.();

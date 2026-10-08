@@ -13,6 +13,8 @@
 // 魔坊APP数据层
 // ========================================
 
+import { parseForumPayload, parseStructuredPayload, renderMofoTemplate } from './mofo-renderer.js';
+
 export class MofoData {
     constructor(storage) {
         this.storage = storage;
@@ -159,36 +161,6 @@ export class MofoData {
         return !!fallback;
     }
 
-    _resolveTemplatePathValue(state = {}, expr = '') {
-        const path = String(expr || '').trim();
-        if (!path) return '';
-
-        const normalizedPath = path
-            .replace(/\[(\d+)\]/g, '.$1')
-            .replace(/^\.+|\.+$/g, '');
-        if (!normalizedPath) return '';
-
-        const segments = normalizedPath.split('.').map(s => String(s || '').trim()).filter(Boolean);
-        if (segments.length === 0) return '';
-
-        let current = state;
-        for (const seg of segments) {
-            if (current === null || current === undefined) return '';
-            if (Array.isArray(current)) {
-                const idx = Number(seg);
-                if (!Number.isInteger(idx) || idx < 0 || idx >= current.length) return '';
-                current = current[idx];
-                continue;
-            }
-            if (typeof current === 'object' && Object.prototype.hasOwnProperty.call(current, seg)) {
-                current = current[seg];
-                continue;
-            }
-            return '';
-        }
-        return current;
-    }
-
     _templateValueToString(value) {
         if (value === null || value === undefined) return '';
         if (typeof value === 'object') {
@@ -236,10 +208,124 @@ export class MofoData {
             source,
             (state && typeof state === 'object') ? state : {}
         );
-        return source.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, expr) => {
-            const rawValue = this._resolveTemplatePathValue(safeState, expr);
-            return this._templateValueToString(rawValue);
-        });
+        return renderMofoTemplate(source, safeState);
+    }
+
+    _normalizeParserMode(value, fallback = 'auto') {
+        const text = String(value ?? '').trim().toLowerCase();
+        if (['forum', '论坛'].includes(text)) return 'forum';
+        if (['structured', 'sections', 'section', '分区', '结构文本'].includes(text)) return 'structured';
+        if (['raw', 'text', 'plain', '纯文本', '原文'].includes(text)) return 'raw';
+        if (['auto', 'json', 'keyvalue', 'key-value', '自动'].includes(text)) return 'auto';
+        return fallback;
+    }
+
+    _parsePayloadForItem(item = {}, rawPayload = '', baseState = {}) {
+        const mode = this._normalizeParserMode(item?.parserMode, 'auto');
+        const safeBase = (baseState && typeof baseState === 'object' && !Array.isArray(baseState))
+            ? this._clone(baseState)
+            : {};
+        const normalizedPayload = this._normalizePayloadText(rawPayload);
+
+        if (mode === 'raw') {
+            return {
+                ...safeBase,
+                content: normalizedPayload
+            };
+        }
+        const looksLikeForum = /<\s*主题\s*>[\s\S]*?<\s*\/\s*主题\s*>/i.test(normalizedPayload)
+            && /<\s*评论区\s*>[\s\S]*?<\s*\/\s*评论区\s*>/i.test(normalizedPayload);
+        if (mode === 'forum' || (mode === 'auto' && looksLikeForum)) {
+            const parsed = parseForumPayload(normalizedPayload);
+            return {
+                ...safeBase,
+                ...parsed,
+                topic: {
+                    ...(safeBase.topic && typeof safeBase.topic === 'object' ? safeBase.topic : {}),
+                    ...(parsed.topic || {})
+                }
+            };
+        }
+        const looksLikeStructured = /<\s*([^\s<>/]+)\s*>[\s\S]*?<\s*\/\s*\1\s*>/i.test(normalizedPayload);
+        if (mode === 'structured' || (mode === 'auto' && looksLikeStructured)) {
+            return {
+                ...safeBase,
+                ...parseStructuredPayload(normalizedPayload)
+            };
+        }
+        const parsed = this._parseStatePayload(normalizedPayload, {});
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+            return {
+                ...safeBase,
+                ...parsed
+            };
+        }
+        return {
+            ...safeBase,
+            content: normalizedPayload
+        };
+    }
+
+    parsePayloadForItem(itemOrId, rawPayload = '', baseState = null) {
+        const item = typeof itemOrId === 'string'
+            ? this.getItemById(itemOrId)
+            : itemOrId;
+        if (!item || typeof item !== 'object') return {};
+        const fallbackState = baseState === null ? (item.initialState || {}) : baseState;
+        return this._parsePayloadForItem(item, rawPayload, fallbackState);
+    }
+
+    _applyParsedPatchToState(item = {}, currentState = {}, parsedPatchInput = {}) {
+        const parsedPatch = (parsedPatchInput && typeof parsedPatchInput === 'object' && !Array.isArray(parsedPatchInput))
+            ? this._clone(parsedPatchInput)
+            : {};
+        const removeIdsRaw = parsedPatch.__removeIds || parsedPatch.removeIds || parsedPatch.deletedIds || [];
+        const removeIds = Array.isArray(removeIdsRaw)
+            ? removeIdsRaw.map(v => String(v ?? '').trim()).filter(Boolean)
+            : [];
+        const replaceAll = this._parseBoolean(
+            parsedPatch.__replace ?? parsedPatch.__replaceAll ?? parsedPatch.replaceAll,
+            false
+        );
+        const mode = this._normalizeUpdateMode(item.updateMode, 'append');
+
+        delete parsedPatch.__replace;
+        delete parsedPatch.__replaceAll;
+        delete parsedPatch.replaceAll;
+        delete parsedPatch.__removeIds;
+        delete parsedPatch.removeIds;
+        delete parsedPatch.deletedIds;
+
+        if (replaceAll || mode === 'replace') {
+            return this._clone(parsedPatch);
+        }
+
+        const safeCurrentState = (currentState && typeof currentState === 'object' && !Array.isArray(currentState))
+            ? this._clone(currentState)
+            : {};
+        const appendKey = this._guessAppendArrayKey(parsedPatch, safeCurrentState, item);
+        if (appendKey && Array.isArray(parsedPatch[appendKey])) {
+            const incomingList = this._isMailListKey(appendKey)
+                ? this._normalizeIncomingMailList(parsedPatch[appendKey])
+                : this._clone(parsedPatch[appendKey]);
+            let mergedList = this._appendUniqueObjects(safeCurrentState[appendKey], incomingList);
+            if (removeIds.length > 0) {
+                mergedList = mergedList.filter(entry => {
+                    const pid = String(this._pickPrimaryId(entry) || '').trim();
+                    return !pid || !removeIds.includes(pid);
+                });
+            }
+            return {
+                ...safeCurrentState,
+                ...this._clone(parsedPatch),
+                [appendKey]: mergedList
+            };
+        }
+
+        return {
+            ...safeCurrentState,
+            ...this._clone(parsedPatch)
+        };
     }
 
     _normalizeUpdateMode(value, fallback = 'append') {
@@ -487,6 +573,14 @@ export class MofoData {
         const cssText = String(rawItem.cssText || rawItem.css || '').trim();
         const htmlTemplate = String(rawItem.htmlTemplate ?? rawItem.templateHtml ?? rawItem['html模板'] ?? '').trim();
         const promptTemplate = String(rawItem.promptTemplate || rawItem.prompt || '').trim();
+        const parserMode = this._normalizeParserMode(
+            rawItem.parserMode ?? rawItem.payloadParser ?? rawItem.parser,
+            'auto'
+        );
+        const inlineRenderEnabled = this._parseBoolean(
+            rawItem.inlineRenderEnabled ?? rawItem.inlineRender ?? rawItem.renderInMessage,
+            false
+        );
         const offlinePromptEnabled = this._parseBoolean(
             rawItem.offlinePromptEnabled ?? rawItem.enableOfflinePrompt ?? rawItem.promptEnabled,
             true
@@ -514,6 +608,8 @@ export class MofoData {
             htmlTemplate,
             'html模板': htmlTemplate,
             promptTemplate,
+            parserMode,
+            inlineRenderEnabled,
             offlinePromptEnabled,
             updateMode,
             initialState,
@@ -783,6 +879,22 @@ export class MofoData {
         this.storage.set(this.STORAGE_KEY, payload);
     }
 
+    _getEffectiveDefinitions() {
+        const winners = new Map();
+        this._ensureCache().forEach((item, index) => {
+            const tagName = this._normalizeTagName(item?.tagName || item?.name, item?.name);
+            if (!tagName) return;
+            const current = winners.get(tagName);
+            const updatedAt = Number(item?.updatedAt || item?.createdAt || 0);
+            if (!current || updatedAt > current.updatedAt || (updatedAt === current.updatedAt && index > current.index)) {
+                winners.set(tagName, { item, index, updatedAt });
+            }
+        });
+        return Array.from(winners.values())
+            .sort((a, b) => a.index - b.index)
+            .map(entry => entry.item);
+    }
+
     getItems() {
         const definitions = this._ensureCache();
         const sessionMap = this._ensureSessionStateCache();
@@ -791,8 +903,10 @@ export class MofoData {
     }
 
     getOfflinePromptItems() {
+        const effectiveIds = new Set(this._getEffectiveDefinitions().map(item => String(item?.id || '')));
         return this.getItems().filter(item =>
             item &&
+            effectiveIds.has(String(item.id || '')) &&
             item.offlinePromptEnabled !== false &&
             String(item.promptTemplate || '').trim()
         );
@@ -815,6 +929,8 @@ export class MofoData {
             htmlTemplate: normalized.htmlTemplate,
             'html模板': normalized.htmlTemplate,
             promptTemplate: normalized.promptTemplate,
+            parserMode: normalized.parserMode,
+            inlineRenderEnabled: normalized.inlineRenderEnabled,
             offlinePromptEnabled: normalized.offlinePromptEnabled,
             updateMode: normalized.updateMode,
             initialState: this._clone(normalized.initialState || {}),
@@ -836,7 +952,7 @@ export class MofoData {
         const items = selected.map(item => this._toExportDefinition(item));
         return {
             type: 'virtual_phone_mofo_templates',
-            version: 1,
+            version: 2,
             exportedAt: new Date().toISOString(),
             count: items.length,
             items: this._clone(items)
@@ -883,6 +999,8 @@ export class MofoData {
             cssText: String(item.cssText || '').trim(),
             htmlTemplate: String(item.htmlTemplate || item['html模板'] || '').trim(),
             promptTemplate: String(item.promptTemplate || '').trim(),
+            parserMode: this._normalizeParserMode(item.parserMode, 'auto'),
+            inlineRenderEnabled: this._parseBoolean(item.inlineRenderEnabled, false),
             offlinePromptEnabled: this._parseBoolean(item.offlinePromptEnabled, true),
             updateMode: this._normalizeUpdateMode(item.updateMode, 'append'),
             initialState: this._clone(item.initialState || {})
@@ -920,7 +1038,8 @@ export class MofoData {
             totalCount: sourceItems.length,
             importedCount: 0,
             skippedCount: 0,
-            renamedCount: 0
+            renamedCount: 0,
+            replacedCount: 0
         };
         if (sourceItems.length === 0) return summary;
 
@@ -950,6 +1069,22 @@ export class MofoData {
                 return;
             }
 
+            const normalizedTag = this._normalizeTagName(normalized.tagName || normalized.name, normalized.name);
+            const replacedIndex = list.findIndex(existing =>
+                this._normalizeTagName(existing?.tagName || existing?.name, existing?.name) === normalizedTag
+            );
+            if (replacedIndex >= 0) {
+                const [replacedItem] = list.splice(replacedIndex, 1);
+                const replacedId = String(replacedItem?.id || '').trim();
+                if (replacedId) {
+                    existingIdSet.delete(replacedId);
+                    existingFingerprintSet.delete(this._buildItemFingerprint(replacedItem));
+                    this._removeSessionRuntime(replacedId);
+                    this._markDeletedItemId(replacedId);
+                }
+                summary.replacedCount += 1;
+            }
+
             const preferredId = String(rawItem?.id || '').trim();
             const nextId = this._buildUniqueImportedId(existingIdSet, preferredId, normalized.name);
             if (preferredId && nextId !== preferredId) {
@@ -963,7 +1098,11 @@ export class MofoData {
                 updatedAt: Number(normalized.updatedAt || normalized.createdAt || Date.now())
             });
 
-            list.push(nextItem);
+            if (replacedIndex >= 0) {
+                list.splice(replacedIndex, 0, nextItem);
+            } else {
+                list.push(nextItem);
+            }
             existingIdSet.add(nextItem.id);
             if (skipDuplicates) {
                 existingFingerprintSet.add(this._buildItemFingerprint(nextItem));
@@ -1037,6 +1176,12 @@ export class MofoData {
             || Object.prototype.hasOwnProperty.call(patch, 'html模板')
             || Object.prototype.hasOwnProperty.call(patch, 'promptTemplate')
             || Object.prototype.hasOwnProperty.call(patch, 'prompt')
+            || Object.prototype.hasOwnProperty.call(patch, 'parserMode')
+            || Object.prototype.hasOwnProperty.call(patch, 'payloadParser')
+            || Object.prototype.hasOwnProperty.call(patch, 'parser')
+            || Object.prototype.hasOwnProperty.call(patch, 'inlineRenderEnabled')
+            || Object.prototype.hasOwnProperty.call(patch, 'inlineRender')
+            || Object.prototype.hasOwnProperty.call(patch, 'renderInMessage')
             || Object.prototype.hasOwnProperty.call(patch, 'offlinePromptEnabled')
             || Object.prototype.hasOwnProperty.call(patch, 'enableOfflinePrompt')
             || Object.prototype.hasOwnProperty.call(patch, 'promptEnabled')
@@ -1126,11 +1271,120 @@ export class MofoData {
         return true;
     }
 
+    findTagBlocksFromText(rawText, options = {}) {
+        const sourceText = String(rawText || '');
+        if (!sourceText) return [];
+        const inlineOnly = options.inlineOnly === true;
+        const blocks = [];
+
+        this._getEffectiveDefinitions().forEach(item => {
+            if (inlineOnly && item.inlineRenderEnabled === false) return;
+            const safeTag = this._normalizeTagName(item.tagName || item.name, item.name);
+            if (!safeTag) return;
+
+            const regex = new RegExp(
+                `(?:<|&lt;)\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)([\\s\\S]*?)(?:<|&lt;)\\s*\\/\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)`,
+                'gi'
+            );
+            let match = null;
+            while ((match = regex.exec(sourceText)) !== null) {
+                blocks.push({
+                    index: match.index,
+                    length: match[0].length,
+                    fullMatch: match[0],
+                    payload: String(match[1] || ''),
+                    item: this._clone(item)
+                });
+            }
+        });
+
+        return blocks.sort((a, b) => a.index - b.index);
+    }
+
+    findTagMatchesFromText(rawText, options = {}) {
+        const seen = new Set();
+        const bubbleOnly = options.bubbleOnly === true;
+        return this.findTagBlocksFromText(rawText).flatMap((block) => {
+            const item = block.item;
+            if (!item?.id || seen.has(item.id)) return [];
+            if (bubbleOnly && item.inlineRenderEnabled !== false) return [];
+            seen.add(item.id);
+            return [{
+                id: item.id,
+                name: item.name,
+                tagName: item.tagName,
+                changed: false
+            }];
+        });
+    }
+
+    buildItemHistoryFromTextBlocks(itemOrId, textBlocks = []) {
+        const sourceItem = typeof itemOrId === 'string'
+            ? this._getEffectiveDefinitions().find(item => String(item?.id || '') === String(itemOrId))
+            : itemOrId;
+        if (!sourceItem || typeof sourceItem !== 'object') return [];
+
+        const item = this._normalizeItem(sourceItem);
+        const safeTag = this._normalizeTagName(item.tagName || item.name, item.name);
+        if (!safeTag) return [];
+
+        const entries = Array.isArray(textBlocks) ? textBlocks : [];
+        const history = [];
+        let nextState = this._clone(item.initialState || {});
+
+        entries.forEach((entry, fallbackIndex) => {
+            const isObjectEntry = entry && typeof entry === 'object' && !Array.isArray(entry);
+            const text = String(isObjectEntry ? (entry.text ?? entry.content ?? '') : (entry ?? ''));
+            if (!text) return;
+
+            const messageIndex = isObjectEntry && Number.isInteger(entry.messageIndex)
+                ? entry.messageIndex
+                : fallbackIndex;
+            const regex = new RegExp(
+                `(?:<|&lt;)\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)([\\s\\S]*?)(?:<|&lt;)\\s*\\/\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)`,
+                'gi'
+            );
+
+            let match = null;
+            let matched = false;
+            let latestPayload = '';
+            while ((match = regex.exec(text)) !== null) {
+                matched = true;
+                latestPayload = String(match[1] || '');
+                const parsedPatch = this._parsePayloadForItem(item, latestPayload, {});
+                nextState = this._applyParsedPatchToState(item, nextState, parsedPatch);
+            }
+            if (!matched) return;
+
+            history.push({
+                messageIndex,
+                payload: this._normalizePayloadText(latestPayload),
+                state: this._clone(nextState)
+            });
+        });
+
+        return history;
+    }
+
+    renderTagBlock(block = {}) {
+        const item = block?.item;
+        if (!item || item.inlineRenderEnabled === false) return null;
+        const htmlTemplate = String(item.htmlTemplate || '').trim();
+        if (!htmlTemplate) return null;
+        const state = this.parsePayloadForItem(item, block.payload, item.initialState || {});
+        return {
+            item: this._clone(item),
+            state: this._clone(state),
+            html: this.renderTemplate(htmlTemplate, state),
+            cssText: String(item.cssText || '')
+        };
+    }
+
     applyTagUpdatesFromText(rawText, meta = {}) {
         const sourceText = String(rawText || '');
         if (!sourceText) return [];
 
-        const list = this._ensureCache();
+        const list = this._getEffectiveDefinitions();
         if (list.length === 0) return [];
         const sessionMap = this._ensureSessionStateCache();
 
@@ -1159,52 +1413,8 @@ export class MofoData {
             while ((match = regex.exec(sourceText)) !== null) {
                 matched = true;
                 latestPayload = String(match[1] || '');
-                const parsedPatch = this._parseStatePayload(latestPayload, {});
-                const removeIdsRaw = parsedPatch.__removeIds || parsedPatch.removeIds || parsedPatch.deletedIds || [];
-                const removeIds = Array.isArray(removeIdsRaw)
-                    ? removeIdsRaw.map(v => String(v ?? '').trim()).filter(Boolean)
-                    : [];
-                const replaceAll = this._parseBoolean(
-                    parsedPatch.__replace ?? parsedPatch.__replaceAll ?? parsedPatch.replaceAll,
-                    false
-                );
-                const mode = this._normalizeUpdateMode(item.updateMode, 'append');
-
-                delete parsedPatch.__replace;
-                delete parsedPatch.__replaceAll;
-                delete parsedPatch.replaceAll;
-                delete parsedPatch.__removeIds;
-                delete parsedPatch.removeIds;
-                delete parsedPatch.deletedIds;
-
-                if (replaceAll || mode === 'replace') {
-                    nextState = this._clone(parsedPatch);
-                    continue;
-                }
-
-                const appendKey = this._guessAppendArrayKey(parsedPatch, nextState, item);
-                if (appendKey && Array.isArray(parsedPatch[appendKey])) {
-                    const incomingList = this._isMailListKey(appendKey)
-                        ? this._normalizeIncomingMailList(parsedPatch[appendKey])
-                        : this._clone(parsedPatch[appendKey]);
-                    let mergedList = this._appendUniqueObjects(nextState[appendKey], incomingList);
-                    if (removeIds.length > 0) {
-                        mergedList = mergedList.filter(entry => {
-                            const pid = String(this._pickPrimaryId(entry) || '').trim();
-                            return !pid || !removeIds.includes(pid);
-                        });
-                    }
-                    nextState = {
-                        ...nextState,
-                        ...this._clone(parsedPatch),
-                        [appendKey]: mergedList
-                    };
-                } else {
-                    nextState = {
-                        ...nextState,
-                        ...this._clone(parsedPatch)
-                    };
-                }
+                const parsedPatch = this._parsePayloadForItem(item, latestPayload, {});
+                nextState = this._applyParsedPatchToState(item, nextState, parsedPatch);
             }
 
             if (!matched) return;

@@ -321,7 +321,7 @@ export class PhoneShell {
                 '.wangxiang-content-scroll',
                 '.yzp-calendar-main', '.yzp-calendar-settings-body', '.yzp-calendar-prompt-editor',
                 '.yzp-calendar-memo-list', '.yzp-calendar-add-sheet', '.yzp-calendar-month-sheet', '.yzp-calendar-detail-sheet', '.yzp-calendar-detail-body', '.yzp-calendar-memo-input', '.yzp-calendar-type-menu',
-                '#phone-inline-reply-menu-pop', '.inline-reply-tabbar', '.inline-reply-page',
+                '#phone-inline-reply-menu-pop', '.inline-reply-tabbar', '.inline-reply-page', '.mofo-page-scroll-body',
                 '#mofo-list-wrap', '#mofo-preview-wrap'
             ];
 

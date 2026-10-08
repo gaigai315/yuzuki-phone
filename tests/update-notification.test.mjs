@@ -11,7 +11,7 @@ test('current version keeps all notices under the latest date', () => {
 
     assert.equal(manifest.version, '1.6.0');
     assert.equal(current.date, '2026-10-09');
-    assert.equal(current.items.length, 3);
+    assert.equal(current.items.length, 4);
     assert.match(current.items[0], /悬浮图标打开手机/);
     assert.match(current.items[0], /隐藏状态尺寸测量、重复定位与缩放动画/);
     assert.match(current.items[0], /快速闪缩抖动/);
@@ -21,6 +21,7 @@ test('current version keeps all notices under the latest date', () => {
     assert.match(current.items[1], /扣减微信零钱并记录购物流水/);
     assert.match(current.items[1], /重复解析防重及酒馆楼层回档/);
     assert.match(current.items[2], /优化 API 请求流式解析/);
+    assert.match(current.items[3], /优化魔坊APP渲染逻辑/);
     assert.equal(current.updates, undefined);
 });
 
@@ -48,4 +49,5 @@ test('fallback announcement preserves the 1.6.0 notices', () => {
     assert.match(block, /扣减微信零钱并记录购物流水/);
     assert.match(block, /重复解析防重及酒馆楼层回档/);
     assert.match(block, /优化 API 请求流式解析/);
+    assert.match(block, /优化魔坊APP渲染逻辑/);
 });
