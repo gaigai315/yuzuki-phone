@@ -1,3 +1,5 @@
+@import url("https://fontsapi.zeoseven.com/110/main/result.css");
+
 /* ========================================================
  *  柚月小手机 (Yuzuki's Little Phone)
  *  作者 (Author): yuzuki
@@ -17,6 +19,15 @@
     font-weight: 400;
     font-display: block;
     src: url("./assets/vendor/fontawesome/fa-regular-400.woff2") format("woff2");
+}
+
+/* Fusion Pixel Font (OFL-1.1), bundled only for the inline payment receipt. */
+@font-face {
+    font-family: "Yuzuki Receipt Pixel SC";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("./assets/fonts/fusion-pixel-10px-proportional-sc/fusion-pixel-10px-proportional-sc.woff2") format("woff2");
 }
 
 /* ========================================
@@ -390,6 +401,10 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+    #phone-panel.drawer-content #phone-panel-content .phone-body-panel {
+        animation: none !important;
+    }
+
     #phone-panel.drawer-content {
         padding-left: max(18px, env(safe-area-inset-left, 0px)) !important;
         padding-right: max(18px, env(safe-area-inset-right, 0px)) !important;
@@ -8829,6 +8844,569 @@ input:checked + .toggle-slider:before {
     font-size: 13px;
     line-height: 1.4;
     text-align: center;
+}
+
+/* 酒馆正文中的微信零钱线上支付小票。 */
+.mes_text .st-phone-payment-receipt,
+.mes_text .st-phone-payment-receipt * {
+    box-sizing: border-box;
+    font-family: "点点像素体-方形", "Yuzuki Receipt Pixel SC", "Microsoft YaHei", "Segoe UI Symbol", sans-serif !important;
+    font-synthesis: none !important;
+    font-weight: 400 !important;
+    letter-spacing: 0;
+}
+
+.mes_text .st-phone-payment-receipt strong {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    filter: none !important;
+    color: inherit !important;
+    font-weight: 400 !important;
+    text-decoration: none !important;
+}
+
+.mes_text .st-phone-payment-receipt {
+    --st-phone-payment-receipt-paper: #fbfcff;
+    --st-phone-payment-receipt-inline-padding: 9px;
+    --st-phone-payment-receipt-qty-column: 27px;
+    --st-phone-payment-receipt-price-column: 48px;
+    --st-phone-payment-receipt-shadow: var(--SmartThemeShadowColor, rgba(115, 139, 205, 0.34));
+    --st-phone-payment-receipt-dot-color: color-mix(in srgb, var(--st-phone-payment-receipt-shadow) 72%, currentColor);
+    --st-phone-payment-receipt-dot-pattern: radial-gradient(circle, var(--st-phone-payment-receipt-dot-color) 0 1px, transparent 1.15px);
+    --st-phone-payment-receipt-notch-top-y: 132px;
+    --st-phone-payment-receipt-notch-bottom-y: calc(100% - 94px);
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 205px);
+    max-width: 100%;
+    margin: 20px auto;
+    padding: 12px 9px 10px;
+    overflow: visible;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1.35;
+    text-align: left;
+    text-shadow: none;
+    white-space: normal;
+}
+
+.mes_text .st-phone-payment-receipt::before {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    border: 1px solid var(--st-phone-payment-receipt-shadow);
+    border-radius: 4px;
+    background: var(--st-phone-payment-receipt-paper);
+    clip-path: polygon(
+        0 0,
+        100% 0,
+        100% calc(var(--st-phone-payment-receipt-notch-top-y) - 9px),
+        calc(100% - 4.5px) calc(var(--st-phone-payment-receipt-notch-top-y) - 7.8px),
+        calc(100% - 7.8px) calc(var(--st-phone-payment-receipt-notch-top-y) - 4.5px),
+        calc(100% - 9px) var(--st-phone-payment-receipt-notch-top-y),
+        calc(100% - 7.8px) calc(var(--st-phone-payment-receipt-notch-top-y) + 4.5px),
+        calc(100% - 4.5px) calc(var(--st-phone-payment-receipt-notch-top-y) + 7.8px),
+        100% calc(var(--st-phone-payment-receipt-notch-top-y) + 9px),
+        100% calc(var(--st-phone-payment-receipt-notch-bottom-y) - 9px),
+        calc(100% - 4.5px) calc(var(--st-phone-payment-receipt-notch-bottom-y) - 7.8px),
+        calc(100% - 7.8px) calc(var(--st-phone-payment-receipt-notch-bottom-y) - 4.5px),
+        calc(100% - 9px) var(--st-phone-payment-receipt-notch-bottom-y),
+        calc(100% - 7.8px) calc(var(--st-phone-payment-receipt-notch-bottom-y) + 4.5px),
+        calc(100% - 4.5px) calc(var(--st-phone-payment-receipt-notch-bottom-y) + 7.8px),
+        100% calc(var(--st-phone-payment-receipt-notch-bottom-y) + 9px),
+        100% 100%,
+        0 100%,
+        0 calc(var(--st-phone-payment-receipt-notch-bottom-y) + 9px),
+        4.5px calc(var(--st-phone-payment-receipt-notch-bottom-y) + 7.8px),
+        7.8px calc(var(--st-phone-payment-receipt-notch-bottom-y) + 4.5px),
+        9px var(--st-phone-payment-receipt-notch-bottom-y),
+        7.8px calc(var(--st-phone-payment-receipt-notch-bottom-y) - 4.5px),
+        4.5px calc(var(--st-phone-payment-receipt-notch-bottom-y) - 7.8px),
+        0 calc(var(--st-phone-payment-receipt-notch-bottom-y) - 9px),
+        0 calc(var(--st-phone-payment-receipt-notch-top-y) + 9px),
+        4.5px calc(var(--st-phone-payment-receipt-notch-top-y) + 7.8px),
+        7.8px calc(var(--st-phone-payment-receipt-notch-top-y) + 4.5px),
+        9px var(--st-phone-payment-receipt-notch-top-y),
+        7.8px calc(var(--st-phone-payment-receipt-notch-top-y) - 4.5px),
+        4.5px calc(var(--st-phone-payment-receipt-notch-top-y) - 7.8px),
+        0 calc(var(--st-phone-payment-receipt-notch-top-y) - 9px)
+    );
+    -webkit-mask-image:
+        radial-gradient(circle at 9px 0, transparent 0 5px, #000 5.5px),
+        radial-gradient(circle at 9px 100%, transparent 0 5px, #000 5.5px);
+    -webkit-mask-size: 18px 100%, 18px 100%;
+    -webkit-mask-repeat: repeat-x, repeat-x;
+    -webkit-mask-composite: source-in;
+    mask-image:
+        radial-gradient(circle at 9px 0, transparent 0 5px, #000 5.5px),
+        radial-gradient(circle at 9px 100%, transparent 0 5px, #000 5.5px);
+    mask-size: 18px 100%, 18px 100%;
+    mask-repeat: repeat-x, repeat-x;
+    mask-composite: intersect;
+    content: "";
+    filter:
+        drop-shadow(0 9px 13px var(--st-phone-payment-receipt-shadow))
+        drop-shadow(0 2px 4px var(--st-phone-payment-receipt-shadow));
+    pointer-events: none;
+}
+
+.mes_text .st-phone-payment-receipt-edge {
+    display: none;
+}
+
+.mes_text .st-phone-payment-receipt-brand {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    padding: 0 1px 7px;
+    border-bottom: 1px solid var(--st-phone-payment-receipt-shadow);
+}
+
+.mes_text .st-phone-payment-receipt-brand::before,
+.mes_text .st-phone-payment-receipt-brand::after,
+.mes_text .st-phone-payment-receipt-footer::before,
+.mes_text .st-phone-payment-receipt-footer::after {
+    position: absolute;
+    z-index: 3;
+    display: block;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--st-phone-payment-receipt-shadow);
+    border-radius: 50%;
+    background: transparent;
+    box-sizing: border-box;
+    content: "";
+    pointer-events: none;
+}
+
+.mes_text .st-phone-payment-receipt-brand::before,
+.mes_text .st-phone-payment-receipt-footer::before {
+    left: calc(-1 * var(--st-phone-payment-receipt-inline-padding) - 9px);
+    clip-path: inset(0 0 0 50%);
+}
+
+.mes_text .st-phone-payment-receipt-brand::after,
+.mes_text .st-phone-payment-receipt-footer::after {
+    right: calc(-1 * var(--st-phone-payment-receipt-inline-padding) - 9px);
+    clip-path: inset(0 50% 0 0);
+}
+
+.mes_text .st-phone-payment-receipt-brand::before,
+.mes_text .st-phone-payment-receipt-brand::after {
+    bottom: -9px;
+}
+
+.mes_text .st-phone-payment-receipt-brand-image {
+    display: block;
+    width: 100%;
+    max-width: 187px;
+    height: auto;
+    max-height: 78px;
+    margin: 0 auto;
+    padding: 0;
+    border: 0;
+    object-fit: contain;
+    filter: none;
+}
+
+.mes_text .st-phone-payment-receipt-subtitle,
+.mes_text .st-phone-payment-receipt-thanks {
+    display: block;
+    width: 100%;
+    color: inherit;
+    font-size: 7px;
+    font-weight: 400;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.mes_text .st-phone-payment-receipt-subtitle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    margin-top: 4px;
+}
+
+.mes_text .st-phone-payment-receipt-decoration-star {
+    display: block;
+    flex: 0 0 auto;
+    color: var(--st-phone-payment-receipt-dot-color);
+    font-size: 8px;
+    line-height: 1;
+}
+
+.mes_text .st-phone-payment-receipt-subtitle-copy {
+    display: block;
+    min-width: 0;
+    word-spacing: 5px;
+}
+
+.mes_text .st-phone-payment-receipt-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    width: 100%;
+    padding: 8px 3px 7px;
+    border-bottom: 0;
+    background-image: var(--st-phone-payment-receipt-dot-pattern);
+    background-position: left bottom;
+    background-repeat: repeat-x;
+    background-size: 5px 2px;
+}
+
+.mes_text .st-phone-payment-receipt-meta-cell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.mes_text .st-phone-payment-receipt-meta-cell:first-child {
+    padding-right: 4px;
+}
+
+.mes_text .st-phone-payment-receipt-meta-cell + .st-phone-payment-receipt-meta-cell {
+    padding-left: 9px;
+    border-left: 0;
+    background-image: var(--st-phone-payment-receipt-dot-pattern);
+    background-position: left top;
+    background-repeat: repeat-y;
+    background-size: 2px 5px;
+}
+
+.mes_text .st-phone-payment-receipt-meta-cell > strong,
+.mes_text .st-phone-payment-receipt-store > span:first-child > strong {
+    display: block;
+    min-width: 0;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+    color: inherit;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.25;
+}
+
+.mes_text .st-phone-payment-receipt-label {
+    display: block;
+    color: inherit;
+    font-size: 8px;
+    font-weight: 400;
+    line-height: 1.15;
+}
+
+.mes_text .st-phone-payment-receipt-store {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.mes_text .st-phone-payment-receipt-store > span:first-child {
+    display: block;
+    min-width: 0;
+}
+
+.mes_text .st-phone-payment-receipt-cloud {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 22px;
+    flex: 0 0 24px;
+    color: var(--st-phone-payment-receipt-shadow);
+    font-size: 21px;
+    line-height: 1;
+}
+
+.mes_text .st-phone-payment-receipt-table-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--st-phone-payment-receipt-qty-column) var(--st-phone-payment-receipt-price-column);
+    align-items: center;
+    width: 100%;
+    margin-top: 7px;
+    padding: 6px 3px;
+    border-radius: 8px;
+    background: var(--st-phone-payment-receipt-shadow);
+    color: inherit;
+    font-size: 8px;
+    font-weight: 400;
+    line-height: 1;
+}
+
+.mes_text .st-phone-payment-receipt-table-head > span:nth-child(2) {
+    text-align: center;
+}
+
+.mes_text .st-phone-payment-receipt-table-head > span:nth-child(3) {
+    text-align: right;
+}
+
+.mes_text .st-phone-payment-receipt-items {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 5px 3px 7px;
+    border-bottom: 0;
+    background-image: var(--st-phone-payment-receipt-dot-pattern);
+    background-position: left bottom;
+    background-repeat: repeat-x;
+    background-size: 5px 2px;
+}
+
+.mes_text .st-phone-payment-receipt-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--st-phone-payment-receipt-qty-column) var(--st-phone-payment-receipt-price-column);
+    align-items: center;
+    min-height: 24px;
+    color: inherit;
+    font-size: 9px;
+    line-height: 1.25;
+}
+
+.mes_text .st-phone-payment-receipt-item-main {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 3px;
+}
+
+.mes_text .st-phone-payment-receipt-item-mark {
+    display: block;
+    flex: 0 0 12px;
+    color: var(--st-phone-payment-receipt-shadow);
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 1;
+    text-align: center;
+}
+
+.mes_text .st-phone-payment-receipt-item-name {
+    display: block;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-weight: 400;
+}
+
+.mes_text .st-phone-payment-receipt-item-dots {
+    display: block;
+    flex: 1 1 12px;
+    min-width: 6px;
+    height: 2px;
+    border-top: 0;
+    background-image: var(--st-phone-payment-receipt-dot-pattern);
+    background-position: left center;
+    background-repeat: repeat-x;
+    background-size: 5px 2px;
+}
+
+.mes_text .st-phone-payment-receipt-item-qty,
+.mes_text .st-phone-payment-receipt-item-price {
+    display: block;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.mes_text .st-phone-payment-receipt-item-qty {
+    text-align: center;
+}
+
+.mes_text .st-phone-payment-receipt-item-price {
+    text-align: right;
+}
+
+.mes_text .st-phone-payment-receipt-total {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5px;
+    width: 100%;
+    margin-top: 7px;
+    padding: 6px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--st-phone-payment-receipt-shadow);
+}
+
+.mes_text .st-phone-payment-receipt-total::before {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-image:
+        var(--st-phone-payment-receipt-dot-pattern),
+        var(--st-phone-payment-receipt-dot-pattern),
+        var(--st-phone-payment-receipt-dot-pattern),
+        var(--st-phone-payment-receipt-dot-pattern);
+    background-position: left top, left bottom, left top, right top;
+    background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+    background-size: 5px 2px, 5px 2px, 2px 5px, 2px 5px;
+    content: "";
+    pointer-events: none;
+}
+
+.mes_text .st-phone-payment-receipt-total > span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mes_text .st-phone-payment-receipt-total > span > strong {
+    color: inherit;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.mes_text .st-phone-payment-receipt-total-amount {
+    display: block;
+    color: inherit;
+    font-size: 19px;
+    font-weight: 400;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.mes_text .st-phone-payment-receipt-footer {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    margin-top: 7px;
+    padding: 7px 3px 5px;
+    border-top: 0;
+    background-image: var(--st-phone-payment-receipt-dot-pattern);
+    background-position: left top;
+    background-repeat: repeat-x;
+    background-size: 5px 2px;
+}
+
+.mes_text .st-phone-payment-receipt-footer::before,
+.mes_text .st-phone-payment-receipt-footer::after {
+    top: -9px;
+}
+
+.mes_text .st-phone-payment-receipt-order {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 3px;
+    padding-right: 6px;
+}
+
+.mes_text .st-phone-payment-receipt-order > strong {
+    display: block;
+    overflow: hidden;
+    color: inherit;
+    font-size: 8px;
+    font-weight: 400;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mes_text .st-phone-payment-receipt-barcode-area {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 0;
+    gap: 3px;
+    padding-left: 9px;
+    border-left: 0;
+}
+
+.mes_text .st-phone-payment-receipt-barcode-area::before {
+    position: absolute;
+    top: 0;
+    bottom: 4px;
+    left: 1px;
+    width: 2px;
+    background-image: var(--st-phone-payment-receipt-dot-pattern);
+    background-position: center top;
+    background-repeat: repeat-y;
+    background-size: 2px 5px;
+    content: "";
+    pointer-events: none;
+}
+
+.mes_text .st-phone-payment-receipt-barcode {
+    display: block;
+    width: 94%;
+    height: 20px;
+    border-right: 2px solid var(--st-phone-payment-receipt-shadow);
+    border-left: 1px solid var(--st-phone-payment-receipt-shadow);
+    background: repeating-linear-gradient(
+        90deg,
+        var(--st-phone-payment-receipt-shadow) 0 1px,
+        transparent 1px 3px,
+        var(--st-phone-payment-receipt-shadow) 3px 5px,
+        transparent 5px 7px,
+        var(--st-phone-payment-receipt-shadow) 7px 8px,
+        transparent 8px 11px
+    );
+}
+
+.mes_text .st-phone-payment-receipt-barcode-copy {
+    display: block;
+    width: 94%;
+    overflow: hidden;
+    color: var(--st-phone-payment-receipt-shadow);
+    font-size: 4px;
+    font-weight: 400;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.mes_text .st-phone-payment-receipt-thanks {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding-top: 4px;
+}
+
+.mes_text .st-phone-payment-receipt-thanks-copy {
+    display: block;
+    flex: 0 0 auto;
+    word-spacing: 4px;
+}
+
+.mes_text .st-phone-payment-receipt-thanks::before,
+.mes_text .st-phone-payment-receipt-thanks::after {
+    display: block;
+    height: 1px;
+    flex: 1 1 auto;
+    background: var(--st-phone-payment-receipt-shadow);
+    content: "";
+}
+
+@media (max-width: 480px) {
+    .mes_text .st-phone-payment-receipt {
+        --st-phone-payment-receipt-inline-padding: 8px;
+        width: min(100%, 198px);
+        padding-right: 8px;
+        padding-left: 8px;
+    }
 }
 
 /* 全局悬浮入口：独立安全根节点，避免被酒馆 transform 容器影响。 */

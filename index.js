@@ -17,18 +17,27 @@
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data.js';
 import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
-import { PhoneFloatingEntry } from './phone/floating-entry.js';
+import {
+    getPhoneFloatingEntryReceiptFile,
+    PHONE_FLOATING_ENTRY_DEFAULT_STYLE,
+    PhoneFloatingEntry
+} from './phone/floating-entry.js';
+import {
+    getOfflineWechatPaymentLedgerCopy,
+    parseOfflineWechatPayments,
+    replaceOfflineWechatPaymentTagsWithReceipts
+} from './apps/wechat/offline-payment.js?v=1.6.0&r=20261009-payment-solid-item-markers';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 import { StoryImageAutoScheduler } from './apps/album/story-image-auto-scheduler.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.5.9';
-const ST_PHONE_CSS_REVISION = '20261005-home-icon-first-tap';
+const ST_PHONE_VERSION = '1.6.0';
+const ST_PHONE_CSS_REVISION = '20261009-payment-store-right-shift';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261006-story-image-outside-close';
 const ST_PHONE_WECHAT_MODULE_REVISION = '20261004-moments-image-cancel';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
-const ST_PHONE_X_MODULE_REVISION = '20261005-x-post-menu-auto-width';
+const ST_PHONE_X_MODULE_REVISION = '20261009-unified-sse-parser';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_REGULAR_FONT_URL = new URL('./assets/vendor/fontawesome/fa-regular-400.woff2', import.meta.url).href;
@@ -66,14 +75,10 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-03',
+    date: '2026-10-08',
     items: [
-        '【修复】修复蜜语保存的主题视频失效后仍反复请求旧地址并误报自动播放失败的问题；失效媒体会自动清除并恢复默认背景。',
-        '【修复】修复微信语音条发送后，文字内容没有正确转入聊天上下文的问题。',
-        '【优化】优化微信单聊上下文注入，聊天时会同时注入当前好友的朋友圈历史记录，避免串入其他好友内容。',
-        '【新增】新增 X APP，支持公开信息流、帖子图片、评论与回复、个人主页、生成设置及按聊天窗口独立存储。',
-        '【新增】新增正文生图功能，设置入口划分为相册 APP；双击手机悬浮图标可进入手动正文生图界面。',
-        '【优化】优化电脑端手机关闭逻辑，手机打开后单击机身外部即可关闭，三击打开方式保持不变。'
+        '【修复】修复桌面端通过悬浮图标打开手机时，面板因隐藏状态尺寸测量、重复定位与缩放动画产生快速闪缩抖动的问题。',
+        '【新增】微信线下模式新增用户微信昵称与微信零钱余额变量注入；AI 输出线上支付标签时会按商品金额扣减微信零钱并记录购物流水，同时支持重复解析防重及酒馆楼层回档。'
     ]
 };
 
@@ -1273,7 +1278,7 @@ if (window.GGP_Loaded) {
         ] = await Promise.all([
             import('./config/apps.js'),
             import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
-            import('./config/api-manager.js'),
+            import('./config/api-manager.js?v=20261009-unified-sse-parser'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
         import('./config/prompt-manager.js?v=20261002-x-follower-sync'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
@@ -5031,7 +5036,7 @@ if (window.GGP_Loaded) {
                 baseUrl: ST_PHONE_BASE_URL,
                 onActivate: activatePhoneFromFloatingEntry,
                 onDoubleActivate: activateStoryImageBrowserFromFloatingEntry,
-                onPressStart: () => blurExternalEditableBeforePhoneOpen(document.getElementById('phone-panel')),
+                onBeforeActivate: () => blurExternalEditableBeforePhoneOpen(document.getElementById('phone-panel')),
                 isPanelOpen: () => document.getElementById('phone-panel')?.classList?.contains('phone-panel-open') === true
             });
         }
@@ -5102,12 +5107,13 @@ if (window.GGP_Loaded) {
 
         blurExternalEditableBeforePhoneOpen(panel);
         updatePhonePanelViewportHeight({ force: true });
-        applyPhonePanelDesktopPosition();
         bindPhonePanelDesktopDockDrag(panel);
         panel.classList.add('phone-panel-open');
         panel.classList.remove('phone-panel-hidden');
         panel.style.cssText = '';
         panel.classList.add('drawer-content', 'fillRight', 'openDrawer');
+        // Measure only after the hidden rules are gone; display:none reports a zero-sized phone body.
+        applyPhonePanelDesktopPosition();
         schedulePhonePanelViewportUpdate();
 
         // 自动唤起来电/转线上时也必须补上外部点击关闭监听
@@ -7908,11 +7914,58 @@ if (window.GGP_Loaded) {
         updateNotificationBadge(totalNotifications);
     }
 
+    let paymentReceiptNotchObserver = null;
+
+    function updatePaymentReceiptNotches(receipt) {
+        if (!receipt?.isConnected) return;
+        const brand = receipt.querySelector('.st-phone-payment-receipt-brand');
+        const footer = receipt.querySelector('.st-phone-payment-receipt-footer');
+        if (!brand || !footer) return;
+
+        const receiptRect = receipt.getBoundingClientRect();
+        if (receiptRect.width <= 0 || receiptRect.height <= 0) return;
+        const topY = brand.getBoundingClientRect().bottom - receiptRect.top;
+        const bottomY = footer.getBoundingClientRect().top - receiptRect.top;
+        const clampY = value => Math.max(9, Math.min(receiptRect.height - 9, value));
+        receipt.style.setProperty('--st-phone-payment-receipt-notch-top-y', `${clampY(topY).toFixed(2)}px`);
+        receipt.style.setProperty('--st-phone-payment-receipt-notch-bottom-y', `${clampY(bottomY).toFixed(2)}px`);
+    }
+
+    function bindPaymentReceiptNotches(receipt) {
+        if (!receipt) return;
+        updatePaymentReceiptNotches(receipt);
+
+        if (receipt.dataset.paymentReceiptNotchesBound === 'true') return;
+        receipt.dataset.paymentReceiptNotchesBound = 'true';
+        const update = () => updatePaymentReceiptNotches(receipt);
+        const image = receipt.querySelector('.st-phone-payment-receipt-brand-image');
+        image?.addEventListener('load', update);
+        requestAnimationFrame(update);
+        document.fonts?.ready?.then(update).catch(() => {});
+
+        if (typeof ResizeObserver === 'function') {
+            paymentReceiptNotchObserver ||= new ResizeObserver(entries => {
+                entries.forEach(entry => updatePaymentReceiptNotches(entry.target));
+            });
+            paymentReceiptNotchObserver.observe(receipt);
+        }
+    }
+
     function hidePhoneTags() {
         // 1. 注入 CSS (保证底线隐藏，防止闪烁)
         if (!document.getElementById('st-phone-hide-style')) {
-            $('<style id="st-phone-hide-style">phone, wechat, music, weibo, 短信, 任务进度 { display: none !important; }</style>').appendTo('head');
+            $('<style id="st-phone-hide-style">phone, wechat, music, weibo, 短信, 任务进度, 线上支付 { display: none !important; }</style>').appendTo('head');
         }
+
+        const receiptStyleId = phoneFloatingEntry?.getStyle?.() || PHONE_FLOATING_ENTRY_DEFAULT_STYLE;
+        const receiptHeaderImageUrl = new URL(
+            getPhoneFloatingEntryReceiptFile(receiptStyleId),
+            ST_PHONE_BASE_URL
+        ).href;
+        const receiptRenderOptions = {
+            headerImageUrl: receiptHeaderImageUrl,
+            styleId: receiptStyleId
+        };
 
         // 2. 遍历页面上的消息气泡
         $('.mes_text').each(function () {
@@ -7920,14 +7973,21 @@ if (window.GGP_Loaded) {
             let html = root.innerHTML;
 
             // 快速跳过，提升性能
-            if (!html || !/phone|wechat|music|weibo|短信|任务进度|手机来电通话|PHONE_CHAT_MODE/i.test(html)) {
+            if (!html || !/phone|wechat|music|weibo|短信|任务进度|线上支付|手机来电通话|PHONE_CHAT_MODE/i.test(html)) {
                 return;
             }
 
-            // 隐藏那些被解析为真实 DOM 元素的孤立标签
-            $(root).find('phone, wechat, music, weibo, 短信, 任务进度').hide();
-
             let changed = false;
+
+            // 线上支付标签保留在酒馆正文中，以安全的小票组件展示。
+            const receiptReplaced = replaceOfflineWechatPaymentTagsWithReceipts(html, receiptRenderOptions);
+            if (receiptReplaced !== html) {
+                html = receiptReplaced;
+                changed = true;
+            }
+
+            // 隐藏那些被解析为真实 DOM 元素的孤立标签
+            $(root).find('phone, wechat, music, weibo, 短信, 任务进度, 线上支付').hide();
 
             // 策略 A: 尝试完整匹配并替换 (适用于格式完美，没有被浏览器截断的情况)
             const wechatReplaced = html.replace(WECHAT_HTML_TAG_REGEX, '');
@@ -7946,6 +8006,22 @@ if (window.GGP_Loaded) {
                 }
             });
 
+            // 金额无效等无法渲染的小票仍需清理，避免协议标签泄漏到正文。
+            const paymentTagRx = /(?:<p>|<br>\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)\s*线上支付\s*(?:>|&gt;)[\s\S]*?(?:(?:<|&lt;)\s*\/\s*线上支付\s*(?:>|&gt;)|<!--\s*\/?\s*线上支付\s*-->)(?:<\/code><\/pre>)?(?:<\/p>)?/gi;
+            const invalidPaymentReplaced = html.replace(paymentTagRx, '');
+            if (invalidPaymentReplaced !== html) {
+                html = invalidPaymentReplaced;
+                changed = true;
+            }
+
+            // 兼容提示词早期使用第二个 <线上支付> 作为结束标记的格式。
+            const repeatedPaymentTagRx = /(?:<p>|<br>\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)\s*线上支付\s*(?:>|&gt;)[\s\S]*?(?:<|&lt;)\s*线上支付\s*(?:>|&gt;)(?:<\/code><\/pre>)?(?:<\/p>)?/gi;
+            const paymentReplaced = html.replace(repeatedPaymentTagRx, '');
+            if (paymentReplaced !== html) {
+                html = paymentReplaced;
+                changed = true;
+            }
+
             // 单独处理来电标签
             const phoneCallRx = /\[手机来电通话\][^\n<]*/gi;
             if (phoneCallRx.test(html)) {
@@ -7955,7 +8031,7 @@ if (window.GGP_Loaded) {
 
             // 策略 B: 只处理独立行开始的尾部协议块，避免正文里提到标签名时误删后文。
             // 微信额外要求标准注释头，残缺的字面量 <wechat> 不参与兜底截断。
-            const fallbackRegex = /(?:^|<p>|<br>\s*)(?:<pre><code[^>]*>)?(?:<|&lt;)(?:music|phone|weibo|任务进度)(?:>|&gt;)[\s\S]*$/i;
+            const fallbackRegex = /(?:^|<p>|<br>\s*)(?:<pre><code[^>]*>)?(?:<|&lt;)(?:music|phone|weibo|任务进度|线上支付)(?:>|&gt;)[\s\S]*$/i;
             const fallbackReplaced = html.replace(fallbackRegex, '');
             if (fallbackReplaced !== html) {
                 html = fallbackReplaced;
@@ -7970,6 +8046,15 @@ if (window.GGP_Loaded) {
             if (changed) {
                 root.innerHTML = html;
             }
+
+            root.querySelectorAll('.st-phone-payment-receipt-brand-image').forEach((image) => {
+                if (image.getAttribute('src') !== receiptHeaderImageUrl) {
+                    image.setAttribute('src', receiptHeaderImageUrl);
+                }
+                const receipt = image.closest('.st-phone-payment-receipt');
+                if (receiptStyleId) receipt?.setAttribute('data-phone-floating-style', receiptStyleId);
+            });
+            root.querySelectorAll('.st-phone-payment-receipt').forEach(bindPaymentReceiptNotches);
         });
     }
 
@@ -8316,6 +8401,93 @@ if (window.GGP_Loaded) {
         }
     }
 
+    async function processWechatOfflinePaymentTags(text, metadata = {}) {
+        const payments = parseOfflineWechatPayments(text);
+        if (payments.length === 0) return [];
+
+        const sourceConversationId = getCurrentTavernConversationIdentity();
+        const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
+        if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
+            console.warn('⚠️ [线上支付] 扣款前会话已切换，丢弃旧会话回调');
+            return [];
+        }
+
+        if (!window.VirtualPhone) window.VirtualPhone = {};
+        if (_lastWechatConversationId && _lastWechatConversationId !== sourceConversationId) {
+            window.VirtualPhone.wechatApp = null;
+            window.VirtualPhone.cachedWechatData = null;
+            window.currentWechatApp = null;
+            window.ggp_currentWechatApp = null;
+        }
+        _lastWechatConversationId = sourceConversationId;
+
+        const existingWechatData = window.VirtualPhone.cachedWechatData
+            || window.VirtualPhone.wechatApp?.wechatData
+            || null;
+        if (!window.VirtualPhone.cachedWechatData) {
+            window.VirtualPhone.cachedWechatData = existingWechatData || new module.WechatData(storage);
+        }
+        if (window.VirtualPhone.wechatApp
+            && window.VirtualPhone.wechatApp.wechatData !== window.VirtualPhone.cachedWechatData) {
+            window.VirtualPhone.wechatApp.wechatData = window.VirtualPhone.cachedWechatData;
+        }
+
+        const wechatData = window.VirtualPhone.cachedWechatData;
+        const floor = Number(metadata.tavernMessageIndex);
+        if (!existingWechatData && Number.isFinite(floor)) {
+            if (metadata.exactReplayForMessage === true) {
+                wechatData.removeMainChatTagMessagesAtFloor?.(floor);
+            } else {
+                wechatData.rollbackToFloor?.(floor);
+            }
+        }
+
+        const results = payments.map((payment, paymentIndex) => {
+            const referenceId = `wechat_offline_payment:${Number.isFinite(floor) ? floor : 'unknown'}:${payment.sourceIndex}:${paymentIndex}`;
+            const ledgerCopy = getOfflineWechatPaymentLedgerCopy(payment);
+            const duplicate = wechatData.getWalletTransactions?.()
+                .find(record => String(record?.referenceId || '') === referenceId);
+            if (duplicate) {
+                if (duplicate.title !== ledgerCopy.title || duplicate.detail !== ledgerCopy.detail) {
+                    duplicate.title = ledgerCopy.title;
+                    duplicate.detail = ledgerCopy.detail;
+                    wechatData.saveData?.();
+                }
+                return { success: true, duplicate: true, payment, transaction: duplicate };
+            }
+
+            const transaction = {
+                type: 'shopping',
+                title: ledgerCopy.title,
+                detail: ledgerCopy.detail,
+                source: 'offline_story',
+                sourceApp: 'wechat',
+                referenceId,
+                date: payment.date,
+                time: payment.time,
+                fromMainChatTag: true,
+                tavernMessageIndex: Number.isFinite(floor) ? floor : undefined,
+                batchId: String(metadata.batchId || '').trim()
+            };
+            const result = wechatData.spendWalletBalance(payment.amount, null, transaction);
+            if (!result.success) {
+                const reason = result.reason === 'insufficient_balance'
+                    ? `余额不足（当前 ¥${Number(result.balanceBefore || 0).toFixed(2)}，需扣 ¥${Number(payment.amount).toFixed(2)}）`
+                    : '扣款金额无效';
+                console.warn(`⚠️ [线上支付] ${reason}`, payment);
+            }
+            return { ...result, payment };
+        });
+
+        if (results.some(result => result.success && !result.duplicate)) {
+            const wechatApp = window.VirtualPhone.wechatApp || window.currentWechatApp || window.ggp_currentWechatApp;
+            if (document.querySelector('.wechat-wallet-ledger-page')) {
+                wechatApp?.showWalletPage?.();
+            }
+        }
+        return results;
+    }
+
     function processWechatLikeTagsInSourceOrder(text, tavernIndex, batchId, isHistoryReplay = false, exactReplayForMessage = false) {
         const sourceText = maskPhoneParserReasoningBlocks(text);
         if (!sourceText) return;
@@ -8565,6 +8737,11 @@ if (window.GGP_Loaded) {
                         markUnread: true
                     });
                     processWechatLikeTagsInSourceOrder(text, index, currentBatchId, isHistoryReplay, exactReplayForMessage);
+                    processWechatOfflinePaymentTags(text, {
+                        tavernMessageIndex: index,
+                        batchId: currentBatchId,
+                        exactReplayForMessage
+                    }).catch(e => console.warn('Wechat offline payment tag process error:', e));
                     processMofoTags(text, { source: 'assistant', messageIndex: index }).then(updates => {
                         // 只要有魔坊条目匹配到更新，优先弹 changed 的；否则弹第一个匹配项
                         if (!Array.isArray(updates) || updates.length === 0) return;
@@ -9496,6 +9673,7 @@ if (window.GGP_Loaded) {
                     storyImageAutoScheduler?.reset?.('auto-disabled');
                 }
             });
+            window.addEventListener('phone:floatingEntrySettingsChanged', hidePhoneTags);
 
             // 🔥 关键修复：启动时就预热 TimeManager / PromptManager，
             // 避免“未切会话、未打开手机面板”时线下注入因懒加载对象仍为 null 而失效。
@@ -11327,6 +11505,8 @@ if (window.GGP_Loaded) {
                                                 let wechatContactsList = '';
                                                 let wechatFriendsList = '';
                                                 let wechatGroupsList = '';
+                                                let wechatUserName = '未设置';
+                                                let wechatWalletBalance = '未初始化';
                                                 let personalImageTagInfo = '暂无';
                                                 try {
                                                     let wechatDataParsed = null;
@@ -11342,6 +11522,23 @@ if (window.GGP_Loaded) {
                                                     }
 
                                                     if (wechatDataParsed) {
+                                                        const savedWechatUserName = String(wechatDataParsed?.userInfo?.name || '').trim();
+                                                        if (savedWechatUserName) wechatUserName = savedWechatUserName;
+                                                        const runtimeWechatData = window.VirtualPhone?.wechatApp?.wechatData
+                                                            || window.VirtualPhone?.cachedWechatData
+                                                            || null;
+                                                        const runtimeBalance = runtimeWechatData?.getWalletBalance?.();
+                                                        const storedBalance = wechatDataParsed?.walletByChat?.__default__
+                                                            ?? wechatDataParsed?.userInfo?.walletBalance;
+                                                        const walletBalance = Number(runtimeBalance ?? storedBalance);
+                                                        if ((runtimeBalance ?? storedBalance) !== null
+                                                            && (runtimeBalance ?? storedBalance) !== undefined
+                                                            && Number.isFinite(walletBalance)) {
+                                                            wechatWalletBalance = `¥${walletBalance.toLocaleString('zh-CN', {
+                                                                minimumFractionDigits: 2,
+                                                                maximumFractionDigits: 2
+                                                            })}`;
+                                                        }
                                                         const contactNames = [];
                                                         const personalImageTagRows = [];
                                                         const groupItems = [];
@@ -11402,6 +11599,8 @@ if (window.GGP_Loaded) {
                                                     .replace(/\{\{wechatFriends\}\}/g, wechatFriendsList)
                                                     .replace(/\{\{wechatGroups\}\}/g, wechatGroupsList)
                                                     .replace(/\{\{wechatContacts\}\}/g, wechatContactsList)
+                                                    .replace(/\{\{wechatUserName\}\}/g, wechatUserName)
+                                                    .replace(/\{\{wechatWalletBalance\}\}/g, wechatWalletBalance)
                                                     .replace(/\{\{personalImageTagInfo\}\}/g, personalImageTagInfo);
                                                 phoneRulesContent += `【微信线下模式】\n${wechatPrompt}\n\n`;
                                             }

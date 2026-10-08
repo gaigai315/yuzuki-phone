@@ -7,15 +7,15 @@ export const PHONE_FLOATING_ENTRY_POSITION_KEY = 'phone-floating-entry-position'
 export const PHONE_FLOATING_ENTRY_DEFAULT_STYLE = 'silver';
 
 export const PHONE_FLOATING_ENTRY_STYLES = Object.freeze([
-    { id: 'gold', label: '样式1', file: 'phone/sjxf1.png' },
-    { id: 'blue', label: '样式2', file: 'phone/sjxf2.png' },
-    { id: 'green', label: '样式3', file: 'phone/sjxf3.png' },
-    { id: 'silver', label: '样式4', file: 'phone/sjxf4.png' },
-    { id: 'purple', label: '样式5', file: 'phone/sjxf5.png' },
-    { id: 'black', label: '样式6', file: 'phone/sjxf6.png' },
-    { id: 'style-7', label: '样式7', file: 'phone/sjxf7.png' },
-    { id: 'style-8', label: '样式8', file: 'phone/sjxf8.png' },
-    { id: 'style-9', label: '样式9', file: 'phone/sjxf9.png' }
+    { id: 'gold', label: '样式1', file: 'phone/sjxf1.png', receiptFile: 'phone/sjxf1_xp.png' },
+    { id: 'blue', label: '样式2', file: 'phone/sjxf2.png', receiptFile: 'phone/sjxf2_xp.png' },
+    { id: 'green', label: '样式3', file: 'phone/sjxf3.png', receiptFile: 'phone/sjxf3_xp.png' },
+    { id: 'silver', label: '样式4', file: 'phone/sjxf4.png', receiptFile: 'phone/sjxf4_xp.png' },
+    { id: 'purple', label: '样式5', file: 'phone/sjxf5.png', receiptFile: 'phone/sjxf5_xp.png' },
+    { id: 'black', label: '样式6', file: 'phone/sjxf6.png', receiptFile: 'phone/sjxf6_xp.png' },
+    { id: 'style-7', label: '样式7', file: 'phone/sjxf7.png', receiptFile: 'phone/sjxf7_xp.png' },
+    { id: 'style-8', label: '样式8', file: 'phone/sjxf8.png', receiptFile: 'phone/sjxf8_xp.png' },
+    { id: 'style-9', label: '样式9', file: 'phone/sjxf9.png', receiptFile: 'phone/sjxf9_xp.png' }
 ]);
 
 const FLOATING_STYLE_MAP = new Map(PHONE_FLOATING_ENTRY_STYLES.map(item => [item.id, item]));
@@ -29,13 +29,19 @@ function normalizeStyle(value) {
     return FLOATING_STYLE_MAP.has(style) ? style : PHONE_FLOATING_ENTRY_DEFAULT_STYLE;
 }
 
+export function getPhoneFloatingEntryReceiptFile(styleId) {
+    const style = FLOATING_STYLE_MAP.get(normalizeStyle(styleId))
+        || FLOATING_STYLE_MAP.get(PHONE_FLOATING_ENTRY_DEFAULT_STYLE);
+    return style.receiptFile;
+}
+
 export class PhoneFloatingEntry {
     constructor(options = {}) {
         this.storage = options.storage || null;
         this.baseUrl = options.baseUrl || './';
         this.onActivate = typeof options.onActivate === 'function' ? options.onActivate : () => {};
         this.onDoubleActivate = typeof options.onDoubleActivate === 'function' ? options.onDoubleActivate : this.onActivate;
-        this.onPressStart = typeof options.onPressStart === 'function' ? options.onPressStart : () => {};
+        this.onBeforeActivate = typeof options.onBeforeActivate === 'function' ? options.onBeforeActivate : () => {};
         this.isPanelOpen = typeof options.isPanelOpen === 'function' ? options.isPanelOpen : () => false;
         this.resizeController = null;
         this.activationTimer = null;
@@ -212,6 +218,11 @@ export class PhoneFloatingEntry {
         if (this.activationTimer !== null) {
             window.clearTimeout(this.activationTimer);
             this.activationTimer = null;
+            try {
+                this.onBeforeActivate();
+            } catch (error) {
+                console.warn('[VirtualPhone] Floating entry pre-activation failed:', error);
+            }
             Promise.resolve(this.onDoubleActivate()).catch(error => {
                 console.warn('[VirtualPhone] 悬浮入口打开正文生图失败:', error);
             });
@@ -220,6 +231,11 @@ export class PhoneFloatingEntry {
 
         this.activationTimer = window.setTimeout(() => {
             this.activationTimer = null;
+            try {
+                this.onBeforeActivate();
+            } catch (error) {
+                console.warn('[VirtualPhone] Floating entry pre-activation failed:', error);
+            }
             Promise.resolve(this.onActivate()).catch(error => {
                 console.warn('[VirtualPhone] 悬浮入口打开手机失败:', error);
             });
@@ -256,11 +272,6 @@ export class PhoneFloatingEntry {
 
         button.addEventListener('pointerdown', event => {
             if (event.button !== undefined && event.button !== 0) return;
-            try {
-                this.onPressStart(event);
-            } catch (error) {
-                console.warn('[VirtualPhone] 悬浮入口按下前处理失败:', error);
-            }
             event.preventDefault();
             event.stopPropagation();
             pointerId = event.pointerId;
@@ -270,7 +281,6 @@ export class PhoneFloatingEntry {
             startLeft = rect.left;
             startTop = rect.top;
             moved = false;
-            button.classList.add('phone-floating-entry-dragging');
             button.setPointerCapture?.(pointerId);
         });
 
@@ -278,7 +288,14 @@ export class PhoneFloatingEntry {
             if (pointerId === null || event.pointerId !== pointerId) return;
             const deltaX = event.clientX - startX;
             const deltaY = event.clientY - startY;
-            if (!moved && Math.hypot(deltaX, deltaY) > 8) moved = true;
+            if (!moved && Math.hypot(deltaX, deltaY) > 8) {
+                moved = true;
+                if (this.activationTimer !== null) {
+                    window.clearTimeout(this.activationTimer);
+                    this.activationTimer = null;
+                }
+                button.classList.add('phone-floating-entry-dragging');
+            }
             if (!moved) return;
             event.preventDefault();
             this.applyPosition(button, startLeft + deltaX, startTop + deltaY);

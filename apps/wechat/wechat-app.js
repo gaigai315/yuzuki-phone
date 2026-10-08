@@ -4175,6 +4175,14 @@ export class WechatApp {
     text-align: right;
 }
 
+#phone-panel-content .phone-screen .wechat-wallet-ledger-filter:first-child {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-self: start !important;
+    width: max-content !important;
+    max-width: 100% !important;
+}
+
 #phone-panel-content .phone-screen .wechat-wallet-ledger-filter select {
     position: static !important;
     display: block !important;
@@ -4211,6 +4219,13 @@ export class WechatApp {
     text-align-last: right !important;
 }
 
+#phone-panel-content .phone-screen .wechat-wallet-ledger-filter:first-child select {
+    flex: 0 1 auto !important;
+    width: auto !important;
+    max-width: calc(100% - 14px) !important;
+    padding-right: 3px !important;
+}
+
 #phone-panel-content .phone-screen .wechat-wallet-ledger-filter i {
     position: absolute;
     right: 3px;
@@ -4224,6 +4239,13 @@ export class WechatApp {
 #phone-panel-content .phone-screen .wechat-wallet-ledger-filter:last-child i {
     right: 3px;
     left: auto;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-filter:first-child i {
+    position: static;
+    flex: 0 0 auto;
+    margin-left: 8px;
+    transform: none;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-day {
@@ -5674,7 +5696,7 @@ export class WechatApp {
 
         // “我”页面的功能入口
         addClickListener('#edit-avatar-btn', () => this.showEditProfile());
-        addClickListener('#wechat-wallet-btn', () => this.showWalletPage());
+        addClickListener('#wechat-wallet-btn', () => this.showWalletPage({ resetMonth: true }));
         addClickListener('#smart-load-contacts', () => this.showLoadContactsConfirm());
         addClickListener('#edit-profile-btn', () => this.showEditProfile());
         addClickListener('#wechat-settings-btn', () => this.showSettings());
@@ -5822,19 +5844,22 @@ export class WechatApp {
     }
 
     // 显示微信零钱明细
-    showWalletPage() {
+    showWalletPage({ resetMonth = false } = {}) {
         const balance = this.wechatData.getWalletBalance();
         const isInitialized = balance !== null;
         const displayBalance = isInitialized ? this._formatWalletNumber(balance) : '***';
         const isEvaluating = !!this._isWalletEvaluating;
         const transactions = this.wechatData.getWalletTransactions?.() || [];
         const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || {};
-        const defaultMonth = this._getWalletMonthKey(transactions[0] || storyTime)
+        const fallbackMonth = this._getWalletMonthKey(storyTime)
             || this._getWalletMonthKey({ timestamp: Date.now() });
         const monthKeys = [...new Set(transactions.map(record => this._getWalletMonthKey(record)).filter(Boolean))];
-        if (defaultMonth && !monthKeys.includes(defaultMonth)) monthKeys.push(defaultMonth);
+        if (monthKeys.length === 0 && fallbackMonth) monthKeys.push(fallbackMonth);
         monthKeys.sort((a, b) => b.localeCompare(a));
-        if (!monthKeys.includes(this._walletLedgerMonth)) this._walletLedgerMonth = monthKeys[0] || defaultMonth;
+        const latestMonth = monthKeys[0] || fallbackMonth;
+        if (resetMonth || !monthKeys.includes(this._walletLedgerMonth)) {
+            this._walletLedgerMonth = latestMonth;
+        }
         if (!['all', 'transfer', 'redpacket', 'honey', 'shopping'].includes(this._walletLedgerType)) {
             this._walletLedgerType = 'all';
         }

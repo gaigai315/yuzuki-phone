@@ -3,8 +3,8 @@
  *  X app controller - visual prototype
  * ======================================================== */
 
-import { XData } from './x-data.js?v=20261005-x-post-menu-auto-width';
-import { XView } from './x-view.js?v=20261005-x-post-menu-auto-width';
+import { XData } from './x-data.js?v=20261009-unified-sse-parser';
+import { XView } from './x-view.js?v=20261009-unified-sse-parser';
 
 export class XApp {
     constructor(phoneShell, storage) {
@@ -35,7 +35,7 @@ export class XApp {
         const link = document.createElement('link');
         link.id = 'xapp-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./x.css?v=20261005-x-post-menu-auto-width', import.meta.url).href;
+        link.href = new URL('./x.css?v=20261009-unified-sse-parser', import.meta.url).href;
         document.head.appendChild(link);
     }
 
@@ -72,6 +72,7 @@ export class XApp {
             event.detail.handled = true;
         }
 
+        if (this.view.closeAIParseFailure?.()) return true;
         if (this.view.closePostMenu()) return true;
         if (this.view.closeForwardDialog()) return true;
 
@@ -102,6 +103,7 @@ export class XApp {
     }
 
     clearCache() {
+        this.view.closeAIParseFailure?.();
         this.view.closePostMenu();
         this.view.closeForwardDialog();
         this.xData.clearCache();
@@ -123,6 +125,7 @@ export class XApp {
     }
 
     destroy() {
+        this.view.closeAIParseFailure?.();
         this.view.closePostMenu();
         this.view.closeForwardDialog();
         this.view._sendingDirectMessageThreadIds?.clear?.();

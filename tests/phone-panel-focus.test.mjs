@@ -25,11 +25,11 @@ test('phone opening blurs an editable element outside the phone panel', () => {
     assert.match(helperSource, /activeElement\.blur\?\.\(\)/);
 });
 
-test('floating entry prepares focus synchronously on pointer press', () => {
+test('floating entry prepares focus after single or double activation is confirmed', () => {
     assert.ok(floatingEntryStart >= 0);
     assert.ok(helperStart > floatingEntryStart);
     assert.ok(floatingEntrySource.includes(
-        "onPressStart: () => blurExternalEditableBeforePhoneOpen(document.getElementById('phone-panel'))"
+        "onBeforeActivate: () => blurExternalEditableBeforePhoneOpen(document.getElementById('phone-panel'))"
     ));
 });
 

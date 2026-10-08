@@ -9,6 +9,10 @@ const clickListenerSource = indexSource.slice(listenerStart, listenerEnd);
 const desktopDragStart = indexSource.indexOf('function bindPhonePanelDesktopDockDrag(panel)');
 const desktopDragEnd = indexSource.indexOf('function bindPhonePanelViewportGuards()', desktopDragStart);
 const desktopDragSource = indexSource.slice(desktopDragStart, desktopDragEnd);
+const panelOpenStart = indexSource.indexOf('function openPhonePanelWithOutsideClose(panel, icon)');
+const panelOpenEnd = indexSource.indexOf('// 🔥 处理面板点击事件', panelOpenStart);
+const panelOpenSource = indexSource.slice(panelOpenStart, panelOpenEnd);
+const phoneCss = fs.readFileSync(new URL('../phone.css', import.meta.url), 'utf8');
 
 test('desktop phone panel closes on the first outside click before triple-tap handling', () => {
     const desktopCloseIndex = clickListenerSource.indexOf("drawerPanel?.classList.contains('phone-panel-open')");
@@ -44,4 +48,25 @@ test('desktop drag release suppresses only its matching trailing click', () => {
     assert.match(desktopDragSource, /dragDoc\.addEventListener\('pointerdown', releaseForNewPress, true\)/);
     assert.match(desktopDragSource, /dragDoc\.removeEventListener\('pointerdown', releaseForNewPress, true\)/);
     assert.match(desktopDragSource, /armNextClickSuppressor\(event\)/);
+});
+
+test('desktop position is measured only after the hidden panel becomes visible', () => {
+    const openClassIndex = panelOpenSource.indexOf("panel.classList.add('phone-panel-open')");
+    const hiddenClassIndex = panelOpenSource.indexOf("panel.classList.remove('phone-panel-hidden')");
+    const clearInlineStyleIndex = panelOpenSource.indexOf("panel.style.cssText = ''");
+    const applyPositionIndex = panelOpenSource.indexOf('applyPhonePanelDesktopPosition();');
+
+    assert.ok(panelOpenStart >= 0);
+    assert.ok(panelOpenEnd > panelOpenStart);
+    assert.ok(openClassIndex >= 0);
+    assert.ok(hiddenClassIndex > openClassIndex);
+    assert.ok(clearInlineStyleIndex > hiddenClassIndex);
+    assert.ok(applyPositionIndex > clearInlineStyleIndex);
+});
+
+test('desktop phone body skips the scale-in animation that distorts position measurements', () => {
+    assert.match(
+        phoneCss,
+        /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*?#phone-panel\.drawer-content #phone-panel-content \.phone-body-panel\s*\{\s*animation: none !important;/
+    );
 });

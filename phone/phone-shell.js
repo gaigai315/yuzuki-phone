@@ -270,6 +270,7 @@ export class PhoneShell {
                 '.xapp-root', '.xapp-feed-scroll', '.xapp-chat-page', '.xapp-chat-list', '.xapp-dm-messages', '.xapp-detail-scroll', '.xapp-comments', '.xapp-profile-scroll', '.xapp-profile-posts', '.xapp-profile-edit-dialog', '.xapp-settings-scroll', '.xapp-settings-prompt', '.xapp-compose-scroll', '.xapp-compose-text',
                 '.xapp-post-menu-overlay', '.xapp-post-menu-sheet',
                 '.xapp-forward-overlay', '.xapp-forward-dialog', '.xapp-forward-list',
+                '.xapp-ai-parse-error-overlay', '.xapp-ai-parse-error-dialog', '.xapp-ai-parse-error-body', '.xapp-ai-parse-error-response',
                 '#wechat-weibo-preview-modal', '#wechat-weibo-preview-modal > div',
                 '#wechat-x-preview-modal', '#wechat-x-preview-modal > div', '.wechat-x-preview-body',
                 '#wechat-poker-preview-modal', '#wechat-poker-preview-modal > div', '.wechat-poker-preview-body',
