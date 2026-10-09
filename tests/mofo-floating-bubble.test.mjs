@@ -198,7 +198,7 @@ test('Mofo bubble follows the mobile input bar while the keyboard viewport settl
     assert.match(source, /const collectBubbleAnchorElements = \(\) => \{[\s\S]*?hostDoc\.querySelector\('#send_form'\),[\s\S]*?sendTextarea\?\.closest\?\.\('\.chat-input-container, \.send_form, form'\),[\s\S]*?sendTextarea,[\s\S]*?hostDoc\.querySelector\('#form_sheld'\)/);
     assert.match(source, /for \(const el of collectBubbleAnchorElements\(\)\) \{[\s\S]*?return rect;/);
     assert.match(source, /targetX = anchorRect\.left \+ \(anchorRect\.width \/ 2\);/);
-    assert.match(source, /targetY = anchorRect\.top - bubbleHalfHeight - 10;/);
+    assert.match(source, /targetY = anchorRect\.top - bounds\.bubbleHalfHeight - 10;/);
     assert.doesNotMatch(source, /target[XY] = offset(?:Left|Top) \+ anchorRect/);
     assert.match(source, /\[60, 160, 320, 600\]\.forEach/);
     assert.match(source, /visualViewport\.addEventListener\('resize', scheduleBubblePosition/);
@@ -206,6 +206,31 @@ test('Mofo bubble follows the mobile input bar while the keyboard viewport settl
     assert.match(source, /hostDoc\.addEventListener\('focusin', scheduleBubblePosition/);
     assert.match(source, /hostDoc\.addEventListener\('focusout', scheduleBubblePosition/);
     assert.match(source, /new BubbleResizeObserver\(scheduleBubblePosition\)/);
+});
+
+test('Mofo bubble supports temporary pointer dragging without persisting its position', () => {
+    const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+    const bubbleStart = source.indexOf('window.VirtualPhone.showMofoUpdateBubble = async function');
+    const manualStateStart = source.indexOf('let manualPosition = null;', bubbleStart);
+    const manualStateEnd = source.indexOf('const syncBubbleThemeColors =', manualStateStart);
+    const manualStateSource = source.slice(manualStateStart, manualStateEnd);
+
+    assert.ok(bubbleStart >= 0 && manualStateStart > bubbleStart && manualStateEnd > manualStateStart);
+    assert.match(source, /\.mofo-update-bubble \{[\s\S]*?cursor: grab;[\s\S]*?touch-action: none;/);
+    assert.match(source, /\.mofo-update-bubble\.is-dragging[\s\S]*?cursor: grabbing;[\s\S]*?animation: none;/);
+    assert.match(source, /const BUBBLE_DRAG_THRESHOLD = 6;/);
+    assert.match(source, /bubble\.addEventListener\('pointerdown',[\s\S]*?bubble\.setPointerCapture\?\.\(event\.pointerId\)/);
+    assert.match(source, /bubble\.addEventListener\('pointermove',[\s\S]*?Math\.hypot\(deltaX, deltaY\) < BUBBLE_DRAG_THRESHOLD/);
+    assert.match(source, /bubble\.addEventListener\('pointerup', finishBubbleDrag/);
+    assert.match(source, /bubble\.addEventListener\('pointercancel', finishBubbleDrag/);
+    assert.match(source, /bubble\.releasePointerCapture\?\.\(dragPointerId\)/);
+    assert.match(source, /x: Math\.max\(bounds\.minX, Math\.min\(bounds\.maxX, x\)\)/);
+    assert.match(source, /y: Math\.max\(bounds\.minY, Math\.min\(bounds\.maxY, y\)\)/);
+    assert.match(source, /if \(manualPosition\) \{[\s\S]*?applyBubblePosition\(manualPosition\);[\s\S]*?return;/);
+    assert.match(source, /if \(suppressNextBubbleClick\) \{[\s\S]*?return;[\s\S]*?const previewItem/);
+    assert.doesNotMatch(manualStateSource, /storage|localStorage|sessionStorage/);
+    assert.match(source, /const oldBubble = bubbleRoot\.querySelector\('\.mofo-update-bubble'\);[\s\S]*?if \(oldBubble\) oldBubble\.remove\(\);[\s\S]*?let manualPosition = null;/);
+    assert.match(source, /if \(!preferred\) \{\s*window\.VirtualPhone\?\.hideMofoUpdateBubble\?\.\(\);\s*return null;/);
 });
 
 test('Mofo quick panel keeps its headers fixed while only Mofo content scrolls', () => {

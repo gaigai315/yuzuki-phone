@@ -11,7 +11,7 @@ test('current version keeps all notices under the latest date', () => {
 
     assert.equal(manifest.version, '1.6.0');
     assert.equal(current.date, '2026-10-09');
-    assert.equal(current.items.length, 8);
+    assert.equal(current.items.length, 9);
     assert.match(current.items[0], /酒馆二改 APP/);
     assert.match(current.items[0], /小手机线上消息无法注入正文/);
     assert.match(current.items[1], /悬浮图标打开手机/);
@@ -31,6 +31,9 @@ test('current version keeps all notices under the latest date', () => {
     assert.match(current.items[6], /完整保留后续提示词/);
     assert.match(current.items[7], /首次点击小手机快捷回复按钮/);
     assert.match(current.items[7], /仅收起键盘而未打开面板/);
+    assert.match(current.items[8], /魔坊悬浮更新气泡/);
+    assert.match(current.items[8], /桌面端与移动端临时拖动/);
+    assert.match(current.items[8], /重新出现时会恢复默认位置/);
     assert.equal(current.updates, undefined);
 });
 
@@ -66,4 +69,9 @@ test('fallback announcement preserves the 1.6.0 notices', () => {
     assert.match(block, /X、微博、微信、蜜语与日记/);
     assert.match(block, /身份 TAG 含括号时不再被提前截断/);
     assert.match(block, /完整保留后续提示词/);
+    assert.match(block, /首次点击小手机快捷回复按钮/);
+    assert.match(block, /仅收起键盘而未打开面板/);
+    assert.match(block, /魔坊悬浮更新气泡/);
+    assert.match(block, /桌面端与移动端临时拖动/);
+    assert.match(block, /重新出现时会恢复默认位置/);
 });

@@ -124,7 +124,9 @@ const ST_PHONE_CURRENT_UPDATE = {
         '【优化】优化 API 请求流式解析。',
         '【优化】优化魔坊APP渲染逻辑。',
         '【优化】完善微信与朋友圈数据删除逻辑：直接删除酒馆楼层时会同步回滚该楼层及后续生成的微信数据和朋友圈，AI 联系人发布的朋友圈也支持单独删除。',
-        '【优化】统一 X、微博、微信、蜜语与日记的生图提示词解析，角色身份 TAG 含括号时不再被提前截断，并完整保留后续提示词。'
+        '【优化】统一 X、微博、微信、蜜语与日记的生图提示词解析，角色身份 TAG 含括号时不再被提前截断，并完整保留后续提示词。',
+        '【修复】修复移动端输入框聚焦并展开快速回复栏后，首次点击小手机快捷回复按钮仅收起键盘而未打开面板的问题。',
+        '【优化】魔坊悬浮更新气泡支持桌面端与移动端临时拖动避让内容；拖动位置不会保存，气泡随楼层隐藏或重新出现时会恢复默认位置。'
     ]
 };
 
@@ -2801,9 +2803,10 @@ if (window.GGP_Loaded) {
                             0 7px 14px rgba(0,0,0,0.08);
                         box-sizing: border-box;
                         z-index: 2147483646;
-                        cursor: pointer;
+                        cursor: grab;
                         opacity: 0;
                         pointer-events: auto;
+                        touch-action: none;
                         user-select: none;
                         transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, filter 0.2s ease;
                     }
@@ -2842,6 +2845,14 @@ if (window.GGP_Loaded) {
                         filter: brightness(1.02);
                     }
                     .mofo-update-bubble:active { transform: translate(-50%, -50%) scale(0.98); }
+                    .mofo-update-bubble.is-dragging,
+                    .mofo-update-bubble.is-dragging:hover,
+                    .mofo-update-bubble.is-dragging:active {
+                        cursor: grabbing;
+                        animation: none;
+                        transform: translate(-50%, -50%) scale(1.025);
+                        transition: opacity 0.2s ease, filter 0.2s ease;
+                    }
                     .mofo-bubble-rank-mini {
                         position: relative;
                         z-index: 1;
@@ -3103,6 +3114,16 @@ if (window.GGP_Loaded) {
             `;
             bubbleRoot.appendChild(bubble);
 
+            // Keep the manual position on this bubble instance only.
+            let manualPosition = null;
+            let dragPointerId = null;
+            let dragStartPoint = null;
+            let dragStartPosition = null;
+            let didDragBubble = false;
+            let suppressNextBubbleClick = false;
+            let suppressBubbleClickTimer = null;
+            const BUBBLE_DRAG_THRESHOLD = 6;
+
             const syncBubbleThemeColors = () => {
                 const readPickerColor = (selector) => {
                     const picker = hostDoc.querySelector(selector);
@@ -3137,16 +3158,55 @@ if (window.GGP_Loaded) {
                 ].filter((element, index, elements) => element && elements.indexOf(element) === index);
             };
 
-            const positionBubble = () => {
-                if (!bubble.isConnected) {
-                    bubblePositionController.abort();
-                    return;
-                }
+            const getBubbleViewportBounds = () => {
                 const vv = hostWin.visualViewport;
                 const viewWidth = vv?.width || hostWin.innerWidth || window.innerWidth;
                 const viewHeight = vv?.height || hostWin.innerHeight || window.innerHeight;
                 const offsetLeft = vv?.offsetLeft || 0;
                 const offsetTop = vv?.offsetTop || 0;
+                const bubbleHalfWidth = Math.max(18, (bubble.offsetWidth || 44) / 2);
+                const bubbleHalfHeight = Math.max(18, (bubble.offsetHeight || 44) / 2);
+                const minX = offsetLeft + bubbleHalfWidth + 8;
+                const minY = offsetTop + bubbleHalfHeight + 8;
+                return {
+                    viewWidth,
+                    viewHeight,
+                    offsetLeft,
+                    offsetTop,
+                    bubbleHalfWidth,
+                    bubbleHalfHeight,
+                    minX,
+                    maxX: Math.max(minX, offsetLeft + viewWidth - bubbleHalfWidth - 8),
+                    minY,
+                    maxY: Math.max(minY, offsetTop + viewHeight - bubbleHalfHeight - 8)
+                };
+            };
+
+            const clampBubblePosition = (x, y) => {
+                const bounds = getBubbleViewportBounds();
+                return {
+                    x: Math.max(bounds.minX, Math.min(bounds.maxX, x)),
+                    y: Math.max(bounds.minY, Math.min(bounds.maxY, y)),
+                    bounds
+                };
+            };
+
+            const applyBubblePosition = (position) => {
+                bubble.style.left = `${position.x}px`;
+                bubble.style.top = `${position.y}px`;
+            };
+
+            const positionBubble = () => {
+                if (!bubble.isConnected) {
+                    bubblePositionController.abort();
+                    return;
+                }
+                if (manualPosition) {
+                    manualPosition = clampBubblePosition(manualPosition.x, manualPosition.y);
+                    applyBubblePosition(manualPosition);
+                    return;
+                }
+                const bounds = getBubbleViewportBounds();
                 const pickAnchorRect = () => {
                     for (const el of collectBubbleAnchorElements()) {
                         const rect = el.getBoundingClientRect?.();
@@ -3159,26 +3219,16 @@ if (window.GGP_Loaded) {
                 };
                 const anchorRect = pickAnchorRect();
                 const hasAnchor = !!anchorRect;
-                const bubbleHalfWidth = Math.max(18, (bubble.offsetWidth || 44) / 2);
-                const bubbleHalfHeight = Math.max(18, (bubble.offsetHeight || 44) / 2);
 
-                let targetX = offsetLeft + (viewWidth / 2);
-                let targetY = offsetTop + viewHeight - bubbleHalfHeight - 126;
+                let targetX = bounds.offsetLeft + (bounds.viewWidth / 2);
+                let targetY = bounds.offsetTop + bounds.viewHeight - bounds.bubbleHalfHeight - 126;
 
                 if (hasAnchor) {
                     targetX = anchorRect.left + (anchorRect.width / 2);
-                    targetY = anchorRect.top - bubbleHalfHeight - 10;
+                    targetY = anchorRect.top - bounds.bubbleHalfHeight - 10;
                 }
 
-                const minX = offsetLeft + bubbleHalfWidth + 8;
-                const maxX = offsetLeft + viewWidth - bubbleHalfWidth - 8;
-                const minY = offsetTop + bubbleHalfHeight + 8;
-                const maxY = offsetTop + viewHeight - bubbleHalfHeight - 8;
-                targetX = Math.max(minX, Math.min(maxX, targetX));
-                targetY = Math.max(minY, Math.min(maxY, targetY));
-
-                bubble.style.left = `${targetX}px`;
-                bubble.style.top = `${targetY}px`;
+                applyBubblePosition(clampBubblePosition(targetX, targetY));
             };
 
             let bubblePositionFrame = null;
@@ -3227,8 +3277,82 @@ if (window.GGP_Loaded) {
             bubblePositionController.signal.addEventListener('abort', () => {
                 clearScheduledBubblePositions();
                 anchorResizeObserver?.disconnect();
+                if (suppressBubbleClickTimer !== null) {
+                    hostWin.clearTimeout(suppressBubbleClickTimer);
+                    suppressBubbleClickTimer = null;
+                }
             }, { once: true });
             scheduleBubblePosition();
+
+            const getStyledBubbleCenter = () => {
+                const styledLeft = Number.parseFloat(bubble.style.left);
+                const styledTop = Number.parseFloat(bubble.style.top);
+                if (Number.isFinite(styledLeft) && Number.isFinite(styledTop)) {
+                    return { x: styledLeft, y: styledTop };
+                }
+                const rect = bubble.getBoundingClientRect();
+                return {
+                    x: rect.left + (rect.width / 2),
+                    y: rect.top + (rect.height / 2)
+                };
+            };
+
+            const finishBubbleDrag = (event) => {
+                if (dragPointerId === null || event.pointerId !== dragPointerId) return;
+                try {
+                    if (bubble.hasPointerCapture?.(dragPointerId)) {
+                        bubble.releasePointerCapture?.(dragPointerId);
+                    }
+                } catch (e) {}
+                dragPointerId = null;
+                dragStartPoint = null;
+                dragStartPosition = null;
+                bubble.classList.remove('is-dragging');
+                if (didDragBubble) {
+                    suppressNextBubbleClick = true;
+                    if (suppressBubbleClickTimer !== null) hostWin.clearTimeout(suppressBubbleClickTimer);
+                    suppressBubbleClickTimer = hostWin.setTimeout(() => {
+                        suppressNextBubbleClick = false;
+                        suppressBubbleClickTimer = null;
+                    }, 800);
+                    event.preventDefault?.();
+                }
+                didDragBubble = false;
+            };
+
+            bubble.addEventListener('pointerdown', (event) => {
+                if (event.isPrimary === false) return;
+                if (event.pointerType === 'mouse' && event.button !== 0) return;
+                positionBubble();
+                dragPointerId = event.pointerId;
+                dragStartPoint = { x: event.clientX, y: event.clientY };
+                dragStartPosition = getStyledBubbleCenter();
+                didDragBubble = false;
+                try {
+                    bubble.setPointerCapture?.(event.pointerId);
+                } catch (e) {}
+                event.preventDefault?.();
+            }, { signal: bubblePositionController.signal });
+
+            bubble.addEventListener('pointermove', (event) => {
+                if (dragPointerId === null || event.pointerId !== dragPointerId || !dragStartPoint || !dragStartPosition) return;
+                const deltaX = event.clientX - dragStartPoint.x;
+                const deltaY = event.clientY - dragStartPoint.y;
+                if (!didDragBubble && Math.hypot(deltaX, deltaY) < BUBBLE_DRAG_THRESHOLD) return;
+                if (!didDragBubble) {
+                    didDragBubble = true;
+                    bubble.classList.add('is-dragging');
+                }
+                manualPosition = clampBubblePosition(
+                    dragStartPosition.x + deltaX,
+                    dragStartPosition.y + deltaY
+                );
+                applyBubblePosition(manualPosition);
+                event.preventDefault?.();
+            }, { signal: bubblePositionController.signal });
+
+            bubble.addEventListener('pointerup', finishBubbleDrag, { signal: bubblePositionController.signal });
+            bubble.addEventListener('pointercancel', finishBubbleDrag, { signal: bubblePositionController.signal });
 
             // 动画滑入
             setTimeout(() => bubble.classList.add('show'), 40);
@@ -3251,6 +3375,14 @@ if (window.GGP_Loaded) {
 
             // 3. 点击气泡 -> 打开全屏速览
             bubble.onclick = () => {
+                if (suppressNextBubbleClick) {
+                    suppressNextBubbleClick = false;
+                    if (suppressBubbleClickTimer !== null) {
+                        hostWin.clearTimeout(suppressBubbleClickTimer);
+                        suppressBubbleClickTimer = null;
+                    }
+                    return;
+                }
                 const previewItem = mofoData?.getItemById?.(mofoId) || item;
                 const history = getMofoBubbleHistory(mofoData, mofoId);
                 if (history.length === 0) {
