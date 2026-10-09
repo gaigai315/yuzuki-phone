@@ -11,17 +11,19 @@ test('current version keeps all notices under the latest date', () => {
 
     assert.equal(manifest.version, '1.6.0');
     assert.equal(current.date, '2026-10-09');
-    assert.equal(current.items.length, 4);
-    assert.match(current.items[0], /悬浮图标打开手机/);
-    assert.match(current.items[0], /隐藏状态尺寸测量、重复定位与缩放动画/);
-    assert.match(current.items[0], /快速闪缩抖动/);
-    assert.match(current.items[1], /微信线下模式/);
-    assert.match(current.items[1], /微信昵称与微信零钱余额变量注入/);
-    assert.match(current.items[1], /线上支付标签/);
-    assert.match(current.items[1], /扣减微信零钱并记录购物流水/);
-    assert.match(current.items[1], /重复解析防重及酒馆楼层回档/);
-    assert.match(current.items[2], /优化 API 请求流式解析/);
-    assert.match(current.items[3], /优化魔坊APP渲染逻辑/);
+    assert.equal(current.items.length, 5);
+    assert.match(current.items[0], /酒馆二改 APP/);
+    assert.match(current.items[0], /小手机线上消息无法注入正文/);
+    assert.match(current.items[1], /悬浮图标打开手机/);
+    assert.match(current.items[1], /隐藏状态尺寸测量、重复定位与缩放动画/);
+    assert.match(current.items[1], /快速闪缩抖动/);
+    assert.match(current.items[2], /微信线下模式/);
+    assert.match(current.items[2], /微信昵称与微信零钱余额变量注入/);
+    assert.match(current.items[2], /线上支付标签/);
+    assert.match(current.items[2], /扣减微信零钱并记录购物流水/);
+    assert.match(current.items[2], /重复解析防重及酒馆楼层回档/);
+    assert.match(current.items[3], /优化 API 请求流式解析/);
+    assert.match(current.items[4], /优化魔坊APP渲染逻辑/);
     assert.equal(current.updates, undefined);
 });
 
@@ -40,6 +42,8 @@ test('fallback announcement preserves the 1.6.0 notices', () => {
 
     const block = indexSource.slice(start, end);
     assert.match(block, /date: '2026-10-09'/);
+    assert.match(block, /酒馆二改 APP/);
+    assert.match(block, /小手机线上消息无法注入正文/);
     assert.match(block, /悬浮图标打开手机/);
     assert.match(block, /隐藏状态尺寸测量、重复定位与缩放动画/);
     assert.match(block, /快速闪缩抖动/);

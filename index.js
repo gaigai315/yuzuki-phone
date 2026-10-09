@@ -83,6 +83,7 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-10-09',
     items: [
+        '【修复】修复部分酒馆二改 APP 中小手机线上消息无法注入正文的问题。',
         '【修复】修复桌面端通过悬浮图标打开手机时，面板因隐藏状态尺寸测量、重复定位与缩放动画产生快速闪缩抖动的问题。',
         '【新增】微信线下模式新增用户微信昵称与微信零钱余额变量注入；AI 输出线上支付标签时会按商品金额扣减微信零钱并记录购物流水，同时支持重复解析防重及酒馆楼层回档。',
         '【优化】优化 API 请求流式解析。',
@@ -9991,11 +9992,20 @@ if (window.GGP_Loaded) {
             await loadCoreModules();
             let phonePromptHandler = async () => {};
             let phonePromptRunTail = Promise.resolve();
+            const phonePromptRunsByChat = new WeakMap();
             const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|PHONE_APP_HISTORY|MOMENTS_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i;
             const runPhonePromptHandler = (eventData, source = 'unknown') => {
+                const chat = Array.isArray(eventData?.chat) ? eventData.chat : null;
+                if (chat && phonePromptRunsByChat.has(chat)) {
+                    return phonePromptRunsByChat.get(chat);
+                }
+
                 const run = phonePromptRunTail
                     .catch(() => undefined)
                     .then(() => phonePromptHandler(eventData));
+                if (chat) {
+                    phonePromptRunsByChat.set(chat, run);
+                }
                 phonePromptRunTail = run.catch((error) => {
                     console.warn(`[手机插件] ${source} 注入队列异常:`, error);
                 });
@@ -13121,21 +13131,29 @@ if (window.GGP_Loaded) {
                         }
                 }; // 结束 phonePromptHandler 定义
 
-                // 🔥 移动端终极修复：回归同步过滤器，防止酒馆在手机端丢弃异步上下文
-                if (window.hooks && typeof window.hooks.addFilter === 'function') {
-                    // 🔥 核心修复：加上 async 和 await，强迫酒馆发包前必须等我们的变量替换彻底完成！
-                    window.hooks.addFilter('chat_completion_prompt_ready', async (chat) => {
-                        // 包装成旧版 eventData 格式兼容原有代码
-                        let eventData = { chat: chat, prompt: [] };
-                        await runPhonePromptHandler(eventData, 'prompt_ready');
-                        return eventData.chat; // 必须返回修改后的数组给酒馆
-                    });
-                } else {
-                    // 旧版本酒馆兼容
+                // 官方事件是主注入链；旧 filter 只作为兼容入口。两者命中同一 chat 时由统一 runner 去重。
+                const eventTypes = context.eventTypes || context.event_types || window.eventTypes || window.event_types || {};
+                let phonePromptBridgeRegistered = false;
+
+                if (eventTypes.CHAT_COMPLETION_PROMPT_READY && typeof context.eventSource.on === 'function') {
                     context.eventSource.on(
-                        context.event_types.CHAT_COMPLETION_PROMPT_READY,
+                        eventTypes.CHAT_COMPLETION_PROMPT_READY,
                         (eventData) => runPhonePromptHandler(eventData, 'prompt_ready_event')
                     );
+                    phonePromptBridgeRegistered = true;
+                }
+
+                if (window.hooks && typeof window.hooks.addFilter === 'function') {
+                    window.hooks.addFilter('chat_completion_prompt_ready', async (chat) => {
+                        const eventData = { chat, prompt: [] };
+                        await runPhonePromptHandler(eventData, 'prompt_ready_filter');
+                        return eventData.chat;
+                    });
+                    phonePromptBridgeRegistered = true;
+                }
+
+                if (!phonePromptBridgeRegistered) {
+                    console.warn('⚠️ [手机插件] 未找到可用的 prompt-ready 注入入口');
                 }
 
             } else {
