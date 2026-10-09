@@ -136,6 +136,18 @@ test('Mofo editor uses the list enable toggle without a duplicate prompt checkbo
     assert.doesNotMatch(source, /offlineEnabledInput/);
 });
 
+test('Mofo editor waits for a user tap before focusing an input', () => {
+    const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+    const editorBindingStart = source.indexOf("if (menu.querySelector('.mofo-editor-inline'))");
+    const editorBindingEnd = source.indexOf("menu.querySelectorAll('.mofo-entry[data-mofo-id]')", editorBindingStart);
+    const editorBindingSource = source.slice(editorBindingStart, editorBindingEnd);
+
+    assert.ok(editorBindingStart >= 0 && editorBindingEnd > editorBindingStart);
+    assert.doesNotMatch(source, /focusMofoEditorName/);
+    assert.doesNotMatch(editorBindingSource, /\.focus\(/);
+    assert.doesNotMatch(source, /<input[^>]+id="mofo-editor-name"[^>]+autofocus/i);
+});
+
 test('Mofo preview click keeps the floating bubble and refreshes preview data', () => {
     const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
     const clickStart = source.indexOf('            bubble.onclick = () => {');

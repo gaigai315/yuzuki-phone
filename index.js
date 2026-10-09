@@ -4869,13 +4869,6 @@ if (window.GGP_Loaded) {
                         return currentTemplate !== String(draft.htmlTemplate ?? '');
                     };
 
-                    const focusMofoEditorName = () => {
-                        const nameInput = menu.querySelector('#mofo-editor-name');
-                        if (!nameInput) return;
-                        nameInput.focus();
-                        nameInput.setSelectionRange?.(nameInput.value.length, nameInput.value.length);
-                    };
-
                     const renderMofoPane = () => {
                         const mofoPageRoot = menu.querySelector('#mofo-page-root');
                         if (!mofoPageRoot) return;
@@ -5056,7 +5049,6 @@ if (window.GGP_Loaded) {
                                     alert(err?.message || '保存失败');
                                 }
                             });
-                            focusMofoEditorName();
                             return;
                         }
 
