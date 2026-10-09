@@ -10,30 +10,43 @@ test('current version keeps all notices under the latest date', () => {
     const current = updateLog.versions[manifest.version];
 
     assert.equal(manifest.version, '1.6.0');
-    assert.equal(current.date, '2026-10-09');
-    assert.equal(current.items.length, 9);
-    assert.match(current.items[0], /酒馆二改 APP/);
-    assert.match(current.items[0], /小手机线上消息无法注入正文/);
-    assert.match(current.items[1], /悬浮图标打开手机/);
-    assert.match(current.items[1], /隐藏状态尺寸测量、重复定位与缩放动画/);
-    assert.match(current.items[1], /快速闪缩抖动/);
-    assert.match(current.items[2], /微信线下模式/);
-    assert.match(current.items[2], /微信昵称与微信零钱余额变量注入/);
-    assert.match(current.items[2], /线上支付标签/);
-    assert.match(current.items[2], /扣减微信零钱并记录购物流水/);
-    assert.match(current.items[2], /重复解析防重及酒馆楼层回档/);
-    assert.match(current.items[3], /优化 API 请求流式解析/);
-    assert.match(current.items[4], /优化魔坊APP渲染逻辑/);
-    assert.match(current.items[5], /直接删除酒馆楼层时会同步回滚/);
-    assert.match(current.items[5], /AI 联系人发布的朋友圈也支持单独删除/);
-    assert.match(current.items[6], /X、微博、微信、蜜语与日记/);
-    assert.match(current.items[6], /身份 TAG 含括号时不再被提前截断/);
-    assert.match(current.items[6], /完整保留后续提示词/);
-    assert.match(current.items[7], /首次点击小手机快捷回复按钮/);
-    assert.match(current.items[7], /仅收起键盘而未打开面板/);
-    assert.match(current.items[8], /魔坊悬浮更新气泡/);
-    assert.match(current.items[8], /桌面端与移动端临时拖动/);
-    assert.match(current.items[8], /重新出现时会恢复默认位置/);
+    assert.equal(current.date, '2026-10-10');
+    assert.equal(current.items.length, 11);
+    assert.deepEqual(
+        current.items.map(item => item.match(/^【([^】]+)】/)?.[1]),
+        ['新增', '新增', '修复', '修复', '修复', '修复', '优化', '优化', '优化', '优化', '优化']
+    );
+    assert.match(current.items[0], /Fish Audio 服务商支持/);
+    assert.match(current.items[0], /官方音色或网页复刻音色 ID/);
+    assert.match(current.items[0], /s2\.1-pro-free 免费模型/);
+    assert.match(current.items[0], /多语言自动识别与混合朗读/);
+
+    const previousItems = current.items.slice(1);
+    assert.match(previousItems[0], /微信线下模式/);
+    assert.match(previousItems[0], /微信昵称与微信零钱余额变量注入/);
+    assert.match(previousItems[0], /线上支付标签/);
+    assert.match(previousItems[0], /扣减微信零钱并记录购物流水/);
+    assert.match(previousItems[0], /重复解析防重及酒馆楼层回档/);
+    assert.match(previousItems[1], /酒馆二改 APP/);
+    assert.match(previousItems[1], /小手机线上消息无法注入正文/);
+    assert.match(previousItems[2], /手机正文注入内容未统一经过酒馆宏变量接口/);
+    assert.match(previousItems[2], /微信线下提示词中的 \{\{user\}\} 等变量未被替换/);
+    assert.match(previousItems[2], /朋友圈、微信历史、日记、魔坊等共用注入入口同步生效/);
+    assert.match(previousItems[3], /悬浮图标打开手机/);
+    assert.match(previousItems[3], /隐藏状态尺寸测量、重复定位与缩放动画/);
+    assert.match(previousItems[3], /快速闪缩抖动/);
+    assert.match(previousItems[4], /首次点击小手机快捷回复按钮/);
+    assert.match(previousItems[4], /仅收起键盘而未打开面板/);
+    assert.match(previousItems[5], /优化 API 请求流式解析/);
+    assert.match(previousItems[6], /优化魔坊APP渲染逻辑/);
+    assert.match(previousItems[7], /直接删除酒馆楼层时会同步回滚/);
+    assert.match(previousItems[7], /AI 联系人发布的朋友圈也支持单独删除/);
+    assert.match(previousItems[8], /X、微博、微信、蜜语与日记/);
+    assert.match(previousItems[8], /身份 TAG 含括号时不再被提前截断/);
+    assert.match(previousItems[8], /完整保留后续提示词/);
+    assert.match(previousItems[9], /魔坊悬浮更新气泡/);
+    assert.match(previousItems[9], /桌面端与移动端临时拖动/);
+    assert.match(previousItems[9], /重新出现时会恢复默认位置/);
     assert.equal(current.updates, undefined);
 });
 
@@ -51,9 +64,15 @@ test('fallback announcement preserves the 1.6.0 notices', () => {
     assert.ok(start >= 0 && end > start, 'fallback update block should exist');
 
     const block = indexSource.slice(start, end);
-    assert.match(block, /date: '2026-10-09'/);
+    assert.match(block, /date: '2026-10-10'/);
+    assert.ok(block.indexOf('【新增】') < block.indexOf('【修复】'));
+    assert.ok(block.lastIndexOf('【修复】') < block.indexOf('【优化】'));
+    assert.match(block, /Fish Audio 服务商支持/);
     assert.match(block, /酒馆二改 APP/);
     assert.match(block, /小手机线上消息无法注入正文/);
+    assert.match(block, /手机正文注入内容未统一经过酒馆宏变量接口/);
+    assert.match(block, /微信线下提示词中的 \{\{user\}\} 等变量未被替换/);
+    assert.match(block, /朋友圈、微信历史、日记、魔坊等共用注入入口同步生效/);
     assert.match(block, /悬浮图标打开手机/);
     assert.match(block, /隐藏状态尺寸测量、重复定位与缩放动画/);
     assert.match(block, /快速闪缩抖动/);

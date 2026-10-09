@@ -9,7 +9,7 @@ function loadPhonePlaceholderTools() {
     const start = indexSource.indexOf('const PHONE_PROMPT_MACRO_NAMES');
     const end = indexSource.indexOf('const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS', start);
     assert.ok(start >= 0 && end > start, 'phone placeholder helpers should be present');
-    return Function(`${indexSource.slice(start, end)}\nreturn { PHONE_REQUEST_MACRO_PATTERN, getPhonePromptMarker, stripPhonePromptPlaceholders };`)();
+    return Function(`${indexSource.slice(start, end)}\nreturn { PHONE_REQUEST_MACRO_PATTERN, getPhonePromptMarker, stripPhonePromptPlaceholders, substitutePhoneInjectedMacros };`)();
 }
 
 function loadPromptRunner(handler) {
@@ -40,6 +40,46 @@ test('registered macro markers remain detectable and cleanable after TT macro ex
         tools.stripPhonePromptPlaceholders(`before ${marker} after`),
         { text: 'before  after', changed: true },
     );
+});
+
+test('injected phone content uses the SillyTavern macro substitution interface', () => {
+    const tools = loadPhonePlaceholderTools();
+    const calls = [];
+    const context = {
+        substituteParams(content) {
+            calls.push(content);
+            return content
+                .replaceAll('{{user}}', '测试用户')
+                .replaceAll('{{char}}', '测试角色')
+                .replaceAll('{{customMacro}}', '扩展值');
+        },
+    };
+
+    const content = tools.substitutePhoneInjectedMacros(
+        '{{PHONE_HISTORY}} {{user}}正在联系{{char}}，状态={{customMacro}}',
+        context,
+    );
+
+    assert.equal(content, '{{PHONE_HISTORY}} 测试用户正在联系测试角色，状态=扩展值');
+    assert.equal(calls.length, 1);
+    assert.doesNotMatch(calls[0], /\{\{PHONE_HISTORY\}\}/);
+});
+
+test('phone macro substitution failures preserve injected content', () => {
+    const tools = loadPhonePlaceholderTools();
+    const previousWarn = console.warn;
+    console.warn = () => {};
+    try {
+        const original = '保留{{user}}原文';
+        const content = tools.substitutePhoneInjectedMacros(original, {
+            substituteParams() {
+                throw new Error('macro failure');
+            },
+        });
+        assert.equal(content, original);
+    } finally {
+        console.warn = previousWarn;
+    }
 });
 
 test('phone prompt macros register through the SillyTavern context bridge', () => {
@@ -165,6 +205,17 @@ test('foreground fallback is limited to WeChat rules and history when TT consume
     assert.match(injectionSource, /PHONE_HISTORY[^\n]+allowForegroundWechatFallback/);
     assert.doesNotMatch(injectionSource, /MOMENTS_HISTORY[^\n]+allowForegroundWechatFallback/);
     assert.doesNotMatch(injectionSource, /HONEY_HISTORY[^\n]+allowForegroundWechatFallback/);
+});
+
+test('all injected phone blocks resolve native Tavern macros before message construction', () => {
+    const start = indexSource.indexOf('// 🔥 辅助函数：原地拆分注入');
+    const end = indexSource.indexOf('// 🔥 分别注入规则和历史记录', start);
+    assert.ok(start >= 0 && end > start, 'phone injection helper should be present');
+    const injectionSource = indexSource.slice(start, end);
+
+    assert.match(injectionSource, /substitutePhoneInjectedMacros\(contentToInject, getContext\(\)\)/);
+    assert.match(injectionSource, /content:\s*resolvedContentToInject/);
+    assert.match(injectionSource, /parts\s*=\s*\[\{ text: resolvedContentToInject \}\]/);
 });
 
 test('same prompt array is injected once across official and legacy paths', async () => {

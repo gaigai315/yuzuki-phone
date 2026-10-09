@@ -34,6 +34,11 @@ export class TtsManager {
                 model: 'tts-1',
                 voice: 'alloy'
             },
+            fish: {
+                url: 'https://api.fish.audio/v1/tts',
+                model: 's2.1-pro-free',
+                voice: ''
+            },
             indextts: {
                 url: 'http://127.0.0.1:7880/v1/audio/speech',
                 model: 'index-tts2',
@@ -74,8 +79,42 @@ export class TtsManager {
         if (url.includes('127.0.0.1:7880') || url.includes('localhost:7880') || url.includes('index-tts')) return 'indextts';
         if (url.includes('xiaomimimo.com') || /\/(?:v1\/)?chat\/completions\b/.test(url)) return 'nimo';
         if (url.includes('openspeech.bytedance.com')) return 'volcengine';
+        if (url.includes('api.fish.audio') || /fish\.audio\/v1\/tts\b/.test(url)) return 'fish';
         if (url.includes('api.openai.com') || /\/audio\/speech\b/.test(url)) return 'openai';
         return String(fallback || '').trim() || 'minimax_cn';
+    }
+
+    _resolveFishEndpoint(apiUrl = '') {
+        let raw = String(apiUrl || this._getProviderDefaults('fish').url || '').trim();
+        if (raw.startsWith('/proxy/')) raw = raw.slice('/proxy/'.length);
+        if (!raw) throw new Error('缺少 Fish Audio API 地址');
+
+        let endpoint;
+        try {
+            endpoint = new URL(raw);
+        } catch (_e) {
+            throw new Error('Fish Audio API 地址无效');
+        }
+        if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+            throw new Error('Fish Audio API 地址必须为不含账号、查询参数的 HTTPS 地址');
+        }
+
+        const path = endpoint.pathname.replace(/\/+$/, '');
+        endpoint.pathname = /\/v1\/tts$/i.test(path)
+            ? path
+            : `${path.replace(/\/v1$/i, '')}/v1/tts`;
+        return `/proxy/${endpoint.href}`;
+    }
+
+    _detectAudioMime(bytes = new Uint8Array()) {
+        const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+        const text = (start, end) => String.fromCharCode(...data.slice(start, end));
+        if (data.length >= 10 && text(0, 3) === 'ID3') return 'audio/mpeg';
+        if (data.length >= 4 && data[0] === 0xff && (data[1] & 0xe0) === 0xe0) return 'audio/mpeg';
+        if (data.length >= 12 && text(0, 4) === 'RIFF' && text(8, 12) === 'WAVE') return 'audio/wav';
+        if (data.length >= 4 && text(0, 4) === 'OggS') return 'audio/ogg';
+        if (data.length >= 4 && text(0, 4) === 'fLaC') return 'audio/flac';
+        return '';
     }
 
     _resolveConfig(options = {}) {
@@ -878,6 +917,86 @@ export class TtsManager {
             }
             const blob = new Blob([bytes], { type: 'audio/mp3' });
             return URL.createObjectURL(blob);
+        }
+
+        if (provider === 'fish') {
+            const safeModel = String(model || 's2.1-pro-free').trim() || 's2.1-pro-free';
+            const officialModels = ['s2.1-pro-free', 's2.1-pro', 's2-pro', 's1', 'drama-3-preview'];
+            const rawApiUrl = String(apiUrl || this._getProviderDefaults('fish').url || '').trim();
+            const parsedApiUrl = rawApiUrl.startsWith('/proxy/') ? rawApiUrl.slice('/proxy/'.length) : rawApiUrl;
+            try {
+                const parsed = new URL(parsedApiUrl);
+                if (parsed.hostname === 'api.fish.audio' && !officialModels.includes(safeModel)) {
+                    throw new Error(`Fish Audio 官方模型无效：${safeModel}`);
+                }
+            } catch (error) {
+                if (error?.message?.startsWith('Fish Audio 官方模型无效')) throw error;
+            }
+
+            const controller = new AbortController();
+            let timedOut = false;
+            const abortFromCaller = () => controller.abort();
+            if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+            signal?.addEventListener?.('abort', abortFromCaller, { once: true });
+            const timeout = setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+            }, 120000);
+
+            try {
+                const response = await this._getRawFetch()(this._resolveFishEndpoint(apiUrl), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`,
+                        'model': safeModel
+                    },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        text: inputText,
+                        reference_id: voice,
+                        format: 'mp3',
+                        latency: 'normal'
+                    })
+                });
+                if (!response.ok) {
+                    const errorText = await response.text().catch(() => '');
+                    let message = errorText;
+                    try {
+                        const parsed = JSON.parse(errorText || '{}');
+                        message = parsed?.detail || parsed?.error?.message || parsed?.message || errorText;
+                    } catch (_e) {}
+                    const hints = {
+                        401: 'API Key 无效或已失效',
+                        402: '账户额度不足或当前模型需要付费额度',
+                        404: '请确认酒馆 config.yaml 已开启 enableCorsProxy，并检查 API 地址',
+                        429: '请求过于频繁或免费服务繁忙，请稍后重试'
+                    };
+                    const hint = hints[response.status] || message || '请求失败';
+                    throw new Error(`Fish Audio HTTP ${response.status}：${String(hint).slice(0, 300)}`);
+                }
+
+                const contentLength = Number(response.headers.get('content-length') || 0);
+                if (contentLength > 25 * 1024 * 1024) throw new Error('Fish Audio 返回音频超过 25MB 限制');
+                const received = await response.blob();
+                if (!received || Number(received.size || 0) <= 0) throw new Error('Fish Audio 未返回音频数据');
+                if (received.size > 25 * 1024 * 1024) throw new Error('Fish Audio 返回音频超过 25MB 限制');
+                const signatureMime = this._detectAudioMime(new Uint8Array(await received.slice(0, 32).arrayBuffer()));
+                const responseMime = /^audio\//i.test(received.type) ? received.type : '';
+                const mime = signatureMime || responseMime;
+                if (!mime) throw new Error('Fish Audio 返回内容不是可识别的音频，请检查 Key、模型和音色 ID');
+                return URL.createObjectURL(new Blob([received], { type: mime }));
+            } catch (error) {
+                if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+                if (timedOut) throw new Error('Fish Audio 请求超时（120 秒）');
+                if (error instanceof TypeError) {
+                    throw new Error('Fish Audio 请求失败，请检查网络、Base URL 和酒馆 enableCorsProxy 设置');
+                }
+                throw error;
+            } finally {
+                clearTimeout(timeout);
+                signal?.removeEventListener?.('abort', abortFromCaller);
+            }
         }
 
         if (provider === 'nimo') {

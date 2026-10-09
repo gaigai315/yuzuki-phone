@@ -108,6 +108,37 @@ function stripPhonePromptPlaceholders(value) {
     });
     return { text: text.trim(), changed };
 }
+
+function substitutePhoneInjectedMacros(value, context) {
+    const rawContent = String(value ?? '');
+    const substituteParams = context?.substituteParams;
+    if (!rawContent || typeof substituteParams !== 'function') return rawContent;
+
+    const protectedMacros = [];
+    let contentForSubstitution = rawContent;
+    PHONE_PROMPT_MACRO_NAMES.forEach((name) => {
+        const rawPattern = new RegExp(`\\{\\{\\s*${name}\\s*\\}\\}`, 'gi');
+        contentForSubstitution = contentForSubstitution.replace(rawPattern, (matchedMacro) => {
+            const token = `__ST_PHONE_PROTECTED_PROMPT_MACRO_${protectedMacros.length}__`;
+            protectedMacros.push({ token, matchedMacro });
+            return token;
+        });
+    });
+
+    try {
+        const substituted = substituteParams.call(context, contentForSubstitution);
+        if (substituted === undefined || substituted === null) return rawContent;
+
+        let resolvedContent = String(substituted);
+        protectedMacros.forEach(({ token, matchedMacro }) => {
+            resolvedContent = resolvedContent.split(token).join(matchedMacro);
+        });
+        return resolvedContent;
+    } catch (error) {
+        console.warn('[手机插件] 酒馆宏变量替换失败，将保留注入原文:', error);
+        return rawContent;
+    }
+}
 const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
     'offline-wechat-prompt-enabled',
     'offline-single-chat-enabled',
@@ -116,16 +147,18 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-09',
+    date: '2026-10-10',
     items: [
-        '【修复】修复部分酒馆二改 APP 中小手机线上消息无法注入正文的问题。',
-        '【修复】修复桌面端通过悬浮图标打开手机时，面板因隐藏状态尺寸测量、重复定位与缩放动画产生快速闪缩抖动的问题。',
+        '【新增】TTS 新增 Fish Audio 服务商支持，可直接使用官方音色或网页复刻音色 ID，并支持 s2.1-pro-free 免费模型、多语言自动识别与混合朗读。',
         '【新增】微信线下模式新增用户微信昵称与微信零钱余额变量注入；AI 输出线上支付标签时会按商品金额扣减微信零钱并记录购物流水，同时支持重复解析防重及酒馆楼层回档。',
+        '【修复】修复部分酒馆二改 APP 中小手机线上消息无法注入正文的问题。',
+        '【修复】修复手机正文注入内容未统一经过酒馆宏变量接口，导致微信线下提示词中的 {{user}} 等变量未被替换的问题；朋友圈、微信历史、日记、魔坊等共用注入入口同步生效。',
+        '【修复】修复桌面端通过悬浮图标打开手机时，面板因隐藏状态尺寸测量、重复定位与缩放动画产生快速闪缩抖动的问题。',
+        '【修复】修复移动端输入框聚焦并展开快速回复栏后，首次点击小手机快捷回复按钮仅收起键盘而未打开面板的问题。',
         '【优化】优化 API 请求流式解析。',
         '【优化】优化魔坊APP渲染逻辑。',
         '【优化】完善微信与朋友圈数据删除逻辑：直接删除酒馆楼层时会同步回滚该楼层及后续生成的微信数据和朋友圈，AI 联系人发布的朋友圈也支持单独删除。',
         '【优化】统一 X、微博、微信、蜜语与日记的生图提示词解析，角色身份 TAG 含括号时不再被提前截断，并完整保留后续提示词。',
-        '【修复】修复移动端输入框聚焦并展开快速回复栏后，首次点击小手机快捷回复按钮仅收起键盘而未打开面板的问题。',
         '【优化】魔坊悬浮更新气泡支持桌面端与移动端临时拖动避让内容；拖动位置不会保存，气泡随楼层隐藏或重新出现时会恢复默认位置。'
     ]
 };
@@ -12944,6 +12977,7 @@ if (window.GGP_Loaded) {
                                         }
 
                                         // 2. 准备要插入的系统块
+                                        const resolvedContentToInject = substitutePhoneInjectedMacros(contentToInject, getContext());
                                         const isGemini = messages.length > 0 && messages[0].parts !== undefined;
                                         const resolveInjectedSystemName = (id, text) => {
                                             if (id === 'weibo_system_history') return 'SYSTEM (微博)';
@@ -12967,12 +13001,12 @@ if (window.GGP_Loaded) {
                                         };
                                         const msgObj = {
                                             role: isGemini ? 'user' : 'system', // Gemini不允许塞system
-                                            content: contentToInject,
+                                            content: resolvedContentToInject,
                                             isPhoneMessage: true,
                                             identifier: identifier,
-                                            name: resolveInjectedSystemName(identifier, contentToInject)
+                                            name: resolveInjectedSystemName(identifier, resolvedContentToInject)
                                         };
-                                        if (isGemini) msgObj.parts = [{ text: contentToInject }];
+                                        if (isGemini) msgObj.parts = [{ text: resolvedContentToInject }];
 
                                         // 3. 开始遍历并原地切割注入
                                         let replaced = false;
