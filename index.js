@@ -11080,6 +11080,31 @@ if (window.GGP_Loaded) {
                                 return; 
                             }
 
+                            const requirePhoneInjectionVariable = isPhoneInjectionVariableRequired();
+                            const requestHasPhoneMacro = (() => {
+                                try {
+                                    return PHONE_REQUEST_MACRO_PATTERN.test(JSON.stringify({
+                                        chat: eventData.chat,
+                                        prompt: eventData.prompt
+                                    }));
+                                } catch (_error) {
+                                    return false;
+                                }
+                            })();
+                            const requestHasInjectedPhoneMessages = [eventData.chat, eventData.prompt]
+                                .some(list => Array.isArray(list) && list.some(msg => msg?.isPhoneMessage && msg?.identifier));
+                            const hasWechatOnlineToOfflinePending = !!getWechatOnlineToOfflineTransferPending();
+
+                            // prompt-ready 可能被多个官方/兼容入口依次处理。变量已替换成手机消息后，
+                            // 后续入口必须保留现有注入，不能先删除消息再因找不到变量而退出。
+                            if (requirePhoneInjectionVariable && !requestHasPhoneMacro && !hasWechatOnlineToOfflinePending) {
+                                if (!requestHasInjectedPhoneMessages) {
+                                    forceFallbackCleanup(eventData.chat);
+                                    forceFallbackCleanup(eventData.prompt);
+                                }
+                                return;
+                            }
+
                             // 2. 如果是酒馆正文发起的请求（比如点击正文发送、重新生成、继续生成）
                             if (eventData.chat && Array.isArray(eventData.chat)) {
                                 // 🧹 清理重绘缓存：
@@ -11101,24 +11126,6 @@ if (window.GGP_Loaded) {
                                         eventData.prompt.splice(i, 1);
                                     }
                                 }
-                            }
-
-                            const requirePhoneInjectionVariable = isPhoneInjectionVariableRequired();
-                            const requestHasPhoneMacro = (() => {
-                                try {
-                                    return PHONE_REQUEST_MACRO_PATTERN.test(JSON.stringify({
-                                        chat: eventData.chat,
-                                        prompt: eventData.prompt
-                                    }));
-                                } catch (_error) {
-                                    return false;
-                                }
-                            })();
-                            const hasWechatOnlineToOfflinePending = !!getWechatOnlineToOfflineTransferPending();
-                            if (requirePhoneInjectionVariable && !requestHasPhoneMacro && !hasWechatOnlineToOfflinePending) {
-                                forceFallbackCleanup(eventData.chat);
-                                forceFallbackCleanup(eventData.prompt);
-                                return;
                             }
 
                             // 📱 收集手机活动记录
@@ -13131,16 +13138,20 @@ if (window.GGP_Loaded) {
                         }
                 }; // 结束 phonePromptHandler 定义
 
-                // 官方事件是主注入链；旧 filter 只作为兼容入口。两者命中同一 chat 时由统一 runner 去重。
+                // 官方事件是主注入链；旧 filter 只作为兼容入口。小手机必须先于会克隆 chat
+                // 的扩展执行，否则后续注入会落在非酒馆最终发送的数组上。
                 const eventTypes = context.eventTypes || context.event_types || window.eventTypes || window.event_types || {};
                 let phonePromptBridgeRegistered = false;
 
-                if (eventTypes.CHAT_COMPLETION_PROMPT_READY && typeof context.eventSource.on === 'function') {
-                    context.eventSource.on(
-                        eventTypes.CHAT_COMPLETION_PROMPT_READY,
-                        (eventData) => runPhonePromptHandler(eventData, 'prompt_ready_event')
-                    );
-                    phonePromptBridgeRegistered = true;
+                if (eventTypes.CHAT_COMPLETION_PROMPT_READY && context.eventSource) {
+                    const phonePromptReadyListener = (eventData) => runPhonePromptHandler(eventData, 'prompt_ready_event');
+                    if (typeof context.eventSource.makeFirst === 'function') {
+                        context.eventSource.makeFirst(eventTypes.CHAT_COMPLETION_PROMPT_READY, phonePromptReadyListener);
+                        phonePromptBridgeRegistered = true;
+                    } else if (typeof context.eventSource.on === 'function') {
+                        context.eventSource.on(eventTypes.CHAT_COMPLETION_PROMPT_READY, phonePromptReadyListener);
+                        phonePromptBridgeRegistered = true;
+                    }
                 }
 
                 if (window.hooks && typeof window.hooks.addFilter === 'function') {
