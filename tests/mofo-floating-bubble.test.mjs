@@ -180,6 +180,22 @@ test('Mofo forum preview has readable but bounded mobile sizing', () => {
     assert.match(source, /#mofo-global-preview-pop \.mofo-history-content::\-webkit-scrollbar \{[\s\S]*?display: none;/);
 });
 
+test('Mofo bubble follows the mobile input bar while the keyboard viewport settles', () => {
+    const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+
+    assert.match(source, /const collectBubbleAnchorElements = \(\) => \{[\s\S]*?hostDoc\.querySelector\('#send_form'\),[\s\S]*?sendTextarea\?\.closest\?\.\('\.chat-input-container, \.send_form, form'\),[\s\S]*?sendTextarea,[\s\S]*?hostDoc\.querySelector\('#form_sheld'\)/);
+    assert.match(source, /for \(const el of collectBubbleAnchorElements\(\)\) \{[\s\S]*?return rect;/);
+    assert.match(source, /targetX = anchorRect\.left \+ \(anchorRect\.width \/ 2\);/);
+    assert.match(source, /targetY = anchorRect\.top - bubbleHalfHeight - 10;/);
+    assert.doesNotMatch(source, /target[XY] = offset(?:Left|Top) \+ anchorRect/);
+    assert.match(source, /\[60, 160, 320, 600\]\.forEach/);
+    assert.match(source, /visualViewport\.addEventListener\('resize', scheduleBubblePosition/);
+    assert.match(source, /visualViewport\.addEventListener\('scroll', scheduleBubblePosition/);
+    assert.match(source, /hostDoc\.addEventListener\('focusin', scheduleBubblePosition/);
+    assert.match(source, /hostDoc\.addEventListener\('focusout', scheduleBubblePosition/);
+    assert.match(source, /new BubbleResizeObserver\(scheduleBubblePosition\)/);
+});
+
 test('Mofo quick panel keeps its headers fixed while only Mofo content scrolls', () => {
     const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
     const phoneShellSource = fs.readFileSync(new URL('../phone/phone-shell.js', import.meta.url), 'utf8');

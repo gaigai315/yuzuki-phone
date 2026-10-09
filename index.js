@@ -3059,6 +3059,16 @@ if (window.GGP_Loaded) {
             themeObserver?.observe(hostDoc.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
             bubblePositionController.signal.addEventListener('abort', () => themeObserver?.disconnect(), { once: true });
 
+            const collectBubbleAnchorElements = () => {
+                const sendTextarea = hostDoc.querySelector('#send_textarea');
+                return [
+                    hostDoc.querySelector('#send_form'),
+                    sendTextarea?.closest?.('.chat-input-container, .send_form, form'),
+                    sendTextarea,
+                    hostDoc.querySelector('#form_sheld')
+                ].filter((element, index, elements) => element && elements.indexOf(element) === index);
+            };
+
             const positionBubble = () => {
                 if (!bubble.isConnected) {
                     bubblePositionController.abort();
@@ -3070,21 +3080,14 @@ if (window.GGP_Loaded) {
                 const offsetLeft = vv?.offsetLeft || 0;
                 const offsetTop = vv?.offsetTop || 0;
                 const pickAnchorRect = () => {
-                    const candidates = [
-                        hostDoc.querySelector('#send_form'),
-                        hostDoc.querySelector('#form_sheld'),
-                        hostDoc.querySelector('#send_textarea')?.closest?.('#send_form, #form_sheld, form, .send_form, .chat-input-container'),
-                        hostDoc.querySelector('#send_textarea')
-                    ].filter(Boolean);
-                    let best = null;
-                    for (const el of candidates) {
+                    for (const el of collectBubbleAnchorElements()) {
                         const rect = el.getBoundingClientRect?.();
                         if (!rect || rect.width <= 0 || rect.height <= 0) continue;
-                        if (!best || rect.bottom > best.bottom) {
-                            best = rect;
-                        }
+                        const style = hostWin.getComputedStyle?.(el);
+                        if (style?.display === 'none' || style?.visibility === 'hidden') continue;
+                        return rect;
                     }
-                    return best;
+                    return null;
                 };
                 const anchorRect = pickAnchorRect();
                 const hasAnchor = !!anchorRect;
@@ -3095,8 +3098,8 @@ if (window.GGP_Loaded) {
                 let targetY = offsetTop + viewHeight - bubbleHalfHeight - 126;
 
                 if (hasAnchor) {
-                    targetX = offsetLeft + anchorRect.left + (anchorRect.width / 2);
-                    targetY = offsetTop + anchorRect.top - bubbleHalfHeight - 10;
+                    targetX = anchorRect.left + (anchorRect.width / 2);
+                    targetY = anchorRect.top - bubbleHalfHeight - 10;
                 }
 
                 const minX = offsetLeft + bubbleHalfWidth + 8;
@@ -3110,12 +3113,54 @@ if (window.GGP_Loaded) {
                 bubble.style.top = `${targetY}px`;
             };
 
-            hostWin.addEventListener('resize', positionBubble, { passive: true, signal: bubblePositionController.signal });
+            let bubblePositionFrame = null;
+            const bubblePositionTimers = new Set();
+            const clearScheduledBubblePositions = () => {
+                if (bubblePositionFrame !== null && typeof hostWin.cancelAnimationFrame === 'function') {
+                    hostWin.cancelAnimationFrame(bubblePositionFrame);
+                }
+                bubblePositionFrame = null;
+                bubblePositionTimers.forEach(timer => hostWin.clearTimeout(timer));
+                bubblePositionTimers.clear();
+            };
+            const scheduleBubblePosition = () => {
+                if (bubblePositionController.signal.aborted) return;
+                clearScheduledBubblePositions();
+                if (typeof hostWin.requestAnimationFrame === 'function') {
+                    bubblePositionFrame = hostWin.requestAnimationFrame(() => {
+                        bubblePositionFrame = null;
+                        positionBubble();
+                    });
+                } else {
+                    positionBubble();
+                }
+                [60, 160, 320, 600].forEach((delay) => {
+                    const timer = hostWin.setTimeout(() => {
+                        bubblePositionTimers.delete(timer);
+                        positionBubble();
+                    }, delay);
+                    bubblePositionTimers.add(timer);
+                });
+            };
+
+            hostWin.addEventListener('resize', scheduleBubblePosition, { passive: true, signal: bubblePositionController.signal });
             if (hostWin.visualViewport) {
-                hostWin.visualViewport.addEventListener('resize', positionBubble, { passive: true, signal: bubblePositionController.signal });
-                hostWin.visualViewport.addEventListener('scroll', positionBubble, { passive: true, signal: bubblePositionController.signal });
+                hostWin.visualViewport.addEventListener('resize', scheduleBubblePosition, { passive: true, signal: bubblePositionController.signal });
+                hostWin.visualViewport.addEventListener('scroll', scheduleBubblePosition, { passive: true, signal: bubblePositionController.signal });
             }
-            positionBubble();
+            hostDoc.addEventListener('focusin', scheduleBubblePosition, { capture: true, signal: bubblePositionController.signal });
+            hostDoc.addEventListener('focusout', scheduleBubblePosition, { capture: true, signal: bubblePositionController.signal });
+
+            const BubbleResizeObserver = hostWin.ResizeObserver || globalThis.ResizeObserver;
+            const anchorResizeObserver = BubbleResizeObserver
+                ? new BubbleResizeObserver(scheduleBubblePosition)
+                : null;
+            collectBubbleAnchorElements().forEach(element => anchorResizeObserver?.observe(element));
+            bubblePositionController.signal.addEventListener('abort', () => {
+                clearScheduledBubblePositions();
+                anchorResizeObserver?.disconnect();
+            }, { once: true });
+            scheduleBubblePosition();
 
             // 动画滑入
             setTimeout(() => bubble.classList.add('show'), 40);
