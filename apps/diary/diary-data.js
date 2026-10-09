@@ -13,6 +13,7 @@
 // 📔 日记数据引擎 - 存储与AI调用
 // ========================================
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
+import { extractImagePromptItems, removeImagePromptItems } from '../../config/image-prompt-format.js';
 
 export class DiaryData {
     constructor(storage) {
@@ -425,12 +426,11 @@ export class DiaryData {
         const source = String(content || '');
         const author = String(options.author || this._extractAuthorFromContent(source)).trim();
         const photos = [];
-        const regex = this._getPhotoPromptTagRegex();
-        let match;
-        while ((match = regex.exec(source)) !== null) {
-            const type = String(match[1] || '').trim();
-            const first = String(match[2] || '').replace(/\s+/g, ' ').trim();
-            const second = String(match[3] || '').replace(/\s+/g, ' ').trim();
+        const promptItems = this._extractPhotoPromptItems(source);
+        for (const item of promptItems) {
+            const type = item.mediaType;
+            const first = String(item.groups[0] || '').replace(/\s+/g, ' ').trim();
+            const second = String(item.groups[1] || '').replace(/\s+/g, ' ').trim();
             const reason = second ? first : '';
             const prompt = second || first;
             if (!prompt) continue;
@@ -449,8 +449,12 @@ export class DiaryData {
         return { photos };
     }
 
-    _getPhotoPromptTagRegex() {
-        return /\[(用户照片|个人图片|图片)\][^\S\r\n]*[（(]([^\r\n]*?)[）)](?:[^\S\r\n]*[（(]([^\r\n]*?)[）)])?/g;
+    _extractPhotoPromptItems(content = '') {
+        return extractImagePromptItems(content, {
+            acceptMediaType: mediaType => mediaType === '用户照片'
+                || mediaType === '个人图片'
+                || mediaType === '图片'
+        });
     }
 
     parseDiaryContent(content = {}) {
@@ -514,9 +518,8 @@ export class DiaryData {
             .replace(/^天气[:：].*$/gm, '')
             .replace(/^日记正文[:：]\s*$/gm, '')
             .replace(/^照片[:：]\s*$/gm, '')
-            .replace(/^落款[:：].*$/gm, '')
-            .replace(this._getPhotoPromptTagRegex(), '')
-            .trim();
+            .replace(/^落款[:：].*$/gm, '');
+        body = removeImagePromptItems(body, this._extractPhotoPromptItems(body)).trim();
         if (footer) {
             body = body.replace(footer, '').trim();
         }
@@ -534,8 +537,8 @@ export class DiaryData {
     }
 
     stripPhotoPromptTags(content = '') {
-        return String(content || '')
-            .replace(this._getPhotoPromptTagRegex(), '')
+        const source = String(content || '');
+        return removeImagePromptItems(source, this._extractPhotoPromptItems(source))
             .replace(/\n{3,}/g, '\n\n')
             .trim();
     }

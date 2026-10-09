@@ -13,6 +13,7 @@
 // 微博视图渲染 - 所有UI界面
 // ========================================
 import { ImageCropper } from '../settings/image-cropper.js';
+import { extractImagePromptItems, parseImagePromptDescriptionPair } from '../../config/image-prompt-format.js';
 import { replacePhoneEmojiTokens } from '../../config/phone-emoji.js';
 
 export class WeiboView {
@@ -1321,8 +1322,7 @@ export class WeiboView {
     // ========================================
 
     _countWeiboDraftTextImages(rawText = '') {
-        const mediaRegex = /\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
-        return (String(rawText || '').match(mediaRegex) || []).length;
+        return extractImagePromptItems(rawText).length;
     }
 
     _insertWeiboTextImageTemplate(textInput) {
@@ -4349,25 +4349,10 @@ export class WeiboView {
     }
 
     _parsePromptDescriptionPair(rawValue = '') {
-        const raw = String(rawValue || '').trim()
-            .replace(/^\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*/i, '');
-        const parts = [];
-        const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
-        let match;
-        while ((match = bracketRegex.exec(raw)) !== null) {
-            const text = String(match[1] || '').trim();
-            if (text) parts.push(text);
-        }
-        if (parts.length >= 2) {
-            return {
-                description: parts[0],
-                prompt: parts.slice(1).join(', ')
-            };
-        }
-        const single = parts[0] || raw.replace(/^[（(]\s*|\s*[)）]$/g, '').trim();
+        const parsed = parseImagePromptDescriptionPair(rawValue);
         return {
-            description: single,
-            prompt: single
+            description: parsed.description,
+            prompt: parsed.prompt
         };
     }
 

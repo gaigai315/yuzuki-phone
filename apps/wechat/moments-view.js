@@ -11,6 +11,11 @@
  * ======================================================== */
 import { ImageCropper } from '../settings/image-cropper.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
+import {
+    extractImagePromptItems,
+    parseImagePromptDescriptionPair,
+    removeImagePromptItems
+} from '../../config/image-prompt-format.js';
 import { readPhoneContextLimit } from '../../config/context-settings.js';
 import { replacePhoneEmojiTokens } from '../../config/phone-emoji.js';
 
@@ -68,20 +73,16 @@ export class MomentsView {
         const timeStr = this.formatTime(moment.time);
         // 🔥 优先实时从联系人/聊天获取头像，确保头像同步更新
         const contactAvatar = this.getContactAvatar(moment.name) || moment.avatar || '👤';
-        const userName = String(this.app.wechatData.getUserInfo()?.name || '').trim();
-        const isOwnMoment = String(moment?.name || '').trim() === userName;
 
         // 🔥 有背景图时，给每条朋友圈添加毛玻璃效果，让背景透出来
         // 使用 rgba 白色背景作为降级方案，确保移动端兼容
         const itemStyle = hasBgImage ? 'background: rgba(255,255,255,0.28); backdrop-filter: blur(10px) saturate(135%); -webkit-backdrop-filter: blur(10px) saturate(135%); border: 1px solid rgba(255,255,255,0.32); margin: 8px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);' : '';
 
         return `
-            <div class="moment-item" data-moment-id="${moment.id}" data-own-moment="${isOwnMoment ? '1' : '0'}" style="${itemStyle}">
-                ${isOwnMoment ? `
-                    <button class="moment-delete-btn" data-moment-id="${moment.id}" title="删除朋友圈">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                ` : ''}
+            <div class="moment-item" data-moment-id="${moment.id}" style="${itemStyle}">
+                <button class="moment-delete-btn" data-moment-id="${moment.id}" title="删除朋友圈">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
                 <!-- 头像 -->
                 <div class="moment-avatar-col">
                     ${this.app.renderAvatar(contactAvatar, '👤', moment.name)}
@@ -358,7 +359,7 @@ export class MomentsView {
             document.querySelectorAll('.moment-item.show-delete').forEach(item => item.classList.remove('show-delete'));
         };
 
-        document.querySelectorAll('.moment-item[data-own-moment="1"]').forEach(item => {
+        document.querySelectorAll('.moment-item').forEach(item => {
             let pressTimer = null;
             let moved = false;
             let startX = 0;
@@ -746,17 +747,12 @@ export class MomentsView {
     }
 
     _extractMomentImageTagsFromText(rawText = '') {
-        let cleanedText = String(rawText || '');
-        const images = [];
-        const mediaRegex = /\[(用户照片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
-        let match;
-
-        while ((match = mediaRegex.exec(cleanedText)) !== null) {
-            images.push(match[0].trim());
-        }
-
-        cleanedText = cleanedText
-            .replace(mediaRegex, '')
+        const raw = String(rawText || '');
+        const promptItems = extractImagePromptItems(raw, {
+            acceptMediaType: mediaType => mediaType !== '个人图片'
+        });
+        const images = promptItems.map(item => item.raw.trim()).filter(Boolean);
+        const cleanedText = removeImagePromptItems(raw, promptItems)
             .replace(/[ \t]+\n/g, '\n')
             .replace(/\n[ \t]+/g, '\n')
             .replace(/\n{3,}/g, '\n\n')
@@ -792,25 +788,10 @@ export class MomentsView {
     }
 
     _parsePromptDescriptionPair(rawValue = '') {
-        const raw = String(rawValue || '').trim()
-            .replace(/^\[(?:用户照片|图片(?:-[^\]\r\n]+)?|视频)\]\s*/i, '');
-        const parts = [];
-        const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
-        let match;
-        while ((match = bracketRegex.exec(raw)) !== null) {
-            const text = String(match[1] || '').trim();
-            if (text) parts.push(text);
-        }
-        if (parts.length >= 2) {
-            return {
-                description: parts[0],
-                prompt: parts.slice(1).join(', ')
-            };
-        }
-        const single = parts[0] || raw.replace(/^[（(]\s*|\s*[)）]$/g, '').trim();
+        const parsed = parseImagePromptDescriptionPair(rawValue);
         return {
-            description: single,
-            prompt: single
+            description: parsed.description,
+            prompt: parsed.prompt
         };
     }
 

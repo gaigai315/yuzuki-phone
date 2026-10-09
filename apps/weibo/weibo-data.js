@@ -14,6 +14,11 @@
 // ========================================
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { readPhoneContextLimit } from '../../config/context-settings.js';
+import {
+    extractImagePromptItems,
+    parseImagePromptDescriptionPair,
+    removeImagePromptItems
+} from '../../config/image-prompt-format.js';
 
 export class WeiboData {
     constructor(storage) {
@@ -1454,9 +1459,9 @@ export class WeiboData {
                 if (inContent) { post.content = contentLines.join('\n'); contentLines = []; inContent = false; }
                 const imgText = trimmed.replace(/^配图[：:]/, '').trim();
                 // 支持格式：[图片] / [用户照片] / [图片-姓名,姓名]（中文描述）（English tags）
-                const pairMatches = [...imgText.matchAll(/\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]([^）)]+)[）)](?:\s*[（(]([^）)]+)[）)])?/g)];
-                if (pairMatches.length > 0) {
-                    post.images = pairMatches.map(m => m[0]);
+                const promptItems = extractImagePromptItems(imgText);
+                if (promptItems.length > 0) {
+                    post.images = promptItems.map(item => item.raw);
                 } else {
                     const imgMatches = imgText.match(/\[[^\]]+\]/g);
                     post.images = imgMatches || (imgText ? [imgText] : []);
@@ -1710,14 +1715,11 @@ export class WeiboData {
         const parsedImages = [...(images || [])];
 
         // 🔥 提取用户输入在正文里的 [图片]（描述） 或 [图片]（描述）（英文tag）
-        const mediaRegex = /\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
-        let match;
-        while ((match = mediaRegex.exec(processedText)) !== null) {
-            parsedImages.push(match[0]); // 将完整的 [图片/视频]（描述） 存入配图数组
-        }
+        const promptItems = extractImagePromptItems(processedText);
+        promptItems.forEach(item => parsedImages.push(item.raw));
         
         // 从微博正文文字中清理掉这些标签，保持纯净文本
-        processedText = processedText.replace(mediaRegex, '').trim();
+        processedText = removeImagePromptItems(processedText, promptItems).trim();
 
         const newPost = {
             id: Date.now().toString(36) + Math.random().toString(36).substr(2, 6),
@@ -2402,15 +2404,9 @@ export class WeiboData {
         const rawTag = taggedMatch?.[1] || stateTag || '图片';
         const tag = /^(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)$/.test(rawTag) ? rawTag : '图片';
         const body = taggedMatch ? String(taggedMatch[2] || '').trim() : raw;
-        const parts = [];
-        const bracketRegex = /[（(]\s*([\s\S]*?)\s*[)）]/g;
-        let match;
-        while ((match = bracketRegex.exec(body)) !== null) {
-            const text = String(match[1] || '').trim();
-            if (text) parts.push(text);
-        }
+        const parsed = parseImagePromptDescriptionPair(body);
 
-        let description = parts[0] || stateDescription;
+        let description = parsed.groups[0] || stateDescription;
         if (!description && body && !/^(?:data:image|data:application\/octet-stream;base64,|https?:\/\/|\/backgrounds\/)/i.test(body)) {
             description = body.replace(/^[（(]\s*|\s*[)）]$/g, '').trim();
         }

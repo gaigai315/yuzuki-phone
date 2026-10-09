@@ -13,6 +13,11 @@ import { ImageCropper } from '../settings/image-cropper.js';
 import { captureWechatChatSnapshot } from './chat-snapshot.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { readPhoneContextLimit } from '../../config/context-settings.js';
+import {
+    extractImagePromptItems,
+    parseImagePromptDescriptionPair,
+    readBalancedImagePromptGroup
+} from '../../config/image-prompt-format.js';
 import { CatboxData } from '../games/catbox/catbox-data.js';
 import { parseWangxiangTaskTags, tokenizeWangxiangTaskTags } from '../wangxiang/wangxiang-task-parser.js';
 import {
@@ -5943,78 +5948,15 @@ renderChatRoom(chat) {
     }
 
     _parseImagePromptText(rawValue = '') {
-        const raw = String(rawValue || '').trim()
-            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '')
-            .trim();
-        const parts = [];
-        let scanIndex = 0;
-        while (scanIndex < raw.length && /\s/.test(raw[scanIndex])) scanIndex += 1;
-        if (raw[scanIndex] !== '（' && raw[scanIndex] !== '(') {
-            return {
-                description: raw,
-                prompt: raw
-            };
-        }
-
-        while (scanIndex < raw.length) {
-            while (scanIndex < raw.length && /\s/.test(raw[scanIndex])) scanIndex += 1;
-            if (raw[scanIndex] !== '（' && raw[scanIndex] !== '(') break;
-            const group = this._readBracketGroupAt(raw, scanIndex);
-            if (!group) {
-                scanIndex += 1;
-                continue;
-            }
-            const text = String(group.text || '').trim();
-            if (text) parts.push(text);
-            scanIndex = group.endIndex;
-        }
-
-        const trailingText = raw.slice(scanIndex).trim();
-        if (trailingText) {
-            return {
-                description: raw,
-                prompt: raw
-            };
-        }
-
-        if (parts.length >= 2) {
-            return {
-                description: parts[0],
-                prompt: parts.slice(1).join(', ')
-            };
-        }
-
-        const single = parts[0] || raw.replace(/^[（(]\s*|\s*[)）]$/g, '').trim();
+        const parsed = parseImagePromptDescriptionPair(rawValue);
         return {
-            description: single,
-            prompt: single
+            description: parsed.description,
+            prompt: parsed.prompt
         };
     }
 
     _readBracketGroupAt(value = '', startIndex = 0) {
-        const text = String(value || '');
-        const opener = text[startIndex];
-        if (opener !== '（' && opener !== '(') return null;
-
-        const primaryCloser = opener === '（' ? '）' : ')';
-        const alternateCloser = opener === '（' ? ')' : '）';
-        let depth = 1;
-        for (let index = startIndex + 1; index < text.length; index += 1) {
-            const char = text[index];
-            if (opener === '(' && char === '(') {
-                depth += 1;
-                continue;
-            }
-            if (char !== primaryCloser && char !== alternateCloser) continue;
-            depth -= 1;
-            if (depth === 0) {
-                return {
-                    text: text.slice(startIndex + 1, index),
-                    endIndex: index + 1
-                };
-            }
-        }
-        return null;
+        return readBalancedImagePromptGroup(value, startIndex);
     }
 
     _hasCjkText(value = '') {
@@ -7512,12 +7454,10 @@ renderChatRoom(chat) {
             }
             if (/^配图[：:]/.test(line)) {
                 const imageLine = line.replace(/^配图[：:]\s*/, '').trim();
-                const imgReg = /\[图片\]\s*[（(]([^）)]+)[）)]/g;
-                let m;
-                while ((m = imgReg.exec(imageLine)) !== null) {
-                    const desc = String(m[1] || '').trim();
-                    if (desc) images.push(`[图片]（${desc}）`);
-                }
+                const imageItems = extractImagePromptItems(imageLine, {
+                    acceptMediaType: mediaType => mediaType === '图片'
+                });
+                imageItems.forEach(item => images.push(item.raw));
                 if (images.length === 0 && imageLine.includes('[图片]')) {
                     images.push('[图片]');
                 }
@@ -9197,9 +9137,9 @@ renderChatRoom(chat) {
         const parseWeiboMediaPreview = (raw) => {
             const txt = String(raw || '').trim();
             if (!txt) return null;
-            const m = txt.match(/\[(用户照片|个人图片|图片|视频)\]\s*[（(]([^）)]+)[）)]/);
-            if (m && m[2]) {
-                return { type: m[1], desc: m[2].trim() };
+            const item = extractImagePromptItems(txt, { maxItems: 1 })[0];
+            if (item) {
+                return { type: item.mediaType, desc: item.description };
             }
             const stripped = txt.replace(/^\[(用户照片|个人图片|图片|视频)\]\s*/g, '').trim();
             return stripped ? { type: '图片', desc: stripped } : null;
@@ -9388,8 +9328,9 @@ renderChatRoom(chat) {
             const rawText = String(raw || '').trim();
             const rawMatch = rawText.match(/((?:https?:\/\/|\/backgrounds\/)[^\s)）]+)/i);
             const url = stateUrl || String(rawMatch?.[1] || '').trim();
+            const parsedPrompt = parseImagePromptDescriptionPair(rawText);
             const description = String(state.description || '').trim()
-                || String(rawText.match(/[（(]\s*([^）)]+)\s*[)）]/)?.[1] || '').trim()
+                || String(parsedPrompt.groups[0] || '').trim()
                 || `配图 ${index + 1}`;
             return { url, description };
         });

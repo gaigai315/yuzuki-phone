@@ -122,7 +122,9 @@ const ST_PHONE_CURRENT_UPDATE = {
         '【修复】修复桌面端通过悬浮图标打开手机时，面板因隐藏状态尺寸测量、重复定位与缩放动画产生快速闪缩抖动的问题。',
         '【新增】微信线下模式新增用户微信昵称与微信零钱余额变量注入；AI 输出线上支付标签时会按商品金额扣减微信零钱并记录购物流水，同时支持重复解析防重及酒馆楼层回档。',
         '【优化】优化 API 请求流式解析。',
-        '【优化】优化魔坊APP渲染逻辑。'
+        '【优化】优化魔坊APP渲染逻辑。',
+        '【优化】完善微信与朋友圈数据删除逻辑：直接删除酒馆楼层时会同步回滚该楼层及后续生成的微信数据和朋友圈，AI 联系人发布的朋友圈也支持单独删除。',
+        '【优化】统一 X、微博、微信、蜜语与日记的生图提示词解析，角色身份 TAG 含括号时不再被提前截断，并完整保留后续提示词。'
     ]
 };
 
@@ -4049,7 +4051,7 @@ if (window.GGP_Loaded) {
         const inject = () => {
             if (!storage) return;
             const isEnabled = storage.get('phone_inline_reply_btn') !== false;
-            const existingBtn = document.getElementById(btnId);
+            let existingBtn = document.getElementById(btnId);
             const hasQrAssistantApi = registerQrAssistantButton();
             if (hasQrAssistantApi) {
                 ensureQrManagedHideStyle();
@@ -4058,13 +4060,21 @@ if (window.GGP_Loaded) {
                 document.getElementById(qrScriptContainerId)?.classList?.remove?.('st-phone-inline-reply-qr-managed');
                 document.getElementById(legacyWrapperId)?.classList?.remove?.('st-phone-inline-reply-qr-managed');
             }
-            const existingWrapper =
+            let existingWrapper =
                 document.getElementById(qrScriptContainerId) ||
                 document.getElementById(legacyWrapperId) ||
                 existingBtn?.closest('.st-phone-inline-reply-wrapper');
             const isQrAssistantEnabled = !!document.body?.classList?.contains('qra-enabled');
             const { stContext, qrSettings } = getQrAssistantContext();
             const shouldHideInlineReplyForQr = hasQrAssistantApi && !isInlineReplyWhitelistedByQr(qrSettings);
+
+            // 热更新兼容：旧按钮只有 click 逻辑时重建一次，避免必须整页刷新才获得移动端修复。
+            if (existingBtn && existingBtn.dataset.stPhoneMobileTouchBound !== 'true') {
+                existingWrapper?.remove();
+                existingBtn.remove();
+                existingBtn = null;
+                existingWrapper = null;
+            }
 
             if (!hasQrAssistantApi && qrSettings) {
                 ensureQrWhitelistInitialized(qrSettings, stContext);
@@ -4151,13 +4161,14 @@ if (window.GGP_Loaded) {
             const btn = document.createElement('div');
             btn.id = btnId;
             btn.className = 'remote-ctrl-btn qr--button menu_button interactable';
+            btn.dataset.stPhoneMobileTouchBound = 'true';
             btn.title = '快捷回复联系人 (手机插件)';
             btn.innerHTML = '<div class="qr--button-label"><i class="fa-solid fa-mobile-screen-button"></i></div>';
 
             // 🔥 防抖锁，防止多端触发两次
             let isMenuOpen = false;
 
-            // 🛡️ 核心修复：完全照抄小铅笔，使用 mouseup 和 touchend 绕过酒馆拦截
+            // 🛡️ 统一入口动作；移动端由 touchend 直接调用，桌面端继续走 click
             const handleAction = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -5244,11 +5255,23 @@ if (window.GGP_Loaded) {
                 }
             };
 
-            // 🔥 核心修复1：酒馆底栏有滑动拦截，统一使用 click，并阻止 touchstart 被滑动组件劫持
+            // 输入框聚焦时，普通 click 会等键盘收起和 QR 折叠后才触发，首击可能丢失。
+            // touchstart 阶段阻止默认失焦，touchend 直接执行；300ms 防抖会拦住 WebView 补发的 click。
+            let inlineReplyTouchStarted = false;
             btn.addEventListener('click', handleAction);
             btn.addEventListener('touchstart', (e) => {
-                e.stopPropagation(); // 阻止事件冒泡给酒馆的横向滑动条
+                inlineReplyTouchStarted = true;
+                e.preventDefault();
+                e.stopPropagation();
             }, { passive: false });
+            btn.addEventListener('touchend', (e) => {
+                if (!inlineReplyTouchStarted) return;
+                inlineReplyTouchStarted = false;
+                handleAction(e);
+            }, { passive: false });
+            btn.addEventListener('touchcancel', () => {
+                inlineReplyTouchStarted = false;
+            });
 
             let wrapper = document.createElement('div');
             wrapper.id = qrScriptContainerId;
@@ -10971,7 +10994,7 @@ if (window.GGP_Loaded) {
                 }
 
                 if (context.event_types.MESSAGE_DELETED) {
-                    context.eventSource.on(context.event_types.MESSAGE_DELETED, (eventData) => {
+                    context.eventSource.on(context.event_types.MESSAGE_DELETED, async (eventData) => {
                         const deletedFloor = Number(eventData?.messageId ?? eventData?.id ?? eventData);
                         if (Number.isFinite(deletedFloor)) {
                             invalidateStoryImageAutoFromFloor(deletedFloor, 'message-deleted');
@@ -10981,6 +11004,46 @@ if (window.GGP_Loaded) {
                                 rebuildMofoStateAndSyncBubble()
                                     .catch(e => console.warn('Mofo delete refresh error:', e));
                             }, 80);
+
+                            try {
+                                const sourceConversationId = getCurrentTavernConversationIdentity();
+                                if (!window.VirtualPhone) window.VirtualPhone = {};
+
+                                if (_lastWechatConversationId && _lastWechatConversationId !== sourceConversationId) {
+                                    window.VirtualPhone.wechatApp = null;
+                                    window.VirtualPhone.cachedWechatData = null;
+                                    window.currentWechatApp = null;
+                                    window.ggp_currentWechatApp = null;
+                                }
+                                _lastWechatConversationId = sourceConversationId;
+
+                                let wechatDataInstance = window.VirtualPhone.wechatApp?.wechatData
+                                    || window.VirtualPhone.cachedWechatData
+                                    || null;
+                                if (!wechatDataInstance && storage) {
+                                    const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
+                                    if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
+                                        console.warn('⚠️ 微信删楼回滚期间会话已切换，丢弃旧会话回调');
+                                        return;
+                                    }
+                                    window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
+                                    wechatDataInstance = window.VirtualPhone.cachedWechatData;
+                                }
+
+                                if (window.VirtualPhone.wechatApp
+                                    && wechatDataInstance
+                                    && window.VirtualPhone.wechatApp.wechatData !== wechatDataInstance) {
+                                    window.VirtualPhone.wechatApp.wechatData = wechatDataInstance;
+                                }
+
+                                const hasRolledBack = wechatDataInstance?.rollbackToFloor?.(deletedFloor) === true;
+                                const activeWechatApp = window.currentWechatApp || window.ggp_currentWechatApp;
+                                if (hasRolledBack && activeWechatApp && !document.querySelector('.call-fullscreen')) {
+                                    setTimeout(() => activeWechatApp.render(), 20);
+                                }
+                            } catch (error) {
+                                console.warn('⚠️ [手机插件] 删除楼层后回滚微信数据失败:', error);
+                            }
                         }
                     });
                 }

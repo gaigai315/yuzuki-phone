@@ -12,6 +12,7 @@
 // ========================================
 // 📔 日记视图 - UI渲染与交互
 // ========================================
+import { extractImagePromptItems } from '../../config/image-prompt-format.js';
 
 export class DiaryView {
     constructor(app) {
@@ -1804,15 +1805,18 @@ export class DiaryView {
             return `<del class="diary-strike">${text}</del>`;
         });
 
-        const photoRegex = this.app?.diaryData?._getPhotoPromptTagRegex?.() || /\[(用户照片|个人图片|图片)\][^\S\r\n]*[（(]([^\r\n]*?)[）)](?:[^\S\r\n]*[（(]([^\r\n]*?)[）)])?/g;
+        const photoItems = extractImagePromptItems(formatted, {
+            acceptMediaType: mediaType => mediaType === '用户照片'
+                || mediaType === '个人图片'
+                || mediaType === '图片'
+        });
         const parts = [];
         let lastIndex = 0;
-        let match;
-        while ((match = photoRegex.exec(formatted)) !== null) {
-            const before = formatted.slice(lastIndex, match.index).trim();
+        for (const item of photoItems) {
+            const before = formatted.slice(lastIndex, item.index).trim();
             if (before) parts.push(...this._formatTextBlocks(before));
             parts.push('__DIARY_PHOTO__');
-            lastIndex = match.index + match[0].length;
+            lastIndex = item.endIndex;
         }
         const tail = formatted.slice(lastIndex).trim();
         if (tail) parts.push(...this._formatTextBlocks(tail));

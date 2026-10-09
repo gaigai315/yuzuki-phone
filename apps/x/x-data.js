@@ -4,6 +4,12 @@
  * ======================================================== */
 
 import { readPhoneContextLimit } from '../../config/context-settings.js';
+import {
+    extractImagePromptItems,
+    isImagePromptItem,
+    parseImagePromptDescriptionPair,
+    removeImagePromptItems
+} from '../../config/image-prompt-format.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 const STORAGE_KEY = 'x_posts';
@@ -229,13 +235,10 @@ export class XData {
     }
 
     publishUserPost(content = '', images = []) {
-        const textImages = [];
-        const mediaRegex = /\[(用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
-        const cleanContent = String(content || '')
-            .replace(mediaRegex, (match) => {
-                textImages.push(String(match || '').trim());
-                return '';
-            })
+        const rawContent = String(content || '');
+        const promptItems = extractImagePromptItems(rawContent);
+        const textImages = promptItems.map(item => item.raw.trim()).filter(Boolean);
+        const cleanContent = removeImagePromptItems(rawContent, promptItems)
             .replace(/\n{3,}/g, '\n\n')
             .trim()
             .slice(0, 280);
@@ -246,7 +249,7 @@ export class XData {
             .map((image) => String(image || '').trim())
             .filter((image) => (
                 /^\/backgrounds\//i.test(image)
-                || /^\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*[^)）]+?\s*[)）](?:\s*[（(]\s*[^)）]+?\s*[)）])?$/i.test(image)
+                || isImagePromptItem(image)
             ))
             .slice(0, 4);
         if (!cleanContent && cleanImages.length === 0) return null;
@@ -486,14 +489,8 @@ export class XData {
             const descriptions = images.map((image, index) => {
                 const state = post?.imageGenerationStates?.[index];
                 const rawImage = String(image || '').trim();
-                const parts = [];
-                const bracketPattern = /[（(]\s*([\s\S]*?)\s*[)）]/g;
-                let match;
-                while ((match = bracketPattern.exec(rawImage)) !== null) {
-                    const part = String(match[1] || '').trim();
-                    if (part) parts.push(part);
-                }
-                return String(state?.description || state?.prompt || parts[0] || '').trim() || `配图${index + 1}`;
+                const parsed = parseImagePromptDescriptionPair(rawImage);
+                return String(state?.description || state?.prompt || parsed.groups[0] || '').trim() || `配图${index + 1}`;
             });
             sections.push(`配图：${descriptions.join('；')}`);
 
@@ -2033,8 +2030,15 @@ export class XData {
             if (!normalized || images.includes(normalized)) return;
             images.push(normalized);
         };
-        const mediaPattern = /\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*(?:[（(][^）)\r\n]+[）)](?:\s*[（(][^）)\r\n]+[）)])?|(?:https?:\/\/|\/backgrounds\/)[^\s，,；;]+)?/gi;
-        for (const match of text.matchAll(mediaPattern)) add(match[0]);
+        const promptItems = extractImagePromptItems(text);
+        promptItems.forEach(item => add(item.raw));
+
+        const isInsidePromptItem = index => promptItems.some(item => index >= item.index && index < item.endIndex);
+        const mediaPattern = /\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*(?:(?:https?:\/\/|\/backgrounds\/)[^\s，,；;]+)?/gi;
+        for (const match of text.matchAll(mediaPattern)) {
+            if (isInsidePromptItem(match.index)) continue;
+            add(match[0]);
+        }
 
         const directUrlPattern = /(?:https?:\/\/|\/backgrounds\/)[^\s，,；;)）]+/gi;
         for (const match of text.matchAll(directUrlPattern)) {

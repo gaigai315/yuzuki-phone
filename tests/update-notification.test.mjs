@@ -11,7 +11,7 @@ test('current version keeps all notices under the latest date', () => {
 
     assert.equal(manifest.version, '1.6.0');
     assert.equal(current.date, '2026-10-09');
-    assert.equal(current.items.length, 5);
+    assert.equal(current.items.length, 8);
     assert.match(current.items[0], /酒馆二改 APP/);
     assert.match(current.items[0], /小手机线上消息无法注入正文/);
     assert.match(current.items[1], /悬浮图标打开手机/);
@@ -24,6 +24,13 @@ test('current version keeps all notices under the latest date', () => {
     assert.match(current.items[2], /重复解析防重及酒馆楼层回档/);
     assert.match(current.items[3], /优化 API 请求流式解析/);
     assert.match(current.items[4], /优化魔坊APP渲染逻辑/);
+    assert.match(current.items[5], /直接删除酒馆楼层时会同步回滚/);
+    assert.match(current.items[5], /AI 联系人发布的朋友圈也支持单独删除/);
+    assert.match(current.items[6], /X、微博、微信、蜜语与日记/);
+    assert.match(current.items[6], /身份 TAG 含括号时不再被提前截断/);
+    assert.match(current.items[6], /完整保留后续提示词/);
+    assert.match(current.items[7], /首次点击小手机快捷回复按钮/);
+    assert.match(current.items[7], /仅收起键盘而未打开面板/);
     assert.equal(current.updates, undefined);
 });
 
@@ -54,4 +61,9 @@ test('fallback announcement preserves the 1.6.0 notices', () => {
     assert.match(block, /重复解析防重及酒馆楼层回档/);
     assert.match(block, /优化 API 请求流式解析/);
     assert.match(block, /优化魔坊APP渲染逻辑/);
+    assert.match(block, /直接删除酒馆楼层时会同步回滚/);
+    assert.match(block, /AI 联系人发布的朋友圈也支持单独删除/);
+    assert.match(block, /X、微博、微信、蜜语与日记/);
+    assert.match(block, /身份 TAG 含括号时不再被提前截断/);
+    assert.match(block, /完整保留后续提示词/);
 });

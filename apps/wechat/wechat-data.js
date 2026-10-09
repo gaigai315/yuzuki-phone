@@ -11,6 +11,7 @@
  * ======================================================== */
 // 微信数据管理
 import { GlobalSocialStore } from '../../config/global-social-store.js';
+import { parseImagePromptDescriptionPair, readBalancedImagePromptGroup } from '../../config/image-prompt-format.js';
 import { parseWechatVoiceContent } from './voice-text.js';
 
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
@@ -3345,78 +3346,15 @@ getWeekday(date) {
     }
 
     _parseImagePromptText(rawValue = '') {
-        const raw = String(rawValue || '').trim()
-            .replace(/^\[(?:用户照片|个人图片|图片|视频)\]\s*/i, '')
-            .trim();
-        const parts = [];
-        let scanIndex = 0;
-        while (scanIndex < raw.length && /\s/.test(raw[scanIndex])) scanIndex += 1;
-        if (raw[scanIndex] !== '（' && raw[scanIndex] !== '(') {
-            return {
-                description: raw,
-                prompt: raw
-            };
-        }
-
-        while (scanIndex < raw.length) {
-            while (scanIndex < raw.length && /\s/.test(raw[scanIndex])) scanIndex += 1;
-            if (raw[scanIndex] !== '（' && raw[scanIndex] !== '(') break;
-            const group = this._readBracketGroupAt(raw, scanIndex);
-            if (!group) {
-                scanIndex += 1;
-                continue;
-            }
-            const text = String(group.text || '').trim();
-            if (text) parts.push(text);
-            scanIndex = group.endIndex;
-        }
-
-        const trailingText = raw.slice(scanIndex).trim();
-        if (trailingText) {
-            return {
-                description: raw,
-                prompt: raw
-            };
-        }
-
-        if (parts.length >= 2) {
-            return {
-                description: parts[0],
-                prompt: parts.slice(1).join(', ')
-            };
-        }
-
-        const single = parts[0] || raw.replace(/^[（(]\s*|\s*[)）]$/g, '').trim();
+        const parsed = parseImagePromptDescriptionPair(rawValue);
         return {
-            description: single,
-            prompt: single
+            description: parsed.description,
+            prompt: parsed.prompt
         };
     }
 
     _readBracketGroupAt(value = '', startIndex = 0) {
-        const text = String(value || '');
-        const opener = text[startIndex];
-        if (opener !== '（' && opener !== '(') return null;
-
-        const primaryCloser = opener === '（' ? '）' : ')';
-        const alternateCloser = opener === '（' ? ')' : '）';
-        let depth = 1;
-        for (let index = startIndex + 1; index < text.length; index += 1) {
-            const char = text[index];
-            if (opener === '(' && char === '(') {
-                depth += 1;
-                continue;
-            }
-            if (char !== primaryCloser && char !== alternateCloser) continue;
-            depth -= 1;
-            if (depth === 0) {
-                return {
-                    text: text.slice(startIndex + 1, index),
-                    endIndex: index + 1
-                };
-            }
-        }
-        return null;
+        return readBalancedImagePromptGroup(value, startIndex);
     }
 
     // 🔥 通过聊天对象同步头像（更可靠）

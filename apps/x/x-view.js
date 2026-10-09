@@ -4,6 +4,7 @@
  * ======================================================== */
 
 import { ImageCropper } from '../settings/image-cropper.js';
+import { extractImagePromptItems, parseImagePromptDescriptionPair } from '../../config/image-prompt-format.js';
 import { replacePhoneEmojiTokens } from '../../config/phone-emoji.js';
 
 const PROFILE_AVATAR = new URL('./assets/profile.jpg', import.meta.url).href;
@@ -335,8 +336,7 @@ export class XView {
     }
 
     _countComposeTextImages(rawText = '') {
-        const mediaRegex = /\[(?:用户照片|个人图片|图片(?:-[^\]\r\n]+)?|视频)\]\s*[（(]\s*([^)）]+?)\s*[)）](?:\s*[（(]\s*([^)）]+?)\s*[)）])?/g;
-        return (String(rawText || '').match(mediaRegex) || []).length;
+        return extractImagePromptItems(rawText).length;
     }
 
     _insertComposeTextImageTemplate(textarea) {
@@ -2949,18 +2949,12 @@ export class XView {
         const realUrl = /^\/(?:backgrounds)\//i.test(stateUrl) || /^https?:\/\//i.test(stateUrl)
             ? stateUrl
             : String(directMatch?.[1] || '').trim();
-        const parts = [];
-        const bracketPattern = /[（(]\s*([\s\S]*?)\s*[)）]/g;
-        let match;
-        while ((match = bracketPattern.exec(text)) !== null) {
-            const part = String(match[1] || '').trim();
-            if (part) parts.push(part);
-        }
+        const parsed = parseImagePromptDescriptionPair(text);
 
         const stateDescription = String(state?.description || '').trim();
         const statePrompt = String(state?.prompt || '').trim();
-        const description = stateDescription || parts[0] || '';
-        const prompt = statePrompt || (parts.length >= 2 ? parts.slice(1).join(', ') : (parts[0] || ''));
+        const description = stateDescription || parsed.groups[0] || '';
+        const prompt = statePrompt || (parsed.groups.length > 0 ? parsed.prompt : '');
         return { realUrl, description, prompt };
     }
 
