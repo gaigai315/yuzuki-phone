@@ -73,6 +73,41 @@ const LOBBY_WECHAT_ONLINE_PROACTIVE_PENDING_KEY = 'phone_lobby_wechat_online_pro
 const WECHAT_MESSAGE_SOUND_ENABLED_KEY = 'wechat_message_sound_enabled';
 const PHONE_TRIPLE_TAP_ENABLED_KEY = 'phone-triple-tap-enabled';
 const STORY_IMAGE_AUTO_ENABLED_KEY = 'phone-story-image-auto-enabled';
+const PHONE_PROMPT_MACRO_NAMES = Object.freeze([
+    'PHONE_PROMPT',
+    'PHONE_HISTORY',
+    'PHONE_APP_HISTORY',
+    'MOMENTS_HISTORY',
+    'HONEY_HISTORY',
+    'WEIBO_HISTORY',
+    'MUSIC_PROMPT',
+    'MOFO_PROMPT',
+    'DIARY_HISTORY',
+    'CALENDAR_REMINDER',
+    'WANGXIANG_TASKS',
+    'WANGXIANG_ORDERS'
+]);
+const PHONE_PROMPT_MARKER_PREFIX = '__ST_PHONE_PROMPT_VAR_';
+const getPhonePromptMarker = (name) => `${PHONE_PROMPT_MARKER_PREFIX}${String(name || '').trim().toUpperCase()}__`;
+const PHONE_REQUEST_MACRO_PATTERN = new RegExp(
+    `(?:\\{\\{\\s*(?:${PHONE_PROMPT_MACRO_NAMES.join('|')})\\s*\\}\\}|${PHONE_PROMPT_MARKER_PREFIX}(?:${PHONE_PROMPT_MACRO_NAMES.join('|')})__)`,
+    'i'
+);
+
+function stripPhonePromptPlaceholders(value) {
+    let text = String(value || '');
+    let changed = false;
+    PHONE_PROMPT_MACRO_NAMES.forEach((name) => {
+        const rawPattern = new RegExp(`\\{\\{\\s*${name}\\s*\\}\\}`, 'gi');
+        const marker = getPhonePromptMarker(name);
+        const next = text.replace(rawPattern, '').split(marker).join('');
+        if (next !== text) {
+            text = next;
+            changed = true;
+        }
+    });
+    return { text: text.trim(), changed };
+}
 const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
     'offline-wechat-prompt-enabled',
     'offline-single-chat-enabled',
@@ -97,6 +132,36 @@ if (window.GGP_Loaded) {
 } else {
     window.GGP_Loaded = true;
     console.log(`🚀 虚拟手机 v${ST_PHONE_VERSION} 启动`);
+
+    const PHONE_FOREGROUND_GENERATION_TYPES = new Set(['normal', 'regenerate', 'swipe', 'continue']);
+    const phoneForegroundGenerationState = {
+        active: false,
+        type: '',
+        markedAt: 0,
+        source: ''
+    };
+    const markPhoneForegroundGeneration = (type, source = 'unknown', isDryRun = false) => {
+        const generationType = String(type || 'normal').trim().toLowerCase();
+        if (isDryRun || !PHONE_FOREGROUND_GENERATION_TYPES.has(generationType)) return false;
+        phoneForegroundGenerationState.active = true;
+        phoneForegroundGenerationState.type = generationType;
+        phoneForegroundGenerationState.markedAt = Date.now();
+        phoneForegroundGenerationState.source = source;
+        return true;
+    };
+    const clearPhoneForegroundGeneration = () => {
+        phoneForegroundGenerationState.active = false;
+        phoneForegroundGenerationState.type = '';
+        phoneForegroundGenerationState.markedAt = 0;
+        phoneForegroundGenerationState.source = '';
+    };
+    const isPhoneForegroundGenerationActive = () => phoneForegroundGenerationState.active
+        && (Date.now() - phoneForegroundGenerationState.markedAt) < 180000;
+
+    // 官方早期拦截链只记录本次是否属于正文生成；实际消息格式转换仍在 prompt-ready 完成。
+    globalThis.yuzukiPhoneGenerateInterceptor = async function (_chat, _contextSize, _abort, type = 'normal') {
+        markPhoneForegroundGeneration(type, 'generate_interceptor', false);
+    };
 
     // 🔥 核心模块（启动时加载）- 只加载最必要的
     let APPS, PhoneStorage;
@@ -9993,7 +10058,6 @@ if (window.GGP_Loaded) {
             let phonePromptHandler = async () => {};
             let phonePromptRunTail = Promise.resolve();
             const phonePromptRunsByChat = new WeakMap();
-            const PHONE_REQUEST_MACRO_PATTERN = /\{\{\s*(?:PHONE_PROMPT|PHONE_HISTORY|PHONE_APP_HISTORY|MOMENTS_HISTORY|HONEY_HISTORY|WEIBO_HISTORY|MUSIC_PROMPT|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i;
             const runPhonePromptHandler = (eventData, source = 'unknown') => {
                 const chat = Array.isArray(eventData?.chat) ? eventData.chat : null;
                 if (chat && phonePromptRunsByChat.has(chat)) {
@@ -10864,6 +10928,36 @@ if (window.GGP_Loaded) {
             // 连接到酒馆
             const context = getContext();
             if (context && context.eventSource) {
+                const registerPhonePromptMacros = () => {
+                    if (window._stPhonePromptMacrosRegistered) return true;
+                    let registered = 0;
+                    PHONE_PROMPT_MACRO_NAMES.forEach((name) => {
+                        try {
+                            const marker = getPhonePromptMarker(name);
+                            if (context.macros?.registry?.hasMacro?.(name)) {
+                                registered += 1;
+                                return;
+                            }
+                            if (typeof context.registerMacro === 'function') {
+                                context.registerMacro(name, () => marker, `Yuzuki Phone placeholder for ${name}`);
+                                registered += 1;
+                            } else if (typeof context.macros?.register === 'function') {
+                                context.macros.register(name, {
+                                    category: 'extension',
+                                    description: `Yuzuki Phone placeholder for ${name}`,
+                                    handler: () => marker
+                                });
+                                registered += 1;
+                            }
+                        } catch (error) {
+                            console.warn(`[手机插件] 注册 ${name} 宏失败:`, error);
+                        }
+                    });
+                    window._stPhonePromptMacrosRegistered = registered === PHONE_PROMPT_MACRO_NAMES.length;
+                    return window._stPhonePromptMacrosRegistered;
+                };
+                registerPhonePromptMacros();
+
                 context.eventSource.on(
                     context.event_types.CHARACTER_MESSAGE_RENDERED,
                     onMessageReceived
@@ -10894,8 +10988,17 @@ if (window.GGP_Loaded) {
                 if (context.event_types.GENERATION_STARTED) {
                     context.eventSource.on(
                         context.event_types.GENERATION_STARTED,
-                        interruptStoryImageAutoForForegroundGeneration
+                        (type, params = {}, isDryRun = false) => {
+                            interruptStoryImageAutoForForegroundGeneration(type, params, isDryRun);
+                            markPhoneForegroundGeneration(type, 'generation_started', isDryRun);
+                        }
                     );
+                }
+                if (context.event_types.GENERATION_ENDED) {
+                    context.eventSource.on(context.event_types.GENERATION_ENDED, clearPhoneForegroundGeneration);
+                }
+                if (context.event_types.GENERATION_STOPPED) {
+                    context.eventSource.on(context.event_types.GENERATION_STOPPED, clearPhoneForegroundGeneration);
                 }
 
                 context.eventSource.on(
@@ -11035,27 +11138,17 @@ if (window.GGP_Loaded) {
                         // 🔥 终极护盾：专门为懒加载失败、页面休眠、提前退出准备的清洗器
                         const forceFallbackCleanup = (chatArray) => {
                             if (!Array.isArray(chatArray)) return;
-                            const macros = ['{{PHONE_PROMPT}}', '{{PHONE_HISTORY}}', '{{PHONE_APP_HISTORY}}', '{{MOMENTS_HISTORY}}', '{{HONEY_HISTORY}}', '{{WEIBO_HISTORY}}', '{{MUSIC_PROMPT}}', '{{MOFO_PROMPT}}', '{{DIARY_HISTORY}}', '{{CALENDAR_REMINDER}}', '{{WANGXIANG_TASKS}}', '{{WANGXIANG_ORDERS}}'];
                             chatArray.forEach(msg => {
                                 // 🌟 兼容移动端特殊请求体格式读取
-                                let c = msg.content || msg.mes || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
+                                let c = msg.content || msg.mes || msg.text || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
                                 if (typeof c === 'string') {
-                                    let modified = false;
-                                    macros.forEach(macro => {
-                                        if (c.includes(macro)) {
-                                            c = c.split(macro).join('').trim();
-                                            modified = true;
-                                        }
-                                    });
-                                    // 兼容 {{ XXX }}（含空格）
-                                    if (/\{\{\s*(PHONE_APP_HISTORY|MOMENTS_HISTORY|HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/i.test(c)) {
-                                        c = c.replace(/\{\{\s*(PHONE_APP_HISTORY|MOMENTS_HISTORY|HONEY_HISTORY|MOFO_PROMPT|DIARY_HISTORY|CALENDAR_REMINDER|WANGXIANG_TASKS|WANGXIANG_ORDERS)\s*\}\}/gi, '').trim();
-                                        modified = true;
-                                    }
-                                    if (modified) {
+                                    const cleaned = stripPhonePromptPlaceholders(c);
+                                    if (cleaned.changed) {
+                                        c = cleaned.text;
                                         // 🌟 兼容移动端特殊请求体格式写入
                                         if (msg.content !== undefined) msg.content = c;
                                         if (msg.mes !== undefined) msg.mes = c;
+                                        if (msg.text !== undefined) msg.text = c;
                                         if (msg.parts && msg.parts[0] !== undefined) msg.parts[0].text = c;
                                     }
                                 }
@@ -11094,15 +11187,17 @@ if (window.GGP_Loaded) {
                             const requestHasInjectedPhoneMessages = [eventData.chat, eventData.prompt]
                                 .some(list => Array.isArray(list) && list.some(msg => msg?.isPhoneMessage && msg?.identifier));
                             const hasWechatOnlineToOfflinePending = !!getWechatOnlineToOfflineTransferPending();
+                            const allowForegroundVariablelessInjection = isPhoneForegroundGenerationActive();
 
                             // prompt-ready 可能被多个官方/兼容入口依次处理。变量已替换成手机消息后，
                             // 后续入口必须保留现有注入，不能先删除消息再因找不到变量而退出。
                             if (requirePhoneInjectionVariable && !requestHasPhoneMacro && !hasWechatOnlineToOfflinePending) {
-                                if (!requestHasInjectedPhoneMessages) {
+                                if (requestHasInjectedPhoneMessages) return;
+                                if (!allowForegroundVariablelessInjection) {
                                     forceFallbackCleanup(eventData.chat);
                                     forceFallbackCleanup(eventData.prompt);
+                                    return;
                                 }
-                                return;
                             }
 
                             // 2. 如果是酒馆正文发起的请求（比如点击正文发送、重新生成、继续生成）
@@ -12612,6 +12707,8 @@ if (window.GGP_Loaded) {
                                     };
 
                                     const allowVariablelessFallback = !requirePhoneInjectionVariable;
+                                    const allowForegroundWechatFallback = allowVariablelessFallback
+                                        || (allowForegroundVariablelessInjection && !requestHasPhoneMacro && isWechatInteropEnabled);
 
                                     // 🔥 辅助函数：原地拆分注入 (Gaigai 终极防弹版)
                                     const injectIntoMessages = (targetVar, contentToInject, identifier, fallbackWhenMissing = allowVariablelessFallback) => {
@@ -12619,6 +12716,7 @@ if (window.GGP_Loaded) {
                                         const spacedVarRegex = normalizedVarName
                                             ? new RegExp(`\\{\\{\\s*${normalizedVarName}\\s*\\}\\}`, 'i')
                                             : null;
+                                        const stableMarker = getPhonePromptMarker(normalizedVarName);
                                         // 1. 如果没有内容要注入，执行安全清洗，把占位符彻底删掉
                                         if (!contentToInject) {
                                             for (let i = 0; i < messages.length; i++) {
@@ -12626,13 +12724,15 @@ if (window.GGP_Loaded) {
                                                 let msgContent = msg.content || msg.mes || msg.text || (msg.parts && msg.parts[0] ? msg.parts[0].text : '') || '';
                                                 const hasExact = typeof msgContent === 'string' && msgContent.includes(targetVar);
                                                 const hasSpaced = typeof msgContent === 'string' && !!spacedVarRegex && spacedVarRegex.test(msgContent);
-                                                if (hasExact || hasSpaced) {
+                                                const hasStableMarker = typeof msgContent === 'string' && msgContent.includes(stableMarker);
+                                                if (hasExact || hasSpaced || hasStableMarker) {
                                                     let cleanedText = String(msgContent || '');
                                                     if (hasExact) cleanedText = cleanedText.split(targetVar).join('');
                                                     if (hasSpaced && spacedVarRegex) {
                                                         const spacedVarGlobalRegex = new RegExp(`\\{\\{\\s*${normalizedVarName}\\s*\\}\\}`, 'gi');
                                                         cleanedText = cleanedText.replace(spacedVarGlobalRegex, '');
                                                     }
+                                                    if (hasStableMarker) cleanedText = cleanedText.split(stableMarker).join('');
                                                     cleanedText = cleanedText.trim();
                                                     if (!cleanedText) {
                                                         messages.splice(i, 1);
@@ -12695,6 +12795,11 @@ if (window.GGP_Loaded) {
                                                         varLen = match[0].length;
                                                     }
                                                 }
+                                                const markerIndex = msgContent.indexOf(stableMarker);
+                                                if (markerIndex >= 0 && (varIndex < 0 || markerIndex < varIndex)) {
+                                                    varIndex = markerIndex;
+                                                    varLen = stableMarker.length;
+                                                }
                                                 if (varIndex < 0) continue;
 
                                                 const preText = msgContent.substring(0, varIndex).trim();
@@ -12730,9 +12835,9 @@ if (window.GGP_Loaded) {
                                     };
 
                                     // 🔥 分别注入规则和历史记录
-                                    injectIntoMessages('{{PHONE_PROMPT}}', phoneRulesContent, 'phone_system_rules');
+                                    injectIntoMessages('{{PHONE_PROMPT}}', phoneRulesContent, 'phone_system_rules', allowForegroundWechatFallback);
                                     injectIntoMessages('{{MOMENTS_HISTORY}}', momentsHistoryContent, 'moments_system_history');
-                                    injectIntoMessages('{{PHONE_HISTORY}}', phoneHistoryContent, 'phone_system_history');
+                                    injectIntoMessages('{{PHONE_HISTORY}}', phoneHistoryContent, 'phone_system_history', allowForegroundWechatFallback);
                                     injectIntoMessages('{{PHONE_APP_HISTORY}}', phoneAppHistoryContent, 'phone_app_system_history');
                                     injectIntoMessages('{{HONEY_HISTORY}}', honeyHistoryContent, 'honey_system_history');
                                     if (weiboInjectEnabled) {
@@ -13092,6 +13197,13 @@ if (window.GGP_Loaded) {
                                             }
                                             if (WANGXIANG_ORDERS_SPACED_REGEX.test(c)) {
                                                 c = c.replace(WANGXIANG_ORDERS_SPACED_REGEX, '');
+                                                modified = true;
+                                            }
+
+                                            // TT 2.3 注册宏后会把原始变量转换成稳定标记，这里一并清理未消费残骸。
+                                            const placeholderCleanup = stripPhonePromptPlaceholders(c);
+                                            if (placeholderCleanup.changed) {
+                                                c = placeholderCleanup.text;
                                                 modified = true;
                                             }
 

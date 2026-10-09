@@ -3,6 +3,14 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
+
+function loadPhonePlaceholderTools() {
+    const start = indexSource.indexOf('const PHONE_PROMPT_MACRO_NAMES');
+    const end = indexSource.indexOf('const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS', start);
+    assert.ok(start >= 0 && end > start, 'phone placeholder helpers should be present');
+    return Function(`${indexSource.slice(start, end)}\nreturn { PHONE_REQUEST_MACRO_PATTERN, getPhonePromptMarker, stripPhonePromptPlaceholders };`)();
+}
 
 function loadPromptRunner(handler) {
     const start = indexSource.indexOf('let phonePromptHandler = async () => {};');
@@ -15,6 +23,35 @@ function loadPromptRunner(handler) {
 
     return Function('handler', `${source}\nreturn runPhonePromptHandler;`)(handler);
 }
+
+test('manifest registers the official early generation interceptor', () => {
+    assert.equal(manifest.generate_interceptor, 'yuzukiPhoneGenerateInterceptor');
+    assert.match(indexSource, /globalThis\.yuzukiPhoneGenerateInterceptor\s*=\s*async function/);
+});
+
+test('registered macro markers remain detectable and cleanable after TT macro expansion', () => {
+    const tools = loadPhonePlaceholderTools();
+    const marker = tools.getPhonePromptMarker('PHONE_HISTORY');
+
+    assert.equal(marker, '__ST_PHONE_PROMPT_VAR_PHONE_HISTORY__');
+    assert.equal(tools.PHONE_REQUEST_MACRO_PATTERN.test('{{ PHONE_HISTORY }}'), true);
+    assert.equal(tools.PHONE_REQUEST_MACRO_PATTERN.test(marker), true);
+    assert.deepEqual(
+        tools.stripPhonePromptPlaceholders(`before ${marker} after`),
+        { text: 'before  after', changed: true },
+    );
+});
+
+test('phone prompt macros register through the SillyTavern context bridge', () => {
+    const start = indexSource.indexOf('const registerPhonePromptMacros = () => {');
+    const end = indexSource.indexOf('context.eventSource.on(', start);
+    assert.ok(start >= 0 && end > start, 'macro registration source should be present');
+    const registrationSource = indexSource.slice(start, end);
+
+    assert.match(registrationSource, /context\.registerMacro\(name, \(\) => marker/);
+    assert.match(registrationSource, /context\.macros\.register\(name/);
+    assert.match(registrationSource, /getPhonePromptMarker\(name\)/);
+});
 
 test('official prompt-ready event is registered first when legacy hooks exist', () => {
     const start = indexSource.indexOf('// 官方事件是主注入链');
@@ -109,11 +146,25 @@ test('already injected phone messages survive a later prompt-ready compatibility
 
     const gateSource = indexSource.slice(start, end);
     assert.match(gateSource, /requestHasInjectedPhoneMessages/);
-    assert.match(gateSource, /if \(!requestHasInjectedPhoneMessages\) \{[\s\S]*forceFallbackCleanup\(eventData\.chat\)/);
+    assert.match(gateSource, /if \(requestHasInjectedPhoneMessages\) return;/);
+    assert.match(gateSource, /if \(!allowForegroundVariablelessInjection\) \{[\s\S]*forceFallbackCleanup\(eventData\.chat\)/);
     assert.ok(
         gateSource.indexOf('requestHasInjectedPhoneMessages') < gateSource.indexOf('// 2. 如果是酒馆正文发起的请求'),
         'existing phone messages must be detected before stale-message cleanup',
     );
+});
+
+test('foreground fallback is limited to WeChat rules and history when TT consumes the variables', () => {
+    const start = indexSource.indexOf('const allowVariablelessFallback = !requirePhoneInjectionVariable;');
+    const end = indexSource.indexOf('// 🎵 {{MUSIC_PROMPT}} 独立注入', start);
+    assert.ok(start >= 0 && end > start, 'phone injection calls should be present');
+    const injectionSource = indexSource.slice(start, end);
+
+    assert.match(injectionSource, /allowForegroundWechatFallback/);
+    assert.match(injectionSource, /PHONE_PROMPT[^\n]+allowForegroundWechatFallback/);
+    assert.match(injectionSource, /PHONE_HISTORY[^\n]+allowForegroundWechatFallback/);
+    assert.doesNotMatch(injectionSource, /MOMENTS_HISTORY[^\n]+allowForegroundWechatFallback/);
+    assert.doesNotMatch(injectionSource, /HONEY_HISTORY[^\n]+allowForegroundWechatFallback/);
 });
 
 test('same prompt array is injected once across official and legacy paths', async () => {
