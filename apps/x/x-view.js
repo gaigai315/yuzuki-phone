@@ -28,6 +28,7 @@ export class XView {
         this.composeReturnPage = 'home';
         this.pendingComposeImages = [];
         this.composeUploadInProgress = false;
+        this.composePublishInProgress = false;
         this.composeSessionId = 0;
         this.currentReplyCommentId = null;
         this.isRefreshing = false;
@@ -44,6 +45,7 @@ export class XView {
         this._visibleUserPostIds = new Set();
         this._suppressDirectMessageThreadClickUntil = 0;
         this._activeAIParseFailureClose = null;
+        this._boundRoots = new WeakSet();
     }
 
     _showAIParseFailure(error) {
@@ -1084,6 +1086,8 @@ export class XView {
 
     bindEvents(root = document.querySelector('.phone-view-current .xapp-root')) {
         if (!root) return;
+        if (this._boundRoots.has(root)) return;
+        this._boundRoots.add(root);
 
         root.querySelectorAll('.xapp-bottom-item[data-page]').forEach((button) => {
             button.addEventListener('click', () => {
@@ -1953,6 +1957,7 @@ export class XView {
         if (countElement) countElement.textContent = String(count);
         if (publishButton) {
             publishButton.disabled = this.composeUploadInProgress
+                || this.composePublishInProgress
                 || (!String(textarea?.value || '').trim() && this.pendingComposeImages.length === 0);
         }
         if (addImageButton) {
@@ -1964,15 +1969,29 @@ export class XView {
     }
 
     publishComposePost(root = document.querySelector('.phone-view-current .xapp-root')) {
-        if (this.composeUploadInProgress) return null;
+        if (this.composeUploadInProgress || this.composePublishInProgress) return null;
         const content = String(root?.querySelector('#xapp-compose-text')?.value || '').trim();
         const textImageCount = this._countComposeTextImages(content);
         if (this.pendingComposeImages.length + textImageCount > 4) {
             this.app.phoneShell.showNotification?.('X', '上传图片和文字图片合计最多 4 张', '×');
             return null;
         }
-        const post = this.app.xData.publishUserPost(content, this.pendingComposeImages);
+        this.composePublishInProgress = true;
+        this.syncComposeControls(root);
+
+        let post = null;
+        try {
+            post = this.app.xData.publishUserPost(content, this.pendingComposeImages);
+        } catch (error) {
+            console.error('[X] 发布帖子失败:', error);
+            this.composePublishInProgress = false;
+            this.syncComposeControls(root);
+            this.app.phoneShell.showNotification?.('X', error?.message || '帖子发布失败', '×');
+            return null;
+        }
         if (!post) {
+            this.composePublishInProgress = false;
+            this.syncComposeControls(root);
             this.app.phoneShell.showNotification?.('X', '请输入内容或添加图片', '×');
             return null;
         }
@@ -2687,6 +2706,7 @@ export class XView {
         this.composeReturnPage = ['home', 'profile'].includes(this.currentPage) ? this.currentPage : 'home';
         this.pendingComposeImages = [];
         this.composeUploadInProgress = false;
+        this.composePublishInProgress = false;
         this.composeSessionId += 1;
         this.currentPage = 'compose';
         this.currentPostId = null;
@@ -2699,6 +2719,7 @@ export class XView {
         const abandonedImages = [...this.pendingComposeImages];
         this.pendingComposeImages = [];
         this.composeUploadInProgress = false;
+        this.composePublishInProgress = false;
         this.composeSessionId += 1;
         this.currentPage = this.composeReturnPage === 'profile' ? 'profile' : 'home';
         this.composeReturnPage = 'home';
