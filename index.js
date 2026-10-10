@@ -147,10 +147,11 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-10',
+    date: '2026-10-11',
     items: [
         '【修复】修复 X 发布页在部分移动端重复绑定点击事件，导致一次发布生成多条重复帖子且每条都会触发 AI 围观的问题；发布操作现已增加防重复提交保护。',
-        '【修复】修复部分移动端键盘弹起时小手机未及时缩小、收起后尺寸不恢复的问题；新增视口状态复查并将尺寸更新限制在手机面板内，降低酒馆长楼层下的布局卡顿。'
+        '【修复】修复部分移动端键盘弹起时小手机未及时缩小、收起后尺寸不恢复的问题；新增视口状态复查并将尺寸更新限制在手机面板内，降低酒馆长楼层下的布局卡顿。',
+        '【修复】修复部分酒馆交互前端在收到新消息后失效的问题；手机协议标签清理现会保留前端 DOM、脚本状态与事件监听，不再因整层消息重绘导致按钮或交互被破坏。'
     ]
 };
 
@@ -8677,6 +8678,74 @@ if (window.GGP_Loaded) {
         }
     }
 
+    const PHONE_STATEFUL_MESSAGE_SELECTOR = [
+        'iframe',
+        'object',
+        'embed',
+        'script',
+        'style',
+        'form',
+        'input',
+        'textarea',
+        'select',
+        'button',
+        '[contenteditable="true"]',
+        '[contenteditable="plaintext-only"]'
+    ].join(',');
+    const PHONE_PROTOCOL_TEXT_SKIP_SELECTOR = [
+        'script',
+        'style',
+        'textarea',
+        'option',
+        'pre',
+        'code',
+        'iframe',
+        'object',
+        'embed',
+        '.st-phone-payment-receipt'
+    ].join(',');
+    const PHONE_PROTOCOL_SUFFIX_TEXT_REGEX = /(?:<|＜)\s*\/?\s*(?:wechat|music|phone|weibo|短信|任务进度|线上支付)(?=[\s/>＞])[^>＞]*(?:>|＞)|\[\s*手机来电通话\s*\]|PHONE_CHAT_MODE/i;
+
+    function shouldPreservePhoneMessageDom(root) {
+        return !!root?.querySelector?.(PHONE_STATEFUL_MESSAGE_SELECTOR);
+    }
+
+    function removePhoneProtocolSuffixPreservingDom(root) {
+        if (!root || typeof document.createTreeWalker !== 'function' || typeof document.createRange !== 'function') {
+            return false;
+        }
+
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let textNode = walker.nextNode();
+        while (textNode) {
+            const parent = textNode.parentElement;
+            if (!parent?.closest?.(PHONE_PROTOCOL_TEXT_SKIP_SELECTOR)) {
+                const match = PHONE_PROTOCOL_SUFFIX_TEXT_REGEX.exec(String(textNode.nodeValue || ''));
+                if (match) {
+                    const range = document.createRange();
+                    range.setStart(textNode, match.index);
+                    range.setEnd(root, root.childNodes.length);
+                    range.deleteContents();
+                    range.detach?.();
+
+                    while (root.lastElementChild) {
+                        const last = root.lastElementChild;
+                        if (last.matches(PHONE_STATEFUL_MESSAGE_SELECTOR)
+                            || last.querySelector(PHONE_STATEFUL_MESSAGE_SELECTOR)
+                            || last.querySelector('img, video, audio, canvas, svg, .st-phone-payment-receipt')
+                            || String(last.textContent || '').trim()) {
+                            break;
+                        }
+                        last.remove();
+                    }
+                    return true;
+                }
+            }
+            textNode = walker.nextNode();
+        }
+        return false;
+    }
+
     function hidePhoneTags() {
         // 1. 注入 CSS (保证底线隐藏，防止闪烁)
         if (!document.getElementById('st-phone-hide-style')) {
@@ -8704,16 +8773,36 @@ if (window.GGP_Loaded) {
             }
 
             let changed = false;
+            const preserveMessageDom = shouldPreservePhoneMessageDom(root);
+            let preservedPaymentReceipts = [];
 
             // 线上支付标签保留在酒馆正文中，以安全的小票组件展示。
             const receiptReplaced = replaceOfflineWechatPaymentTagsWithReceipts(html, receiptRenderOptions);
             if (receiptReplaced !== html) {
+                if (preserveMessageDom && !root.querySelector('.st-phone-payment-receipt')) {
+                    const template = document.createElement('template');
+                    template.innerHTML = receiptReplaced;
+                    preservedPaymentReceipts = Array.from(
+                        template.content.querySelectorAll('.st-phone-payment-receipt'),
+                        receipt => receipt.cloneNode(true)
+                    );
+                }
                 html = receiptReplaced;
                 changed = true;
             }
 
             // 隐藏那些被解析为真实 DOM 元素的孤立标签
             $(root).find('phone, wechat, music, weibo, 短信, 任务进度, 线上支付').hide();
+
+            // 酒馆前端通常依赖 iframe、脚本或已绑定事件的表单控件。重写整个 .mes_text.innerHTML
+            // 会销毁这些运行时对象，表现为“编辑后恢复，下一条消息渲染时再次失效”。
+            // 这类楼层只裁掉末尾协议文本，保留已有 DOM 实例；普通消息仍走完整兼容清理。
+            if (preserveMessageDom) {
+                removePhoneProtocolSuffixPreservingDom(root);
+                preservedPaymentReceipts.forEach(receipt => root.appendChild(receipt));
+                root.querySelectorAll('.st-phone-payment-receipt').forEach(bindPaymentReceiptNotches);
+                return;
+            }
 
             // 策略 A: 尝试完整匹配并替换 (适用于格式完美，没有被浏览器截断的情况)
             const wechatReplaced = html.replace(WECHAT_HTML_TAG_REGEX, '');

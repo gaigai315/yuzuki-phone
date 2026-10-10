@@ -10,9 +10,9 @@ test('current version keeps all notices under the latest date', () => {
     const current = updateLog.versions[manifest.version];
 
     assert.equal(manifest.version, '1.6.0.1');
-    assert.equal(current.date, '2026-10-10');
-    assert.equal(current.items.length, 2);
-    assert.deepEqual(current.items.map(item => item.match(/^【([^】]+)】/)?.[1]), ['修复', '修复']);
+    assert.equal(current.date, '2026-10-11');
+    assert.equal(current.items.length, 3);
+    assert.deepEqual(current.items.map(item => item.match(/^【([^】]+)】/)?.[1]), ['修复', '修复', '修复']);
     assert.match(current.items[0], /X 发布页/);
     assert.match(current.items[0], /重复绑定点击事件/);
     assert.match(current.items[0], /多条重复帖子/);
@@ -22,6 +22,11 @@ test('current version keeps all notices under the latest date', () => {
     assert.match(current.items[1], /收起后尺寸不恢复/);
     assert.match(current.items[1], /视口状态复查/);
     assert.match(current.items[1], /长楼层下的布局卡顿/);
+    assert.match(current.items[2], /交互前端/);
+    assert.match(current.items[2], /收到新消息后失效/);
+    assert.match(current.items[2], /保留前端 DOM/);
+    assert.match(current.items[2], /事件监听/);
+    assert.match(current.items[2], /整层消息重绘/);
     assert.equal(current.updates, undefined);
 });
 
@@ -39,7 +44,7 @@ test('fallback announcement preserves the 1.6.0.1 notice', () => {
     assert.ok(start >= 0 && end > start, 'fallback update block should exist');
 
     const block = indexSource.slice(start, end);
-    assert.match(block, /date: '2026-10-10'/);
+    assert.match(block, /date: '2026-10-11'/);
     assert.match(block, /X 发布页/);
     assert.match(block, /重复绑定点击事件/);
     assert.match(block, /多条重复帖子/);
@@ -49,4 +54,9 @@ test('fallback announcement preserves the 1.6.0.1 notice', () => {
     assert.match(block, /收起后尺寸不恢复/);
     assert.match(block, /视口状态复查/);
     assert.match(block, /长楼层下的布局卡顿/);
+    assert.match(block, /交互前端/);
+    assert.match(block, /收到新消息后失效/);
+    assert.match(block, /保留前端 DOM/);
+    assert.match(block, /事件监听/);
+    assert.match(block, /整层消息重绘/);
 });
