@@ -11,13 +11,17 @@ test('current version keeps all notices under the latest date', () => {
 
     assert.equal(manifest.version, '1.6.0.1');
     assert.equal(current.date, '2026-10-10');
-    assert.equal(current.items.length, 1);
-    assert.deepEqual(current.items.map(item => item.match(/^【([^】]+)】/)?.[1]), ['修复']);
+    assert.equal(current.items.length, 2);
+    assert.deepEqual(current.items.map(item => item.match(/^【([^】]+)】/)?.[1]), ['修复', '修复']);
     assert.match(current.items[0], /X 发布页/);
     assert.match(current.items[0], /重复绑定点击事件/);
     assert.match(current.items[0], /多条重复帖子/);
     assert.match(current.items[0], /每条都会触发 AI 围观/);
     assert.match(current.items[0], /防重复提交保护/);
+    assert.match(current.items[1], /键盘弹起时小手机未及时缩小/);
+    assert.match(current.items[1], /收起后尺寸不恢复/);
+    assert.match(current.items[1], /视口状态复查/);
+    assert.match(current.items[1], /长楼层下的布局卡顿/);
     assert.equal(current.updates, undefined);
 });
 
@@ -41,4 +45,8 @@ test('fallback announcement preserves the 1.6.0.1 notice', () => {
     assert.match(block, /多条重复帖子/);
     assert.match(block, /每条都会触发 AI 围观/);
     assert.match(block, /防重复提交保护/);
+    assert.match(block, /键盘弹起时小手机未及时缩小/);
+    assert.match(block, /收起后尺寸不恢复/);
+    assert.match(block, /视口状态复查/);
+    assert.match(block, /长楼层下的布局卡顿/);
 });

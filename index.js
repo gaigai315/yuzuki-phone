@@ -149,7 +149,8 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-10-10',
     items: [
-        '【修复】修复 X 发布页在部分移动端重复绑定点击事件，导致一次发布生成多条重复帖子且每条都会触发 AI 围观的问题；发布操作现已增加防重复提交保护。'
+        '【修复】修复 X 发布页在部分移动端重复绑定点击事件，导致一次发布生成多条重复帖子且每条都会触发 AI 围观的问题；发布操作现已增加防重复提交保护。',
+        '【修复】修复部分移动端键盘弹起时小手机未及时缩小、收起后尺寸不恢复的问题；新增视口状态复查并将尺寸更新限制在手机面板内，降低酒馆长楼层下的布局卡顿。'
     ]
 };
 
@@ -231,6 +232,8 @@ if (window.GGP_Loaded) {
     let _phoneStableViewportWidth = 0;
     let _phoneViewportResizeTimer = null;
     let _phoneViewportSettleTimer = null;
+    let _phoneViewportWatchdogTimer = null;
+    let _phoneViewportWatchdogUntil = 0;
     let _phoneKeyboardLikelyOpenUntil = 0;
     let _phoneHostKeyboardOffset = 0;
     let _phoneVirtualKeyboardOffset = 0;
@@ -656,10 +659,24 @@ if (window.GGP_Loaded) {
         return hasCoarsePrimaryPointer && !hasDesktopPointer && viewportWidth > 0 && viewportWidth <= 900;
     }
 
+    function isPhoneTypingTarget(target) {
+        if (!(target instanceof Element)) return false;
+        const field = target.closest?.('textarea, input, [contenteditable]');
+        if (!field) return false;
+        if (field.tagName?.toLowerCase() === 'textarea' || field.isContentEditable) return true;
+        const inputType = String(field.type || 'text').toLowerCase();
+        return ['text', 'search', 'password', 'email', 'number', 'url', 'tel'].includes(inputType);
+    }
+
+    function setPhoneViewportProperty(style, name, value) {
+        if (style.getPropertyValue(name) === value) return;
+        style.setProperty(name, value);
+    }
+
     function updatePhonePanelViewportHeight(options = {}) {
         const panel = document.getElementById('phone-panel');
         const root = document.documentElement;
-        if (!root) return;
+        if (!root || !panel) return;
 
         const viewport = window.visualViewport;
         const layoutHeight = Math.max(
@@ -679,11 +696,7 @@ if (window.GGP_Loaded) {
         const keyboardGap = layoutHeight && visualHeight ? layoutHeight - visualHeight : 0;
         const stableGap = _phoneStableViewportHeight ? _phoneStableViewportHeight - visualHeight : 0;
         const activeElement = document.activeElement;
-        const activeTag = String(activeElement?.tagName || '').toLowerCase();
-        const activeInputType = String(activeElement?.type || 'text').toLowerCase();
-        const isTypingTarget = activeTag === 'textarea'
-            || (activeTag === 'input' && ['text', 'search', 'password', 'email', 'number', 'url', 'tel'].includes(activeInputType))
-            || activeElement?.isContentEditable;
+        const isTypingTarget = isPhoneTypingTarget(activeElement);
         const now = Date.now();
         const hasVisualKeyboardViewportGap = keyboardGap > 120 || stableGap > 120;
         const hadVisualKeyboardViewportGap = _phoneVisualKeyboardViewportOpen;
@@ -693,6 +706,11 @@ if (window.GGP_Loaded) {
             : 0;
         const hostSafeBottom = Math.max(0, Number.parseFloat(getComputedStyle(root).getPropertyValue('--tt-inset-bottom')) || 0);
         const hostCssKeyboardOffset = Math.max(hostImeBottom - hostSafeBottom, 0);
+        const liveVirtualKeyboardOffset = Math.max(
+            0,
+            Number(navigator.virtualKeyboard?.boundingRect?.height) || 0
+        );
+        _phoneVirtualKeyboardOffset = liveVirtualKeyboardOffset;
         const reportedKeyboardOffset = Math.max(
             _phoneHostKeyboardOffset,
             _phoneVirtualKeyboardOffset,
@@ -750,19 +768,20 @@ if (window.GGP_Loaded) {
 
         const panelHeight = Math.max(_phoneStableViewportHeight || currentHeight, currentHeight);
         const panelWidth = Math.max(_phoneStableViewportWidth || currentWidth, currentWidth);
-        root.style.setProperty('--phone-panel-vh', `${Math.round(panelHeight)}px`);
-        root.style.setProperty('--phone-panel-vw', `${Math.round(panelWidth)}px`);
-        root.style.setProperty('--phone-panel-top', '0px');
-        root.style.setProperty('--phone-panel-left', '0px');
+        const viewportStyle = panel.style;
+        setPhoneViewportProperty(viewportStyle, '--phone-panel-vh', `${Math.round(panelHeight)}px`);
+        setPhoneViewportProperty(viewportStyle, '--phone-panel-vw', `${Math.round(panelWidth)}px`);
+        setPhoneViewportProperty(viewportStyle, '--phone-panel-top', '0px');
+        setPhoneViewportProperty(viewportStyle, '--phone-panel-left', '0px');
         // Some Android shells keep the WebView viewport stable while exposing IME overlap separately (or not at all).
         // Only subtract a reported/estimated inset when visualViewport has not already shrunk.
         const keyboardViewportHeight = hasVisualKeyboardViewportGap
             ? visualHeight
             : visualHeight - (keyboardOpen ? effectiveKeyboardOffset : 0);
-        root.style.setProperty('--phone-keyboard-vh', `${Math.round(Math.max(keyboardViewportHeight, 320))}px`);
-        root.style.setProperty('--phone-keyboard-vw', `${Math.round(Math.max(visualWidth, 320))}px`);
-        root.style.setProperty('--phone-keyboard-top', `${Math.round(Math.max(visualTop, 0))}px`);
-        root.style.setProperty('--phone-keyboard-left', `${Math.round(Math.max(visualLeft, 0))}px`);
+        setPhoneViewportProperty(viewportStyle, '--phone-keyboard-vh', `${Math.round(Math.max(keyboardViewportHeight, 320))}px`);
+        setPhoneViewportProperty(viewportStyle, '--phone-keyboard-vw', `${Math.round(Math.max(visualWidth, 320))}px`);
+        setPhoneViewportProperty(viewportStyle, '--phone-keyboard-top', `${Math.round(Math.max(visualTop, 0))}px`);
+        setPhoneViewportProperty(viewportStyle, '--phone-keyboard-left', `${Math.round(Math.max(visualLeft, 0))}px`);
 
         if (!keyboardOpen && panel?.classList?.contains('phone-panel-open')) {
             applyPhonePanelDesktopPosition();
@@ -789,6 +808,45 @@ if (window.GGP_Loaded) {
         _phoneViewportSettleTimer = setTimeout(() => {
             updatePhonePanelViewportHeight(options);
         }, settleDelay);
+    }
+
+    function stopPhonePanelViewportWatchdog() {
+        clearTimeout(_phoneViewportWatchdogTimer);
+        _phoneViewportWatchdogTimer = null;
+        _phoneViewportWatchdogUntil = 0;
+    }
+
+    function startPhonePanelViewportWatchdog(duration = 1800) {
+        _phoneViewportWatchdogUntil = Math.max(
+            _phoneViewportWatchdogUntil,
+            Date.now() + Math.max(600, Number(duration) || 0)
+        );
+        if (_phoneViewportWatchdogTimer) return;
+
+        const tick = () => {
+            _phoneViewportWatchdogTimer = null;
+            const panel = document.getElementById('phone-panel');
+            if (!panel?.classList?.contains('phone-panel-open')) {
+                stopPhonePanelViewportWatchdog();
+                return;
+            }
+
+            updatePhonePanelViewportHeight({ source: 'watchdog' });
+            const keyboardOpen = panel.classList.contains('phone-keyboard-open');
+            if (!keyboardOpen && Date.now() >= _phoneViewportWatchdogUntil) {
+                stopPhonePanelViewportWatchdog();
+                return;
+            }
+
+            // Keyboard-open polling is intentionally low frequency. It catches browsers that update
+            // visualViewport values but omit the final resize event when the IME is dismissed.
+            const delay = keyboardOpen
+                ? (Date.now() < _phoneViewportWatchdogUntil ? 360 : 900)
+                : 120;
+            _phoneViewportWatchdogTimer = setTimeout(tick, delay);
+        };
+
+        _phoneViewportWatchdogTimer = setTimeout(tick, 80);
     }
 
     function isDesktopPhonePanelDragEnabled() {
@@ -1223,36 +1281,39 @@ if (window.GGP_Loaded) {
             if (panel.classList?.contains('phone-panel-open')) return true;
             return !!(target && typeof panel.contains === 'function' && panel.contains(target));
         };
-        const isTypingTarget = (target) => {
-            if (!(target instanceof Element)) return false;
-            const field = target.closest?.('textarea, input, [contenteditable]');
-            if (!field) return false;
-            if (field.tagName?.toLowerCase() === 'textarea' || field.isContentEditable) return true;
-            const inputType = String(field.type || 'text').toLowerCase();
-            return ['text', 'search', 'password', 'email', 'number', 'url', 'tel'].includes(inputType);
-        };
         const armPhoneKeyboardFallback = () => {
             _phoneKeyboardFallbackSuppressed = false;
             _phoneKeyboardLikelyOpenUntil = Date.now() + 700;
             _phoneKeyboardFallbackArmedAt = Date.now() + 160;
             schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
+            startPhonePanelViewportWatchdog(2200);
         };
         const onViewportResize = () => {
             if (!shouldUpdatePhoneViewport()) return;
             schedulePhonePanelViewportUpdate({ delay: 40, settleDelay: 160 });
+            startPhonePanelViewportWatchdog(1800);
         };
         const onViewportScroll = () => {
             if (!shouldUpdatePhoneViewport()) return;
             schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 140 });
+            startPhonePanelViewportWatchdog(1200);
         };
         const onFocusIn = (event) => {
             if (!shouldUpdatePhoneViewport(event.target)) return;
-            if (isTypingTarget(event.target)) armPhoneKeyboardFallback();
+            if (isPhoneTypingTarget(event.target)) armPhoneKeyboardFallback();
         };
         const onPointerDown = (event) => {
-            if (!shouldUpdatePhoneViewport(event.target) || !isTypingTarget(event.target)) return;
+            if (!shouldUpdatePhoneViewport(event.target) || !isPhoneTypingTarget(event.target)) return;
             // A dismissed Android keyboard can leave the field focused, so focusin will not fire again.
             armPhoneKeyboardFallback();
+        };
+        const onInput = (event) => {
+            const panel = document.getElementById('phone-panel');
+            if (!panel?.contains?.(event.target) || !isPhoneTypingTarget(event.target)) return;
+            if (!panel.classList.contains('phone-keyboard-open')) {
+                schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
+            }
+            startPhonePanelViewportWatchdog(1600);
         };
         const onFocusOut = (event) => {
             if (!shouldUpdatePhoneViewport(event.target)) return;
@@ -1261,6 +1322,22 @@ if (window.GGP_Loaded) {
             // 保持键盘态直到 viewport 恢复；900ms 复查用于兼容不补发 resize 的 WebView。
             _phoneKeyboardLikelyOpenUntil = Date.now() + 800;
             schedulePhonePanelViewportUpdate({ immediate: true, delay: 120, settleDelay: 900 });
+            startPhonePanelViewportWatchdog(2400);
+        };
+        const onVisibilityChange = () => {
+            if (document.visibilityState !== 'visible' || !shouldUpdatePhoneViewport()) return;
+            schedulePhonePanelViewportUpdate({ immediate: true, delay: 60, settleDelay: 300 });
+            startPhonePanelViewportWatchdog(1800);
+        };
+        const onPageShow = () => {
+            if (!shouldUpdatePhoneViewport()) return;
+            schedulePhonePanelViewportUpdate({ immediate: true, delay: 60, settleDelay: 300 });
+            startPhonePanelViewportWatchdog(1800);
+        };
+        const onOrientationChange = () => {
+            if (!shouldUpdatePhoneViewport()) return;
+            schedulePhonePanelViewportUpdate({ immediate: true, delay: 120, settleDelay: 700 });
+            startPhonePanelViewportWatchdog(2600);
         };
 
         if (bindPhonePanelViewportGuards._handlers) {
@@ -1276,6 +1353,10 @@ if (window.GGP_Loaded) {
             document.removeEventListener('focusin', prev.onFocusIn, true);
             document.removeEventListener('focusout', prev.onFocusOut, true);
             document.removeEventListener('pointerdown', prev.onPointerDown, true);
+            document.removeEventListener('input', prev.onInput, true);
+            document.removeEventListener('visibilitychange', prev.onVisibilityChange);
+            window.removeEventListener('pageshow', prev.onPageShow);
+            window.removeEventListener('orientationchange', prev.onOrientationChange);
         }
 
         const virtualKeyboard = navigator.virtualKeyboard || null;
@@ -1283,6 +1364,7 @@ if (window.GGP_Loaded) {
             _phoneVirtualKeyboardOffset = Math.max(0, Number(virtualKeyboard?.boundingRect?.height) || 0);
             if (!shouldUpdatePhoneViewport()) return;
             schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
+            startPhonePanelViewportWatchdog(1800);
         };
 
         bindPhonePanelViewportGuards._handlers = {
@@ -1291,6 +1373,10 @@ if (window.GGP_Loaded) {
             onFocusIn,
             onFocusOut,
             onPointerDown,
+            onInput,
+            onVisibilityChange,
+            onPageShow,
+            onOrientationChange,
             onVirtualKeyboardGeometry,
             virtualKeyboard
         };
@@ -1307,6 +1393,10 @@ if (window.GGP_Loaded) {
         document.addEventListener('focusin', onFocusIn, true);
         document.addEventListener('focusout', onFocusOut, true);
         document.addEventListener('pointerdown', onPointerDown, true);
+        document.addEventListener('input', onInput, true);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        window.addEventListener('pageshow', onPageShow, { passive: true });
+        window.addEventListener('orientationchange', onOrientationChange, { passive: true });
     }
 
     async function bindTauriTavernPhoneLayout(panel) {
@@ -1346,6 +1436,7 @@ if (window.GGP_Loaded) {
 
                 if (changed || panel.classList.contains('phone-panel-open')) {
                     schedulePhonePanelViewportUpdate({ immediate: true, delay: 40, settleDelay: 180 });
+                    startPhonePanelViewportWatchdog(1800);
                 }
             });
 
@@ -5695,6 +5786,7 @@ if (window.GGP_Loaded) {
 
         if (isOpen) {
             // 关闭
+            stopPhonePanelViewportWatchdog();
             panel.classList.remove('phone-panel-open');
             panel.classList.remove('phone-keyboard-open');
             panel.classList.add('phone-panel-hidden');
@@ -5739,15 +5831,16 @@ if (window.GGP_Loaded) {
         if (!panel || !icon) return;
 
         blurExternalEditableBeforePhoneOpen(panel);
-        updatePhonePanelViewportHeight({ force: true });
         bindPhonePanelDesktopDockDrag(panel);
         panel.classList.add('phone-panel-open');
         panel.classList.remove('phone-panel-hidden');
         panel.style.cssText = '';
         panel.classList.add('drawer-content', 'fillRight', 'openDrawer');
+        updatePhonePanelViewportHeight({ force: true });
         // Measure only after the hidden rules are gone; display:none reports a zero-sized phone body.
         applyPhonePanelDesktopPosition();
         schedulePhonePanelViewportUpdate();
+        startPhonePanelViewportWatchdog(1200);
 
         // 自动唤起来电/转线上时也必须补上外部点击关闭监听
         panel.removeEventListener('click', handlePanelClick);
