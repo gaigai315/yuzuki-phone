@@ -1191,12 +1191,16 @@ export class SettingsApp {
             .map(option => `<option value="${option.id}" ${selectedProvider === option.id ? 'selected' : ''}>${option.label}</option>`)
             .join('');
         const currentTtsUrlPresets = this._getTtsUrlPresetOptions(currentTtsProvider);
-        const isGeneralInteractionOpen = this.storage.get('phone-settings-general-interaction-open') === true;
         const readStoredBool = (key, fallback = false) => {
             const value = this.storage.get(key, undefined);
             if (value === undefined || value === null) return fallback;
             return value === true || value === 'true';
         };
+        const hasStoredValue = (key) => {
+            const value = this.storage.get(key, undefined);
+            return value !== undefined && value !== null;
+        };
+        const isGeneralInteractionOpen = readStoredBool('phone-settings-general-interaction-open');
         const wechatOnlineControlsHtml = isWechatOnlineOnlyMode ? `
                             <div class="setting-item setting-toggle" style="margin-top: 8px; margin-left: 12px; padding-left: 10px; border-left: 2px solid rgba(7,193,96,0.18);">
                                 <div>
@@ -1236,17 +1240,19 @@ export class SettingsApp {
                                 </button>
                             </div>
         ` : '';
-        const hasStoredValue = (key) => {
-            const value = this.storage.get(key, undefined);
-            return value !== undefined && value !== null;
-        };
         const isGeneralLimitsOpen = readStoredBool('phone-settings-general-limits-open');
         const isGeneralOnlineInjectionOpen = hasStoredValue('phone-settings-general-online-injection-open')
             ? readStoredBool('phone-settings-general-online-injection-open')
             : isGeneralLimitsOpen;
-        const isGeneralOfflineInjectionOpen = hasStoredValue('phone-settings-general-offline-injection-open')
+        const isGeneralOnlineModeOpen = hasStoredValue('phone-settings-general-online-mode-open')
+            ? readStoredBool('phone-settings-general-online-mode-open')
+            : isGeneralOnlineInjectionOpen;
+        const legacyGeneralOfflineInjectionOpen = hasStoredValue('phone-settings-general-offline-injection-open')
             ? readStoredBool('phone-settings-general-offline-injection-open')
             : isGeneralLimitsOpen;
+        const isGeneralOperationOpen = hasStoredValue('phone-settings-general-operation-open')
+            ? readStoredBool('phone-settings-general-operation-open')
+            : legacyGeneralOfflineInjectionOpen;
         const isGeneralPersonalizationOpen = this.storage.get('phone-settings-general-personalization-open') === true;
         const isGeneralTextColorOpen = this.storage.get('phone-settings-general-text-color-open') === true;
         const isGeneralTimeOpen = this.storage.get('phone-settings-general-time-open') === true;
@@ -1849,6 +1855,20 @@ export class SettingsApp {
                         background: #ffffff !important;
                         box-shadow: 0 8px 24px rgba(18, 24, 38, 0.06), 0 1px 2px rgba(18, 24, 38, 0.04) !important;
                         overflow: hidden !important;
+                    }
+                    #tab-general > .yzp-settings-interaction-help {
+                        margin: 10px 0 !important;
+                        padding: 12px 14px !important;
+                        border: 1px solid rgba(18, 24, 38, 0.08) !important;
+                        border-radius: 14px !important;
+                        background: #ffffff !important;
+                        box-shadow: 0 8px 24px rgba(18, 24, 38, 0.06), 0 1px 2px rgba(18, 24, 38, 0.04) !important;
+                        color: color-mix(in srgb, var(--settings-text-color) 72%, transparent) !important;
+                        font-size: 11px !important;
+                        line-height: 1.55 !important;
+                    }
+                    #tab-general > .yzp-settings-interaction-help strong {
+                        color: var(--settings-text-color) !important;
                     }
                     #tab-general > details[data-settings-fold-key] > summary {
                         min-height: 46px !important;
@@ -2486,13 +2506,22 @@ export class SettingsApp {
                             </button>
                         </div>
 
-                        <details data-settings-fold-key="phone-settings-general-interaction-open" ${isGeneralInteractionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                        <div data-settings-interaction-help class="yzp-settings-interaction-help">
+                            <strong>使用说明：</strong><br>
+                            1. 开启“互通模式”或“线上模式”，二选一<br>
+                            2. 互通模式为正文与小手机线上内容互通<br>
+                            3. 线上模式为小手机内容不与正文互通；线上模式分为同步现实时间/同步剧情时间。<br>
+                            4. 线上注入设置不分“互通模式”或“线上模式”模式，仅为使用小手机上聊天时设置。
+                        </div>
+
+                        <details data-settings-section="operation" data-settings-fold-key="phone-settings-general-operation-open" ${isGeneralOperationOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>📡 互动模式</span>
+                                <span>⚙️ 操作设置</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
 
+                            <div data-settings-interaction-mode-controls>
                             <div class="setting-item setting-toggle">
                                 <div>
                                     <div class="setting-label">互通模式</div>
@@ -2503,10 +2532,12 @@ export class SettingsApp {
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
+                            </div>
 
-                            <div class="setting-item setting-toggle" style="margin-top: 10px;">
+                            <div data-settings-online-mode-controls>
+                            <div class="setting-item setting-toggle">
                                 <div>
-                                    <div class="setting-label">线上模式</div>
+                                    <div class="setting-label">启用线上模式</div>
                                     <div class="setting-desc">启用手机内线上聊天；可选定时主动触发，开启后会关闭微信线下注入相关开关</div>
                                 </div>
                                 <label class="toggle-switch">
@@ -2516,6 +2547,7 @@ export class SettingsApp {
                             </div>
 
                             ${wechatOnlineControlsHtml}
+                            </div>
 
                             <div class="setting-item setting-toggle" style="margin-top: 10px;">
                                 <div>
@@ -2583,16 +2615,18 @@ export class SettingsApp {
                                 </div>
                             </fieldset>
 
-                            <div class="setting-info">
-                                <strong>使用说明：</strong><br>
-                                1. 开启"互通模式"或"线上模式"<br>
-                                2. 在对应APP设置中配置各功能提示词<br>
-                                3. 在手机APP中发送消息，AI会自动回复
-                            </div>
                             </div>
                         </details>
 
-                        <details data-settings-fold-key="phone-settings-general-online-injection-open" ${isGeneralOnlineInjectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                        <details data-settings-section="online-mode" data-settings-fold-key="phone-settings-general-online-mode-open" ${isGeneralOnlineModeOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                            <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
+                                <span>📱 线上模式设置</span>
+                                ${SETTINGS_FOLD_ARROW_HTML}
+                            </summary>
+                            <div data-settings-online-mode-content style="padding: 10px 10px 4px;"></div>
+                        </details>
+
+                        <details data-settings-section="online-injection" data-settings-fold-key="phone-settings-general-online-injection-open" ${isGeneralOnlineInjectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
                                 <span>📨 线上注入设置</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
@@ -2638,12 +2672,12 @@ export class SettingsApp {
                             </div>
                         </details>
 
-                        <details data-settings-fold-key="phone-settings-general-offline-injection-open" ${isGeneralOfflineInjectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                        <details data-settings-section="interaction" data-settings-fold-key="phone-settings-general-interaction-open" ${isGeneralInteractionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>📴 线下注入设置</span>
+                                <span>📡 互动模式</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
-                            <div style="padding: 10px 10px 4px;">
+                            <div data-settings-interaction-content style="padding: 10px 10px 4px;">
 
                             <div class="settings-subsection-title">微信线下记录</div>
 
@@ -3516,8 +3550,39 @@ export class SettingsApp {
         `;
 
         this.phoneShell.setContent(html);
+        this._arrangeGeneralSettingsSections();
         this._applySettingsThemeIsolation();
         this.bindEvents();
+    }
+
+    _arrangeGeneralSettingsSections() {
+        const generalTab = document.querySelector('#yzp-settings-app #tab-general');
+        if (!generalTab) return;
+
+        const interactionSection = generalTab.querySelector('details[data-settings-section="interaction"]');
+        const operationSection = generalTab.querySelector('details[data-settings-section="operation"]');
+        const onlineModeSection = generalTab.querySelector('details[data-settings-section="online-mode"]');
+        const onlineInjectionSection = generalTab.querySelector('details[data-settings-section="online-injection"]');
+        const interactionContent = interactionSection?.querySelector('[data-settings-interaction-content]');
+        const onlineModeContent = onlineModeSection?.querySelector('[data-settings-online-mode-content]');
+        const interactionModeControls = operationSection?.querySelector('[data-settings-interaction-mode-controls]');
+        const onlineModeControls = operationSection?.querySelector('[data-settings-online-mode-controls]');
+
+        if (interactionContent && interactionModeControls) {
+            interactionContent.prepend(interactionModeControls);
+        }
+        if (onlineModeContent && onlineModeControls) {
+            onlineModeContent.prepend(onlineModeControls);
+        }
+        if (!interactionSection || !operationSection) return;
+
+        generalTab.insertBefore(interactionSection, operationSection);
+        if (onlineModeSection && onlineInjectionSection) {
+            generalTab.insertBefore(onlineModeSection, onlineInjectionSection);
+        }
+        if (onlineInjectionSection) {
+            generalTab.insertBefore(operationSection, onlineInjectionSection.nextSibling);
+        }
     }
 
     _getImagePromptAppDefs() {
