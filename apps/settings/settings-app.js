@@ -8946,6 +8946,11 @@ export class SettingsApp {
                 imageOpenaiPresetName.focus();
             }
             await setOpenAIActivePresetId(appKey, '');
+            const emptyForm = { fixedPrompt: '', fixedPromptEnd: '', negativePrompt: '' };
+            if (imageFixedPromptInput) imageFixedPromptInput.value = '';
+            if (imageFixedPromptEndInput) imageFixedPromptEndInput.value = '';
+            if (imageNegativePromptInput) imageNegativePromptInput.value = '';
+            await saveOpenAIImagePromptDraft(appKey, emptyForm);
             this.phoneShell?.showNotification?.('新建 GPT 预设', '填写名称后点击保存', '✏️');
         });
 
@@ -9146,6 +9151,7 @@ export class SettingsApp {
                 imagePromptPresetName.focus();
             }
             await this.storage.set(`phone-image-${this._normalizeImagePresetScope(appKey)}-active-prompt-preset`, '');
+            await setImagePromptForm({});
             this.phoneShell?.showNotification?.('新建生图设定', '填写名称后点击保存', '✏️');
         });
 
