@@ -30,18 +30,49 @@ test('interactive message cleanup deletes only the protocol suffix through a DOM
     assert.doesNotMatch(helperSource, /root\.innerHTML\s*=/);
 });
 
+test('complete payment receipts are replaced in place without rebuilding unrelated frontend DOM', () => {
+    assert.match(helperSource, /function replaceCompletePaymentReceiptsInPlace\(root, rawPayments = \[\], renderOptions = \{\}\)/);
+    assert.match(helperSource, /payments\.length === 0/);
+    assert.match(helperSource, /querySelectorAll\?\.\('\[data-st-phone-payment-boundary\]'\)/);
+    assert.match(helperSource, /hasUnpairedMarkerBoundary/);
+    assert.match(helperSource, /hasUnpairedTextBoundary/);
+    assert.match(helperSource, /paymentCount !== payments\.length/);
+    assert.match(helperSource, /getElementsByTagName\?\.\('线上支付'\)/);
+    assert.match(helperSource, /paymentElement\.querySelector\?\.\(PHONE_PAYMENT_FOREIGN_CONTENT_SELECTOR\)/);
+    assert.match(helperSource, /paymentElement\.replaceWith\(receipt\)/);
+    assert.match(helperSource, /NodeFilter\.SHOW_TEXT \| NodeFilter\.SHOW_COMMENT/);
+    assert.match(helperSource, /if \(!boundary\.closing\) \{[\s\S]*?opener = boundary;/);
+    assert.match(helperSource, /range\.deleteContents\(\)/);
+    assert.match(helperSource, /range\.insertNode\(receipt\)/);
+    assert.match(helperSource, /range\.setStartBefore\(start\)/);
+    assert.match(helperSource, /range\.setEndAfter\(end\)/);
+    assert.doesNotMatch(helperSource, /root\.innerHTML\s*=/);
+});
+
 test('phone tag hiding preserves a frontend DOM before the legacy innerHTML fallback', () => {
+    const rawPaymentIndex = hideSource.indexOf('const rawMessageText = getPhoneMessageRawText(root)');
+    const paymentIndex = hideSource.indexOf('replaceCompletePaymentReceiptsInPlace(root, rawPayments, receiptRenderOptions)');
+    const paymentReturnIndex = hideSource.indexOf('if (rawHasPaymentBoundary || paymentRenderResult.found) return;', paymentIndex);
     const preserveIndex = hideSource.indexOf('if (preserveMessageDom)');
     const rangeCleanupIndex = hideSource.indexOf('removePhoneProtocolSuffixPreservingDom(root)', preserveIndex);
-    const receiptRestoreIndex = hideSource.indexOf('preservedPaymentReceipts.forEach(receipt => root.appendChild(receipt))', rangeCleanupIndex);
     const returnIndex = hideSource.indexOf('return;', rangeCleanupIndex);
     const legacyRewriteIndex = hideSource.indexOf('root.innerHTML = html');
 
+    assert.ok(rawPaymentIndex >= 0);
+    assert.ok(paymentIndex > rawPaymentIndex);
+    assert.ok(paymentReturnIndex > paymentIndex);
+    assert.ok(paymentReturnIndex < preserveIndex);
     assert.ok(preserveIndex >= 0);
     assert.ok(rangeCleanupIndex > preserveIndex);
-    assert.ok(receiptRestoreIndex > rangeCleanupIndex);
-    assert.ok(returnIndex > receiptRestoreIndex);
+    assert.ok(returnIndex > rangeCleanupIndex);
     assert.ok(legacyRewriteIndex > returnIndex);
+});
+
+test('payment rendering is gated by the raw Tavern message and never globally hides payment descendants', () => {
+    assert.match(helperSource, /function getPhoneMessageRawText\(root\)/);
+    assert.match(helperSource, /context\.chat\[messageId\]/);
+    assert.match(hideSource, /parseOfflineWechatPayments\(rawMessageText\)/);
+    assert.doesNotMatch(hideSource, /任务进度, 线上支付 \{ display: none/);
 });
 
 test('frontend-safe cleanup recognizes current phone protocol suffixes', () => {

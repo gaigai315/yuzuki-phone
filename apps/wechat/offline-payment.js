@@ -1,4 +1,5 @@
 const PAYMENT_TAG_BOUNDARY_REGEX = /<\s*(\/?)\s*线上支付\s*>/gi;
+const PAYMENT_RAW_TAG_BOUNDARY_REGEX = /(?:<|＜)\s*(\/?)\s*线上支付\s*(?:>|＞)/gi;
 const PAYMENT_HTML_TAG_BOUNDARY_REGEX = /(?:<\s*(\/?)\s*线上支付(?:\s[^>]*)?>|&lt;\s*(\/?)\s*线上支付\s*&gt;|＜\s*(\/?)\s*线上支付\s*＞|<!--\s*(\/?)\s*线上支付\s*-->)/gi;
 const PAYMENT_TIME_LINE_REGEX = /^\s*支\s*付\s*时\s*间\s*[:：]\s*(.+?)\s*$/i;
 const PAYMENT_ITEM_NAME_LINE_REGEX = /^\s*(?:商品名称|商品|项目)\s*[:：]\s*(.+?)\s*$/i;
@@ -61,7 +62,7 @@ function extractPaymentDateTimeFromBody(body) {
         .replace(/[\u200b-\u200d\u2060\ufeff]/g, '')
         .replace(/\r\n/g, '\n');
     const match = plainText.match(
-        /支\s*付\s*时\s*间\s*[:：]\s*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日\s*\d{1,2}\s*[:：]\s*\d{2})/i
+        /支\s*付\s*时\s*间\s*[:：]\s*(\d{1,6}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日\s*\d{1,2}\s*[:：]\s*\d{2})/i
     );
     return String(match?.[1] || '').trim();
 }
@@ -77,7 +78,7 @@ function parsePaymentDateTime(value) {
         .replace(/\u00a0/g, ' ')
         .replace(/[\u200b-\u200d\u2060\ufeff]/g, '')
         .trim();
-    const match = raw.match(/((\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日)\s*(\d{1,2})\s*[:：]\s*(\d{2})(?:\s|$)/);
+    const match = raw.match(/((\d{1,6})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日)\s*(\d{1,2})\s*[:：]\s*(\d{2})(?:\s|$)/);
     return {
         raw,
         date: String(match?.[1] || '').replace(/\s+/g, ''),
@@ -215,7 +216,7 @@ function formatReceiptAmount(value) {
 function formatReceiptDate(value) {
     const raw = String(value || '').trim();
     if (!raw) return '未提供';
-    const match = raw.match(/(\d{4})\s*(?:年|[.\/-])\s*(\d{1,2})\s*(?:月|[.\/-])\s*(\d{1,2})\s*(?:日)?/);
+    const match = raw.match(/(\d{1,6})\s*(?:年|[.\/-])\s*(\d{1,2})\s*(?:月|[.\/-])\s*(\d{1,2})\s*(?:日)?/);
     if (!match) return raw;
     return `${match[1]}.${String(match[2]).padStart(2, '0')}.${String(match[3]).padStart(2, '0')}`;
 }
@@ -236,8 +237,8 @@ function getReceiptOrderNumber(payment = {}) {
         payment.paymentTime || `${payment.date || ''}${payment.time || ''}`
     );
     const rawDateTime = parsedDateTime.raw || `${payment.date || ''}${payment.time || ''}`;
-    const dateMatch = rawDateTime.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/)
-        || String(payment.date || '').match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+    const dateMatch = rawDateTime.match(/(\d{1,6})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/)
+        || String(payment.date || '').match(/(\d{1,6})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
     const timeMatch = rawDateTime.match(/(\d{1,2})\s*[:：]\s*(\d{2})/)
         || String(payment.time || '').match(/(\d{1,2})\s*[:：]\s*(\d{2})/);
     const year = String(dateMatch?.[1] || '0000').padStart(4, '0');
@@ -358,6 +359,11 @@ export function replaceOfflineWechatPaymentTagsWithReceipts(html = '', options =
             return;
         }
 
+        if (!boundary.closing) {
+            opener = boundary;
+            return;
+        }
+
         const payment = parsePaymentBlock(source.slice(opener.end, boundary.index), opener.index);
         if (payment) {
             replacements.push({
@@ -369,22 +375,52 @@ export function replaceOfflineWechatPaymentTagsWithReceipts(html = '', options =
         opener = null;
     });
 
-    // SillyTavern's Markdown renderer can discard an unknown closing tag and leave only
-    // the escaped opening boundary. Payment blocks are protocol suffixes, so a complete
-    // parsable body may safely use the end of the message as its implicit closing edge.
-    if (opener) {
-        const payment = parsePaymentBlock(source.slice(opener.end), opener.index);
-        if (payment) {
-            replacements.push({
-                start: opener.index,
-                end: source.length,
-                html: renderOfflineWechatPaymentReceipt(payment, options)
-            });
-        }
-    }
-
     if (replacements.length === 0) return source;
     return replacements.reduceRight((output, replacement) => (
+        output.slice(0, replacement.start) + replacement.html + output.slice(replacement.end)
+    ), source);
+}
+
+export function markCompleteOfflineWechatPaymentBoundaries(rawText = '') {
+    const source = String(rawText || '');
+    if (!source || !/(?:<|＜)\s*线上支付\s*(?:>|＞)/i.test(source)) return source;
+
+    const maskedSource = maskReasoningBlocks(source);
+    const boundaries = [];
+    PAYMENT_RAW_TAG_BOUNDARY_REGEX.lastIndex = 0;
+    let match;
+    while ((match = PAYMENT_RAW_TAG_BOUNDARY_REGEX.exec(maskedSource)) !== null) {
+        boundaries.push({
+            index: match.index,
+            end: PAYMENT_RAW_TAG_BOUNDARY_REGEX.lastIndex,
+            closing: match[1] === '/'
+        });
+    }
+
+    const replacements = [];
+    let opener = null;
+    boundaries.forEach((boundary) => {
+        if (!opener) {
+            if (!boundary.closing) opener = boundary;
+            return;
+        }
+        if (!boundary.closing) {
+            opener = boundary;
+            return;
+        }
+
+        const payment = parsePaymentBlock(source.slice(opener.end, boundary.index), opener.index);
+        if (payment) {
+            replacements.push(
+                { start: opener.index, end: opener.end, html: '<span data-st-phone-payment-boundary="start"></span>' },
+                { start: boundary.index, end: boundary.end, html: '<span data-st-phone-payment-boundary="end"></span>' }
+            );
+        }
+        opener = null;
+    });
+
+    if (replacements.length === 0) return source;
+    return replacements.sort((a, b) => b.start - a.start).reduce((output, replacement) => (
         output.slice(0, replacement.start) + replacement.html + output.slice(replacement.end)
     ), source);
 }
@@ -409,6 +445,11 @@ export function parseOfflineWechatPayments(rawText = '') {
     boundaries.forEach((boundary) => {
         if (!opener) {
             if (!boundary.closing) opener = boundary;
+            return;
+        }
+
+        if (!boundary.closing) {
+            opener = boundary;
             return;
         }
 

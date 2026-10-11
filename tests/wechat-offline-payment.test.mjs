@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import {
     getOfflineWechatPaymentLedgerCopy,
+    markCompleteOfflineWechatPaymentBoundaries,
     parseOfflineWechatPayments,
     renderOfflineWechatPaymentReceipt,
     replaceOfflineWechatPaymentTagsWithReceipts
@@ -18,7 +19,7 @@ const receiptCssSource = phoneCssSource.slice(
     phoneCssSource.indexOf('/* 全局悬浮入口：')
 );
 
-test('offline payment parser accepts standard and repeated opening end tags', () => {
+test('offline payment parser requires an explicit closing boundary', () => {
     const standard = parseOfflineWechatPayments(`<线上支付>
 支付时间：2026年10月8日 14:30
 午餐：20元
@@ -34,9 +35,26 @@ test('offline payment parser accepts standard and repeated opening end tags', ()
     assert.equal(standard[0].time, '14:30');
     assert.deepEqual(standard[0].items, [{ name: '午餐', amount: 20 }]);
 
-    assert.equal(repeated.length, 1);
-    assert.equal(repeated[0].amount, 18.5);
-    assert.equal(repeated[0].items[0].name, '商品名称');
+    assert.equal(repeated.length, 0);
+});
+
+test('payment formatter markers are added only for complete parsable pairs', () => {
+    const suffix = '<progress>PG.71</progress><Status_block><button>MUV</button></Status_block>';
+    const complete = `<线上支付>
+支付时间：117年12月08日07:45
+商品名称：热豆浆（1杯）
+支付金额：¥2.00
+</线上支付>${suffix}`;
+    const missing = complete.replace('</线上支付>', '');
+    const invalid = complete.replace('¥2.00', '?2.00');
+    const marked = markCompleteOfflineWechatPaymentBoundaries(complete);
+
+    assert.equal((marked.match(/data-st-phone-payment-boundary=/g) || []).length, 2);
+    assert.match(marked, /data-st-phone-payment-boundary="start"/);
+    assert.match(marked, /data-st-phone-payment-boundary="end"/);
+    assert.ok(marked.endsWith(suffix));
+    assert.equal(markCompleteOfflineWechatPaymentBoundaries(missing), missing);
+    assert.equal(markCompleteOfflineWechatPaymentBoundaries(invalid), invalid);
 });
 
 test('offline payment parser totals item lines and prefers an explicit total', () => {
@@ -83,6 +101,35 @@ test('offline payment parser pairs multiple product blocks and totals their subt
         { name: '夏日生活用品', quantity: '1份', amount: 168.8 },
         { name: '零食', quantity: '2包', amount: 8.8 }
     ]);
+});
+
+test('offline payment receipt supports century and millennial year formats', () => {
+    const source = `<线上支付>
+支付时间：117年12月08日07:45
+---
+商品名称：油渣白菜包（2个）
+支付金额：¥4.00
+---
+商品名称：热豆浆（1杯）
+支付金额：¥2.00
+</线上支付>`;
+    const [payment] = parseOfflineWechatPayments(source);
+    const receipt = replaceOfflineWechatPaymentTagsWithReceipts(source);
+
+    assert.equal(payment.date, '117年12月08日');
+    assert.equal(payment.time, '07:45');
+    assert.equal(payment.amount, 6);
+    assert.deepEqual(payment.items, [
+        { name: '油渣白菜包', quantity: '2个', amount: 4 },
+        { name: '热豆浆', quantity: '1杯', amount: 2 }
+    ]);
+    assert.match(receipt, /<strong>117\.12\.08<\/strong>/);
+    assert.match(receipt, /[A-Z]01171208000745/);
+    assert.doesNotMatch(receipt, /未提供/);
+
+    const [millennial] = parseOfflineWechatPayments(source.replace('117年', '3117年'));
+    assert.equal(millennial.date, '3117年12月08日');
+    assert.equal(millennial.time, '07:45');
 });
 
 test('offline payment receipt preserves multiple products when Markdown turns separators into headings', () => {
@@ -144,7 +191,7 @@ test('offline payment receipt recovers time split by theme blocks and invisible 
     assert.doesNotMatch(receipt, /未提供|[A-Z]0{14}/);
 });
 
-test('offline payment tags render as an inline receipt for standard and legacy boundaries', () => {
+test('offline payment tags render only with explicit closing boundaries', () => {
     const standard = replaceOfflineWechatPaymentTagsWithReceipts(`<p>正文内容</p><p>&lt;线上支付&gt;<br>
 支付时间：2026年10月8日 16:20<br>
 商品名称：晚餐<br>
@@ -173,17 +220,44 @@ test('offline payment tags render as an inline receipt for standard and legacy b
     assert.match(standard, /[A-Z]20261008001620/);
     assert.doesNotMatch(standard, /&lt;\/?线上支付&gt;|<\/?线上支付>/);
 
-    assert.match(legacy, /class="st-phone-payment-receipt"/);
-    assert.match(legacy, /奶茶/);
-    assert.doesNotMatch(legacy, /<\/?线上支付>/);
+    assert.doesNotMatch(legacy, /class="st-phone-payment-receipt"/);
+    assert.match(legacy, /<线上支付>/);
     assert.match(browserSerialized, /class="st-phone-payment-receipt"/);
     assert.match(browserSerialized, /咖啡/);
     assert.doesNotMatch(browserSerialized, /&lt;线上支付&gt;|<!--线上支付-->/);
-    assert.match(tavernFormatted, /class="st-phone-payment-receipt"/);
-    assert.match(tavernFormatted, /2035\.07\.19/);
-    assert.match(tavernFormatted, /夏日生活用品/);
-    assert.match(tavernFormatted, /¥ 168\.80/);
-    assert.doesNotMatch(tavernFormatted, /&lt;线上支付&gt;/);
+    assert.doesNotMatch(tavernFormatted, /class="st-phone-payment-receipt"/);
+    assert.match(tavernFormatted, /&lt;线上支付&gt;/);
+});
+
+test('incomplete payment blocks never consume following pencil or MUV frontend markup', () => {
+    const source = `<p>&lt;线上支付&gt;<br>
+支付时间：2021年11月14日13:48<br>
+商品名称：出租车车费（1次）<br>
+支付金额：¥18.00</p>
+<current_event>任务数据</current_event>
+<progress>时间推进: 2021-11-14 13:30 → 2021-11-14 13:50</progress>
+<Status_block><details><summary>状态</summary><button>交互按钮</button></details></Status_block>`;
+    const rendered = replaceOfflineWechatPaymentTagsWithReceipts(source);
+
+    assert.equal(rendered, source);
+    assert.doesNotMatch(rendered, /class="st-phone-payment-receipt"/);
+    assert.match(rendered, /<current_event>任务数据<\/current_event>/);
+    assert.match(rendered, /<button>交互按钮<\/button>/);
+});
+
+test('a complete payment replacement leaves following pencil or MUV markup byte-for-byte intact', () => {
+    const suffix = `<current_event>任务数据</current_event>
+<progress>时间推进: 2021-11-14 13:30 → 2021-11-14 13:50</progress>
+<Status_block><details><summary>状态</summary><button>交互按钮</button></details></Status_block>`;
+    const source = `<p>&lt;线上支付&gt;<br>
+支付时间：2021年11月14日13:48<br>
+商品名称：出租车车费（1次）<br>
+支付金额：¥18.00<br>
+&lt;/线上支付&gt;</p>${suffix}`;
+    const rendered = replaceOfflineWechatPaymentTagsWithReceipts(source);
+
+    assert.match(rendered, /class="st-phone-payment-receipt"/);
+    assert.ok(rendered.endsWith(suffix));
 });
 
 test('offline payment receipt escapes AI-provided fields and is idempotent', () => {
@@ -271,7 +345,9 @@ test('offline payment receipt uses the fixed layout copy and scoped CSS', () => 
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-edge\s*\{\s*display: none;/);
     assert.match(phoneCssSource, /clip-path: inset\(0 0 0 50%\)/);
     assert.match(phoneCssSource, /clip-path: inset\(0 50% 0 0\)/);
-    assert.match(indexSource, /replaceOfflineWechatPaymentTagsWithReceipts\(html, receiptRenderOptions\)/);
+    assert.match(indexSource, /replaceCompletePaymentReceiptsInPlace\(root, rawPayments, receiptRenderOptions\)/);
+    assert.match(indexSource, /registerPaymentMessageFormatter\(\)/);
+    assert.match(indexSource, /markCompleteOfflineWechatPaymentBoundaries\(messageText\)/);
     assert.match(indexSource, /addEventListener\('phone:floatingEntrySettingsChanged', hidePhoneTags\)/);
     assert.match(indexSource, /querySelectorAll\('\.st-phone-payment-receipt-brand-image'\)/);
     assert.match(indexSource, /function updatePaymentReceiptNotches\(receipt\)/);

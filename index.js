@@ -24,9 +24,10 @@ import {
 } from './phone/floating-entry.js';
 import {
     getOfflineWechatPaymentLedgerCopy,
+    markCompleteOfflineWechatPaymentBoundaries,
     parseOfflineWechatPayments,
-    replaceOfflineWechatPaymentTagsWithReceipts
-} from './apps/wechat/offline-payment.js?v=1.6.1&r=20261009-payment-solid-item-markers';
+    renderOfflineWechatPaymentReceipt
+} from './apps/wechat/offline-payment.js?v=1.6.1&r=20261011-payment-boundaries-and-flexible-years';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 import { StoryImageAutoScheduler } from './apps/album/story-image-auto-scheduler.js';
 import {
@@ -259,6 +260,7 @@ if (window.GGP_Loaded) {
     const _pendingPromptCleanupFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
     let _mofoBubbleSyncRevision = 0;
     let _mofoMessageFormatterBound = false;
+    let _paymentMessageFormatterBound = false;
     let _mofoInlinePreviewBound = false;
     let _mofoInlineTokenSequence = 0;
     const _mofoInlineRenderCache = new Map();
@@ -2756,6 +2758,22 @@ if (window.GGP_Loaded) {
         });
         _mofoMessageFormatterBound = true;
         registerMofoInlinePreviewClick();
+        return true;
+    }
+
+    function registerPaymentMessageFormatter() {
+        if (_paymentMessageFormatterBound) return true;
+        const formatter = getContext()?.messageFormatter;
+        if (!formatter?.addHook || !formatter?.stage) return false;
+
+        formatter.addHook((messageText, formattingContext) => {
+            if (formattingContext?.isReasoning) return messageText;
+            return markCompleteOfflineWechatPaymentBoundaries(messageText);
+        }, {
+            stage: formatter.stage.BEFORE_REGEX,
+            order: formatter.order?.EARLIEST ?? 0
+        });
+        _paymentMessageFormatterBound = true;
         return true;
     }
 
@@ -9005,10 +9023,183 @@ if (window.GGP_Loaded) {
         return false;
     }
 
+    const PHONE_PAYMENT_TEXT_BOUNDARY_REGEX = /(?:<|＜)\s*(\/?)\s*线上支付\s*(?:>|＞)/gi;
+    const PHONE_PAYMENT_RAW_BOUNDARY_REGEX = /(?:<|＜|&lt;)\s*\/?\s*线上支付\s*(?:>|＞|&gt;)/i;
+    const PHONE_PAYMENT_FOREIGN_CONTENT_SELECTOR = [
+        '线上支付',
+        'wechat',
+        'music',
+        'phone',
+        'weibo',
+        '短信',
+        '任务进度',
+        'current_event',
+        'progress',
+        'status_block',
+        'updatevariable',
+        'statusplaceholderimpl'
+    ].join(',');
+
+    function getPhoneMessageRawText(root) {
+        const messageId = Number.parseInt(root?.closest?.('.mes')?.getAttribute?.('mesid') || '', 10);
+        if (!Number.isInteger(messageId) || messageId < 0) return '';
+
+        const context = getContext();
+        const message = Array.isArray(context?.chat) ? context.chat[messageId] : null;
+        return String(message?.extra?.display_text || message?.mes || '');
+    }
+
+    function createPaymentReceiptElement(payment, renderOptions = {}) {
+        const template = document.createElement('template');
+        template.innerHTML = renderOfflineWechatPaymentReceipt(payment, renderOptions);
+        return template.content.querySelector('.st-phone-payment-receipt');
+    }
+
+    function replaceCompletePaymentReceiptsInPlace(root, rawPayments = [], renderOptions = {}) {
+        if (!root || typeof document.createTreeWalker !== 'function' || typeof document.createRange !== 'function') {
+            return { found: false, replaced: 0 };
+        }
+
+        const markerElements = Array.from(root.querySelectorAll?.('[data-st-phone-payment-boundary]') || []);
+        const markerPairs = [];
+        let markerOpener = null;
+        markerElements.forEach((element) => {
+            const boundaryType = String(element.dataset?.stPhonePaymentBoundary || '').trim().toLowerCase();
+            if (boundaryType === 'start') {
+                markerOpener = element;
+                return;
+            }
+            if (boundaryType === 'end' && markerOpener) {
+                markerPairs.push({ opener: markerOpener, closer: element });
+                markerOpener = null;
+            }
+        });
+
+        const paymentElements = Array.from(root.getElementsByTagName?.('线上支付') || []);
+        const boundaries = [];
+        const walker = document.createTreeWalker(
+            root,
+            NodeFilter.SHOW_TEXT | NodeFilter.SHOW_COMMENT
+        );
+        let node = walker.nextNode();
+        while (node) {
+            const parent = node.parentElement;
+            if (!parent?.closest?.(PHONE_PROTOCOL_TEXT_SKIP_SELECTOR)) {
+                const value = String(node.nodeValue || '');
+                if (node.nodeType === 8) {
+                    if (/^\s*\/?\s*线上支付\s*$/i.test(value)) {
+                        boundaries.push({ node, start: 0, end: value.length, closing: true, comment: true });
+                    }
+                } else {
+                    PHONE_PAYMENT_TEXT_BOUNDARY_REGEX.lastIndex = 0;
+                    let match;
+                    while ((match = PHONE_PAYMENT_TEXT_BOUNDARY_REGEX.exec(value)) !== null) {
+                        boundaries.push({
+                            node,
+                            start: match.index,
+                            end: PHONE_PAYMENT_TEXT_BOUNDARY_REGEX.lastIndex,
+                            closing: match[1] === '/',
+                            comment: false
+                        });
+                    }
+                }
+            }
+            node = walker.nextNode();
+        }
+
+        const pairs = [];
+        let opener = null;
+        boundaries.forEach((boundary) => {
+            if (!opener) {
+                if (!boundary.closing) opener = boundary;
+                return;
+            }
+            if (!boundary.closing) {
+                opener = boundary;
+                return;
+            }
+            pairs.push({ opener, closer: boundary });
+            opener = null;
+        });
+
+        const found = markerElements.length > 0 || paymentElements.length > 0 || boundaries.length > 0;
+        const payments = Array.isArray(rawPayments) ? rawPayments : [];
+        const representationCount = [markerElements.length, paymentElements.length, boundaries.length].filter(Boolean).length;
+        const hasAmbiguousDom = representationCount > 1;
+        const hasUnpairedMarkerBoundary = markerElements.length !== markerPairs.length * 2;
+        const hasUnpairedTextBoundary = boundaries.length !== pairs.length * 2;
+        const paymentCount = markerElements.length > 0
+            ? markerPairs.length
+            : (paymentElements.length > 0 ? paymentElements.length : pairs.length);
+        if (!found
+            || payments.length === 0
+            || hasAmbiguousDom
+            || hasUnpairedMarkerBoundary
+            || hasUnpairedTextBoundary
+            || paymentCount !== payments.length) {
+            return { found, replaced: 0 };
+        }
+
+        let replaced = 0;
+        if (markerElements.length > 0) {
+            markerPairs.map((pair, index) => ({ ...pair, payment: payments[index] })).reverse().forEach(({ opener: start, closer: end, payment }) => {
+                const receipt = createPaymentReceiptElement(payment, renderOptions);
+                if (!receipt) return;
+
+                const range = document.createRange();
+                range.setStartBefore(start);
+                range.setEndAfter(end);
+                range.deleteContents();
+                range.insertNode(receipt);
+                range.detach?.();
+                bindPaymentReceiptNotches(receipt);
+                replaced += 1;
+            });
+            return { found, replaced };
+        }
+
+        if (paymentElements.length > 0) {
+            const hasUnsafePaymentElement = paymentElements.some(paymentElement => (
+                paymentElement.querySelector?.(PHONE_PAYMENT_FOREIGN_CONTENT_SELECTOR)
+            ));
+            if (hasUnsafePaymentElement) return { found, replaced: 0 };
+
+            paymentElements.forEach((paymentElement, index) => {
+                const receipt = createPaymentReceiptElement(payments[index], renderOptions);
+                if (!receipt) return;
+                paymentElement.replaceWith(receipt);
+                bindPaymentReceiptNotches(receipt);
+                replaced += 1;
+            });
+            return { found, replaced };
+        }
+
+        pairs.map((pair, index) => ({ ...pair, payment: payments[index] })).reverse().forEach(({ opener: start, closer: end, payment }) => {
+            const range = document.createRange();
+            range.setStart(start.node, start.start);
+            if (end.comment) range.setEndAfter(end.node);
+            else range.setEnd(end.node, end.end);
+
+            const receipt = createPaymentReceiptElement(payment, renderOptions);
+            if (!receipt) {
+                range.detach?.();
+                return;
+            }
+
+            range.deleteContents();
+            range.insertNode(receipt);
+            range.detach?.();
+            bindPaymentReceiptNotches(receipt);
+            replaced += 1;
+        });
+
+        return { found, replaced };
+    }
+
     function hidePhoneTags() {
         // 1. 注入 CSS (保证底线隐藏，防止闪烁)
         if (!document.getElementById('st-phone-hide-style')) {
-            $('<style id="st-phone-hide-style">phone, wechat, music, weibo, 短信, 任务进度, 线上支付 { display: none !important; }</style>').appendTo('head');
+            $('<style id="st-phone-hide-style">phone, wechat, music, weibo, 短信, 任务进度 { display: none !important; }</style>').appendTo('head');
         }
 
         const receiptStyleId = phoneFloatingEntry?.getStyle?.() || PHONE_FLOATING_ENTRY_DEFAULT_STYLE;
@@ -9031,24 +9222,22 @@ if (window.GGP_Loaded) {
                 return;
             }
 
+            const existingPaymentReceipts = root.querySelectorAll('.st-phone-payment-receipt');
+            if (existingPaymentReceipts.length > 0) {
+                existingPaymentReceipts.forEach(bindPaymentReceiptNotches);
+                return;
+            }
+
+            // 小票只允许替换一对明确、完整的支付边界。其余 MUV/小铅笔前端 DOM
+            // 必须原样保留；结束标签缺失或金额无效时不猜测、不裁剪、不重绘。
+            const rawMessageText = getPhoneMessageRawText(root);
+            const rawHasPaymentBoundary = PHONE_PAYMENT_RAW_BOUNDARY_REGEX.test(rawMessageText);
+            const rawPayments = rawHasPaymentBoundary ? parseOfflineWechatPayments(rawMessageText) : [];
+            const paymentRenderResult = replaceCompletePaymentReceiptsInPlace(root, rawPayments, receiptRenderOptions);
+            if (rawHasPaymentBoundary || paymentRenderResult.found) return;
+
             let changed = false;
             const preserveMessageDom = shouldPreservePhoneMessageDom(root);
-            let preservedPaymentReceipts = [];
-
-            // 线上支付标签保留在酒馆正文中，以安全的小票组件展示。
-            const receiptReplaced = replaceOfflineWechatPaymentTagsWithReceipts(html, receiptRenderOptions);
-            if (receiptReplaced !== html) {
-                if (preserveMessageDom && !root.querySelector('.st-phone-payment-receipt')) {
-                    const template = document.createElement('template');
-                    template.innerHTML = receiptReplaced;
-                    preservedPaymentReceipts = Array.from(
-                        template.content.querySelectorAll('.st-phone-payment-receipt'),
-                        receipt => receipt.cloneNode(true)
-                    );
-                }
-                html = receiptReplaced;
-                changed = true;
-            }
 
             // 隐藏那些被解析为真实 DOM 元素的孤立标签
             $(root).find('phone, wechat, music, weibo, 短信, 任务进度, 线上支付').hide();
@@ -9058,7 +9247,6 @@ if (window.GGP_Loaded) {
             // 这类楼层只裁掉末尾协议文本，保留已有 DOM 实例；普通消息仍走完整兼容清理。
             if (preserveMessageDom) {
                 removePhoneProtocolSuffixPreservingDom(root);
-                preservedPaymentReceipts.forEach(receipt => root.appendChild(receipt));
                 root.querySelectorAll('.st-phone-payment-receipt').forEach(bindPaymentReceiptNotches);
                 return;
             }
@@ -10762,6 +10950,12 @@ if (window.GGP_Loaded) {
                 _autoCalendarProbeCount: 0,
                 _storyImageAutoRunning: false
             };
+
+            try {
+                registerPaymentMessageFormatter();
+            } catch (paymentFormatterError) {
+                console.warn('⚠️ [线上支付] 正文边界标记初始化失败:', paymentFormatterError);
+            }
 
             try {
                 await getOrCreateMofoData();
