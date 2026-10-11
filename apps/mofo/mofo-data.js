@@ -220,6 +220,14 @@ export class MofoData {
         return fallback;
     }
 
+    _normalizeProcessorMode(value, fallback = '') {
+        const text = String(value ?? '').trim().toLowerCase();
+        if (['funds', 'fund', 'finance', 'ledger', '资金', '资金管理', '资金管理系统'].includes(text)) {
+            return 'funds';
+        }
+        return fallback === 'funds' ? 'funds' : '';
+    }
+
     _parsePayloadForItem(item = {}, rawPayload = '', baseState = {}) {
         const mode = this._normalizeParserMode(item?.parserMode, 'auto');
         const safeBase = (baseState && typeof baseState === 'object' && !Array.isArray(baseState))
@@ -275,10 +283,13 @@ export class MofoData {
         return this._parsePayloadForItem(item, rawPayload, fallbackState);
     }
 
-    _applyParsedPatchToState(item = {}, currentState = {}, parsedPatchInput = {}) {
+    _applyParsedPatchToState(item = {}, currentState = {}, parsedPatchInput = {}, meta = {}) {
         const parsedPatch = (parsedPatchInput && typeof parsedPatchInput === 'object' && !Array.isArray(parsedPatchInput))
             ? this._clone(parsedPatchInput)
             : {};
+        if (this._normalizeProcessorMode(item.processorMode, '') === 'funds') {
+            return this._applyFundPatch(currentState, parsedPatch, meta);
+        }
         const removeIdsRaw = parsedPatch.__removeIds || parsedPatch.removeIds || parsedPatch.deletedIds || [];
         const removeIds = Array.isArray(removeIdsRaw)
             ? removeIdsRaw.map(v => String(v ?? '').trim()).filter(Boolean)
@@ -468,6 +479,289 @@ export class MofoData {
         return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     }
 
+    _pickFundField(source = {}, fieldNames = []) {
+        const safeSource = (source && typeof source === 'object' && !Array.isArray(source)) ? source : {};
+        for (const name of fieldNames) {
+            if (!Object.prototype.hasOwnProperty.call(safeSource, name)) continue;
+            return { exists: true, value: safeSource[name] };
+        }
+        return { exists: false, value: '' };
+    }
+
+    _parseFundMinor(value) {
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? Math.round(value * 100) : null;
+        }
+        const text = String(value ?? '')
+            .trim()
+            .replace(/[，,]/g, '')
+            .replace(/[＋﹢]/g, '+')
+            .replace(/[－−﹣]/g, '-');
+        if (!text) return null;
+        if (/^[±]\s*0(?:\.0+)?$/.test(text)) return 0;
+        const match = text.match(/[+-]?\d+(?:\.\d+)?/);
+        if (!match) return null;
+        const number = Number(match[0]);
+        return Number.isFinite(number) ? Math.round(number * 100) : null;
+    }
+
+    _fundMinorToNumber(minor) {
+        const safeMinor = Number.isFinite(Number(minor)) ? Math.round(Number(minor)) : 0;
+        return safeMinor / 100;
+    }
+
+    _formatFundMinor(minor) {
+        const value = this._fundMinorToNumber(minor);
+        try {
+            return new Intl.NumberFormat('zh-CN', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(value);
+        } catch (e) {
+            return value.toFixed(2);
+        }
+    }
+
+    _formatSignedFundMinor(minor) {
+        const safeMinor = Number.isFinite(Number(minor)) ? Math.round(Number(minor)) : 0;
+        if (safeMinor > 0) return `+${this._formatFundMinor(safeMinor)}`;
+        if (safeMinor < 0) return `-${this._formatFundMinor(Math.abs(safeMinor))}`;
+        return '±0.00';
+    }
+
+    _splitFundDateTime(value) {
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            const pad = (n) => String(n).padStart(2, '0');
+            return {
+                date: `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`,
+                time: `${pad(value.getHours())}:${pad(value.getMinutes())}`
+            };
+        }
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return this._splitFundDateTime(new Date(value));
+        }
+
+        const text = String(value ?? '').trim();
+        if (!text) return { date: '', time: '' };
+        const normalized = text.replace('T', ' ');
+        const dateMatch = normalized.match(/^(\d{4}(?:[-/.]\d{1,2}(?:[-/.]\d{1,2})?|年\d{1,2}月\d{1,2}日?))/);
+        const timeMatch = normalized.match(/(?:^|\s)(\d{1,2}:\d{2}(?::\d{2})?)/);
+        return {
+            date: String(dateMatch?.[1] || '').trim(),
+            time: String(timeMatch?.[1] || '').trim()
+        };
+    }
+
+    _resolveFundDateTime(parsedPatch = {}, meta = {}) {
+        const combinedField = this._pickFundField(parsedPatch, [
+            '日期时间', '收支日期时间', '交易日期时间', 'datetime', 'dateTime'
+        ]);
+        const dateField = this._pickFundField(parsedPatch, [
+            '日期', '收支日期', '交易日期', '剧情日期', 'date'
+        ]);
+        const timeField = this._pickFundField(parsedPatch, [
+            '时间', '收支时间', '交易时间', '剧情时间', 'time'
+        ]);
+
+        const combined = combinedField.exists ? this._splitFundDateTime(combinedField.value) : { date: '', time: '' };
+        let date = dateField.exists ? String(dateField.value ?? '').trim() : combined.date;
+        let time = timeField.exists ? String(timeField.value ?? '').trim() : combined.time;
+
+        if (!date || !time) {
+            const fallback = this._splitFundDateTime(
+                meta.messageDateTime
+                ?? meta.dateTime
+                ?? meta.timestamp
+                ?? this._resolvePhoneDateTimeText()
+            );
+            if (!date) date = fallback.date;
+            if (!time) time = fallback.time;
+        }
+
+        return {
+            date: date || '未标注日期',
+            time: time || '--:--'
+        };
+    }
+
+    _getFundAmountType(minor) {
+        const safeMinor = Number.isFinite(Number(minor)) ? Number(minor) : 0;
+        if (safeMinor > 0) return { label: '收入', className: 'income' };
+        if (safeMinor < 0) return { label: '支出', className: 'expense' };
+        return { label: '无变动', className: 'neutral' };
+    }
+
+    _rebuildFundState(rawState = {}) {
+        const state = (rawState && typeof rawState === 'object' && !Array.isArray(rawState))
+            ? this._clone(rawState)
+            : {};
+        const initialMinor = this._parseFundMinor(state.初始资金) ?? 0;
+        const sourceRecords = Array.isArray(state.收支记录) ? state.收支记录 : [];
+        const records = sourceRecords
+            .map((entry, index) => ({
+                ...(entry && typeof entry === 'object' && !Array.isArray(entry) ? this._clone(entry) : {}),
+                __sourceOrder: index
+            }))
+            .sort((a, b) => {
+                const aFloor = Number.isInteger(a.来源楼层) ? a.来源楼层 : Number.MAX_SAFE_INTEGER;
+                const bFloor = Number.isInteger(b.来源楼层) ? b.来源楼层 : Number.MAX_SAFE_INTEGER;
+                if (aFloor !== bFloor) return aFloor - bFloor;
+                const aIndex = Number.isInteger(a.楼内序号) ? a.楼内序号 : a.__sourceOrder;
+                const bIndex = Number.isInteger(b.楼内序号) ? b.楼内序号 : b.__sourceOrder;
+                return aIndex - bIndex;
+            });
+
+        let balanceMinor = initialMinor;
+        let incomeMinor = 0;
+        let expenseMinor = 0;
+        records.forEach((record) => {
+            const amountMinor = this._parseFundMinor(record.金额) ?? 0;
+            balanceMinor += amountMinor;
+            if (amountMinor > 0) incomeMinor += amountMinor;
+            if (amountMinor < 0) expenseMinor += Math.abs(amountMinor);
+            const amountType = this._getFundAmountType(amountMinor);
+            record.金额 = this._fundMinorToNumber(amountMinor);
+            record.类型 = amountType.label;
+            record.金额类 = amountType.className;
+            record.金额显示 = this._formatSignedFundMinor(amountMinor);
+            record.收入显示 = amountMinor > 0 ? this._formatSignedFundMinor(amountMinor) : '--';
+            record.支出显示 = amountMinor < 0 ? this._formatSignedFundMinor(amountMinor) : '--';
+            record.结余 = this._fundMinorToNumber(balanceMinor);
+            record.结余显示 = this._formatFundMinor(balanceMinor);
+            delete record.__sourceOrder;
+        });
+
+        const dateGroups = [];
+        const groupMap = new Map();
+        records.slice().reverse().forEach((record) => {
+            const date = String(record.日期 || '未标注日期').trim() || '未标注日期';
+            if (!groupMap.has(date)) {
+                const group = { 日期: date, 记录: [] };
+                groupMap.set(date, group);
+                dateGroups.push(group);
+            }
+            groupMap.get(date).记录.push(this._clone(record));
+        });
+
+        const latest = records[records.length - 1] || null;
+        const latestMinor = latest ? (this._parseFundMinor(latest.金额) ?? 0) : 0;
+        const latestType = this._getFundAmountType(latestMinor);
+        state.系统类型 = '资金管理系统';
+        state.货币名称 = String(state.货币名称 || '通用货币').trim() || '通用货币';
+        state.初始资金 = this._fundMinorToNumber(initialMinor);
+        state.初始资金显示 = this._formatFundMinor(initialMinor);
+        state.当前资金 = this._fundMinorToNumber(balanceMinor);
+        state.当前资金显示 = this._formatFundMinor(balanceMinor);
+        state.累计收入 = this._fundMinorToNumber(incomeMinor);
+        state.累计收入显示 = this._formatFundMinor(incomeMinor);
+        state.累计支出 = this._fundMinorToNumber(expenseMinor);
+        state.累计支出显示 = this._formatFundMinor(expenseMinor);
+        state.流水数量 = records.length;
+        state.有收支记录 = records.length > 0;
+        state.收支记录 = records;
+        state.日期分组 = dateGroups;
+        state.本次收支 = this._fundMinorToNumber(latestMinor);
+        state.本次收支显示 = latest ? this._formatSignedFundMinor(latestMinor) : '±0.00';
+        state.本次类型 = latest ? latestType.label : '无变动';
+        state.本次金额类 = latest ? latestType.className : 'neutral';
+        state.收支事由 = String(latest?.事由 || state.收支事由 || '暂无收支').trim() || '暂无收支';
+        state.本次日期 = String(latest?.日期 || '').trim();
+        state.本次时间 = String(latest?.时间 || '').trim();
+        state.最新流水ID = String(latest?.id || '').trim();
+        return state;
+    }
+
+    _applyFundPatch(currentState = {}, parsedPatchInput = {}, meta = {}) {
+        const parsedPatch = (parsedPatchInput && typeof parsedPatchInput === 'object' && !Array.isArray(parsedPatchInput))
+            ? this._clone(parsedPatchInput)
+            : {};
+        const nextState = (currentState && typeof currentState === 'object' && !Array.isArray(currentState))
+            ? this._clone(currentState)
+            : {};
+        const messageIndex = Number.isInteger(meta.messageIndex) ? meta.messageIndex : null;
+        const transactionIndex = Number.isInteger(meta.transactionIndex) ? meta.transactionIndex : 0;
+        const profileFields = [
+            ['角色姓名', ['角色姓名', '姓名', 'name']],
+            ['年龄', ['年龄', 'age']],
+            ['身份', ['身份', '职业', 'identity', 'role']],
+            ['备注', ['备注', 'note']],
+            ['货币名称', ['货币名称', '货币', 'currency']]
+        ];
+        profileFields.forEach(([targetKey, candidates]) => {
+            const picked = this._pickFundField(parsedPatch, candidates);
+            if (picked.exists) nextState[targetKey] = String(picked.value ?? '').trim();
+        });
+
+        const initialField = this._pickFundField(parsedPatch, ['初始资金', '初始余额', 'openingBalance']);
+        if (initialField.exists) {
+            const initialMinor = this._parseFundMinor(initialField.value);
+            if (initialMinor !== null) nextState.初始资金 = this._fundMinorToNumber(initialMinor);
+        }
+
+        const removeIdsRaw = parsedPatch.__removeIds || parsedPatch.removeIds || parsedPatch.deletedIds || [];
+        const removeIds = new Set(
+            (Array.isArray(removeIdsRaw) ? removeIdsRaw : [removeIdsRaw])
+                .map(value => String(value ?? '').trim())
+                .filter(Boolean)
+        );
+        let records = Array.isArray(nextState.收支记录) ? this._clone(nextState.收支记录) : [];
+        if (messageIndex !== null && transactionIndex === 0) {
+            records = records.filter(record => record?.来源楼层 !== messageIndex);
+        }
+        if (removeIds.size > 0) {
+            records = records.filter(record => !removeIds.has(String(record?.id || '').trim()));
+        }
+
+        const amountField = this._pickFundField(parsedPatch, [
+            '本次收支', '收支金额', '交易金额', '金额', 'amount'
+        ]);
+        if (amountField.exists) {
+            const amountMinor = this._parseFundMinor(amountField.value);
+            if (amountMinor !== null) {
+                const reasonField = this._pickFundField(parsedPatch, [
+                    '收支事由', '交易事由', '事由', '说明', 'reason', 'description'
+                ]);
+                const idField = this._pickFundField(parsedPatch, [
+                    '流水ID', '记录ID', '交易ID', 'transactionId', 'id'
+                ]);
+                const dateTime = this._resolveFundDateTime(parsedPatch, meta);
+                const fallbackIdSeed = [
+                    dateTime.date,
+                    dateTime.time,
+                    amountMinor,
+                    String(reasonField.value ?? '').trim(),
+                    transactionIndex
+                ].join('|');
+                const transactionId = String(idField.value ?? '').trim()
+                    || (messageIndex !== null
+                        ? `fund_${messageIndex}_${transactionIndex}`
+                        : `fund_${this._hashText(fallbackIdSeed)}`);
+                const amountType = this._getFundAmountType(amountMinor);
+                const transaction = {
+                    id: transactionId,
+                    日期: dateTime.date,
+                    时间: dateTime.time,
+                    事由: String(reasonField.value ?? '').trim() || '未填写事由',
+                    金额: this._fundMinorToNumber(amountMinor),
+                    类型: amountType.label,
+                    金额类: amountType.className,
+                    金额显示: this._formatSignedFundMinor(amountMinor),
+                    来源楼层: messageIndex,
+                    楼内序号: transactionIndex
+                };
+                const existingIndex = records.findIndex(record => String(record?.id || '') === transactionId);
+                if (existingIndex >= 0) {
+                    records[existingIndex] = transaction;
+                } else {
+                    records.push(transaction);
+                }
+            }
+        }
+
+        nextState.收支记录 = records;
+        return this._rebuildFundState(nextState);
+    }
+
     _normalizeIncomingMailList(rawList = []) {
         const list = Array.isArray(rawList) ? rawList : [];
         const fallbackDate = this._resolvePhoneDateTimeText();
@@ -572,14 +866,29 @@ export class MofoData {
         const tagName = this._normalizeTagName(rawItem.tagName || rawItem.tag || name, name);
         const cssText = String(rawItem.cssText || rawItem.css || '').trim();
         const htmlTemplate = String(rawItem.htmlTemplate ?? rawItem.templateHtml ?? rawItem['html模板'] ?? '').trim();
+        const bubbleHtmlTemplate = String(
+            rawItem.bubbleHtmlTemplate
+            ?? rawItem.ledgerHtmlTemplate
+            ?? rawItem.popupHtmlTemplate
+            ?? ''
+        ).trim();
         const promptTemplate = String(rawItem.promptTemplate || rawItem.prompt || '').trim();
         const parserMode = this._normalizeParserMode(
             rawItem.parserMode ?? rawItem.payloadParser ?? rawItem.parser,
             'auto'
         );
+        const processorMode = this._normalizeProcessorMode(
+            rawItem.processorMode ?? rawItem.stateProcessor ?? rawItem.processor,
+            ''
+        );
         const inlineRenderEnabled = this._parseBoolean(
             rawItem.inlineRenderEnabled ?? rawItem.inlineRender ?? rawItem.renderInMessage,
             false
+        );
+        const bubbleRenderEnabled = !inlineRenderEnabled;
+        const bubbleHistoryEnabled = this._parseBoolean(
+            rawItem.bubbleHistoryEnabled ?? rawItem.historyPagingEnabled ?? rawItem.bubbleHistory,
+            true
         );
         const offlinePromptEnabled = this._parseBoolean(
             rawItem.offlinePromptEnabled ?? rawItem.enableOfflinePrompt ?? rawItem.promptEnabled,
@@ -593,9 +902,12 @@ export class MofoData {
         const initialStateSource = hasInitialStateRaw
             ? rawItem.initialStateRaw
             : (rawItem.initialState ?? rawItem.initial ?? rawItem.initialStateRaw ?? '');
-        const initialState = this._parseStatePayload(initialStateSource, {});
+        let initialState = this._parseStatePayload(initialStateSource, {});
         if (initialState && typeof initialState === 'object' && initialState.content === '[object Object]') {
             delete initialState.content;
+        }
+        if (processorMode === 'funds') {
+            initialState = this._rebuildFundState(initialState);
         }
         const createdAt = Number(rawItem.createdAt || Date.now());
         const updatedAt = Number(rawItem.updatedAt || createdAt);
@@ -607,9 +919,13 @@ export class MofoData {
             cssText,
             htmlTemplate,
             'html模板': htmlTemplate,
+            bubbleHtmlTemplate,
             promptTemplate,
             parserMode,
+            processorMode,
             inlineRenderEnabled,
+            bubbleRenderEnabled,
+            bubbleHistoryEnabled,
             offlinePromptEnabled,
             updateMode,
             initialState,
@@ -928,9 +1244,13 @@ export class MofoData {
             cssText: normalized.cssText,
             htmlTemplate: normalized.htmlTemplate,
             'html模板': normalized.htmlTemplate,
+            bubbleHtmlTemplate: normalized.bubbleHtmlTemplate,
             promptTemplate: normalized.promptTemplate,
             parserMode: normalized.parserMode,
+            processorMode: normalized.processorMode,
             inlineRenderEnabled: normalized.inlineRenderEnabled,
+            bubbleRenderEnabled: normalized.bubbleRenderEnabled,
+            bubbleHistoryEnabled: normalized.bubbleHistoryEnabled,
             offlinePromptEnabled: normalized.offlinePromptEnabled,
             updateMode: normalized.updateMode,
             initialState: this._clone(normalized.initialState || {}),
@@ -998,9 +1318,13 @@ export class MofoData {
             tagName: String(item.tagName || '').trim(),
             cssText: String(item.cssText || '').trim(),
             htmlTemplate: String(item.htmlTemplate || item['html模板'] || '').trim(),
+            bubbleHtmlTemplate: String(item.bubbleHtmlTemplate || '').trim(),
             promptTemplate: String(item.promptTemplate || '').trim(),
             parserMode: this._normalizeParserMode(item.parserMode, 'auto'),
+            processorMode: this._normalizeProcessorMode(item.processorMode, ''),
             inlineRenderEnabled: this._parseBoolean(item.inlineRenderEnabled, false),
+            bubbleRenderEnabled: !this._parseBoolean(item.inlineRenderEnabled, false),
+            bubbleHistoryEnabled: this._parseBoolean(item.bubbleHistoryEnabled, true),
             offlinePromptEnabled: this._parseBoolean(item.offlinePromptEnabled, true),
             updateMode: this._normalizeUpdateMode(item.updateMode, 'append'),
             initialState: this._clone(item.initialState || {})
@@ -1174,14 +1498,26 @@ export class MofoData {
             || Object.prototype.hasOwnProperty.call(patch, 'htmlTemplate')
             || Object.prototype.hasOwnProperty.call(patch, 'templateHtml')
             || Object.prototype.hasOwnProperty.call(patch, 'html模板')
+            || Object.prototype.hasOwnProperty.call(patch, 'bubbleHtmlTemplate')
+            || Object.prototype.hasOwnProperty.call(patch, 'ledgerHtmlTemplate')
+            || Object.prototype.hasOwnProperty.call(patch, 'popupHtmlTemplate')
             || Object.prototype.hasOwnProperty.call(patch, 'promptTemplate')
             || Object.prototype.hasOwnProperty.call(patch, 'prompt')
             || Object.prototype.hasOwnProperty.call(patch, 'parserMode')
             || Object.prototype.hasOwnProperty.call(patch, 'payloadParser')
             || Object.prototype.hasOwnProperty.call(patch, 'parser')
+            || Object.prototype.hasOwnProperty.call(patch, 'processorMode')
+            || Object.prototype.hasOwnProperty.call(patch, 'stateProcessor')
+            || Object.prototype.hasOwnProperty.call(patch, 'processor')
             || Object.prototype.hasOwnProperty.call(patch, 'inlineRenderEnabled')
             || Object.prototype.hasOwnProperty.call(patch, 'inlineRender')
             || Object.prototype.hasOwnProperty.call(patch, 'renderInMessage')
+            || Object.prototype.hasOwnProperty.call(patch, 'bubbleRenderEnabled')
+            || Object.prototype.hasOwnProperty.call(patch, 'bubbleRender')
+            || Object.prototype.hasOwnProperty.call(patch, 'showBubble')
+            || Object.prototype.hasOwnProperty.call(patch, 'bubbleHistoryEnabled')
+            || Object.prototype.hasOwnProperty.call(patch, 'historyPagingEnabled')
+            || Object.prototype.hasOwnProperty.call(patch, 'bubbleHistory')
             || Object.prototype.hasOwnProperty.call(patch, 'offlinePromptEnabled')
             || Object.prototype.hasOwnProperty.call(patch, 'enableOfflinePrompt')
             || Object.prototype.hasOwnProperty.call(patch, 'promptEnabled')
@@ -1307,7 +1643,7 @@ export class MofoData {
         return this.findTagBlocksFromText(rawText).flatMap((block) => {
             const item = block.item;
             if (!item?.id || seen.has(item.id)) return [];
-            if (bubbleOnly && item.inlineRenderEnabled !== false) return [];
+            if (bubbleOnly && item.bubbleRenderEnabled !== true) return [];
             seen.add(item.id);
             return [{
                 id: item.id,
@@ -1348,11 +1684,20 @@ export class MofoData {
             let match = null;
             let matched = false;
             let latestPayload = '';
+            let transactionIndex = 0;
             while ((match = regex.exec(text)) !== null) {
                 matched = true;
                 latestPayload = String(match[1] || '');
                 const parsedPatch = this._parsePayloadForItem(item, latestPayload, {});
-                nextState = this._applyParsedPatchToState(item, nextState, parsedPatch);
+                nextState = this._applyParsedPatchToState(item, nextState, parsedPatch, {
+                    messageIndex,
+                    transactionIndex,
+                    messageDateTime: isObjectEntry
+                        ? (entry.messageDateTime ?? entry.dateTime ?? entry.timestamp ?? null)
+                        : null,
+                    source: 'history_rebuild'
+                });
+                transactionIndex += 1;
             }
             if (!matched) return;
 
@@ -1366,12 +1711,21 @@ export class MofoData {
         return history;
     }
 
-    renderTagBlock(block = {}) {
+    renderTagBlock(block = {}, options = {}) {
         const item = block?.item;
         if (!item || item.inlineRenderEnabled === false) return null;
         const htmlTemplate = String(item.htmlTemplate || '').trim();
         if (!htmlTemplate) return null;
-        const state = this.parsePayloadForItem(item, block.payload, item.initialState || {});
+        const stateOverride = options?.state;
+        const hasStateOverride = stateOverride && typeof stateOverride === 'object' && !Array.isArray(stateOverride);
+        const state = hasStateOverride
+            ? this._clone(stateOverride)
+            : this._applyParsedPatchToState(
+                item,
+                item.initialState || {},
+                this._parsePayloadForItem(item, block.payload, {}),
+                options?.meta || {}
+            );
         return {
             item: this._clone(item),
             state: this._clone(state),
@@ -1403,6 +1757,7 @@ export class MofoData {
             let match = null;
             let matched = false;
             let latestPayload = '';
+            let transactionIndex = 0;
             const currentRuntime = this._normalizeRuntimeRecord(
                 sessionMap[item.id] || {},
                 item.initialState || {},
@@ -1414,7 +1769,11 @@ export class MofoData {
                 matched = true;
                 latestPayload = String(match[1] || '');
                 const parsedPatch = this._parsePayloadForItem(item, latestPayload, {});
-                nextState = this._applyParsedPatchToState(item, nextState, parsedPatch);
+                nextState = this._applyParsedPatchToState(item, nextState, parsedPatch, {
+                    ...meta,
+                    transactionIndex
+                });
+                transactionIndex += 1;
             }
 
             if (!matched) return;
@@ -1450,8 +1809,19 @@ export class MofoData {
     rebuildSessionStateFromTextBlocks(textBlocks = [], meta = {}) {
         const list = this._ensureCache();
         const blocks = (Array.isArray(textBlocks) ? textBlocks : [])
-            .map(text => String(text || ''))
-            .filter(Boolean);
+            .map((entry, index) => {
+                const isObjectEntry = entry && typeof entry === 'object' && !Array.isArray(entry);
+                return {
+                    text: String(isObjectEntry ? (entry.text ?? entry.content ?? '') : (entry ?? '')),
+                    messageIndex: isObjectEntry && Number.isInteger(entry.messageIndex)
+                        ? entry.messageIndex
+                        : (Number.isInteger(meta.messageIndexOffset) ? meta.messageIndexOffset + index : index),
+                    messageDateTime: isObjectEntry
+                        ? (entry.messageDateTime ?? entry.dateTime ?? entry.timestamp ?? null)
+                        : null
+                };
+            })
+            .filter(entry => entry.text);
         if (list.length === 0) return [];
 
         const sessionMap = this._ensureSessionStateCache();
@@ -1468,17 +1838,70 @@ export class MofoData {
         }
 
         const updates = [];
-        blocks.forEach((text, index) => {
-            const nextUpdates = this.applyTagUpdatesFromText(text, {
+        blocks.forEach((entry) => {
+            const nextUpdates = this.applyTagUpdatesFromText(entry.text, {
                 source: String(meta.source || 'current_chat_rebuild'),
-                messageIndex: Number.isInteger(meta.messageIndexOffset)
-                    ? meta.messageIndexOffset + index
-                    : index
+                messageIndex: entry.messageIndex,
+                messageDateTime: entry.messageDateTime
             });
             if (Array.isArray(nextUpdates) && nextUpdates.length > 0) {
                 updates.push(...nextUpdates);
             }
         });
+        return updates;
+    }
+
+    rebuildProcessorSessionStateFromTextBlocks(processorMode, textBlocks = [], meta = {}) {
+        const normalizedMode = this._normalizeProcessorMode(processorMode, '');
+        if (!normalizedMode) return [];
+        const processorItems = this._getEffectiveDefinitions().filter(item =>
+            this._normalizeProcessorMode(item?.processorMode, '') === normalizedMode
+        );
+        if (processorItems.length === 0) return [];
+
+        const sessionMap = this._ensureSessionStateCache();
+        const updates = [];
+        let changed = false;
+        processorItems.forEach((item) => {
+            const history = this.buildItemHistoryFromTextBlocks(item, textBlocks);
+            const latest = history[history.length - 1] || null;
+            const hadRuntime = Object.prototype.hasOwnProperty.call(sessionMap, item.id);
+            const currentRuntime = this._normalizeRuntimeRecord(
+                sessionMap[item.id] || {},
+                item.initialState || {},
+                item.updatedAt || item.createdAt || null
+            );
+            const nextState = latest?.state || this._clone(item.initialState || {});
+            const currentStateText = JSON.stringify(currentRuntime.state || {});
+            const nextStateText = JSON.stringify(nextState || {});
+            const runtimeChanged = currentStateText !== nextStateText
+                || String(currentRuntime.lastPayload || '') !== String(latest?.payload || '')
+                || currentRuntime.lastMessageIndex !== (Number.isInteger(latest?.messageIndex) ? latest.messageIndex : null)
+                || (!latest && hadRuntime);
+
+            if (latest) {
+                sessionMap[item.id] = this._normalizeRuntimeRecord({
+                    state: nextState,
+                    lastPayload: latest.payload || '',
+                    lastUpdatedBy: String(meta.source || 'processor_rebuild'),
+                    lastMessageIndex: Number.isInteger(latest.messageIndex) ? latest.messageIndex : null,
+                    updatedAt: Date.now()
+                }, item.initialState || {}, Date.now());
+            } else if (Object.prototype.hasOwnProperty.call(sessionMap, item.id)) {
+                delete sessionMap[item.id];
+            }
+
+            if (runtimeChanged) changed = true;
+            updates.push({
+                id: item.id,
+                name: item.name,
+                tagName: item.tagName,
+                changed: runtimeChanged,
+                state: this._clone(nextState)
+            });
+        });
+
+        if (changed) this._commitSessionState();
         return updates;
     }
 

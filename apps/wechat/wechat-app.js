@@ -13,7 +13,8 @@
 import { ChatView } from './chat-view.js?v=20261002-x-forward-card';
 import { ContactsView } from './contacts-view.js';
 import { MomentsView } from './moments-view.js?v=20261004-moments-image-cancel';
-import { WechatData } from './wechat-data.js?v=20261002-x-forward-card';
+import { WechatData } from './wechat-data.js?v=20261011-wallet-credit-repayment';
+import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
 import {
@@ -43,6 +44,7 @@ export class WechatApp {
         this._isWalletEvaluating = false;
         this._walletLedgerMonth = '';
         this._walletLedgerType = 'all';
+        this._walletSection = 'ledger';
 
         // 初始化视图
         this.chatView = new ChatView(this);
@@ -4022,11 +4024,11 @@ export class WechatApp {
 }
 
 /* ========================================
-   微信零钱明细
+   微信钱包
    ======================================== */
 #phone-panel-content .phone-screen .wechat-app.wechat-wallet-ledger-page {
-    background: #f2f3f5;
-    color: #202124;
+    background: #f2f4f1;
+    color: #242824;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-scroll {
@@ -4034,6 +4036,7 @@ export class WechatApp {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    padding-bottom: 18px;
     touch-action: pan-y;
     overscroll-behavior: contain;
     scrollbar-width: none;
@@ -4044,12 +4047,18 @@ export class WechatApp {
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-hero {
-    background: linear-gradient(145deg, #08c86d 0%, #06b65b 58%, #05a94f 100%);
-    color: #fff;
-    padding: 30px 14px 24px;
+    position: relative;
+    overflow: hidden;
+    padding: 28px 14px 20px;
+    border-radius: 0 0 24px 24px;
+    background: #e2eed9;
+    color: #273128;
+    box-shadow: 0 8px 20px rgba(55, 78, 56, 0.08);
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-nav {
+    position: relative;
+    z-index: 1;
     display: grid;
     grid-template-columns: 34px minmax(0, 1fr) 34px;
     align-items: center;
@@ -4063,7 +4072,7 @@ export class WechatApp {
     border: 0;
     border-radius: 50%;
     background: transparent;
-    color: #fff;
+    color: #283229;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -4072,47 +4081,74 @@ export class WechatApp {
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-nav button:active {
-    background: rgba(255, 255, 255, 0.16);
+    background: rgba(48, 66, 48, 0.09);
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-title {
     min-width: 0;
     text-align: center;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 17px;
+    font-weight: 650;
     line-height: 1.3;
 }
 
-#phone-panel-content .phone-screen .wechat-wallet-ledger-brand {
+#phone-panel-content .phone-screen .wechat-wallet-hero-emblem {
+    height: 64px;
+    margin-top: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
-    margin-top: 18px;
-    color: rgba(255, 255, 255, 0.86);
-    font-size: 13px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-hero-emblem span {
+    width: 54px;
+    height: 54px;
+    border: 1px solid rgba(92, 117, 89, 0.14);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.48);
+    color: #8da287;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 23px;
+    box-shadow: inset 0 0 0 7px rgba(255, 255, 255, 0.18);
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-stats {
+    position: relative;
+    z-index: 1;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-top: 26px;
+    margin-top: 8px;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-stat {
     min-width: 0;
     padding: 0 7px;
     text-align: center;
-    border-right: 1px solid rgba(255, 255, 255, 0.13);
+    border-right: 1px solid rgba(72, 90, 70, 0.16);
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-stat:last-child {
     border-right: 0;
 }
 
+#phone-panel-content .phone-screen .wechat-wallet-ledger-stat-icon {
+    width: 24px;
+    height: 24px;
+    margin: 0 auto 6px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.58);
+    color: #5b6b59;
+    font-size: 11px;
+}
+
 #phone-panel-content .phone-screen .wechat-wallet-ledger-stat-label {
     display: block;
-    color: rgba(255, 255, 255, 0.78);
+    color: #667064;
     font-size: 10px;
     line-height: 1.3;
     white-space: nowrap;
@@ -4120,8 +4156,8 @@ export class WechatApp {
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-stat-value {
     display: block;
-    margin-top: 7px;
-    color: #fff;
+    margin-top: 6px;
+    color: #202720;
     font-size: 18px;
     font-weight: 650;
     line-height: 1.2;
@@ -4133,34 +4169,782 @@ export class WechatApp {
 #phone-panel-content .phone-screen .wechat-wallet-ledger-stat-value.is-compact { font-size: 14px; }
 #phone-panel-content .phone-screen .wechat-wallet-ledger-stat-value.is-tight { font-size: 12px; }
 
+#phone-panel-content .phone-screen .wechat-wallet-shortcuts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin: 12px 12px 10px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-card {
+    appearance: none;
+    -webkit-appearance: none;
+    min-width: 0;
+    min-height: 88px;
+    padding: 9px 7px 10px;
+    border: 1px solid #e5e8e3;
+    border-radius: 8px;
+    box-sizing: border-box;
+    background: #fff;
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) 12px;
+    grid-template-rows: 30px minmax(20px, auto);
+    column-gap: 3px;
+    row-gap: 8px;
+    align-items: start;
+    box-shadow: 0 5px 14px rgba(47, 59, 48, 0.05);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-card.is-active {
+    border-color: #b7c9af;
+    background: #f8fbf6;
+    box-shadow: 0 5px 14px rgba(58, 87, 58, 0.09), inset 0 0 0 1px rgba(112, 146, 104, 0.08);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-card:active {
+    transform: translateY(1px);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-card:focus-visible {
+    outline: 2px solid #78966f;
+    outline-offset: 1px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 13px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-icon.is-balance {
+    background: #efb94c;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-icon.is-card {
+    background: #4aa8dc;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-icon.is-credit {
+    background: #ef6b70;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-title {
+    min-width: 0;
+    align-self: center;
+    color: #262a27;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-value {
+    grid-column: 1 / -1;
+    min-width: 0;
+    align-self: end;
+    transform: translateY(-7px);
+    color: #252925;
+    font-size: 14px;
+    font-weight: 650;
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-value.is-compact {
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-value.is-tight {
+    font-size: 10px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-shortcut-chevron {
+    width: 12px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #767d75;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    align-self: center;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2300;
+    padding: 14px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(20, 24, 20, 0.62);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-dialog {
+    width: 100%;
+    max-width: 320px;
+    max-height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 12px 34px rgba(18, 24, 18, 0.28);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-header {
+    min-height: 58px;
+    padding: 12px 12px 10px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 32px;
+    gap: 10px;
+    align-items: center;
+    border-bottom: 1px solid #e7eae5;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-header span {
+    display: block;
+    color: #8a9188;
+    font-size: 9px;
+    line-height: 1.3;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-header h3 {
+    margin: 2px 0 0;
+    color: #262b27;
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-close {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #5f675f;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-body {
+    min-height: 0;
+    padding: 14px;
+    overflow-y: auto;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-note {
+    margin: 0 0 12px;
+    color: #555d55;
+    font-size: 11px;
+    line-height: 1.55;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-section > strong {
+    color: #2c312d;
+    font-size: 11px;
+    font-weight: 650;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-response {
+    width: 100%;
+    min-height: 170px;
+    margin: 8px 0 0;
+    padding: 10px;
+    overflow: auto;
+    box-sizing: border-box;
+    border: 1px solid #e1e5df;
+    border-radius: 6px;
+    background: #f6f7f5;
+    color: #303530;
+    font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-footer {
+    padding: 10px 14px 14px;
+    border-top: 1px solid #e7eae5;
+    flex-shrink: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-parse-error-confirm {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 8px;
+    background: #6e8c65;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-panel {
+    margin: 0 12px 10px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-section {
+    margin-bottom: 10px;
+    overflow: hidden;
+    border: 1px solid #e4e7e2;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 6px 18px rgba(46, 58, 47, 0.06);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-section:last-child {
+    margin-bottom: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-section-header {
+    min-height: 48px;
+    padding: 0 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    border-bottom: 1px solid #eceeea;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-section-title {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: #2c302d;
+    font-size: 13px;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-section-title i {
+    color: #606760;
+    font-size: 13px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-section-summary {
+    min-width: 0;
+    color: #747a74;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-empty {
+    min-height: 156px;
+    padding: 28px 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    color: #a5aaa4;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-empty i {
+    margin-bottom: 12px;
+    color: #b7bdb5;
+    font-size: 28px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-empty strong {
+    color: #737973;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-empty span {
+    margin-top: 6px;
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-savings-row {
+    min-height: 72px;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: center;
+    border-bottom: 1px solid #eef0ed;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-savings-row:last-child,
+#phone-panel-content .phone-screen .wechat-wallet-liability-row:last-child {
+    border-bottom: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 15px;
+    flex: 0 0 auto;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-logo.is-savings { background: #4aa8dc; }
+#phone-panel-content .phone-screen .wechat-wallet-account-logo.is-credit { background: #e86267; }
+#phone-panel-content .phone-screen .wechat-wallet-account-logo.is-loan { background: #418fd0; }
+
+#phone-panel-content .phone-screen .wechat-wallet-account-copy {
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-name {
+    overflow: hidden;
+    color: #2a2e2a;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-account-detail {
+    margin-top: 5px;
+    overflow: hidden;
+    color: #929792;
+    font-size: 9px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-savings-balance {
+    max-width: 112px;
+    overflow: hidden;
+    color: #222722;
+    font-size: 14px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-savings-balance.is-compact {
+    font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-row {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    padding: 9px 9px 8px;
+    border: 0;
+    border-bottom: 1px solid #eceeea;
+    background: #fff;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen button.wechat-wallet-liability-row {
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen button.wechat-wallet-liability-row:active {
+    background: #f7f8f6;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-top {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto 10px;
+    gap: 7px;
+    align-items: center;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-top .wechat-wallet-account-logo {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-status {
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #fff0f0;
+    color: #e56569;
+    font-size: 9px;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-status.is-clear {
+    background: #edf6ea;
+    color: #5f9262;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-status.is-overdue {
+    background: #fff0e8;
+    color: #d76d3d;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-chevron {
+    color: #929792;
+    font-size: 9px;
+    text-align: right;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 8px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-metric {
+    min-width: 0;
+    padding: 0 7px;
+    border-left: 1px solid #eceeea;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-metric:first-child {
+    padding-left: 0;
+    border-left: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-metric:last-child {
+    padding-right: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-label,
+#phone-panel-content .phone-screen .wechat-wallet-liability-value {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-label {
+    color: #999e99;
+    font-size: 8px;
+    line-height: 1.35;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-value {
+    margin-top: 3px;
+    color: #303530;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    font-variant-numeric: tabular-nums;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-liability-value.is-amount {
+    color: #202520;
+    font-size: 14px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(25, 29, 25, 0.46);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-dialog {
+    width: 100%;
+    max-height: 88%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 12px 12px 0 0;
+    background: #f7f8f6;
+    box-shadow: 0 -10px 30px rgba(28, 34, 29, 0.18);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-header {
+    min-height: 50px;
+    padding: 0 14px;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
+    align-items: center;
+    border-bottom: 1px solid #e6e9e4;
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-header strong {
+    grid-column: 2;
+    justify-self: center;
+    color: #282d29;
+    font-size: 14px;
+    font-weight: 650;
+    text-align: center;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-close {
+    grid-column: 3;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #6e746e;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-body {
+    min-height: 0;
+    padding: 12px;
+    overflow-y: auto;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-summary {
+    padding: 13px 14px;
+    border: 1px solid #e3e7e1;
+    border-radius: 8px;
+    background: #fff;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-summary span,
+#phone-panel-content .phone-screen .wechat-wallet-repayment-summary small {
+    display: block;
+    color: #858c85;
+    font-size: 10px;
+    line-height: 1.45;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-summary strong {
+    display: block;
+    margin: 4px 0 2px;
+    color: #222722;
+    font-size: 25px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-section-title {
+    margin: 14px 2px 7px;
+    color: #727972;
+    font-size: 10px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-sources {
+    overflow: hidden;
+    border: 1px solid #e3e7e1;
+    border-radius: 8px;
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-source {
+    min-height: 56px;
+    padding: 8px 11px;
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: center;
+    border-bottom: 1px solid #eceeea;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-source:last-child {
+    border-bottom: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-source input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #6e8c65;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-source-copy {
+    min-width: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-source-copy strong,
+#phone-panel-content .phone-screen .wechat-wallet-repayment-source-copy span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-source-copy strong {
+    color: #2b302c;
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-source-copy span {
+    margin-top: 3px;
+    color: #929892;
+    font-size: 9px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-source-balance {
+    color: #303530;
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-error {
+    min-height: 18px;
+    margin-top: 8px;
+    color: #d85f5f;
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-actions {
+    padding: 10px 12px 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+    border-top: 1px solid #e3e7e1;
+    background: #fff;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-actions button {
+    min-height: 40px;
+    border: 0;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-cancel {
+    background: #eef0ed;
+    color: #535953;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-confirm {
+    background: #6e8c65;
+    color: #fff;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-repayment-confirm:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-panel {
+    min-height: 330px;
+    margin: 0 12px;
+    overflow: hidden;
+    border: 1px solid #e4e7e2;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 6px 18px rgba(46, 58, 47, 0.06);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-panel-header {
+    min-height: 54px;
+    padding: 0 10px;
+    display: grid;
+    grid-template-columns: minmax(80px, 1fr) auto;
+    align-items: center;
+    border-bottom: 1px solid #eceeea;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-heading {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #2c302d;
+    font-size: 14px;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-heading i {
+    color: #6f746f;
+    font-size: 15px;
+}
+
 #phone-panel-content .phone-screen .wechat-wallet-ledger-filters {
+    position: relative !important;
     display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-columns: 96px 88px !important;
     align-items: stretch !important;
-    gap: 10px !important;
-    width: 100% !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    gap: 8px !important;
+    width: 192px !important;
+    height: 52px !important;
+    min-height: 52px !important;
+    max-height: 52px !important;
     margin: 0 !important;
-    padding: 0 12px !important;
+    padding: 0 !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
-    background: #fff !important;
+    background: transparent !important;
     border: 0 !important;
-    border-bottom: 1px solid #e8e8e8 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-filters::after {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    left: 100px;
+    top: 50%;
+    height: 12px;
+    transform: translateY(-50%);
+    width: 1px;
+    background: #e3e6e1;
+    pointer-events: none;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-filter {
     position: relative !important;
     display: block !important;
     min-width: 0 !important;
-    width: auto !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 52px !important;
+    min-height: 52px !important;
+    max-height: 52px !important;
     margin: 0 !important;
     padding: 0 !important;
     border: 0 !important;
@@ -4171,29 +4955,19 @@ export class WechatApp {
     overflow: hidden !important;
 }
 
-#phone-panel-content .phone-screen .wechat-wallet-ledger-filter:last-child {
-    text-align: right;
-}
-
-#phone-panel-content .phone-screen .wechat-wallet-ledger-filter:first-child {
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-self: start !important;
-    width: max-content !important;
-    max-width: 100% !important;
-}
-
 #phone-panel-content .phone-screen .wechat-wallet-ledger-filter select {
-    position: static !important;
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 2 !important;
     display: block !important;
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    height: 52px !important;
+    min-height: 52px !important;
+    max-height: 52px !important;
     margin: 0 !important;
-    padding: 0 22px 0 2px !important;
+    padding: 0 !important;
     box-sizing: border-box !important;
     border: 0 !important;
     border-radius: 0 !important;
@@ -4201,62 +4975,60 @@ export class WechatApp {
     background: transparent !important;
     background-image: none !important;
     box-shadow: none !important;
-    color: #303134 !important;
+    color: transparent !important;
     font-family: inherit !important;
-    font-size: 13px !important;
+    font-size: 12px !important;
     font-weight: 400 !important;
     line-height: normal !important;
     appearance: none !important;
     -webkit-appearance: none !important;
+    opacity: 0 !important;
     transform: none !important;
     cursor: pointer !important;
 }
 
-#phone-panel-content .phone-screen .wechat-wallet-ledger-filter:last-child select {
-    padding-left: 2px !important;
-    padding-right: 22px !important;
-    text-align: right !important;
-    text-align-last: right !important;
-}
-
-#phone-panel-content .phone-screen .wechat-wallet-ledger-filter:first-child select {
-    flex: 0 1 auto !important;
-    width: auto !important;
-    max-width: calc(100% - 20px) !important;
-    padding-right: 3px !important;
+#phone-panel-content .phone-screen .wechat-wallet-ledger-filter-label {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 52px;
+    padding: 0 24px 0 2px;
+    box-sizing: border-box;
+    color: #535853;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: normal;
+    white-space: nowrap;
+    pointer-events: none;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-filter i {
     position: absolute;
-    right: 3px;
+    z-index: 1;
+    right: 6px;
     top: 50%;
     transform: translateY(-50%);
-    color: #5f6368;
-    font-size: 10px;
+    color: #656a65;
+    font-size: 9px;
     pointer-events: none;
 }
 
-#phone-panel-content .phone-screen .wechat-wallet-ledger-filter:last-child i {
-    right: 3px;
-    left: auto;
-}
-
-#phone-panel-content .phone-screen .wechat-wallet-ledger-filter:first-child i {
-    position: static;
-    flex: 0 0 auto;
-    margin-left: 14px;
-    transform: none;
+#phone-panel-content .phone-screen .wechat-wallet-ledger-list {
+    min-height: 276px;
+    background: #fff;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-day {
     height: 34px;
-    padding: 0 14px;
+    padding: 0 12px;
     display: flex;
     align-items: center;
-    background: #f2f3f5;
-    color: #8a8d91;
+    background: #f5f6f4;
+    color: #8a8d89;
     font-size: 11px;
-    border-bottom: 1px solid #eceef0;
+    border-bottom: 1px solid #eceeea;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-row {
@@ -4265,7 +5037,7 @@ export class WechatApp {
     grid-template-columns: 36px minmax(0, 1fr) minmax(74px, auto);
     gap: 10px;
     align-items: center;
-    padding: 8px 14px;
+    padding: 8px 12px;
     background: #fff;
     box-sizing: border-box;
 }
@@ -4284,8 +5056,9 @@ export class WechatApp {
 #phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-transfer { background: #2d8cf0; }
 #phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-redpacket { background: #e45b4b; }
 #phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-honey { background: #cf4f8d; }
-#phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-shopping { background: #f28c28; }
-#phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-other { background: #14ad60; }
+#phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-shopping { background: #e5a33b; }
+#phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-repayment { background: #d95f65; }
+#phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-other { background: #56a16a; }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-copy,
 #phone-panel-content .phone-screen .wechat-wallet-ledger-money {
@@ -4298,7 +5071,7 @@ export class WechatApp {
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-name {
-    color: #25272a;
+    color: #252925;
     font-size: 13px;
     line-height: 1.35;
     white-space: nowrap;
@@ -4308,7 +5081,7 @@ export class WechatApp {
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-detail {
     margin-top: 4px;
-    color: #92969b;
+    color: #929792;
     font-size: 10px;
     line-height: 1.3;
     white-space: nowrap;
@@ -4322,7 +5095,7 @@ export class WechatApp {
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-amount {
-    color: #202124;
+    color: #202520;
     font-size: 14px;
     font-weight: 600;
     line-height: 1.35;
@@ -4331,39 +5104,60 @@ export class WechatApp {
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-amount.is-income {
-    color: #08b85d;
+    color: #4d9c64;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-time {
     margin-top: 4px;
-    color: #9a9da1;
+    color: #9a9e99;
     font-size: 10px;
     line-height: 1.3;
     font-variant-numeric: tabular-nums;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-empty {
-    min-height: 180px;
-    padding: 32px 20px;
+    min-height: 276px;
+    padding: 34px 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    color: #9aa0a6;
+    box-sizing: border-box;
+    text-align: center;
     background: #fff;
-    font-size: 12px;
 }
 
-#phone-panel-content .phone-screen .wechat-wallet-ledger-empty i {
-    font-size: 30px;
-    color: #c2c6ca;
+#phone-panel-content .phone-screen .wechat-wallet-ledger-empty-icon {
+    width: 58px;
+    height: 58px;
+    margin-bottom: 16px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f0f3ed;
+    color: #b4bbb1;
+    font-size: 25px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-empty strong {
+    color: #777d76;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-empty > span:not(.wechat-wallet-ledger-empty-icon) {
+    margin-top: 7px;
+    color: #acb0aa;
+    font-size: 10px;
+    line-height: 1.5;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-footer {
     padding: 15px 0 22px;
     text-align: center;
-    color: #a1a5a9;
+    color: #a1a5a0;
     font-size: 10px;
     background: #fff;
 }
@@ -5551,7 +6345,7 @@ export class WechatApp {
                     </div>
                     <div class="function-content">
                         <div class="function-title">服务</div>
-                        <div class="function-desc">零钱、收支明细</div>
+                        <div class="function-desc">零钱、银行卡、收支明细</div>
                     </div>
                     <div class="function-arrow">
                         <i class="fa-solid fa-chevron-right"></i>
@@ -5696,7 +6490,7 @@ export class WechatApp {
 
         // “我”页面的功能入口
         addClickListener('#edit-avatar-btn', () => this.showEditProfile());
-        addClickListener('#wechat-wallet-btn', () => this.showWalletPage({ resetMonth: true }));
+        addClickListener('#wechat-wallet-btn', () => this.showWalletPage({ resetMonth: true, section: 'ledger' }));
         addClickListener('#smart-load-contacts', () => this.showLoadContactsConfirm());
         addClickListener('#edit-profile-btn', () => this.showEditProfile());
         addClickListener('#wechat-settings-btn', () => this.showSettings());
@@ -5790,6 +6584,7 @@ export class WechatApp {
             redpacket: { className: 'is-redpacket', icon: 'fa-envelope' },
             honey: { className: 'is-honey', icon: 'fa-droplet' },
             shopping: { className: 'is-shopping', icon: 'fa-cart-shopping' },
+            repayment: { className: 'is-repayment', icon: 'fa-credit-card' },
             other: { className: 'is-other', icon: 'fa-wallet' }
         };
         return visuals[type] || visuals.other;
@@ -5799,8 +6594,9 @@ export class WechatApp {
         if (!transactions.length) {
             return `
                 <div class="wechat-wallet-ledger-empty">
-                    <i class="fa-solid fa-receipt"></i>
-                    <span>本月暂无收支记录</span>
+                    <span class="wechat-wallet-ledger-empty-icon"><i class="fa-solid fa-receipt"></i></span>
+                    <strong>本月暂无收支记录</strong>
+                    <span>每一份收支，都是生活的可爱印记</span>
                 </div>
             `;
         }
@@ -5825,7 +6621,8 @@ export class WechatApp {
                 transfer: '微信转账',
                 redpacket: '微信红包',
                 honey: '蜜语',
-                shopping: '微信支付'
+                shopping: '线下支付',
+                repayment: '信用卡还款'
             }[record.type] || '微信零钱')).trim();
             return `${dateHeader}
                 <div class="wechat-wallet-ledger-row">
@@ -5843,14 +6640,209 @@ export class WechatApp {
         }).join('');
     }
 
-    // 显示微信零钱明细
-    showWalletPage({ resetMonth = false } = {}) {
+    _renderWalletLedgerPanel({
+        monthOptions = '',
+        typeOptions = '',
+        selectedMonthLabel = '',
+        selectedTypeLabel = '',
+        visibleTransactions = []
+    } = {}) {
+        return `
+            <section class="wechat-wallet-ledger-panel" data-wallet-panel="ledger">
+                <div class="wechat-wallet-ledger-panel-header">
+                    <div class="wechat-wallet-ledger-heading"><i class="fa-solid fa-receipt"></i><span>收支明细</span></div>
+                    <div class="wechat-wallet-ledger-filters">
+                        <div class="wechat-wallet-ledger-filter">
+                            <select id="wechat-wallet-month-filter" aria-label="选择月份">${monthOptions}</select>
+                            <span class="wechat-wallet-ledger-filter-label">${this._escapeWalletHtml(selectedMonthLabel)}</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                        <div class="wechat-wallet-ledger-filter">
+                            <select id="wechat-wallet-type-filter" aria-label="选择收支类型">${typeOptions}</select>
+                            <span class="wechat-wallet-ledger-filter-label">${this._escapeWalletHtml(selectedTypeLabel)}</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="wechat-wallet-ledger-list">
+                    ${this._renderWalletTransactionRows(visibleTransactions)}
+                    ${visibleTransactions.length ? '<div class="wechat-wallet-ledger-footer">— 已加载全部 —</div>' : ''}
+                </div>
+            </section>
+        `;
+    }
+
+    _renderWalletAccountEmpty(icon, title, description) {
+        return `
+            <div class="wechat-wallet-account-empty">
+                <i class="fa-solid ${icon}"></i>
+                <strong>${this._escapeWalletHtml(title)}</strong>
+                <span>${this._escapeWalletHtml(description)}</span>
+            </div>
+        `;
+    }
+
+    _renderWalletSavingsPanel(profile = {}, totals = {}) {
+        const accounts = Array.isArray(profile?.savingsAccounts) ? profile.savingsAccounts : [];
+        const rows = accounts.map((account) => {
+            const balanceText = this._formatWalletNumber(account.balance);
+            const balanceClass = balanceText.length > 13 ? 'is-compact' : '';
+            return `
+                <div class="wechat-wallet-savings-row">
+                    <span class="wechat-wallet-account-logo is-savings"><i class="fa-solid fa-building-columns"></i></span>
+                    <div class="wechat-wallet-account-copy">
+                        <div class="wechat-wallet-account-name">${this._escapeWalletHtml(account.bankName)}</div>
+                        <div class="wechat-wallet-account-detail">储蓄卡 · 尾号 ${this._escapeWalletHtml(account.tailNumber)}</div>
+                    </div>
+                    <div class="wechat-wallet-savings-balance ${balanceClass}">¥${balanceText}</div>
+                </div>
+            `;
+        }).join('');
+        const summary = accounts.length ? `合计 ¥${this._formatWalletNumber(totals.savingsBalance)}` : '尚未配置';
+        return `
+            <div class="wechat-wallet-account-panel" data-wallet-panel="bank">
+                <section class="wechat-wallet-account-section">
+                    <div class="wechat-wallet-account-section-header">
+                        <div class="wechat-wallet-account-section-title"><i class="fa-solid fa-building-columns"></i><span>储蓄账户 (${accounts.length})</span></div>
+                        <div class="wechat-wallet-account-section-summary">${this._escapeWalletHtml(summary)}</div>
+                    </div>
+                    ${rows || this._renderWalletAccountEmpty('fa-credit-card', '暂无银行卡', '完成资产评估后显示储蓄账户')}
+                </section>
+            </div>
+        `;
+    }
+
+    _renderWalletCreditPanel(profile = {}, totals = {}, billingStatuses = []) {
+        const creditCards = Array.isArray(profile?.creditCards) ? profile.creditCards : [];
+        const debts = Array.isArray(profile?.debts) ? profile.debts : [];
+        const creditRows = creditCards.map((card, cardIndex) => {
+            const rawDue = Math.max(0, Number(card.currentDue || 0));
+            const status = billingStatuses[cardIndex] || {
+                state: rawDue > 0 ? 'pending' : 'clear',
+                label: rawDue > 0 ? '待还款' : '无欠款',
+                amountDue: rawDue
+            };
+            const currentDue = Number(status.amountDue || 0);
+            const isPayable = ['pending', 'overdue'].includes(status.state) && currentDue > 0;
+            const statusClass = status.state === 'overdue'
+                ? 'is-overdue'
+                : (isPayable ? '' : 'is-clear');
+            const limitText = card.limitLabel
+                ? (/无预设|动态额度|∞|无限/i.test(card.limitLabel) ? '无预设上限' : card.limitLabel)
+                : (Number.isFinite(Number(card.limit)) ? `¥${this._formatWalletNumber(card.limit)}` : '未记录');
+            const tailText = card.tailNumber ? `信用卡 · 尾号 ${card.tailNumber}` : '信用卡账户';
+            const detailText = card.installmentStatus ? `${tailText} · ${card.installmentStatus}` : tailText;
+            const rowTag = isPayable ? 'button' : 'div';
+            const rowAttributes = isPayable
+                ? `type="button" data-wallet-credit-card-index="${cardIndex}" aria-label="偿还${this._escapeWalletHtml(card.bankName)}账单"`
+                : '';
+            return `
+                <${rowTag} class="wechat-wallet-liability-row" ${rowAttributes}>
+                    <div class="wechat-wallet-liability-top">
+                        <span class="wechat-wallet-account-logo is-credit"><i class="fa-solid fa-credit-card"></i></span>
+                        <div class="wechat-wallet-account-copy">
+                            <div class="wechat-wallet-account-name">${this._escapeWalletHtml(card.bankName)}</div>
+                            <div class="wechat-wallet-account-detail">${this._escapeWalletHtml(detailText)}</div>
+                        </div>
+                        <span class="wechat-wallet-liability-status ${statusClass}">${this._escapeWalletHtml(status.label)}</span>
+                        ${isPayable ? '<i class="fa-solid fa-chevron-right wechat-wallet-liability-chevron" aria-hidden="true"></i>' : '<span></span>'}
+                    </div>
+                    <div class="wechat-wallet-liability-metrics">
+                        <div class="wechat-wallet-liability-metric">
+                            <span class="wechat-wallet-liability-label">本期应还(元)</span>
+                            <strong class="wechat-wallet-liability-value is-amount">${this._formatWalletNumber(currentDue)}</strong>
+                        </div>
+                        <div class="wechat-wallet-liability-metric">
+                            <span class="wechat-wallet-liability-label">信用额度</span>
+                            <strong class="wechat-wallet-liability-value" title="${this._escapeWalletHtml(card.limitLabel || limitText)}">${this._escapeWalletHtml(limitText)}</strong>
+                        </div>
+                        <div class="wechat-wallet-liability-metric">
+                            <span class="wechat-wallet-liability-label">还款日</span>
+                            <strong class="wechat-wallet-liability-value">${this._escapeWalletHtml(card.repaymentDay || '未记录')}</strong>
+                        </div>
+                    </div>
+                </${rowTag}>
+            `;
+        }).join('');
+        const debtRows = debts.map((debt) => {
+            const amount = Number(debt.amount || 0);
+            const hasDue = amount > 0;
+            return `
+                <div class="wechat-wallet-liability-row">
+                    <div class="wechat-wallet-liability-top">
+                        <span class="wechat-wallet-account-logo is-loan"><i class="fa-solid fa-hand-holding-dollar"></i></span>
+                        <div class="wechat-wallet-account-copy">
+                            <div class="wechat-wallet-account-name">${this._escapeWalletHtml(debt.name)}</div>
+                            <div class="wechat-wallet-account-detail">${this._escapeWalletHtml(debt.detail || '借贷账户')}</div>
+                        </div>
+                        <span class="wechat-wallet-liability-status ${hasDue ? '' : 'is-clear'}">${hasDue ? '待还款' : '已结清'}</span>
+                        <i class="fa-solid fa-chevron-right wechat-wallet-liability-chevron" aria-hidden="true"></i>
+                    </div>
+                    <div class="wechat-wallet-liability-metrics">
+                        <div class="wechat-wallet-liability-metric">
+                            <span class="wechat-wallet-liability-label">本期应还(元)</span>
+                            <strong class="wechat-wallet-liability-value is-amount">${this._formatWalletNumber(amount)}</strong>
+                        </div>
+                        <div class="wechat-wallet-liability-metric">
+                            <span class="wechat-wallet-liability-label">分期状态</span>
+                            <strong class="wechat-wallet-liability-value">${this._escapeWalletHtml(debt.installmentStatus || '未分期')}</strong>
+                        </div>
+                        <div class="wechat-wallet-liability-metric">
+                            <span class="wechat-wallet-liability-label">还款日</span>
+                            <strong class="wechat-wallet-liability-value">${this._escapeWalletHtml(debt.repaymentDay || '未记录')}</strong>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        return `
+            <div class="wechat-wallet-account-panel" data-wallet-panel="credit">
+                <section class="wechat-wallet-account-section">
+                    <div class="wechat-wallet-account-section-header">
+                        <div class="wechat-wallet-account-section-title"><i class="fa-solid fa-credit-card"></i><span>信用卡账单 (${creditCards.length})</span></div>
+                        <div class="wechat-wallet-account-section-summary">待还 ¥${this._formatWalletNumber(totals.creditDue)}</div>
+                    </div>
+                    ${creditRows || this._renderWalletAccountEmpty('fa-credit-card', '暂无信用卡账单', '当前评估未生成信用卡账户')}
+                </section>
+                <section class="wechat-wallet-account-section">
+                    <div class="wechat-wallet-account-section-header">
+                        <div class="wechat-wallet-account-section-title"><i class="fa-solid fa-hand-holding-dollar"></i><span>借贷记录 (${debts.length})</span></div>
+                        <div class="wechat-wallet-account-section-summary">待还 ¥${this._formatWalletNumber(totals.loanDue)}</div>
+                    </div>
+                    ${debtRows || this._renderWalletAccountEmpty('fa-file-invoice-dollar', '暂无借贷记录', '当前评估未生成其它负债')}
+                </section>
+            </div>
+        `;
+    }
+
+    // 显示微信钱包
+    showWalletPage({ resetMonth = false, section = null } = {}) {
+        if (section && ['ledger', 'bank', 'credit'].includes(section)) {
+            this._walletSection = section;
+        }
+        if (!['ledger', 'bank', 'credit'].includes(this._walletSection)) {
+            this._walletSection = 'ledger';
+        }
         const balance = this.wechatData.getWalletBalance();
         const isInitialized = balance !== null;
         const displayBalance = isInitialized ? this._formatWalletNumber(balance) : '***';
         const isEvaluating = !!this._isWalletEvaluating;
-        const transactions = this.wechatData.getWalletTransactions?.() || [];
         const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || {};
+        const creditBillingStatuses = this.wechatData.getWalletCreditCardStatuses?.(storyTime) || [];
+        const assetProfile = this.wechatData.getWalletAssetProfile?.() || {
+            savingsAccounts: [],
+            creditCards: [],
+            debts: []
+        };
+        const assetTotals = {
+            ...getWalletAssetTotals(assetProfile),
+            creditDue: creditBillingStatuses.reduce((sum, status) => sum + Number(status.amountDue || 0), 0)
+        };
+        const bankCardCount = assetProfile.savingsAccounts.length;
+        const creditCardCount = assetProfile.creditCards.length;
+        const creditCardDueText = this._formatWalletNumber(assetTotals.creditDue);
+        const loanDueText = this._formatWalletNumber(assetTotals.loanDue);
+        const transactions = this.wechatData.getWalletTransactions?.() || [];
         const fallbackMonth = this._getWalletMonthKey(storyTime)
             || this._getWalletMonthKey({ timestamp: Date.now() });
         const monthKeys = [...new Set(transactions.map(record => this._getWalletMonthKey(record)).filter(Boolean))];
@@ -5860,7 +6852,7 @@ export class WechatApp {
         if (resetMonth || !monthKeys.includes(this._walletLedgerMonth)) {
             this._walletLedgerMonth = latestMonth;
         }
-        if (!['all', 'transfer', 'redpacket', 'honey', 'shopping'].includes(this._walletLedgerType)) {
+        if (!['all', 'transfer', 'redpacket', 'honey', 'shopping', 'repayment'].includes(this._walletLedgerType)) {
             this._walletLedgerType = 'all';
         }
 
@@ -5868,25 +6860,37 @@ export class WechatApp {
         const visibleTransactions = this._walletLedgerType === 'all'
             ? monthlyTransactions
             : monthlyTransactions.filter(record => record.type === this._walletLedgerType);
-        const monthlyIncome = monthlyTransactions.reduce((sum, record) => sum + Math.max(0, Number(record.delta || 0)), 0);
-        const monthlyExpense = monthlyTransactions.reduce((sum, record) => sum + Math.abs(Math.min(0, Number(record.delta || 0))), 0);
-        const incomeText = `+${this._formatWalletNumber(monthlyIncome)}`;
-        const expenseText = `-${this._formatWalletNumber(monthlyExpense)}`;
-        const longestStatValueLength = Math.max(incomeText.length, expenseText.length, displayBalance.length);
+        const longestStatValueLength = Math.max(creditCardDueText.length, loanDueText.length, displayBalance.length);
         const statValueClass = longestStatValueLength > 12 ? 'is-tight' : (longestStatValueLength > 9 ? 'is-compact' : '');
+        const shortcutBalanceClass = displayBalance.length > 13 ? 'is-tight' : (displayBalance.length > 10 ? 'is-compact' : '');
         const monthOptions = monthKeys.map(monthKey => `
             <option value="${monthKey}" ${monthKey === this._walletLedgerMonth ? 'selected' : ''}>${this._formatWalletMonthLabel(monthKey)}</option>
         `).join('');
-        const typeOptions = [
+        const typeOptionEntries = [
             ['all', '全部类型'],
             ['transfer', '转账'],
             ['redpacket', '红包'],
             ['honey', '蜜语'],
-            ['shopping', '购物']
-        ].map(([value, label]) => `<option value="${value}" ${value === this._walletLedgerType ? 'selected' : ''}>${label}</option>`).join('');
+            ['shopping', '线下支付'],
+            ['repayment', '信用卡还款']
+        ];
+        const typeOptions = typeOptionEntries
+            .map(([value, label]) => `<option value="${value}" ${value === this._walletLedgerType ? 'selected' : ''}>${label}</option>`)
+            .join('');
+        const selectedMonthLabel = this._formatWalletMonthLabel(this._walletLedgerMonth);
+        const selectedTypeLabel = typeOptionEntries.find(([value]) => value === this._walletLedgerType)?.[1] || '全部类型';
         const evalLabel = isEvaluating ? '资产评估中' : (isInitialized ? '重新评估资产' : '初始资产评估');
-        const evalIcon = isEvaluating ? 'fa-spinner fa-spin' : (isInitialized ? 'fa-rotate' : 'fa-wand-magic-sparkles');
-
+        const lowerPanelHtml = this._walletSection === 'bank'
+            ? this._renderWalletSavingsPanel(assetProfile, assetTotals)
+            : (this._walletSection === 'credit'
+                ? this._renderWalletCreditPanel(assetProfile, assetTotals, creditBillingStatuses)
+                : this._renderWalletLedgerPanel({
+                    monthOptions,
+                    typeOptions,
+                    selectedMonthLabel,
+                    selectedTypeLabel,
+                    visibleTransactions
+                }));
         const html = `
         <div class="wechat-app wechat-wallet-ledger-page">
             <div class="wechat-wallet-ledger-scroll">
@@ -5895,41 +6899,51 @@ export class WechatApp {
                         <button class="wechat-back-btn" id="back-from-wallet" type="button" title="返回" aria-label="返回">
                             <i class="fa-solid fa-chevron-left"></i>
                         </button>
-                        <div class="wechat-wallet-ledger-title">零钱明细</div>
+                        <div class="wechat-wallet-ledger-title">钱包</div>
                         <button class="wechat-wallet-eval-action" id="ai-eval-wallet-btn" type="button" title="${evalLabel}" aria-label="${evalLabel}">
-                            <i class="fa-solid ${evalIcon}"></i>
+                            <i class="fa-solid fa-gear"></i>
                         </button>
                     </div>
-                    <div class="wechat-wallet-ledger-brand"><i class="fa-solid fa-shield-halved"></i><span>微信零钱</span></div>
+                    <div class="wechat-wallet-hero-emblem"><span><i class="fa-solid fa-wallet"></i></span></div>
                     <div class="wechat-wallet-ledger-stats">
                         <div class="wechat-wallet-ledger-stat">
-                            <span class="wechat-wallet-ledger-stat-label">本月收入(元)</span>
-                            <strong class="wechat-wallet-ledger-stat-value ${statValueClass}">${incomeText}</strong>
-                        </div>
-                        <div class="wechat-wallet-ledger-stat">
-                            <span class="wechat-wallet-ledger-stat-label">本月支出(元)</span>
-                            <strong class="wechat-wallet-ledger-stat-value ${statValueClass}">${expenseText}</strong>
-                        </div>
-                        <div class="wechat-wallet-ledger-stat">
-                            <span class="wechat-wallet-ledger-stat-label">当前余额(元)</span>
+                            <span class="wechat-wallet-ledger-stat-icon"><i class="fa-solid fa-shield-halved"></i></span>
+                            <span class="wechat-wallet-ledger-stat-label">零钱余额(元)</span>
                             <strong class="wechat-wallet-ledger-stat-value ${statValueClass}">${displayBalance}</strong>
+                        </div>
+                        <div class="wechat-wallet-ledger-stat">
+                            <span class="wechat-wallet-ledger-stat-icon"><i class="fa-solid fa-credit-card"></i></span>
+                            <span class="wechat-wallet-ledger-stat-label">信用卡待还(元)</span>
+                            <strong class="wechat-wallet-ledger-stat-value ${statValueClass}">${creditCardDueText}</strong>
+                        </div>
+                        <div class="wechat-wallet-ledger-stat">
+                            <span class="wechat-wallet-ledger-stat-icon"><i class="fa-solid fa-chart-column"></i></span>
+                            <span class="wechat-wallet-ledger-stat-label">借贷待还(元)</span>
+                            <strong class="wechat-wallet-ledger-stat-value ${statValueClass}">${loanDueText}</strong>
                         </div>
                     </div>
                 </section>
-                <div class="wechat-wallet-ledger-filters">
-                    <div class="wechat-wallet-ledger-filter">
-                        <select id="wechat-wallet-month-filter" aria-label="选择月份">${monthOptions}</select>
-                        <i class="fa-solid fa-chevron-down"></i>
-                    </div>
-                    <div class="wechat-wallet-ledger-filter">
-                        <select id="wechat-wallet-type-filter" aria-label="选择收支类型">${typeOptions}</select>
-                        <i class="fa-solid fa-chevron-down"></i>
-                    </div>
+                <div class="wechat-wallet-shortcuts">
+                    <button class="wechat-wallet-shortcut-card ${this._walletSection === 'ledger' ? 'is-active' : ''}" type="button" data-wallet-section="ledger" aria-pressed="${this._walletSection === 'ledger'}">
+                        <span class="wechat-wallet-shortcut-icon is-balance"><i class="fa-solid fa-yen-sign"></i></span>
+                        <div class="wechat-wallet-shortcut-title">零钱</div>
+                        <span class="wechat-wallet-shortcut-chevron" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
+                        <div class="wechat-wallet-shortcut-value ${shortcutBalanceClass}">¥${displayBalance}</div>
+                    </button>
+                    <button class="wechat-wallet-shortcut-card ${this._walletSection === 'bank' ? 'is-active' : ''}" type="button" data-wallet-section="bank" aria-pressed="${this._walletSection === 'bank'}">
+                        <span class="wechat-wallet-shortcut-icon is-card"><i class="fa-solid fa-credit-card"></i></span>
+                        <div class="wechat-wallet-shortcut-title">银行卡</div>
+                        <span class="wechat-wallet-shortcut-chevron" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
+                        <div class="wechat-wallet-shortcut-value">${bankCardCount} 张</div>
+                    </button>
+                    <button class="wechat-wallet-shortcut-card ${this._walletSection === 'credit' ? 'is-active' : ''}" type="button" data-wallet-section="credit" aria-pressed="${this._walletSection === 'credit'}">
+                        <span class="wechat-wallet-shortcut-icon is-credit"><i class="fa-solid fa-credit-card"></i></span>
+                        <div class="wechat-wallet-shortcut-title">信用卡</div>
+                        <span class="wechat-wallet-shortcut-chevron" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
+                        <div class="wechat-wallet-shortcut-value">${creditCardCount} 张</div>
+                    </button>
                 </div>
-                <div class="wechat-wallet-ledger-list">
-                    ${this._renderWalletTransactionRows(visibleTransactions)}
-                    ${visibleTransactions.length ? '<div class="wechat-wallet-ledger-footer">— 已加载全部 —</div>' : ''}
-                </div>
+                ${lowerPanelHtml}
             </div>
         </div>
         `;
@@ -5942,6 +6956,14 @@ export class WechatApp {
             evalBtn.disabled = isEvaluating;
             evalBtn.addEventListener('click', () => this.evaluateWalletByAI());
         }
+        currentView.querySelectorAll('[data-wallet-section]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const nextSection = String(button.dataset.walletSection || 'ledger');
+                if (!['ledger', 'bank', 'credit'].includes(nextSection)) return;
+                this._walletSection = nextSection;
+                this.showWalletPage();
+            });
+        });
         currentView.querySelector('#wechat-wallet-month-filter')?.addEventListener('change', (event) => {
             this._walletLedgerMonth = String(event.currentTarget.value || '');
             this.showWalletPage();
@@ -5949,6 +6971,116 @@ export class WechatApp {
         currentView.querySelector('#wechat-wallet-type-filter')?.addEventListener('change', (event) => {
             this._walletLedgerType = String(event.currentTarget.value || 'all');
             this.showWalletPage();
+        });
+        currentView.querySelectorAll('[data-wallet-credit-card-index]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const cardIndex = Number.parseInt(button.dataset.walletCreditCardIndex, 10);
+                if (Number.isInteger(cardIndex)) this.showWalletCreditRepaymentModal(cardIndex);
+            });
+        });
+    }
+
+    showWalletCreditRepaymentModal(cardIndex) {
+        document.querySelectorAll('#wechat-wallet-repayment-modal').forEach(el => el.remove());
+
+        const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || {};
+        const profile = this.wechatData.getWalletAssetProfile?.() || {};
+        const card = profile.creditCards?.[cardIndex];
+        const status = this.wechatData.getWalletCreditCardStatuses?.(storyTime)?.[cardIndex];
+        if (!card || !status || !['pending', 'overdue'].includes(status.state) || Number(status.amountDue) <= 0) {
+            this.phoneShell.showNotification('信用卡账单', '当前账单无需还款', '✓');
+            this.showWalletPage({ section: 'credit' });
+            return;
+        }
+
+        const sources = this.wechatData.getWalletRepaymentSources?.() || [];
+        const sourceRows = sources.map((source, index) => `
+            <label class="wechat-wallet-repayment-source">
+                <input type="radio" name="wechat-wallet-repayment-source" value="${this._escapeWalletHtml(source.id)}" ${index === 0 ? 'checked' : ''}>
+                <span class="wechat-wallet-repayment-source-copy">
+                    <strong>${this._escapeWalletHtml(source.label)}</strong>
+                    <span>${this._escapeWalletHtml(source.detail)}</span>
+                </span>
+                <span class="wechat-wallet-repayment-source-balance">¥${this._formatWalletNumber(source.balance)}</span>
+            </label>
+        `).join('');
+        const cardLabel = `${card.bankName}${card.tailNumber ? ` · 尾号${card.tailNumber}` : ''}`;
+        const modalHtml = `
+            <div id="wechat-wallet-repayment-modal" class="wechat-wallet-repayment-overlay">
+                <section class="wechat-wallet-repayment-dialog" role="dialog" aria-modal="true" aria-labelledby="wechat-wallet-repayment-title">
+                    <header class="wechat-wallet-repayment-header">
+                        <strong id="wechat-wallet-repayment-title">信用卡还款</strong>
+                        <button type="button" class="wechat-wallet-repayment-close" data-wallet-repayment-close aria-label="关闭" title="关闭">
+                            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                        </button>
+                    </header>
+                    <div class="wechat-wallet-repayment-body">
+                        <div class="wechat-wallet-repayment-summary">
+                            <span>${this._escapeWalletHtml(cardLabel)}</span>
+                            <strong>¥${this._formatWalletNumber(status.amountDue)}</strong>
+                            <small>${this._escapeWalletHtml(status.label)} · ${this._escapeWalletHtml(card.repaymentDay || '还款日未记录')}</small>
+                        </div>
+                        <div class="wechat-wallet-repayment-section-title">选择还款方式</div>
+                        <div class="wechat-wallet-repayment-sources">${sourceRows}</div>
+                        <div class="wechat-wallet-repayment-error" data-wallet-repayment-error aria-live="polite"></div>
+                    </div>
+                    <footer class="wechat-wallet-repayment-actions">
+                        <button type="button" class="wechat-wallet-repayment-cancel" data-wallet-repayment-close>取消</button>
+                        <button type="button" class="wechat-wallet-repayment-confirm" data-wallet-repayment-confirm>确认还款</button>
+                    </footer>
+                </section>
+            </div>
+        `;
+
+        const currentView = document.querySelector('.phone-view-current') || document;
+        currentView.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = currentView.querySelector('#wechat-wallet-repayment-modal');
+        const confirmButton = modal?.querySelector('[data-wallet-repayment-confirm]');
+        const errorEl = modal?.querySelector('[data-wallet-repayment-error]');
+        if (!modal || !confirmButton || !errorEl) return;
+
+        const closeModal = () => modal.remove();
+        modal.querySelectorAll('[data-wallet-repayment-close]').forEach(button => {
+            button.addEventListener('click', closeModal);
+        });
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) closeModal();
+        });
+        confirmButton.addEventListener('click', async () => {
+            const selected = modal.querySelector('input[name="wechat-wallet-repayment-source"]:checked');
+            if (!selected) {
+                errorEl.textContent = '请选择还款方式。';
+                return;
+            }
+
+            confirmButton.disabled = true;
+            errorEl.textContent = '';
+            try {
+                const result = await this.wechatData.repayCreditCard({
+                    cardIndex,
+                    sourceId: selected.value,
+                    storyTime
+                });
+                if (!result.success) {
+                    if (result.reason === 'insufficient_balance') {
+                        errorEl.textContent = `该账户余额不足，当前 ¥${this._formatWalletNumber(result.balanceBefore)}，需还 ¥${this._formatWalletNumber(result.amount)}。`;
+                    } else if (result.reason === 'not_due' || result.reason === 'billing_cycle_changed') {
+                        errorEl.textContent = '账单状态已变化，请返回后重新查看。';
+                    } else {
+                        errorEl.textContent = '还款失败，请重新选择还款方式。';
+                    }
+                    return;
+                }
+
+                closeModal();
+                this.phoneShell.showNotification('还款成功', `已从${result.source.label}扣款 ¥${this._formatWalletNumber(result.amount)}`, '✓');
+                this.showWalletPage({ section: 'credit' });
+            } catch (error) {
+                console.error('信用卡还款失败:', error);
+                errorEl.textContent = error?.message || '还款失败，请稍后重试。';
+            } finally {
+                if (confirmButton.isConnected) confirmButton.disabled = false;
+            }
         });
     }
 
@@ -5962,9 +7094,7 @@ export class WechatApp {
             const label = isLoading ? '资产评估中' : (isInitialized ? '重新评估资产' : '初始资产评估');
             buttonEl.title = label;
             buttonEl.setAttribute('aria-label', label);
-            buttonEl.innerHTML = isLoading
-                ? '<i class="fa-solid fa-spinner fa-spin"></i>'
-                : (isInitialized ? '<i class="fa-solid fa-rotate"></i>' : '<i class="fa-solid fa-wand-magic-sparkles"></i>');
+            buttonEl.innerHTML = '<i class="fa-solid fa-gear"></i>';
             return;
         }
         buttonEl.innerHTML = isLoading
@@ -5972,7 +7102,7 @@ export class WechatApp {
             : (isInitialized ? '<i class="fa-solid fa-rotate"></i> 重新评估资产' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 初始资产评估');
     }
 
-    // AI 评估钱包金额
+    // AI 评估完整资产
     async evaluateWalletByAI() {
         if (this._isWalletEvaluating) {
             this.phoneShell.showNotification('资产评估中', '请稍候，正在生成评估结果...', '⏳');
@@ -5982,9 +7112,9 @@ export class WechatApp {
         const isWalletReset = this.wechatData.getWalletBalance() !== null;
         if (isWalletReset) {
             const confirmed = window.confirm(
-                '确定要重新评估微信零钱吗？\n\n' +
-                '评估成功后，当前余额会被新余额替换，全部零钱收支明细也会永久清空，且无法恢复。\n\n' +
-                '如果评估失败，现有余额和明细不会变更。'
+                '确定要重新评估全部资产吗？\n\n' +
+                '评估成功后，微信零钱、银行卡、信用卡与借贷数据都会被新结果替换，全部零钱收支明细也会永久清空，且无法恢复。\n\n' +
+                '如果评估失败，现有资产数据和明细不会变更。'
             );
             if (!confirmed) return;
         }
@@ -6042,7 +7172,9 @@ export class WechatApp {
         if (promptManager && !promptManager._loaded && typeof promptManager.ensureLoaded === 'function') {
             promptManager.ensureLoaded();
         }
-        const promptTemplate = promptManager?.getPromptForFeature('wechat', 'walletEval') || '';
+        const promptTemplate = typeof promptManager?.renderPromptForFeature === 'function'
+            ? promptManager.renderPromptForFeature('wechat', 'walletEval', { user: userName })
+            : String(promptManager?.getPromptForFeature('wechat', 'walletEval') || '').split('{{user}}').join(userName);
         if (!promptTemplate) {
             this.phoneShell.showNotification('错误', '找不到钱包评估提示词', '❌');
             this._isWalletEvaluating = false;
@@ -6058,7 +7190,7 @@ export class WechatApp {
         });
         messages.push({
             role: 'system',
-            content: '以上是参考背景，以下是 user 的信息。你是一个数据处理引擎，只负责根据背景和用户信息评估微信零钱余额，不要进行角色扮演。'
+            content: '以上是参考背景，以下是 user 的信息。你是一个数据处理引擎，只负责根据背景和用户信息评估微信零钱、储蓄账户、信用卡与其它负债，不要进行角色扮演。'
         });
         messages.push({
             role: 'system',
@@ -6075,26 +7207,28 @@ export class WechatApp {
 
             if (!result.success) throw new Error(result.error);
 
-            // 3. 解析JSON
-            const jsonMatch = result.summary.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) throw new Error('AI返回格式有误');
-            const data = JSON.parse(jsonMatch[0]);
-            
-            if (data.amount === undefined || data.reasoning === undefined) throw new Error('解析不到金额或原因');
-            const normalizedAmount = parseFloat(data.amount);
-            if (!Number.isFinite(normalizedAmount) || normalizedAmount < 0) throw new Error('AI返回的金额无效');
+            // 3. 只解析新版 <初始资产评估> 标签，不再兼容旧 JSON。
+            const rawResponse = String(result.summary ?? '');
+            let evaluation;
+            try {
+                evaluation = parseWalletAssetEvaluation(rawResponse);
+            } catch (parseError) {
+                console.error('钱包资产评估解析失败:', parseError, rawResponse);
+                this.showWalletParseFailureModal(rawResponse, parseError);
+                return;
+            }
 
-            // 4. 首次评估只初始化余额；重新评估则以新余额开始并清空旧流水
+            // 4. 首次评估写入完整资产；重新评估则整体替换并清空旧流水。
+            await this.wechatData.applyWalletAssetEvaluation(evaluation, {
+                resetTransactions: isWalletReset
+            });
             if (isWalletReset) {
-                await this.wechatData.resetWalletBalance(normalizedAmount);
                 this._walletLedgerMonth = '';
                 this._walletLedgerType = 'all';
-            } else {
-                this.wechatData.setWalletBalance(normalizedAmount);
             }
-            
+
             // 5. 渲染结果弹窗
-            this.showWalletResultModal(normalizedAmount, data.reasoning);
+            this.showWalletResultModal(evaluation);
             
         } catch (e) {
             console.error('钱包评估失败:', e);
@@ -6107,25 +7241,36 @@ export class WechatApp {
         }
     }
 
-    showWalletResultModal(amount, reasoning) {
+    showWalletResultModal(evaluation = {}) {
         // 清理遗留弹窗，避免旧图层中的同名ID干扰事件绑定
         document.querySelectorAll('#wallet-eval-modal').forEach(el => el.remove());
+
+        const totals = getWalletAssetTotals(evaluation);
+        const walletBalance = this._formatWalletNumber(evaluation.walletBalance);
+        const savingsCount = Array.isArray(evaluation.savingsAccounts) ? evaluation.savingsAccounts.length : 0;
+        const creditCount = Array.isArray(evaluation.creditCards) ? evaluation.creditCards.length : 0;
+        const safeReasoning = this._escapeWalletHtml(evaluation.reasoning || '评估已完成。').replace(/\n/g, '<br>');
 
         const modalHtml = `
         <div id="wallet-eval-modal" class="wallet-eval-modal" style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 14px; box-sizing: border-box; animation: fadeIn 0.3s;">
             <div class="wallet-eval-modal-panel" style="background: #fff; width: 100%; max-width: 320px; max-height: 100%; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3); animation: slideUp 0.3s; display: flex; flex-direction: column;">
-                <div style="background: linear-gradient(135deg, #07c160 0%, #06a752 100%); padding: 25px 20px 15px; text-align: center; color: #fff; flex-shrink: 0;">
-                    <i class="fa-solid fa-sack-dollar" style="font-size: 40px; margin-bottom: 10px; text-shadow: 0 2px 4px rgba(0,0,0,0.2);"></i>
-                    <div style="font-size: 14px; opacity: 0.9;">资产评估完成</div>
-                    <div style="font-size: 32px; font-weight: bold; margin-top: 5px;">¥ ${parseFloat(amount).toFixed(2)}</div>
+                <div style="background: #dfeeda; padding: 20px 16px 15px; text-align: center; color: #253026; flex-shrink: 0;">
+                    <i class="fa-solid fa-wallet" style="font-size: 34px; margin-bottom: 8px; color: #77906f;"></i>
+                    <div style="font-size: 13px; color: #637061;">资产评估完成</div>
+                    <div style="font-size: 29px; font-weight: bold; margin-top: 4px;">¥ ${walletBalance}</div>
                 </div>
-                <div class="wallet-eval-modal-body" style="padding: 20px; display: flex; flex-direction: column; gap: 10px; min-height: 0;">
-                    <div style="font-size: 12px; color: #999; margin-bottom: 8px;">AI 评估报告：</div>
-                    <div class="wallet-eval-reasoning" style="font-size: 13px; color: #333; line-height: 1.6; background: #f5f5f5; padding: 12px; border-radius: 8px; max-height: 180px; overflow-y: auto;">
-                        ${reasoning}
+                <div class="wallet-eval-modal-body" style="padding: 16px; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto;">
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px;">
+                        <div style="padding: 9px; border: 1px solid #e8ebe6; border-radius: 8px;"><div style="font-size: 9px; color: #8a9189;">储蓄账户</div><strong style="display: block; margin-top: 3px; font-size: 13px; color: #2b302b;">${savingsCount} 张 · ¥${this._formatWalletNumber(totals.savingsBalance)}</strong></div>
+                        <div style="padding: 9px; border: 1px solid #e8ebe6; border-radius: 8px;"><div style="font-size: 9px; color: #8a9189;">信用卡待还</div><strong style="display: block; margin-top: 3px; font-size: 13px; color: #2b302b;">${creditCount} 张 · ¥${this._formatWalletNumber(totals.creditDue)}</strong></div>
+                        <div style="grid-column: 1 / -1; padding: 9px; border: 1px solid #e8ebe6; border-radius: 8px;"><div style="font-size: 9px; color: #8a9189;">其它借贷待还</div><strong style="display: block; margin-top: 3px; font-size: 13px; color: #2b302b;">¥${this._formatWalletNumber(totals.loanDue)}</strong></div>
                     </div>
-                    <button id="close-wallet-modal" style="width: 100%; padding: 12px; background: #07c160; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; margin-top: 8px; cursor: pointer; flex-shrink: 0;">
-                        开心收下
+                    <div style="font-size: 11px; color: #858b84; margin-top: 2px;">AI 评估报告</div>
+                    <div class="wallet-eval-reasoning" style="font-size: 12px; color: #333; line-height: 1.6; background: #f5f6f4; padding: 11px; border-radius: 8px; max-height: 150px; overflow-y: auto;">
+                        ${safeReasoning}
+                    </div>
+                    <button id="close-wallet-modal" style="width: 100%; padding: 12px; background: #6e8c65; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; margin-top: 5px; cursor: pointer; flex-shrink: 0;">
+                        查看钱包
                     </button>
                 </div>
             </div>
@@ -6145,6 +7290,53 @@ export class WechatApp {
             modalEl.remove();
             this.showWalletPage(); // 刷新钱包页面显示最新余额
         };
+    }
+
+    showWalletParseFailureModal(rawResponse, error) {
+        document.querySelectorAll('#wallet-eval-parse-error-modal').forEach(el => el.remove());
+
+        const responseText = String(rawResponse ?? '');
+        const safeResponse = this._escapeWalletHtml(responseText || '[AI 返回为空]');
+        const safeError = this._escapeWalletHtml(error?.message || '返回内容不符合资产评估标签格式。');
+        const modalHtml = `
+        <div id="wallet-eval-parse-error-modal" class="wechat-wallet-parse-error-overlay">
+            <section class="wechat-wallet-parse-error-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-eval-parse-error-title" tabindex="-1">
+                <header class="wechat-wallet-parse-error-header">
+                    <div>
+                        <span>AI 回复诊断</span>
+                        <h3 id="wallet-eval-parse-error-title">资产评估解析失败</h3>
+                    </div>
+                    <button type="button" class="wechat-wallet-parse-error-close" data-wallet-parse-close aria-label="关闭" title="关闭">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </header>
+                <div class="wechat-wallet-parse-error-body">
+                    <p class="wechat-wallet-parse-error-note">${safeError} 以下是本次 AI 返回的完整原文，资产数据未发生变化。</p>
+                    <section class="wechat-wallet-parse-error-section">
+                        <strong>模型原始回复（完整）</strong>
+                        <pre class="wechat-wallet-parse-error-response">${safeResponse}</pre>
+                    </section>
+                </div>
+                <footer class="wechat-wallet-parse-error-footer">
+                    <button type="button" class="wechat-wallet-parse-error-confirm" data-wallet-parse-close>关闭</button>
+                </footer>
+            </section>
+        </div>`;
+
+        const currentView = document.querySelector('.phone-view-current') || document;
+        currentView.insertAdjacentHTML('beforeend', modalHtml);
+
+        const modalEl = currentView.querySelector('#wallet-eval-parse-error-modal');
+        if (!modalEl) return false;
+        const close = () => modalEl.remove();
+        modalEl.querySelectorAll('[data-wallet-parse-close]').forEach(button => {
+            button.addEventListener('click', close, { once: true });
+        });
+        modalEl.addEventListener('click', event => {
+            if (event.target === modalEl) close();
+        });
+        modalEl.querySelector('.wechat-wallet-parse-error-dialog')?.focus?.();
+        return true;
     }
 
     // 会话列表：长按松开后弹出“编辑/删除”操作

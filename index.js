@@ -26,7 +26,7 @@ import {
     getOfflineWechatPaymentLedgerCopy,
     parseOfflineWechatPayments,
     replaceOfflineWechatPaymentTagsWithReceipts
-} from './apps/wechat/offline-payment.js?v=1.6.0.1&r=20261009-payment-solid-item-markers';
+} from './apps/wechat/offline-payment.js?v=1.6.1&r=20261009-payment-solid-item-markers';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 import { StoryImageAutoScheduler } from './apps/album/story-image-auto-scheduler.js';
 import {
@@ -37,11 +37,11 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.0.1';
+const ST_PHONE_VERSION = '1.6.1';
 const ST_PHONE_CSS_REVISION = '20261009-payment-store-right-shift';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261006-story-image-outside-close';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261009-wallet-month-chevron-spacing';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261011-wallet-credit-repayment';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -149,9 +149,7 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-10-11',
     items: [
-        '【修复】修复 X 发布页在部分移动端重复绑定点击事件，导致一次发布生成多条重复帖子且每条都会触发 AI 围观的问题；发布操作现已增加防重复提交保护。',
-        '【修复】修复部分移动端键盘弹起时小手机未及时缩小、收起后尺寸不恢复的问题；新增视口状态复查并将尺寸更新限制在手机面板内，降低酒馆长楼层下的布局卡顿。',
-        '【修复】修复部分酒馆交互前端在收到新消息后失效的问题；手机协议标签清理现会保留前端 DOM、脚本状态与事件监听，不再因整层消息重绘导致按钮或交互被破坏。'
+        '【新增】微信零钱重构功能为钱包功能，涵盖微信零钱/银行卡/借贷功能。'
     ]
 };
 
@@ -261,6 +259,7 @@ if (window.GGP_Loaded) {
     const _pendingPromptCleanupFloors = new Map(); // key: `${chatId}:${floor}`, value: expireAt
     let _mofoBubbleSyncRevision = 0;
     let _mofoMessageFormatterBound = false;
+    let _mofoInlinePreviewBound = false;
     let _mofoInlineTokenSequence = 0;
     const _mofoInlineRenderCache = new Map();
 
@@ -2542,6 +2541,55 @@ if (window.GGP_Loaded) {
         return `yzp-mofo-inline-scope-${safeName}-${(hash >>> 0).toString(36)}`;
     }
 
+    function getMofoHostDocuments() {
+        const documents = new Set();
+        let probe = window;
+        while (probe) {
+            try {
+                if (probe.document) documents.add(probe.document);
+                if (!probe.parent || probe.parent === probe) break;
+                probe = probe.parent;
+            } catch (e) {
+                break;
+            }
+        }
+        return Array.from(documents);
+    }
+
+    function getMofoUserAvatarUrl() {
+        const selectors = [
+            '#user_avatar_block .avatar-container.selected img',
+            '#rm_button_panel_persona img'
+        ];
+        for (const doc of getMofoHostDocuments()) {
+            for (const selector of selectors) {
+                const image = doc.querySelector?.(selector);
+                const source = String(image?.currentSrc || image?.src || image?.getAttribute?.('src') || '').trim();
+                if (source) return source;
+            }
+            const userMessageAvatars = doc.querySelectorAll?.('.mes[is_user="true"] .mesAvatarWrapper .avatar img') || [];
+            for (let index = userMessageAvatars.length - 1; index >= 0; index -= 1) {
+                const image = userMessageAvatars[index];
+                const source = String(image?.currentSrc || image?.src || image?.getAttribute?.('src') || '').trim();
+                if (source) return source;
+            }
+        }
+        return '';
+    }
+
+    function getMofoRuntimeTemplateState(state = {}) {
+        const safeState = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
+        const userName = String(getContext?.()?.name1 || '').trim() || '用户';
+        const userAvatar = getMofoUserAvatarUrl();
+        return {
+            ...safeState,
+            用户姓名: userName,
+            用户头像: userAvatar,
+            userName,
+            userAvatar
+        };
+    }
+
     function createMofoInlineToken(renderedHtml = '') {
         _mofoInlineTokenSequence += 1;
         const token = `STPHONEMOFOINLINE${Date.now().toString(36).toUpperCase()}${_mofoInlineTokenSequence.toString(36).toUpperCase()}TOKEN`;
@@ -2552,6 +2600,42 @@ if (window.GGP_Loaded) {
             _mofoInlineRenderCache.delete(oldestKey);
         }
         return token;
+    }
+
+    function getMofoFormattingMessageIndex(formattingContext = {}, rawText = '') {
+        const directCandidates = [
+            formattingContext.messageIndex,
+            formattingContext.messageId,
+            formattingContext.mesId,
+            formattingContext.index,
+            formattingContext.message?.messageIndex,
+            formattingContext.message?.messageId,
+            formattingContext.message?.mesId
+        ];
+        for (const candidate of directCandidates) {
+            const parsed = Number(candidate);
+            if (Number.isInteger(parsed) && parsed >= 0) return parsed;
+        }
+
+        const source = String(rawText || '').trim();
+        if (!source) return null;
+        const context = getContext?.();
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        for (let index = chat.length - 1; index >= 0; index -= 1) {
+            const message = chat[index];
+            if (!message || message.is_user || message.is_system) continue;
+            if (getMofoMessageText(message).trim() === source) return index;
+        }
+        return null;
+    }
+
+    function getMofoInlineSnapshotState(mofoData, block, rawText, formattingContext = {}) {
+        if (String(block?.item?.processorMode || '').trim().toLowerCase() !== 'funds') return null;
+        const messageIndex = getMofoFormattingMessageIndex(formattingContext, rawText);
+        if (!Number.isInteger(messageIndex)) return null;
+        const history = getMofoBubbleHistory(mofoData, block.item.id);
+        const entry = history.find(candidate => candidate?.messageIndex === messageIndex);
+        return entry?.state && typeof entry.state === 'object' ? entry.state : null;
     }
 
     function prepareMofoInlineMessage(rawText, formattingContext = {}) {
@@ -2569,15 +2653,24 @@ if (window.GGP_Loaded) {
                 output = `${output.slice(0, block.index)}\n\n${output.slice(block.index + block.length)}`;
                 return;
             }
-            const rendered = mofoData.renderTagBlock(block);
+            const snapshotState = getMofoInlineSnapshotState(mofoData, block, source, formattingContext);
+            const rendered = mofoData.renderTagBlock(block, snapshotState ? { state: snapshotState } : {});
             if (!rendered?.html) return;
+            const renderedHtml = typeof mofoData.renderTemplate === 'function'
+                ? mofoData.renderTemplate(
+                    rendered.item?.htmlTemplate || '',
+                    getMofoRuntimeTemplateState(rendered.state)
+                )
+                : rendered.html;
             const scopeClass = getMofoInlineScopeClass(rendered.item);
             const scopedCss = scopeMofoCss(rendered.cssText || '', `.${scopeClass}`);
             const baseCss = `.${scopeClass}{display:block;width:100%;max-width:100%;margin:12px 0;isolation:isolate}`;
             const styleHtml = `<style>${baseCss}${scopedCss}</style>`;
             const itemId = escapeMofoHtml(String(rendered.item?.id || ''));
             const itemName = escapeMofoHtml(String(rendered.item?.name || ''));
-            const finalHtml = `${styleHtml}<div class="yzp-mofo-inline-render ${scopeClass}" data-mofo-id="${itemId}" data-mofo-name="${itemName}">${rendered.html}</div>`;
+            const bubbleEnabled = rendered.item?.bubbleRenderEnabled === true ? 'true' : 'false';
+            const interactionCss = bubbleEnabled === 'true' ? 'cursor:pointer;' : '';
+            const finalHtml = `${styleHtml}<div class="yzp-mofo-inline-render ${scopeClass}" data-mofo-id="${itemId}" data-mofo-name="${itemName}" data-mofo-bubble-enabled="${bubbleEnabled}" style="${interactionCss}">${renderedHtml}</div>`;
             const token = createMofoInlineToken(finalHtml);
             output = `${output.slice(0, block.index)}\n\n${token}\n\n${output.slice(block.index + block.length)}`;
         });
@@ -2597,6 +2690,57 @@ if (window.GGP_Loaded) {
         return html;
     }
 
+    function pruneDisabledMofoInlineRenders() {
+        const mofoData = window.VirtualPhone?.cachedMofoData;
+        if (!mofoData?.getItemById) return 0;
+
+        let removedCount = 0;
+        getMofoHostDocuments().forEach((doc) => {
+            doc.querySelectorAll?.('.yzp-mofo-inline-render[data-mofo-id]').forEach((card) => {
+                const itemId = String(card.getAttribute('data-mofo-id') || '').trim();
+                const item = itemId ? mofoData.getItemById(itemId) : null;
+                if (item?.inlineRenderEnabled === true) return;
+
+                const scopeClass = Array.from(card.classList || [])
+                    .find(className => className.startsWith('yzp-mofo-inline-scope-'));
+                const style = card.previousElementSibling;
+                if (
+                    style?.tagName === 'STYLE'
+                    && (!scopeClass || String(style.textContent || '').includes(`.${scopeClass}`))
+                ) {
+                    style.remove();
+                }
+                card.remove();
+                removedCount += 1;
+            });
+        });
+        return removedCount;
+    }
+
+    function registerMofoInlinePreviewClick() {
+        if (_mofoInlinePreviewBound) return;
+        _mofoInlinePreviewBound = true;
+        document.addEventListener('click', async (event) => {
+            const target = event?.target;
+            const inlineCard = target?.closest?.('.yzp-mofo-inline-render[data-mofo-id][data-mofo-bubble-enabled="true"]');
+            if (!inlineCard) return;
+            if (target.closest?.('a, button, input, textarea, select, [role="button"]')) return;
+            const mofoId = String(inlineCard.getAttribute('data-mofo-id') || '').trim();
+            if (!mofoId) return;
+
+            event.preventDefault?.();
+            await window.VirtualPhone?.showMofoUpdateBubble?.(mofoId);
+
+            let hostWindow = window;
+            try {
+                while (hostWindow.parent && hostWindow.parent !== hostWindow && hostWindow.parent.document?.body) {
+                    hostWindow = hostWindow.parent;
+                }
+            } catch (e) {}
+            hostWindow.document?.querySelector?.('#mofo-global-bubble-root .mofo-update-bubble')?.click?.();
+        });
+    }
+
     function registerMofoMessageFormatter() {
         if (_mofoMessageFormatterBound) return true;
         const formatter = getContext()?.messageFormatter;
@@ -2611,16 +2755,31 @@ if (window.GGP_Loaded) {
             order: formatter.order?.LATEST ?? 100
         });
         _mofoMessageFormatterBound = true;
+        registerMofoInlinePreviewClick();
         return true;
     }
 
     function refreshMofoInlineMessages() {
         const context = getContext();
         const chat = Array.isArray(context?.chat) ? context.chat : [];
+        _mofoInlineRenderCache.clear();
+        pruneDisabledMofoInlineRenders();
         if (typeof context?.updateMessageBlock !== 'function') return false;
+        const pending = [];
         chat.forEach((message, messageIndex) => {
-            context.updateMessageBlock(messageIndex, message);
+            try {
+                const result = context.updateMessageBlock(messageIndex, message);
+                if (result?.then) pending.push(result);
+            } catch (e) {
+                console.warn(`[Mofo] Failed to refresh inline message ${messageIndex}:`, e);
+            }
         });
+        if (pending.length > 0) {
+            Promise.allSettled(pending).then(() => pruneDisabledMofoInlineRenders());
+        }
+        if (typeof queueMicrotask === 'function') queueMicrotask(pruneDisabledMofoInlineRenders);
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(pruneDisabledMofoInlineRenders);
+        setTimeout(pruneDisabledMofoInlineRenders, 80);
         return true;
     }
 
@@ -2644,16 +2803,80 @@ if (window.GGP_Loaded) {
         return true;
     }
 
-    async function processMofoTags(rawText, { source = 'assistant', messageIndex = null } = {}) {
+    async function processMofoTags(rawText, { source = 'assistant', messageIndex = null, messageDateTime = null } = {}) {
         const safeText = String(rawText || '').trim();
         if (!safeText) return [];
 
         try {
             const mofoData = await getOrCreateMofoData();
             if (!mofoData || typeof mofoData.applyTagUpdatesFromText !== 'function') return [];
-            return mofoData.applyTagUpdatesFromText(safeText, { source, messageIndex });
+            const hasFundProcessor = Number.isInteger(messageIndex)
+                && source === 'assistant'
+                && typeof mofoData.rebuildProcessorSessionStateFromTextBlocks === 'function'
+                && (mofoData.getItems?.() || []).some(item => item?.processorMode === 'funds');
+            if (hasFundProcessor) {
+                const context = getContext?.();
+                const chat = Array.isArray(context?.chat) ? context.chat : [];
+                const textBlocks = [];
+                chat.forEach((message, index) => {
+                    if (!message || message.is_user || message.is_system) return;
+                    const text = getMofoMessageText(message);
+                    if (!text) return;
+                    textBlocks.push({
+                        messageIndex: index,
+                        text,
+                        messageDateTime: getMofoMessageDateTime(message)
+                    });
+                });
+                mofoData.rebuildProcessorSessionStateFromTextBlocks('funds', textBlocks, {
+                    source: 'assistant_floor_rebuild'
+                });
+            }
+            let resolvedDateTime = messageDateTime;
+            if (resolvedDateTime === null && Number.isInteger(messageIndex)) {
+                const context = getContext?.();
+                const message = Array.isArray(context?.chat) ? context.chat[messageIndex] : null;
+                resolvedDateTime = getMofoMessageDateTime(message || {});
+            }
+            return mofoData.applyTagUpdatesFromText(safeText, {
+                source,
+                messageIndex,
+                messageDateTime: resolvedDateTime
+            });
         } catch (e) {
             console.warn('⚠️ [魔坊] 标签解析失败:', e);
+            return [];
+        }
+    }
+
+    async function checkWalletCreditRepayments(currentTime = null) {
+        try {
+            if (!storage) return [];
+            const tm = timeManager || window.VirtualPhone?.timeManager || await loadTimeManager();
+            const latestTime = currentTime || tm?.getCurrentStoryTime?.();
+            if (!latestTime?.date) return [];
+
+            const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
+            if (!window.VirtualPhone) window.VirtualPhone = {};
+            const existingWechatData = window.VirtualPhone.wechatApp?.wechatData
+                || window.VirtualPhone.cachedWechatData
+                || null;
+            if (!window.VirtualPhone.cachedWechatData) {
+                window.VirtualPhone.cachedWechatData = existingWechatData || new module.WechatData(storage);
+            }
+            if (window.VirtualPhone.wechatApp
+                && window.VirtualPhone.wechatApp.wechatData !== window.VirtualPhone.cachedWechatData) {
+                window.VirtualPhone.wechatApp.wechatData = window.VirtualPhone.cachedWechatData;
+            }
+
+            const results = await window.VirtualPhone.cachedWechatData
+                .checkCreditCardAutoRepayments?.(latestTime) || [];
+            if (results.some(result => result.success) && document.querySelector('.wechat-wallet-ledger-page')) {
+                window.VirtualPhone.wechatApp?.showWalletPage?.({ section: 'credit' });
+            }
+            return results;
+        } catch (error) {
+            console.warn('[Wechat][Wallet] 信用卡自动还款检测失败:', error);
             return [];
         }
     }
@@ -2667,6 +2890,19 @@ if (window.GGP_Loaded) {
         return String(message.mes || message.content || '');
     }
 
+    function getMofoMessageDateTime(message = {}) {
+        const value = message.send_date
+            ?? message.sendDate
+            ?? message.createdAt
+            ?? message.timestamp
+            ?? message.gen_started
+            ?? null;
+        if (value === null || typeof value === 'undefined') return null;
+        if (value instanceof Date) return value;
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        return String(value || '').trim() || null;
+    }
+
     function getMofoBubbleHistory(mofoData, mofoId) {
         if (!mofoData || typeof mofoData.buildItemHistoryFromTextBlocks !== 'function') return [];
         const context = getContext?.();
@@ -2676,7 +2912,11 @@ if (window.GGP_Loaded) {
             if (!message || message.is_user || message.is_system) return;
             const text = getMofoMessageText(message);
             if (!text) return;
-            textBlocks.push({ messageIndex, text });
+            textBlocks.push({
+                messageIndex,
+                text,
+                messageDateTime: getMofoMessageDateTime(message)
+            });
         });
         return mofoData.buildItemHistoryFromTextBlocks(mofoId, textBlocks);
     }
@@ -2733,7 +2973,7 @@ if (window.GGP_Loaded) {
         }
         matches = matches.filter((update) => {
             const item = mofoData.getItemById?.(update?.id);
-            return item?.inlineRenderEnabled === false;
+            return item?.bubbleRenderEnabled === true;
         });
 
         if (revision !== _mofoBubbleSyncRevision || !isCurrentMofoBubbleSnapshot(snapshot)) {
@@ -2816,14 +3056,22 @@ if (window.GGP_Loaded) {
             }
 
             const textBlocks = [];
-            chat.forEach((message) => {
+            chat.forEach((message, messageIndex) => {
                 if (!message || message.is_user) return;
                 const swipeIndex = Number.isInteger(message.swipe_id) ? message.swipe_id : null;
                 if (swipeIndex !== null && Array.isArray(message.swipes) && typeof message.swipes[swipeIndex] !== 'undefined') {
-                    textBlocks.push(String(message.swipes[swipeIndex] || ''));
+                    textBlocks.push({
+                        messageIndex,
+                        text: String(message.swipes[swipeIndex] || ''),
+                        messageDateTime: getMofoMessageDateTime(message)
+                    });
                     return;
                 }
-                textBlocks.push(String(message.mes || message.content || ''));
+                textBlocks.push({
+                    messageIndex,
+                    text: String(message.mes || message.content || ''),
+                    messageDateTime: getMofoMessageDateTime(message)
+                });
             });
             return mofoData.rebuildSessionStateFromTextBlocks(textBlocks, { source: 'current_chat_rebuild' });
         } catch (e) {
@@ -2842,7 +3090,7 @@ if (window.GGP_Loaded) {
             const mofoData = await getOrCreateMofoData();
             const item = mofoData?.getItemById?.(mofoId);
             if (!item || !isCurrent()) return;
-            if (item.inlineRenderEnabled !== false) {
+            if (item.bubbleRenderEnabled !== true) {
                 window.VirtualPhone?.hideMofoUpdateBubble?.();
                 return;
             }
@@ -3499,7 +3747,8 @@ if (window.GGP_Loaded) {
                     return;
                 }
                 const previewItem = mofoData?.getItemById?.(mofoId) || item;
-                const history = getMofoBubbleHistory(mofoData, mofoId);
+                const bubbleHistoryEnabled = previewItem.bubbleHistoryEnabled !== false;
+                const history = bubbleHistoryEnabled ? getMofoBubbleHistory(mofoData, mofoId) : [];
                 if (history.length === 0) {
                     history.push({
                         messageIndex: Number.isInteger(previewItem.lastMessageIndex) ? previewItem.lastMessageIndex : null,
@@ -3509,11 +3758,19 @@ if (window.GGP_Loaded) {
                 }
                 let activeHistoryIndex = history.length - 1;
 
-                const htmlTemplate = String(previewItem.htmlTemplate ?? previewItem.templateHtml ?? previewItem['html模板'] ?? '').trim();
+                const htmlTemplate = String(
+                    previewItem.bubbleHtmlTemplate
+                    || previewItem.htmlTemplate
+                    || previewItem.templateHtml
+                    || previewItem['html模板']
+                    || ''
+                ).trim();
                 const renderPreviewState = (state = {}) => {
                     let innerHtml = '';
                     if (htmlTemplate && typeof mofoData.renderTemplate === 'function') {
-                        innerHtml = sanitizePreviewHtml(mofoData.renderTemplate(htmlTemplate, state));
+                        innerHtml = sanitizePreviewHtml(
+                            mofoData.renderTemplate(htmlTemplate, getMofoRuntimeTemplateState(state))
+                        );
                     }
                     if (innerHtml.trim()) return innerHtml;
 
@@ -3590,7 +3847,7 @@ if (window.GGP_Loaded) {
                     historyContent.scrollLeft = 0;
                     previousButton.disabled = activeHistoryIndex <= 0;
                     nextButton.disabled = activeHistoryIndex >= history.length - 1;
-                    historyNav.hidden = history.length <= 1;
+                    historyNav.hidden = !bubbleHistoryEnabled || history.length <= 1;
                     historyCount.textContent = Number.isInteger(entry?.messageIndex)
                         ? `第${entry.messageIndex}楼`
                         : `第${activeHistoryIndex + 1}楼`;
@@ -4530,8 +4787,8 @@ if (window.GGP_Loaded) {
                         const rawTemplate = String(template ?? '').trim();
                         if (!rawTemplate) return { ok: false, html: '' };
                         const safeState = (stateObj && typeof stateObj === 'object' && !Array.isArray(stateObj))
-                            ? stateObj
-                            : {};
+                            ? getMofoRuntimeTemplateState(stateObj)
+                            : getMofoRuntimeTemplateState({});
                         const rendered = (typeof mofoData?.renderTemplate === 'function')
                             ? mofoData.renderTemplate(rawTemplate, safeState)
                             : rawTemplate;
@@ -4771,7 +5028,7 @@ if (window.GGP_Loaded) {
                                 </label>
                                 <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:#35527f; background:#f6f9ff; border:1px solid #dbe5f7; border-radius:8px; padding:8px 10px;">
                                     <input type="checkbox" id="mofo-editor-inline-enabled" ${oldInlineRenderEnabled ? 'checked' : ''} style="accent-color:#4f7fd5;">
-                                    <span>在酒馆正文中显示（勾选后不显示悬浮气泡）</span>
+                                    <span>在酒馆正文中显示</span>
                                 </label>
                                 <div style="display:flex; gap:6px; padding-top:2px;">
                                     <button type="button" id="mofo-editor-cancel-btn" style="flex:1; border:1px solid rgba(116, 139, 184, 0.55); border-radius:8px; background:rgba(255,255,255,0.34); color:#264672; font-size:11px; padding:7px 8px; cursor:pointer; font-weight:700;">返回</button>
@@ -5140,6 +5397,7 @@ if (window.GGP_Loaded) {
                         const promptInput = menu.querySelector('#mofo-editor-prompt');
                         const inlineEnabledInput = menu.querySelector('#mofo-editor-inline-enabled');
                         const beautifyTemplate = splitMofoBeautifyTemplate(beautifyInput?.value || '');
+                        const inlineRenderEnabled = !!inlineEnabledInput?.checked;
 
                         return {
                             name: String(nameInput?.value || '').trim(),
@@ -5148,7 +5406,8 @@ if (window.GGP_Loaded) {
                             htmlTemplate: beautifyTemplate.htmlTemplate,
                             initialStateRaw: String(initialInput?.value || ''),
                             promptTemplate: String(promptInput?.value || ''),
-                            inlineRenderEnabled: !!inlineEnabledInput?.checked
+                            inlineRenderEnabled,
+                            bubbleRenderEnabled: !inlineRenderEnabled
                         };
                     };
                     const getCanonicalJson = (value) => {
@@ -8024,7 +8283,7 @@ if (window.GGP_Loaded) {
         const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment').then(module => {
             let wechatData;
 
             if (getCurrentTavernConversationIdentity() !== conversationId) {
@@ -8897,7 +9156,7 @@ if (window.GGP_Loaded) {
             const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment').then(async module => {
                 let wechatData;
                 if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                     console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
@@ -9174,7 +9433,7 @@ if (window.GGP_Loaded) {
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
-            const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             const context = getContext();
@@ -9221,7 +9480,7 @@ if (window.GGP_Loaded) {
         if (payments.length === 0) return [];
 
         const sourceConversationId = getCurrentTavernConversationIdentity();
-        const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
         if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
             console.warn('⚠️ [线上支付] 扣款前会话已切换，丢弃旧会话回调');
             return [];
@@ -10470,6 +10729,7 @@ if (window.GGP_Loaded) {
                 cachedMofoData: null,
                 notify: showUnifiedPhoneNotification,
                 checkCalendarScheduleReminders: checkCalendarScheduleReminders,
+                checkWalletCreditRepayments: checkWalletCreditRepayments,
                 playWechatMessageSound: playWechatMessageSound,
                 markWechatOnlineToOfflineTransferPending: markWechatOnlineToOfflineTransferPending,
                 showCurrentUpdateInfo: async () => showPhoneUpdateModal('local', await fetchLocalUpdateNotes(ST_PHONE_VERSION), {
@@ -10518,6 +10778,17 @@ if (window.GGP_Loaded) {
                 }
             });
             window.addEventListener('phone:floatingEntrySettingsChanged', hidePhoneTags);
+            if (!window.__stPhoneWalletRepaymentTimeBound) {
+                window.__stPhoneWalletRepaymentTimeBound = true;
+                window.addEventListener('phone:timeUpdated', () => {
+                    Promise.resolve().then(() => {
+                        const latestTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.();
+                        return checkWalletCreditRepayments(latestTime);
+                    }).catch(error => {
+                        console.warn('[Wechat][Wallet] 时间更新后的自动还款检测失败:', error);
+                    });
+                });
+            }
 
             // 🔥 关键修复：启动时就预热 TimeManager / PromptManager，
             // 避免“未切会话、未打开手机面板”时线下注入因懒加载对象仍为 null 而失效。
@@ -11128,7 +11399,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -11358,7 +11629,7 @@ if (window.GGP_Loaded) {
                                     || window.VirtualPhone.cachedWechatData
                                     || null;
                                 if (!wechatDataInstance && storage) {
-                                    const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
+                                    const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
                                     if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                                         console.warn('⚠️ 微信删楼回滚期间会话已切换，丢弃旧会话回调');
                                         return;
@@ -11662,7 +11933,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js?v=20261002-x-forward-card');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;

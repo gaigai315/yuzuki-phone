@@ -131,7 +131,12 @@ test('Mofo editor uses the list enable toggle without a duplicate prompt checkbo
     assert.match(source, /class="mofo-editor-default-data"[\s\S]*?默认数据（可选）[\s\S]*?id="mofo-editor-initial"/);
     assert.match(source, /class="mofo-editor-default-data" \$\{oldInitial \? 'open' : ''\}/);
     assert.match(source, /const oldInlineRenderEnabled = current\?\.inlineRenderEnabled === true;/);
-    assert.match(source, /在酒馆正文中显示（勾选后不显示悬浮气泡）/);
+    assert.match(source, /在酒馆正文中显示/);
+    assert.doesNotMatch(source, /id="mofo-editor-bubble-enabled"/);
+    assert.doesNotMatch(source, /收到更新时显示悬浮气泡/);
+    assert.doesNotMatch(source, /oldBubbleRenderEnabled|bubbleEnabledInput/);
+    assert.match(source, /const inlineRenderEnabled = !!inlineEnabledInput\?\.checked;/);
+    assert.match(source, /inlineRenderEnabled,\s*bubbleRenderEnabled: !inlineRenderEnabled/);
     assert.doesNotMatch(source, /id="mofo-editor-offline-enabled"/);
     assert.doesNotMatch(source, /offlineEnabledInput/);
 });
@@ -158,11 +163,53 @@ test('Mofo preview click keeps the floating bubble and refreshes preview data', 
     assert.match(clickSource, /getItemById\?\.\(mofoId\)/);
     assert.doesNotMatch(clickSource, /hideBubble|burstBubble|bubble\.remove\(\)/);
     assert.match(source, /findTagMatchesFromText\(snapshot\.text, \{ bubbleOnly: true \}\)/);
-    assert.match(source, /item\?\.inlineRenderEnabled === false/);
+    assert.match(source, /item\?\.bubbleRenderEnabled === true/);
     assert.match(source, /const blocks = mofoData\.findTagBlocksFromText\(source\);/);
     assert.match(source, /block\?\.item\?\.inlineRenderEnabled !== true[\s\S]*?output = `\$\{output\.slice\(0, block\.index\)\}\\n\\n\$\{output\.slice\(block\.index \+ block\.length\)\}`/);
     assert.match(source, /syncMofoBubbleFromLatestMessage/);
     assert.match(source, /rebuildMofoStateAndSyncBubble/);
+    assert.match(source, /if \(item\.bubbleRenderEnabled !== true\) \{[\s\S]*?hideMofoUpdateBubble/);
+    assert.doesNotMatch(source, /if \(item\.inlineRenderEnabled !== false\) \{[\s\S]*?hideMofoUpdateBubble/);
+});
+
+test('Mofo refresh prunes stale inline cards after the inline toggle is disabled', () => {
+    const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+
+    assert.match(source, /function pruneDisabledMofoInlineRenders\(\)/);
+    assert.match(source, /\.yzp-mofo-inline-render\[data-mofo-id\]/);
+    assert.match(source, /item\?\.inlineRenderEnabled === true/);
+    assert.match(source, /_mofoInlineRenderCache\.clear\(\);[\s\S]*?pruneDisabledMofoInlineRenders\(\);/);
+    assert.match(source, /Promise\.allSettled\(pending\)\.then\(\(\) => pruneDisabledMofoInlineRenders\(\)\)/);
+});
+
+test('Mofo templates receive the current SillyTavern Persona avatar at render time', () => {
+    const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+
+    assert.match(source, /function getMofoUserAvatarUrl\(\)/);
+    assert.match(source, /#user_avatar_block \.avatar-container\.selected img/);
+    assert.match(source, /#rm_button_panel_persona img/);
+    assert.match(source, /\.mes\[is_user="true"\] \.mesAvatarWrapper \.avatar img/);
+    assert.match(source, /function getMofoRuntimeTemplateState\(state = \{\}\)/);
+    assert.match(source, /用户头像: userAvatar/);
+    assert.match(source, /用户姓名: userName/);
+    assert.match(source, /renderTemplate\([\s\S]*?getMofoRuntimeTemplateState\(rendered\.state\)/);
+    assert.match(source, /renderTemplate\(htmlTemplate, getMofoRuntimeTemplateState\(state\)\)/);
+});
+
+test('Mofo supports simultaneous inline snapshots and a current-state bubble template', () => {
+    const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+    const dataSource = fs.readFileSync(new URL('../apps/mofo/mofo-data.js', import.meta.url), 'utf8');
+
+    assert.match(source, /getMofoInlineSnapshotState\(mofoData, block, source, formattingContext\)/);
+    assert.match(source, /renderTagBlock\(block, snapshotState \? \{ state: snapshotState \} : \{\}\)/);
+    assert.match(source, /data-mofo-bubble-enabled="\$\{bubbleEnabled\}"/);
+    assert.match(source, /registerMofoInlinePreviewClick\(\)/);
+    assert.match(source, /showMofoUpdateBubble\?\.\(mofoId\)/);
+    assert.match(source, /previewItem\.bubbleHtmlTemplate[\s\S]*?\|\| previewItem\.htmlTemplate/);
+    assert.match(source, /const bubbleHistoryEnabled = previewItem\.bubbleHistoryEnabled !== false;/);
+    assert.match(source, /historyNav\.hidden = !bubbleHistoryEnabled \|\| history\.length <= 1;/);
+    assert.match(dataSource, /if \(bubbleOnly && item\.bubbleRenderEnabled !== true\) return \[\];/);
+    assert.match(dataSource, /processorMode[\s\S]*?bubbleRenderEnabled[\s\S]*?bubbleHistoryEnabled/);
 });
 
 test('Mofo bubble preview pages through tagged floors and reopens on the latest one', () => {
@@ -175,7 +222,7 @@ test('Mofo bubble preview pages through tagged floors and reopens on the latest 
     assert.match(source, /class="mofo-history-button mofo-history-next"[\s\S]*?下一楼/);
     assert.match(source, /activeHistoryIndex -= 1;[\s\S]*?renderActiveHistory\(\)/);
     assert.match(source, /activeHistoryIndex \+= 1;[\s\S]*?renderActiveHistory\(\)/);
-    assert.match(source, /historyNav\.hidden = history\.length <= 1;/);
+    assert.match(source, /historyNav\.hidden = !bubbleHistoryEnabled \|\| history\.length <= 1;/);
     assert.match(source, /historyContent\.innerHTML = renderPreviewState\(entry\?\.state \|\| \{\}\)/);
     assert.match(source, /pop\.appendChild\(historyContent\);\s*pop\.appendChild\(historyNav\);/);
     assert.match(source, /historyCount\.textContent = Number\.isInteger\(entry\?\.messageIndex\)[\s\S]*?`第\$\{entry\.messageIndex\}楼`/);

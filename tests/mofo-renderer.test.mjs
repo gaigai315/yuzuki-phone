@@ -217,7 +217,9 @@ test('display mode defaults to bubble and survives template export and import', 
     });
 
     assert.equal(bubbleItem.inlineRenderEnabled, false);
+    assert.equal(bubbleItem.bubbleRenderEnabled, true);
     assert.equal(inlineItem.inlineRenderEnabled, true);
+    assert.equal(inlineItem.bubbleRenderEnabled, false);
     assert.deepEqual(
         source.findTagMatchesFromText(
             '<气泡模板>气泡内容</气泡模板><正文模板>正文内容</正文模板>',
@@ -228,11 +230,208 @@ test('display mode defaults to bubble and survives template export and import', 
 
     const payload = source.buildExportPayload(['bubble-template', 'inline-template']);
     assert.deepEqual(payload.items.map(item => item.inlineRenderEnabled), [false, true]);
+    assert.deepEqual(payload.items.map(item => item.bubbleRenderEnabled), [true, false]);
 
     const restored = new MofoData(createStorage());
     restored.importItemsFromPayload(payload);
     assert.equal(restored.getItemById('bubble-template').inlineRenderEnabled, false);
     assert.equal(restored.getItemById('inline-template').inlineRenderEnabled, true);
+});
+
+test('inline and bubble rendering are mutually exclusive even for legacy dual-mode data', () => {
+    const combinations = [
+        { id: 'bubble-only', inlineRenderEnabled: false, bubbleRenderEnabled: true },
+        { id: 'both', inlineRenderEnabled: true, bubbleRenderEnabled: true },
+        { id: 'inline-only', inlineRenderEnabled: true, bubbleRenderEnabled: false },
+        { id: 'hidden', inlineRenderEnabled: false, bubbleRenderEnabled: false }
+    ];
+    const data = new MofoData(createStorage(combinations.map((item) => ({
+        ...item,
+        name: item.id,
+        tagName: item.id,
+        htmlTemplate: '<div>{{value}}</div>',
+        initialState: { value: item.id }
+    }))));
+
+    combinations.forEach((expected) => {
+        const item = data.getItemById(expected.id);
+        assert.equal(item.inlineRenderEnabled, expected.inlineRenderEnabled);
+        assert.equal(item.bubbleRenderEnabled, !expected.inlineRenderEnabled);
+        const source = `<${expected.id}>value：updated</${expected.id}>`;
+        const block = data.findTagBlocksFromText(source)[0];
+        assert.equal(!!data.renderTagBlock(block), expected.inlineRenderEnabled);
+        assert.equal(
+            data.findTagMatchesFromText(source, { bubbleOnly: true }).length > 0,
+            !expected.inlineRenderEnabled
+        );
+    });
+});
+
+test('fund processor accumulates signed transactions with stable floor ids and exact cents', () => {
+    const data = new MofoData(createStorage([{
+        id: 'funds',
+        name: '资金管理系统',
+        tagName: '资金管理系统',
+        processorMode: 'funds',
+        parserMode: 'auto',
+        updateMode: 'append',
+        inlineRenderEnabled: true,
+        bubbleRenderEnabled: true,
+        bubbleHistoryEnabled: false,
+        initialState: {
+            角色姓名: '陆沉',
+            货币名称: '魔晶',
+            初始资金: 1000,
+            收支记录: []
+        }
+    }]));
+
+    data.applyTagUpdatesFromText(`<资金管理系统>
+日期：2077-10-26
+时间：18:03
+本次收支：+500.10
+收支事由：出售附魔匕首
+</资金管理系统>`, { messageIndex: 4 });
+
+    let state = data.getItemById('funds').state;
+    assert.equal(state.当前资金, 1500.1);
+    assert.equal(state.当前资金显示, '1,500.10');
+    assert.equal(state.累计收入, 500.1);
+    assert.equal(state.累计支出, 0);
+    assert.equal(state.收支记录.length, 1);
+    assert.equal(state.收支记录[0].id, 'fund_4_0');
+    assert.equal(state.收支记录[0].收入显示, '+500.10');
+    assert.equal(state.收支记录[0].支出显示, '--');
+
+    data.applyTagUpdatesFromText(`<资金管理系统>
+日期：2077-10-26
+时间：18:03
+本次收支：+450.05
+收支事由：重新生成后的出售收益
+</资金管理系统>`, { messageIndex: 4 });
+
+    state = data.getItemById('funds').state;
+    assert.equal(state.当前资金, 1450.05);
+    assert.equal(state.收支记录.length, 1);
+    assert.equal(state.收支记录[0].事由, '重新生成后的出售收益');
+
+    data.applyTagUpdatesFromText(`<资金管理系统>
+日期：2077-10-27
+时间：09:15
+本次收支：-120.15
+收支事由：委托手续费
+</资金管理系统>`, { messageIndex: 6 });
+
+    state = data.getItemById('funds').state;
+    assert.equal(state.当前资金, 1329.9);
+    assert.equal(state.累计收入, 450.05);
+    assert.equal(state.累计支出, 120.15);
+    assert.equal(state.日期分组.length, 2);
+    assert.equal(state.日期分组[0].日期, '2077-10-27');
+    assert.equal(state.日期分组[1].日期, '2077-10-26');
+    assert.equal(state.日期分组[0].记录[0].结余, 1329.9);
+    assert.equal(state.日期分组[0].记录[0].收入显示, '--');
+    assert.equal(state.日期分组[0].记录[0].支出显示, '-120.15');
+});
+
+test('fund history keeps per-floor balance snapshots and rebuild removes deleted future records', () => {
+    const data = new MofoData(createStorage([{
+        id: 'funds',
+        name: '资金管理系统',
+        tagName: '资金管理系统',
+        processorMode: 'funds',
+        updateMode: 'append',
+        inlineRenderEnabled: true,
+        bubbleRenderEnabled: true,
+        bubbleHistoryEnabled: false,
+        initialState: { 货币名称: '黑币', 初始资金: 1000, 收支记录: [] }
+    }]));
+    const first = '<资金管理系统>日期：2077-10-26\n时间：10:00\n本次收支：+500\n收支事由：收款</资金管理系统>';
+    const second = '<资金管理系统>日期：2077-10-27\n时间：11:00\n本次收支：-120\n收支事由：手续费</资金管理系统>';
+
+    const history = data.buildItemHistoryFromTextBlocks('funds', [
+        { messageIndex: 2, text: first },
+        { messageIndex: 5, text: second }
+    ]);
+    assert.deepEqual(history.map(entry => entry.state.当前资金), [1500, 1380]);
+    assert.deepEqual(history.map(entry => entry.state.流水数量), [1, 2]);
+
+    data.rebuildSessionStateFromTextBlocks([
+        { messageIndex: 2, text: first }
+    ]);
+    const rebuilt = data.getItemById('funds').state;
+    assert.equal(rebuilt.当前资金, 1500);
+    assert.equal(rebuilt.流水数量, 1);
+    assert.equal(rebuilt.收支记录[0].id, 'fund_2_0');
+});
+
+test('fund processor replaces every transaction from a regenerated floor', () => {
+    const data = new MofoData(createStorage([{
+        id: 'funds',
+        name: '资金管理系统',
+        tagName: '资金管理系统',
+        processorMode: 'funds',
+        initialState: { 初始资金: 100, 收支记录: [] }
+    }]));
+    data.applyTagUpdatesFromText(
+        '<资金管理系统>本次收支：+10\n收支事由：第一笔</资金管理系统>'
+        + '<资金管理系统>本次收支：+20\n收支事由：第二笔</资金管理系统>',
+        { messageIndex: 8, messageDateTime: '2077-10-26 10:00' }
+    );
+    assert.deepEqual(data.getItemById('funds').state.收支记录.map(item => item.id), ['fund_8_0', 'fund_8_1']);
+
+    data.applyTagUpdatesFromText(
+        '<资金管理系统>本次收支：-5\n收支事由：重新生成后仅一笔</资金管理系统>',
+        { messageIndex: 8, messageDateTime: '2077-10-26 10:01' }
+    );
+    const state = data.getItemById('funds').state;
+    assert.equal(state.流水数量, 1);
+    assert.equal(state.当前资金, 95);
+    assert.equal(state.收支记录[0].id, 'fund_8_0');
+    assert.equal(state.收支记录[0].事由, '重新生成后仅一笔');
+});
+
+test('fund-only rebuild clears a transaction when regeneration removes the tag', () => {
+    const data = new MofoData(createStorage([{
+        id: 'funds',
+        name: '资金管理系统',
+        tagName: '资金管理系统',
+        processorMode: 'funds',
+        initialState: { 初始资金: 100, 收支记录: [] }
+    }]));
+    const tagged = '<资金管理系统>本次收支：+25\n收支事由：临时收入</资金管理系统>';
+    data.rebuildProcessorSessionStateFromTextBlocks('funds', [
+        { messageIndex: 3, text: tagged, messageDateTime: '2077-10-26 10:00' }
+    ]);
+    assert.equal(data.getItemById('funds').state.当前资金, 125);
+
+    data.rebuildProcessorSessionStateFromTextBlocks('funds', [
+        { messageIndex: 3, text: '重新生成后的正文不再包含资金标签。' }
+    ]);
+    const state = data.getItemById('funds').state;
+    assert.equal(state.当前资金, 100);
+    assert.equal(state.流水数量, 0);
+});
+
+test('fund import template defaults to forum-style bubble mode and keeps an optional inline view', () => {
+    const payload = JSON.parse(fs.readFileSync(new URL('../资金管理系统-魔坊模板.json', import.meta.url), 'utf8'));
+    const template = payload.items[0];
+
+    assert.equal(template.processorMode, 'funds');
+    assert.equal(template.inlineRenderEnabled, false);
+    assert.equal(template.bubbleRenderEnabled, true);
+    assert.equal(template.bubbleHistoryEnabled, false);
+    assert.match(template.htmlTemplate, /CURRENT BALANCE \/ 当前资金/);
+    assert.match(template.bubbleHtmlTemplate, /CHARACTER FINANCE PROFILE/);
+    assert.match(template.bubbleHtmlTemplate, /TRANSACTION RECORDS/);
+    assert.match(template.bubbleHtmlTemplate, /fund-mofo-table-header/);
+    assert.match(template.bubbleHtmlTemplate, /\{\{#if 用户头像\}\}<img src="\{\{用户头像\}\}"/);
+    assert.match(template.bubbleHtmlTemplate, /\{\{收入显示\}\}/);
+    assert.match(template.bubbleHtmlTemplate, /\{\{支出显示\}\}/);
+    assert.match(template.bubbleHtmlTemplate, /\{\{#each 日期分组\}\}/);
+    assert.match(template.promptTemplate, /禁止自行计算或输出当前资金/);
+    assert.doesNotMatch(template.promptTemplate, /角色头像/);
+    assert.equal(Object.prototype.hasOwnProperty.call(template.initialState, '角色头像'), false);
 });
 
 test('forum import template hides duplicate comment totals and visible floor labels', () => {
@@ -245,7 +444,20 @@ test('forum import template hides duplicate comment totals and visible floor lab
 });
 
 test('CSS scoping keeps media rules and confines selectors to one render surface', () => {
-    const css = scopeMofoCss('.forum-card{color:red}@media(max-width:430px){.forum-card,.forum-title{font-size:14px}}', '.scope-one');
+    const css = scopeMofoCss('.forum-card{color:red}\n@media(max-width:430px){.forum-card,.forum-title{font-size:14px}}', '.scope-one');
     assert.match(css, /\.scope-one \.forum-card\{color:red\}/);
     assert.match(css, /@media\(max-width:430px\)\{\.scope-one \.forum-card, \.scope-one \.forum-title\{font-size:14px\}\}/);
+    assert.doesNotMatch(css, /\.scope-one\s+@media/);
+});
+
+test('fund import template remains valid after inline CSS scoping', () => {
+    const payload = JSON.parse(fs.readFileSync(new URL('../资金管理系统-魔坊模板.json', import.meta.url), 'utf8'));
+    const template = payload.items[0];
+    const css = scopeMofoCss(template.cssText, '.fund-inline-scope');
+
+    assert.match(css, /@media\(max-width:760px\)\{\.fund-inline-scope \.fund-mofo-ledger/);
+    assert.match(css, /@media\(max-width:480px\)\{\.fund-inline-scope \.fund-mofo-ledger/);
+    assert.match(css, /@media\(max-width:340px\)\{\.fund-inline-scope \.fund-mofo-profile/);
+    assert.doesNotMatch(css, /\.fund-inline-scope\s+@(?:media|supports|container|keyframes)/);
+    assert.equal((css.match(/\{/g) || []).length, (css.match(/\}/g) || []).length);
 });

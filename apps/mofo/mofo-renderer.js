@@ -455,7 +455,7 @@ export function sanitizeMofoCss(cssText = '') {
 export function scopeMofoCss(cssText = '', scopeSelector = '.yzp-mofo-render-scope') {
     const source = sanitizeMofoCss(cssText);
     if (!source.trim()) return '';
-    return source.replace(/(^|[{}])(\s*[^@{}][^{}]*?)\{/g, (match, boundary, selectorGroup) => {
+    return source.replace(/(^|[{}])((?!\s*@)\s*[^{}]+?)\{/g, (match, boundary, selectorGroup) => {
         const scoped = String(selectorGroup || '')
             .split(',')
             .map((part) => {

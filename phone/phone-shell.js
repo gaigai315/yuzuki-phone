@@ -263,6 +263,8 @@ export class PhoneShell {
                 '.honey-settings-content', '.honey-prompt-editor', '#honey-prompt-editor',
                 '.honey-ai-error-body', '.honey-ai-error-response',
                 '#wallet-eval-modal', '.wallet-eval-modal-panel', '.wallet-eval-modal-body', '.wallet-eval-reasoning',
+                '.wechat-wallet-parse-error-overlay', '.wechat-wallet-parse-error-dialog', '.wechat-wallet-parse-error-body', '.wechat-wallet-parse-error-response',
+                '.wechat-wallet-repayment-overlay', '.wechat-wallet-repayment-dialog', '.wechat-wallet-repayment-body', '.wechat-wallet-repayment-sources',
                 '.weibo-app', '.weibo-tab-content', '.weibo-detail-posts', '.weibo-settings-content', '.weibo-detail-page-body',
                 '.weibo-profile-wrapper', '.weibo-recommend-container', '.weibo-pull-refresh-indicator',
                 '.weibo-forward-overlay', '.weibo-forward-dialog', '.weibo-forward-dialog-compose', '.weibo-forward-list',
