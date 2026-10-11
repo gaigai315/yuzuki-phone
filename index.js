@@ -38,7 +38,7 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.1';
+const ST_PHONE_VERSION = '1.6.1.1';
 const ST_PHONE_CSS_REVISION = '20261009-payment-store-right-shift';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261006-story-image-outside-close';
@@ -150,7 +150,9 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-10-11',
     items: [
-        '【新增】微信零钱重构功能为钱包功能，涵盖微信零钱/银行卡/借贷功能。'
+        '【修复】线上支付小票仅在存在完整闭合标签时渲染，支付时间支持 1 至 6 位年份；缺失结束标签或内容无效时不再猜测边界。',
+        '【修复】线上支付清理只处理支付协议本身，不再误改后续 MUV、任务进度、Status_block 或其他酒馆前端 DOM。',
+        '【修复】修复酒馆助手偶发漏过角色卡开场 HTML 前端首屏渲染的问题；无需点击小铅笔即可正常加载。'
     ]
 };
 
@@ -8966,6 +8968,7 @@ if (window.GGP_Loaded) {
         'textarea',
         'select',
         'button',
+        'pre code',
         '[contenteditable="true"]',
         '[contenteditable="plaintext-only"]'
     ].join(',');
@@ -8981,7 +8984,47 @@ if (window.GGP_Loaded) {
         'embed',
         '.st-phone-payment-receipt'
     ].join(',');
+    const PHONE_RAW_PROTOCOL_BOUNDARY_REGEX = /(?:(?:<|＜|&lt;)\s*\/?\s*(?:wechat|music|phone|weibo|短信|任务进度|线上支付)(?=[\s/>＞]|&gt;)[^>＞]*?(?:>|＞|&gt;))|\[\s*手机来电通话\s*\]|PHONE_CHAT_MODE/i;
     const PHONE_PROTOCOL_SUFFIX_TEXT_REGEX = /(?:<|＜)\s*\/?\s*(?:wechat|music|phone|weibo|短信|任务进度|线上支付)(?=[\s/>＞])[^>＞]*(?:>|＞)|\[\s*手机来电通话\s*\]|PHONE_CHAT_MODE/i;
+    const PHONE_TAVERN_FRONTEND_CODE_REGEX = /(?:<!doctype\s+html\b|<html(?:\s|>)|<head(?:\s|>)|<body(?:\s|>))/i;
+
+    function repairMissedTavernFrontendRenders() {
+        const context = getContext();
+        const messageUpdatedEvent = context?.event_types?.MESSAGE_UPDATED;
+        if (!messageUpdatedEvent || typeof context?.eventSource?.emit !== 'function') return 0;
+
+        // 酒馆助手在首次进入角色卡时可能晚于 chatLoaded 挂载渲染监听器。
+        // 等其面板和公开对象均就绪后，只为仍停留在代码块状态的 HTML 前端补发一次更新事件。
+        if (!window.TavernHelper || !document.getElementById('tavern_helper')) return 0;
+
+        const messageIds = new Set();
+        document.querySelectorAll('#chat > .mes .mes_text pre').forEach((pre) => {
+            if (!PHONE_TAVERN_FRONTEND_CODE_REGEX.test(String(pre.textContent || ''))) return;
+            if (pre.closest('.TH-render')?.querySelector('iframe')) return;
+            if (pre.dataset.stPhoneFrontendRenderRequested === 'true') return;
+
+            const messageElement = pre.closest('#chat > .mes');
+            const messageId = Number.parseInt(messageElement?.getAttribute('mesid') || '', 10);
+            if (!Number.isInteger(messageId) || messageId < 0) return;
+
+            pre.dataset.stPhoneFrontendRenderRequested = 'true';
+            messageIds.add(messageId);
+        });
+
+        messageIds.forEach((messageId) => {
+            Promise.resolve(context.eventSource.emit(messageUpdatedEvent, messageId)).catch((error) => {
+                document
+                    .querySelectorAll(`#chat > .mes[mesid="${messageId}"] .mes_text pre[data-st-phone-frontend-render-requested="true"]`)
+                    .forEach(pre => delete pre.dataset.stPhoneFrontendRenderRequested);
+                console.warn('[手机插件] 补发酒馆助手前端渲染事件失败:', error);
+            });
+        });
+        return messageIds.size;
+    }
+
+    function scheduleMissedTavernFrontendRenderRepair(delays = [0, 600, 1800, 3600]) {
+        delays.forEach((delay) => setTimeout(repairMissedTavernFrontendRenders, delay));
+    }
 
     function shouldPreservePhoneMessageDom(root) {
         return !!root?.querySelector?.(PHONE_STATEFUL_MESSAGE_SELECTOR);
@@ -9215,12 +9258,7 @@ if (window.GGP_Loaded) {
         // 2. 遍历页面上的消息气泡
         $('.mes_text').each(function () {
             const root = this;
-            let html = root.innerHTML;
-
-            // 快速跳过，提升性能
-            if (!html || !/phone|wechat|music|weibo|短信|任务进度|线上支付|手机来电通话|PHONE_CHAT_MODE/i.test(html)) {
-                return;
-            }
+            const rawMessageText = getPhoneMessageRawText(root);
 
             const existingPaymentReceipts = root.querySelectorAll('.st-phone-payment-receipt');
             if (existingPaymentReceipts.length > 0) {
@@ -9228,9 +9266,15 @@ if (window.GGP_Loaded) {
                 return;
             }
 
+            // 只根据酒馆保存的原始消息识别手机协议。渲染后的前端可能含有 phoneEntry、
+            // openPhoneModal 等普通标识符，不能据此重写整个消息 DOM。
+            if (!PHONE_RAW_PROTOCOL_BOUNDARY_REGEX.test(rawMessageText)) return;
+
+            let html = root.innerHTML;
+            if (!html) return;
+
             // 小票只允许替换一对明确、完整的支付边界。其余 MUV/小铅笔前端 DOM
             // 必须原样保留；结束标签缺失或金额无效时不猜测、不裁剪、不重绘。
-            const rawMessageText = getPhoneMessageRawText(root);
             const rawHasPaymentBoundary = PHONE_PAYMENT_RAW_BOUNDARY_REGEX.test(rawMessageText);
             const rawPayments = rawHasPaymentBoundary ? parseOfflineWechatPayments(rawMessageText) : [];
             const paymentRenderResult = replaceCompletePaymentReceiptsInPlace(root, rawPayments, receiptRenderOptions);
@@ -10515,6 +10559,7 @@ if (window.GGP_Loaded) {
 
         // 切换会话后重新处理标签隐藏
         setTimeout(hidePhoneTags, 500);
+        scheduleMissedTavernFrontendRenderRepair([250, 900, 2200]);
     }
 
     // 🔥 hidePhoneTags 已移除，改用酒馆正则隐藏
@@ -11015,6 +11060,7 @@ if (window.GGP_Loaded) {
                     startWechatOnlineProactiveScheduler();
                     scheduleHoneyAppPreload();
                     scheduleGamesAppPreload();
+                    scheduleMissedTavernFrontendRenderRepair();
 
                     // 🎵 悬浮窗初始化：若开启了全局悬浮窗，懒加载音乐模块并创建
                     try {
