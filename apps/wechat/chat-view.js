@@ -13000,6 +13000,85 @@ renderChatRoom(chat) {
         await this.sendToAI('用户主动发起了蜜语邀约。', chat.id);
     }
 
+    _selectWechatPaymentSource(amount, actionLabel = '付款') {
+        document.querySelectorAll('#wechat-chat-payment-modal').forEach(element => element.remove());
+        const sources = this.app.wechatData.getWalletRepaymentSources?.() || [];
+        const formatAmount = value => Number(value || 0).toLocaleString('zh-CN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+        const rows = sources.map((source, index) => {
+            const label = source.type === 'wallet' ? '微信支付' : '银行卡支付';
+            const detail = source.type === 'wallet'
+                ? '零钱'
+                : `${source.label}${source.tailNumber ? ` 尾号${source.tailNumber}` : ''}`;
+            return `
+                <label class="wechat-wallet-repayment-source">
+                    <input type="radio" name="wechat-chat-payment-source" value="${this._escapeHtml(source.id)}" ${index === 0 ? 'checked' : ''}>
+                    <span class="wechat-wallet-repayment-source-copy">
+                        <strong>${label}</strong>
+                        <span>${this._escapeHtml(detail)}</span>
+                    </span>
+                    <span class="wechat-wallet-repayment-source-balance">余额 ¥${formatAmount(source.balance)}</span>
+                </label>
+            `;
+        }).join('');
+        const modalHtml = `
+            <div id="wechat-chat-payment-modal" class="wechat-wallet-repayment-overlay">
+                <section class="wechat-wallet-repayment-dialog" role="dialog" aria-modal="true" aria-labelledby="wechat-chat-payment-title">
+                    <header class="wechat-wallet-repayment-header">
+                        <strong id="wechat-chat-payment-title">选择支付方式</strong>
+                        <button type="button" class="wechat-wallet-repayment-close" data-chat-payment-close aria-label="关闭" title="关闭">
+                            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                        </button>
+                    </header>
+                    <div class="wechat-wallet-repayment-body">
+                        <div class="wechat-wallet-repayment-summary">
+                            <span>${this._escapeHtml(actionLabel)}</span>
+                            <strong>¥${formatAmount(amount)}</strong>
+                            <small>信用卡不支持转账或发红包</small>
+                        </div>
+                        <div class="wechat-wallet-repayment-section-title">付款方式</div>
+                        <div class="wechat-wallet-repayment-sources">${rows}</div>
+                        <div class="wechat-wallet-repayment-error" data-chat-payment-error aria-live="polite"></div>
+                    </div>
+                    <footer class="wechat-wallet-repayment-actions">
+                        <button type="button" class="wechat-wallet-repayment-cancel" data-chat-payment-close>取消</button>
+                        <button type="button" class="wechat-wallet-repayment-confirm" data-chat-payment-confirm>确认支付</button>
+                    </footer>
+                </section>
+            </div>
+        `;
+
+        const currentView = document.querySelector('.phone-view-current') || document;
+        currentView.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = currentView.querySelector('#wechat-chat-payment-modal');
+        return new Promise(resolve => {
+            if (!modal) return resolve(null);
+            let settled = false;
+            const finish = value => {
+                if (settled) return;
+                settled = true;
+                modal.remove();
+                resolve(value);
+            };
+            modal.querySelectorAll('[data-chat-payment-close]').forEach(button => {
+                button.addEventListener('click', () => finish(null));
+            });
+            modal.addEventListener('click', event => {
+                if (event.target === modal) finish(null);
+            });
+            modal.querySelector('[data-chat-payment-confirm]')?.addEventListener('click', () => {
+                const selected = modal.querySelector('input[name="wechat-chat-payment-source"]:checked');
+                if (!selected) {
+                    modal.querySelector('[data-chat-payment-error]').textContent = '请选择支付方式。';
+                    return;
+                }
+                finish(selected.value);
+            });
+        });
+    }
+
     showTransferDialog() {
         const chat = this.app.currentChat;
         const avatarHtml = this.app.renderAvatar(chat.avatar, '👤', chat.name);
@@ -13064,6 +13143,8 @@ renderChatRoom(chat) {
             }
 
             const transferAmount = parseFloat(amount);
+            const paymentSourceId = await this._selectWechatPaymentSource(transferAmount, '微信转账');
+            if (!paymentSourceId) return;
             const transferId = `transfer_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
             const transferTransaction = {
                 type: 'transfer',
@@ -13075,9 +13156,10 @@ renderChatRoom(chat) {
                 messageId: transferId,
                 referenceId: `wechat:transfer:send:${transferId}`
             };
-            const spendResult = this.app.wechatData.spendWalletBalance(transferAmount, null, transferTransaction);
+            const spendResult = this.app.wechatData.spendFromPaymentSource(transferAmount, paymentSourceId, null, transferTransaction);
             if (!spendResult?.success) {
-                this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${Number(spendResult?.balanceBefore || 0).toFixed(2)} 啦`, '❌');
+                const sourceName = spendResult?.source?.type === 'wallet' ? '零钱' : '该银行卡';
+                this.app.phoneShell.showNotification('余额不足', `${sourceName}只剩 ¥${Number(spendResult?.balanceBefore || 0).toFixed(2)}`, '❌');
                 return;
             }
 
@@ -16983,7 +17065,7 @@ ${callTranscript}`;
                 if (groupNote) groupNote.textContent = isLucky ? '群成员领取后每人金额相同' : '群成员领取后随机拆分';
             });
 
-            const sendGroupRedPacket = (packetMode) => {
+            const sendGroupRedPacket = async (packetMode) => {
                 const chat = this.app.currentChat || currentChat;
                 const isTargetedPacket = packetMode === 'single';
                 const rawAmount = isTargetedPacket ? amountInput?.value : groupTotalInput?.value;
@@ -17017,6 +17099,8 @@ ${callTranscript}`;
                 const wish = isTargetedPacket
                     ? (document.getElementById('redpacket-wish')?.value || '恭喜发财，大吉大利')
                     : (document.getElementById('redpacket-group-wish')?.value || '恭喜发财，大吉大利');
+                const paymentSourceId = await this._selectWechatPaymentSource(amount, isTargetedPacket ? '定向红包' : '群红包');
+                if (!paymentSourceId) return;
                 const redpacketId = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
                 const redpacketTransaction = {
                     type: 'redpacket',
@@ -17028,9 +17112,10 @@ ${callTranscript}`;
                     messageId: redpacketId,
                     referenceId: `wechat:redpacket:send:${redpacketId}`
                 };
-                const spendResult = this.app.wechatData.spendWalletBalance(amount, null, redpacketTransaction);
+                const spendResult = this.app.wechatData.spendFromPaymentSource(amount, paymentSourceId, null, redpacketTransaction);
                 if (!spendResult?.success) {
-                    this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${Number(spendResult?.balanceBefore || 0).toFixed(2)} 啦`, '❌');
+                    const sourceName = spendResult?.source?.type === 'wallet' ? '零钱' : '该银行卡';
+                    this.app.phoneShell.showNotification('余额不足', `${sourceName}只剩 ¥${Number(spendResult?.balanceBefore || 0).toFixed(2)}`, '❌');
                     return;
                 }
 
@@ -17084,6 +17169,8 @@ ${callTranscript}`;
             }
 
             const redpacketAmount = parseFloat(amount);
+            const paymentSourceId = await this._selectWechatPaymentSource(redpacketAmount, '微信红包');
+            if (!paymentSourceId) return;
             const redpacketId = `rp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
             const redpacketTransaction = {
                 type: 'redpacket',
@@ -17095,9 +17182,10 @@ ${callTranscript}`;
                 messageId: redpacketId,
                 referenceId: `wechat:redpacket:send:${redpacketId}`
             };
-            const spendResult = this.app.wechatData.spendWalletBalance(redpacketAmount, null, redpacketTransaction);
+            const spendResult = this.app.wechatData.spendFromPaymentSource(redpacketAmount, paymentSourceId, null, redpacketTransaction);
             if (!spendResult?.success) {
-                this.app.phoneShell.showNotification('余额不足', `你的零钱只剩 ¥${Number(spendResult?.balanceBefore || 0).toFixed(2)} 啦`, '❌');
+                const sourceName = spendResult?.source?.type === 'wallet' ? '零钱' : '该银行卡';
+                this.app.phoneShell.showNotification('余额不足', `${sourceName}只剩 ¥${Number(spendResult?.balanceBefore || 0).toFixed(2)}`, '❌');
                 return;
             }
 

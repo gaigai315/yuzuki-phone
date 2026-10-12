@@ -260,6 +260,41 @@ test('manual credit-card repayment uses exactly one selected account and records
     assert.equal(data.getWalletTransactions()[0].paymentSourceId, 'bank:0:1000');
 });
 
+test('chat payments can use wallet or savings accounts and always appear in the WeChat ledger', async () => {
+    const data = await createRepaymentData({ walletBalance: 150, savingsBalances: [500] });
+
+    const walletPayment = data.spendFromPaymentSource(25, 'wallet', null, {
+        type: 'transfer',
+        title: '转账-测试好友',
+        detail: '晚餐',
+        referenceId: 'test-wallet-payment'
+    });
+    const bankPayment = data.spendFromPaymentSource(80, 'bank:0:1000', null, {
+        type: 'redpacket',
+        title: '红包支出-测试好友',
+        detail: '恭喜发财',
+        referenceId: 'test-bank-payment'
+    });
+
+    assert.equal(walletPayment.success, true);
+    assert.equal(bankPayment.success, true);
+    assert.equal(data.getWalletBalance(), 125);
+    assert.equal(data.getWalletAssetProfile().savingsAccounts[0].balance, 420);
+    const transactions = data.getWalletTransactions();
+    assert.equal(transactions.length, 2);
+    const bankTransaction = transactions.find(record => record.referenceId === 'test-bank-payment');
+    const walletTransaction = transactions.find(record => record.referenceId === 'test-wallet-payment');
+    assert.equal(bankTransaction.balanceScope, 'savings');
+    assert.equal(bankTransaction.paymentSourceId, 'bank:0:1000');
+    assert.match(bankTransaction.detail, /测试银行1尾号1000/);
+    assert.equal(walletTransaction.paymentSourceId, 'wallet');
+    assert.match(walletTransaction.detail, /微信支付/);
+
+    assert.equal(data._rollbackWalletTransactions(record => record.referenceId === 'test-bank-payment'), true);
+    assert.equal(data.getWalletAssetProfile().savingsAccounts[0].balance, 500);
+    assert.equal(data.getWalletTransactions().length, 1);
+});
+
 test('automatic repayment chooses one sufficient account after the due date is skipped', async () => {
     const data = await createRepaymentData({
         storyDate: '2026年10月10日',

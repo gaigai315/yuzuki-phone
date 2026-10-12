@@ -2417,6 +2417,64 @@ export class WechatData {
         };
     }
 
+    spendFromPaymentSource(amount, sourceId = 'wallet', chatId = null, transaction = null) {
+        const parsedAmount = Number.parseFloat(amount);
+        const spendAmount = Number.isFinite(parsedAmount) ? Math.round(parsedAmount * 100) / 100 : 0;
+        const source = this.getWalletRepaymentSources(chatId)
+            .find(item => item.id === String(sourceId || 'wallet').trim());
+        const balanceBefore = Math.max(0, Math.round((Number(source?.balance) || 0) * 100) / 100);
+
+        if (spendAmount <= 0) {
+            return { success: false, amount: spendAmount, balanceBefore, balanceAfter: balanceBefore, source, reason: 'invalid_amount' };
+        }
+        if (!source) {
+            return { success: false, amount: spendAmount, balanceBefore: 0, balanceAfter: 0, source: null, reason: 'source_not_found' };
+        }
+        if (balanceBefore < spendAmount) {
+            return { success: false, amount: spendAmount, balanceBefore, balanceAfter: balanceBefore, source, reason: 'insufficient_balance' };
+        }
+
+        const paymentLabel = source.type === 'wallet'
+            ? '微信支付'
+            : `${source.label}${source.tailNumber ? `尾号${source.tailNumber}` : ''}`;
+        const paymentTransaction = transaction ? {
+            ...transaction,
+            detail: [String(transaction.detail || '').trim(), paymentLabel].filter(Boolean).join(' · '),
+            balanceScope: source.type,
+            paymentSourceId: source.id,
+            paymentSourceLabel: paymentLabel,
+            savingsAccountIndex: source.accountIndex,
+            savingsAccountTailNumber: source.tailNumber
+        } : null;
+
+        if (source.type === 'wallet') {
+            const result = this.spendWalletBalance(spendAmount, chatId, paymentTransaction);
+            return { ...result, amount: spendAmount, source };
+        }
+
+        const entry = this._getMutableWalletAssetProfile(chatId);
+        const account = entry?.profile?.savingsAccounts?.[source.accountIndex];
+        if (!account || String(account.tailNumber || '') !== String(source.tailNumber || '')) {
+            return { success: false, amount: spendAmount, balanceBefore, balanceAfter: balanceBefore, source, reason: 'source_not_found' };
+        }
+        if (paymentTransaction && this._findWalletTransactionDuplicate(paymentTransaction)) {
+            return { success: true, duplicate: true, amount: spendAmount, balanceBefore, balanceAfter: balanceBefore, source };
+        }
+
+        const balanceAfter = Math.round((balanceBefore - spendAmount) * 100) / 100;
+        account.balance = balanceAfter;
+        if (paymentTransaction) {
+            this._appendWalletTransaction(-spendAmount, paymentTransaction, {
+                affectsBalance: true,
+                balanceBefore,
+                balanceAfter,
+                walletKey: entry.key
+            });
+        }
+        this.saveData();
+        return { success: true, amount: spendAmount, balanceBefore, balanceAfter, source, reason: '' };
+    }
+
     // 设置钱包金额（初始化用）
     setWalletBalance(amount, chatId = null) {
         if (!this.data.walletByChat) this.data.walletByChat = {};
