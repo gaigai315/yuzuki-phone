@@ -54,7 +54,7 @@ test('missed Tavern frontend rendering is repaired through one scoped update eve
 });
 
 test('frontend render repair runs after initial readiness and chat changes', () => {
-    assert.match(indexSource, /scheduleMissedTavernFrontendRenderRepair\(\[250, 900, 2200\]\);/);
+    assert.match(indexSource, /scheduleMissedTavernFrontendRenderRepair\(delays = \[1800, 3600\]\)/);
     assert.match(indexSource, /scheduleGamesAppPreload\(\);\s*scheduleMissedTavernFrontendRenderRepair\(\);/);
 });
 

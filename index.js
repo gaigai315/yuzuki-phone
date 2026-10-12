@@ -8990,42 +8990,78 @@ if (window.GGP_Loaded) {
     const PHONE_PROTOCOL_SUFFIX_TEXT_REGEX = /(?:<|＜)\s*\/?\s*(?:wechat|music|phone|weibo|短信|任务进度|线上支付)(?=[\s/>＞])[^>＞]*(?:>|＞)|\[\s*手机来电通话\s*\]|PHONE_CHAT_MODE/i;
     const PHONE_TAVERN_FRONTEND_CODE_REGEX = /(?:<!doctype\s+html\b|<html(?:\s|>)|<head(?:\s|>)|<body(?:\s|>))/i;
 
-    function repairMissedTavernFrontendRenders() {
+    const frontendRepairState = { chatKey: null, generation: 0, timers: new Set(), attempted: new Set(), running: false };
+
+    async function repairMissedTavernFrontendRenders() {
         const context = getContext();
         const messageUpdatedEvent = context?.event_types?.MESSAGE_UPDATED;
         if (!messageUpdatedEvent || typeof context?.eventSource?.emit !== 'function') return 0;
-
-        // 酒馆助手在首次进入角色卡时可能晚于 chatLoaded 挂载渲染监听器。
-        // 等其面板和公开对象均就绪后，只为仍停留在代码块状态的 HTML 前端补发一次更新事件。
         if (!window.TavernHelper || !document.getElementById('tavern_helper')) return 0;
-
-        const messageIds = new Set();
-        document.querySelectorAll('#chat > .mes .mes_text pre').forEach((pre) => {
-            if (!PHONE_TAVERN_FRONTEND_CODE_REGEX.test(String(pre.textContent || ''))) return;
-            if (pre.closest('.TH-render')?.querySelector('iframe')) return;
-            if (pre.dataset.stPhoneFrontendRenderRequested === 'true') return;
-
-            const messageElement = pre.closest('#chat > .mes');
-            const messageId = Number.parseInt(messageElement?.getAttribute('mesid') || '', 10);
-            if (!Number.isInteger(messageId) || messageId < 0) return;
-
-            pre.dataset.stPhoneFrontendRenderRequested = 'true';
-            messageIds.add(messageId);
-        });
-
-        messageIds.forEach((messageId) => {
-            Promise.resolve(context.eventSource.emit(messageUpdatedEvent, messageId)).catch((error) => {
-                document
-                    .querySelectorAll(`#chat > .mes[mesid="${messageId}"] .mes_text pre[data-st-phone-frontend-render-requested="true"]`)
-                    .forEach(pre => delete pre.dataset.stPhoneFrontendRenderRequested);
-                console.warn('[手机插件] 补发酒馆助手前端渲染事件失败:', error);
-            });
-        });
-        return messageIds.size;
+        const chatKey = context.getCurrentChatId?.() || context.chatId;
+        if (!chatKey || frontendRepairState.running || chatKey !== frontendRepairState.chatKey) return 0;
+        // The original fallback is only for a missed first greeting. Existing conversations
+        // already get chatLoaded, which Tavern Helper handles with its own render depth.
+        if (context.chat?.length !== 1 || context.chat[0]?.is_user || context.chat[0]?.is_system) return 0;
+        const renderSettings = context.extensionSettings?.tavern_helper?.render;
+        if (renderSettings?.enabled === false || renderSettings?.allow_streaming === true) return 0;
+        const generation = frontendRepairState.generation;
+        frontendRepairState.running = true;
+        let repaired = 0;
+        try {
+            // Only visible, still-unrendered code needs the startup fallback. Hidden history
+            // belongs to Tavern Helper's own lazy rendering, not a global message replay.
+            const blocks = document.querySelectorAll('#chat > .mes .mes_text pre');
+            for (const pre of blocks) {
+                if (generation !== frontendRepairState.generation || (getContext()?.getCurrentChatId?.() || getContext()?.chatId) !== chatKey) break;
+                if (!pre.isConnected || pre.closest('.TH-render')?.querySelector('iframe')) continue;
+                const messageElement = pre.closest('#chat > .mes');
+                const messageId = Number.parseInt(messageElement?.getAttribute('mesid') || '', 10);
+                if (!Number.isInteger(messageId) || messageId !== 0 || frontendRepairState.attempted.has(messageId)) continue;
+                if (pre.dataset.stPhoneFrontendRenderRequested === 'true') continue;
+                const rect = pre.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
+                if (!PHONE_TAVERN_FRONTEND_CODE_REGEX.test(String(pre.textContent || ''))) continue;
+                frontendRepairState.attempted.add(messageId);
+                pre.dataset.stPhoneFrontendRenderRequested = 'true';
+                try {
+                    await context.eventSource.emit(messageUpdatedEvent, messageId);
+                    repaired++;
+                } catch (error) {
+                    console.warn('[手机插件] 补发酒馆助手前端渲染事件失败:', error);
+                }
+                // Let touch/scroll and painting run between expensive frontend renders.
+                await new Promise(resolve => setTimeout(resolve, 80));
+            }
+        } finally {
+            if (generation === frontendRepairState.generation) frontendRepairState.running = false;
+        }
+        return repaired;
     }
 
-    function scheduleMissedTavernFrontendRenderRepair(delays = [0, 600, 1800, 3600]) {
-        delays.forEach((delay) => setTimeout(repairMissedTavernFrontendRenders, delay));
+    function scheduleMissedTavernFrontendRenderRepair(delays = [1800, 3600]) {
+        frontendRepairState.timers.forEach(clearTimeout);
+        frontendRepairState.timers.clear();
+        frontendRepairState.generation++;
+        frontendRepairState.running = false;
+        const context = getContext();
+        const chatKey = context?.getCurrentChatId?.() || context?.chatId;
+        if (frontendRepairState.chatKey !== chatKey) frontendRepairState.attempted.clear();
+        frontendRepairState.chatKey = chatKey;
+        if (!chatKey || context?.chat?.length !== 1) return;
+        const generation = frontendRepairState.generation;
+        // Give the normal renderer time to finish before checking for missed blocks.
+        [...new Set(delays.map(delay => Math.max(1800, delay)))].forEach((delay) => {
+            const timer = setTimeout(() => {
+                frontendRepairState.timers.delete(timer);
+                const run = () => {
+                    if (generation !== frontendRepairState.generation) return;
+                    void repairMissedTavernFrontendRenders().catch(error => console.warn('[手机插件] 前端补绘检查失败:', error));
+                };
+                if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run);
+                else setTimeout(run, 80);
+            }, delay);
+            frontendRepairState.timers.add(timer);
+        });
     }
 
     function shouldPreservePhoneMessageDom(root) {
@@ -10561,7 +10597,7 @@ if (window.GGP_Loaded) {
 
         // 切换会话后重新处理标签隐藏
         setTimeout(hidePhoneTags, 500);
-        scheduleMissedTavernFrontendRenderRepair([250, 900, 2200]);
+        scheduleMissedTavernFrontendRenderRepair();
     }
 
     // 🔥 hidePhoneTags 已移除，改用酒馆正则隐藏

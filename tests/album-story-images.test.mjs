@@ -6,8 +6,7 @@ const dataSource = fs.readFileSync(new URL('../apps/album/album-data.js', import
 const dataModuleUrl = `data:text/javascript;base64,${Buffer.from(dataSource).toString('base64')}`;
 const { AlbumData } = await import(dataModuleUrl);
 const promptManagerSource = fs.readFileSync(new URL('../config/prompt-manager.js', import.meta.url), 'utf8');
-const promptManagerModuleUrl = `data:text/javascript;base64,${Buffer.from(promptManagerSource).toString('base64')}`;
-const { PromptManager } = await import(promptManagerModuleUrl);
+const { PromptManager } = await import('../config/prompt-manager.js');
 
 function createFixture() {
     let saveCount = 0;

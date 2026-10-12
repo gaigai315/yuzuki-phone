@@ -9802,6 +9802,8 @@ renderChatRoom(chat) {
         // 🔥 新增：选择自定义表情
         queryAll('.custom-emoji-item').forEach(item => {
             this._bindCustomEmojiImageRecovery(item);
+            if (item._wechatCustomEmojiEventsBound) return;
+            item._wechatCustomEmojiEventsBound = true;
             let longPressTimer = null;
             let suppressClick = false;
             const clearLongPressTimer = () => {
@@ -9810,11 +9812,13 @@ renderChatRoom(chat) {
                     longPressTimer = null;
                 }
             };
-            const startManageGesture = () => {
-                if (this.customEmojiSelectionMode) return;
+            const startManageGesture = (event) => {
+                if (event.isPrimary === false || (event.button !== undefined && event.button !== 0)) return;
+                if (this.customEmojiSelectionMode || this._customEmojiManageBusy || Date.now() < (this._customEmojiManageSuppressUntil || 0)) return;
                 clearLongPressTimer();
                 suppressClick = false;
                 longPressTimer = setTimeout(() => {
+                    longPressTimer = null;
                     const emojiId = item.dataset.emojiId;
                     suppressClick = true;
                     this.manageCustomEmoji(emojiId);
@@ -9827,8 +9831,8 @@ renderChatRoom(chat) {
             item.addEventListener('pointercancel', clearLongPressTimer);
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                if (this.customEmojiSelectionMode) return;
                 clearLongPressTimer();
+                if (this.customEmojiSelectionMode || suppressClick) return;
                 suppressClick = true;
                 this.manageCustomEmoji(item.dataset.emojiId);
             });
@@ -17350,54 +17354,61 @@ ${callTranscript}`;
     }
 
     async manageCustomEmoji(emojiId) {
-        const emoji = this.app.wechatData.getCustomEmoji(emojiId);
-        if (!emoji) return;
+        if (this._customEmojiManageBusy || Date.now() < (this._customEmojiManageSuppressUntil || 0)) return;
+        this._customEmojiManageBusy = true;
+        try {
+            const emoji = this.app.wechatData.getCustomEmoji(emojiId);
+            if (!emoji) return;
 
-        const currentDescription = String(emoji.description || emoji.name || '').trim();
-        const nextDescriptionRaw = window.prompt(
-            '修改这个自定义表情的线下描述。\n\n线上发送时仍然发图片；只有线下正文注入时会转成这个描述。\n\n输入 /delete 可删除该表情。',
-            currentDescription
-        );
+            const currentDescription = String(emoji.description || emoji.name || '').trim();
+            const nextDescriptionRaw = window.prompt(
+                '修改这个自定义表情的线下描述。\n\n线上发送时仍然发图片；只有线下正文注入时会转成这个描述。\n\n输入 /delete 可删除该表情。',
+                currentDescription
+            );
 
-        if (nextDescriptionRaw === null) return;
+            if (nextDescriptionRaw === null) return;
 
-        const normalized = String(nextDescriptionRaw || '').replace(/\s+/g, ' ').trim().slice(0, 20);
-        if (normalized === '/delete') {
-            const ok = window.confirm(`确定删除表情“${emoji.name || currentDescription || '未命名表情'}”吗？`);
-            if (!ok) return;
+            const normalized = String(nextDescriptionRaw || '').replace(/\s+/g, ' ').trim().slice(0, 20);
+            if (normalized === '/delete') {
+                const ok = window.confirm(`确定删除表情“${emoji.name || currentDescription || '未命名表情'}”吗？`);
+                if (!ok) return;
 
-            let fileCleanupFailed = false;
-            const imageManager = window.VirtualPhone?.imageManager;
-            if (imageManager?.deleteManagedBackgroundByPath) {
-                try {
-                    const result = await imageManager.deleteManagedBackgroundByPath(emoji.image, { quiet: true });
-                    fileCleanupFailed = result?.attempted === true && result?.success !== true;
-                } catch (e) {
-                    fileCleanupFailed = true;
+                let fileCleanupFailed = false;
+                const imageManager = window.VirtualPhone?.imageManager;
+                if (imageManager?.deleteManagedBackgroundByPath) {
+                    try {
+                        const result = await imageManager.deleteManagedBackgroundByPath(emoji.image, { quiet: true });
+                        fileCleanupFailed = result?.attempted === true && result?.success !== true;
+                    } catch (e) {
+                        fileCleanupFailed = true;
+                    }
                 }
+
+                this.app.wechatData.deleteCustomEmoji(emojiId);
+                this.app.phoneShell.showNotification(
+                    '已删除',
+                    fileCleanupFailed ? '自定义表情已删除（旧图片清理失败）' : '自定义表情已删除',
+                    fileCleanupFailed ? '⚠️' : '🗑️'
+                );
+                this.app.render();
+                return;
             }
 
-            this.app.wechatData.deleteCustomEmoji(emojiId);
-            this.app.phoneShell.showNotification(
-                '已删除',
-                fileCleanupFailed ? '自定义表情已删除（旧图片清理失败）' : '自定义表情已删除',
-                fileCleanupFailed ? '⚠️' : '🗑️'
-            );
+            if (!normalized) {
+                this.app.phoneShell.showNotification('提示', '描述不能为空', '⚠️');
+                return;
+            }
+
+            this.app.wechatData.updateCustomEmoji(emojiId, {
+                name: normalized,
+                description: normalized
+            });
+            this.app.phoneShell.showNotification('已更新', '表情描述已保存', '✅');
             this.app.render();
-            return;
+        } finally {
+            this._customEmojiManageBusy = false;
+            this._customEmojiManageSuppressUntil = Date.now() + 600;
         }
-
-        if (!normalized) {
-            this.app.phoneShell.showNotification('提示', '描述不能为空', '⚠️');
-            return;
-        }
-
-        this.app.wechatData.updateCustomEmoji(emojiId, {
-            name: normalized,
-            description: normalized
-        });
-        this.app.phoneShell.showNotification('已更新', '表情描述已保存', '✅');
-        this.app.render();
     }
 
     // 🔔 通用AI通知方法

@@ -3146,7 +3146,7 @@ export class SettingsApp {
 
                                 <div class="phone-api-panel phone-api-route-panel">
                                     <div class="phone-api-panel-title"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i><span>App API 路由</span></div>
-                                    <div class="phone-api-route-desc">支持蜜语/微信APP指定单独API。</div>
+                                    <div class="phone-api-route-desc">支持微信、蜜语、X 和正文生图 TAG 请求分别指定独立 API。</div>
                                     <div class="phone-api-route-row">
                                         <div class="phone-api-route-label">微信</div>
                                         <select id="phone-api-route-wechat" class="phone-api-control" data-api-route-app="wechat" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
@@ -3156,6 +3156,18 @@ export class SettingsApp {
                                     <div class="phone-api-route-row">
                                         <div class="phone-api-route-label">蜜语</div>
                                         <select id="phone-api-route-honey" class="phone-api-control" data-api-route-app="honey" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
+                                            <option value="">跟随当前预设</option>
+                                        </select>
+                                    </div>
+                                    <div class="phone-api-route-row">
+                                        <div class="phone-api-route-label">X</div>
+                                        <select id="phone-api-route-x" class="phone-api-control" data-api-route-app="x" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
+                                            <option value="">跟随当前预设</option>
+                                        </select>
+                                    </div>
+                                    <div class="phone-api-route-row">
+                                        <div class="phone-api-route-label">正文生图（TAG）</div>
+                                        <select id="phone-api-route-story" class="phone-api-control" data-api-route-app="story" style="border: 1px solid #e0e0e0; background: #fff; box-sizing: border-box;">
                                             <option value="">跟随当前预设</option>
                                         </select>
                                     </div>
@@ -11131,7 +11143,7 @@ export class SettingsApp {
                 ? merged.appProfileRoutes
                 : {};
             merged.appProfileRoutes = {};
-            ['wechat', 'honey'].forEach((appId) => {
+            ['wechat', 'honey', 'x', 'story'].forEach((appId) => {
                 const routeName = String(rawRoutes[appId] || '').trim();
                 merged.appProfileRoutes[appId] = validProfileNames.has(routeName) ? routeName : '';
             });
@@ -11243,7 +11255,7 @@ export class SettingsApp {
             const routeOptions = ['<option value="">跟随当前预设</option>']
                 .concat(config.profiles.map(p => `<option value="${this._escapeHtml(p.name)}">${this._escapeHtml(p.name)}</option>`))
                 .join('');
-            ['wechat', 'honey'].forEach((appId) => {
+            ['wechat', 'honey', 'x', 'story'].forEach((appId) => {
                 const select = document.getElementById(`phone-api-route-${appId}`);
                 if (!select) return;
                 const value = String(config.appProfileRoutes?.[appId] || '').trim();

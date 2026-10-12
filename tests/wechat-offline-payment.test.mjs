@@ -11,7 +11,7 @@ import {
 } from '../apps/wechat/offline-payment.js';
 import { WechatData } from '../apps/wechat/wechat-data.js';
 
-const promptSource = fs.readFileSync(new URL('../config/prompt-manager.js', import.meta.url), 'utf8');
+const promptSource = fs.readFileSync(new URL('../config/prompt-manager.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 const phoneCssSource = fs.readFileSync(new URL('../phone.css', import.meta.url), 'utf8');
 const receiptCssSource = phoneCssSource.slice(
