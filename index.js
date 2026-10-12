@@ -38,7 +38,7 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.1.1';
+const ST_PHONE_VERSION = '1.6.2';
 const ST_PHONE_CSS_REVISION = '20261009-payment-store-right-shift';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261006-story-image-outside-close';
@@ -148,12 +148,13 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-12',
+    date: '2026-10-13',
     items: [
         '【修复】修复支付小票渲染及其影响正文渲染、角色卡开场前端偶发加载异常的问题。',
         '【优化】优化线上微信的时间推进。',
         '【优化】优化部分渲染问题。',
-        '【优化】优化 API 路由，新增 X 和正文生图 TAG 请求的独立 API 配置。'
+        '【优化】优化 API 路由，新增 X 和正文生图 TAG 请求的独立 API 配置。',
+        '【修复】修复开启“仅变量命中时注入”后，未命中变量仍强行注入手机规则和微信历史的问题。'
     ]
 };
 
@@ -12068,17 +12069,14 @@ if (window.GGP_Loaded) {
                             const requestHasInjectedPhoneMessages = [eventData.chat, eventData.prompt]
                                 .some(list => Array.isArray(list) && list.some(msg => msg?.isPhoneMessage && msg?.identifier));
                             const hasWechatOnlineToOfflinePending = !!getWechatOnlineToOfflineTransferPending();
-                            const allowForegroundVariablelessInjection = isPhoneForegroundGenerationActive();
 
                             // prompt-ready 可能被多个官方/兼容入口依次处理。变量已替换成手机消息后，
                             // 后续入口必须保留现有注入，不能先删除消息再因找不到变量而退出。
                             if (requirePhoneInjectionVariable && !requestHasPhoneMacro && !hasWechatOnlineToOfflinePending) {
                                 if (requestHasInjectedPhoneMessages) return;
-                                if (!allowForegroundVariablelessInjection) {
-                                    forceFallbackCleanup(eventData.chat);
-                                    forceFallbackCleanup(eventData.prompt);
-                                    return;
-                                }
+                                forceFallbackCleanup(eventData.chat);
+                                forceFallbackCleanup(eventData.prompt);
+                                return;
                             }
 
                             // 2. 如果是酒馆正文发起的请求（比如点击正文发送、重新生成、继续生成）
@@ -13588,8 +13586,6 @@ if (window.GGP_Loaded) {
                                     };
 
                                     const allowVariablelessFallback = !requirePhoneInjectionVariable;
-                                    const allowForegroundWechatFallback = allowVariablelessFallback
-                                        || (allowForegroundVariablelessInjection && !requestHasPhoneMacro && isWechatInteropEnabled);
 
                                     // 🔥 辅助函数：原地拆分注入 (Gaigai 终极防弹版)
                                     const injectIntoMessages = (targetVar, contentToInject, identifier, fallbackWhenMissing = allowVariablelessFallback) => {
@@ -13717,9 +13713,9 @@ if (window.GGP_Loaded) {
                                     };
 
                                     // 🔥 分别注入规则和历史记录
-                                    injectIntoMessages('{{PHONE_PROMPT}}', phoneRulesContent, 'phone_system_rules', allowForegroundWechatFallback);
+                                    injectIntoMessages('{{PHONE_PROMPT}}', phoneRulesContent, 'phone_system_rules');
                                     injectIntoMessages('{{MOMENTS_HISTORY}}', momentsHistoryContent, 'moments_system_history');
-                                    injectIntoMessages('{{PHONE_HISTORY}}', phoneHistoryContent, 'phone_system_history', allowForegroundWechatFallback);
+                                    injectIntoMessages('{{PHONE_HISTORY}}', phoneHistoryContent, 'phone_system_history');
                                     injectIntoMessages('{{PHONE_APP_HISTORY}}', phoneAppHistoryContent, 'phone_app_system_history');
                                     injectIntoMessages('{{HONEY_HISTORY}}', honeyHistoryContent, 'honey_system_history');
                                     if (weiboInjectEnabled) {

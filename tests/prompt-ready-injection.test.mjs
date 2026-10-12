@@ -187,24 +187,63 @@ test('already injected phone messages survive a later prompt-ready compatibility
     const gateSource = indexSource.slice(start, end);
     assert.match(gateSource, /requestHasInjectedPhoneMessages/);
     assert.match(gateSource, /if \(requestHasInjectedPhoneMessages\) return;/);
-    assert.match(gateSource, /if \(!allowForegroundVariablelessInjection\) \{[\s\S]*forceFallbackCleanup\(eventData\.chat\)/);
+    assert.doesNotMatch(gateSource, /allowForegroundVariablelessInjection/);
     assert.ok(
         gateSource.indexOf('requestHasInjectedPhoneMessages') < gateSource.indexOf('// 2. 如果是酒馆正文发起的请求'),
         'existing phone messages must be detected before stale-message cleanup',
     );
 });
 
-test('foreground fallback is limited to WeChat rules and history when TT consumes the variables', () => {
+function runVariableInjection(required, text) {
     const start = indexSource.indexOf('const allowVariablelessFallback = !requirePhoneInjectionVariable;');
     const end = indexSource.indexOf('// 🎵 {{MUSIC_PROMPT}} 独立注入', start);
-    assert.ok(start >= 0 && end > start, 'phone injection calls should be present');
-    const injectionSource = indexSource.slice(start, end);
+    const messages = [{ role: 'user', content: text }];
+    const variables = {
+        requirePhoneInjectionVariable: required, messages,
+        getPhonePromptMarker: name => `__ST_PHONE_PROMPT_VAR_${name}__`,
+        substitutePhoneInjectedMacros: text => text, getContext: () => ({}),
+        cloneSplitMessage: (msg, text) => ({ ...msg, content: text }),
+        phoneRulesContent: 'TEST_RULES', phoneHistoryContent: 'TEST_HISTORY',
+        momentsHistoryContent: '', phoneAppHistoryContent: '', honeyHistoryContent: '',
+        weiboInjectEnabled: false, mofoPromptContent: '', diaryHistoryContent: '',
+        calendarReminderContent: '', wangxiangTaskContent: '', wangxiangOrderContent: ''
+    };
+    Function(...Object.keys(variables), indexSource.slice(start, end))(...Object.values(variables));
+    return messages;
+}
 
-    assert.match(injectionSource, /allowForegroundWechatFallback/);
-    assert.match(injectionSource, /PHONE_PROMPT[^\n]+allowForegroundWechatFallback/);
-    assert.match(injectionSource, /PHONE_HISTORY[^\n]+allowForegroundWechatFallback/);
-    assert.doesNotMatch(injectionSource, /MOMENTS_HISTORY[^\n]+allowForegroundWechatFallback/);
-    assert.doesNotMatch(injectionSource, /HONEY_HISTORY[^\n]+allowForegroundWechatFallback/);
+test('strict gate stops variableless foreground requests before collecting phone content', () => {
+    const start = indexSource.indexOf('const requirePhoneInjectionVariable = isPhoneInjectionVariableRequired();');
+    const end = indexSource.indexOf('// 2. 如果是酒馆正文发起的请求', start);
+    const chat = [{ role: 'user', content: 'hello' }];
+    const prompt = [];
+    const cleaned = [];
+    const result = Function('isPhoneInjectionVariableRequired', 'eventData', 'PHONE_REQUEST_MACRO_PATTERN',
+        'getWechatOnlineToOfflineTransferPending', 'isPhoneForegroundGenerationActive', 'forceFallbackCleanup',
+        indexSource.slice(start, end) + '\nreturn "continued";')(
+        () => true, { chat, prompt }, /\{\{PHONE_PROMPT\}\}/,
+        () => null, () => true, list => cleaned.push(list),
+    );
+    assert.equal(result, undefined);
+    assert.deepEqual(cleaned, [chat, prompt]);
+});
+
+test('strict variable injection never adds WeChat rules or history without their variables', () => {
+    assert.deepEqual(runVariableInjection(true, 'hello'), [{ role: 'user', content: 'hello' }]);
+    assert.deepEqual(runVariableInjection(true, '{{MOMENTS_HISTORY}} hello'), [{ role: 'user', content: 'hello' }]);
+});
+
+test('strict variable injection replaces only the requested block, including stable markers', () => {
+    for (const token of ['{{PHONE_PROMPT}}', '{{ PHONE_PROMPT }}', '__ST_PHONE_PROMPT_VAR_PHONE_PROMPT__']) {
+        const result = runVariableInjection(true, token);
+        assert.deepEqual(result.map(msg => msg.identifier), ['phone_system_rules']);
+        assert.equal(result[0].content, 'TEST_RULES');
+    }
+    assert.deepEqual(runVariableInjection(true, '{{PHONE_HISTORY}}').map(msg => msg.identifier), ['phone_system_history']);
+});
+
+test('disabling strict variable injection preserves automatic fallback', () => {
+    assert.deepEqual(runVariableInjection(false, 'hello').map(msg => msg.identifier), ['phone_system_rules', 'phone_system_history', undefined]);
 });
 
 test('all injected phone blocks resolve native Tavern macros before message construction', () => {

@@ -9,14 +9,15 @@ const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'ut
 test('current version publishes the payment and Tavern frontend hotfix notice', () => {
     const current = updateLog.versions[manifest.version];
 
-    assert.equal(manifest.version, '1.6.1.1');
-    assert.deepEqual(Object.keys(updateLog.versions), ['1.6.1.1', '1.6.1']);
-    assert.equal(current.date, '2026-10-12');
+    assert.equal(manifest.version, '1.6.2');
+    assert.deepEqual(Object.keys(updateLog.versions), ['1.6.2', '1.6.1.1', '1.6.1']);
+    assert.equal(current.date, '2026-10-13');
     assert.deepEqual(current.items, [
         '【修复】修复支付小票渲染及其影响正文渲染、角色卡开场前端偶发加载异常的问题。',
         '【优化】优化线上微信的时间推进。',
         '【优化】优化部分渲染问题。',
-        '【优化】优化 API 路由，新增 X 和正文生图 TAG 请求的独立 API 配置。'
+        '【优化】优化 API 路由，新增 X 和正文生图 TAG 请求的独立 API 配置。',
+        '【修复】修复开启“仅变量命中时注入”后，未命中变量仍强行注入手机规则和微信历史的问题。'
     ]);
     assert.equal(current.updates, undefined);
     assert.match(updateLog.versions['1.6.1'].items[0], /微信零钱重构功能为钱包功能/);
@@ -30,13 +31,13 @@ test('local update announcements are acknowledged by version and date', () => {
     assert.match(indexSource, /options\.rememberValue \|\| version/);
 });
 
-test('fallback announcement matches the 1.6.1.1 hotfix notice', () => {
+test('fallback announcement matches the 1.6.2 hotfix notice', () => {
     const start = indexSource.indexOf('const ST_PHONE_CURRENT_UPDATE =');
     const end = indexSource.indexOf('\n};', start);
     assert.ok(start >= 0 && end > start, 'fallback update block should exist');
 
     const block = indexSource.slice(start, end);
-    assert.match(block, /date: '2026-10-12'/);
+    assert.match(block, /date: '2026-10-13'/);
     for (const item of updateLog.versions[manifest.version].items) {
         assert.ok(block.includes(item), 'fallback should include each current announcement item');
     }
