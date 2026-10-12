@@ -597,7 +597,12 @@ parseTimeToTimestamp(timeData) {
             const hour = parseInt(timeParts[1]);
             const minute = parseInt(timeParts[2]);
 
-            return this._createStoryTimestamp(year, month, day, hour, minute);
+            const minuteTimestamp = this._createStoryTimestamp(year, month, day, hour, minute);
+            const preciseTimestamp = Number(timeData.timestamp);
+            // Preserve seconds only when the timestamp belongs to the displayed story minute.
+            return Number.isFinite(preciseTimestamp) && preciseTimestamp >= minuteTimestamp && preciseTimestamp < minuteTimestamp + 60000
+                ? preciseTimestamp
+                : minuteTimestamp;
         }
     } catch (e) {
         console.warn('⚠️ 时间戳解析失败:', e);
@@ -742,6 +747,7 @@ getPhoneLastMessageTime(referenceTime = null) {
                     const candidate = {
                         time: lastMsg.time,
                         date: messageDate,
+                        timestamp: lastMsg.timestamp,
                         weekday: parsedDate?.isAncient ? '' : (lastMsg.weekday || this.getWeekday(new Date(lastMsg.timestamp))),
                         isAncient: parsedDate?.isAncient === true,
                         era: parsedDate?.era || '',
@@ -943,10 +949,10 @@ setTime(time, date, weekday = null, options = {}) {
         this.clearCache();
 
         let finalTime = time;
-        const finalDate = date;
+        let finalDate = date;
         const parsedDate = this._parseStoryDate(finalDate, { allowUnknownEra: true });
         const isAncient = options?.isAncient === true || parsedDate?.isAncient === true;
-        const finalWeekday = isAncient ? '' : (weekday || this.calculateWeekday(date));
+        let finalWeekday = isAncient ? '' : (weekday || this.calculateWeekday(date));
         const force = options?.force === true;
 
         // 🔥 和手机聊天记录的最后时间比较，取更晚的
@@ -957,15 +963,17 @@ setTime(time, date, weekday = null, options = {}) {
             isAncient,
             era: options?.era || parsedDate?.era || ''
         });
-        if (!force && phoneLastTime && phoneLastTime.time) {
-            const [syncHour, syncMin] = time.split(':').map(Number);
-            const [phoneHour, phoneMin] = phoneLastTime.time.split(':').map(Number);
-
-            const syncMinutes = syncHour * 60 + syncMin;
-            const phoneMinutes = phoneHour * 60 + phoneMin;
-
-            if (phoneMinutes > syncMinutes) {
+        let preciseTimestamp = options?.timestamp;
+        if (!force && phoneLastTime?.time && phoneLastTime?.date) {
+            const requested = { time, date, timestamp: preciseTimestamp };
+            const requestedTimestamp = this.parseTimeToTimestamp(requested);
+            const phoneTimestamp = this.parseTimeToTimestamp(phoneLastTime);
+            // Compare full dates, so yesterday's 23:59 cannot replace today's 00:00.
+            if (phoneTimestamp > requestedTimestamp && !this._isLikelyRealClockPollution(phoneLastTime, [requested])) {
                 finalTime = phoneLastTime.time;
+                finalDate = phoneLastTime.date;
+                finalWeekday = phoneLastTime.weekday || this.calculateWeekday(finalDate);
+                preciseTimestamp = phoneTimestamp;
             }
         }
 
@@ -975,10 +983,10 @@ setTime(time, date, weekday = null, options = {}) {
             weekday: finalWeekday,
             isAncient,
             era: options?.era || parsedDate?.era || '',
-            calendarDate: options?.calendarDate || parsedDate?.calendarDate || finalDate,
+            calendarDate: options?.calendarDate || this._parseStoryDate(finalDate, { allowUnknownEra: true })?.calendarDate || finalDate,
             source: options?.source || (force ? 'manual-sync' : 'story-current')
         };
-        timeData.timestamp = this.parseTimeToTimestamp(timeData);
+        timeData.timestamp = this.parseTimeToTimestamp({ ...timeData, timestamp: preciseTimestamp });
 
         this._rememberStableStoryTime(timeData);
 

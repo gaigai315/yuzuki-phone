@@ -148,11 +148,13 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-11',
+    date: '2026-10-12',
     items: [
         '【修复】线上支付小票仅在存在完整闭合标签时渲染，支付时间支持 1 至 6 位年份；缺失结束标签或内容无效时不再猜测边界。',
         '【修复】线上支付清理只处理支付协议本身，不再误改后续 MUV、任务进度、Status_block 或其他酒馆前端 DOM。',
-        '【修复】修复酒馆助手偶发漏过角色卡开场 HTML 前端首屏渲染的问题；无需点击小铅笔即可正常加载。'
+        '【修复】修复酒馆助手偶发漏过角色卡开场 HTML 前端首屏渲染的问题；无需点击小铅笔即可正常加载。',
+        '【优化】优化线上微信的时间推进。',
+        '【优化】优化部分渲染问题。'
     ]
 };
 

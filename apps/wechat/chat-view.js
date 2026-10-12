@@ -1,3 +1,4 @@
+import { CALL_HANGUP_RULE, parseCallHangupReply } from '../../config/call-hangup.js';
 /* ========================================================
  *  柚月小手机 (Yuzuki's Little Phone)
  *  作者 (Author): yuzuki
@@ -9,6 +10,7 @@
  * 
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
+import { startCallTimer } from '../../config/call-timer.js';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { captureWechatChatSnapshot } from './chat-snapshot.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
@@ -2875,193 +2877,61 @@ export class ChatView {
     }
 
     _getWechatReplySecondsToAdd(content = '', { isFirstInReplyBatch = false } = {}) {
-        const text = String(content || '').replace(/\s+/g, '').trim();
-        if (isFirstInReplyBatch) {
-            return text.length <= 12 ? 6 + Math.floor(Math.random() * 10) : 12 + Math.floor(Math.random() * 18);
-        }
-        if (!text) return 3 + Math.floor(Math.random() * 4);
-        const readingSeconds = Math.ceil(text.length * 0.9);
-        const randomThinkSeconds = 3 + Math.floor(Math.random() * 8);
-        return Math.max(4, Math.min(55, readingSeconds + randomThinkSeconds));
-    }
-
-    _isShortWechatReplyForTimeline(content = '') {
-        const text = String(content || '').replace(/\s+/g, '').trim();
-        if (!text) return false;
-
-        const timeManager = window.VirtualPhone?.timeManager;
-        if (typeof timeManager?.getWechatMessageMinutesToAdd === 'function') {
-            const minutes = Number(timeManager.getWechatMessageMinutesToAdd(text, { inBatch: true }));
-            if (Number.isFinite(minutes)) {
-                return minutes <= 0;
-            }
-        }
-
-        return text.length <= 12;
-    }
-
-    _buildShortWechatReplyGapMap(messageList = []) {
-        const extras = new Map();
-        if (!Array.isArray(messageList) || messageList.length <= 2) {
-            return extras;
-        }
-
-        const flushRun = (runIndexes) => {
-            if (runIndexes.length <= 2) return;
-            for (let i = 2; i < runIndexes.length; i++) {
-                const targetIndex = runIndexes[i];
-                const randomExtraMinutes = 1 + Math.floor(Math.random() * 3); // 1~3分钟随机分散
-                extras.set(targetIndex, randomExtraMinutes);
-            }
-        };
-
-        let shortRun = [];
-        for (let i = 0; i < messageList.length; i++) {
-            const msg = messageList[i] || {};
-            const cleanContent = this.cleanAbnormalSpaces(msg.content);
-            const normalizedTextContent = this._stripCallSpeechPrefix(cleanContent);
-            const special = msg.specialMessage || this.parseSpecialMessage(cleanContent);
-            const isShortTextReply = !special && this._isShortWechatReplyForTimeline(normalizedTextContent);
-
-            if (isShortTextReply) {
-                shortRun.push(i);
-            } else {
-                flushRun(shortRun);
-                shortRun = [];
-            }
-        }
-        flushRun(shortRun);
-        return extras;
+        const length = String(content || '').replace(/\s+/g, '').length;
+        const thinkSeconds = 2 + Math.floor(Math.random() * 4);
+        const seconds = Math.max(4, Math.min(20, Math.ceil(length * 0.35) + thinkSeconds));
+        return isFirstInReplyBatch ? Math.max(6, seconds) : seconds;
     }
 
     _applyAiReplyTimeline(messageObj, fallbackContent = '', options = {}) {
         if (!messageObj || typeof messageObj !== 'object') return;
 
-        const contentText = String(messageObj.content || fallbackContent || '').trim();
+        const now = Date.now();
+        const startedAt = Number(this._aiReplyRequestStartedAt || 0);
+        const isFirstInReplyBatch = options?.isFirstInReplyBatch === true;
+        const waitedMs = isFirstInReplyBatch && startedAt > 0 ? Math.max(0, now - startedAt) : 0;
+        if (waitedMs > 60000) messageObj.forceTimeDivider = true;
+
+        // Reality mode always uses the clock at arrival, with no simulated delay.
         if (this._shouldUseRealTimeForOnlineChat(options)) {
-            let baseTimestamp = Number(this._aiReplyTimestampCursor || options?.baseTimestamp || Date.now());
-            if (!Number.isFinite(baseTimestamp) || baseTimestamp <= 0) baseTimestamp = Date.now();
-
-            let minutesToAdd = contentText.length <= 12 ? 0 : 1;
-            const isFirstInReplyBatch = options?.isFirstInReplyBatch === true;
-            if (isFirstInReplyBatch) {
-                const startedAt = Number(this._aiReplyRequestStartedAt || 0);
-                if (Number.isFinite(startedAt) && startedAt > 0) {
-                    const waitedMs = Math.max(0, Date.now() - startedAt);
-                    if (waitedMs > 60 * 1000) messageObj.forceTimeDivider = true;
-                    minutesToAdd = Math.max(minutesToAdd, Math.max(0, Math.floor(waitedMs / (60 * 1000))));
-                }
-            }
-
-            minutesToAdd += Math.max(0, Number(options?.extraGapMinutes) || 0);
-            let nextTimestamp = baseTimestamp + (Math.max(0, minutesToAdd) * 60 * 1000);
-            nextTimestamp += this._getWechatReplySecondsToAdd(contentText, { isFirstInReplyBatch }) * 1000;
-
-            messageObj.time = this._formatWechatTimeFromTimestamp(nextTimestamp) || messageObj.time;
-            messageObj.date = messageObj.date || this._formatWechatDateFromTimestamp(nextTimestamp);
-            messageObj.weekday = messageObj.weekday || this._getWechatWeekdayFromTimestamp(nextTimestamp, '');
-            messageObj.timestamp = nextTimestamp;
-            messageObj.realTimestamp = Date.now();
-            this._aiReplyTimestampCursor = nextTimestamp;
-            this._aiReplyTimeCursor = {
-                time: messageObj.time,
-                date: messageObj.date,
-                weekday: messageObj.weekday,
-                timestamp: nextTimestamp
-            };
+            Object.assign(messageObj, this._buildWechatRealTimeFields(now));
+            this._aiReplyTimestampCursor = now;
+            this._aiReplyTimeCursor = { ...this._buildWechatRealTimeFields(now) };
             return;
         }
 
         const timeManager = window.VirtualPhone?.timeManager;
-        if (!timeManager?.getCurrentStoryTime) return;
-
+        if (!timeManager?.getCurrentStoryTime || !timeManager?.addMinutesToStoryTime) return;
         let cursor = this._aiReplyTimeCursor || timeManager.getCurrentStoryTime();
-        if (!cursor?.time || !cursor?.date) {
-            cursor = timeManager.getCurrentStoryTime();
+        if (!cursor?.time || !cursor?.date) return;
+        // Respect a newer global time if another window advanced it during this batch.
+        const current = timeManager.getCurrentStoryTime();
+        let cursorTimestamp = Number(this._aiReplyTimestampCursor || cursor.timestamp || timeManager.parseTimeToTimestamp(cursor));
+        if (Number(current?.timestamp) > cursorTimestamp) {
+            cursor = current;
+            cursorTimestamp = Number(current.timestamp);
         }
-        const cursorTimestamp = Number(this._aiReplyTimestampCursor || cursor.timestamp || 0);
-        if (Number.isFinite(cursorTimestamp) && cursorTimestamp > 0) {
-            cursor = {
-                ...cursor,
-                timestamp: cursorTimestamp,
-                time: this._formatWechatTimeFromTimestamp(cursorTimestamp) || cursor.time,
-                date: this._formatWechatDateFromTimestamp(cursorTimestamp) || cursor.date,
-                weekday: this._getWechatWeekdayFromTimestamp(cursorTimestamp, cursor.weekday)
-            };
-        }
+        if (!Number.isFinite(cursorTimestamp)) return;
 
-        // 线上微信聊天统一由插件推进时间，忽略 AI 输出的显式时间，避免模型乱算时间造成跳时序。
-        const hasExplicitTime = false;
-        if (hasExplicitTime) {
-            if (!messageObj.date) messageObj.date = cursor?.date || '';
-            if (!messageObj.weekday) messageObj.weekday = cursor?.weekday || '';
-            if (typeof timeManager.setTime === 'function' && messageObj.date) {
-                timeManager.setTime(messageObj.time, messageObj.date, messageObj.weekday || null);
-            }
-            this._aiReplyTimeCursor = timeManager.getCurrentStoryTime();
-            return;
-        }
-
-        let minutesToAdd = 1;
-        if (typeof timeManager.getWechatMessageMinutesToAdd === 'function') {
-            minutesToAdd = timeManager.getWechatMessageMinutesToAdd(contentText, { inBatch: true });
-        } else {
-            minutesToAdd = contentText.length <= 12 ? 0 : 1;
-        }
-
-        const isFirstInReplyBatch = options?.isFirstInReplyBatch === true;
-        if (isFirstInReplyBatch) {
-            const startedAt = Number(this._aiReplyRequestStartedAt || 0);
-            if (Number.isFinite(startedAt) && startedAt > 0) {
-                const waitedMs = Math.max(0, Date.now() - startedAt);
-                if (waitedMs > 60 * 1000) {
-                    // 首条回复等待超过 1 分钟时，强制显示时间胶囊（渲染层识别）
-                    messageObj.forceTimeDivider = true;
-                }
-                const waitedMinutes = Math.max(0, Math.floor(waitedMs / (60 * 1000)));
-                minutesToAdd = Math.max(minutesToAdd, waitedMinutes);
-            }
-        }
-        const extraGapMinutes = Math.max(0, Number(options?.extraGapMinutes) || 0);
-        if (extraGapMinutes > 0) {
-            minutesToAdd += extraGapMinutes;
-        }
-        minutesToAdd = Math.max(0, Number(minutesToAdd) || 0);
-
-        let nextTime = cursor;
-        if (typeof timeManager.addMinutesToStoryTime === 'function') {
-            nextTime = timeManager.addMinutesToStoryTime(cursor, minutesToAdd);
-        }
-        let nextTimestamp = Number(nextTime?.timestamp || cursor?.timestamp || 0);
-        if (Number.isFinite(nextTimestamp) && nextTimestamp > 0) {
-            nextTimestamp += this._getWechatReplySecondsToAdd(contentText, { isFirstInReplyBatch }) * 1000;
-            nextTime = {
-                ...nextTime,
-                timestamp: nextTimestamp,
-                time: this._formatWechatTimeFromTimestamp(nextTimestamp) || nextTime?.time || cursor?.time,
-                date: this._formatWechatDateFromTimestamp(nextTimestamp) || nextTime?.date || cursor?.date,
-                weekday: this._getWechatWeekdayFromTimestamp(nextTimestamp, nextTime?.weekday || cursor?.weekday)
-            };
-        }
-
-        messageObj.time = nextTime?.time || cursor?.time || messageObj.time;
-        messageObj.date = messageObj.date || nextTime?.date || cursor?.date;
-        messageObj.weekday = messageObj.weekday || nextTime?.weekday || cursor?.weekday;
-        if (Number.isFinite(nextTimestamp) && nextTimestamp > 0) {
-            messageObj.timestamp = nextTimestamp;
-        }
-
-        if (typeof timeManager.setTime === 'function' && messageObj.time && messageObj.date) {
-            timeManager.setTime(messageObj.time, messageObj.date, messageObj.weekday || null);
-            window.VirtualPhone?.checkCalendarScheduleReminders?.(timeManager.getCurrentStoryTime?.() || {
-                time: messageObj.time,
-                date: messageObj.date,
-                weekday: messageObj.weekday
-            });
-        }
-
-        this._aiReplyTimeCursor = timeManager.getCurrentStoryTime();
-        this._aiReplyTimestampCursor = Number(messageObj.timestamp || nextTime?.timestamp || 0) || null;
+        const contentText = String(messageObj.content || fallbackContent || '').trim();
+        let secondsToAdd = this._getWechatReplySecondsToAdd(contentText, { isFirstInReplyBatch });
+        if (waitedMs > 60000) secondsToAdd = Math.max(secondsToAdd, Math.floor(waitedMs / 1000));
+        // Only proactive contact supplies an additional story gap, once per request.
+        secondsToAdd += Math.max(0, Number(options?.extraGapMinutes) || 0) * 60;
+        const nextTimestamp = cursorTimestamp + secondsToAdd * 1000;
+        const minuteTimestamp = timeManager.parseTimeToTimestamp({ ...cursor, timestamp: undefined });
+        const nextTime = timeManager.addMinutesToStoryTime(cursor, Math.floor((nextTimestamp - minuteTimestamp) / 60000));
+        Object.assign(messageObj, {
+            time: nextTime.time,
+            date: nextTime.date,
+            weekday: nextTime.weekday,
+            timestamp: nextTimestamp,
+            realTimestamp: now
+        });
+        timeManager.setTime?.(messageObj.time, messageObj.date, messageObj.weekday || null, { timestamp: nextTimestamp });
+        window.VirtualPhone?.checkCalendarScheduleReminders?.(timeManager.getCurrentStoryTime() || nextTime);
+        this._aiReplyTimeCursor = { ...nextTime, timestamp: nextTimestamp };
+        this._aiReplyTimestampCursor = nextTimestamp;
     }
 
     _getMessageTimelineFields(messageObj = {}) {
@@ -3153,7 +3023,7 @@ renderChatRoom(chat) {
         `;
     }
 
-    // 🔥 渲染消息列表（常规3分钟时间胶囊 + AI首条>1分钟强制显示）
+    // 🔥 渲染消息列表（常规2分钟时间胶囊 + AI首条>1分钟强制显示）
     renderMessagesWithDateDividers(messages, userInfo) {
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
             return '';
@@ -3179,7 +3049,7 @@ renderChatRoom(chat) {
 
                 // 🔥 日期变化时强制显示日期分隔符（线下转线上跨天场景）
                 const isDateChanged = msgDate && msgDate !== lastRenderedDate;
-                // 🔥 常规：间隔达到3分钟或日期变化；新增：AI首条>1分钟也显示时间胶囊
+                // 🔥 常规：距上次时间标签达到2分钟或日期变化；AI首条>1分钟也显示时间胶囊
                 const isManualTimeMarker = msg?.isTimeMarker === true || msg?.type === 'time_marker';
                 if (isManualTimeMarker) {
                     const markerText = this._buildWechatTimeDividerText(msg, { forceDate: true });
@@ -3191,7 +3061,7 @@ renderChatRoom(chat) {
                     return;
                 }
 
-                if (isDateChanged || shouldShowAiFirstDivider || msgTimestamp - lastRenderedTimestamp >= 3 * 60 * 1000 || (index === 0 && msgTimestamp)) {
+                if (isDateChanged || shouldShowAiFirstDivider || msgTimestamp - lastRenderedTimestamp >= 2 * 60 * 1000 || (index === 0 && msgTimestamp)) {
                     let displayText = '';
                     if (isDateChanged) {
                         displayText = `${msgDate}${msg.weekday ? ' ' + msg.weekday : ''} ${msg.time || ''}`;
@@ -11472,7 +11342,6 @@ renderChatRoom(chat) {
                 }
                 let senderAvatar = bgChat.avatar || '👤';
                 const bgDisplayName = isBgGroupChat ? targetName : (bgChat.name || targetName);
-                const bgShortGapMap = this._buildShortWechatReplyGapMap(msgs);
                 for (let bgIndex = 0; bgIndex < msgs.length; bgIndex++) {
                     const m = msgs[bgIndex];
                     const cleanContent = this.cleanAbnormalSpaces(m.content);
@@ -11497,7 +11366,7 @@ renderChatRoom(chat) {
 
                     this._applyAiReplyTimeline(m, normalizedTextContent, {
                         isFirstInReplyBatch: bgIndex === 0,
-                        extraGapMinutes: (bgShortGapMap.get(bgIndex) || 0) + consumeProactiveStoryGapMinutes(),
+                        extraGapMinutes: consumeProactiveStoryGapMinutes(),
                         baseTimestamp: options?.proactiveMeta?.now || Date.now()
                     });
 
@@ -11573,7 +11442,6 @@ renderChatRoom(chat) {
             }
 
             // 6️⃣ 将AI回复添加到微信界面（使用动态打字延迟）
-            const inlineShortGapMap = this._buildShortWechatReplyGapMap(parsedMessages);
             for (let msgIndex = 0; msgIndex < parsedMessages.length; msgIndex++) {
                 const msg = parsedMessages[msgIndex];
                 if (this.abortController?.signal.aborted) {
@@ -11643,7 +11511,7 @@ renderChatRoom(chat) {
 
                 this._applyAiReplyTimeline(msg, normalizedTextContent, {
                     isFirstInReplyBatch: msgIndex === 0,
-                    extraGapMinutes: (inlineShortGapMap.get(msgIndex) || 0) + consumeProactiveStoryGapMinutes(),
+                    extraGapMinutes: consumeProactiveStoryGapMinutes(),
                     baseTimestamp: options?.proactiveMeta?.now || Date.now()
                 });
 
@@ -12725,6 +12593,7 @@ renderChatRoom(chat) {
                 callSystemPrompt = promptManager.getPromptForFeature('wechat', promptFeature) || '';
             }
 
+            if (!callSystemPrompt.includes(CALL_HANGUP_RULE)) callSystemPrompt += `\n\n${CALL_HANGUP_RULE}`;
             callSystemPrompt = callSystemPrompt
                 .replace(/\{\{user\}\}/g, userName)
                 .replace(/\{\{char\}\}/g, targetChat.name)
@@ -14942,6 +14811,7 @@ renderChatRoom(chat) {
 
     // 🔥 显示视频通话界面（接通后）- 白色玻璃风格
     showVideoCallInterface(contact, aiFirstMessage) {
+        clearInterval(this._wechatCallTimer);
         // 🔥 记录通话开始的剧情时间
         const timeManager = window.VirtualPhone?.timeManager;
         const callStartTime = this._shouldUseRealTimeForOnlineChat()
@@ -15168,6 +15038,7 @@ renderChatRoom(chat) {
         };
 
         const restartVideoPendingTimerIfNeeded = () => {
+            if (callEnded) return;
             const input = getVideoInput();
             const text = String(input?.value || '').trim();
             const isEditing = !!input && document.activeElement === input;
@@ -15190,6 +15061,40 @@ renderChatRoom(chat) {
             return Math.min(2200, 420 + length * 45);
         };
 
+        let callEnded = false;
+        const callChatId = contact.id;
+        const callMessagesElement = getVideoMessages();
+        const finishCall = (endedBy) => {
+            if (callEnded || !callMessagesElement?.isConnected) return;
+            callEnded = true;
+            this.stopWechatCallTTS();
+            clearInterval(videoTimer);
+            clearVideoBatchTimer();
+            videoPendingUserLines = [];
+            isVideoSending = false;
+            document.getElementById('video-typing-indicator')?.remove();
+            chatMessages.push({
+                from: endedBy === 'user' ? 'me' : contact.name,
+                text: endedBy === 'user' ? '已挂断（用户主动挂断）' : '已挂断（角色主动挂断）',
+                type: 'call_hangup', endedBy
+            });
+            const effectiveDurationSec = Math.max(videoDuration, Math.floor((Date.now() - callStartEpoch) / 1000));
+            const durationText = `${Math.floor(effectiveDurationSec / 60)}分${effectiveDurationSec % 60}秒`;
+            this.addCallRecord('video', 'answered', durationText, {
+                chatId: callChatId, callStartTime, elapsedSeconds: effectiveDurationSec,
+                endedBy, transcript: chatMessages.filter(m => !m.isDeleted).map(m => ({ ...m }))
+            });
+            callMessagesElement.insertAdjacentHTML('beforeend', '<div class="wechat-call-ended" style="text-align:center; color:#888; font-size:12px; padding:10px 0; flex-shrink:0;">已挂断</div>');
+            callMessagesElement.scrollTop = callMessagesElement.scrollHeight;
+            const input = getVideoInput();
+            if (input) { input.disabled = true; input.placeholder = '通话已结束'; }
+            const sendButton = document.getElementById('video-send-btn');
+            if (sendButton) sendButton.disabled = true;
+            setVideoCallStatus('red');
+            const hangupButton = document.getElementById('video-hangup-btn');
+            if (hangupButton) { hangupButton.title = '返回聊天'; hangupButton.setAttribute('aria-label', '返回聊天'); }
+        };
+
         const renderVideoAiLinesSequentially = async (lines, roundId) => {
             const bubbleMetas = [];
             const renderLines = Array.isArray(lines) ? lines : [];
@@ -15204,12 +15109,13 @@ renderChatRoom(chat) {
                         sender: String(renderLines[i]?.sender || contact.name).trim() || contact.name,
                         text: String(renderLines[i]?.text || '').trim()
                     };
+                if (callEnded || !callMessagesElement?.isConnected) break;
                 if (!entry.text) continue;
 
                 document.getElementById('video-typing-indicator')?.remove();
                 const typingHtml = `
                     <div id="video-typing-indicator" style="display: flex; justify-content: flex-start;">
-                        <div style="padding: 8px 12px; background: rgba(255,255,255,0.5); color: rgba(0,0,0,0.5); border-radius: 12px; font-size: 12px;">正在输入...</div>
+                        <div style="padding: 8px 12px; background: rgba(255,255,255,0.5); color: rgba(0,0,0,0.5); border-radius: 12px; font-size: 12px;">对方正在说话...</div>
                     </div>
                 `;
                 messagesDiv.insertAdjacentHTML('beforeend', typingHtml);
@@ -15217,6 +15123,7 @@ renderChatRoom(chat) {
 
                 await new Promise(resolve => setTimeout(resolve, getVideoCallTypingDelay(entry.text)));
                 document.getElementById('video-typing-indicator')?.remove();
+                if (callEnded || !callMessagesElement?.isConnected) break;
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
                 const senderLabelHtml = isGroupCall
@@ -15263,7 +15170,8 @@ renderChatRoom(chat) {
                 cleanedGreeting = cleanedGreeting.replace(/\[微信\][^:：]*[：:]\s*/g, ''); // 移除 [微信] xxx: 格式
                 cleanedGreeting = cleanedGreeting.replace(/^from\s+\S+[：:]\s*/gmi, ''); // 移除 from xxx: 格式
 
-                const msgLines = this._parseCallReplyEntries(cleanedGreeting, {
+                const greetingHangup = parseCallHangupReply(cleanedGreeting);
+                const msgLines = this._parseCallReplyEntries(greetingHangup.text, {
                     contactName: contact.name,
                     participants: isGroupCall ? groupParticipants : [],
                     groupName: contact.name,
@@ -15272,6 +15180,7 @@ renderChatRoom(chat) {
                 const roundId = 'round_greeting_' + Date.now();
                 (async () => {
                     const bubbleMetas = await renderVideoAiLinesSequentially(msgLines, roundId);
+                    if (callEnded || !callMessagesElement?.isConnected) return;
                     this.bindCallBubbleClickEvents(messagesDiv);
                     const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
                     this.currentTtsRound = roundId;
@@ -15284,24 +15193,20 @@ renderChatRoom(chat) {
                             await this.playWechatCallTTS(ttsText, bubble);
                         }
                     }
+                    if (greetingHangup.ended) finishCall('character');
                 })();
             }
         }
 
         // 计时器
         let videoDuration = 0;
-        const videoTimer = setInterval(() => {
-            videoDuration++;
-            const minutes = Math.floor(videoDuration / 60).toString().padStart(2, '0');
-            const seconds = (videoDuration % 60).toString().padStart(2, '0');
-            const timerDiv = document.getElementById('video-timer');
-            if (timerDiv) {
-                timerDiv.textContent = `${minutes}:${seconds}`;
-            }
-        }, 1000);
+        const videoTimer = startCallTimer(document.getElementById('video-timer'), seconds => {
+            videoDuration = seconds;
+        });
+        this._wechatCallTimer = videoTimer;
 
         const triggerVideoAI = async () => {
-            if (isVideoSending || videoPendingUserLines.length === 0) return;
+            if (callEnded || !callMessagesElement?.isConnected || isVideoSending || videoPendingUserLines.length === 0) return;
 
             if (!this.isOnlineMode()) {
                 this.app.phoneShell.showNotification('离线模式', '请在设置中开启在线模式', '⚠️');
@@ -15324,7 +15229,7 @@ renderChatRoom(chat) {
                 document.getElementById('video-typing-indicator')?.remove();
                 const typingHtml = `
                     <div id="video-typing-indicator" style="display: flex; justify-content: flex-start;">
-                        <div style="padding: 8px 12px; background: rgba(255,255,255,0.5); color: rgba(0,0,0,0.5); border-radius: 12px; font-size: 12px;">正在输入...</div>
+                        <div style="padding: 8px 12px; background: rgba(255,255,255,0.5); color: rgba(0,0,0,0.5); border-radius: 12px; font-size: 12px;">对方正在说话...</div>
                     </div>
                 `;
                 messagesDiv.insertAdjacentHTML('beforeend', typingHtml);
@@ -15333,15 +15238,18 @@ renderChatRoom(chat) {
                 const aiReply = await this.sendCallMessageToAI(messageToSend, contact.name, chatMessages, 'video');
                 document.getElementById('video-typing-indicator')?.remove();
 
+                if (callEnded || !callMessagesElement?.isConnected) return;
+                const hangupReply = parseCallHangupReply(aiReply);
                 const roundId = 'round_' + Date.now();
-                const aiEntries = this._parseCallReplyEntries(aiReply, {
+                const aiEntries = this._parseCallReplyEntries(hangupReply.text, {
                     contactName: contact.name,
                     participants: isGroupCall ? groupParticipants : [],
                     groupName: contact.name,
                     isGroupCall
                 });
-                const renderLines = aiEntries.length > 0 ? aiEntries : [{ sender: contact.name, text: '...' }];
+                const renderLines = aiEntries.length > 0 ? aiEntries : (hangupReply.ended ? [] : [{ sender: contact.name, text: '...' }]);
                 const bubbleMetas = await renderVideoAiLinesSequentially(renderLines, roundId);
+                    if (callEnded || !callMessagesElement?.isConnected) return;
 
                 this.bindCallBubbleClickEvents(messagesDiv);
                 const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
@@ -15355,6 +15263,7 @@ renderChatRoom(chat) {
                         await this.playWechatCallTTS(ttsText, bubble);
                     }
                 }
+                if (hangupReply.ended) finishCall('character');
             } catch (error) {
                 console.error('❌ 视频通话消息发送失败:', error);
                 document.getElementById('video-typing-indicator')?.remove();
@@ -15362,7 +15271,7 @@ renderChatRoom(chat) {
                 isVideoSending = false;
                 if (videoPendingUserLines.length > 0) {
                     restartVideoPendingTimerIfNeeded();
-                } else {
+                } else if (!callEnded) {
                     setVideoCallStatus('green');
                 }
             }
@@ -15370,6 +15279,7 @@ renderChatRoom(chat) {
 
         // 发送消息（复刻微信聊天的“连发等待”逻辑）
         const sendMessage = async () => {
+            if (callEnded || !callMessagesElement?.isConnected) return;
             this.stopWechatCallTTS(); // 发新消息时打断旧语音
             const input = getVideoInput();
             const messagesDiv = getVideoMessages();
@@ -15471,38 +15381,8 @@ renderChatRoom(chat) {
 
         // 挂断
         document.getElementById('video-hangup-btn')?.addEventListener('click', () => {
-            this.stopWechatCallTTS();
-            clearInterval(videoTimer);
-            clearVideoBatchTimer();
-            videoPendingUserLines = [];
-            isVideoSending = false;
-
-            // 🔥 终极防报错保护。如果退出了当前聊天界面，直接返回即可，不再去读 id
-            if (!this.app.currentChat) {
-                this.app.render();
-                return;
-            }
-
-            const wallElapsedSeconds = Math.max(0, Math.floor((Date.now() - callStartEpoch) / 1000));
-            const effectiveDurationSec = Math.max(videoDuration, wallElapsedSeconds);
-            const durationText = `${Math.floor(effectiveDurationSec / 60)}分${effectiveDurationSec % 60}秒`;
-
-            // 🔥 过滤掉被删除的废弃消息
-            const validChatMessages = chatMessages.filter(m => !m.isDeleted);
-
-            this.addCallRecord('video', 'answered', durationText, {
-                callStartTime,
-                elapsedSeconds: effectiveDurationSec,
-                transcript: validChatMessages.length > 0 ? [...validChatMessages] : undefined
-            });
-
-            // 🔥 如果开启在线模式，通知AI
-            if (this.isOnlineMode() && effectiveDurationSec > 0) {
-                this.notifyAI(`刚才和你视频通话了${durationText}`);
-            }
-
-            this.app.phoneShell.showNotification('通话结束', `${isGroupCall ? '群视频通话' : '视频通话'} ${durationText}`, '📹');
-            setTimeout(() => this.app.render(), 1000);
+            if (callEnded) this.app.render();
+            else finishCall('user');
         });
     }
 
@@ -15758,12 +15638,13 @@ ${groupParticipants.join('、') || '暂无成员'}
             : (this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : (window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || null));
         const currentTime = storyTime?.time || this._getCurrentStoryTimeText();
 
-        this.app.wechatData.addMessage(this.app.currentChat.id, {
+        this.app.wechatData.addMessage(options?.chatId || this.app.currentChat.id, {
             from: 'me',
             type: 'call_record',
             callType: callType,
             status: status,
             duration: duration,
+            endedBy: options?.endedBy || undefined,
             transcript: Array.isArray(options?.transcript) && options.transcript.length > 0 ? options.transcript : undefined,
             callStartTime: String(callStartTime?.time || '').trim() || undefined,
             callStartDate: String(callStartTime?.date || '').trim() || undefined,
@@ -16269,6 +16150,10 @@ ${callTranscript}`;
                 cleanedResponse = this._extractWechatTagPayloadOrSelf(aiResponse).trim();
             }
 
+            const hangupReply = parseCallHangupReply(cleanedResponse);
+            cleanedResponse = hangupReply.text;
+            const withHangup = text => hangupReply.ended ? `${text}\n已挂断`.trim() : text;
+
             if (isGroupCall) {
                 const groupEntries = this._parseCallReplyEntries(cleanedResponse, {
                     contactName,
@@ -16277,13 +16162,13 @@ ${callTranscript}`;
                     isGroupCall
                 });
                 if (groupEntries.length > 0) {
-                    return groupEntries.map(item => `${item.sender}: ${item.text}`).join('\n');
+                    return withHangup(groupEntries.map(item => `${item.sender}: ${item.text}`).join('\n'));
                 }
-                return String(cleanedResponse || '').trim() || '...';
+                return withHangup(String(cleanedResponse || '').trim() || (hangupReply.ended ? '' : '...'));
             }
 
             const lines = this._normalizeCallReplyLines(cleanedResponse, contactName);
-            return lines.length > 0 ? lines.join('\n') : '...';
+            return withHangup(lines.length > 0 ? lines.join('\n') : (hangupReply.ended ? '' : '...'));
 
         } catch (error) {
             console.error(`❌ ${callType}通话消息发送失败:`, error);
@@ -16298,6 +16183,7 @@ ${callTranscript}`;
 
     // 🔥 显示语音通话界面（接通后）- 简洁版
     showVoiceCallInterface(contact, aiGreeting = '') {
+        clearInterval(this._wechatCallTimer);
         // 🔥 记录通话开始的剧情时间
         const timeManager = window.VirtualPhone?.timeManager;
         const callStartTime = this._shouldUseRealTimeForOnlineChat()
@@ -16516,6 +16402,7 @@ ${callTranscript}`;
         };
 
         const restartVoicePendingTimerIfNeeded = () => {
+            if (callEnded) return;
             const input = getVoiceInput();
             const text = String(input?.value || '').trim();
             const isEditing = !!input && document.activeElement === input;
@@ -16538,6 +16425,40 @@ ${callTranscript}`;
             return Math.min(2000, 360 + length * 40);
         };
 
+        let callEnded = false;
+        const callChatId = contact.id;
+        const callMessagesElement = getVoiceMessages();
+        const finishCall = (endedBy) => {
+            if (callEnded || !callMessagesElement?.isConnected) return;
+            callEnded = true;
+            this.stopWechatCallTTS();
+            clearInterval(callTimer);
+            clearVoiceBatchTimer();
+            voicePendingUserLines = [];
+            isVoiceSending = false;
+            document.getElementById('voice-typing-indicator')?.remove();
+            chatMessages.push({
+                from: endedBy === 'user' ? 'me' : contact.name,
+                text: endedBy === 'user' ? '已挂断（用户主动挂断）' : '已挂断（角色主动挂断）',
+                type: 'call_hangup', endedBy
+            });
+            const effectiveDurationSec = Math.max(callDuration, Math.floor((Date.now() - callStartEpoch) / 1000));
+            const durationText = `${Math.floor(effectiveDurationSec / 60)}分${effectiveDurationSec % 60}秒`;
+            this.addCallRecord('voice', 'answered', durationText, {
+                chatId: callChatId, callStartTime, elapsedSeconds: effectiveDurationSec,
+                endedBy, transcript: chatMessages.filter(m => !m.isDeleted).map(m => ({ ...m }))
+            });
+            callMessagesElement.insertAdjacentHTML('beforeend', '<div class="wechat-call-ended" style="text-align:center; color:#888; font-size:12px; padding:10px 0; flex-shrink:0;">已挂断</div>');
+            callMessagesElement.scrollTop = callMessagesElement.scrollHeight;
+            const input = getVoiceInput();
+            if (input) { input.disabled = true; input.placeholder = '通话已结束'; }
+            const sendButton = document.getElementById('voice-send-btn');
+            if (sendButton) sendButton.disabled = true;
+            setVoiceCallStatus('red');
+            const hangupButton = document.getElementById('voice-hangup-btn');
+            if (hangupButton) { hangupButton.title = '返回聊天'; hangupButton.setAttribute('aria-label', '返回聊天'); }
+        };
+
         const renderVoiceAiLinesSequentially = async (lines, roundId) => {
             const bubbleMetas = [];
             const renderLines = Array.isArray(lines) ? lines : [];
@@ -16552,12 +16473,13 @@ ${callTranscript}`;
                         sender: String(renderLines[i]?.sender || contact.name).trim() || contact.name,
                         text: String(renderLines[i]?.text || '').trim()
                     };
+                if (callEnded || !callMessagesElement?.isConnected) break;
                 if (!entry.text) continue;
 
                 document.getElementById('voice-typing-indicator')?.remove();
                 const typingHtml = `
                     <div id="voice-typing-indicator" style="display: flex; justify-content: flex-start;">
-                        <div style="padding: 6px 10px; background: rgba(255,255,255,0.6); color: rgba(0,0,0,0.5); border-radius: 10px; font-size: 11px;">正在输入...</div>
+                        <div style="padding: 6px 10px; background: rgba(255,255,255,0.6); color: rgba(0,0,0,0.5); border-radius: 10px; font-size: 11px;">对方正在说话...</div>
                     </div>
                 `;
                 messagesDiv.insertAdjacentHTML('beforeend', typingHtml);
@@ -16565,6 +16487,7 @@ ${callTranscript}`;
 
                 await new Promise(resolve => setTimeout(resolve, getVoiceCallTypingDelay(entry.text)));
                 document.getElementById('voice-typing-indicator')?.remove();
+                if (callEnded || !callMessagesElement?.isConnected) break;
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
                 const senderLabelHtml = isGroupCall
@@ -16597,15 +16520,10 @@ ${callTranscript}`;
 
         // 计时器
         let callDuration = 0;
-        const callTimer = setInterval(() => {
-            callDuration++;
-            const minutes = Math.floor(callDuration / 60).toString().padStart(2, '0');
-            const seconds = (callDuration % 60).toString().padStart(2, '0');
-            const timerDiv = document.getElementById('call-timer');
-            if (timerDiv) {
-                timerDiv.textContent = `${minutes}:${seconds}`;
-            }
-        }, 1000);
+        const callTimer = startCallTimer(document.getElementById('call-timer'), seconds => {
+            callDuration = seconds;
+        });
+        this._wechatCallTimer = callTimer;
 
         // 聊天消息记录
         const chatMessages = [];
@@ -16622,7 +16540,8 @@ ${callTranscript}`;
                 cleanedGreeting = cleanedGreeting.replace(/\[微信\][^:：]*[：:]\s*/g, '');
                 cleanedGreeting = cleanedGreeting.replace(/^from\s+\S+[：:]\s*/gmi, '');
 
-                const msgLines = this._parseCallReplyEntries(cleanedGreeting, {
+                const greetingHangup = parseCallHangupReply(cleanedGreeting);
+                const msgLines = this._parseCallReplyEntries(greetingHangup.text, {
                     contactName: contact.name,
                     participants: isGroupCall ? groupParticipants : [],
                     groupName: contact.name,
@@ -16631,6 +16550,7 @@ ${callTranscript}`;
                 const roundId = 'round_greeting_' + Date.now();
                 (async () => {
                     const bubbleMetas = await renderVoiceAiLinesSequentially(msgLines, roundId);
+                    if (callEnded || !callMessagesElement?.isConnected) return;
                     this.bindCallBubbleClickEvents(messagesDiv);
                     const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
                     this.currentTtsRound = roundId;
@@ -16641,12 +16561,13 @@ ${callTranscript}`;
                             await this.playWechatCallTTS(bubbleMetas[i].text, bubble);
                         }
                     }
+                    if (greetingHangup.ended) finishCall('character');
                 })();
             }
         }
 
         const triggerVoiceAI = async () => {
-            if (isVoiceSending || voicePendingUserLines.length === 0) return;
+            if (callEnded || !callMessagesElement?.isConnected || isVoiceSending || voicePendingUserLines.length === 0) return;
 
             if (!this.isOnlineMode()) {
                 this.app.phoneShell.showNotification('离线模式', '请在设置中开启在线模式', '⚠️');
@@ -16669,7 +16590,7 @@ ${callTranscript}`;
                 document.getElementById('voice-typing-indicator')?.remove();
                 const typingHtml = `
                     <div id="voice-typing-indicator" style="display: flex; justify-content: flex-start;">
-                        <div style="padding: 6px 10px; background: rgba(255,255,255,0.6); color: rgba(0,0,0,0.5); border-radius: 10px; font-size: 11px;">正在输入...</div>
+                        <div style="padding: 6px 10px; background: rgba(255,255,255,0.6); color: rgba(0,0,0,0.5); border-radius: 10px; font-size: 11px;">对方正在说话...</div>
                     </div>
                 `;
                 messagesDiv.insertAdjacentHTML('beforeend', typingHtml);
@@ -16678,15 +16599,18 @@ ${callTranscript}`;
                 const aiReply = await this.sendCallMessageToAI(messageToSend, contact.name, chatMessages, 'voice');
                 document.getElementById('voice-typing-indicator')?.remove();
 
+                if (callEnded || !callMessagesElement?.isConnected) return;
+                const hangupReply = parseCallHangupReply(aiReply);
                 const roundId = 'round_' + Date.now();
-                const aiEntries = this._parseCallReplyEntries(aiReply, {
+                const aiEntries = this._parseCallReplyEntries(hangupReply.text, {
                     contactName: contact.name,
                     participants: isGroupCall ? groupParticipants : [],
                     groupName: contact.name,
                     isGroupCall
                 });
-                const renderLines = aiEntries.length > 0 ? aiEntries : [{ sender: contact.name, text: '...' }];
+                const renderLines = aiEntries.length > 0 ? aiEntries : (hangupReply.ended ? [] : [{ sender: contact.name, text: '...' }]);
                 const bubbleMetas = await renderVoiceAiLinesSequentially(renderLines, roundId);
+                    if (callEnded || !callMessagesElement?.isConnected) return;
 
                 this.bindCallBubbleClickEvents(messagesDiv);
                 const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
@@ -16698,6 +16622,7 @@ ${callTranscript}`;
                         await this.playWechatCallTTS(bubbleMetas[i].text, bubble);
                     }
                 }
+                if (hangupReply.ended) finishCall('character');
             } catch (error) {
                 console.error('❌ 语音通话消息发送失败:', error);
                 document.getElementById('voice-typing-indicator')?.remove();
@@ -16705,7 +16630,7 @@ ${callTranscript}`;
                 isVoiceSending = false;
                 if (voicePendingUserLines.length > 0) {
                     restartVoicePendingTimerIfNeeded();
-                } else {
+                } else if (!callEnded) {
                     setVoiceCallStatus('green');
                 }
             }
@@ -16713,6 +16638,7 @@ ${callTranscript}`;
 
         // 发送消息（复刻微信聊天的“连发等待”逻辑）
         const sendMessage = async () => {
+            if (callEnded || !callMessagesElement?.isConnected) return;
             this.stopWechatCallTTS();
             const input = getVoiceInput();
             const messagesDiv = getVoiceMessages();
@@ -16814,37 +16740,8 @@ ${callTranscript}`;
         // 挂断
         // 挂断
         document.getElementById('voice-hangup-btn')?.addEventListener('click', () => {
-            this.stopWechatCallTTS();
-            clearInterval(callTimer);
-            clearVoiceBatchTimer();
-            voicePendingUserLines = [];
-            isVoiceSending = false;
-
-            // 🔥 修复：终极防报错保护。如果退出了当前聊天界面，直接返回即可，不再去读 id
-            if (!this.app.currentChat) {
-                this.app.render();
-                return;
-            }
-
-            const wallElapsedSeconds = Math.max(0, Math.floor((Date.now() - callStartEpoch) / 1000));
-            const effectiveDurationSec = Math.max(callDuration, wallElapsedSeconds);
-            const durationText = `${Math.floor(effectiveDurationSec / 60)}分${effectiveDurationSec % 60}秒`;
-
-            // 🔥 过滤掉被删除的废弃消息
-            const validChatMessages = chatMessages.filter(m => !m.isDeleted);
-
-            this.addCallRecord('voice', 'answered', durationText, {
-                callStartTime,
-                elapsedSeconds: effectiveDurationSec,
-                transcript: validChatMessages.length > 0 ? [...validChatMessages] : undefined
-            });
-
-            if (this.isOnlineMode() && effectiveDurationSec > 0) {
-                this.notifyAI(`刚才和你语音通话了${durationText}`);
-            }
-
-            this.app.phoneShell.showNotification('通话结束', `${isGroupCall ? '群语音通话' : '语音通话'} ${durationText}`, '📞');
-            setTimeout(() => this.app.render(), 1000);
+            if (callEnded) this.app.render();
+            else finishCall('user');
         });
     }
 
