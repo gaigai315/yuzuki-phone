@@ -4,94 +4,77 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
-const helper = source.slice(source.indexOf('    const frontendRepairState ='), source.indexOf('    function shouldPreservePhoneMessageDom('));
+const helper = source.slice(source.indexOf('    function refreshMofoInlineMessages()'), source.indexOf('    function insertTextToSendTextarea'));
 
 function fixture() {
-    let context = { chatId: 'first', chat: [{}], event_types: { MESSAGE_UPDATED: 'updated' }, eventSource: {} };
-    const blocks = [];
-    const events = [];
-    const timers = new Map();
-    let timerId = 0;
+    const calls = [];
+    const context = {
+        chat: [{ mes: 'foreign frontend' }, { mes: '<mofo>visible</mofo>' }, { mes: '<mofo>unloaded</mofo>' }],
+        updateMessageBlock() { assert.fail('must not rebuild media or adjust chat scroll'); },
+        messageFormatting(text, name, system, user, id) { calls.push(id); return '<div>updated mofo</div>'; }
+    };
+    const nodes = [];
     const sandbox = {
         getContext: () => context, console,
-        PHONE_TAVERN_FRONTEND_CODE_REGEX: /<html>/i,
-        window: { TavernHelper: {}, innerHeight: 800 },
-        document: { getElementById: () => ({}), querySelectorAll: () => blocks },
-        setTimeout(callback, delay) {
-            if (delay === 80) { callback(); return 0; }
-            timers.set(++timerId, callback);
-            return timerId;
-        },
-        clearTimeout: id => timers.delete(id)
+        window: { VirtualPhone: { cachedMofoData: { findTagBlocksFromText: text => text.includes('<mofo>') ? [{}] : [] } } },
+        _mofoInlineRenderCache: new Map(), pruneDisabledMofoInlineRenders() {},
+        document: { querySelectorAll: () => nodes }
     };
-    context.eventSource.emit = async (_, id) => { events.push(id); };
     vm.createContext(sandbox);
-    vm.runInContext(helper + '\n globalThis.repair = repairMissedTavernFrontendRenders; globalThis.schedule = scheduleMissedTavernFrontendRenderRepair;', sandbox);
-    sandbox.schedule();
-    return { sandbox, blocks, events, timers, context, switchChat() { context = { ...context, chatId: 'second' }; sandbox.schedule(); } };
-}
-
-function block(id, { hidden = false, offscreen = false, rendered = false } = {}) {
-    return {
-        isConnected: true, dataset: {},
-        get textContent() {
-            assert.equal(hidden || offscreen || rendered, false, 'skip inactive frontend before reading its source');
-            return '<html>frontend</html>';
-        },
-        getBoundingClientRect: () => ({ width: hidden ? 0 : 300, height: 200, top: offscreen ? 1000 : 100, bottom: offscreen ? 1200 : 300 }),
-        closest: selector => selector === '.TH-render'
-            ? { querySelector: () => rendered ? {} : null }
-            : { getAttribute: () => String(id) }
-    };
-}
-
-test('only visible missed frontends are repaired; replacing DOM does not replay a floor', async () => {
-    const f = fixture();
-    f.blocks.push(block(0, { hidden: true }), block(1, { offscreen: true }), block(2, { rendered: true }), block(0));
-    assert.equal(await f.sandbox.repair(), 1);
-    assert.deepEqual(f.events, [0]);
-    f.blocks.splice(0, f.blocks.length, block(0));
-    assert.equal(await f.sandbox.repair(), 0);
-    assert.deepEqual(f.events, [0]);
-});
-
-test('chat changes cancel pending scans and stop the old batch after an awaited event', async () => {
-    const f = fixture();
-    f.blocks.push(block(0), block(1));
-    f.context.eventSource.emit = async (_, id) => { f.events.push(id); f.switchChat(); };
-    await f.sandbox.repair();
-    assert.deepEqual(f.events, [0]);
-    assert.equal(f.timers.size, 2, 'only new chat timers survive');
-});
-
-test('overlapping repair passes do not emit duplicate events', async () => {
-    const f = fixture();
-    f.blocks.push(block(0));
-    let release;
-    f.context.eventSource.emit = async (_, id) => { f.events.push(id); await new Promise(resolve => { release = resolve; }); };
-    const first = f.sandbox.repair();
-    assert.equal(await f.sandbox.repair(), 0);
-    release();
-    await first;
-    assert.deepEqual(f.events, [0]);
-});
-
-test('existing conversations neither schedule fallback timers nor scan message DOM', async () => {
-    const f = fixture();
-    f.context.chat.push({});
-    f.sandbox.document.querySelectorAll = () => { assert.fail('history must use normal Tavern Helper rendering'); };
-    f.sandbox.schedule();
-    assert.equal(f.timers.size, 0);
-    assert.equal(await f.sandbox.repair(), 0);
-    assert.deepEqual(f.events, []);
-});
-
-test('disabled and streaming render modes do not trigger the fallback', async () => {
-    for (const render of [{ enabled: false }, { enabled: true, allow_streaming: true }]) {
-        const f = fixture();
-        f.context.extensionSettings = { tavern_helper: { render } };
-        f.sandbox.document.querySelectorAll = () => { assert.fail('respect renderer settings before scanning DOM'); };
-        assert.equal(await f.sandbox.repair(), 0);
-        assert.deepEqual(f.events, []);
+    vm.runInContext(helper + '\nglobalThis.refresh = refreshMofoInlineMessages;', sandbox);
+    function add(id, foreign = false) {
+        const root = { innerHTML: 'original', contains: () => false, querySelectorAll: () => foreign ? [{ closest: () => null }] : [] };
+        nodes.push({ getAttribute: () => id === null ? null : String(id), querySelector: () => root });
+        return root;
     }
+    return { context, calls, sandbox, add };
+}
+
+test('refresh only formats loaded Mofo floors and preserves unrelated frontend DOM', () => {
+    const f = fixture();
+    const foreign = f.add(0);
+    const mofo = f.add(1);
+    f.sandbox.refresh();
+    assert.deepEqual(f.calls, [1]);
+    assert.equal(foreign.innerHTML, 'original');
+    assert.equal(mofo.innerHTML, '<div>updated mofo</div>');
+});
+
+test('mixed Mofo and foreign frontend floors are not overwritten', () => {
+    const f = fixture();
+    const mixed = f.add(1, true);
+    f.sandbox.refresh();
+    assert.deepEqual(f.calls, []);
+    assert.equal(mixed.innerHTML, 'original');
+});
+
+test('without Mofo data no floor is formatted', () => {
+    const f = fixture();
+    f.add(1);
+    f.sandbox.window.VirtualPhone.cachedMofoData = null;
+    assert.equal(f.sandbox.refresh(), false);
+    assert.deepEqual(f.calls, []);
+});
+
+test('a 300-floor chat with only the last 20 mounted never reads unloaded floors', () => {
+    const f = fixture();
+    f.context.chat = Array.from({ length: 300 }, (_, id) => {
+        if (id >= 280) return { mes: '<mofo>loaded</mofo>' };
+        return { get mes() { assert.fail('unloaded history must not be formatted'); } };
+    });
+    for (let id = 280; id < 300; id++) f.add(id);
+    f.sandbox.refresh();
+    assert.deepEqual(f.calls, Array.from({ length: 20 }, (_, i) => 280 + i));
+});
+
+test('missing floor IDs and focused inline controls are left untouched', () => {
+    const f = fixture();
+    f.context.chat[0].mes = '<mofo>zero</mofo>';
+    f.add(null);
+    f.add('');
+    const focused = f.add(1);
+    focused.contains = () => true;
+    f.sandbox.refresh();
+    assert.deepEqual(f.calls, []);
+    assert.equal(focused.innerHTML, 'original');
 });

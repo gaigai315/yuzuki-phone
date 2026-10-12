@@ -179,7 +179,7 @@ test('Mofo refresh prunes stale inline cards after the inline toggle is disabled
     assert.match(source, /\.yzp-mofo-inline-render\[data-mofo-id\]/);
     assert.match(source, /item\?\.inlineRenderEnabled === true/);
     assert.match(source, /_mofoInlineRenderCache\.clear\(\);[\s\S]*?pruneDisabledMofoInlineRenders\(\);/);
-    assert.match(source, /Promise\.allSettled\(pending\)\.then\(\(\) => pruneDisabledMofoInlineRenders\(\)\)/);
+    assert.match(source, /pruneDisabledMofoInlineRenders\(\);\s*return true;\s*}\s*function insertTextToSendTextarea/);
 });
 
 test('Mofo templates receive the current SillyTavern Persona avatar at render time', () => {

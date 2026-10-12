@@ -8,10 +8,6 @@ const hideStart = indexSource.indexOf('function hidePhoneTags()', helperStart);
 const processReplyStart = indexSource.indexOf('function processUserReplyTags(', hideStart);
 const helperSource = indexSource.slice(helperStart, hideStart);
 const hideSource = indexSource.slice(hideStart, processReplyStart);
-const frontendRepairStart = helperSource.indexOf('function repairMissedTavernFrontendRenders()');
-const frontendRepairEnd = helperSource.indexOf('function scheduleMissedTavernFrontendRenderRepair(', frontendRepairStart);
-const frontendRepairSource = helperSource.slice(frontendRepairStart, frontendRepairEnd);
-
 test('stateful Tavern frontends are detected before phone tags are cleaned', () => {
     assert.ok(helperStart >= 0);
     assert.ok(hideStart > helperStart);
@@ -40,22 +36,8 @@ test('raw protocol detection requires a real tag boundary instead of frontend id
     assert.doesNotMatch('openPhoneModal()', protocolRegex);
 });
 
-test('missed Tavern frontend rendering is repaired through one scoped update event', () => {
-    assert.ok(frontendRepairStart >= 0);
-    assert.ok(frontendRepairEnd > frontendRepairStart);
-    assert.match(helperSource, /const PHONE_TAVERN_FRONTEND_CODE_REGEX = \/\(\?:<!doctype/);
-    assert.match(frontendRepairSource, /document\.querySelectorAll\('#chat > \.mes \.mes_text pre'\)/);
-    assert.match(frontendRepairSource, /PHONE_TAVERN_FRONTEND_CODE_REGEX\.test\(String\(pre\.textContent \|\| ''\)\)/);
-    assert.match(frontendRepairSource, /pre\.closest\('\.TH-render'\)\?\.querySelector\('iframe'\)/);
-    assert.match(frontendRepairSource, /pre\.dataset\.stPhoneFrontendRenderRequested === 'true'/);
-    assert.match(frontendRepairSource, /!window\.TavernHelper \|\| !document\.getElementById\('tavern_helper'\)/);
-    assert.match(frontendRepairSource, /context\.eventSource\.emit\(messageUpdatedEvent, messageId\)/);
-    assert.doesNotMatch(frontendRepairSource, /innerHTML\s*=/);
-});
-
-test('frontend render repair runs after initial readiness and chat changes', () => {
-    assert.match(indexSource, /scheduleMissedTavernFrontendRenderRepair\(delays = \[1800, 3600\]\)/);
-    assert.match(indexSource, /scheduleGamesAppPreload\(\);\s*scheduleMissedTavernFrontendRenderRepair\(\);/);
+test('phone startup does not replay Tavern frontend update events', () => {
+    assert.doesNotMatch(indexSource, /scheduleMissedTavernFrontendRenderRepair|repairMissedTavernFrontendRenders/);
 });
 
 test('interactive message cleanup deletes only the protocol suffix through a DOM range', () => {

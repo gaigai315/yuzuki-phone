@@ -2783,24 +2783,35 @@ if (window.GGP_Loaded) {
     function refreshMofoInlineMessages() {
         const context = getContext();
         const chat = Array.isArray(context?.chat) ? context.chat : [];
+        const mofoData = window.VirtualPhone?.cachedMofoData;
         _mofoInlineRenderCache.clear();
         pruneDisabledMofoInlineRenders();
-        if (typeof context?.updateMessageBlock !== 'function') return false;
-        const pending = [];
-        chat.forEach((message, messageIndex) => {
+        if (!mofoData?.findTagBlocksFromText || typeof context?.messageFormatting !== 'function') return false;
+
+        // Never replay the whole chat through updateMessageBlock: it destroys foreign
+        // frontends and appendMediaToMessage schedules scroll adjustments afterwards.
+        document.querySelectorAll('#chat > .mes').forEach((element) => {
+            const rawMessageIndex = element.getAttribute('mesid');
+            if (rawMessageIndex === null || rawMessageIndex.trim() === '') return;
+            const messageIndex = Number(rawMessageIndex);
+            const message = chat[messageIndex];
+            const root = element.querySelector('.mes_text');
+            if (!Number.isInteger(messageIndex) || messageIndex < 0 || !message || message.is_user || !root) return;
+            // Keep focus and cursor state when an inline template contains editable controls.
+            if (root.contains(document.activeElement)) return;
+            const text = String(message.extra?.display_text ?? message.mes ?? '');
             try {
-                const result = context.updateMessageBlock(messageIndex, message);
-                if (result?.then) pending.push(result);
+                if (!mofoData.findTagBlocksFromText(text)?.length) return;
+                // A mixed floor belongs to its frontend renderer; never destroy its runtime.
+                const foreignNodes = root.querySelectorAll('iframe, .TH-render, pre, script, form, input, textarea, select, button, audio, video, canvas, .st-phone-payment-receipt');
+                if (Array.from(foreignNodes).some(node => !node.closest('.yzp-mofo-inline-render'))) return;
+                const html = context.messageFormatting(text, message.name, message.is_system, message.is_user, messageIndex, {}, false);
+                if (root.innerHTML !== html) root.innerHTML = html;
             } catch (e) {
                 console.warn(`[Mofo] Failed to refresh inline message ${messageIndex}:`, e);
             }
         });
-        if (pending.length > 0) {
-            Promise.allSettled(pending).then(() => pruneDisabledMofoInlineRenders());
-        }
-        if (typeof queueMicrotask === 'function') queueMicrotask(pruneDisabledMofoInlineRenders);
-        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(pruneDisabledMofoInlineRenders);
-        setTimeout(pruneDisabledMofoInlineRenders, 80);
+        pruneDisabledMofoInlineRenders();
         return true;
     }
 
@@ -8987,82 +8998,6 @@ if (window.GGP_Loaded) {
     ].join(',');
     const PHONE_RAW_PROTOCOL_BOUNDARY_REGEX = /(?:(?:<|＜|&lt;)\s*\/?\s*(?:wechat|music|phone|weibo|短信|任务进度|线上支付)(?=[\s/>＞]|&gt;)[^>＞]*?(?:>|＞|&gt;))|\[\s*手机来电通话\s*\]|PHONE_CHAT_MODE/i;
     const PHONE_PROTOCOL_SUFFIX_TEXT_REGEX = /(?:<|＜)\s*\/?\s*(?:wechat|music|phone|weibo|短信|任务进度|线上支付)(?=[\s/>＞])[^>＞]*(?:>|＞)|\[\s*手机来电通话\s*\]|PHONE_CHAT_MODE/i;
-    const PHONE_TAVERN_FRONTEND_CODE_REGEX = /(?:<!doctype\s+html\b|<html(?:\s|>)|<head(?:\s|>)|<body(?:\s|>))/i;
-
-    const frontendRepairState = { chatKey: null, generation: 0, timers: new Set(), attempted: new Set(), running: false };
-
-    async function repairMissedTavernFrontendRenders() {
-        const context = getContext();
-        const messageUpdatedEvent = context?.event_types?.MESSAGE_UPDATED;
-        if (!messageUpdatedEvent || typeof context?.eventSource?.emit !== 'function') return 0;
-        if (!window.TavernHelper || !document.getElementById('tavern_helper')) return 0;
-        const chatKey = context.getCurrentChatId?.() || context.chatId;
-        if (!chatKey || frontendRepairState.running || chatKey !== frontendRepairState.chatKey) return 0;
-        // The original fallback is only for a missed first greeting. Existing conversations
-        // already get chatLoaded, which Tavern Helper handles with its own render depth.
-        if (context.chat?.length !== 1 || context.chat[0]?.is_user || context.chat[0]?.is_system) return 0;
-        const renderSettings = context.extensionSettings?.tavern_helper?.render;
-        if (renderSettings?.enabled === false || renderSettings?.allow_streaming === true) return 0;
-        const generation = frontendRepairState.generation;
-        frontendRepairState.running = true;
-        let repaired = 0;
-        try {
-            // Only visible, still-unrendered code needs the startup fallback. Hidden history
-            // belongs to Tavern Helper's own lazy rendering, not a global message replay.
-            const blocks = document.querySelectorAll('#chat > .mes .mes_text pre');
-            for (const pre of blocks) {
-                if (generation !== frontendRepairState.generation || (getContext()?.getCurrentChatId?.() || getContext()?.chatId) !== chatKey) break;
-                if (!pre.isConnected || pre.closest('.TH-render')?.querySelector('iframe')) continue;
-                const messageElement = pre.closest('#chat > .mes');
-                const messageId = Number.parseInt(messageElement?.getAttribute('mesid') || '', 10);
-                if (!Number.isInteger(messageId) || messageId !== 0 || frontendRepairState.attempted.has(messageId)) continue;
-                if (pre.dataset.stPhoneFrontendRenderRequested === 'true') continue;
-                const rect = pre.getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
-                if (!PHONE_TAVERN_FRONTEND_CODE_REGEX.test(String(pre.textContent || ''))) continue;
-                frontendRepairState.attempted.add(messageId);
-                pre.dataset.stPhoneFrontendRenderRequested = 'true';
-                try {
-                    await context.eventSource.emit(messageUpdatedEvent, messageId);
-                    repaired++;
-                } catch (error) {
-                    console.warn('[手机插件] 补发酒馆助手前端渲染事件失败:', error);
-                }
-                // Let touch/scroll and painting run between expensive frontend renders.
-                await new Promise(resolve => setTimeout(resolve, 80));
-            }
-        } finally {
-            if (generation === frontendRepairState.generation) frontendRepairState.running = false;
-        }
-        return repaired;
-    }
-
-    function scheduleMissedTavernFrontendRenderRepair(delays = [1800, 3600]) {
-        frontendRepairState.timers.forEach(clearTimeout);
-        frontendRepairState.timers.clear();
-        frontendRepairState.generation++;
-        frontendRepairState.running = false;
-        const context = getContext();
-        const chatKey = context?.getCurrentChatId?.() || context?.chatId;
-        if (frontendRepairState.chatKey !== chatKey) frontendRepairState.attempted.clear();
-        frontendRepairState.chatKey = chatKey;
-        if (!chatKey || context?.chat?.length !== 1) return;
-        const generation = frontendRepairState.generation;
-        // Give the normal renderer time to finish before checking for missed blocks.
-        [...new Set(delays.map(delay => Math.max(1800, delay)))].forEach((delay) => {
-            const timer = setTimeout(() => {
-                frontendRepairState.timers.delete(timer);
-                const run = () => {
-                    if (generation !== frontendRepairState.generation) return;
-                    void repairMissedTavernFrontendRenders().catch(error => console.warn('[手机插件] 前端补绘检查失败:', error));
-                };
-                if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run);
-                else setTimeout(run, 80);
-            }, delay);
-            frontendRepairState.timers.add(timer);
-        });
-    }
-
     function shouldPreservePhoneMessageDom(root) {
         return !!root?.querySelector?.(PHONE_STATEFUL_MESSAGE_SELECTOR);
     }
@@ -10596,7 +10531,6 @@ if (window.GGP_Loaded) {
 
         // 切换会话后重新处理标签隐藏
         setTimeout(hidePhoneTags, 500);
-        scheduleMissedTavernFrontendRenderRepair();
     }
 
     // 🔥 hidePhoneTags 已移除，改用酒馆正则隐藏
@@ -11097,7 +11031,6 @@ if (window.GGP_Loaded) {
                     startWechatOnlineProactiveScheduler();
                     scheduleHoneyAppPreload();
                     scheduleGamesAppPreload();
-                    scheduleMissedTavernFrontendRenderRepair();
 
                     // 🎵 悬浮窗初始化：若开启了全局悬浮窗，懒加载音乐模块并创建
                     try {
