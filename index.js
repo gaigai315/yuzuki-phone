@@ -50,7 +50,6 @@ const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${S
 const ST_PHONE_REGULAR_FONT_URL = new URL('./assets/vendor/fontawesome/fa-regular-400.woff2', import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
 const ST_PHONE_HONEY_CSS_URL = new URL(`./apps/honey/honey.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
-const ST_PHONE_HONEY_LOGO_URL = new URL('./apps/honey/honey.png', import.meta.url).href;
 const ST_PHONE_HONEY_THEME_URL = new URL('./apps/honey/honeyzt.png', import.meta.url).href;
 const ST_PHONE_GAMES_MODULE_URL = new URL(`./apps/games/games-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`, import.meta.url).href;
 const ST_PHONE_GAMES_CSS_URL = new URL('./apps/games/poker/poker.css?v=1.0.2', import.meta.url).href;
@@ -213,6 +212,7 @@ if (window.GGP_Loaded) {
     // 🔥 三击唤醒手势状态
     let phoneTapCount = 0;
     let phoneLastTapTime = 0;
+    let phonePointerSequenceStartedInside = false;
 
     // 🔥 延迟初始化的变量
     let phoneShell = null;
@@ -390,15 +390,6 @@ if (window.GGP_Loaded) {
                 link.href = ST_PHONE_HONEY_MODULE_URL;
                 document.head.appendChild(link);
             }
-            if (!document.getElementById('honey-logo-preload')) {
-                const link = document.createElement('link');
-                link.id = 'honey-logo-preload';
-                link.rel = 'preload';
-                link.as = 'image';
-                link.href = ST_PHONE_HONEY_LOGO_URL;
-                document.head.appendChild(link);
-            }
-            ensureHoneyThemePreloaded();
             ensureHoneyCSSPreloaded();
             loadHoneyModule().catch(error => console.warn('⚠️ 蜜语模块预加载失败，点击时将重试:', error));
         } catch (error) {
@@ -11055,8 +11046,21 @@ if (window.GGP_Loaded) {
             // 🔥 wechat 标签隐藏已移至酒馆正则设置
             // 请在酒馆设置中添加正则：((?:<wechat>|^)[\s\S]*?<\/wechat>)
 
+            // 文本拖选可能从手机内开始、在手机外释放。记录按下起点，避免尾随 click 误关手机。
+            document.addEventListener('pointerdown', (e) => {
+                const path = e.composedPath?.() || [];
+                phonePointerSequenceStartedInside = path.some(el => {
+                    if (!el) return false;
+                    if (el.id === 'phoneDrawerIcon' || el.id === 'phoneDrawerToolEntry' || el.id === 'phoneDrawerToolRow') return true;
+                    return !!(el.classList && el.classList.contains('phone-in-panel'));
+                });
+            }, true);
+
             // 🔥 全局极轻量级监听：三击空白处呼出/隐藏手机
             document.body.addEventListener('click', (e) => {
+                const pointerSequenceStartedInside = phonePointerSequenceStartedInside;
+                phonePointerSequenceStartedInside = false;
+
                 // 如果功能被禁用，直接退出
                 if (!isPhoneFeatureEnabled()) return;
 
@@ -11079,6 +11083,7 @@ if (window.GGP_Loaded) {
                     && drawerPanel?.classList.contains('phone-panel-open')
                     && isDesktopPhonePanelDragEnabled()
                     && !isInsidePhone
+                    && !pointerSequenceStartedInside
                 ) {
                     phoneTapCount = 0;
                     phoneLastTapTime = 0;
@@ -11780,15 +11785,15 @@ if (window.GGP_Loaded) {
                                 registered += 1;
                                 return;
                             }
-                            if (typeof context.registerMacro === 'function') {
-                                context.registerMacro(name, () => marker, `Yuzuki Phone placeholder for ${name}`);
-                                registered += 1;
-                            } else if (typeof context.macros?.register === 'function') {
+                            if (typeof context.macros?.register === 'function') {
                                 context.macros.register(name, {
                                     category: 'extension',
                                     description: `Yuzuki Phone placeholder for ${name}`,
                                     handler: () => marker
                                 });
+                                registered += 1;
+                            } else if (typeof context.registerMacro === 'function') {
+                                context.registerMacro(name, () => marker, `Yuzuki Phone placeholder for ${name}`);
                                 registered += 1;
                             }
                         } catch (error) {

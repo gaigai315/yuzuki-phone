@@ -38,6 +38,20 @@ test('desktop outside-click close excludes the phone body and phone entry contro
     assert.match(clickListenerSource, /phone-in-panel/);
 });
 
+test('desktop text selection that starts inside the phone does not close on outside release', () => {
+    const pointerGuardStart = indexSource.indexOf("document.addEventListener('pointerdown', (e) => {");
+    const clickListenerStart = indexSource.indexOf("document.body.addEventListener('click', (e) => {");
+    const pointerGuardSource = indexSource.slice(pointerGuardStart, clickListenerStart);
+
+    assert.ok(pointerGuardStart >= 0);
+    assert.ok(clickListenerStart > pointerGuardStart);
+    assert.match(pointerGuardSource, /phonePointerSequenceStartedInside = path\.some/);
+    assert.match(pointerGuardSource, /phone-in-panel/);
+    assert.match(clickListenerSource, /const pointerSequenceStartedInside = phonePointerSequenceStartedInside/);
+    assert.match(clickListenerSource, /phonePointerSequenceStartedInside = false/);
+    assert.match(clickListenerSource, /&& !pointerSequenceStartedInside/);
+});
+
 test('desktop drag release suppresses only its matching trailing click', () => {
     assert.ok(desktopDragStart >= 0);
     assert.ok(desktopDragEnd > desktopDragStart);

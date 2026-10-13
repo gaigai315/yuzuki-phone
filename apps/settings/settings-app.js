@@ -8281,9 +8281,15 @@ export class SettingsApp {
             host.appendChild(overlay);
             const textarea = overlay.querySelector('#phone-image-preset-share-text');
             const close = () => overlay.remove();
+            let overlayPointerStartedOnBackdrop = false;
             overlay.querySelector('#phone-image-preset-share-cancel')?.addEventListener('click', close);
+            overlay.addEventListener('pointerdown', (e) => {
+                overlayPointerStartedOnBackdrop = e.target === overlay;
+            });
             overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) close();
+                const shouldCloseFromBackdrop = overlayPointerStartedOnBackdrop && e.target === overlay;
+                overlayPointerStartedOnBackdrop = false;
+                if (shouldCloseFromBackdrop) close();
             });
             overlay.querySelector('#phone-image-preset-share-confirm')?.addEventListener('click', async () => {
                 try {

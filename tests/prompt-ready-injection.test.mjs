@@ -29,6 +29,18 @@ test('manifest registers the official early generation interceptor', () => {
     assert.match(indexSource, /globalThis\.yuzukiPhoneGenerateInterceptor\s*=\s*async function/);
 });
 
+test('Honey startup warmup does not preload images before the app is opened', () => {
+    const start = indexSource.indexOf('function preloadHoneyAppAssets()');
+    const end = indexSource.indexOf('function scheduleHoneyAppPreload()', start);
+    assert.ok(start >= 0 && end > start, 'Honey preload source should be present');
+    const preloadSource = indexSource.slice(start, end);
+
+    assert.doesNotMatch(preloadSource, /honey-logo-preload/);
+    assert.doesNotMatch(preloadSource, /ensureHoneyThemePreloaded\(\)/);
+    assert.match(preloadSource, /ensureHoneyCSSPreloaded\(\)/);
+    assert.match(preloadSource, /loadHoneyModule\(\)/);
+});
+
 test('registered macro markers remain detectable and cleanable after TT macro expansion', () => {
     const tools = loadPhonePlaceholderTools();
     const marker = tools.getPhonePromptMarker('PHONE_HISTORY');
@@ -91,6 +103,11 @@ test('phone prompt macros register through the SillyTavern context bridge', () =
     assert.match(registrationSource, /context\.registerMacro\(name, \(\) => marker/);
     assert.match(registrationSource, /context\.macros\.register\(name/);
     assert.match(registrationSource, /getPhonePromptMarker\(name\)/);
+    assert.ok(
+        registrationSource.indexOf("typeof context.macros?.register === 'function'")
+            < registrationSource.indexOf("typeof context.registerMacro === 'function'"),
+        'the current macro registry API should be preferred over the deprecated context bridge',
+    );
 });
 
 test('official prompt-ready event is registered first when legacy hooks exist', () => {

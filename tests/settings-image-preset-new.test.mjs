@@ -33,3 +33,16 @@ test('new GPT preset starts with an empty prompt draft', () => {
     assert.match(block, /imageNegativePromptInput\.value = ''/);
     assert.match(block, /await saveOpenAIImagePromptDraft\(appKey, emptyForm\);/);
 });
+
+test('expanded prompt editor closes only when the pointer starts and ends on its backdrop', () => {
+    const block = getHandlerBlock(
+        'const showImagePromptPresetTextModal =',
+        'const refreshImagePromptAppPanel ='
+    );
+
+    assert.match(block, /let overlayPointerStartedOnBackdrop = false/);
+    assert.match(block, /overlay\.addEventListener\('pointerdown'/);
+    assert.match(block, /overlayPointerStartedOnBackdrop = e\.target === overlay/);
+    assert.match(block, /overlayPointerStartedOnBackdrop && e\.target === overlay/);
+    assert.match(block, /overlayPointerStartedOnBackdrop = false/);
+});
