@@ -6,6 +6,7 @@
 import { ImageCropper } from '../settings/image-cropper.js';
 import { extractImagePromptItems, parseImagePromptDescriptionPair } from '../../config/image-prompt-format.js';
 import { replacePhoneEmojiTokens } from '../../config/phone-emoji.js';
+import { resolveImageMime } from '../../config/image-mime.js';
 
 const PROFILE_AVATAR = new URL('./assets/profile.jpg', import.meta.url).href;
 const SOL_AVATAR = new URL('./assets/sol-avatar.png', import.meta.url).href;
@@ -2536,7 +2537,12 @@ export class XView {
             }
             const response = await fetch(image, { cache: 'no-store' });
             if (!response.ok) throw new Error(`读取生图结果失败（HTTP ${response.status}）`);
-            uploaded = await uploadManager.uploadBlob(await response.blob(), 'x_img');
+            const blob = await response.blob();
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            // Some image hosts return generic or missing Content-Type headers.
+            const mime = resolveImageMime(bytes, blob.type);
+            if (!bytes.length || !mime) throw new Error('X 生图结果不是有效图片');
+            uploaded = await uploadManager.uploadBlob(new Blob([bytes], { type: mime }), 'x_img');
         }
 
         const normalized = String(uploaded || '').trim();
