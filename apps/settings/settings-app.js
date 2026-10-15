@@ -11749,8 +11749,9 @@ export class SettingsApp {
                                 : { 'Content-Type': 'application/json' };
 
                             if (provider === 'gemini') {
-                                if (apiUrl.includes('googleapis.com') && !apiUrl.toLowerCase().includes('/v1')) {
-                                    directUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+                                if (apiManager?._isOfficialGeminiApiUrl?.(apiUrl)) {
+                                    directUrl = apiManager._buildOfficialGeminiModelsUrl(apiUrl);
+                                    if (apiKey) headers['x-goog-api-key'] = apiKey;
                                 } else if (authHeader) {
                                     headers.Authorization = authHeader;
                                 }
