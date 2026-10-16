@@ -38,7 +38,7 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.2';
+const ST_PHONE_VERSION = '1.6.3';
 const ST_PHONE_CSS_REVISION = '20261009-payment-store-right-shift';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261006-story-image-outside-close';
@@ -147,13 +147,9 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-13',
+    date: '2026-10-16',
     items: [
-        '【修复】修复支付小票渲染及其影响正文渲染、角色卡开场前端偶发加载异常的问题。',
-        '【优化】优化线上微信的时间推进。',
-        '【优化】优化部分渲染问题。',
-        '【优化】优化 API 路由，新增 X 和正文生图 TAG 请求的独立 API 配置。',
-        '【修复】修复开启“仅变量命中时注入”后，未命中变量仍强行注入手机规则和微信历史的问题。'
+        '【优化】完善 Google Vertex AI 跟随酒馆的兼容性，修复关闭独立 API 后使用服务账号模式请求失败的问题。'
     ]
 };
 

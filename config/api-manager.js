@@ -339,7 +339,7 @@ export class ApiManager {
 
         const apiUrl = String(config.apiUrl || config.baseUrl || config.reverseProxy || '').trim();
         const usesOpenAiCompatibility = /\/openai(?:\/|$|[?#])/i.test(apiUrl);
-        let usesGeminiNativeApi = provider === 'makersuite';
+        let usesGeminiNativeApi = provider === 'makersuite' || provider === 'vertexai';
         if (provider === 'gemini' && !usesOpenAiCompatibility) {
             try {
                 usesGeminiNativeApi = new URL(apiUrl).hostname.toLowerCase() === 'generativelanguage.googleapis.com';
@@ -812,7 +812,20 @@ export class ApiManager {
             }
             
             // 兼容不同版本的酒馆设置结构
-            const oai = parsedSettings.oai_settings || parsedSettings;
+            let oai = parsedSettings.oai_settings || parsedSettings;
+            // 酒馆设置有保存防抖，本地缓存也可能滞后；优先使用当前页面的实时设置。
+            try {
+                const context = typeof SillyTavern !== 'undefined' ? SillyTavern.getContext?.() : null;
+                if (context?.chatCompletionSettings) {
+                    oai = { ...oai, ...context.chatCompletionSettings };
+                }
+            } catch (_error) {
+                // 旧版酒馆未暴露实时设置时继续使用已保存配置和 DOM。
+            }
+            const readSetting = (key, elementId = key, fallback = '') =>
+                document.getElementById(elementId)?.value ?? oai[key] ?? fallback;
+            const readCheckbox = (key, elementId = key) =>
+                document.getElementById(elementId)?.checked ?? oai[key] ?? false;
 
             // 🌟 2. 提取最真实的 Secret ID 和 URL（无视 DOM 掩码）
             const chatSource = document.getElementById('chat_completion_source')?.value || oai.chat_completion_source || 'custom';
@@ -833,6 +846,11 @@ export class ApiManager {
                 model = oai.claude_model || document.getElementById('model_claude')?.value;
                 reverseProxy = oai.claude_reverse_proxy || document.getElementById('claude_reverse_proxy')?.value;
                 apiKey = oai.claude_key;
+            } else if (chatSource === 'vertexai') {
+                model = readSetting('vertexai_model', 'model_vertexai_select');
+                reverseProxy = readSetting('reverse_proxy', 'openai_reverse_proxy');
+                // 服务账号/API Key 由酒馆后端读取；反代只接收专用代理密码。
+                apiKey = reverseProxy ? readSetting('proxy_password', 'openai_proxy_access_key') : '';
             } else {
                 model = oai.openai_model || document.getElementById('model_openai')?.value;
                 reverseProxy = oai.reverse_proxy || document.getElementById('openai_reverse_proxy')?.value;
@@ -847,7 +865,7 @@ export class ApiManager {
             cleanMessages = this._removeUnsupportedAssistantPrefill(cleanMessages, assistantPrefillConfig);
 
             // 跟随酒馆时只使用酒馆当前响应长度，不接受业务调用覆盖。
-            const maxTokens = this._resolveResponseLength(parsedSettings);
+            const maxTokens = this._resolveResponseLength({ ...parsedSettings, oai_settings: oai });
             // 🌟 修复：精准读取 OpenAI/Custom 专属的高级参数滑块和后台数据
             const tempCandidates = [document.getElementById('temp_openai')?.value, oai.temp_openai, document.getElementById('temp')?.value, parsedSettings.temp];
             const temperature = tempCandidates.map(v => Number.parseFloat(v)).find(v => Number.isFinite(v)) ?? 1.0;
@@ -875,6 +893,21 @@ export class ApiManager {
             if (frequency_penalty !== undefined) payload.frequency_penalty = frequency_penalty;
             if (presence_penalty !== undefined) payload.presence_penalty = presence_penalty;
             if (top_p !== undefined) payload.top_p = top_p;
+
+            if (chatSource === 'vertexai') {
+                // 缺少 auth_mode 时酒馆默认 express，会把 Service Account 误判为缺少 API Key。
+                payload.vertexai_auth_mode = readSetting('vertexai_auth_mode', 'vertexai_auth_mode', 'express');
+                payload.vertexai_region = readSetting('vertexai_region', 'vertexai_region', 'us-central1');
+                payload.vertexai_express_project_id = readSetting('vertexai_express_project_id');
+                payload.use_sysprompt = Boolean(readCheckbox('use_sysprompt'));
+                payload.custom_prompt_post_processing = readSetting('custom_prompt_post_processing');
+                payload.reasoning_effort = readSetting('reasoning_effort', 'openai_reasoning_effort', 'auto');
+                payload.include_reasoning = Boolean(readCheckbox('show_thoughts', 'openai_show_thoughts'));
+                const topK = Number.parseFloat(readSetting('top_k_openai'));
+                if (Number.isFinite(topK)) payload.top_k = topK;
+                const seed = Number.parseInt(readSetting('seed', 'seed_openai'), 10);
+                if (Number.isFinite(seed) && seed >= 0) payload.seed = seed;
+            }
 
             if (model) payload.model = model;
             
