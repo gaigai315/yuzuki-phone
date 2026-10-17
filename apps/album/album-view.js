@@ -7,7 +7,7 @@
 
 import { PHONE_CONFIG } from '../../config/apps.js';
 
-export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.3&r=20261017-story-image-native-download', import.meta.url).href;
+export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.3&r=20261017-album-preview-download', import.meta.url).href;
 
 export class AlbumView {
     constructor(app) {
@@ -608,9 +608,14 @@ export class AlbumView {
                     <button type="button" class="album-preview-close" aria-label="关闭">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
-                    <button type="button" class="album-preview-delete" aria-label="删除">
-                        <i class="fa-regular fa-trash-can"></i>
-                    </button>
+                    <div class="album-preview-actions">
+                        <button type="button" class="album-preview-download" aria-label="下载${isVideo ? '视频' : '图片'}" title="下载${isVideo ? '视频' : '图片'}">
+                            <i class="fa-solid fa-download"></i>
+                        </button>
+                        <button type="button" class="album-preview-delete" aria-label="删除">
+                            <i class="fa-regular fa-trash-can"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="album-preview-image-wrap${isVideo ? ' is-video' : ''}">
                     ${isVideo
@@ -633,6 +638,27 @@ export class AlbumView {
         });
         overlay.querySelector('.album-preview-close')?.addEventListener('click', () => this.closePreview());
         overlay.querySelector('.album-preview-delete')?.addEventListener('click', () => this.deleteImage(image));
+        overlay.querySelector('.album-preview-download')?.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+            const button = event.currentTarget;
+            button.disabled = true;
+            try {
+                await this.app.storyImageOverlay.downloadMediaFile(
+                    image.src,
+                    image.filename || `album-${Date.now()}.${isVideo ? 'mp4' : 'png'}`
+                );
+            } catch (error) {
+                console.error('下载相册媒体失败:', error);
+                this.app.phoneShell?.showNotification?.(
+                    '相册',
+                    `下载失败：${String(error?.message || error || '未知错误')}`,
+                    '⚠️'
+                );
+            } finally {
+                if (button.isConnected) button.disabled = false;
+            }
+        });
 
         if (isVideo) {
             const video = overlay.querySelector('.album-preview-video');

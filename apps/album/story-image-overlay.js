@@ -502,7 +502,10 @@ export class StoryImageOverlay {
         const imageUrl = String(floor.imageUrl || '').trim();
         if (!imageUrl) throw new Error('当前楼层没有可下载的图片');
         const fileName = this.getStoryImageDownloadName(floor);
+        return this.downloadMediaFile(imageUrl, fileName);
+    }
 
+    async downloadMediaFile(imageUrl, fileName) {
         if (this.isTauriRuntime()) {
             const response = await fetch(imageUrl, { credentials: 'include', cache: 'no-store' });
             if (!response.ok) throw new Error(`读取图片失败（HTTP ${response.status}）`);
@@ -515,7 +518,7 @@ export class StoryImageOverlay {
                 fallbackName: 'story-image.png'
             });
             const destination = String(result?.savedPath || result?.displayName || fileName).trim();
-            this.app._showStoryNotification?.('正文生图', `图片已保存：${destination}`, '✅');
+            this.app._showStoryNotification?.('相册', `文件已保存：${destination}`, '✅');
             return result;
         }
 

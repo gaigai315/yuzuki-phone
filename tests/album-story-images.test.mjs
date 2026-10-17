@@ -564,7 +564,18 @@ test('story image card uses the natural image ratio without black side backgroun
     assert.match(cssSource, /\.phone-story-image-card-body\s*\{[^}]*padding:\s*0 12px 12px/s);
     assert.match(cssSource, /\.phone-story-image-floor-label\s*\{[^}]*background:\s*rgba\(255, 255, 255, 0\.42\)[^}]*color:\s*var\(--SmartThemeBodyColor, var\(--phone-global-text, #333\)\)[^}]*backdrop-filter:\s*blur\(18px\) saturate\(125%\)/s);
     assert.match(cssSource, /\.phone-story-image-floor-label::after\s*\{[^}]*color:\s*currentColor/s);
-    assert.match(viewSource, /story-image-native-download/);
+    assert.match(viewSource, /album-preview-download/);
+});
+
+test('album preview exposes a native-backed download action for historical media', () => {
+    const viewSource = fs.readFileSync(new URL('../apps/album/album-view.js', import.meta.url), 'utf8');
+    const cssSource = fs.readFileSync(new URL('../apps/album/album.css', import.meta.url), 'utf8');
+
+    assert.match(viewSource, /class="album-preview-download"/);
+    assert.match(viewSource, /storyImageOverlay\.downloadMediaFile\(/);
+    assert.match(viewSource, /image\.filename \|\| `album-/);
+    assert.match(cssSource, /\.album-preview-download/);
+    assert.match(cssSource, /\.album-preview-actions/);
 });
 
 test('story image overlay exposes a mobile-safe download action with the original extension', async () => {

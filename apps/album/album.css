@@ -43,6 +43,7 @@
 
 #phone-panel-content .phone-screen .album-icon-btn,
 #phone-panel-content .phone-screen .album-preview-close,
+#phone-panel-content .phone-screen .album-preview-download,
 #phone-panel-content .phone-screen .album-preview-delete {
     width: 34px !important;
     height: 34px !important;
@@ -919,6 +920,17 @@
     color: #fff !important;
 }
 
+#phone-panel-content .phone-screen .album-preview-actions {
+    display: flex;
+    gap: 8px;
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .album-preview-actions > button {
+    pointer-events: auto;
+}
+
+#phone-panel-content .phone-screen .album-preview-download:disabled,
 #phone-panel-content .phone-screen .album-preview-delete:disabled {
     opacity: 0.5;
     cursor: default;
