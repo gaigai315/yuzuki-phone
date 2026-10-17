@@ -484,14 +484,29 @@ export class StoryImageOverlay {
             const button = event.currentTarget;
             button.disabled = true;
             try {
-                await this.app.phoneShell?.downloadImage?.(
-                    floor.imageUrl,
-                    this.getStoryImageDownloadName(floor)
+                await this.downloadStoryImage(floor);
+            } catch (error) {
+                console.error('[StoryImageOverlay] 正文图片下载失败:', error);
+                this.app._showStoryNotification?.(
+                    '正文生图',
+                    `图片下载失败：${String(error?.message || error || '未知错误')}`,
+                    '⚠️'
                 );
             } finally {
                 if (button.isConnected) button.disabled = false;
             }
         });
+    }
+
+    async downloadStoryImage(floor = {}) {
+        const phoneShell = this.app.phoneShell;
+        const downloader = typeof phoneShell?.downloadImage === 'function'
+            ? phoneShell.downloadImage
+            : phoneShell?._downloadImageFromViewer;
+        if (typeof downloader !== 'function') {
+            throw new Error('图片下载组件尚未加载，请刷新酒馆页面后重试');
+        }
+        return downloader.call(phoneShell, floor.imageUrl, this.getStoryImageDownloadName(floor));
     }
 
     getStoryImageDownloadName(floor = {}) {

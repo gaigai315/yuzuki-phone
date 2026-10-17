@@ -572,13 +572,25 @@ test('story image overlay exposes a mobile-safe download action with the origina
     const cssSource = fs.readFileSync(new URL('../apps/album/album.css', import.meta.url), 'utf8');
     const shellSource = fs.readFileSync(new URL('../phone/phone-shell.js', import.meta.url), 'utf8');
     const { StoryImageOverlay } = await import(`../apps/album/story-image-overlay.js?test=story-download-${Date.now()}`);
-    const overlay = new StoryImageOverlay({ albumData: { getStoryFloors: () => [] } });
+    const calls = [];
+    const legacyPhoneShell = {
+        _downloadImageFromViewer(...args) {
+            calls.push(args);
+        }
+    };
+    const overlay = new StoryImageOverlay({
+        albumData: { getStoryFloors: () => [] },
+        phoneShell: legacyPhoneShell
+    });
 
     assert.equal(overlay.getStoryImageDownloadName({ floor: 7, imageUrl: '/backgrounds/picture.webp?rev=1' }), 'story-image-7.webp');
     assert.equal(overlay.getStoryImageDownloadName({ floor: 9, imageUrl: 'data:image/png;base64,AAAA' }), 'story-image-9.png');
     assert.equal(overlay.getStoryImageDownloadName({ floor: 10, imageUrl: 'data:image/webp;base64,AAAA' }), 'story-image-10.webp');
+    await overlay.downloadStoryImage({ floor: 7, imageUrl: '/backgrounds/picture.webp?rev=1' });
+    assert.deepEqual(calls, [['/backgrounds/picture.webp?rev=1', 'story-image-7.webp']]);
     assert.match(overlaySource, /class="phone-story-image-download"/);
-    assert.match(overlaySource, /phoneShell\?\.downloadImage\?\./);
+    assert.match(overlaySource, /phoneShell\?\.downloadImage === 'function'/);
+    assert.match(overlaySource, /phoneShell\?\._downloadImageFromViewer/);
     assert.match(cssSource, /#phone-story-image-overlay-root \.phone-story-image-download/);
     assert.match(shellSource, /async downloadImage\(imageUrl, filename = 'phone-image'\)/);
 });

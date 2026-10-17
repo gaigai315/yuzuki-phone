@@ -6,8 +6,8 @@
  * ======================================================== */
 
 import { AlbumData } from './album-data.js?v=1.4.4&r=20261006-story-image-outside-close';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261017-story-image-download';
-import { StoryImageOverlay } from './story-image-overlay.js?v=20261017-story-image-download';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261017-story-image-download-fix';
+import { StoryImageOverlay } from './story-image-overlay.js?v=20261017-story-image-download-fix';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 export class AlbumApp {
