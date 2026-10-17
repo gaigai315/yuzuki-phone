@@ -41,7 +41,7 @@ const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.6.4';
 const ST_PHONE_CSS_REVISION = '20261009-payment-store-right-shift';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
-const ST_PHONE_ALBUM_MODULE_REVISION = '20261006-story-image-outside-close';
+const ST_PHONE_ALBUM_MODULE_REVISION = '20261017-story-image-download';
 const ST_PHONE_WECHAT_MODULE_REVISION = '20261011-wallet-credit-repayment';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
@@ -149,7 +149,8 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-10-17',
     items: [
-        '【新增】NAI Vibe 支持导入 Vibe 分组 JSON 与官方 .naiv4vibebundle.json，导入后的编码可直接用于对应模型生图。'
+        '【新增】NAI Vibe 支持导入 Vibe 分组 JSON 与官方 .naiv4vibebundle.json，导入后的编码可直接用于对应模型生图。',
+        '【新增】正文生图预览新增图片下载按钮，支持在 TauriTavern 移动端将生成图片保存到本地。'
     ]
 };
 

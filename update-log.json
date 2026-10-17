@@ -3,7 +3,8 @@
         "1.6.4": {
             "date": "2026-10-17",
             "items": [
-                "【新增】NAI Vibe 支持导入 Vibe 分组 JSON 与官方 .naiv4vibebundle.json，导入后的编码可直接用于对应模型生图。"
+                "【新增】NAI Vibe 支持导入 Vibe 分组 JSON 与官方 .naiv4vibebundle.json，导入后的编码可直接用于对应模型生图。",
+                "【新增】正文生图预览新增图片下载按钮，支持在 TauriTavern 移动端将生成图片保存到本地。"
             ]
         }
     }

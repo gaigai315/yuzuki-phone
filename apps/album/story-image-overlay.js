@@ -222,6 +222,9 @@ export class StoryImageOverlay {
                                 <div class="phone-story-image-face phone-story-image-front${floor.imageUrl ? ' has-image' : ' is-empty'}">
                                     ${floor.imageUrl ? `
                                         <img src="${this.escapeAttr(floor.imageUrl)}" alt="#${floor.floor} 正文生图">
+                                        <button type="button" class="phone-story-image-download" aria-label="下载第${floor.floor}楼正文图片" title="下载图片">
+                                            <i class="fa-solid fa-download" aria-hidden="true"></i>
+                                        </button>
                                     ` : `
                                         <span class="phone-story-image-empty-icon" aria-hidden="true"><i class="fa-regular fa-image"></i></span>
                                         <strong>这一楼还没有图片</strong>
@@ -475,6 +478,33 @@ export class StoryImageOverlay {
             this.editingTagFloors.delete(floor.floor);
             this.app.generateStoryImage(floor.floor, tagsInput?.value || floor.tags);
         });
+        root.querySelector('.phone-story-image-download')?.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+            const button = event.currentTarget;
+            button.disabled = true;
+            try {
+                await this.app.phoneShell?.downloadImage?.(
+                    floor.imageUrl,
+                    this.getStoryImageDownloadName(floor)
+                );
+            } finally {
+                if (button.isConnected) button.disabled = false;
+            }
+        });
+    }
+
+    getStoryImageDownloadName(floor = {}) {
+        const imageUrl = String(floor.imageUrl || '').trim();
+        const extension = (
+            imageUrl.match(/^data:image\/(png|jpe?g|webp|gif|avif)(?:;|,)/i)?.[1]
+            || imageUrl.match(/\.((?:png|jpe?g|webp|gif|avif))(?:[?#]|$)/i)?.[1]
+            || 'png'
+        ).toLowerCase();
+        const normalizedExtension = extension === 'jpeg' ? 'jpg' : extension;
+        const floorNumber = Number.parseInt(String(floor.floor ?? ''), 10);
+        const suffix = Number.isInteger(floorNumber) ? `-${floorNumber}` : '';
+        return `story-image${suffix}.${normalizedExtension}`;
     }
 
     escapeHtml(text) {

@@ -969,7 +969,7 @@ export class PhoneShell {
             downloadInFlight = true;
             if (downloadBtn) downloadBtn.disabled = true;
             try {
-                await this._downloadImageFromViewer(safeUrl, downloadName);
+                await this.downloadImage(safeUrl, downloadName);
             } finally {
                 downloadInFlight = false;
                 if (downloadBtn?.isConnected) {
@@ -1105,7 +1105,7 @@ export class PhoneShell {
             .replace(/[\\/:*?"<>|]+/g, '_')
             .replace(/\s+/g, '_')
             .slice(0, 80) || 'phone-image';
-        return /\.(?:png|jpe?g|webp|gif)$/i.test(base) ? base : `${base}.png`;
+        return /\.(?:png|jpe?g|webp|gif|avif)$/i.test(base) ? base : `${base}.png`;
     }
 
     async _downloadImageFromViewer(imageUrl, filename) {
@@ -1139,6 +1139,11 @@ export class PhoneShell {
                 setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
             }
         }
+    }
+
+    async downloadImage(imageUrl, filename = 'phone-image') {
+        const downloadName = this._buildImageViewerDownloadName(filename);
+        return this._downloadImageFromViewer(imageUrl, downloadName);
     }
     
     _syncChromeThemeForView(viewId = '', html = '') {

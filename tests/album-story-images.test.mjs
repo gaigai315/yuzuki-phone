@@ -564,7 +564,23 @@ test('story image card uses the natural image ratio without black side backgroun
     assert.match(cssSource, /\.phone-story-image-card-body\s*\{[^}]*padding:\s*0 12px 12px/s);
     assert.match(cssSource, /\.phone-story-image-floor-label\s*\{[^}]*background:\s*rgba\(255, 255, 255, 0\.42\)[^}]*color:\s*var\(--SmartThemeBodyColor, var\(--phone-global-text, #333\)\)[^}]*backdrop-filter:\s*blur\(18px\) saturate\(125%\)/s);
     assert.match(cssSource, /\.phone-story-image-floor-label::after\s*\{[^}]*color:\s*currentColor/s);
-    assert.match(viewSource, /story-image-outside-close/);
+    assert.match(viewSource, /story-image-download/);
+});
+
+test('story image overlay exposes a mobile-safe download action with the original extension', async () => {
+    const overlaySource = fs.readFileSync(new URL('../apps/album/story-image-overlay.js', import.meta.url), 'utf8');
+    const cssSource = fs.readFileSync(new URL('../apps/album/album.css', import.meta.url), 'utf8');
+    const shellSource = fs.readFileSync(new URL('../phone/phone-shell.js', import.meta.url), 'utf8');
+    const { StoryImageOverlay } = await import(`../apps/album/story-image-overlay.js?test=story-download-${Date.now()}`);
+    const overlay = new StoryImageOverlay({ albumData: { getStoryFloors: () => [] } });
+
+    assert.equal(overlay.getStoryImageDownloadName({ floor: 7, imageUrl: '/backgrounds/picture.webp?rev=1' }), 'story-image-7.webp');
+    assert.equal(overlay.getStoryImageDownloadName({ floor: 9, imageUrl: 'data:image/png;base64,AAAA' }), 'story-image-9.png');
+    assert.equal(overlay.getStoryImageDownloadName({ floor: 10, imageUrl: 'data:image/webp;base64,AAAA' }), 'story-image-10.webp');
+    assert.match(overlaySource, /class="phone-story-image-download"/);
+    assert.match(overlaySource, /phoneShell\?\.downloadImage\?\./);
+    assert.match(cssSource, /#phone-story-image-overlay-root \.phone-story-image-download/);
+    assert.match(shellSource, /async downloadImage\(imageUrl, filename = 'phone-image'\)/);
 });
 
 test('story image card is top-aligned below the tavern toolbar on mobile', () => {
