@@ -38,7 +38,7 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.3';
+const ST_PHONE_VERSION = '1.6.4';
 const ST_PHONE_CSS_REVISION = '20261009-payment-store-right-shift';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261006-story-image-outside-close';
@@ -147,9 +147,9 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-16',
+    date: '2026-10-17',
     items: [
-        '【优化】完善 Google Vertex AI 跟随酒馆的兼容性，修复关闭独立 API 后使用服务账号模式请求失败的问题。'
+        '【新增】NAI Vibe 支持导入 Vibe 分组 JSON 与官方 .naiv4vibebundle.json，导入后的编码可直接用于对应模型生图。'
     ]
 };
 

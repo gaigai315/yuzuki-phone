@@ -28,6 +28,7 @@ import {
     ensurePhoneContextLimitSetting,
     normalizePhoneContextLimit
 } from '../../config/context-settings.js';
+import { parseNovelAIVibeGroupPayload } from '../../config/novelai-vibe-import.js';
 
 const DEFAULT_DOUBAO_CLONE_WORKER_URL = '';
 const DEFAULT_MIMO_TTS_RELAY_URL = '';
@@ -46,6 +47,9 @@ const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const CARD_LAYOUT_CUSTOM_CSS_KEY = 'phone-card-layout-custom-css';
 const SETTINGS_IMAGE_MAX_FILE_SIZE = 20 * 1024 * 1024;
+const NOVELAI_VIBE_IMPORT_MAX_FILE_SIZE = 5 * 1024 * 1024;
+const NOVELAI_VIBE_IMPORT_MAX_GROUPS = 32;
+const NOVELAI_VIBE_IMPORT_MAX_ITEMS = 64;
 
 const getMemoryTagFilterInfo = typeof PhoneTagFilter.getMemoryTagFilterInfo === 'function'
     ? PhoneTagFilter.getMemoryTagFilterInfo
@@ -4037,11 +4041,16 @@ export class SettingsApp {
             const items = (Array.isArray(group?.items) ? group.items : (Array.isArray(group?.vibes) ? group.vibes : []))
                 .map((item) => {
                     const image = String(item?.image || item?.imageUrl || item?.url || '').trim();
-                    if (!image) return null;
+                    const encodingPath = String(item?.encodingPath || item?.encoding_path || '').trim();
+                    if (!image && !encodingPath) return null;
                     return {
                         id: String(item?.id || `vibe-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`).trim(),
                         name: String(item?.name || item?.title || 'Vibe').trim() || 'Vibe',
                         image,
+                        encodingPath,
+                        encodingHash: String(item?.encodingHash || item?.encoding_hash || '').trim(),
+                        encodingModel: String(item?.encodingModel || item?.encoding_model || '').trim(),
+                        encodingVariant: String(item?.encodingVariant || item?.encoding_variant || '').trim(),
                         strength: this._clampNovelAIVibeValue(item?.strength ?? item?.referenceStrength, 0.6),
                         informationExtracted: this._clampNovelAIVibeValue(item?.informationExtracted ?? item?.referenceInformationExtracted, 1),
                         cacheSecretKey: String(item?.cacheSecretKey || item?.cache_secret_key || '').trim()
@@ -4070,6 +4079,79 @@ export class SettingsApp {
 
     async _saveNovelAIVibeGroups(groups) {
         await this.storage.set('phone-image-novelai-vibe-groups', JSON.stringify(this._normalizeNovelAIVibeGroups(groups)));
+    }
+
+    _decodeNovelAIVibeEncoding(value) {
+        const encoding = String(value || '').replace(/\s+/g, '');
+        if (!encoding || encoding.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoding)) {
+            throw new Error('Vibe 编码不是有效的 Base64 数据');
+        }
+        let binary;
+        try {
+            binary = atob(encoding);
+        } catch (error) {
+            throw new Error('Vibe 编码解码失败');
+        }
+        if (!binary.length || binary.length > 1024 * 1024) throw new Error('Vibe 编码大小无效');
+        return Uint8Array.from(binary, char => char.charCodeAt(0));
+    }
+
+    async _hashNovelAIVibeBytes(bytes) {
+        if (globalThis.crypto?.subtle) {
+            const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+            return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+        let hash = 2166136261;
+        for (const byte of bytes) {
+            hash ^= byte;
+            hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16).padStart(8, '0');
+    }
+
+    async _uploadNovelAIVibeEncoding(encoding) {
+        const bytes = this._decodeNovelAIVibeEncoding(encoding);
+        const hash = await this._hashNovelAIVibeBytes(bytes);
+        const filename = `yuzuki-phone-nai-vibe-${hash}.bin`;
+        const fallbackPath = `/files/${filename}`;
+        const rawFetch = typeof window.VirtualPhoneRawFetch === 'function'
+            ? window.VirtualPhoneRawFetch
+            : window.fetch.bind(window);
+        const headers = await this.imageManager._buildRequestHeaders({ json: true });
+        headers['X-ST-Phone-Internal-API'] = '1';
+        const response = await rawFetch('/api/files/upload', {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            stPhoneInternalApi: true,
+            body: JSON.stringify({ name: filename, data: String(encoding).replace(/\s+/g, '') })
+        });
+        const text = await response.text().catch(() => '');
+        if (!response.ok) {
+            throw new Error(text ? `Vibe 编码上传失败（HTTP ${response.status}）：${text}` : `Vibe 编码上传失败（HTTP ${response.status}）`);
+        }
+        let payload = text;
+        try {
+            payload = JSON.parse(text || '{}');
+        } catch (error) { }
+        const candidate = typeof payload === 'string'
+            ? payload
+            : (payload?.path || payload?.url || payload?.filename || payload?.name
+                || payload?.file?.path || payload?.file?.url || payload?.file?.filename || payload?.file?.name || fallbackPath);
+        let encodingPath = String(candidate || fallbackPath).trim().replace(/\\/g, '/');
+        if (/^https?:\/\//i.test(encodingPath)) {
+            const parsedUrl = new URL(encodingPath, window.location?.href);
+            if (parsedUrl.origin !== window.location?.origin) throw new Error('Vibe 编码上传返回了非本站路径');
+            encodingPath = `${parsedUrl.pathname}${parsedUrl.search}`;
+        }
+        encodingPath = encodingPath.replace(/^public\//i, '');
+        if (!/^(?:https?:\/\/|\/)/i.test(encodingPath)) {
+            encodingPath = encodingPath.startsWith('files/') ? `/${encodingPath}` : `/files/${encodingPath}`;
+        }
+        if (!encodingPath.startsWith('/') || !/\/files\/[^/?#]+/i.test(encodingPath) || encodingPath.includes('..')) {
+            throw new Error('Vibe 编码上传返回路径无效');
+        }
+        return { encodingPath, encodingHash: hash };
     }
 
     _getImageSiteKeyStorageKey(provider, site) {
@@ -4304,9 +4386,11 @@ export class SettingsApp {
         const novelaiVibeNormalizeStrength = this.storage.get('phone-image-novelai-vibe-normalize-strength') === true || this.storage.get('phone-image-novelai-vibe-normalize-strength') === 'true';
         const novelaiVibeGroupItemsHtml = activeNovelAIVibeGroup?.items?.length
             ? activeNovelAIVibeGroup.items.map((item, index) => `
-                <div class="phone-image-vibe-item" data-vibe-id="${this._escapeHtml(item.id)}" style="display:grid; grid-template-columns:44px 1fr 34px; gap:8px; align-items:center; padding:8px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-top:8px;">
+                <div class="phone-image-vibe-item" data-vibe-id="${this._escapeHtml(item.id)}" data-vibe-image="${this._escapeHtml(item.image || '')}" data-vibe-encoding-path="${this._escapeHtml(item.encodingPath || '')}" data-vibe-encoding-hash="${this._escapeHtml(item.encodingHash || '')}" data-vibe-encoding-model="${this._escapeHtml(item.encodingModel || '')}" data-vibe-encoding-variant="${this._escapeHtml(item.encodingVariant || '')}" data-vibe-cache-key="${this._escapeHtml(item.cacheSecretKey || '')}" style="display:grid; grid-template-columns:44px 1fr 34px; gap:8px; align-items:center; padding:8px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-top:8px;">
                     <div style="width:44px; height:44px; border-radius:6px; overflow:hidden; background:#e5e7eb;">
-                        <img src="${this._escapeHtml(item.image)}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">
+                        ${item.encodingPath
+                            ? '<div title="已导入 Vibe 编码" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#7c3aed; font-size:18px;"><i class="fa-solid fa-wave-square" aria-hidden="true"></i></div>'
+                            : `<img src="${this._escapeHtml(item.image || '')}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">`}
                     </div>
                     <div style="min-width:0;">
                         <input type="text" class="phone-image-vibe-name" value="${this._escapeHtml(item.name || `Vibe ${index + 1}`)}" placeholder="Vibe 名称" style="width:100%; height:28px; padding:0 8px; border:1px solid #e0e0e0; border-radius:7px; font-size:12px; background:#fff; box-sizing:border-box;">
@@ -4320,7 +4404,7 @@ export class SettingsApp {
                     </button>
                 </div>
             `).join('')
-            : '<div class="setting-desc" style="margin-top:8px;">当前组还没有 Vibe 图片。</div>';
+            : '<div class="setting-desc" style="margin-top:8px;">当前组还没有 Vibe。</div>';
         const imageProviderAppBindings = this._getImageProviderAppBindings();
         const novelaiDisplay = provider === 'novelai' ? '' : 'display: none;';
         const openaiDisplay = provider === 'openai' ? '' : 'display: none;';
@@ -5030,7 +5114,7 @@ export class SettingsApp {
                             ${novelaiVibeGroupOptions}
                         </select>
                         <button type="button" id="phone-image-novelai-vibe-upload" style="height:30px; border:none; border-radius:8px; background:#7c3aed !important; color:#fff !important; font-size:12px; font-weight:600; cursor:pointer;">
-                            <i class="fa-solid fa-upload"></i> 添加
+                            <i class="fa-solid fa-upload"></i> 导入
                         </button>
                     </div>
                     <input type="text" id="phone-image-novelai-vibe-group-name"
@@ -5045,7 +5129,7 @@ export class SettingsApp {
                     <div id="phone-image-novelai-vibe-list" style="margin-top:8px;">
                         ${novelaiVibeGroupItemsHtml}
                     </div>
-                    <input type="file" id="phone-image-novelai-vibe-file" accept="image/png,image/jpeg,image/webp,image/*" multiple style="display:none;">
+                    <input type="file" id="phone-image-novelai-vibe-file" accept="image/png,image/jpeg,image/webp,image/*,application/json,.json" multiple style="display:none;">
                     <div class="setting-desc" id="phone-image-novelai-vibe-status" style="margin-top:8px;"></div>
                 </div>
 
@@ -7590,23 +7674,29 @@ export class SettingsApp {
                     id: String(row.dataset.vibeId || createNovelAIVibeId()).trim(),
                     name: String(row.querySelector('.phone-image-vibe-name')?.value || `Vibe ${index + 1}`).trim() || `Vibe ${index + 1}`,
                     image: String(row.dataset.vibeImage || row.querySelector('img')?.getAttribute('src') || '').trim(),
+                    encodingPath: String(row.dataset.vibeEncodingPath || '').trim(),
+                    encodingHash: String(row.dataset.vibeEncodingHash || '').trim(),
+                    encodingModel: String(row.dataset.vibeEncodingModel || '').trim(),
+                    encodingVariant: String(row.dataset.vibeEncodingVariant || '').trim(),
                     strength: this._clampNovelAIVibeValue(row.querySelector('.phone-image-vibe-strength')?.value, 0.6),
                     informationExtracted: this._clampNovelAIVibeValue(row.querySelector('.phone-image-vibe-info')?.value, 1),
                     cacheSecretKey: String(row.dataset.vibeCacheKey || '').trim()
                 }))
-                .filter(item => item.image);
+                .filter(item => item.image || item.encodingPath);
         };
         const renderNovelAIVibeList = (items = []) => {
             if (!imageNovelAIVibeList) return;
             const normalizedItems = Array.isArray(items) ? items : [];
             if (!normalizedItems.length) {
-                imageNovelAIVibeList.innerHTML = '<div class="setting-desc" style="margin-top:8px;">当前组还没有 Vibe 图片。</div>';
+                imageNovelAIVibeList.innerHTML = '<div class="setting-desc" style="margin-top:8px;">当前组还没有 Vibe。</div>';
                 return;
             }
             imageNovelAIVibeList.innerHTML = normalizedItems.map((item, index) => `
-                <div class="phone-image-vibe-item" data-vibe-id="${this._escapeHtml(item.id || createNovelAIVibeId())}" data-vibe-image="${this._escapeHtml(item.image || '')}" data-vibe-cache-key="${this._escapeHtml(item.cacheSecretKey || '')}" style="display:grid; grid-template-columns:44px 1fr 34px; gap:8px; align-items:center; padding:8px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-top:8px;">
+                <div class="phone-image-vibe-item" data-vibe-id="${this._escapeHtml(item.id || createNovelAIVibeId())}" data-vibe-image="${this._escapeHtml(item.image || '')}" data-vibe-encoding-path="${this._escapeHtml(item.encodingPath || '')}" data-vibe-encoding-hash="${this._escapeHtml(item.encodingHash || '')}" data-vibe-encoding-model="${this._escapeHtml(item.encodingModel || '')}" data-vibe-encoding-variant="${this._escapeHtml(item.encodingVariant || '')}" data-vibe-cache-key="${this._escapeHtml(item.cacheSecretKey || '')}" style="display:grid; grid-template-columns:44px 1fr 34px; gap:8px; align-items:center; padding:8px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-top:8px;">
                     <div style="width:44px; height:44px; border-radius:6px; overflow:hidden; background:#e5e7eb;">
-                        <img src="${this._escapeHtml(item.image || '')}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">
+                        ${item.encodingPath
+                            ? '<div title="已导入 Vibe 编码" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#7c3aed; font-size:18px;"><i class="fa-solid fa-wave-square" aria-hidden="true"></i></div>'
+                            : `<img src="${this._escapeHtml(item.image || '')}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">`}
                     </div>
                     <div style="min-width:0;">
                         <input type="text" class="phone-image-vibe-name" value="${this._escapeHtml(item.name || `Vibe ${index + 1}`)}" placeholder="Vibe 名称" style="width:100%; height:28px; padding:0 8px; border:1px solid #e0e0e0; border-radius:7px; font-size:12px; background:#fff; box-sizing:border-box;">
@@ -8550,15 +8640,114 @@ export class SettingsApp {
         });
 
         imageNovelAIVibeFile?.addEventListener('change', async () => {
-            const files = Array.from(imageNovelAIVibeFile.files || []).filter(file => /^image\//i.test(String(file.type || '')));
+            const files = Array.from(imageNovelAIVibeFile.files || []).filter(file =>
+                /^image\//i.test(String(file.type || '')) || /\.json$/i.test(String(file.name || ''))
+            );
             if (!files.length) return;
+            const jsonFiles = files.filter(file => /\.json$/i.test(String(file.name || '')));
+            const imageFiles = files.filter(file => /^image\//i.test(String(file.type || '')));
             const existing = getNovelAIVibeDraftItems();
             try {
+                if (jsonFiles.length && imageFiles.length) throw new Error('请分开导入 Vibe JSON 和图片');
+                if (jsonFiles.length) {
+                    setNovelAIVibeStatus('正在导入 Vibe 分组...', '#7c3aed');
+                    const groups = getNovelAIVibeGroups();
+                    const activeIdBeforeImport = getActiveNovelAIVibeGroupId();
+                    const activeGroupBeforeImport = groups.find(group => group.id === activeIdBeforeImport) || null;
+                    const draftName = String(imageNovelAIVibeGroupName?.value || '').trim();
+                    const itemSignature = items => JSON.stringify((Array.isArray(items) ? items : []).map(item => ({
+                        id: String(item?.id || ''),
+                        name: String(item?.name || ''),
+                        image: String(item?.image || ''),
+                        encodingPath: String(item?.encodingPath || ''),
+                        encodingHash: String(item?.encodingHash || ''),
+                        encodingModel: String(item?.encodingModel || ''),
+                        encodingVariant: String(item?.encodingVariant || ''),
+                        strength: this._clampNovelAIVibeValue(item?.strength, 0.6),
+                        informationExtracted: this._clampNovelAIVibeValue(item?.informationExtracted, 1),
+                        cacheSecretKey: String(item?.cacheSecretKey || '')
+                    })));
+                    const hasUnsavedDraft = activeGroupBeforeImport
+                        ? draftName !== activeGroupBeforeImport.name
+                            || itemSignature(existing) !== itemSignature(activeGroupBeforeImport.items)
+                        : Boolean(draftName || existing.length);
+                    const usedNames = new Set(groups.map(group => String(group.name || '').trim()));
+                    const importedGroups = [];
+                    const uploadedEncodings = new Map();
+                    const parsedGroups = [];
+                    let skipped = 0;
+                    for (const file of jsonFiles) {
+                        if (Number(file.size || 0) > NOVELAI_VIBE_IMPORT_MAX_FILE_SIZE) {
+                            throw new Error(`${file.name} 超过 5MB，无法导入`);
+                        }
+                        let payload;
+                        try {
+                            payload = JSON.parse(await file.text());
+                        } catch (error) {
+                            throw new Error(`${file.name} 不是有效的 JSON 文件`);
+                        }
+                        const defaultGroupName = String(file.name || '')
+                            .replace(/\.naiv4vibebundle\.json$/i, '')
+                            .replace(/\.json$/i, '')
+                            .trim();
+                        const parsed = parseNovelAIVibeGroupPayload(payload, {
+                            createId: createNovelAIVibeId,
+                            defaultGroupName
+                        });
+                        skipped += parsed.skipped;
+                        parsedGroups.push(...parsed.groups);
+                    }
+                    const totalImportedItems = parsedGroups.reduce((sum, group) => sum + group.items.length, 0);
+                    if (parsedGroups.length > NOVELAI_VIBE_IMPORT_MAX_GROUPS) {
+                        throw new Error(`单次最多导入 ${NOVELAI_VIBE_IMPORT_MAX_GROUPS} 个 Vibe 分组`);
+                    }
+                    if (totalImportedItems > NOVELAI_VIBE_IMPORT_MAX_ITEMS) {
+                        throw new Error(`单次最多导入 ${NOVELAI_VIBE_IMPORT_MAX_ITEMS} 个 Vibe`);
+                    }
+                    for (const group of parsedGroups) {
+                        const baseName = group.name;
+                        let uniqueName = baseName;
+                        let suffix = 2;
+                        while (usedNames.has(uniqueName)) uniqueName = `${baseName} (${suffix++})`;
+                        usedNames.add(uniqueName);
+                        const storedItems = [];
+                        for (const item of group.items) {
+                            let stored = uploadedEncodings.get(item.encoding);
+                            if (!stored) {
+                                stored = await this._uploadNovelAIVibeEncoding(item.encoding);
+                                uploadedEncodings.set(item.encoding, stored);
+                            }
+                            const { encoding, ...metadata } = item;
+                            storedItems.push({
+                                ...metadata,
+                                ...stored,
+                                cacheSecretKey: `phone-vibe-${stored.encodingHash}`
+                            });
+                        }
+                        importedGroups.push({ ...group, name: uniqueName, items: storedItems });
+                    }
+                    groups.push(...importedGroups);
+                    await this._saveNovelAIVibeGroups(groups);
+                    if (hasUnsavedDraft) {
+                        fillNovelAIVibeGroupSelect(getNovelAIVibeGroups(), activeIdBeforeImport);
+                        if (imageNovelAIVibeGroupSelect) imageNovelAIVibeGroupSelect.value = activeIdBeforeImport;
+                    } else {
+                        const activeId = importedGroups[0]?.id || '';
+                        await this.storage.set('phone-image-novelai-active-vibe-group', activeId);
+                        refreshNovelAIVibePanel(activeId);
+                    }
+                    const skippedText = skipped ? `，跳过 ${skipped} 个无效条目` : '';
+                    const draftText = hasUnsavedDraft ? '；当前未保存编辑已保留' : '';
+                    setNovelAIVibeStatus(`已导入 ${importedGroups.length} 个分组${skippedText}${draftText}。`, '#0f9f6e');
+                    this.phoneShell?.showNotification?.('Vibe 分组已导入', importedGroups.map(group => group.name).join('、'), '✅');
+                    return;
+                }
+
                 setNovelAIVibeStatus('正在上传 Vibe 图片...', '#7c3aed');
                 const uploader = window.VirtualPhone?.imageManager || this.imageManager;
                 if (!uploader?.uploadBlob) throw new Error('图片上传器未初始化');
                 const uploaded = [];
-                for (const file of files) {
+                for (const file of imageFiles) {
                     const image = await uploader.uploadBlob(file, 'nai_vibe');
                     uploaded.push({
                         id: createNovelAIVibeId(),
@@ -8573,8 +8762,8 @@ export class SettingsApp {
                 setNovelAIVibeStatus(`已添加 ${uploaded.length} 张 Vibe 图片，记得保存组。`, '#0f9f6e');
             } catch (err) {
                 const message = err?.message || String(err || '上传失败');
-                setNovelAIVibeStatus(`上传失败：${message}`, '#d33');
-                this.phoneShell?.showNotification?.('Vibe 图片上传失败', message, '⚠️');
+                setNovelAIVibeStatus(`导入失败：${message}`, '#d33');
+                this.phoneShell?.showNotification?.('Vibe 导入失败', message, '⚠️');
             } finally {
                 imageNovelAIVibeFile.value = '';
             }
@@ -8589,7 +8778,7 @@ export class SettingsApp {
                 return;
             }
             if (!items.length) {
-                this.phoneShell?.showNotification?.('保存失败', '请先添加至少 1 张 Vibe 图片', '⚠️');
+                this.phoneShell?.showNotification?.('保存失败', '请先添加至少 1 个 Vibe', '⚠️');
                 return;
             }
             const groups = getNovelAIVibeGroups();

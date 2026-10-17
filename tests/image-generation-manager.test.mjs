@@ -284,6 +284,80 @@ test('NovelAI V4.5 keeps personal reference images as Precise Reference paramete
     assert.equal(payload.action, 'generate');
 });
 
+test('imported NovelAI Vibe encoding files are read directly and cached', async () => {
+    const encodingBytes = new Uint8Array(4096).fill(0x70);
+    const values = {
+        'phone-image-novelai-vibe-enabled': true,
+        'phone-image-novelai-active-vibe-group': 'group-1',
+        'phone-image-novelai-vibe-groups': JSON.stringify([{
+            id: 'group-1',
+            name: 'Imported',
+            items: [{
+                image: '',
+                encodingPath: '/files/yuzuki-phone-nai-vibe-test.bin',
+                encodingHash: 'test-hash',
+                encodingModel: 'nai-diffusion-4-5-full',
+                encodingVariant: 'v4-5full',
+                cacheSecretKey: 'phone-vibe-test-hash',
+                strength: 0.36,
+                informationExtracted: 0.7
+            }]
+        }])
+    };
+    const vibeManager = new ImageGenerationManager({ get: key => values[key] ?? null });
+    vibeManager._encodeNovelAIVibeImage = async () => {
+        throw new Error('Imported Vibe encodings must not be encoded again');
+    };
+    let fetchCount = 0;
+    const oldWindow = globalThis.window;
+    globalThis.window = {
+        getRequestHeaders: () => ({ 'X-CSRF-Token': 'test-token' }),
+        VirtualPhoneRawFetch: async (url) => {
+            fetchCount += 1;
+            assert.equal(url, '/files/yuzuki-phone-nai-vibe-test.bin');
+            return {
+                ok: true,
+                arrayBuffer: async () => encodingBytes.buffer.slice(0)
+            };
+        }
+    };
+    try {
+        const first = await vibeManager._resolveNovelAIVibeReferences({}, { model: 'nai-diffusion-4-5-full' });
+        const second = await vibeManager._resolveNovelAIVibeReferences({}, { model: 'nai-diffusion-4-5-full' });
+        const expected = Buffer.from(encodingBytes).toString('base64');
+        assert.equal(first[0].image, expected);
+        assert.equal(first[0].strength, 0.36);
+        assert.equal(first[0].informationExtracted, 0.7);
+        assert.equal(second[0].image, expected);
+        assert.equal(fetchCount, 1);
+    } finally {
+        globalThis.window = oldWindow;
+    }
+});
+
+test('imported NovelAI Vibe encoding rejects an incompatible model', async () => {
+    const values = {
+        'phone-image-novelai-vibe-enabled': true,
+        'phone-image-novelai-active-vibe-group': 'group-1',
+        'phone-image-novelai-vibe-groups': JSON.stringify([{
+            id: 'group-1',
+            name: 'Imported',
+            items: [{
+                encodingPath: '/files/vibe.bin',
+                encodingModel: 'nai-diffusion-4-5-full',
+                strength: 0.5,
+                informationExtracted: 0.7
+            }]
+        }])
+    };
+    const vibeManager = new ImageGenerationManager({ get: key => values[key] ?? null });
+
+    await assert.rejects(
+        vibeManager._resolveNovelAIVibeReferences({}, { model: 'nai-diffusion-5-full' }),
+        /不兼容/
+    );
+});
+
 test('NovelAI debug payload redacts the V5 Image2Image source', () => {
     const redacted = manager._redactNovelAIDebugPayload({
         action: 'img2img',

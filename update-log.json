@@ -1,9 +1,9 @@
 {
     "versions": {
-        "1.6.3": {
-            "date": "2026-10-16",
+        "1.6.4": {
+            "date": "2026-10-17",
             "items": [
-                "【优化】完善 Google Vertex AI 跟随酒馆的兼容性，修复关闭独立 API 后使用服务账号模式请求失败的问题。"
+                "【新增】NAI Vibe 支持导入 Vibe 分组 JSON 与官方 .naiv4vibebundle.json，导入后的编码可直接用于对应模型生图。"
             ]
         }
     }

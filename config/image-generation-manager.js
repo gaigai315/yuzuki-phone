@@ -32,6 +32,7 @@ export class ImageGenerationManager {
         this._comfyUIResourcesCacheTtl = 5 * 60 * 1000;
         this._csrfToken = null;
         this._csrfTokenPromise = null;
+        this._novelAIVibeEncodingCache = new Map();
     }
 
     _get(key, fallback = '') {
@@ -394,6 +395,7 @@ export class ImageGenerationManager {
                 if (!image) return null;
                 return {
                     image,
+                    encodingModel: String(item?.encodingModel || item?.encoding_model || '').trim(),
                     cacheSecretKey: String(item?.cacheSecretKey || item?.cache_secret_key || '').trim()
                         || this._buildNovelAIReferenceCacheKey(image),
                     strength: this._clampReferenceValue(item?.strength ?? item?.referenceStrength, 0.6, 0, 1),
@@ -434,9 +436,16 @@ export class ImageGenerationManager {
                         const image = typeof item === 'string'
                             ? String(item || '').trim()
                             : String(item?.image || item?.imageData || item?.dataUrl || item?.base64 || item?.imageUrl || item?.url || '').trim();
-                        if (!image) return null;
+                        const encodingPath = typeof item === 'string'
+                            ? ''
+                            : String(item?.encodingPath || item?.encoding_path || '').trim();
+                        if (!image && !encodingPath) return null;
                         return {
                             image,
+                            encodingPath,
+                            encodingHash: String(item?.encodingHash || item?.encoding_hash || '').trim(),
+                            encodingModel: String(item?.encodingModel || item?.encoding_model || '').trim(),
+                            encodingVariant: String(item?.encodingVariant || item?.encoding_variant || '').trim(),
                             cacheSecretKey: String(item?.cacheSecretKey || item?.cache_secret_key || '').trim(),
                             strength: this._clampReferenceValue(item?.strength ?? item?.referenceStrength, 0.6, 0, 1),
                             informationExtracted: this._clampReferenceValue(
@@ -485,6 +494,50 @@ export class ImageGenerationManager {
         const blob = await response.blob();
         const dataUrl = await this._blobToDataUrl(blob);
         return dataUrl.startsWith('data:image/') ? dataUrl : '';
+    }
+
+    async _readNovelAIVibeEncoding(path, cacheKey = '', signal = null) {
+        const url = String(path || '').trim().replace(/\\/g, '/');
+        if (!url.startsWith('/') || !/\/files\/[^/?#]+/i.test(url) || url.includes('..')) {
+            throw new Error('Vibe 编码文件路径无效，请重新导入');
+        }
+        const key = String(cacheKey || url).trim();
+        if (this._novelAIVibeEncodingCache.has(key)) return this._novelAIVibeEncodingCache.get(key);
+
+        const pending = (async () => {
+            const rawFetch = typeof window !== 'undefined' && typeof window.VirtualPhoneRawFetch === 'function'
+                ? window.VirtualPhoneRawFetch
+                : fetch;
+            const headers = typeof window !== 'undefined' && typeof window.getRequestHeaders === 'function'
+                ? { ...(window.getRequestHeaders() || {}) }
+                : {};
+            headers['X-ST-Phone-Internal-API'] = '1';
+            const response = await rawFetch(url, {
+                credentials: 'include',
+                cache: 'no-store',
+                headers,
+                signal,
+                stPhoneInternalApi: true
+            });
+            if (!response.ok) throw new Error(`Vibe 编码文件读取失败（HTTP ${response.status}），请重新导入`);
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            if (!bytes.length || bytes.length > 1024 * 1024) throw new Error('Vibe 编码文件大小无效，请重新导入');
+            if (/^[a-f0-9]{64}$/i.test(String(cacheKey || '')) && globalThis.crypto?.subtle) {
+                const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+                const actualHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+                if (actualHash.toLowerCase() !== String(cacheKey).toLowerCase()) {
+                    throw new Error('Vibe 编码文件校验失败，请重新导入');
+                }
+            }
+            return this._uint8ArrayToBase64(bytes);
+        })();
+        this._novelAIVibeEncodingCache.set(key, pending);
+        try {
+            return await pending;
+        } catch (error) {
+            this._novelAIVibeEncodingCache.delete(key);
+            throw error;
+        }
     }
 
     async _encodeNovelAIVibeImage(image, informationExtracted, config, signal) {
@@ -558,9 +611,15 @@ export class ImageGenerationManager {
 
         const resolved = [];
         for (const item of group.items) {
+            const encodingPath = String(item.encodingPath || '').trim();
+            if (encodingPath && item.encodingModel && String(item.encodingModel).trim() !== String(config?.model || '').trim()) {
+                throw new Error(`当前 Vibe 编码适用于 ${item.encodingModel}，与当前模型 ${config?.model || '未知'} 不兼容`);
+            }
             const source = String(item.image || '').trim();
-            let image = this._normalizeNovelAIReferenceImage(source);
-            if (!image && source) {
+            let image = encodingPath
+                ? await this._readNovelAIVibeEncoding(encodingPath, item.encodingHash || item.cacheSecretKey, options.signal)
+                : this._normalizeNovelAIReferenceImage(source);
+            if (!encodingPath && !image && source) {
                 try {
                     image = this._normalizeNovelAIReferenceImage(await this._imageUrlToNovelAIReferenceDataUrl(source));
                 } catch (err) {
