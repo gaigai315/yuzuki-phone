@@ -499,14 +499,51 @@ export class StoryImageOverlay {
     }
 
     async downloadStoryImage(floor = {}) {
+        const imageUrl = String(floor.imageUrl || '').trim();
+        if (!imageUrl) throw new Error('当前楼层没有可下载的图片');
+        const fileName = this.getStoryImageDownloadName(floor);
+
+        if (this.isTauriRuntime()) {
+            const response = await fetch(imageUrl, { credentials: 'include', cache: 'no-store' });
+            if (!response.ok) throw new Error(`读取图片失败（HTTP ${response.status}）`);
+            const blob = await response.blob();
+            const fileExport = await import('/scripts/file-export.js');
+            if (typeof fileExport.downloadBlobWithRuntime !== 'function') {
+                throw new Error('TT 原生下载模块不可用');
+            }
+            const result = await fileExport.downloadBlobWithRuntime(blob, fileName, {
+                fallbackName: 'story-image.png'
+            });
+            const destination = String(result?.savedPath || result?.displayName || fileName).trim();
+            this.app._showStoryNotification?.('正文生图', `图片已保存：${destination}`, '✅');
+            return result;
+        }
+
         const phoneShell = this.app.phoneShell;
         const downloader = typeof phoneShell?.downloadImage === 'function'
             ? phoneShell.downloadImage
             : phoneShell?._downloadImageFromViewer;
-        if (typeof downloader !== 'function') {
-            throw new Error('图片下载组件尚未加载，请刷新酒馆页面后重试');
+        if (typeof downloader === 'function') {
+            return downloader.call(phoneShell, imageUrl, fileName);
         }
-        return downloader.call(phoneShell, floor.imageUrl, this.getStoryImageDownloadName(floor));
+
+        const response = await fetch(imageUrl, { credentials: 'include', cache: 'no-store' });
+        if (!response.ok) throw new Error(`读取图片失败（HTTP ${response.status}）`);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        return { mode: 'browser', savedPath: '' };
+    }
+
+    isTauriRuntime() {
+        return typeof window !== 'undefined'
+            && typeof window.__TAURI__?.core?.invoke === 'function';
     }
 
     getStoryImageDownloadName(floor = {}) {

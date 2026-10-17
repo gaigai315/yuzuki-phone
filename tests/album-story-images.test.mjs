@@ -564,7 +564,7 @@ test('story image card uses the natural image ratio without black side backgroun
     assert.match(cssSource, /\.phone-story-image-card-body\s*\{[^}]*padding:\s*0 12px 12px/s);
     assert.match(cssSource, /\.phone-story-image-floor-label\s*\{[^}]*background:\s*rgba\(255, 255, 255, 0\.42\)[^}]*color:\s*var\(--SmartThemeBodyColor, var\(--phone-global-text, #333\)\)[^}]*backdrop-filter:\s*blur\(18px\) saturate\(125%\)/s);
     assert.match(cssSource, /\.phone-story-image-floor-label::after\s*\{[^}]*color:\s*currentColor/s);
-    assert.match(viewSource, /story-image-download/);
+    assert.match(viewSource, /story-image-native-download/);
 });
 
 test('story image overlay exposes a mobile-safe download action with the original extension', async () => {
@@ -591,6 +591,8 @@ test('story image overlay exposes a mobile-safe download action with the origina
     assert.match(overlaySource, /class="phone-story-image-download"/);
     assert.match(overlaySource, /phoneShell\?\.downloadImage === 'function'/);
     assert.match(overlaySource, /phoneShell\?\._downloadImageFromViewer/);
+    assert.match(overlaySource, /import\('\/scripts\/file-export\.js'\)/);
+    assert.match(overlaySource, /fileExport\.downloadBlobWithRuntime\(blob, fileName/);
     assert.match(cssSource, /#phone-story-image-overlay-root \.phone-story-image-download/);
     assert.match(shellSource, /async downloadImage\(imageUrl, filename = 'phone-image'\)/);
 });
