@@ -192,9 +192,11 @@ test('story image settings use the dedicated automatic key without migrating the
 
     assert.deepEqual(data.getStoryImageSettings(), {
         autoEnabled: false,
+        manualTagsAutoImageEnabled: true,
         autoPreviewEnabled: true
     });
     assert.ok(reads.includes('phone-story-image-auto-enabled'));
+    assert.ok(reads.includes('phone-story-image-manual-tags-auto-image-enabled'));
     assert.ok(reads.includes('phone-story-image-completion-notice-enabled'));
     assert.ok(!reads.includes('phone-story-image-enabled'));
 });
@@ -526,6 +528,8 @@ test('story image settings own a dedicated worldbook selector and override promp
 
     assert.match(viewSource, /id="album-story-use-worldbook"/);
     assert.match(viewSource, /id: 'album-story-image-auto-preview'/);
+    assert.match(viewSource, /id: 'album-story-image-manual-tags-auto-image'/);
+    assert.match(viewSource, /手动生成 Tags 后自动生图/);
     assert.match(viewSource, /生成完成自动预览/);
     assert.doesNotMatch(viewSource, /生成完成提醒/);
     assert.match(viewSource, /id="album-story-worldbook-list"/);
@@ -538,6 +542,14 @@ test('story image settings own a dedicated worldbook selector and override promp
     assert.match(viewSource, /bindPromptPresetControls\?\.\(root, 'story', 'override'/);
     assert.match(shellSource, /\.album-story-worldbook-list/);
     assert.match(shellSource, /\.album-story-prompt-editor/);
+});
+
+test('manual tag generation can continue into image generation through its setting', () => {
+    const overlaySource = fs.readFileSync(new URL('../apps/album/story-image-overlay.js', import.meta.url), 'utf8');
+
+    assert.match(overlaySource, /manualTagsAutoImageEnabled/);
+    assert.match(overlaySource, /generateStoryImage\(floor\.floor, tagsResult\.tags/);
+    assert.match(overlaySource, /expectedMessage: floor\.message/);
 });
 
 test('story image override prompt is registered in the default prompt manager', () => {

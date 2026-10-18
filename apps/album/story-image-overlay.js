@@ -470,9 +470,18 @@ export class StoryImageOverlay {
             this.editingTagFloors.delete(floor.floor);
             setEditingState(false);
         });
-        root.querySelector('.phone-story-image-action.is-tag')?.addEventListener('click', () => {
+        root.querySelector('.phone-story-image-action.is-tag')?.addEventListener('click', async () => {
             this.editingTagFloors.delete(floor.floor);
-            this.app.generateStoryTags(floor.floor);
+            const tagsResult = await this.app.generateStoryTags(floor.floor, {
+                expectedMessage: floor.message
+            });
+            if (!tagsResult?.success) return;
+
+            const settings = this.app.albumData.getStoryImageSettings();
+            if (!settings.manualTagsAutoImageEnabled) return;
+            await this.app.generateStoryImage(floor.floor, tagsResult.tags, {
+                expectedMessage: floor.message
+            });
         });
         root.querySelector('.phone-story-image-action.is-image')?.addEventListener('click', () => {
             this.editingTagFloors.delete(floor.floor);

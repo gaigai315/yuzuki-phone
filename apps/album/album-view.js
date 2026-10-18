@@ -158,6 +158,13 @@ export class AlbumView {
                             checked: settings.autoEnabled
                         })}
                         ${this.renderStoryImageSettingRow({
+                            id: 'album-story-image-manual-tags-auto-image',
+                            title: '手动生成 Tags 后自动生图',
+                            description: '手动生成 Tags 完成后，自动调用生图模型',
+                            icon: 'fa-image',
+                            checked: settings.manualTagsAutoImageEnabled
+                        })}
+                        ${this.renderStoryImageSettingRow({
                             id: 'album-story-image-auto-preview',
                             title: '生成完成自动预览',
                             description: '图片生成完成后直接打开对应楼层预览',
@@ -473,6 +480,7 @@ export class AlbumView {
         };
 
         bindToggle('#album-story-image-auto-enabled', 'autoEnabled', { rerender: true });
+        bindToggle('#album-story-image-manual-tags-auto-image', 'manualTagsAutoImageEnabled');
         bindToggle('#album-story-image-auto-preview', 'autoPreviewEnabled');
 
         root.querySelectorAll('.album-story-settings-fold .phone-prompt-fold-header').forEach((header) => {
