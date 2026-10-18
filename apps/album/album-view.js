@@ -7,7 +7,7 @@
 
 import { PHONE_CONFIG } from '../../config/apps.js';
 
-export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.3&r=20261017-album-preview-download', import.meta.url).href;
+export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.3&r=20261018-album-bulk-download', import.meta.url).href;
 
 export class AlbumView {
     constructor(app) {
@@ -20,6 +20,7 @@ export class AlbumView {
         this._missingImagePaths = new Set();
         this.isDeleting = false;
         this.isBulkDeleting = false;
+        this.isBulkDownloading = false;
         this.activeSource = 'all';
         this.sourceMenuOpen = false;
         this.currentView = 'main';
@@ -73,7 +74,9 @@ export class AlbumView {
                     </div>
                     <div class="album-header-actions">
                         ${this.selectionMode ? `
-                            <button type="button" class="album-select-btn" id="album-select-all">${allSelected ? '取消全选' : '全选'}</button>
+                            <button type="button" class="album-icon-btn" id="album-download-selected" aria-label="下载所选" title="下载所选" ${selectedCount ? '' : 'disabled'}>
+                                <i class="fa-solid fa-download"></i>
+                            </button>
                             <button type="button" class="album-icon-btn album-danger-btn" id="album-delete-selected" aria-label="删除所选" ${selectedCount ? '' : 'disabled'}>
                                 <i class="fa-regular fa-trash-can"></i>
                             </button>
@@ -94,7 +97,9 @@ export class AlbumView {
                                     <span>分类</span>
                                     <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
                                 </button>
-                                <button type="button" id="album-select-toggle">选择</button>
+                                ${this.selectionMode
+                                    ? `<button type="button" id="album-select-all">${allSelected ? '取消全选' : '全选'}</button>`
+                                    : '<button type="button" id="album-select-toggle">选择</button>'}
                             </div>
                         </div>
                         ${this.renderSourceSections(visibleImages)}
@@ -410,6 +415,7 @@ export class AlbumView {
             this.render();
         });
         root.querySelector('#album-select-all')?.addEventListener('click', () => this.toggleSelectAll());
+        root.querySelector('#album-download-selected')?.addEventListener('click', () => this.downloadSelectedImages());
         root.querySelector('#album-delete-selected')?.addEventListener('click', () => this.deleteSelectedImages());
         root.querySelectorAll('.album-tile-main').forEach(tile => {
             tile.addEventListener('click', () => {
@@ -545,6 +551,9 @@ export class AlbumView {
         const selectAllBtn = root?.querySelector('#album-select-all');
         if (selectAllBtn) selectAllBtn.textContent = allSelected ? '取消全选' : '全选';
 
+        const downloadBtn = root?.querySelector('#album-download-selected');
+        if (downloadBtn) downloadBtn.disabled = selectedCount === 0 || this.isBulkDownloading;
+
         const deleteBtn = root?.querySelector('#album-delete-selected');
         if (deleteBtn) deleteBtn.disabled = selectedCount === 0;
 
@@ -590,6 +599,40 @@ export class AlbumView {
             visibleImages.forEach(image => this.selectedPaths.add(image.path));
         }
         this.refreshSelectionUI();
+    }
+
+    async downloadSelectedImages() {
+        if (this.isBulkDownloading || this.isDeleting || this.isBulkDeleting) return;
+        const selected = this.images.filter(image => this.selectedPaths.has(image.path));
+        if (selected.length === 0) return;
+
+        const downloadBtn = (document.querySelector('.phone-view-current') || document).querySelector('#album-download-selected');
+        if (downloadBtn) downloadBtn.disabled = true;
+        this.isBulkDownloading = true;
+        let successCount = 0;
+        let failureCount = 0;
+        try {
+            for (const media of selected) {
+                try {
+                    await this.app.storyImageOverlay.downloadMediaFile(
+                        media.src,
+                        media.filename || `album-${Date.now()}.${media.mediaType === 'video' ? 'mp4' : 'png'}`,
+                        { notify: false }
+                    );
+                    successCount += 1;
+                } catch (error) {
+                    failureCount += 1;
+                    console.error('下载所选相册媒体失败:', media.path, error);
+                }
+            }
+            const summary = failureCount
+                ? `已下载 ${successCount} 项，${failureCount} 项失败`
+                : `已下载 ${successCount} 项`;
+            this.app.phoneShell?.showNotification?.('相册', summary, failureCount ? '⚠️' : '✅');
+        } finally {
+            this.isBulkDownloading = false;
+            this.refreshSelectionUI();
+        }
     }
 
     openPreview(index) {

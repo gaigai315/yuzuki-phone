@@ -505,7 +505,7 @@ export class StoryImageOverlay {
         return this.downloadMediaFile(imageUrl, fileName);
     }
 
-    async downloadMediaFile(imageUrl, fileName) {
+    async downloadMediaFile(imageUrl, fileName, { notify = true } = {}) {
         if (this.isTauriRuntime()) {
             const response = await fetch(imageUrl, { credentials: 'include', cache: 'no-store' });
             if (!response.ok) throw new Error(`读取图片失败（HTTP ${response.status}）`);
@@ -518,7 +518,7 @@ export class StoryImageOverlay {
                 fallbackName: 'story-image.png'
             });
             const destination = String(result?.savedPath || result?.displayName || fileName).trim();
-            this.app._showStoryNotification?.('相册', `文件已保存：${destination}`, '✅');
+            if (notify) this.app._showStoryNotification?.('相册', `文件已保存：${destination}`, '✅');
             return result;
         }
 

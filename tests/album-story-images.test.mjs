@@ -564,7 +564,7 @@ test('story image card uses the natural image ratio without black side backgroun
     assert.match(cssSource, /\.phone-story-image-card-body\s*\{[^}]*padding:\s*0 12px 12px/s);
     assert.match(cssSource, /\.phone-story-image-floor-label\s*\{[^}]*background:\s*rgba\(255, 255, 255, 0\.42\)[^}]*color:\s*var\(--SmartThemeBodyColor, var\(--phone-global-text, #333\)\)[^}]*backdrop-filter:\s*blur\(18px\) saturate\(125%\)/s);
     assert.match(cssSource, /\.phone-story-image-floor-label::after\s*\{[^}]*color:\s*currentColor/s);
-    assert.match(viewSource, /album-preview-download/);
+    assert.match(viewSource, /album-bulk-download/);
 });
 
 test('album preview exposes a native-backed download action for historical media', () => {
@@ -576,6 +576,17 @@ test('album preview exposes a native-backed download action for historical media
     assert.match(viewSource, /image\.filename \|\| `album-/);
     assert.match(cssSource, /\.album-preview-download/);
     assert.match(cssSource, /\.album-preview-actions/);
+});
+
+test('album selection moves select-all beside the filter and downloads checked media', () => {
+    const viewSource = fs.readFileSync(new URL('../apps/album/album-view.js', import.meta.url), 'utf8');
+
+    assert.match(viewSource, /id="album-download-selected"/);
+    assert.match(viewSource, /id="album-select-all">\$\{allSelected \? '取消全选' : '全选'\}/);
+    assert.match(viewSource, /async downloadSelectedImages\(\)/);
+    assert.match(viewSource, /this\.images\.filter\(image => this\.selectedPaths\.has\(image\.path\)\)/);
+    assert.match(viewSource, /downloadMediaFile\([\s\S]*?\{ notify: false \}/);
+    assert.match(viewSource, /已下载 \$\{successCount\} 项/);
 });
 
 test('story image overlay exposes a mobile-safe download action with the original extension', async () => {

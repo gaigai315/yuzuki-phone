@@ -30,6 +30,7 @@ import {
 } from './apps/wechat/offline-payment.js?v=1.6.1&r=20261011-payment-boundaries-and-flexible-years';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 import { StoryImageAutoScheduler } from './apps/album/story-image-auto-scheduler.js';
+import { buildInlineReplyWechatList } from './apps/wechat/inline-reply-order.js';
 import {
     combineMofoBeautifyTemplate,
     escapeMofoHtml,
@@ -41,7 +42,7 @@ const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.6.4';
 const ST_PHONE_CSS_REVISION = '20261017-story-image-native-download';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
-const ST_PHONE_ALBUM_MODULE_REVISION = '20261017-album-preview-download';
+const ST_PHONE_ALBUM_MODULE_REVISION = '20261018-album-bulk-download';
 const ST_PHONE_WECHAT_MODULE_REVISION = '20261011-wallet-credit-repayment';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
@@ -147,10 +148,12 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-17',
+    date: '2026-10-18',
     items: [
         '【新增】NAI Vibe 支持导入 Vibe 分组 JSON 与官方 .naiv4vibebundle.json，导入后的编码可直接用于对应模型生图。',
-        '【新增】正文生图预览新增图片下载按钮，支持在 TauriTavern 移动端将生成图片保存到本地。'
+        '【新增】正文生图预览新增图片下载按钮，支持在 TauriTavern 移动端将生成图片保存到本地。',
+        '【新增】相册选择模式支持按勾选项批量下载图片和视频，可全选或部分选择后保存到本地。',
+        '【优化】微信快捷回复联系人优先按会话列表排序，常聊和置顶会话更容易找到，其余好友按通讯录顺序排列。'
     ]
 };
 
@@ -4705,7 +4708,7 @@ if (window.GGP_Loaded) {
                 try {
                     // 🔥 核心修改：同时提取联系人、群聊、以及系统自动分配的头像映射表
                     let contacts = [];
-                    let groups = [];
+                    let chats = [];
                     let autoAvatarMap = {}; // 新增映射表变量
 
                     try {
@@ -4713,7 +4716,7 @@ if (window.GGP_Loaded) {
                         if (rawData) {
                             const parsed = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
                             contacts = parsed.contacts || [];
-                            groups = (parsed.chats || []).filter(c => c.type === 'group');
+                            chats = parsed.chats || [];
                             autoAvatarMap = parsed.contactAutoAvatarMap || {}; // 提取系统分配的头像池映射
                         }
                     } catch (parseErr) {
@@ -4734,20 +4737,7 @@ if (window.GGP_Loaded) {
                     };
 
                     // 组合微信列表
-                    const combinedList = [
-                        ...contacts.map(c => ({
-                            name: c.name,
-                            avatar: resolveAvatar(c.id, c.avatar),
-                            fallbackIcon: '👤',
-                            chatType: 'single'
-                        })),
-                        ...groups.map(g => ({
-                            name: g.name,
-                            avatar: resolveAvatar(g.id, g.avatar),
-                            fallbackIcon: '👥',
-                            chatType: 'group'
-                        }))
-                    ];
+                    const combinedList = buildInlineReplyWechatList(contacts, chats, resolveAvatar);
                     const smsConversations = getOrCreatePhoneCallData()
                         .getSmsConversations()
                         .filter(conversation => String(conversation?.name || '').trim())
