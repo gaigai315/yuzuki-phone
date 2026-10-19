@@ -576,7 +576,7 @@ test('story image card uses the natural image ratio without black side backgroun
     assert.match(cssSource, /\.phone-story-image-card-body\s*\{[^}]*padding:\s*0 12px 12px/s);
     assert.match(cssSource, /\.phone-story-image-floor-label\s*\{[^}]*background:\s*rgba\(255, 255, 255, 0\.42\)[^}]*color:\s*var\(--SmartThemeBodyColor, var\(--phone-global-text, #333\)\)[^}]*backdrop-filter:\s*blur\(18px\) saturate\(125%\)/s);
     assert.match(cssSource, /\.phone-story-image-floor-label::after\s*\{[^}]*color:\s*currentColor/s);
-    assert.match(viewSource, /album-bulk-download/);
+    assert.match(viewSource, /album\.css\?v=[^'\s]+&r=[^'\s]+/);
 });
 
 test('album preview exposes a native-backed download action for historical media', () => {
@@ -922,4 +922,36 @@ test('story image generation uses the story provider route, uploads the result, 
         if (originalDocument === undefined) delete globalThis.document;
         else globalThis.document = originalDocument;
     }
+});
+
+
+test('story overlay deletion keeps tags, clears image references and rejects stale actions', async () => {
+    const { StoryImageOverlay } = await import('../apps/album/story-image-overlay.js');
+    const { data, context } = createFixture();
+    context.chat[1].extra.phone_story_image = { tags: '1girl, rain', imageUrl: '/backgrounds/story.png' };
+    const floor = data.getStoryFloor(1);
+    const previousWindow = globalThis.window;
+    let deleted = 0;
+    let refreshed = 0;
+    let confirmed = true;
+    data.deleteImage = async path => {
+        deleted++;
+        await data._cleanupStoryMessageReferences(path);
+        return { success: true };
+    };
+    globalThis.window = { confirm: () => confirmed, dispatchEvent: () => {} };
+    try {
+        const overlay = new StoryImageOverlay({ albumData: data, isStoryImageBusy: () => false, isStoryTagBusy: () => false });
+        overlay.refresh = () => refreshed++;
+        confirmed = false;
+        assert.equal(await overlay.deleteStoryImage(floor), false);
+        assert.equal(deleted, 0);
+        confirmed = true;
+        assert.equal(await overlay.deleteStoryImage(floor), true);
+        assert.equal(data.getStoryFloor(1).imageUrl, '');
+        assert.equal(data.getStoryFloor(1).tags, '1girl, rain');
+        assert.equal(refreshed, 1);
+        assert.equal(await overlay.deleteStoryImage(floor), false);
+        assert.equal(deleted, 1);
+    } finally { globalThis.window = previousWindow; }
 });

@@ -27,10 +27,17 @@ export class StoryImageOverlay {
         this._imagePreloads = new Map();
         this._navigationRequestId = 0;
         this._onKeyDown = event => {
-            if (event.key === 'Escape') this.close();
+            if (event.key === 'Escape') {
+                const menu = document.querySelector(`#${STORY_OVERLAY_ROOT_ID} .phone-story-image-menu[open]`);
+                if (menu) { menu.open = false; menu.querySelector('summary')?.focus(); }
+                else this.close();
+            }
         };
         this._onRootClick = event => {
             event.stopPropagation();
+            if (!event.target.closest?.('.phone-story-image-menu')) {
+                event.currentTarget.querySelector?.('.phone-story-image-menu[open]')?.removeAttribute('open');
+            }
             if (event.target === event.currentTarget) this.close();
         };
         this._onResize = () => this.scheduleStageFit();
@@ -222,9 +229,13 @@ export class StoryImageOverlay {
                                 <div class="phone-story-image-face phone-story-image-front${floor.imageUrl ? ' has-image' : ' is-empty'}">
                                     ${floor.imageUrl ? `
                                         <img src="${this.escapeAttr(floor.imageUrl)}" alt="#${floor.floor} 正文生图">
-                                        <button type="button" class="phone-story-image-download" aria-label="下载第${floor.floor}楼正文图片" title="下载图片">
-                                            <i class="fa-solid fa-download" aria-hidden="true"></i>
-                                        </button>
+                                        <details class="phone-story-image-menu">
+                                            <summary class="phone-story-image-more" aria-label="图片操作" title="图片操作"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary>
+                                            <div class="phone-story-image-menu-items">
+                                                <button type="button" class="phone-story-image-delete" ${anyBusy ? 'disabled' : ''}><i class="fa-solid fa-trash-can" aria-hidden="true"></i>删除图片</button>
+                                                <button type="button" class="phone-story-image-download"><i class="fa-solid fa-download" aria-hidden="true"></i>下载图片</button>
+                                            </div>
+                                        </details>
                                     ` : `
                                         <span class="phone-story-image-empty-icon" aria-hidden="true"><i class="fa-regular fa-image"></i></span>
                                         <strong>这一楼还没有图片</strong>
@@ -424,6 +435,7 @@ export class StoryImageOverlay {
 
         const stage = root.querySelector('.phone-story-image-stage');
         root.querySelector('.phone-story-image-flip')?.addEventListener('click', event => {
+            root.querySelector('.phone-story-image-menu')?.removeAttribute('open');
             const showBack = !stage?.classList.contains('is-showing-back');
             if (showBack) this.showTagBack(floor.floor);
             else this.showImageFront(floor.floor);
@@ -487,12 +499,27 @@ export class StoryImageOverlay {
             this.editingTagFloors.delete(floor.floor);
             this.app.generateStoryImage(floor.floor, tagsInput?.value || floor.tags);
         });
+        root.querySelector('.phone-story-image-delete')?.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+            const button = event.currentTarget;
+            button.disabled = true;
+            root.querySelector('.phone-story-image-menu')?.removeAttribute('open');
+            try {
+                await this.deleteStoryImage(floor);
+            } catch (error) {
+                this.app._showStoryNotification?.('正文生图', `删除失败：${error?.message || error}`, '⚠️');
+            } finally {
+                if (button.isConnected) button.disabled = false;
+            }
+        });
         root.querySelector('.phone-story-image-download')?.addEventListener('click', async event => {
             event.preventDefault();
             event.stopPropagation();
             const button = event.currentTarget;
             button.disabled = true;
             try {
+                root.querySelector('.phone-story-image-menu')?.removeAttribute('open');
                 await this.downloadStoryImage(floor);
             } catch (error) {
                 console.error('[StoryImageOverlay] 正文图片下载失败:', error);
@@ -505,6 +532,26 @@ export class StoryImageOverlay {
                 if (button.isConnected) button.disabled = false;
             }
         });
+    }
+
+    async deleteStoryImage(floor = {}) {
+        if (this._deletingStoryImage || this.app.isStoryImageBusy(floor.floor) || this.app.isStoryTagBusy(floor.floor)) return false;
+        const current = this.app.albumData.getStoryFloor(floor.floor);
+        if (!current || current.message !== floor.message || current.imageUrl !== floor.imageUrl || !current.imageUrl) return false;
+        if (!window.confirm('删除当前图片吗？相册中的这张图片及其引用也会移除，Tags 会保留，可手动重新生成。')) return false;
+        this._deletingStoryImage = true;
+        try {
+            const result = await this.app.albumData.deleteImage(current.imageUrl);
+            if (!result?.success) throw new Error(result?.message || '图片删除失败');
+            this._imageDimensions.delete(current.imageUrl);
+            this._imagePreloads.delete(current.imageUrl);
+            this.refresh();
+            window.dispatchEvent(new CustomEvent('phone:albumImageDeleted'));
+            this.app._showStoryNotification?.('正文生图', '图片已删除，Tags 已保留', '✅');
+            return true;
+        } finally {
+            this._deletingStoryImage = false;
+        }
     }
 
     async downloadStoryImage(floor = {}) {

@@ -16,7 +16,7 @@ function createQueue() {
     const ctx = {
         storage: {
             async get(key) {
-                return values.get(key);
+                return structuredClone(values.get(key));
             },
             async put(key, value) {
                 values.set(key, structuredClone(value));
@@ -171,4 +171,103 @@ test('a new task from the same user does not release the active NovelAI lease', 
     );
     assert.equal(secondTurn.body.can_run, true);
     assert.ok(secondTurn.body.token);
+});
+
+const task = (id, user = id) => ({ key_hash: 'regression-key', user_id: user, task_id: id });
+const join = (queue, id, path = '/queue', user = id) => request(queue, path, { method: 'POST', body: task(id, user) });
+const poll = (queue, id) => request(queue, `/my-turn?key_hash=regression-key&user_id=${id}&task_id=${id}`);
+const finish = (queue, id, token, path = '/complete') => request(queue, path, {
+    method: 'POST', body: { ...task(id), token },
+});
+
+for (const protocol of ['/queue', '/join-queue']) {
+    test(`${protocol}: abandoned waiter expires without taking a full generation lease`, async () => {
+        const originalNow = Date.now;
+        let now = 1800000000000;
+        Date.now = () => now;
+        try {
+            const queue = createQueue();
+            const a = await join(queue, 'A');
+            await join(queue, 'B', protocol);
+            await join(queue, 'C');
+            now += 60000;
+            await finish(queue, 'A', a.body.token);
+            assert.equal((await poll(queue, 'C')).body.can_run, false);
+            now += 30001;
+            assert.equal((await poll(queue, 'C')).body.can_run, true);
+            assert.equal((await poll(queue, 'B')).body.queued, false);
+        } finally { Date.now = originalNow; }
+    });
+}
+
+test('claimed turn survives reservation expiry and heartbeat renews its lease', async () => {
+    const originalNow = Date.now;
+    let now = 1800000000000;
+    Date.now = () => now;
+    try {
+        const queue = createQueue();
+        const a = await join(queue, 'A');
+        await join(queue, 'B');
+        await join(queue, 'C');
+        await finish(queue, 'A', a.body.token);
+        now += 29000;
+        const b = await poll(queue, 'B');
+        assert.equal(b.body.can_run, true);
+        now += 31000;
+        assert.equal((await poll(queue, 'C')).body.can_run, false);
+        assert.equal((await finish(queue, 'B', b.body.token, '/heartbeat')).status, 200);
+        await finish(queue, 'B', b.body.token);
+        assert.equal((await poll(queue, 'C')).body.can_run, true);
+    } finally { Date.now = originalNow; }
+});
+
+for (const path of ['/complete', '/leave-queue']) {
+    test(`${path}: wrong or absent token cannot release an active generation`, async () => {
+        const queue = createQueue();
+        const a = await join(queue, 'A');
+        await join(queue, 'B');
+        for (const token of ['wrong-token', undefined]) {
+            assert.equal((await finish(queue, 'A', token, path)).status, 409);
+            assert.equal((await poll(queue, 'B')).body.can_run, false);
+            assert.equal((await poll(queue, 'A')).body.token, a.body.token);
+        }
+        assert.equal((await finish(queue, 'A', a.body.token, path)).status, 200);
+        assert.equal((await finish(queue, 'A', a.body.token, path)).status, 200);
+        assert.equal((await poll(queue, 'B')).body.can_run, true);
+    });
+}
+
+test('same-browser waiters retain FIFO order', async () => {
+    const queue = createQueue();
+    const a = await join(queue, 'A');
+    await join(queue, 'B', '/queue', 'browser');
+    await join(queue, 'C', '/queue', 'browser');
+    assert.deepEqual((await queue.loadState()).queue.map(item => item.taskId), ['A', 'B', 'C']);
+    await finish(queue, 'A', a.body.token);
+    assert.equal((await poll(queue, 'C')).body.can_run, false);
+    assert.equal((await poll(queue, 'B')).body.can_run, true);
+});
+
+test('owner can cancel an unclaimed promoted waiter without a token', async () => {
+    const queue = createQueue();
+    const a = await join(queue, 'A');
+    await join(queue, 'B');
+    await join(queue, 'C');
+    await finish(queue, 'A', a.body.token);
+    assert.equal((await finish(queue, 'B', undefined, '/leave-queue')).status, 200);
+    assert.equal((await poll(queue, 'C')).body.can_run, true);
+});
+
+test('existing deployed leases without claimed field remain protected', async () => {
+    const queue = createQueue();
+    const a = await join(queue, 'A');
+    await join(queue, 'B');
+    const state = await queue.loadState();
+    delete state.active.claimed;
+    state.active.activeAt -= 60000;
+    state.active.startedAt -= 60000;
+    await queue.saveState(state);
+    assert.equal((await poll(queue, 'B')).body.can_run, false);
+    assert.equal((await finish(queue, 'A', undefined, '/leave-queue')).status, 409);
+    assert.equal((await finish(queue, 'A', a.body.token)).status, 200);
 });

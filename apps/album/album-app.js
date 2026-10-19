@@ -5,9 +5,9 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 
-import { AlbumData } from './album-data.js?v=1.4.4&r=20261019-manual-tags-auto-image';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261019-manual-tags-auto-image';
-import { StoryImageOverlay } from './story-image-overlay.js?v=20261019-manual-tags-auto-image';
+import { AlbumData } from './album-data.js?v=1.4.4&r=20261020-story-image-menu';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261020-story-image-menu';
+import { StoryImageOverlay } from './story-image-overlay.js?v=20261020-story-image-menu';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 export class AlbumApp {

@@ -7,6 +7,8 @@ const CORS_HEADERS = {
 };
 
 const QUEUE_STALE_MS = 15 * 60 * 1000;
+// A promoted waiter must poll to claim its turn before receiving a full lease.
+const CLAIM_WAIT_MS = 30 * 1000;
 const ACTIVE_STALE_MS = 8 * 60 * 1000;
 const ACTIVE_MAX_MS = 12 * 60 * 1000;
 
@@ -111,7 +113,8 @@ export class NaiQueueDO extends DurableObject {
             const heartbeatRequired = state.active.heartbeatRequired !== false;
             const leaseExpired = heartbeatRequired && (!activeAt || now - activeAt > ACTIVE_STALE_MS);
             const exceededMaximum = !startedAt || now - startedAt > ACTIVE_MAX_MS;
-            if (leaseExpired || exceededMaximum || !activeStillQueued) {
+            const claimExpired = state.active.claimed === false && now - activeAt > CLAIM_WAIT_MS;
+            if (claimExpired || leaseExpired || exceededMaximum || !activeStillQueued) {
                 const abandonedTaskId = state.active.taskId;
                 state.queue = state.queue.filter(item => item.taskId !== abandonedTaskId);
                 state.active = null;
@@ -127,6 +130,7 @@ export class NaiQueueDO extends DurableObject {
             taskId: first.taskId,
             userId: first.userId,
             token,
+            claimed: false,
             greeting: first.greeting || '',
             heartbeatRequired: first.heartbeatRequired !== false,
             activeAt: Date.now(),
@@ -134,6 +138,13 @@ export class NaiQueueDO extends DurableObject {
         };
         first.token = token;
         first.updatedAt = Date.now();
+    }
+
+    claimTurn(state, taskId) {
+        if (state.active?.taskId !== taskId || state.active.claimed !== false) return;
+        state.active.claimed = true;
+        state.active.activeAt = Date.now();
+        state.active.startedAt = Date.now();
     }
 
     buildStatus(state, taskId, token = '') {
@@ -167,20 +178,6 @@ export class NaiQueueDO extends DurableObject {
         this.cleanup(state);
 
         const now = Date.now();
-        const activeTaskId = String(state.active?.taskId || '');
-        const supersededTaskIds = new Set(
-            state.queue
-                .filter(item => (
-                    item.userId === task.userId
-                    && item.taskId !== task.taskId
-                    && item.taskId !== activeTaskId
-                ))
-                .map(item => item.taskId)
-        );
-        if (supersededTaskIds.size > 0) {
-            state.queue = state.queue.filter(item => !supersededTaskIds.has(item.taskId));
-        }
-
         let existing = state.queue.find(item => item.taskId === task.taskId);
         if (!existing) {
             existing = {
@@ -205,6 +202,7 @@ export class NaiQueueDO extends DurableObject {
         }
 
         this.promote(state);
+        this.claimTurn(state, task.taskId);
         await this.saveState(state);
         return json(this.buildStatus(state, task.taskId, existing.token || task.token));
     }
@@ -224,6 +222,7 @@ export class NaiQueueDO extends DurableObject {
         }
 
         this.promote(state);
+        this.claimTurn(state, task.taskId);
         await this.saveState(state);
         return json(this.buildStatus(state, task.taskId, existing?.token || task.token));
     }
@@ -255,34 +254,39 @@ export class NaiQueueDO extends DurableObject {
     }
 
     async handleComplete(input) {
-        const task = normalizeTask(input);
-        const state = await this.loadState();
-        this.cleanup(state);
-
-        const isActive = state.active
-            && state.active.taskId === task.taskId
-            && (!state.active.token || !task.token || state.active.token === task.token);
-
-        state.queue = state.queue.filter(item => item.taskId !== task.taskId);
-        if (isActive) state.active = null;
-        this.promote(state);
-        await this.saveState(state);
-        return json({ success: true });
+        return this.removeTask(input, true);
     }
 
     async handleLeave(input) {
+        return this.removeTask(input, false);
+    }
+
+    async removeTask(input, completing) {
         const task = normalizeTask(input);
+        if (!task.taskId) {
+            return json({ success: false, error: 'Missing task_id' }, { status: 400 });
+        }
         const state = await this.loadState();
         this.cleanup(state);
-
-        state.queue = state.queue.filter(item => item.taskId !== task.taskId);
-        if (state.active?.taskId === task.taskId) {
-            state.active = null;
+        const existing = state.queue.find(item => item.taskId === task.taskId);
+        const active = state.active?.taskId === task.taskId ? state.active : null;
+        // Active leases require their token. Unclaimed waiters can cancel by owner,
+        // including after promotion but before their next poll delivers the token.
+        const needsToken = completing || (active && active.claimed !== false);
+        const valid = needsToken
+            ? !!active && !!task.token && task.token === active.token
+            : !!task.userId && task.userId === existing?.userId;
+        if (existing && (!valid || (task.userId && task.userId !== existing.userId))) {
+            return json({ success: false, error: 'Invalid queue owner or lease token' }, { status: 409 });
         }
+        // Repeated completion/cancellation of an already removed task is harmless.
+        state.queue = state.queue.filter(item => item.taskId !== task.taskId);
+        if (active) state.active = null;
         this.promote(state);
         await this.saveState(state);
         return json({ success: true });
     }
+
 }
 
 export default {
