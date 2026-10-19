@@ -3392,6 +3392,10 @@ export class WechatData {
             && Number.isFinite(Number(message.mainChatOrder));
         if (shouldOrderedInsert) {
             const nextOrder = Number(message.mainChatOrder);
+            const nextTimestamp = Number(message.timestamp);
+            const hasNextTimestamp = message.timestamp !== null
+                && message.timestamp !== ''
+                && Number.isFinite(nextTimestamp);
             let insertIndex = replayInsertAnchorIndex >= 0
                 ? Math.min(replayInsertAnchorIndex, this.data.messages[chatId].length)
                 : this.data.messages[chatId].length;
@@ -3403,11 +3407,18 @@ export class WechatData {
                 if (String(existing.batchId || '') !== String(message.batchId || '')) continue;
                 foundSameMainChatBatch = true;
                 const existingOrder = Number(existing.mainChatOrder);
-                if (Number.isFinite(existingOrder) && existingOrder > nextOrder) {
+                const existingTimestamp = Number(existing.timestamp);
+                const hasExistingTimestamp = existing.timestamp !== null
+                    && existing.timestamp !== ''
+                    && Number.isFinite(existingTimestamp);
+                const timelineOrder = hasExistingTimestamp && hasNextTimestamp && existingTimestamp !== nextTimestamp
+                    ? existingTimestamp - nextTimestamp
+                    : (Number.isFinite(existingOrder) ? existingOrder - nextOrder : -1);
+                if (timelineOrder > 0) {
                     insertIndex = i;
                     break;
                 }
-                if (Number.isFinite(existingOrder) && existingOrder <= nextOrder) {
+                if (timelineOrder <= 0) {
                     insertIndex = i + 1;
                 }
             }
