@@ -631,6 +631,20 @@ test('story image overlay exposes a mobile-safe download action with the origina
     assert.match(shellSource, /async downloadImage\(imageUrl, filename = 'phone-image'\)/);
 });
 
+test('story image actions share a bottom-right menu that opens upward', () => {
+    const overlaySource = fs.readFileSync(new URL('../apps/album/story-image-overlay.js', import.meta.url), 'utf8');
+    const cssSource = fs.readFileSync(new URL('../apps/album/album.css', import.meta.url), 'utf8');
+    const menuMarkup = overlaySource.match(/<details class="phone-story-image-menu">([\s\S]*?)<\/details>/)?.[1] || '';
+
+    assert.match(menuMarkup, /phone-story-image-flip/);
+    assert.match(menuMarkup, /查看 Tags/);
+    assert.match(menuMarkup, /phone-story-image-delete/);
+    assert.match(menuMarkup, /phone-story-image-download/);
+    assert.match(cssSource, /\.phone-story-image-menu\s*\{[^}]*bottom:\s*10px[^}]*right:\s*10px/s);
+    assert.match(cssSource, /\.phone-story-image-menu-items\s*\{[^}]*bottom:\s*38px/s);
+    assert.doesNotMatch(cssSource, /\.phone-story-image-flip\s*\{[^}]*position:\s*absolute/s);
+});
+
 test('story image card is top-aligned below the tavern toolbar on mobile', () => {
     const cssSource = fs.readFileSync(new URL('../apps/album/album.css', import.meta.url), 'utf8');
     const mobileRules = cssSource.match(/@media \(max-width: 600px\), \(pointer: coarse\) \{([\s\S]*?)\n\}/)?.[1] || '';

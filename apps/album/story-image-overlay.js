@@ -229,13 +229,6 @@ export class StoryImageOverlay {
                                 <div class="phone-story-image-face phone-story-image-front${floor.imageUrl ? ' has-image' : ' is-empty'}">
                                     ${floor.imageUrl ? `
                                         <img src="${this.escapeAttr(floor.imageUrl)}" alt="#${floor.floor} 正文生图">
-                                        <details class="phone-story-image-menu">
-                                            <summary class="phone-story-image-more" aria-label="图片操作" title="图片操作"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary>
-                                            <div class="phone-story-image-menu-items">
-                                                <button type="button" class="phone-story-image-delete" ${anyBusy ? 'disabled' : ''}><i class="fa-solid fa-trash-can" aria-hidden="true"></i>删除图片</button>
-                                                <button type="button" class="phone-story-image-download"><i class="fa-solid fa-download" aria-hidden="true"></i>下载图片</button>
-                                            </div>
-                                        </details>
                                     ` : `
                                         <span class="phone-story-image-empty-icon" aria-hidden="true"><i class="fa-regular fa-image"></i></span>
                                         <strong>这一楼还没有图片</strong>
@@ -253,10 +246,17 @@ export class StoryImageOverlay {
                                     </div>
                                     <textarea class="phone-story-image-tags" rows="8" placeholder="生成的 Tags 会显示在这里" ${editingTags ? '' : 'readonly'} ${anyBusy ? 'disabled' : ''}>${this.escapeHtml(tags)}</textarea>
                                 </div>
-                                ${hasTags ? `
-                                    <button type="button" class="phone-story-image-flip" aria-label="${showTagBack ? '返回图片正面' : `查看 #${floor.floor} 的 Tags`}" title="${showTagBack ? '返回图片' : '查看 Tags'}">
-                                        <i class="fa-solid fa-rotate" aria-hidden="true"></i>
-                                    </button>
+                                ${hasTags || floor.imageUrl ? `
+                                    <details class="phone-story-image-menu">
+                                        <summary class="phone-story-image-more" aria-label="图片操作" title="图片操作"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary>
+                                        <div class="phone-story-image-menu-items">
+                                            ${hasTags ? `<button type="button" class="phone-story-image-flip"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>${showTagBack ? '返回图片' : '查看 Tags'}</span></button>` : ''}
+                                            ${floor.imageUrl ? `
+                                                <button type="button" class="phone-story-image-delete" ${anyBusy ? 'disabled' : ''}><i class="fa-solid fa-trash-can" aria-hidden="true"></i>删除图片</button>
+                                                <button type="button" class="phone-story-image-download"><i class="fa-solid fa-download" aria-hidden="true"></i>下载图片</button>
+                                            ` : ''}
+                                        </div>
+                                    </details>
                                 ` : ''}
                             </div>
                             <button type="button" class="phone-story-image-nav is-next" aria-label="下一正文楼层" ${floorIndex >= floors.length - 1 || anyBusy ? 'disabled' : ''}>
@@ -442,6 +442,8 @@ export class StoryImageOverlay {
             stage?.classList.toggle('is-showing-back', showBack);
             event.currentTarget.setAttribute('aria-label', showBack ? '返回图片正面' : `查看 #${floor.floor} 的 Tags`);
             event.currentTarget.setAttribute('title', showBack ? '返回图片' : '查看 Tags');
+            const label = event.currentTarget.querySelector('span');
+            if (label) label.textContent = showBack ? '返回图片' : '查看 Tags';
         });
 
         const tagsInput = root.querySelector('.phone-story-image-tags');

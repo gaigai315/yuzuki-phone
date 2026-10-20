@@ -1146,7 +1146,8 @@
 }
 
 #phone-story-image-overlay-root .phone-story-image-nav:focus-visible,
-#phone-story-image-overlay-root .phone-story-image-flip:focus-visible,
+#phone-story-image-overlay-root .phone-story-image-more:focus-visible,
+#phone-story-image-overlay-root .phone-story-image-menu-items button:focus-visible,
 #phone-story-image-overlay-root .phone-story-image-action:focus-visible,
 #phone-story-image-overlay-root .phone-story-image-tags:focus-visible {
     outline: 2px solid #3d88c9 !important;
@@ -1234,7 +1235,7 @@
 
 #phone-story-image-overlay-root .phone-story-image-menu {
     position: absolute !important;
-    top: 10px !important;
+    bottom: 10px !important;
     right: 10px !important;
     z-index: 5 !important;
     width: 32px !important;
@@ -1244,7 +1245,7 @@
 #phone-story-image-overlay-root .phone-story-image-more::-webkit-details-marker { display: none !important; }
 #phone-story-image-overlay-root .phone-story-image-menu-items {
     position: absolute !important;
-    top: 38px !important;
+    bottom: 38px !important;
     right: 0 !important;
     width: 132px !important;
     padding: 5px !important;
@@ -1254,7 +1255,8 @@
 }
 #phone-story-image-overlay-root .phone-story-image-menu:not([open]) .phone-story-image-menu-items { display: none !important; }
 #phone-story-image-overlay-root .phone-story-image-download,
-#phone-story-image-overlay-root .phone-story-image-delete {
+#phone-story-image-overlay-root .phone-story-image-delete,
+#phone-story-image-overlay-root .phone-story-image-flip {
     display: flex !important;
     align-items: center !important;
     gap: 9px !important;
@@ -1350,40 +1352,6 @@
     font-size: 13px !important;
     font-weight: 600 !important;
     line-height: 1.4 !important;
-}
-
-#phone-story-image-overlay-root .phone-story-image-flip {
-    position: absolute !important;
-    right: 10px !important;
-    bottom: 10px !important;
-    z-index: 3 !important;
-    width: 32px !important;
-    min-width: 32px !important;
-    max-width: 32px !important;
-    height: 32px !important;
-    min-height: 32px !important;
-    max-height: 32px !important;
-    border: 1px solid rgba(255, 255, 255, 0.58) !important;
-    border-radius: 50% !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    background: rgba(23, 27, 31, 0.64) !important;
-    color: #fff !important;
-    box-shadow: 0 4px 13px rgba(20, 24, 28, 0.2) !important;
-    font-family: inherit !important;
-    font-size: 12px !important;
-    line-height: 1 !important;
-    cursor: pointer !important;
-    touch-action: manipulation !important;
-    appearance: none !important;
-    -webkit-appearance: none !important;
-}
-
-#phone-story-image-overlay-root .phone-story-image-flip:active {
-    transform: rotate(24deg) scale(0.94) !important;
 }
 
 #phone-story-image-overlay-root .phone-story-image-back-heading {
