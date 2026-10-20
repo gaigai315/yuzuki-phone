@@ -40,6 +40,17 @@ export class MomentsView {
         this._momentImageStateSavePending = false;
     }
 
+    _getContactDisplayName(contact = {}, fallback = '') {
+        return this.app.wechatData?.getContactDisplayName?.(contact)
+            || String(contact?.remark || contact?.nickname || contact?.name || contact?.realName || fallback || '').trim();
+    }
+
+    _resolveContactDisplayName(name = '') {
+        const safeName = String(name || '').trim();
+        const contact = this.app.wechatData?.findContactByNameLoose?.(safeName, { includeChats: false });
+        return this._getContactDisplayName(contact, safeName) || safeName;
+    }
+
     // 在wechat-app的renderDiscover中调用
     renderMomentsPage() {
         this.app.wechatData.markAllMomentsRead?.();
@@ -73,6 +84,7 @@ export class MomentsView {
         const timeStr = this.formatTime(moment.time);
         // 🔥 优先实时从联系人/聊天获取头像，确保头像同步更新
         const contactAvatar = this.getContactAvatar(moment.name) || moment.avatar || '👤';
+        const authorName = this._resolveContactDisplayName(moment.name);
 
         // 🔥 有背景图时，给每条朋友圈添加毛玻璃效果，让背景透出来
         // 使用 rgba 白色背景作为降级方案，确保移动端兼容
@@ -85,13 +97,13 @@ export class MomentsView {
                 </button>
                 <!-- 头像 -->
                 <div class="moment-avatar-col">
-                    ${this.app.renderAvatar(contactAvatar, '👤', moment.name)}
+                    ${this.app.renderAvatar(contactAvatar, '👤', authorName)}
                 </div>
 
                 <!-- 内容区 -->
                 <div class="moment-content-col">
                     <!-- 发布者名字 -->
-                    <div class="moment-author">${moment.name}</div>
+                    <div class="moment-author">${authorName}</div>
 
                     <!-- 文字内容 -->
                     ${moment.text ? `<div class="moment-text">${this._renderEmojiText(moment.text)}</div>` : ''}
@@ -1295,7 +1307,7 @@ export class MomentsView {
         } catch (e) {
             storyUserName = '';
         }
-        return [userInfo?.name, storyUserName, '{{user}}']
+        return [userInfo?.realName, userInfo?.name, storyUserName, '{{user}}']
             .some(alias => this._normalizeMomentIdentityName(alias) === lookupName);
     }
 
@@ -2642,16 +2654,18 @@ ${memoryLines.slice(0, 10).join('\n')}
                         <span class="wechat-moment-visibility-count">已选 0 人</span>
                     </div>
                     <div class="wechat-moment-visibility-list">
-                        ${contacts.map((contact, index) => `
+                        ${contacts.map((contact, index) => {
+                            const displayName = this._getContactDisplayName(contact);
+                            return `
                             <label class="wechat-moment-visibility-contact" role="checkbox" aria-checked="${isContactSelected(contact) ? 'true' : 'false'}">
                                 <input type="checkbox" data-contact-index="${index}" tabindex="-1" hidden ${isContactSelected(contact) ? 'checked' : ''}>
                                 <span class="wechat-moment-visibility-avatar">
-                                    ${this.app.renderAvatar(contact.avatar, '👤', contact.name)}
+                                    ${this.app.renderAvatar(contact.avatar, '👤', displayName)}
                                 </span>
-                                <span class="wechat-moment-visibility-name">${this._escapeHtml(contact.name)}</span>
+                                <span class="wechat-moment-visibility-name">${this._escapeHtml(displayName)}</span>
                                 <span class="wechat-moment-visibility-check"><i class="fa-solid fa-check"></i></span>
                             </label>
-                        `).join('')}
+                        `;}).join('')}
                     </div>
                 `
                 : '<div class="wechat-moment-visibility-empty">通讯录暂无好友</div>';

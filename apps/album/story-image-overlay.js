@@ -246,18 +246,22 @@ export class StoryImageOverlay {
                                     </div>
                                     <textarea class="phone-story-image-tags" rows="8" placeholder="生成的 Tags 会显示在这里" ${editingTags ? '' : 'readonly'} ${anyBusy ? 'disabled' : ''}>${this.escapeHtml(tags)}</textarea>
                                 </div>
-                                ${hasTags || floor.imageUrl ? `
+                                ${showTagBack ? `
+                                    <button type="button" class="phone-story-image-return" aria-label="返回图片正面" title="返回图片">
+                                        <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+                                    </button>
+                                ` : (hasTags || floor.imageUrl ? `
                                     <details class="phone-story-image-menu">
                                         <summary class="phone-story-image-more" aria-label="图片操作" title="图片操作"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary>
                                         <div class="phone-story-image-menu-items">
-                                            ${hasTags ? `<button type="button" class="phone-story-image-flip"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>${showTagBack ? '返回图片' : '查看 Tags'}</span></button>` : ''}
+                                            ${hasTags ? `<button type="button" class="phone-story-image-flip"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>查看 Tags</span></button>` : ''}
                                             ${floor.imageUrl ? `
                                                 <button type="button" class="phone-story-image-delete" ${anyBusy ? 'disabled' : ''}><i class="fa-solid fa-trash-can" aria-hidden="true"></i>删除图片</button>
                                                 <button type="button" class="phone-story-image-download"><i class="fa-solid fa-download" aria-hidden="true"></i>下载图片</button>
                                             ` : ''}
                                         </div>
                                     </details>
-                                ` : ''}
+                                ` : '')}
                             </div>
                             <button type="button" class="phone-story-image-nav is-next" aria-label="下一正文楼层" ${floorIndex >= floors.length - 1 || anyBusy ? 'disabled' : ''}>
                                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
@@ -433,17 +437,13 @@ export class StoryImageOverlay {
         root.querySelector('.phone-story-image-nav.is-prev')?.addEventListener('click', () => navigate(-1));
         root.querySelector('.phone-story-image-nav.is-next')?.addEventListener('click', () => navigate(1));
 
-        const stage = root.querySelector('.phone-story-image-stage');
-        root.querySelector('.phone-story-image-flip')?.addEventListener('click', event => {
-            root.querySelector('.phone-story-image-menu')?.removeAttribute('open');
-            const showBack = !stage?.classList.contains('is-showing-back');
-            if (showBack) this.showTagBack(floor.floor);
-            else this.showImageFront(floor.floor);
-            stage?.classList.toggle('is-showing-back', showBack);
-            event.currentTarget.setAttribute('aria-label', showBack ? '返回图片正面' : `查看 #${floor.floor} 的 Tags`);
-            event.currentTarget.setAttribute('title', showBack ? '返回图片' : '查看 Tags');
-            const label = event.currentTarget.querySelector('span');
-            if (label) label.textContent = showBack ? '返回图片' : '查看 Tags';
+        root.querySelector('.phone-story-image-flip')?.addEventListener('click', () => {
+            this.showTagBack(floor.floor);
+            this.render();
+        });
+        root.querySelector('.phone-story-image-return')?.addEventListener('click', () => {
+            this.showImageFront(floor.floor);
+            this.render();
         });
 
         const tagsInput = root.querySelector('.phone-story-image-tags');

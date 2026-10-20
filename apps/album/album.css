@@ -843,6 +843,32 @@
     text-align: center;
 }
 
+#phone-panel-content .phone-screen .album-load-more {
+    width: 100% !important;
+    min-height: 42px !important;
+    margin: 8px 0 2px !important;
+    border: 1px solid #e3e7eb !important;
+    border-radius: 7px !important;
+    display: flex !important;
+    flex-direction: column;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 2px;
+    padding: 7px 10px !important;
+    background: rgba(255, 255, 255, 0.82) !important;
+    color: #4b535c !important;
+    box-shadow: none !important;
+    font-size: 11px !important;
+    letter-spacing: 0;
+    touch-action: manipulation;
+}
+
+#phone-panel-content .phone-screen .album-load-more small {
+    color: #9299a1;
+    font-size: 9px;
+    letter-spacing: 0;
+}
+
 #phone-panel-content .phone-screen .album-empty {
     height: 100%;
     min-height: 260px;
@@ -1147,6 +1173,7 @@
 
 #phone-story-image-overlay-root .phone-story-image-nav:focus-visible,
 #phone-story-image-overlay-root .phone-story-image-more:focus-visible,
+#phone-story-image-overlay-root .phone-story-image-return:focus-visible,
 #phone-story-image-overlay-root .phone-story-image-menu-items button:focus-visible,
 #phone-story-image-overlay-root .phone-story-image-action:focus-visible,
 #phone-story-image-overlay-root .phone-story-image-tags:focus-visible {
@@ -1276,7 +1303,8 @@
 #phone-story-image-overlay-root .phone-story-image-delete { color: #d94d59 !important; }
 #phone-story-image-overlay-root .phone-story-image-menu-items button:hover { background: #f1f2f6 !important; }
 #phone-story-image-overlay-root .phone-story-image-menu-items button:disabled { opacity: 0.45 !important; cursor: default !important; }
-#phone-story-image-overlay-root .phone-story-image-more {
+#phone-story-image-overlay-root .phone-story-image-more,
+#phone-story-image-overlay-root .phone-story-image-return {
     position: absolute !important;
     right: 0 !important;
     top: 0 !important;
@@ -1306,11 +1334,20 @@
     -webkit-appearance: none !important;
 }
 
-#phone-story-image-overlay-root .phone-story-image-more:active {
+#phone-story-image-overlay-root .phone-story-image-return {
+    top: auto !important;
+    right: 10px !important;
+    bottom: 10px !important;
+    z-index: 5 !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-more:active,
+#phone-story-image-overlay-root .phone-story-image-return:active {
     transform: scale(0.94) !important;
 }
 
-#phone-story-image-overlay-root .phone-story-image-more:disabled {
+#phone-story-image-overlay-root .phone-story-image-more:disabled,
+#phone-story-image-overlay-root .phone-story-image-return:disabled {
     opacity: 0.5 !important;
     cursor: wait !important;
 }

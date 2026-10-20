@@ -844,7 +844,10 @@ export class DiaryData {
             .map(tag => tag.trim())
             .filter(Boolean)
             .join(', ');
-        if (userTags) rows.unshift(`{{user}}：${userTags}`);
+        const userVariableName = String(userInfo?.realName || userInfo?.name || 'user')
+            .replace(/[{}\r\n]/g, '')
+            .trim() || 'user';
+        if (userTags) rows.unshift(`{{${userVariableName}}}：${userTags}`);
         return rows.length > 0 ? rows.join('\n') : '暂无';
     }
 

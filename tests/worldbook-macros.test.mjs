@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 import { WorldbookManager } from '../config/worldbook-manager.js';
+
+const worldbookSource = fs.readFileSync(new URL('../config/worldbook-manager.js', import.meta.url), 'utf8');
+const phoneCssSource = fs.readFileSync(new URL('../phone.css', import.meta.url), 'utf8');
 
 function createManager(entries, substituteParams) {
     const manager = new WorldbookManager();
@@ -66,4 +70,21 @@ test('worldbook macro substitution failures preserve the original entry', async 
     } finally {
         console.warn = previousWarn;
     }
+});
+
+test('shared worldbook entry dialog searches titles and full content', () => {
+    assert.match(worldbookSource, /placeholder="搜索条目名称或内容"/);
+    assert.match(worldbookSource, /normalizeSearchText\(\[entry\.comment \|\| `条目 \$\{index \+ 1\}`, entry\.content\]\.join\('\\n'\)\)/);
+    assert.match(worldbookSource, /row\.hidden = !matches/);
+    assert.match(worldbookSource, /找到 \$\{visibleCount\} 条条目/);
+    assert.match(worldbookSource, /getVisibleChoices\(\)\.forEach/);
+    assert.match(worldbookSource, /全选筛选结果/);
+    assert.match(phoneCssSource, /\.phone-worldbook-entry-row\[hidden\]/);
+    assert.match(phoneCssSource, /\.phone-worldbook-entry-search-wrap/);
+});
+
+test('worldbook selectors reuse cached reads without flooding successful book logs', () => {
+    assert.match(worldbookSource, /force:\s*options\.force === true/);
+    assert.match(worldbookSource, /this\._listPromises\.has\(requestKey\)/);
+    assert.doesNotMatch(worldbookSource, /世界书读取结果/);
 });

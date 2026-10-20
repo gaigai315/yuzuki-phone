@@ -245,6 +245,7 @@ export class WorldbookManager {
         this.storage = storage;
         this._cache = null;
         this._cacheAt = 0;
+        this._listPromises = new Map();
         this._worldInfoModulePromise = null;
         this._stContextModulePromise = null;
     }
@@ -487,14 +488,6 @@ export class WorldbookManager {
             const rawEntries = getRawEntries(data?.entries);
             const totalEntries = rawEntries.length;
             const disabledEntries = rawEntries.filter((entry) => !isWorldEntryEnabled(entry)).length;
-            console.info('[WorldbookManager] 世界书读取结果:', {
-                name,
-                source: data?._phoneReadSource || 'unknown',
-                entries: entries.length,
-                totalEntries,
-                disabledEntries,
-                rawEntriesType: Array.isArray(data?.entries) ? 'array' : typeof data?.entries
-            });
             return {
                 ...book,
                 entries,
@@ -515,13 +508,25 @@ export class WorldbookManager {
         if (!force && this._cache && now - this._cacheAt < 5000 && (!includeEntries || this._cache.every(book => Array.isArray(book.allEntries)))) {
             return this._cache;
         }
+        const requestKey = includeEntries ? 'with-entries' : 'books-only';
+        if (this._listPromises.has(requestKey)) return this._listPromises.get(requestKey);
 
-        const books = await this.fetchAllAvailableWorldBooks();
-        this._cache = includeEntries
-            ? await Promise.all(books.map((book) => this._loadWorldContent(book)))
-            : books;
-        this._cacheAt = now;
-        return this._cache;
+        const request = (async () => {
+            const books = await this.fetchAllAvailableWorldBooks();
+            this._cache = includeEntries
+                ? await Promise.all(books.map((book) => this._loadWorldContent(book)))
+                : books;
+            this._cacheAt = Date.now();
+            return this._cache;
+        })();
+        this._listPromises.set(requestKey, request);
+        try {
+            return await request;
+        } finally {
+            if (this._listPromises.get(requestKey) === request) {
+                this._listPromises.delete(requestKey);
+            }
+        }
     }
 
     getSelectionKey(appKey) {
@@ -803,7 +808,7 @@ export class WorldbookManager {
         try {
             const sources = await this.listAvailableWorldbooks({
                 includeEntries: true,
-                force: options.force !== false
+                force: options.force === true
             });
             if (sources.length === 0) {
                 container.innerHTML = '<div class="phone-worldbook-status">未读取到酒馆世界书列表。</div>';
@@ -948,16 +953,26 @@ export class WorldbookManager {
                         <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                     </button>
                 </header>
+                <div class="phone-worldbook-entry-search-wrap">
+                    <div class="phone-worldbook-search phone-worldbook-entry-search" role="search">
+                        <i class="fa-solid fa-magnifying-glass phone-worldbook-search-icon" aria-hidden="true"></i>
+                        <input class="phone-worldbook-search-input" type="search" placeholder="搜索条目名称或内容" aria-label="搜索条目名称或内容" autocomplete="off" spellcheck="false">
+                        <button class="phone-worldbook-search-clear" type="button" title="清除搜索" aria-label="清除搜索" hidden>
+                            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="phone-worldbook-search-result phone-worldbook-entry-search-result" aria-live="polite" hidden></div>
+                </div>
                 <label class="phone-worldbook-entry-select-all">
                     <input type="checkbox" class="phone-worldbook-entry-select-all-input">
-                    <span>全选</span>
+                    <span class="phone-worldbook-entry-select-all-label">全选</span>
                 </label>
                 <div class="phone-worldbook-entry-list">
                     ${entries.length > 0 ? entries.map((entry, index) => {
                         const title = entry.comment || `条目 ${index + 1}`;
                         const preview = entry.content.replace(/\s+/g, ' ').slice(0, 180);
                         return `
-                            <label class="phone-worldbook-entry-row">
+                            <label class="phone-worldbook-entry-row" data-entry-id="${escapeHtml(entry.uid)}">
                                 <input class="phone-worldbook-entry-choice" type="checkbox" value="${escapeHtml(entry.uid)}" ${configuredIds.has(entry.uid) ? 'checked' : ''}>
                                 <span class="phone-worldbook-entry-copy">
                                     <span class="phone-worldbook-entry-title">${escapeHtml(title)}</span>
@@ -985,15 +1000,49 @@ export class WorldbookManager {
             let settled = false;
             const choices = Array.from(modal.querySelectorAll('.phone-worldbook-entry-choice'));
             const selectAll = modal.querySelector('.phone-worldbook-entry-select-all-input');
+            const selectAllLabel = modal.querySelector('.phone-worldbook-entry-select-all-label');
             const count = modal.querySelector('.phone-worldbook-entry-count');
+            const searchInput = modal.querySelector('.phone-worldbook-entry-search .phone-worldbook-search-input');
+            const searchClear = modal.querySelector('.phone-worldbook-entry-search .phone-worldbook-search-clear');
+            const searchResult = modal.querySelector('.phone-worldbook-entry-search-result');
+            const entryRows = Array.from(modal.querySelectorAll('.phone-worldbook-entry-row'));
+            const searchTextByEntryId = new Map(entries.map((entry, index) => [
+                String(entry.uid),
+                normalizeSearchText([entry.comment || `条目 ${index + 1}`, entry.content].join('\n'))
+            ]));
+            const getVisibleChoices = () => choices.filter((input) => !input.closest('.phone-worldbook-entry-row')?.hidden);
             const updateSelectionMeta = () => {
                 const selectedCount = choices.filter((input) => input.checked).length;
                 if (count) count.textContent = `${selectedCount}/${choices.length} 条已选`;
                 if (selectAll) {
-                    selectAll.checked = choices.length > 0 && selectedCount === choices.length;
-                    selectAll.indeterminate = selectedCount > 0 && selectedCount < choices.length;
-                    selectAll.disabled = choices.length === 0;
+                    const visibleChoices = getVisibleChoices();
+                    const visibleSelectedCount = visibleChoices.filter((input) => input.checked).length;
+                    selectAll.checked = visibleChoices.length > 0 && visibleSelectedCount === visibleChoices.length;
+                    selectAll.indeterminate = visibleSelectedCount > 0 && visibleSelectedCount < visibleChoices.length;
+                    selectAll.disabled = visibleChoices.length === 0;
                 }
+            };
+            const applyEntrySearch = () => {
+                const query = safeString(searchInput?.value);
+                const tokens = normalizeSearchText(query).split(' ').filter(Boolean);
+                let visibleCount = 0;
+
+                entryRows.forEach((row) => {
+                    const searchText = searchTextByEntryId.get(String(row.dataset.entryId || '')) || '';
+                    const matches = tokens.every((token) => searchText.includes(token));
+                    row.hidden = !matches;
+                    if (matches) visibleCount += 1;
+                });
+
+                if (searchClear) searchClear.hidden = !query;
+                if (searchResult) {
+                    searchResult.hidden = !query;
+                    searchResult.textContent = visibleCount > 0
+                        ? `找到 ${visibleCount} 条条目`
+                        : '没有找到匹配的条目';
+                }
+                if (selectAllLabel) selectAllLabel.textContent = query ? '全选筛选结果' : '全选';
+                updateSelectionMeta();
             };
             const close = (result) => {
                 if (settled) return;
@@ -1008,8 +1057,21 @@ export class WorldbookManager {
             modal._phoneWorldbookClose = close;
             choices.forEach((input) => input.addEventListener('change', updateSelectionMeta));
             selectAll?.addEventListener('change', () => {
-                choices.forEach((input) => { input.checked = selectAll.checked; });
+                getVisibleChoices().forEach((input) => { input.checked = selectAll.checked; });
                 updateSelectionMeta();
+            });
+            searchInput?.addEventListener('input', applyEntrySearch);
+            searchInput?.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape' || !searchInput.value) return;
+                event.stopPropagation();
+                searchInput.value = '';
+                applyEntrySearch();
+            });
+            searchClear?.addEventListener('click', () => {
+                if (!searchInput) return;
+                searchInput.value = '';
+                applyEntrySearch();
+                searchInput.focus();
             });
             modal.querySelectorAll('[data-action="cancel"]').forEach((button) => {
                 button.addEventListener('click', () => close({ saved: false, entryIds: [] }));
@@ -1020,7 +1082,7 @@ export class WorldbookManager {
                 close({ saved: true, entryIds });
             });
             document.addEventListener('keydown', onKeyDown);
-            updateSelectionMeta();
+            applyEntrySearch();
             modal.querySelector('.phone-worldbook-entry-close')?.focus?.();
         });
     }

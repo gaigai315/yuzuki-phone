@@ -10,10 +10,10 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20261002-x-forward-card';
-import { ContactsView } from './contacts-view.js';
-import { MomentsView } from './moments-view.js?v=20261004-moments-image-cancel';
-import { WechatData } from './wechat-data.js?v=20261011-wallet-credit-repayment';
+import { ChatView } from './chat-view.js?v=20261021-user-real-name';
+import { ContactsView } from './contacts-view.js?v=20261021-contact-identities';
+import { MomentsView } from './moments-view.js?v=20261021-user-real-name';
+import { WechatData } from './wechat-data.js?v=20261021-user-real-name';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
@@ -796,6 +796,49 @@ export class WechatApp {
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none; /* 隐藏 Firefox 滚动条 */
     -ms-overflow-style: none; /* 隐藏 IE/Edge 滚动条 */
+}
+
+.wechat-app .wechat-message-history-loader {
+    display: flex;
+    justify-content: center;
+    min-height: 34px;
+    margin: 2px 0 10px;
+}
+
+.wechat-app .wechat-message-history-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 32px;
+    max-width: calc(100% - 24px);
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    color: #576b95;
+    font: inherit;
+    font-size: 12px;
+    line-height: 18px;
+    letter-spacing: 0;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.wechat-app .wechat-message-history-button:active {
+    background: rgba(232, 232, 232, 0.9);
+}
+
+.wechat-app .wechat-message-history-button i {
+    width: 14px;
+    flex: 0 0 14px;
+    text-align: center;
+}
+
+.wechat-app .wechat-message-history-count {
+    color: #8a8a8a;
+    white-space: nowrap;
 }
 
 /* 🔥 隐藏 Chrome/Safari/Edge 手机浏览器的滚动条 */
@@ -5478,17 +5521,19 @@ export class WechatApp {
         contactsArray.forEach(contact => {
             // 检查是否已存在
             const exists = this.wechatData.findContactAliasConflict?.(
-                [contact.name, contact.remark].filter(Boolean)
+                [contact.name, contact.nickname, contact.remark, contact.realName].filter(Boolean)
             );
 
             if (!exists) {
                 const addedContact = this.wechatData.addContact({
                     id: `contact_${Date.now()}_${Math.random()}`,
-                    name: contact.name,
+                    name: contact.nickname || contact.name,
+                    nickname: contact.nickname || contact.name,
                     avatar: contact.avatar || '👤',
                     remark: contact.remark || '',
+                    realName: contact.realName || '',
                     relation: contact.relation || '',
-                    letter: this.wechatData.getFirstLetter(contact.name)
+                    letter: this.wechatData.getFirstLetter(contact.remark || contact.nickname || contact.name)
                 });
                 if (contact.gender) {
                     this.wechatData.setContactGender?.(addedContact?.id || contact.name, contact.gender);
@@ -7611,6 +7656,7 @@ export class WechatApp {
 
         const chat = this.wechatData.getChat(chatId);
         if (chat) {
+            this.chatView?.resetMessageHistoryWindow?.(chatId);
             if (String(this.currentChat?.id || '') !== String(chatId || '')) {
                 this.chatView?.resetTransientInputPanels?.();
             }
@@ -7789,6 +7835,9 @@ export class WechatApp {
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
+        const safeUserName = escapeAttr(userInfo.name || '');
+        const safeUserRealName = escapeAttr(userInfo.realName || '');
+        const safeUserSignature = escapeAttr(userInfo.signature || '');
             
         const avatarHtml = this.renderAvatar(userInfo.avatar, '😊', userInfo.name);
 
@@ -7836,14 +7885,21 @@ export class WechatApp {
                 <div style="background: #fff; border-radius: 12px; padding: 0 16px; margin-bottom: 16px;">
                     <div style="display: flex; align-items: center; padding: 16px 0; border-bottom: 0.5px solid #f0f0f0;">
                         <div style="width: 70px; font-size: 15px; color: #000;">昵称</div>
-                        <input type="text" id="user-name-input" placeholder="未设置" value="${userInfo.name || ''}" maxlength="20" style="
+                        <input type="text" id="user-name-input" placeholder="未设置" value="${safeUserName}" maxlength="20" style="
                             flex: 1; border: none; outline: none; background: transparent; 
+                            font-size: 15px; color: #333; text-align: right; min-width: 0;
+                        ">
+                    </div>
+                    <div style="display: flex; align-items: center; padding: 16px 0; border-bottom: 0.5px solid #f0f0f0;">
+                        <div style="width: 70px; font-size: 15px; color: #000;">真实姓名</div>
+                        <input type="text" id="user-real-name-input" placeholder="未设置" value="${safeUserRealName}" maxlength="40" style="
+                            flex: 1; border: none; outline: none; background: transparent;
                             font-size: 15px; color: #333; text-align: right; min-width: 0;
                         ">
                     </div>
                     <div style="display: flex; align-items: center; padding: 16px 0;">
                         <div style="width: 70px; font-size: 15px; color: #000;">签名</div>
-                        <input type="text" id="user-signature-input" placeholder="未设置" value="${userInfo.signature || ''}" maxlength="50" style="
+                        <input type="text" id="user-signature-input" placeholder="未设置" value="${safeUserSignature}" maxlength="50" style="
                             flex: 1; border: none; outline: none; background: transparent; 
                             font-size: 15px; color: #333; text-align: right; min-width: 0;
                         ">
@@ -8020,6 +8076,7 @@ export class WechatApp {
             setTimeout(() => saveBtn.style.transform = 'scale(1)', 100);
 
             const newName = document.getElementById('user-name-input').value.trim();
+            const realName = document.getElementById('user-real-name-input')?.value?.trim() || '';
             const newSignature = document.getElementById('user-signature-input').value.trim();
             const naiPromptTags = document.getElementById('user-nai-prompt-tags-input')?.value?.trim() || '';
             const ttsProvider = String(document.getElementById('edit-user-tts-provider-select')?.value || '').trim();
@@ -8039,6 +8096,7 @@ export class WechatApp {
 
             this.wechatData.updateUserInfo({
                 name: newName,
+                realName,
                 signature: newSignature,
                 naiPromptTags,
                 ttsProvider,
@@ -8372,7 +8430,33 @@ export class WechatApp {
                         </div>
                     </div>
 
-                    <!-- 智能加载联系人 -->
+                    <!-- 智能加载联系人破限词 -->
+                    <div class="prompt-item" style="border-bottom: 1px solid #f0f0f0; padding-bottom: 12px; margin-bottom: 12px;">
+                        <div class="prompt-header" style="display: flex; align-items: center; cursor: pointer;"
+                             data-feature="loadContactsOverride">
+                            <div style="display: flex; align-items: center; flex: 1;">
+                                <i class="fa-solid fa-chevron-right prompt-arrow"
+                                   style="color: #999; font-size: 12px; margin-right: 8px; transition: transform 0.2s;"></i>
+                                <span style="font-size: 15px;">${prompts.loadContactsOverride?.name || '🧩 智能加载联系人破限词'}</span>
+                            </div>
+                        </div>
+                        <div class="prompt-content" style="display: none; margin-top: 10px; padding-left: 20px;">
+                            <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+                                ${prompts.loadContactsOverride?.description || '智能加载联系人请求开头以 system 消息注入'}
+                            </div>
+                            <button class="edit-prompt-btn" data-feature="loadContactsOverride" style="
+                                padding: 6px 12px;
+                                background: #f0f0f0;
+                                border: none;
+                                border-radius: 4px;
+                                font-size: 12px;
+                                color: #333;
+                                cursor: pointer;
+                            ">编辑破限词</button>
+                        </div>
+                    </div>
+
+                    <!-- 智能加载联系人填写规则 -->
                     <div class="prompt-item">
                         <div class="prompt-header" style="display: flex; align-items: center; cursor: pointer;" 
                              data-feature="loadContacts">
@@ -8970,7 +9054,9 @@ export class WechatApp {
         const rowsHtml = contacts.length > 0
             ? contacts.map((contact) => {
                 const contactId = String(contact?.id || '').trim();
-                const contactName = String(contact?.name || '').trim() || '未命名';
+                const contactName = this.wechatData?.getContactDisplayName?.(contact)
+                    || String(contact?.remark || contact?.nickname || contact?.name || contact?.realName || '').trim()
+                    || '未命名';
                 const safeContactName = escapeHtml(contactName);
                 const gender = this.wechatData?.getContactGender?.(contactId) || 'unknown';
                 const avatarGroup = this.wechatData?.getContactAvatarGroup?.(contactId) || '';
@@ -9433,7 +9519,7 @@ export class WechatApp {
                 }
 
                 const contacts = this.wechatData.getContacts().filter(c =>
-                    [c.name, c.remark].some(value => String(value || '').toLowerCase().includes(query))
+                    [c.name, c.nickname, c.remark, c.realName].some(value => String(value || '').toLowerCase().includes(query))
                 );
                 const chats = this.wechatData.getChatList().filter(c => c.name.toLowerCase().includes(query));
 
@@ -9441,12 +9527,14 @@ export class WechatApp {
 
                 if (contacts.length > 0) {
                     resultsHtml += '<div style="font-size:12px;color:#888;padding:5px 15px;">联系人</div>';
-                    resultsHtml += contacts.map(contact => `
+                    resultsHtml += contacts.map(contact => {
+                        const displayName = this.wechatData.getContactDisplayName?.(contact) || contact.remark || contact.nickname || contact.name;
+                        return `
                     <div class="contact-item" data-contact-id="${contact.id}" style="padding: 8px 15px; cursor:pointer;">
-                        <div class="contact-avatar" style="width:36px;height:36px;">${this.renderAvatar(contact.avatar, '👤', contact.name)}</div>
-                        <div class="contact-name">${contact.name}</div>
+                        <div class="contact-avatar" style="width:36px;height:36px;">${this.renderAvatar(contact.avatar, '👤', displayName)}</div>
+                        <div class="contact-name">${displayName}</div>
                     </div>
-                `).join('');
+                `;}).join('');
                 }
 
                 if (chats.length > 0) {

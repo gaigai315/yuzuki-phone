@@ -1374,7 +1374,7 @@ export class XData {
         if (wechatData) return wechatData;
 
         try {
-            const module = await import('../wechat/wechat-data.js?v=20261011-wallet-assets');
+            const module = await import('../wechat/wechat-data.js?v=20261021-user-real-name');
             wechatData = new module.WechatData(this.storage);
             if (window.VirtualPhone) window.VirtualPhone.cachedWechatData = wechatData;
             return wechatData;

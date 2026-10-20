@@ -43,6 +43,7 @@ const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
 const WECHAT_STICKER_ALAPI_CACHE_KEY = 'phone_wechat_alapi_sticker_cache_v1';
 const WECHAT_STICKER_ALAPI_CACHE_MAX = 240;
 const WECHAT_STICKER_ALAPI_CACHE_TTL = 90 * 24 * 60 * 60 * 1000;
+export const WECHAT_MESSAGE_PAGE_SIZE = 50;
 
 export function buildWechatCharacterCardInfo(character = null) {
     if (!character || typeof character !== 'object') return '';
@@ -119,6 +120,7 @@ export class ChatView {
         this.messageSelectionMode = false;
         this.selectedMessageIds = new Set();
         this.messageSelectionChatId = null;
+        this._visibleMessageCounts = new Map();
         this._lobbyPersonaProfileCache = new Map();
         this._lobbyPersonaCacheTTL = 10 * 60 * 1000;
         this._lobbyPersonaEmptyCacheTTL = 45 * 1000;
@@ -351,17 +353,23 @@ export class ChatView {
             || null;
     }
 
+    _getContactDisplayName(contact = {}, fallback = '') {
+        return this.app.wechatData?.getContactDisplayName?.(contact)
+            || String(contact?.remark || contact?.nickname || contact?.name || contact?.realName || fallback || '').trim();
+    }
+
     _formatWechatContactNameForPrompt(name = '') {
         const safeName = String(name || '').trim();
         if (!safeName) return '';
         const contact = this._getContactByDisplayName(safeName);
-        return contact?.blocked ? `${safeName}（已拉黑）` : safeName;
+        const displayName = this._getContactDisplayName(contact, safeName) || safeName;
+        return contact?.blocked ? `${displayName}（已拉黑）` : displayName;
     }
 
     _formatWechatContactListForPrompt(contacts = []) {
         const names = (Array.isArray(contacts) ? contacts : [])
             .map(contact => {
-                const name = String(contact?.name || '').trim();
+                const name = this._getContactDisplayName(contact);
                 return name ? (contact?.blocked ? `${name}（已拉黑）` : name) : '';
             })
             .filter(Boolean);
@@ -1975,13 +1983,13 @@ export class ChatView {
         const contactById = this.app.wechatData?.getContact?.(rawName);
         const contactByName = this.app.wechatData?.findContactByNameLoose?.(rawName, { includeChats: false });
         const contact = contactById || contactByName || null;
-        const aliases = [rawName, contact?.id, contact?.name, contact?.remark, contact?.nickname]
+        const aliases = [rawName, contact?.id, contact?.name, contact?.remark, contact?.nickname, contact?.realName]
             .map(value => String(value || '').trim())
             .filter(Boolean);
 
         if (aliases.some(alias => this._isCurrentWechatUserName(alias))) return null;
 
-        const displayName = String(contact?.name || rawName).trim();
+        const displayName = this._getContactDisplayName(contact, rawName);
         const normalizedName = this._normalizeLookupName(displayName);
         if (!normalizedName) return null;
 
@@ -2122,8 +2130,12 @@ export class ChatView {
         const contactByName = this.app.wechatData?.findContactByNameLoose?.(targetChat.name, { includeChats: false });
         pushAlias(contactById?.name);
         pushAlias(contactByName?.name);
+        pushAlias(contactById?.nickname);
+        pushAlias(contactByName?.nickname);
         pushAlias(contactById?.remark);
         pushAlias(contactByName?.remark);
+        pushAlias(contactById?.realName);
+        pushAlias(contactByName?.realName);
 
         const lobbySelection = this._buildLobbySelection(context || this._safeGetContext());
         if (lobbySelection?.isLobby) {
@@ -2162,9 +2174,11 @@ export class ChatView {
             contactById?.name,
             contactById?.remark,
             contactById?.nickname,
+            contactById?.realName,
             contactByName?.name,
             contactByName?.remark,
-            contactByName?.nickname
+            contactByName?.nickname,
+            contactByName?.realName
         ].map(name => this._normalizeLookupName(name)).filter(Boolean));
 
         const wechatUserName = String(this.app.wechatData?.getUserInfo?.()?.name || '').trim();
@@ -2420,9 +2434,11 @@ export class ChatView {
             contactById?.name,
             contactById?.remark,
             contactById?.nickname,
+            contactById?.realName,
             contactByName?.name,
             contactByName?.remark,
-            contactByName?.nickname
+            contactByName?.nickname,
+            contactByName?.realName
         ].map(name => this._normalizeLookupName(name)).filter(Boolean));
         if (aliasKeys.size === 0) return '';
 
@@ -2492,9 +2508,11 @@ export class ChatView {
             contactById?.name,
             contactById?.remark,
             contactById?.nickname,
+            contactById?.realName,
             contactByName?.name,
             contactByName?.remark,
-            contactByName?.nickname
+            contactByName?.nickname,
+            contactByName?.realName
         ].map(name => this._normalizeLookupName(name)).filter(Boolean));
         if (aliasKeys.size === 0) return '';
 
@@ -2693,7 +2711,10 @@ export class ChatView {
         const contacts = this.app?.wechatData?.getContacts?.() || [];
         const userInfo = this.app?.wechatData?.getUserInfo?.() || {};
         const userTags = String(userInfo?.naiPromptTags || userInfo?.imageTags || '').trim();
-        const userRow = userTags ? [{ name: '{{user}}', tags: userTags }] : [];
+        const userVariableName = String(userInfo?.realName || userInfo?.name || 'user')
+            .replace(/[{}\r\n]/g, '')
+            .trim() || 'user';
+        const userRow = userTags ? [{ name: `{{${userVariableName}}}`, tags: userTags }] : [];
         if (!Array.isArray(contacts) || contacts.length === 0) {
             return this._formatPersonalImageTagRows(userRow);
         }
@@ -2704,9 +2725,13 @@ export class ChatView {
             return this._formatPersonalImageTagRows([
                 ...userRow,
                 ...contacts
-                .filter(contact => participantKeys.has(this._normalizeLookupName(contact?.name)))
+                .filter(contact => {
+                    const aliases = this.app.wechatData?._getContactAliasValues?.(contact)
+                        || [contact?.name, contact?.nickname, contact?.remark, contact?.realName];
+                    return aliases.some(alias => participantKeys.has(this._normalizeLookupName(alias)));
+                })
                 .map(contact => ({
-                    name: contact?.name,
+                    name: this._getContactDisplayName(contact),
                     tags: contact?.naiPromptTags || contact?.imageTags
                 }))
             ]);
@@ -2720,7 +2745,7 @@ export class ChatView {
         return this._formatPersonalImageTagRows([
             ...userRow,
             ...(contact ? [{
-                name: contact.name || chatName,
+                name: this._getContactDisplayName(contact, chatName),
                 tags: contact.naiPromptTags || contact.imageTags
             }] : [])
         ]);
@@ -2950,6 +2975,127 @@ export class ChatView {
             ...this._getMessageTimelineFields(source)
         };
     }
+
+    resetMessageHistoryWindow(chatId = '') {
+        const safeChatId = String(chatId || '').trim();
+        if (safeChatId) {
+            this._visibleMessageCounts?.delete?.(safeChatId);
+            return;
+        }
+        this._visibleMessageCounts?.clear?.();
+    }
+
+    _getMessageHistoryWindow(messages, chatId = '') {
+        const allMessages = Array.isArray(messages) ? messages : [];
+        const safeChatId = String(chatId || this.app?.currentChat?.id || '').trim();
+        if (!(this._visibleMessageCounts instanceof Map)) {
+            this._visibleMessageCounts = new Map();
+        }
+
+        const storedCount = safeChatId ? this._visibleMessageCounts.get(safeChatId) : null;
+        const requestedCount = Number.isFinite(Number(storedCount))
+            ? Math.max(WECHAT_MESSAGE_PAGE_SIZE, Number(storedCount))
+            : WECHAT_MESSAGE_PAGE_SIZE;
+        const visibleCount = Math.min(allMessages.length, requestedCount);
+        const startIndex = Math.max(0, allMessages.length - visibleCount);
+
+        return {
+            chatId: safeChatId,
+            messages: allMessages.slice(startIndex),
+            startIndex,
+            hiddenCount: startIndex,
+            visibleCount
+        };
+    }
+
+    _expandMessageHistoryWindow(chatId, totalCount) {
+        const safeChatId = String(chatId || this.app?.currentChat?.id || '').trim();
+        const safeTotal = Math.max(0, Number(totalCount) || 0);
+        const currentCount = this._getMessageHistoryWindow(new Array(safeTotal), safeChatId).visibleCount;
+        const nextCount = Math.min(safeTotal, currentCount + WECHAT_MESSAGE_PAGE_SIZE);
+        if (safeChatId) this._visibleMessageCounts.set(safeChatId, nextCount);
+        return nextCount;
+    }
+
+    _renderMessageHistoryWindow(messages, userInfo, chatId = '') {
+        const windowState = this._getMessageHistoryWindow(messages, chatId);
+        const historyButton = windowState.hiddenCount > 0 ? `
+            <div class="wechat-message-history-loader">
+                <button type="button" class="wechat-message-history-button" data-chat-id="${this._escapeHtml(windowState.chatId)}" aria-label="展开更早的 ${Math.min(WECHAT_MESSAGE_PAGE_SIZE, windowState.hiddenCount)} 条消息">
+                    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                    <span>展开更早消息</span>
+                    <span class="wechat-message-history-count">剩余 ${windowState.hiddenCount} 条</span>
+                </button>
+            </div>
+        ` : '';
+        return historyButton + this.renderMessagesWithDateDividers(windowState.messages, userInfo, {
+            startIndex: windowState.startIndex
+        });
+    }
+
+    _captureMessageHistoryScroll(messagesDiv) {
+        const previousTop = Number(messagesDiv?.scrollTop || 0);
+        const anchor = Array.from(messagesDiv?.querySelectorAll?.('[data-message-index]') || [])[0] || null;
+        return {
+            previousTop,
+            previousHeight: Number(messagesDiv?.scrollHeight || 0),
+            anchorIndex: String(anchor?.dataset?.messageIndex || ''),
+            anchorOffset: anchor ? Number(anchor.offsetTop || 0) - previousTop : null
+        };
+    }
+
+    _restoreMessageHistoryScroll(messagesDiv, snapshot = {}) {
+        if (!messagesDiv) return;
+        const anchorIndex = String(snapshot.anchorIndex || '');
+        if (anchorIndex) {
+            const anchor = Array.from(messagesDiv.querySelectorAll?.('[data-message-index]') || [])
+                .find(element => String(element?.dataset?.messageIndex || '') === anchorIndex);
+            if (anchor) {
+                messagesDiv.scrollTop = Math.max(0, Number(anchor.offsetTop || 0) - Number(snapshot.anchorOffset || 0));
+                return;
+            }
+        }
+
+        const addedHeight = Number(messagesDiv.scrollHeight || 0) - Number(snapshot.previousHeight || 0);
+        messagesDiv.scrollTop = Math.max(0, Number(snapshot.previousTop || 0) + addedHeight);
+    }
+
+    bindMessageHistoryEvents() {
+        const currentView = this.getCurrentWechatView();
+        const messagesDiv = currentView?.querySelector('#chat-messages');
+        if (!messagesDiv || messagesDiv._messageHistoryEventsBound) return;
+        messagesDiv._messageHistoryEventsBound = true;
+
+        messagesDiv.addEventListener('click', (event) => {
+            const button = event.target.closest?.('.wechat-message-history-button');
+            if (!button || !messagesDiv.contains(button)) return;
+            event.preventDefault();
+
+            const chatId = String(button.dataset.chatId || this.app?.currentChat?.id || '').trim();
+            if (!chatId || String(this.app?.currentChat?.id || '').trim() !== chatId) return;
+
+            const messages = this.app.wechatData.getMessages(chatId) || [];
+            const userInfo = this.app.wechatData.getUserInfo();
+            const scrollSnapshot = this._captureMessageHistoryScroll(messagesDiv);
+
+            this._expandMessageHistoryWindow(chatId, messages.length);
+            messagesDiv.innerHTML = this._renderMessageHistoryWindow(messages, userInfo, chatId);
+
+            this.bindMessageLongPressEvents();
+            this.bindManualTimeMarkerEvents();
+            this.bindSpecialMessageEvents();
+            this.bindInnerThoughtEvents();
+            this.bindMessageSelectionEvents();
+
+            const restoreScrollPosition = () => {
+                this._restoreMessageHistoryScroll(messagesDiv, scrollSnapshot);
+            };
+            restoreScrollPosition();
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(restoreScrollPosition);
+            }
+        });
+    }
 renderChatRoom(chat) {
         const messages = this.app.wechatData.getMessages(chat.id);
         const userInfo = this.app.wechatData.getUserInfo();
@@ -2967,7 +3113,7 @@ renderChatRoom(chat) {
         return `
     <div class="chat-room" data-chat-id="${safeChatId}">
                 <div class="chat-messages" id="chat-messages" data-chat-id="${safeChatId}">
-                    ${this.renderMessagesWithDateDividers(messages, userInfo)}
+                    ${this._renderMessageHistoryWindow(messages, userInfo, chat.id)}
                 </div>
 
                 <!-- 输入区 -->
@@ -3024,7 +3170,7 @@ renderChatRoom(chat) {
     }
 
     // 🔥 渲染消息列表（常规2分钟时间胶囊 + AI首条>1分钟强制显示）
-    renderMessagesWithDateDividers(messages, userInfo) {
+    renderMessagesWithDateDividers(messages, userInfo, options = {}) {
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
             return '';
         }
@@ -3033,8 +3179,10 @@ renderChatRoom(chat) {
         let lastRenderedTimestamp = 0;
         let lastRenderedDate = null;
 
+        const startIndex = Math.max(0, Number(options.startIndex) || 0);
         messages.forEach((msg, index) => {
             try {
+                const messageIndex = startIndex + index;
                 const msgTimestamp = msg.timestamp || 0;
                 const msgDate = msg.date ? this._normalizeWechatDateDisplay(msg.date) : null;
                 const prevMsg = index > 0 ? messages[index - 1] : null;
@@ -3054,7 +3202,7 @@ renderChatRoom(chat) {
                 if (isManualTimeMarker) {
                     const markerText = this._buildWechatTimeDividerText(msg, { forceDate: true });
                     if (markerText) {
-                        html += this.renderManualTimeMarkerDivider(msg, index, markerText);
+                        html += this.renderManualTimeMarkerDivider(msg, messageIndex, markerText);
                         lastRenderedTimestamp = msgTimestamp;
                         if (msgDate) lastRenderedDate = msgDate;
                     }
@@ -3088,7 +3236,7 @@ renderChatRoom(chat) {
                     }
                 }
 
-                html += this.renderMessage(msg, userInfo, index);
+                html += this.renderMessage(msg, userInfo, messageIndex);
             } catch (e) {
                 console.error('渲染单条消息失败，已跳过:', e, msg);
             }
@@ -3159,13 +3307,14 @@ renderChatRoom(chat) {
 
         const messages = this.app.wechatData.getMessages(chatId);
         const userInfo = this.app.wechatData.getUserInfo();
-        messagesDiv.innerHTML = this.renderMessagesWithDateDividers(messages, userInfo);
+        messagesDiv.innerHTML = this._renderMessageHistoryWindow(messages, userInfo, chatId);
 
         this.bindMessageLongPressEvents();
         this.bindManualTimeMarkerEvents();
         this.bindSpecialMessageEvents();
         this.bindInnerThoughtEvents();
         this.bindMessageSelectionEvents();
+        this.bindMessageHistoryEvents();
         this._syncMessageSelectionBar();
 
         if (!keepScroll) return true;
@@ -3498,7 +3647,8 @@ renderChatRoom(chat) {
         // 2. 生成新 HTML
         let newHtml = '';
         try {
-            newHtml = this.renderMessagesWithDateDividers(messages, userInfo);
+            const chatId = String(options.chatId || this.app?.currentChat?.id || '').trim();
+            newHtml = this._renderMessageHistoryWindow(messages, userInfo, chatId);
         } catch (error) {
             console.error('微信消息列表 HTML 生成失败:', error);
             return;
@@ -3519,6 +3669,7 @@ renderChatRoom(chat) {
             this.bindSpecialMessageEvents();
             this.bindInnerThoughtEvents();
             this.bindMessageSelectionEvents();
+            this.bindMessageHistoryEvents();
         } catch (error) {
             console.error('微信消息列表事件绑定失败:', error);
         }
@@ -9934,6 +10085,7 @@ renderChatRoom(chat) {
         this.scrollToBottomIfNeeded(true);
 
         // 🔧 绑定消息气泡长按/点击事件
+        this.bindMessageHistoryEvents();
         this.bindMessageLongPressEvents();
         this.bindManualTimeMarkerEvents();
         this.bindMessageSelectionEvents();
@@ -14243,7 +14395,7 @@ renderChatRoom(chat) {
         const messagesDiv = currentView?.querySelector('#chat-messages');
         if (messagesDiv) {
             const updatedMessages = this.app.wechatData.getMessages(this.app.currentChat.id);
-            messagesDiv.innerHTML = this.renderMessagesWithDateDividers(updatedMessages, userInfo);
+            messagesDiv.innerHTML = this._renderMessageHistoryWindow(updatedMessages, userInfo, this.app.currentChat.id);
             // 🔥 重新绑定长按事件
             this.bindMessageLongPressEvents();
             this.bindManualTimeMarkerEvents();
@@ -14402,7 +14554,7 @@ renderChatRoom(chat) {
             if (scopedMessagesDiv) {
                 const latestMessages = this.app.wechatData.getMessages(this.app.currentChat.id);
                 const userInfo = this.app.wechatData.getUserInfo();
-                scopedMessagesDiv.innerHTML = this.renderMessagesWithDateDividers(latestMessages, userInfo);
+                scopedMessagesDiv.innerHTML = this._renderMessageHistoryWindow(latestMessages, userInfo, this.app.currentChat.id);
                 this.bindMessageLongPressEvents();
             }
             setTimeout(() => this._setMessageInlineEditMode(false, this.app.currentChat?.id), 0);
@@ -18183,7 +18335,12 @@ ${callTranscript}`;
         // 获取所有联系人（排除已在群里的）
         const contacts = this.app.wechatData.getContacts();
         const existingMembers = chat.members || [];
-        const availableContacts = contacts.filter(c => !existingMembers.includes(c.name));
+        const existingMemberKeys = new Set(existingMembers.map(name => this._normalizeLookupName(name)).filter(Boolean));
+        const availableContacts = contacts.filter((contact) => {
+            const aliases = this.app.wechatData?._getContactAliasValues?.(contact)
+                || [contact?.name, contact?.nickname, contact?.remark, contact?.realName];
+            return !aliases.some(alias => existingMemberKeys.has(this._normalizeLookupName(alias)));
+        });
 
         const html = `
         <div class="wechat-app">
@@ -18226,8 +18383,10 @@ ${callTranscript}`;
 
                 ${availableContacts.length > 0 ? `
                     <div style="background: #fff; padding: 10px 0;">
-                        ${availableContacts.map(contact => `
-                            <div class="add-member-item" data-name="${this._encodeDataToken(contact.name)}" style="
+                        ${availableContacts.map(contact => {
+                            const displayName = this._getContactDisplayName(contact);
+                            return `
+                            <div class="add-member-item" data-name="${this._encodeDataToken(displayName)}" style="
                                 display: flex;
                                 align-items: center;
                                 padding: 10px 15px;
@@ -18245,13 +18404,13 @@ ${callTranscript}`;
                                     font-size: 20px;
                                     margin-right: 12px;
                                     overflow: hidden;
-                                ">${this.app.renderAvatar(contact.avatar, '👤', contact.name)}</div>
+                                ">${this.app.renderAvatar(contact.avatar, '👤', displayName)}</div>
                                 <div style="flex: 1;">
-                                    <div style="font-size: 15px; color: #000;">${contact.name}</div>
+                                    <div style="font-size: 15px; color: #000;">${displayName}</div>
                                 </div>
                                 <i class="fa-solid fa-plus" style="color: #07c160; font-size: 16px;"></i>
                             </div>
-                        `).join('')}
+                        `;}).join('')}
                     </div>
                 ` : `
                     <div style="text-align: center; padding: 40px; color: #999;">

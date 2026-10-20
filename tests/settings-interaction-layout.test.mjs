@@ -54,3 +54,21 @@ test('operation settings occupy the former offline section position', () => {
         /generalTab\.insertBefore\(interactionSection, operationSection\);[\s\S]*generalTab\.insertBefore\(onlineModeSection, onlineInjectionSection\);[\s\S]*generalTab\.insertBefore\(operationSection, onlineInjectionSection\.nextSibling\);/
     );
 });
+
+test('interop defaults offline injections on without overwriting later user choices', () => {
+    assert.match(settingsSource, /const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS\.slice\(0, 3\)/);
+    assert.match(settingsSource, /WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX = '-user-set'/);
+    assert.match(
+        settingsSource,
+        /await this\._ensureInitialWechatOfflineInjectionToggles\(\);[\s\S]*?resetWechatOnlineProactiveSessionTimer/
+    );
+    assert.match(
+        settingsSource,
+        /_saveWechatOfflineInjectionToggle\(key, enabled\)[\s\S]*?WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX[\s\S]*?this\.storage\.set\(key, !!enabled\)/
+    );
+    assert.doesNotMatch(settingsSource, /_disableWechatOfflineInjectionToggles/);
+    assert.doesNotMatch(
+        settingsSource,
+        /线上模式切换[\s\S]*?this\.storage\.set\('offline-wechat-prompt-enabled', false\)/
+    );
+});

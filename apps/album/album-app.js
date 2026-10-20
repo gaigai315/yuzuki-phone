@@ -5,9 +5,9 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 
-import { AlbumData } from './album-data.js?v=1.4.4&r=20261020-story-image-menu-v2';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261020-story-image-menu-v2';
-import { StoryImageOverlay } from './story-image-overlay.js?v=20261020-story-image-menu-v2';
+import { AlbumData } from './album-data.js?v=1.4.4&r=20261021-album-lazy-folds';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261021-album-lazy-folds';
+import { StoryImageOverlay } from './story-image-overlay.js?v=20261021-story-image-back-return';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 export class AlbumApp {
@@ -26,8 +26,18 @@ export class AlbumApp {
         this.storyImageOverlay = new StoryImageOverlay(this);
 
         window.addEventListener('phone:swipeBack', (event) => this.handleSwipeBack(event));
-        window.addEventListener('phone:albumImageDeleted', () => this.refreshIfVisible());
-        window.addEventListener('phone:updateWallpaper', () => this.refreshIfVisible());
+        window.addEventListener('phone:albumImageDeleted', () => {
+            this.albumData.invalidateMediaCache?.();
+            this.refreshIfVisible();
+        });
+        window.addEventListener('phone:albumMediaChanged', () => {
+            this.albumData.invalidateMediaCache?.();
+            this.refreshIfVisible();
+        });
+        window.addEventListener('phone:updateWallpaper', () => {
+            this.albumData.invalidateMediaCache?.();
+            this.refreshIfVisible();
+        });
         window.addEventListener('phone:panelVisibility', event => {
             if (event?.detail?.open === false) this.albumView?.pausePreview?.();
         });
@@ -42,6 +52,7 @@ export class AlbumApp {
         if (storage) {
             this.storage = storage;
             this.albumData.storage = storage;
+            this.albumData.invalidateMediaCache?.();
         }
         return this;
     }
@@ -212,6 +223,123 @@ export class AlbumApp {
         }
     }
 
+    _getStoryWechatDataSnapshot() {
+        const runtimeData = window.VirtualPhone?.wechatApp?.wechatData
+            || window.VirtualPhone?.cachedWechatData
+            || null;
+        if (runtimeData?.data) {
+            return { data: runtimeData.data, runtime: runtimeData };
+        }
+
+        try {
+            const saved = this.storage?.get?.('wechat_data', false);
+            const data = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            if (data && typeof data === 'object') return { data, runtime: null };
+        } catch (error) {
+            console.warn('[AlbumApp] 读取微信固定形象 Tags 失败:', error);
+        }
+        return { data: {}, runtime: null };
+    }
+
+    _normalizeStoryCharacterAlias(value = '') {
+        return String(value || '')
+            .trim()
+            .replace(/[{}\r\n]/g, '')
+            .replace(/\s+/g, ' ')
+            .slice(0, 80);
+    }
+
+    _getStoryFixedImageCharacters() {
+        const { data, runtime } = this._getStoryWechatDataSnapshot();
+        const entries = [];
+        const pushEntry = (source, tags, extraAliases = [], preferredAlias = '') => {
+            const fixedTags = String(tags || '').trim();
+            if (!fixedTags) return;
+            const rawAliases = typeof runtime?._getContactAliasValues === 'function'
+                ? runtime._getContactAliasValues(source)
+                : [source?.remark, source?.nickname, source?.name, source?.realName, source?.alias];
+            const aliases = [];
+            const seen = new Set();
+            [...extraAliases, ...(Array.isArray(rawAliases) ? rawAliases : [])].forEach((rawAlias) => {
+                const candidates = String(rawAlias || '').split(/[、,，/|｜；;]+/);
+                candidates.forEach((candidate) => {
+                    const alias = this._normalizeStoryCharacterAlias(candidate);
+                    const key = alias.replace(/\s+/g, '').toLowerCase();
+                    if (!alias || !key || seen.has(key)) return;
+                    seen.add(key);
+                    aliases.push(alias);
+                });
+            });
+            if (aliases.length > 0) {
+                const preferredKeys = String(preferredAlias || '')
+                    .split(/[、,，/|｜；;]+/)
+                    .map(value => this._normalizeStoryCharacterAlias(value).replace(/\s+/g, '').toLowerCase())
+                    .filter(Boolean);
+                const displayAlias = aliases.find(alias => preferredKeys.includes(alias.replace(/\s+/g, '').toLowerCase()))
+                    || aliases[0];
+                entries.push({ aliases, displayAliases: preferredAlias ? [displayAlias] : aliases, tags: fixedTags });
+            }
+        };
+
+        (Array.isArray(data?.contacts) ? data.contacts : []).forEach((contact) => {
+            pushEntry(contact, contact?.naiPromptTags || contact?.imageTags);
+        });
+        const userInfo = data?.userInfo && typeof data.userInfo === 'object' ? data.userInfo : {};
+        const userVariableName = String(userInfo?.realName || userInfo?.name || 'user').trim();
+        pushEntry(
+            userInfo,
+            userInfo?.naiPromptTags || userInfo?.imageTags,
+            ['user', userInfo?.name, userInfo?.realName],
+            userVariableName
+        );
+        return entries;
+    }
+
+    _formatStoryFixedImageCharacters(entries = this._getStoryFixedImageCharacters()) {
+        if (!Array.isArray(entries) || entries.length === 0) return '暂无';
+        return entries.map((entry) => {
+            const variables = (entry.displayAliases || entry.aliases).map(alias => `{{${alias}}}`).join('、');
+            return `- ${variables}（同一固定形象角色；按剧情中的称呼原样输出其中一个变量）`;
+        }).join('\n');
+    }
+
+    _injectStoryFixedImageCharacters(prompt = '', formattedCharacters = '暂无') {
+        const content = String(prompt || '');
+        const fixedList = String(formattedCharacters || '').trim() || '暂无';
+        if (fixedList === '暂无' || content.includes(fixedList)) return content;
+        const headingPattern = /【当前已有固定形象tags角色】[^\n]*/;
+        if (headingPattern.test(content)) {
+            return content.replace(headingPattern, match => `${match}\n${fixedList}`);
+        }
+        return `${content}\n\n【当前已有固定形象tags角色】\n${fixedList}\n固定形象变量只能原样放进对应 characterX，禁止改写其外貌。`.trim();
+    }
+
+    _resolveStoryFixedImageTags(rawTags = '') {
+        const entries = this._getStoryFixedImageCharacters();
+        const tagsByAlias = new Map();
+        entries.forEach((entry) => {
+            entry.aliases.forEach((alias) => {
+                const key = alias.replace(/\s+/g, '').toLowerCase();
+                if (key && !tagsByAlias.has(key)) tagsByAlias.set(key, entry.tags);
+            });
+        });
+
+        const unresolved = new Set();
+        const replacements = [];
+        const prompt = String(rawTags || '').replace(/\{\{\s*([^{}\n]+?)\s*\}\}/g, (token, rawName) => {
+            const name = this._normalizeStoryCharacterAlias(rawName);
+            const key = name.replace(/\s+/g, '').toLowerCase();
+            const fixedTags = tagsByAlias.get(key);
+            if (!fixedTags) {
+                unresolved.add(name || String(rawName || '').trim());
+                return token;
+            }
+            replacements.push({ name, tags: fixedTags });
+            return fixedTags;
+        });
+        return { prompt, replacements, unresolved: [...unresolved] };
+    }
+
     _buildStoryCharacterMessage(context, fallbackName = '角色') {
         const character = context?.characterId !== undefined && context?.characters
             ? context.characters[context.characterId]
@@ -277,10 +405,23 @@ export class AlbumApp {
         const promptManager = window.VirtualPhone?.promptManager;
         promptManager?.ensureLoaded?.();
         const context = this._getStoryTavernContext();
+        const imageGenerationManager = window.VirtualPhone?.imageGenerationManager;
+        let imageProvider = this.getCurrentStoryImageProvider() || 'unknown';
+        let imageModel = '';
+        try {
+            const imageConfig = imageGenerationManager?.getConfig?.({ app: 'story' });
+            imageProvider = String(imageConfig?.provider || imageProvider || 'unknown').trim().toLowerCase() || 'unknown';
+            imageModel = String(imageConfig?.model || '').trim();
+        } catch (error) {
+            console.warn('读取正文生图目标模型失败，将由提示词使用通用输出格式:', error);
+        }
         const variables = {
             user: source.userName || context?.name1 || '用户',
             char: source.characterName || context?.name2 || '角色',
-            floor: targetFloor
+            floor: targetFloor,
+            imageProvider,
+            imageModel: imageModel || 'unknown',
+            fixedImageCharacters: this._formatStoryFixedImageCharacters()
         };
         const overridePrompt = String(
             promptManager?.renderPromptForFeature?.('story', 'override', variables)
@@ -291,11 +432,26 @@ export class AlbumApp {
         if (!overridePrompt) {
             throw new Error('正文生图破限提示词为空，请先在相册设置中恢复默认提示词');
         }
+        let generationPrompt = String(
+            promptManager?.renderPromptForFeature?.('story', 'generate', variables)
+            || promptManager?.getPromptForFeature?.('story', 'generate')
+            || promptManager?.getDefaultPrompts?.()?.story?.generate?.content
+            || ''
+        ).trim();
+        generationPrompt = this._injectStoryFixedImageCharacters(generationPrompt, variables.fixedImageCharacters);
+        if (!generationPrompt) {
+            throw new Error('正文生图提示词为空，请先在相册设置中恢复默认提示词');
+        }
 
         const messages = [{
             role: 'system',
             content: overridePrompt,
             name: 'SYSTEM (正文生图破限词)',
+            isPhoneMessage: true
+        }, {
+            role: 'system',
+            content: generationPrompt,
+            name: 'SYSTEM (正文生图提示词)',
             isPhoneMessage: true
         }];
         messages.push(this._buildStoryCharacterMessage(context, variables.char));
@@ -313,7 +469,7 @@ export class AlbumApp {
         ].filter(Boolean).join('\n\n');
         messages.push({
             role: 'user',
-            content: `Selected story floor ${targetFloor}:\n<story>\n${contextLines}\n</story>\n\nReturn only comma-separated image-generation Tags:`,
+            content: `Selected story floor ${targetFloor}:\n<story>\n${contextLines}\n</story>\n\nGenerate the final image prompt now.`,
             isPhoneMessage: true
         });
         return messages;
@@ -453,9 +609,13 @@ export class AlbumApp {
         try {
             this._assertStoryOperationCurrent(targetFloor, target.message, options);
             await this.albumData.setStoryFloorTags(targetFloor, tags, target.message);
+            const resolved = this._resolveStoryFixedImageTags(tags);
+            if (resolved.unresolved.length > 0) {
+                throw new Error(`未找到以下固定形象角色的专属生图 Tags：${resolved.unresolved.map(name => `{{${name}}}`).join('、')}`);
+            }
             const result = await imageGenerationManager.generate({
                 app: 'story',
-                prompt: tags,
+                prompt: resolved.prompt,
                 signal: options.signal
             });
             this._assertStoryOperationCurrent(targetFloor, target.message, options);
@@ -573,6 +733,7 @@ export class AlbumApp {
 
         if (this.albumView.selectionMode) {
             this.albumView.selectionMode = false;
+            this.albumView.renderLimit = this.albumView.renderBatchSize;
             this.albumView.selectedPaths.clear();
             this.albumView.render();
             return true;
@@ -580,6 +741,7 @@ export class AlbumApp {
 
         if (this.albumView.activeSource !== 'all') {
             this.albumView.activeSource = 'all';
+            this.albumView.renderLimit = this.albumView.renderBatchSize;
             this.albumView.render();
             return true;
         }

@@ -168,6 +168,181 @@ test('NovelAI character parser disables all coordinates when one position is unk
     assert.equal(charCaptions.some(item => Object.hasOwn(item, 'centers')), false);
 });
 
+test('NovelAI labeled character parser keeps continuous V5 coordinates', () => {
+    const parsed = manager._parseNovelAIPromptSyntax(`
+scenePrompt:
+2girls, indoors, bedroom
+
+character1:
+girl, black hair, source#hug
+center1:
+x:0.2,y:0.45
+
+character2:
+girl, blonde hair, target#hug
+center2:
+x:0.8,y:0.55
+`, '', 'nai-diffusion-5-full');
+
+    assert.equal(parsed.baseCaption, '2girls, indoors, bedroom');
+    assert.equal(parsed.useCoords, true);
+    assert.deepEqual(parsed.characters, [
+        {
+            charCaption: 'girl, black hair, source#hug',
+            negativeCaption: '',
+            center: { x: 0.2, y: 0.45 }
+        },
+        {
+            charCaption: 'girl, blonde hair, target#hug',
+            negativeCaption: '',
+            center: { x: 0.8, y: 0.55 }
+        }
+    ]);
+});
+
+test('NovelAI labeled character parser accepts plural character and center labels', () => {
+    const parsed = manager._parseNovelAIPromptSyntax(`
+scenePrompt: 1girl, portrait
+characters1: girl, black hair
+centers1: x:0.4,y:0.6
+`, '', 'nai-diffusion-5-full');
+
+    assert.equal(parsed.baseCaption, '1girl, portrait');
+    assert.equal(parsed.useCoords, true);
+    assert.deepEqual(parsed.characters, [{
+        charCaption: 'girl, black hair',
+        negativeCaption: '',
+        center: { x: 0.4, y: 0.6 }
+    }]);
+});
+
+test('NovelAI labeled character parser snaps V4.5 coordinates to the nearest grid point', () => {
+    const parsed = manager._parseNovelAIPromptSyntax(`
+scenePrompt: 3girls, outdoors
+character1: girl, black hair
+center1: x:0.2,y:0.5
+character2: girl, brown hair
+center2: x:0.5,y:0.5
+character3: girl, blonde hair
+center3: x:0.8,y:0.5
+`, '', 'nai-diffusion-4-5-full');
+
+    assert.equal(parsed.useCoords, true);
+    assert.deepEqual(parsed.characters.map(item => item.center), [
+        { x: 0.3, y: 0.5 },
+        { x: 0.5, y: 0.5 },
+        { x: 0.7, y: 0.5 }
+    ]);
+});
+
+test('NovelAI labeled character parser supports scene-only close-ups', () => {
+    const parsed = manager._parseNovelAIPromptSyntax(`
+scenePrompt:
+1girl, close-up, embarrassed
+`, '', 'nai-diffusion-5-full');
+
+    assert.equal(parsed.baseCaption, '1girl, close-up, embarrassed');
+    assert.deepEqual(parsed.characters, []);
+    assert.equal(parsed.useCoords, false);
+});
+
+test('NovelAI labeled character parser disables coordinates when one center is incomplete', () => {
+    const parsed = manager._parseNovelAIPromptSyntax(`
+scenePrompt: 2girls, indoors
+character1: girl, black hair
+center1: x:0.3,y:0.5
+character2: girl, blonde hair
+center2: x:0.7
+`, '', 'nai-diffusion-5-full');
+
+    assert.equal(parsed.useCoords, false);
+    assert.deepEqual(parsed.characters.map(item => item.center), [null, null]);
+});
+
+test('NovelAI labeled syntax is passed through for models outside V4.5 and V5', () => {
+    const prompt = `scenePrompt:\n1girl, portrait\ncharacter1:\ngirl, black hair\ncenter1:\nx:0.5,y:0.5`;
+    const parsed = manager._parseNovelAIPromptSyntax(prompt, '', 'nai-diffusion-4-full');
+
+    assert.equal(parsed.baseCaption, prompt);
+    assert.deepEqual(parsed.characters, []);
+    assert.equal(parsed.useCoords, false);
+});
+
+test('NovelAI payload maps labeled prompts to character captions by model', async () => {
+    const prompt = `
+scenePrompt: 2girls, indoors
+character1: girl, black hair, source#hug
+center1: x:0.2,y:0.5
+character2: girl, blonde hair, target#hug
+center2: x:0.8,y:0.5
+`;
+    const baseConfig = {
+        width: 832,
+        height: 1216,
+        scale: 5,
+        sampler: 'k_euler',
+        steps: 28,
+        cfgRescale: 0,
+        schedule: 'native',
+        seed: 123,
+        fixedPrompt: 'fixed start',
+        fixedPromptEnd: 'fixed end',
+        negativePrompt: 'bad quality',
+        novelAISkipCfgCompat: false
+    };
+    const payloadManager = new ImageGenerationManager(null);
+    payloadManager._resolveNovelAIVibeReferences = async () => [];
+
+    const v45Payload = await payloadManager._buildNovelAIPayload(
+        { prompt },
+        { ...baseConfig, model: 'nai-diffusion-4-5-full' }
+    );
+    const v5Payload = await payloadManager._buildNovelAIPayload(
+        { prompt },
+        { ...baseConfig, model: 'nai-diffusion-5-full', schedule: 'karras' }
+    );
+
+    assert.equal(v45Payload.parameters.v4_prompt.caption.base_caption, 'fixed start, 2girls, indoors, fixed end');
+    assert.deepEqual(v45Payload.parameters.v4_prompt.caption.char_captions, [
+        {
+            char_caption: 'girl, black hair, source#hug',
+            centers: [{ x: 0.3, y: 0.5 }]
+        },
+        {
+            char_caption: 'girl, blonde hair, target#hug',
+            centers: [{ x: 0.7, y: 0.5 }]
+        }
+    ]);
+    assert.deepEqual(
+        v5Payload.parameters.v4_prompt.caption.char_captions.map(item => item.centers[0]),
+        [{ x: 0.2, y: 0.5 }, { x: 0.8, y: 0.5 }]
+    );
+});
+
+test('NovelAI models outside V4.5 and V5 send labeled text as a direct prompt', async () => {
+    const prompt = `scenePrompt:\n1girl, portrait\ncharacter1:\ngirl, black hair\ncenter1:\nx:0.5,y:0.5`;
+    const payloadManager = new ImageGenerationManager(null);
+    payloadManager._resolveNovelAIVibeReferences = async () => [];
+    const payload = await payloadManager._buildNovelAIPayload({ prompt }, {
+        model: 'nai-diffusion-3',
+        width: 832,
+        height: 1216,
+        scale: 5,
+        sampler: 'k_euler',
+        steps: 28,
+        cfgRescale: 0,
+        schedule: 'native',
+        seed: 123,
+        fixedPrompt: 'fixed start',
+        fixedPromptEnd: 'fixed end',
+        negativePrompt: '',
+        novelAISkipCfgCompat: false
+    });
+
+    assert.equal(payload.input, `fixed start, ${prompt}, fixed end`);
+    assert.equal(Object.hasOwn(payload.parameters, 'v4_prompt'), false);
+});
+
 test('NovelAI V5 converts the first personal reference image to Image2Image parameters', async () => {
     const v5Manager = new ImageGenerationManager(null);
     v5Manager._resolveNovelAIVibeReferences = async () => [];

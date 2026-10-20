@@ -8291,7 +8291,8 @@ input:checked + .toggle-slider:before {
 
 #phone-panel-content .phone-worldbook-search-clear[hidden],
 #phone-panel-content .phone-worldbook-search-result[hidden],
-#phone-panel-content .phone-worldbook-source-row[hidden] {
+#phone-panel-content .phone-worldbook-source-row[hidden],
+#phone-panel-content .phone-worldbook-entry-row[hidden] {
     display: none !important;
 }
 
@@ -8452,6 +8453,23 @@ input:checked + .toggle-slider:before {
 #phone-panel-content .phone-worldbook-entry-close {
     flex: 0 0 32px;
     color: #383d44 !important;
+}
+
+#phone-panel-content .phone-worldbook-entry-search-wrap {
+    flex: 0 0 auto;
+    padding: 8px 12px 4px;
+    border-bottom: 1px solid #e2e5e9;
+    background: #ffffff;
+    color: #3d4249;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-worldbook-entry-search {
+    margin: 0;
+}
+
+#phone-panel-content .phone-worldbook-entry-search-result {
+    padding: 4px 4px 1px;
 }
 
 #phone-panel-content .phone-worldbook-entry-select-all {

@@ -92,6 +92,25 @@ function createGroupView({ moments = [] } = {}) {
     return { view, groupChat };
 }
 
+test('personal image tag context identifies the user by real name', () => {
+    const view = Object.create(ChatView.prototype);
+    view.app = {
+        wechatData: {
+            getContacts: () => [],
+            getUserInfo: () => ({
+                name: '晚晚',
+                realName: '程昕晚',
+                naiPromptTags: '1girl, silver hair, green eyes'
+            })
+        }
+    };
+
+    assert.equal(
+        view._buildWechatPersonalImageTagInfo(),
+        '{{程昕晚}}：1girl, silver hair, green eyes'
+    );
+});
+
 test('single-chat AI context includes existing moments from the current friend', () => {
     const { view, chat } = createView({
         moments: [{
@@ -169,7 +188,7 @@ test('group-chat moments combine only current group friends into one context blo
 
     assert.match(context, /【当前微信群成员朋友圈】/);
     assert.match(context, /会所微信群/);
-    assert.match(context, /命中的群好友：好友A、好友B/);
+    assert.match(context, /命中的群好友：小A、好友B/);
     assert.match(context, /正文：好友A的动态/);
     assert.match(context, /正文：好友B的动态/);
     assert.equal(context.includes('用户自己的动态'), false);
@@ -190,7 +209,7 @@ test('group-chat moments remain linked through the member single-chat source aft
 
     const context = view._buildGroupChatMomentsContext(groupChat, { name1: '用户' });
 
-    assert.match(context, /群成员朋友圈 1（好友A）/);
+    assert.match(context, /群成员朋友圈 1（小A）/);
     assert.match(context, /发布者：好友A旧名/);
     assert.match(context, /正文：改名之前发布的群友动态/);
 });

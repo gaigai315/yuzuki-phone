@@ -2458,6 +2458,126 @@ export class ImageGenerationManager {
             .trim();
     }
 
+    _normalizeNovelAILabeledCenter(center = null, model = '') {
+        const rawX = Number.parseFloat(center?.x);
+        const rawY = Number.parseFloat(center?.y);
+        if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return null;
+
+        const clamp = value => Math.max(0.1, Math.min(0.9, value));
+        const normalized = {
+            x: clamp(rawX),
+            y: clamp(rawY)
+        };
+        if (!this._isNovelAIV45Model(model)) return normalized;
+
+        const grid = [0.1, 0.3, 0.5, 0.7, 0.9];
+        const snap = (value) => grid.reduce((best, candidate) => {
+            const distance = Math.abs(candidate - value);
+            const bestDistance = Math.abs(best - value);
+            if (distance < bestDistance - Number.EPSILON * 10) return candidate;
+            if (distance > bestDistance + Number.EPSILON * 10) return best;
+            return Math.abs(candidate - 0.5) < Math.abs(best - 0.5) ? candidate : best;
+        }, grid[0]);
+        return {
+            x: snap(normalized.x),
+            y: snap(normalized.y)
+        };
+    }
+
+    _parseNovelAILabeledCharacterPromptSyntax(prompt = '', negativePrompt = '', model = '') {
+        if (!this._isNovelAIV45Model(model) && !this._isNovelAIV5Model(model)) return null;
+
+        const source = String(prompt || '').replace(/\r/g, '');
+        const sections = {
+            scenePrompt: [],
+            characters: new Map(),
+            centers: new Map()
+        };
+        let activeSection = null;
+        let foundScenePrompt = false;
+
+        const append = (section, value) => {
+            const text = String(value || '').trim();
+            if (!text || text === '---' || /^```/.test(text)) return;
+            if (section.type === 'scenePrompt') {
+                sections.scenePrompt.push(text);
+                return;
+            }
+            const target = section.type === 'character' ? sections.characters : sections.centers;
+            if (!target.has(section.index)) target.set(section.index, []);
+            target.get(section.index).push(text);
+        };
+
+        source.split('\n').forEach((rawLine) => {
+            const line = String(rawLine || '').trim();
+            if (!line || /^```/.test(line)) return;
+            const headerMatch = line.match(
+                /^(?:\*{1,2}\s*)?(scene\s*prompt|characters?\s*(\d+)|centers?\s*(\d+))\s*[:：]\s*(?:\*{1,2}\s*)?(.*?)(?:\s*\*{1,2})?$/i
+            );
+            if (headerMatch) {
+                const label = String(headerMatch[1] || '').replace(/\s+/g, '').toLowerCase();
+                if (label === 'sceneprompt') {
+                    foundScenePrompt = true;
+                    activeSection = { type: 'scenePrompt' };
+                } else {
+                    const isCharacter = label.startsWith('character');
+                    const index = Number(headerMatch[2] || headerMatch[3]);
+                    activeSection = {
+                        type: isCharacter ? 'character' : 'center',
+                        index
+                    };
+                }
+                append(activeSection, headerMatch[4]);
+                return;
+            }
+            if (activeSection) append(activeSection, line);
+        });
+
+        if (!foundScenePrompt) return null;
+
+        const maxCharacters = this._isNovelAIV5Model(model) ? 22 : 6;
+        const characterIndexes = [...sections.characters.keys()]
+            .filter(index => Number.isInteger(index) && index > 0)
+            .sort((left, right) => left - right)
+            .slice(0, maxCharacters);
+        const characters = characterIndexes.map((index) => {
+            const charCaption = this._trimNovelAIPromptSeparators(
+                (sections.characters.get(index) || []).join(' ')
+            );
+            const centerText = (sections.centers.get(index) || []).join(' ');
+            const xMatch = centerText.match(/(?:^|[,，;；\s])x\s*[:=]\s*(-?(?:\d+(?:\.\d+)?|\.\d+))/i);
+            const yMatch = centerText.match(/(?:^|[,，;；\s])y\s*[:=]\s*(-?(?:\d+(?:\.\d+)?|\.\d+))/i);
+            const center = this._normalizeNovelAILabeledCenter({
+                x: xMatch?.[1],
+                y: yMatch?.[1]
+            }, model);
+            return {
+                charCaption,
+                negativeCaption: '',
+                center
+            };
+        }).filter(item => item.charCaption);
+
+        const useCoords = characters.length > 0 && characters.every(item => item.center);
+        if (!useCoords) {
+            characters.forEach((item) => {
+                item.center = null;
+            });
+        }
+
+        return {
+            baseCaption: this._trimNovelAIPromptSeparators(sections.scenePrompt.join(' ')),
+            negativeBaseCaption: String(negativePrompt || '').trim(),
+            characters,
+            useCoords
+        };
+    }
+
+    _parseNovelAIPromptSyntax(prompt = '', negativePrompt = '', model = '') {
+        return this._parseNovelAILabeledCharacterPromptSyntax(prompt, negativePrompt, model)
+            || this._parseNovelAICharacterPromptSyntax(prompt, negativePrompt);
+    }
+
     _parseNovelAICharacterPromptSyntax(prompt = '', negativePrompt = '') {
         const source = String(prompt || '');
         const characters = [];
@@ -2525,7 +2645,7 @@ export class ImageGenerationManager {
         const appKey = String(options.app || '').trim().toLowerCase();
         const aiPrompt = String(options.prompt || '').trim();
         const parsedV4Prompt = this._isNovelAIV4PlusModel(config.model)
-            ? this._parseNovelAICharacterPromptSyntax(aiPrompt, '')
+            ? this._parseNovelAIPromptSyntax(aiPrompt, '', config.model)
             : null;
         const rawPrompt = this._joinPrompt([
             config.fixedPrompt,

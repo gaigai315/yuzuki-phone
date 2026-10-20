@@ -10,7 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 设置APP
-import { ImageUploadManager } from './image-upload.js?v=20261006-story-upload-console-cleanup';
+import { ImageUploadManager } from './image-upload.js?v=20261021-album-media-cache';
 import { ImageCropper } from './image-cropper.js';
 import { AlbumData } from '../album/album-data.js';
 import { AlbumImagePicker } from '../album/album-image-picker.js';
@@ -71,6 +71,8 @@ const WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS = [
     'offline-group-chat-enabled',
     'offline-moments-history-enabled'
 ];
+const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS.slice(0, 3);
+const WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX = '-user-set';
 const WECHAT_ONLINE_PROACTIVE_ENABLED_KEY = 'wechat_online_proactive_enabled';
 const WECHAT_ONLINE_PROACTIVE_INTERVAL_KEY = 'wechat_online_proactive_interval_minutes';
 const LOBBY_WECHAT_ONLINE_PROACTIVE_ENABLED_KEY = 'phone_lobby_wechat_online_proactive_enabled';
@@ -684,10 +686,16 @@ export class SettingsApp {
         return raw === true || raw === 'true' || raw === 1;
     }
 
-    async _disableWechatOfflineInjectionToggles() {
-        for (const key of WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS) {
-            await this.storage.set(key, false);
+    async _ensureInitialWechatOfflineInjectionToggles() {
+        for (const key of WECHAT_INITIAL_ENABLED_OFFLINE_KEYS) {
+            if (this._isStorageTruthy(`${key}${WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX}`)) continue;
+            await this.storage.set(key, true);
         }
+    }
+
+    async _saveWechatOfflineInjectionToggle(key, enabled) {
+        await this.storage.set(`${key}${WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX}`, true);
+        await this.storage.set(key, !!enabled);
     }
 
     _isWechatOnlineOnlyModeEnabled(context = null) {
@@ -6600,6 +6608,7 @@ export class SettingsApp {
                 await this.storage.set(onlineOnlyModeKey, false);
                 await this.storage.set(proactiveEnabledKey, false);
                 await this.storage.set(onlineOnlyRealTimeKey, false);
+                await this._ensureInitialWechatOfflineInjectionToggles();
                 await window.VirtualPhone?.resetWechatOnlineProactiveSessionTimer?.('switch_to_interop');
                 const onlineOnlyToggle = document.getElementById('setting-wechat-online-only-mode');
                 if (onlineOnlyToggle) onlineOnlyToggle.checked = false;
@@ -6615,7 +6624,7 @@ export class SettingsApp {
             }
         });
 
-        // 线上模式切换：与互通模式互斥，并强制关闭微信线下注入开关
+        // 线上模式切换：与互通模式互斥；仅暂时禁用线下注入，不覆盖用户偏好
         document.getElementById('setting-wechat-online-only-mode')?.addEventListener('change', async (e) => {
             const context = this.storage.getContext();
             const interopModeKey = this._getWechatInteropModeStorageKey(context);
@@ -6630,7 +6639,6 @@ export class SettingsApp {
                 const interopToggle = document.getElementById('setting-wechat-interop-mode');
                 if (interopToggle) interopToggle.checked = false;
 
-                await this._disableWechatOfflineInjectionToggles();
                 WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS.forEach((key) => {
                     const toggle = document.getElementById(key);
                     if (toggle) {
@@ -6829,19 +6837,17 @@ export class SettingsApp {
         document.getElementById('offline-single-chat-enabled')?.addEventListener('change', async (e) => {
             if (this._isWechatOnlineOnlyModeEnabled()) {
                 e.target.checked = false;
-                await this.storage.set('offline-single-chat-enabled', false);
                 return;
             }
-            await this.storage.set('offline-single-chat-enabled', !!e.target.checked);
+            await this._saveWechatOfflineInjectionToggle('offline-single-chat-enabled', e.target.checked);
         });
 
         document.getElementById('offline-wechat-prompt-enabled')?.addEventListener('change', async (e) => {
             if (this._isWechatOnlineOnlyModeEnabled()) {
                 e.target.checked = false;
-                await this.storage.set('offline-wechat-prompt-enabled', false);
                 return;
             }
-            await this.storage.set('offline-wechat-prompt-enabled', !!e.target.checked);
+            await this._saveWechatOfflineInjectionToggle('offline-wechat-prompt-enabled', e.target.checked);
         });
 
         document.getElementById('offline-single-chat-limit')?.addEventListener('change', async (e) => {
@@ -6855,10 +6861,9 @@ export class SettingsApp {
         document.getElementById('offline-group-chat-enabled')?.addEventListener('change', async (e) => {
             if (this._isWechatOnlineOnlyModeEnabled()) {
                 e.target.checked = false;
-                await this.storage.set('offline-group-chat-enabled', false);
                 return;
             }
-            await this.storage.set('offline-group-chat-enabled', !!e.target.checked);
+            await this._saveWechatOfflineInjectionToggle('offline-group-chat-enabled', e.target.checked);
         });
 
         document.getElementById('offline-group-chat-limit')?.addEventListener('change', async (e) => {
@@ -6875,10 +6880,9 @@ export class SettingsApp {
         document.getElementById('offline-moments-history-enabled')?.addEventListener('change', async (e) => {
             if (this._isWechatOnlineOnlyModeEnabled()) {
                 e.target.checked = false;
-                await this.storage.set('offline-moments-history-enabled', false);
                 return;
             }
-            await this.storage.set('offline-moments-history-enabled', !!e.target.checked);
+            await this._saveWechatOfflineInjectionToggle('offline-moments-history-enabled', e.target.checked);
         });
 
         document.getElementById('offline-diary-history-enabled')?.addEventListener('change', async (e) => {

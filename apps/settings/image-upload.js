@@ -336,6 +336,9 @@ export class ImageUploadManager {
                 ...normalizedList.filter(item => this._normalizeBackgroundPath(item?.path || item) !== path)
             ].slice(0, 1000);
             await this.storage.set('phone_album_upload_index', JSON.stringify(next));
+            window.dispatchEvent(new CustomEvent('phone:albumMediaChanged', {
+                detail: { path, action: 'added' }
+            }));
         } catch (e) {
             console.warn('[ImageUpload] 记录相册上传索引失败:', e);
         }

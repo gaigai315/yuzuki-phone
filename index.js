@@ -40,10 +40,10 @@ import {
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.6.4';
-const ST_PHONE_CSS_REVISION = '20261017-story-image-native-download';
+const ST_PHONE_CSS_REVISION = '20261021-worldbook-entry-search';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
-const ST_PHONE_ALBUM_MODULE_REVISION = '20261020-story-image-menu-v2';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261011-wallet-credit-repayment';
+const ST_PHONE_ALBUM_MODULE_REVISION = '20261021-user-fixed-tags';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261021-user-real-name';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -145,15 +145,21 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
     'offline-single-chat-enabled',
     'offline-group-chat-enabled'
 ];
+const WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX = '-user-set';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-18',
+    date: '2026-10-21',
     items: [
-        '【新增】NAI Vibe 支持导入 Vibe 分组 JSON 与官方 .naiv4vibebundle.json，导入后的编码可直接用于对应模型生图。',
-        '【新增】正文生图预览新增图片下载按钮，支持在 TauriTavern 移动端将生成图片保存到本地。',
-        '【新增】相册选择模式支持按勾选项批量下载图片和视频，可全选或部分选择后保存到本地。',
-        '【优化】微信快捷回复联系人优先按会话列表排序，常聊和置顶会话更容易找到，其余好友按通讯录顺序排列。'
+        '【正文生图·新增】支持注入微信联系人及用户的专属 Tags：用户可设置真实姓名，提示词中的对应姓名变量会在生图前自动替换为固定形象 Tags，适用于 NovelAI、ComfyUI、GPT 等生图模型。',
+        '【正文生图·优化】优化 NAI V4.5/V5 多角色提示词与坐标解析，V4.5 自动吸附最近网格点、V5 原样发送；新增多套提示词预设、手动生成 Tags 后自动生图开关及预览下载。当前内置 NovelAI V4.5/V5 预设，其他模型可按需新增自定义预设。',
+        '【正文生图·修复】修复设置页折叠面板偶发无法展开；世界书列表改为展开后按需读取并复用缓存，减少重复请求与控制台日志。',
+        '【微信·优化】智能加载联系人新增独立 system 破限词与填写规则，联系人支持昵称、备注、真实姓名/别名和性别；备注优先显示，并兼容新旧 AI 输出格式。',
+        '【微信·优化】聊天记录超过 50 条时默认折叠更早消息，可按每批 50 条展开；快捷回复联系人优先按会话列表排序，其余好友按通讯录顺序排列。',
+        '【世界书·新增】APP 内世界书支持按条目名称或正文内容搜索，并可全选当前筛选结果。',
+        '【NAI Vibe·新增】支持导入 Vibe 分组 JSON 与官方 .naiv4vibebundle.json，导入后的编码可直接用于对应模型生图。',
+        '【相册·优化】优化大量媒体的加载性能：优先使用媒体索引，图片按需懒加载并分批显示，避免进入相册时一次读取全部媒体和微信聊天记录。',
+        '【相册·新增】选择模式支持批量下载图片和视频，可全选或部分选择后保存到本地。'
     ]
 };
 
@@ -1473,10 +1479,10 @@ if (window.GGP_Loaded) {
             import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
             import('./config/api-manager.js?v=20261009-unified-sse-parser'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20261002-x-follower-sync'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20261021-story-fixed-character-tags'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
-        import('./config/image-generation-manager.js?v=20261006-nai-queue-lock-retry'),
-            import('./config/worldbook-manager.js')
+        import('./config/image-generation-manager.js?v=20261021-nai-character-coordinates'),
+            import('./config/worldbook-manager.js?v=20261021-worldbook-lazy-load')
         ]);
 
         APPS = appsModule.APPS;
@@ -1524,7 +1530,7 @@ if (window.GGP_Loaded) {
         ] = await Promise.all([
             import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
             import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
-            import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261006-story-upload-console-cleanup`)
+            import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261021-album-media-cache`)
         ]);
 
         PhoneShell = phoneShellModule.PhoneShell;
@@ -2880,7 +2886,7 @@ if (window.GGP_Loaded) {
             const latestTime = currentTime || tm?.getCurrentStoryTime?.();
             if (!latestTime?.date) return [];
 
-            const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261021-user-real-name');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             const existingWechatData = window.VirtualPhone.wechatApp?.wechatData
                 || window.VirtualPhone.cachedWechatData
@@ -6532,16 +6538,31 @@ if (window.GGP_Loaded) {
             const isEnabled = (value) => value === true || value === 'true' || value === 1 || value === '1';
 
             const interopRaw = storage.get(interopKey);
+            const onlineOnlyRaw = storage.get(onlineOnlyKey);
+            const interopEnabled = hasStoredValue(interopRaw)
+                ? isEnabled(interopRaw)
+                : !isEnabled(onlineOnlyRaw);
             if (!hasStoredValue(interopRaw)) {
-                const onlineOnlyRaw = storage.get(onlineOnlyKey);
-                void storage.set(interopKey, !isEnabled(onlineOnlyRaw));
+                void storage.set(interopKey, interopEnabled);
             }
 
-            WECHAT_INITIAL_ENABLED_OFFLINE_KEYS.forEach((key) => {
-                if (!hasStoredValue(storage.get(key))) {
-                    void storage.set(key, true);
-                }
-            });
+            if (interopEnabled) {
+                WECHAT_INITIAL_ENABLED_OFFLINE_KEYS.forEach((key) => {
+                    const userSetKey = `${key}${WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX}`;
+                    if (!isEnabled(storage.get(userSetKey))) {
+                        void storage.set(key, true);
+                    } else if (!hasStoredValue(storage.get(key))) {
+                        // 已有用户偏好标记但值意外缺失时，仍使用默认开启值。
+                        void storage.set(key, true);
+                    }
+                });
+            } else {
+                WECHAT_INITIAL_ENABLED_OFFLINE_KEYS.forEach((key) => {
+                    if (!hasStoredValue(storage.get(key))) {
+                        void storage.set(key, true);
+                    }
+                });
+            }
         } catch (error) {
             console.warn('[Wechat] 初始化互动模式默认设置失败:', error);
         }
@@ -8294,7 +8315,7 @@ if (window.GGP_Loaded) {
         const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20261021-user-real-name').then(module => {
             let wechatData;
 
             if (getCurrentTavernConversationIdentity() !== conversationId) {
@@ -8370,7 +8391,7 @@ if (window.GGP_Loaded) {
             }
             const displayContactName = effectiveIsGroupChat
                 ? rawContactName
-                : (existingContact?.name || resolvedContactName || rawContactName);
+                : (wechatData.getContactDisplayName?.(existingContact) || existingContact?.remark || existingContact?.name || resolvedContactName || rawContactName);
 
             // 🔥🔥🔥 关键修复：按联系人名字和类型查找现有聊天，避免重复创建 🔥🔥🔥
             // 1. 先按名字和类型查找（最精确）
@@ -8425,7 +8446,7 @@ if (window.GGP_Loaded) {
                     chat.members = mergedMembers;
                 } else if (!effectiveIsGroupChat && existingContact?.name) {
                     chat.contactId = existingContact.id || chat.contactId;
-                    chat.name = existingContact.name;
+                    chat.name = wechatData.getContactDisplayName?.(existingContact) || existingContact.remark || existingContact.name;
                 }
             }
 
@@ -9339,7 +9360,7 @@ if (window.GGP_Loaded) {
             const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20261021-user-real-name').then(async module => {
                 let wechatData;
                 if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                     console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
@@ -9616,7 +9637,7 @@ if (window.GGP_Loaded) {
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
-            const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261021-user-real-name');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             const context = getContext();
@@ -9663,7 +9684,7 @@ if (window.GGP_Loaded) {
         if (payments.length === 0) return [];
 
         const sourceConversationId = getCurrentTavernConversationIdentity();
-        const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261021-user-real-name');
         if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
             console.warn('⚠️ [线上支付] 扣款前会话已切换，丢弃旧会话回调');
             return [];
@@ -10213,7 +10234,7 @@ if (window.GGP_Loaded) {
                     const diaryGeneration = autoDiaryState._autoDiaryGeneration;
                     autoDiaryState._autoDiaryProbeCount += 1;
                     // 懒加载 DiaryData 检查楼层差
-                    import('./apps/diary/diary-data.js').then(module => {
+                    import('./apps/diary/diary-data.js?v=20261021-user-real-name').then(module => {
                         const diaryData = window.VirtualPhone.diaryApp?.diaryData
                             || new module.DiaryData(storage);
                         const diaryConfig = diaryData.getAutoSettings();
@@ -11602,7 +11623,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20261021-user-real-name');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -11832,7 +11853,7 @@ if (window.GGP_Loaded) {
                                     || window.VirtualPhone.cachedWechatData
                                     || null;
                                 if (!wechatDataInstance && storage) {
-                                    const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
+                                    const module = await import('./apps/wechat/wechat-data.js?v=20261021-user-real-name');
                                     if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                                         console.warn('⚠️ 微信删楼回滚期间会话已切换，丢弃旧会话回调');
                                         return;
@@ -12133,7 +12154,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js?v=20261011-wallet-credit-repayment');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20261021-user-real-name');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;
@@ -12947,10 +12968,15 @@ if (window.GGP_Loaded) {
                                                             .map(tag => tag.trim())
                                                             .filter(Boolean)
                                                             .join(', ');
-                                                        if (userTags) personalImageTagRows.push(`{{user}}：${userTags}`);
+                                                        const userImageVariableName = String(
+                                                            wechatDataParsed?.userInfo?.realName
+                                                            || wechatDataParsed?.userInfo?.name
+                                                            || 'user'
+                                                        ).replace(/[{}\r\n]/g, '').trim() || 'user';
+                                                        if (userTags) personalImageTagRows.push(`{{${userImageVariableName}}}：${userTags}`);
                                                         const contacts = wechatDataParsed.contacts || [];
                                                         contacts.forEach(c => {
-                                                            const name = String(c?.name || '').trim();
+                                                            const name = String(c?.remark || c?.nickname || c?.name || c?.realName || '').trim();
                                                             if (name) contactNames.push(c?.blocked ? `${name}（已拉黑）` : name);
                                                             const tags = String(c?.naiPromptTags || c?.imageTags || '')
                                                                 .split(/[,，\n]+/)
@@ -13100,7 +13126,7 @@ if (window.GGP_Loaded) {
                                         if (diaryInjectEnabled) {
                                             let diaryData = window.VirtualPhone?.diaryApp?.diaryData || null;
                                             if (!diaryData) {
-                                                const diaryModule = await import('./apps/diary/diary-data.js');
+                                                const diaryModule = await import('./apps/diary/diary-data.js?v=20261021-user-real-name');
                                                 diaryData = new diaryModule.DiaryData(storage);
                                             }
                                             diaryHistoryContent = diaryData?.buildOfflineInjectionContent?.() || '';

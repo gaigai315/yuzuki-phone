@@ -39,6 +39,11 @@ export class ContactsView {
             .replace(/>/g, '&gt;');
     }
 
+    _getContactDisplayName(contact = {}) {
+        return this.app.wechatData?.getContactDisplayName?.(contact)
+            || String(contact?.remark || contact?.nickname || contact?.name || contact?.realName || '').trim();
+    }
+
     _normalizeWechatReferenceImage(value = '') {
         const raw = String(value || '').trim();
         if (!raw || /^data:image\/[a-z0-9.+-]+;base64,/i.test(raw)) return '';
@@ -251,13 +256,14 @@ export class ContactsView {
                                 ${grouped[letter].map(contact => {
                                     const isHoneyContact = contact.sourceApp === 'honey' || contact.sourceLabel === '蜜语' || contact.sourceLabel === '主播';
                                     const honeyLabel = contact.sourceLabel === '主播' || String(contact.relation || '').includes('主播') ? '主播' : '蜜语';
+                                    const displayName = this._getContactDisplayName(contact);
                                     return `
                                     <div class="contact-item" data-contact-id="${contact.id}">
                                         <div class="contact-avatar">
-                                            ${this.app.renderAvatar(contact.avatar, '👤', contact.name)}
+                                            ${this.app.renderAvatar(contact.avatar, '👤', displayName)}
                                         </div>
                                         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex:1; min-width:0;">
-                                            <div class="contact-name" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${contact.name}</div>
+                                            <div class="contact-name" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${displayName}</div>
                                             ${isHoneyContact
                                                 ? `<span style="flex-shrink:0; display:inline-flex; align-items:center; gap:4px; padding:2px 6px; margin-right:16px; border-radius:999px; background:rgba(255,105,180,0.14); color:#ff5fa2; font-size:10px; line-height:1; border:1px solid rgba(255,105,180,0.24);"><i class="fa-solid fa-heart" style="font-size:9px;"></i>${honeyLabel}</span>`
                                                 : ''}
@@ -283,7 +289,7 @@ export class ContactsView {
         const grouped = {};
 
         contacts.forEach(contact => {
-            const firstLetter = this.getFirstLetter(contact.name);
+            const firstLetter = this.getFirstLetter(this._getContactDisplayName(contact));
             if (!grouped[firstLetter]) {
                 grouped[firstLetter] = [];
             }
@@ -436,7 +442,7 @@ export class ContactsView {
         element.querySelector('.contact-menu-item[data-action="delete"]')?.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            this.confirmDeleteContact(contactId, contact.name);
+            this.confirmDeleteContact(contactId, this._getContactDisplayName(contact));
         });
 
         setTimeout(() => {
@@ -579,7 +585,7 @@ export class ContactsView {
 
         const storedAvatar = String(contact.avatar || '').trim();
         const editableAvatar = this.app._isWechatAvatarPoolAssetValue?.(storedAvatar) ? '' : storedAvatar;
-        const avatarHtml = this.app.renderAvatar(editableAvatar, '👤', contact.name);
+        const avatarHtml = this.app.renderAvatar(editableAvatar, '👤', this._getContactDisplayName(contact));
         const currentTtsProvider = this._getCurrentTtsProvider();
         const contactTtsVoices = this._getContactTtsVoices(contact);
         const contactTtsProvider = String(contact.ttsProvider || '').trim();
@@ -657,7 +663,7 @@ export class ContactsView {
                         <div style="margin-bottom: 10px;">
                             <div style="font-size: 11px; color: #999; margin-bottom: 4px;">昵称 *</div>
                             <input type="text" id="edit-contact-name-input" placeholder="输入昵称" maxlength="20"
-                                   value="${contact.name || ''}" style="
+                                   value="${contact.nickname || contact.name || ''}" style="
                                 width: 100%;
                                 padding: 8px 10px;
                                 ${fieldStyle}
@@ -671,6 +677,19 @@ export class ContactsView {
                             <div style="font-size: 11px; color: #999; margin-bottom: 4px;">备注</div>
                             <input type="text" id="edit-contact-remark-input" placeholder="输入备注" maxlength="20"
                                    value="${contact.remark || ''}" style="
+                                width: 100%;
+                                padding: 8px 10px;
+                                ${fieldStyle}
+                                border-radius: 6px;
+                                font-size: 13px;
+                                box-sizing: border-box;
+                            ">
+                        </div>
+
+                        <div style="margin-bottom: 10px;">
+                            <div style="font-size: 11px; color: #999; margin-bottom: 4px;">真实姓名 / 其他别名</div>
+                            <input type="text" id="edit-contact-real-name-input" placeholder="输入真实姓名或别名，多个可用顿号分隔" maxlength="60"
+                                   value="${contact.realName || ''}" style="
                                 width: 100%;
                                 padding: 8px 10px;
                                 ${fieldStyle}
@@ -1021,13 +1040,13 @@ export class ContactsView {
             const oldAvatar = String(selectedAvatar || contact.avatar || '').trim();
             const preview = query('#edit-contact-avatar-preview');
             if (safeNextAvatar === oldAvatar) {
-                if (preview) preview.innerHTML = this.app.renderAvatar(safeNextAvatar, '👤', contact.name);
+                if (preview) preview.innerHTML = this.app.renderAvatar(safeNextAvatar, '👤', this._getContactDisplayName(contact));
                 this.app.phoneShell.showNotification('提示', '当前已经在使用这张头像', 'ℹ️');
                 return;
             }
 
             selectedAvatar = safeNextAvatar;
-            if (preview) preview.innerHTML = this.app.renderAvatar(selectedAvatar, '👤', contact.name);
+            if (preview) preview.innerHTML = this.app.renderAvatar(selectedAvatar, '👤', this._getContactDisplayName(contact));
 
             const synced = this.app.wechatData.syncContactAvatar(safeContactId, selectedAvatar);
             const savedContact = this.app.wechatData.getContact(safeContactId)
@@ -1038,7 +1057,7 @@ export class ContactsView {
             if (!synced || !contactAvatarSaved || !chatAvatarSaved) {
                 selectedAvatar = oldAvatar || contact.avatar || '👤';
                 this.app.wechatData.syncContactAvatar(safeContactId, selectedAvatar);
-                if (preview) preview.innerHTML = this.app.renderAvatar(selectedAvatar, '👤', contact.name);
+                if (preview) preview.innerHTML = this.app.renderAvatar(selectedAvatar, '👤', this._getContactDisplayName(contact));
                 throw new Error('头像写入联系人数据失败，请重新打开联系人后再试');
             }
 
@@ -1189,6 +1208,7 @@ export class ContactsView {
         query('#save-edit-contact-btn')?.addEventListener('click', async () => {
             const name = query('#edit-contact-name-input').value.trim();
             const remark = String(query('#edit-contact-remark-input')?.value || '').trim();
+            const realName = String(query('#edit-contact-real-name-input')?.value || '').trim();
 
             if (!name) {
                 this.app.phoneShell.showNotification('提示', '请输入昵称', '⚠️');
@@ -1196,11 +1216,11 @@ export class ContactsView {
             }
 
             const exists = this.app.wechatData.findContactAliasConflict?.(
-                [name, remark].filter(Boolean),
+                [name, remark, realName].filter(Boolean),
                 { excludeContactId: safeContactId }
             );
             if (exists) {
-                this.app.phoneShell.showNotification('提示', '该昵称或备注已被其他联系人使用', '⚠️');
+                this.app.phoneShell.showNotification('提示', '该昵称、备注或真实姓名/别名已被其他联系人使用', '⚠️');
                 return;
             }
 
@@ -1226,7 +1246,9 @@ export class ContactsView {
 
             const updated = this.app.wechatData.updateContact(safeContactId, {
                 name: name,
+                nickname: name,
                 remark: remark,
+                realName,
                 avatar: selectedAvatar,
                 letter: this.app.wechatData.getFirstLetter(name),
                 ttsVoice: ttsVoice, // 🔥 旧字段兜底
@@ -1241,7 +1263,7 @@ export class ContactsView {
                 wechatSupplementalSetting: wechatSupplementalSettingValue
             });
             if (!updated) {
-                this.app.phoneShell.showNotification('提示', '该昵称或备注已被其他联系人使用', '⚠️');
+                this.app.phoneShell.showNotification('提示', '该昵称、备注或真实姓名/别名已被其他联系人使用', '⚠️');
                 return;
             }
             this.app.wechatData.setContactGender?.(
@@ -1388,12 +1410,13 @@ export class ContactsView {
                 chat = this.app.wechatData.createChat({
                     id: `chat_${contactId}`,
                     contactId: contactId,
-                    name: contact.name,
+                    name: this._getContactDisplayName(contact),
                     type: 'single',
                     avatar: contact.avatar
                 });
             }
 
+            this.app.chatView?.resetMessageHistoryWindow?.(chat.id);
             this.app.currentChat = chat;
             this.app.render();
         }
@@ -1420,6 +1443,7 @@ export class ContactsView {
         const chat = this.app.wechatData.getChat(chatId);
         if (chat && chat.type === 'group') {
             this.app.currentView = 'chats';
+            this.app.chatView?.resetMessageHistoryWindow?.(chat.id);
             this.app.currentChat = chat;
             this.app.wechatData.getMessages(chat.id);
             this.app.render();
@@ -1507,6 +1531,18 @@ export class ContactsView {
                         <div style="margin-bottom: 10px;">
                             <div style="font-size: 11px; color: #999; margin-bottom: 4px;">备注</div>
                             <input type="text" id="friend-remark-input" placeholder="输入备注" maxlength="20" style="
+                                width: 100%;
+                                padding: 8px;
+                                border: 1px solid #e5e5e5;
+                                border-radius: 6px;
+                                font-size: 13px;
+                                box-sizing: border-box;
+                            ">
+                        </div>
+
+                        <div style="margin-bottom: 10px;">
+                            <div style="font-size: 11px; color: #999; margin-bottom: 4px;">真实姓名 / 其他别名</div>
+                            <input type="text" id="friend-real-name-input" placeholder="输入真实姓名或别名，多个可用顿号分隔" maxlength="60" style="
                                 width: 100%;
                                 padding: 8px;
                                 border: 1px solid #e5e5e5;
@@ -1630,15 +1666,16 @@ export class ContactsView {
 
             const name = currentView.querySelector('#friend-name-input').value.trim();
             const remark = String(currentView.querySelector('#friend-remark-input')?.value || '').trim();
+            const realName = String(currentView.querySelector('#friend-real-name-input')?.value || '').trim();
 
             if (!name) {
                 this.app.phoneShell.showNotification('提示', '请输入好友昵称', '⚠️');
                 return;
             }
 
-            const exists = this.app.wechatData.findContactAliasConflict?.([name, remark].filter(Boolean));
+            const exists = this.app.wechatData.findContactAliasConflict?.([name, remark, realName].filter(Boolean));
             if (exists) {
-                this.app.phoneShell.showNotification('提示', '该昵称或备注已被其他联系人使用', '⚠️');
+                this.app.phoneShell.showNotification('提示', '该昵称、备注或真实姓名/别名已被其他联系人使用', '⚠️');
                 return;
             }
 
@@ -1650,11 +1687,13 @@ export class ContactsView {
             const createdContact = this.app.wechatData.addContact({
                 id: newContactId,
                 name: name,
+                nickname: name,
                 remark: remark,
+                realName,
                 avatar: selectedAvatar,
                 gender,
                 letter: this.app.wechatData.getFirstLetter(name)
-            }) || { id: newContactId, name, remark, avatar: selectedAvatar };
+            }) || { id: newContactId, name, nickname: name, remark, realName, avatar: selectedAvatar };
 
             this.app.wechatData.setContactGender?.(createdContact.id || name, gender);
             this.app.wechatData.setContactAvatarGroup?.(createdContact.id || name, avatarGroup);
@@ -1667,7 +1706,7 @@ export class ContactsView {
                     this.app.wechatData.setContactAutoAvatar?.(createdContact.id || name, autoAvatar);
                 }
             }
-            this.app.phoneShell.showNotification('添加成功', `已添加好友：${createdContact.name || name}`, '✅');
+            this.app.phoneShell.showNotification('添加成功', `已添加好友：${this._getContactDisplayName(createdContact) || name}`, '✅');
 
             setTimeout(() => {
                 this.app.currentView = 'contacts';
@@ -1719,7 +1758,7 @@ export class ContactsView {
                                 cursor: pointer;
                                 transition: background 0.2s;
                             ">
-                                <input type="checkbox" class="contact-checkbox wechat-force-checkbox" data-contact-name="${contact.name}" data-contact-avatar="${this.escapeAttr(contact.avatar)}" style="
+                                <input type="checkbox" class="contact-checkbox wechat-force-checkbox" data-contact-name="${this._getContactDisplayName(contact)}" data-contact-avatar="${this.escapeAttr(contact.avatar)}" style="
                                     -webkit-appearance: checkbox !important;
                                     appearance: auto !important;
                                     opacity: 1 !important;
@@ -1750,9 +1789,9 @@ export class ContactsView {
                                     font-size: 22px;
                                     margin-right: 12px;
                                     overflow: hidden;
-                                ">${this.app.renderAvatar(contact.avatar, '👤', contact.name)}</div>
+                                ">${this.app.renderAvatar(contact.avatar, '👤', this._getContactDisplayName(contact))}</div>
                                 <div style="flex: 1;">
-                                    <div style="font-size: 16px; color: #000;">${contact.name}</div>
+                                    <div style="font-size: 16px; color: #000;">${this._getContactDisplayName(contact)}</div>
                                 </div>
                             </div>
                         `).join('')}
