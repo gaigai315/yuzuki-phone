@@ -6234,6 +6234,8 @@ export class SettingsApp {
                     title: '裁剪壁纸',
                     outputWidth: 400,
                     outputHeight: 800,
+                    fitMode: 'contain',
+                    preserveSourceAspectRatio: true,
                     quality: 0.85,
                     maxFileSize: SETTINGS_IMAGE_MAX_FILE_SIZE
                 });

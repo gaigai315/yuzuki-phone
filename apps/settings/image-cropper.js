@@ -23,6 +23,9 @@ export class ImageCropper {
             onCancel: options.onCancel || (() => {}),
             title: options.title || '裁剪图片',
             preserveTransparency: options.preserveTransparency || false, // PNG透明支持
+            fitMode: options.fitMode === 'contain' ? 'contain' : 'cover',
+            preserveSourceAspectRatio: options.preserveSourceAspectRatio === true,
+            maxOutputDimension: options.maxOutputDimension || 4096,
         };
 
         this.image = null;
@@ -48,6 +51,18 @@ export class ImageCropper {
         const { width, height } = this._getImageDimensions();
         if (!width || !height || !this.cWidth || !this.cHeight) return 1;
         return Math.max(this.cWidth / width, this.cHeight / height);
+    }
+
+    _getContainScale() {
+        const { width, height } = this._getImageDimensions();
+        if (!width || !height || !this.cWidth || !this.cHeight) return 1;
+        return Math.min(this.cWidth / width, this.cHeight / height);
+    }
+
+    _getInitialScale() {
+        return this.options.fitMode === 'contain'
+            ? this._getContainScale()
+            : this._getCoverScale();
     }
 
     _updateSliderFromScale(slider) {
@@ -109,6 +124,19 @@ export class ImageCropper {
                 const img = new Image();
                 img.onload = () => {
                     this.image = img;
+                    if (this.options.preserveSourceAspectRatio && img.naturalWidth && img.naturalHeight) {
+                        const sourceRatio = img.naturalWidth / img.naturalHeight;
+                        let outputWidth = this.options.outputWidth;
+                        let outputHeight = outputWidth / sourceRatio;
+                        const longestSide = Math.max(outputWidth, outputHeight);
+                        if (longestSide > this.options.maxOutputDimension) {
+                            const dimensionScale = this.options.maxOutputDimension / longestSide;
+                            outputWidth *= dimensionScale;
+                            outputHeight *= dimensionScale;
+                        }
+                        this.options.outputWidth = Math.max(1, Math.round(outputWidth));
+                        this.options.outputHeight = Math.max(1, Math.round(outputHeight));
+                    }
                     this.showCropper(resolve, reject);
                 };
                 img.onerror = () => reject(new Error('图片加载失败'));
@@ -140,7 +168,7 @@ export class ImageCropper {
         }
 
         const { width: imageWidth, height: imageHeight } = this._getImageDimensions();
-        this.scale = this._getCoverScale();
+        this.scale = this._getInitialScale();
 
         // 🔥 设定对称的缩放极限，确保滑块（125）完美居中
         this.minScale = this.scale * 0.2;
@@ -549,7 +577,7 @@ export class ImageCropper {
         // 重置按钮
         document.getElementById('reset-btn')?.addEventListener('click', () => {
             const { width: imageWidth, height: imageHeight } = this._getImageDimensions();
-            this.scale = this._getCoverScale();
+            this.scale = this._getInitialScale();
             this.offsetX = (this.cWidth - imageWidth * this.scale) / 2;
             this.offsetY = (this.cHeight - imageHeight * this.scale) / 2;
             this.rotation = 0;

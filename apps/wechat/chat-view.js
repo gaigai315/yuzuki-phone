@@ -13916,6 +13916,8 @@ renderChatRoom(chat) {
                     title: '裁剪聊天背景',
                     outputWidth: 1080,
                     outputHeight: 1920,
+                    fitMode: 'contain',
+                    preserveSourceAspectRatio: true,
                     quality: 0.9,
                     maxFileSize: 5 * 1024 * 1024
                 });

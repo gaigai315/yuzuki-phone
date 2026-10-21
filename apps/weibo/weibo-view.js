@@ -3429,10 +3429,11 @@ export class WeiboView {
             e.target.value = '';
             try {
                 const cropper = new ImageCropper({
-                    title: '裁剪背景图',
-                    aspectRatio: 1,
+                    title: '调整背景图',
                     outputWidth: 1080,
-                    outputHeight: 1080,
+                    outputHeight: 1920,
+                    fitMode: 'contain',
+                    preserveSourceAspectRatio: true,
                     quality: 0.9,
                     maxFileSize: 5 * 1024 * 1024
                 });
