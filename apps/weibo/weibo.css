@@ -180,10 +180,10 @@
 
 /* Avatar wrapper */
 .weibo-avatar-wrapper {
-    width: 48px;
-    height: 48px;
+    width: 54px;
+    height: 54px;
     border-radius: 50%;
-    border: 3px solid #fff;
+    border: none;
     background: linear-gradient(135deg, #ff8200, #e85d04);
     display: flex;
     align-items: center;
