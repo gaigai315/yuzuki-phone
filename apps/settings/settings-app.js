@@ -3730,6 +3730,8 @@ export class SettingsApp {
                 fixedPromptEnd: String(preset?.fixedPromptEnd || ''),
                 negativePrompt: String(preset?.negativePrompt || ''),
                 novelaiModel: String(preset?.novelaiModel || preset?.model || ''),
+                novelaiMode: String(preset?.novelaiMode || preset?.mode || ''),
+                novelaiEffort: String(preset?.novelaiEffort || preset?.effort || ''),
                 novelaiSampler: String(preset?.novelaiSampler || preset?.sampler || ''),
                 novelaiSchedule: String(preset?.novelaiSchedule || preset?.schedule || ''),
                 honeyWidth: preset?.honeyWidth,
@@ -4194,7 +4196,12 @@ export class SettingsApp {
         const openaiPublicKey = this._getImageSiteApiKey('openai', 'public');
         const openaiCustomKey = this._getImageSiteApiKey('openai', 'custom');
         const siliconflowKey = String(this.storage.get('phone-image-siliconflow-key') || this.storage.get('siliconflow_api_key') || '').trim();
-        const novelaiModel = String(this.storage.get('phone-image-novelai-model') || 'nai-diffusion-4-5-full').trim();
+        const storedNovelaiModel = String(this.storage.get('phone-image-novelai-model') || 'nai-diffusion-4-5-full').trim();
+        const novelaiModel = storedNovelaiModel === 'nai-diffusion-5-full-medium' ? 'nai-diffusion-5-full' : storedNovelaiModel;
+        const novelaiMode = String(this.storage.get('phone-image-novelai-mode') || 'anime').trim().toLowerCase() === 'furry' ? 'furry' : 'anime';
+        const novelaiEffort = storedNovelaiModel === 'nai-diffusion-5-full-medium'
+            ? 'medium'
+            : (String(this.storage.get('phone-image-novelai-effort') || 'high').trim().toLowerCase() === 'medium' ? 'medium' : 'high');
         const openaiModel = String(this.storage.get('phone-image-openai-model') || 'gpt-image-2').trim();
         const siliconflowModel = String(this.storage.get('phone-image-siliconflow-model') || this.storage.get('image_generation_model') || 'Kwai-Kolors/Kolors').trim();
         const sdUrl = String(this.storage.get('phone-image-sd-url') || 'http://127.0.0.1:7860').trim();
@@ -4571,6 +4578,24 @@ export class SettingsApp {
                         <option value="nai-diffusion-4-curated-preview" ${novelaiModel === 'nai-diffusion-4-curated-preview' ? 'selected' : ''}>NAI Diffusion 4 Curated Preview</option>
                         <option value="nai-diffusion-3" ${novelaiModel === 'nai-diffusion-3' ? 'selected' : ''}>NAI Diffusion 3</option>
                     </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div class="setting-item">
+                        <div class="setting-label">模式</div>
+                        <select id="phone-image-novelai-mode" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                            <option value="anime" ${novelaiMode === 'anime' ? 'selected' : ''}>Anime</option>
+                            <option value="furry" ${novelaiMode === 'furry' ? 'selected' : ''}>Furry</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">Effort</div>
+                        <select id="phone-image-novelai-effort" ${novelaiModel !== 'nai-diffusion-5-full' ? 'disabled' : ''} style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box; margin-top: 6px;">
+                            <option value="high" ${novelaiEffort === 'high' ? 'selected' : ''}>High</option>
+                            <option value="medium" ${novelaiEffort === 'medium' ? 'selected' : ''}>Medium</option>
+                        </select>
+                        <div class="setting-desc" id="phone-image-novelai-effort-desc">${novelaiModel === 'nai-diffusion-5-full' && novelaiEffort === 'medium' ? '固定 14 步、Euler Ancestral，不使用自定义负面提示。' : 'Medium 仅支持 NAI Diffusion 5 Full。'}</div>
+                    </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -6939,6 +6964,12 @@ export class SettingsApp {
         const imageNovelaiPublicUrlRow = document.getElementById('phone-image-novelai-public-url-row');
         const imageNovelaiUrlRow = document.getElementById('phone-image-novelai-url-row');
         const imageNovelaiModel = document.getElementById('phone-image-novelai-model');
+        const imageNovelaiMode = document.getElementById('phone-image-novelai-mode');
+        const imageNovelaiEffort = document.getElementById('phone-image-novelai-effort');
+        const imageNovelaiEffortDesc = document.getElementById('phone-image-novelai-effort-desc');
+        const imageNovelaiSampler = document.getElementById('phone-image-novelai-sampler');
+        const imageNovelaiSteps = document.getElementById('phone-image-steps');
+        const imageNovelaiCfgRescale = document.getElementById('phone-image-novelai-guidance-rescale');
         const imageNovelaiSchedule = document.getElementById('phone-image-novelai-schedule');
         const imageNovelaiSkipCfgCompat = document.getElementById('phone-image-novelai-skip-cfg-compat');
         const imageNovelaiSkipCfgRow = document.getElementById('phone-image-novelai-skip-cfg-row');
@@ -7048,6 +7079,40 @@ export class SettingsApp {
         const syncNovelaiModelCapabilities = () => {
             const model = String(imageNovelaiModel?.value || '').trim();
             const isV5 = /^nai-diffusion-5(?:-|$)/i.test(model);
+            const supportsMedium = model === 'nai-diffusion-5-full';
+            if (imageNovelaiEffort) {
+                imageNovelaiEffort.disabled = !supportsMedium;
+                if (!supportsMedium) imageNovelaiEffort.value = 'high';
+            }
+            const isMedium = supportsMedium && imageNovelaiEffort?.value === 'medium';
+            if (imageNovelaiSampler) {
+                imageNovelaiSampler.disabled = isMedium;
+                if (isMedium) {
+                    imageNovelaiSampler.value = 'k_euler_ancestral';
+                } else {
+                    const storedSampler = String(this.storage.get('phone-image-novelai-sampler') || 'k_euler').trim() || 'k_euler';
+                    if (Array.from(imageNovelaiSampler.options).some(option => option.value === storedSampler)) {
+                        imageNovelaiSampler.value = storedSampler;
+                    }
+                }
+            }
+            if (imageNovelaiSteps) {
+                imageNovelaiSteps.disabled = isMedium;
+                imageNovelaiSteps.value = isMedium
+                    ? '14'
+                    : String(this.storage.get('phone-image-steps') ?? 28);
+            }
+            if (imageNovelaiCfgRescale) {
+                imageNovelaiCfgRescale.disabled = isMedium;
+                imageNovelaiCfgRescale.value = isMedium
+                    ? '0'
+                    : String(this.storage.get('phone-image-cfg-rescale') ?? 0.2);
+            }
+            if (imageNovelaiEffortDesc) {
+                imageNovelaiEffortDesc.textContent = isMedium
+                    ? '固定 14 步、Euler Ancestral，不使用自定义负面提示。'
+                    : 'Medium 仅支持 NAI Diffusion 5 Full。';
+            }
             if (imageNovelaiSchedule) {
                 imageNovelaiSchedule.disabled = isV5;
                 imageNovelaiSchedule.title = isV5 ? 'NAI V5 当前固定使用 karras' : '';
@@ -7164,6 +7229,8 @@ export class SettingsApp {
         };
         const getImageGenerationPresetSettings = () => ({
             novelaiModel: String(imageNovelaiModel?.value || '').trim() || 'nai-diffusion-4-5-full',
+            novelaiMode: String(imageNovelaiMode?.value || '').trim() || 'anime',
+            novelaiEffort: String(imageNovelaiEffort?.value || '').trim() || 'high',
             novelaiSampler: String(document.getElementById('phone-image-novelai-sampler')?.value || '').trim() || 'k_euler',
             novelaiSchedule: String(document.getElementById('phone-image-novelai-schedule')?.value || '').trim() || 'native',
             honeyWidth: readPresetNumber('phone-image-honey-width', 832, 64, 2048, true),
@@ -7189,6 +7256,16 @@ export class SettingsApp {
                 const model = String(preset.novelaiModel || '').trim() || 'nai-diffusion-4-5-full';
                 if (imageNovelaiModel) imageNovelaiModel.value = model;
                 await this.storage.set('phone-image-novelai-model', model);
+            }
+            if (preset.novelaiMode) {
+                const value = String(preset.novelaiMode || '').trim().toLowerCase() === 'furry' ? 'furry' : 'anime';
+                if (imageNovelaiMode) imageNovelaiMode.value = value;
+                await this.storage.set('phone-image-novelai-mode', value);
+            }
+            if (preset.novelaiEffort) {
+                const value = String(preset.novelaiEffort || '').trim().toLowerCase() === 'medium' ? 'medium' : 'high';
+                if (imageNovelaiEffort) imageNovelaiEffort.value = value;
+                await this.storage.set('phone-image-novelai-effort', value);
             }
             if (preset.novelaiSampler) {
                 const value = String(preset.novelaiSampler || '').trim() || 'k_euler';
@@ -7750,6 +7827,8 @@ export class SettingsApp {
                 fixedPromptEnd: String(preset?.fixedPromptEnd || ''),
                 negativePrompt: String(preset?.negativePrompt || ''),
                 novelaiModel: String(preset?.novelaiModel || ''),
+                novelaiMode: String(preset?.novelaiMode || ''),
+                novelaiEffort: String(preset?.novelaiEffort || ''),
                 novelaiSampler: String(preset?.novelaiSampler || ''),
                 novelaiSchedule: String(preset?.novelaiSchedule || ''),
                 honeyWidth: preset?.honeyWidth,
@@ -7839,6 +7918,8 @@ export class SettingsApp {
                 fixedPromptEnd: String(preset?.fixedPromptEnd || ''),
                 negativePrompt: readImportedNegativePrompt(preset),
                 novelaiModel: String(preset?.novelaiModel || preset?.model || '').trim(),
+                novelaiMode: String(preset?.novelaiMode || preset?.mode || '').trim(),
+                novelaiEffort: String(preset?.novelaiEffort || preset?.effort || '').trim(),
                 novelaiSampler: String(preset?.novelaiSampler || preset?.sampler || '').trim(),
                 novelaiSchedule: String(preset?.novelaiSchedule || preset?.schedule || '').trim(),
                 honeyWidth: preset?.honeyWidth,
@@ -9288,6 +9369,20 @@ export class SettingsApp {
             const model = String(e.target.value || '').trim() || 'nai-diffusion-4-5-full';
             e.target.value = model;
             await this.storage.set('phone-image-novelai-model', model);
+            if (model !== 'nai-diffusion-5-full') await this.storage.set('phone-image-novelai-effort', 'high');
+            syncNovelaiModelCapabilities();
+        });
+
+        imageNovelaiMode?.addEventListener('change', async (e) => {
+            const value = String(e.target.value || '').trim().toLowerCase() === 'furry' ? 'furry' : 'anime';
+            e.target.value = value;
+            await this.storage.set('phone-image-novelai-mode', value);
+        });
+
+        imageNovelaiEffort?.addEventListener('change', async (e) => {
+            const value = String(e.target.value || '').trim().toLowerCase() === 'medium' ? 'medium' : 'high';
+            e.target.value = value;
+            await this.storage.set('phone-image-novelai-effort', value);
             syncNovelaiModelCapabilities();
         });
 

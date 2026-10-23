@@ -149,9 +149,10 @@ const WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX = '-user-set';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-21',
+    date: '2026-10-23',
     items: [
-        '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。'
+        '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。',
+        '【新增】NovelAI V5 Full 支持 Anime/Furry 模式与 Medium/High Effort；Medium 会自动使用官方节约模型并锁定兼容参数。'
     ]
 };
 

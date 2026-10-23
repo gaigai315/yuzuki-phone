@@ -283,7 +283,21 @@ x:0.1~0.9,y:0.1~0.9
    - sfw：无生殖器裸露、无明确性行为或色情体液，仅表现日常服装、暧昧姿态或轻度挑逗。
    - nsfw：包含明确裸体、生殖器、性行为、口交、插入或色情体液。
 3. 剧情元素：当前RP正文所处的物理空间、背景环境、家具、主题道具等（如 indoors, bedroom, bed）。
-4. 构图与全局关系：角色间的整体站位或无指向性的全局状态（如 face to face, standing next to each other, standing apart）。
+4. 场景光影与氛围渲染规则（必须写入 scenePrompt）
+在写完基础环境与构图后，必须根据当前RP剧情的情绪基调，在 scenePrompt 末尾追加多个英文自然语言短语，用于激活画面的局部色彩与光影张力。必须按以下4个维度依次生成：
+
+①. [时令与具象光源]：结合剧情时间，描写光线如何与环境或人物发生物理接触（如：dappled sunlight falling across clothes, cold moonlight filtering through curtains, dim golden lamp light illuminating the room, neon light reflecting on wet skin）。
+②. [剧情色彩调性 (Color Palette)]：根据剧情氛围指定1个主色调词组，用以激活画面的局部上色（如：
+   - 温馨/怀旧/慵懒：warm amber and honey-gold color palette
+   - 暧昧/情欲/旖旎：hazy rose-pink and warm peach color palette
+   - 压抑/强迫/暗夜：muted cold blue and deep shadow color palette
+   - 危险/偏执/激烈：high-contrast crimson and dark charcoal color palette
+   - 清冷/日常/疏离：desaturated silver-grey and pale cyan color palette）
+③. [空气感与镜头微距]：固定挑选 1~2 个增强画面呼吸感的电影镜头词（如：natural shadows, shallow depth of field, subtle lens flare, floating dust motes, gentle breeze）。
+④. [情绪意境总结]：用 形容词 + atmosphere / mood 概括当前剧情的心理张力（如：cozy nostalgic atmosphere, quiet and peaceful mood, suffocating and tense atmosphere, intimate and seductive mood, candid unposed moment）。
+
+*注：同时解除原规则中对“光影渲染词”的禁令，允许在 scenePrompt 中使用 natural shadows, cinematic lighting, depth of field 等自然光影词汇。*
+5. 构图与全局关系：角色间的整体站位或无指向性的全局状态（如 face to face, standing next to each other, standing apart）。
    - 注意：source#、target#、mutual# 属于角色专属动作，严禁写在 scenePrompt 中。
 
 二、 characterX: 与 centerX: （角色块信息，三选一模式）
@@ -372,12 +386,12 @@ x:0.3,y:0.5
 
 ---
 
- [综合输出范例]
+[综合输出范例]
 
 范例1：双人复合互动（一人主动压制，另一人主动亲吻）
 
 scenePrompt:
-1boy, 1girl, sfw, indoors, bedroom, against wall, face to face
+1boy, 1girl, sfw, indoors, bedroom, against wall, face to face, dim moonlight filtering through sheer curtains, muted cold blue and deep shadow color palette, natural shadows, shallow depth of field, intimate and obsessive atmosphere
 
 character1:
 boy, mature male, black hair, short hair, black shirt, standing, tense, dominant, obsessed, source#pinning, target#kiss
@@ -392,7 +406,7 @@ x:0.7,y:0.5
 
 范例2：四人两组独立互动
 scenePrompt:
-2boys, 2girls, sfw, indoors, luxury lounge
+2boys, 2girls, sfw, indoors, luxury lounge, warm golden chandelier light illuminating the room, warm amber and honey-gold color palette, subtle lens flare, shallow depth of field, dramatic and romantic mood
 
 character1:
 boy, mature male, black hair, short hair, black suit, standing, calm, possessive, intense, source#pinning

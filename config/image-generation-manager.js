@@ -1180,7 +1180,7 @@ export class ImageGenerationManager {
                 : customKey;
             apiKey = String(overrides.apiKey || storedKey || '').trim();
         }
-        const model = String(
+        const requestedModel = String(
             overrides.model
             || openaiPromptPreset?.openaiModel
             || this._get(`phone-image-${provider}-model`, '')
@@ -1190,6 +1190,14 @@ export class ImageGenerationManager {
                     ? legacySiliconflowModel || 'Kwai-Kolors/Kolors'
                     : (provider === 'openai' ? 'gpt-image-2' : '')))
         ).trim();
+        const novelAIEffort = String(overrides.novelAIEffort || this._get('phone-image-novelai-effort', 'high')).trim().toLowerCase() === 'medium'
+            ? 'medium'
+            : 'high';
+        const model = provider === 'novelai'
+            && requestedModel === 'nai-diffusion-5-full'
+            && novelAIEffort === 'medium'
+            ? 'nai-diffusion-5-full-medium'
+            : requestedModel;
 
         return {
             enabled: overrides.enabled ?? this._getBool('phone-image-enabled', false),
@@ -1240,9 +1248,13 @@ export class ImageGenerationManager {
             publicUrl: String(overrides.publicUrl || this._get('phone-image-novelai-public-url', '')).trim(),
             queueUrl: site === 'official' ? String(overrides.queueUrl || this._get('phone-image-novelai-queue-url', '')).trim() : '',
             model,
+            novelAIMode: String(overrides.novelAIMode || this._get('phone-image-novelai-mode', 'anime')).trim().toLowerCase() === 'furry' ? 'furry' : 'anime',
+            novelAIEffort,
             sampler: provider === 'sd'
                 ? String(overrides.sampler || this._get('phone-image-sd-sampler', 'Euler a')).trim() || 'Euler a'
-                : this._normalizeNovelAISampler(overrides.sampler || this._get('phone-image-novelai-sampler', 'k_euler')),
+                : (model === 'nai-diffusion-5-full-medium'
+                    ? 'k_euler_ancestral'
+                    : this._normalizeNovelAISampler(overrides.sampler || this._get('phone-image-novelai-sampler', 'k_euler'))),
             schedule: this._normalizeNovelAISchedule(
                 overrides.schedule || this._get('phone-image-novelai-schedule', 'native'),
                 model
@@ -2647,23 +2659,28 @@ export class ImageGenerationManager {
         const parsedV4Prompt = this._isNovelAIV4PlusModel(config.model)
             ? this._parseNovelAIPromptSyntax(aiPrompt, '', config.model)
             : null;
-        const rawPrompt = this._joinPrompt([
+        let rawPrompt = this._joinPrompt([
             config.fixedPrompt,
             parsedV4Prompt ? parsedV4Prompt.baseCaption : aiPrompt,
             config.fixedPromptEnd
         ]);
-        const rawNegativePrompt = this._joinPrompt([
+        if (config.novelAIMode === 'furry' && !/^\s*fur dataset(?:\s*,|\s*$)/i.test(rawPrompt)) {
+            rawPrompt = this._joinPrompt(['fur dataset', rawPrompt]);
+        }
+        let rawNegativePrompt = this._joinPrompt([
             config.negativePrompt,
             options.negativePrompt
         ]);
+        const isMediumEffort = config.model === 'nai-diffusion-5-full-medium';
+        if (isMediumEffort) rawNegativePrompt = '';
         const prompt = rawPrompt;
         const negativePrompt = rawNegativePrompt;
         const seed = Number(options.seed ?? config.seed);
         let width = Number(options.width || config.width);
         let height = Number(options.height || config.height);
         let scale = Number(options.scale ?? config.scale);
-        let steps = Number(options.steps || config.steps);
-        const cfgRescale = Number(options.cfgRescale ?? config.cfgRescale);
+        let steps = isMediumEffort ? 14 : Number(options.steps || config.steps);
+        const cfgRescale = isMediumEffort ? 0 : Number(options.cfgRescale ?? config.cfgRescale);
         const novelAIReferences = this._normalizeNovelAIReferences(options);
         const configuredNovelAIVibes = await this._resolveNovelAIVibeReferences(options, config);
         const supportsPreciseReference = this._isNovelAIV45Model(config.model);
@@ -2685,7 +2702,7 @@ export class ImageGenerationManager {
             width,
             height,
             scale,
-            sampler: config.sampler,
+            sampler: isMediumEffort ? 'k_euler_ancestral' : config.sampler,
             steps,
             n_samples: 1,
             ucPreset: 0,
@@ -2719,7 +2736,7 @@ export class ImageGenerationManager {
                 v4_negative_prompt: {
                     caption: {
                         base_caption: negativePrompt,
-                        char_captions: this._buildNovelAICharCaptions(parsedV4Prompt?.characters, 'negativeCaption')
+                        char_captions: isMediumEffort ? [] : this._buildNovelAICharCaptions(parsedV4Prompt?.characters, 'negativeCaption')
                     },
                     use_coords: parsedV4Prompt?.useCoords === true,
                     use_order: true,
