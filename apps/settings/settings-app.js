@@ -3744,6 +3744,8 @@ export class SettingsApp {
                 xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
+                storyWidth: preset?.storyWidth,
+                storyHeight: preset?.storyHeight,
                 width: preset?.width,
                 height: preset?.height,
                 steps: preset?.steps,
@@ -3813,6 +3815,8 @@ export class SettingsApp {
                 xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
+                storyWidth: preset?.storyWidth,
+                storyHeight: preset?.storyHeight,
                 width: preset?.width,
                 height: preset?.height,
                 updatedAt: Number(preset?.updatedAt || 0) || Date.now()
@@ -4304,6 +4308,7 @@ export class SettingsApp {
         const weiboSize = readImageSizePair('phone-image-weibo-width', 'phone-image-weibo-height', 1024, 1024);
         const xSize = readImageSizePair('phone-image-x-width', 'phone-image-x-height', 1024, 1024);
         const diarySize = readImageSizePair('phone-image-diary-width', 'phone-image-diary-height', 512, 512);
+        const storySize = readImageSizePair('phone-image-story-width', 'phone-image-story-height', 832, 1216);
         const width = fallbackSize.width;
         const height = fallbackSize.height;
         const honeyWidth = honeySize.width;
@@ -4316,6 +4321,8 @@ export class SettingsApp {
         const xHeight = xSize.height;
         const diaryWidth = diarySize.width;
         const diaryHeight = diarySize.height;
+        const storyWidth = storySize.width;
+        const storyHeight = storySize.height;
         const readStoredNumber = (key, fallback) => {
             const raw = this.storage.get(key);
             if (raw === null || typeof raw === 'undefined' || raw === '') return fallback;
@@ -5072,7 +5079,7 @@ export class SettingsApp {
 
                 <div class="setting-item">
                     <div class="setting-label">各 App 生图尺寸</div>
-                    <div class="setting-desc">蜜语默认使用 NAI 竖图；微信和日记默认小方图；微博和 X 默认方图。</div>
+                    <div class="setting-desc">蜜语和正文默认使用 NAI 竖图；微信和日记默认小方图；微博和 X 默认方图。</div>
                     <button type="button" id="phone-image-reset-app-sizes" class="setting-btn" style="width: 100%; height: 30px; margin-top: 8px; border: 1px solid #d8d8d8; border-radius: 8px; background: #f7f7f7; color: #333; font-size: 12px; cursor: pointer;">恢复默认尺寸</button>
                     <div style="display: grid; grid-template-columns: 72px 1fr 1fr; gap: 8px; align-items: center; margin-top: 8px;">
                         <div style="font-size: 11px; color: #777;">App</div>
@@ -5098,6 +5105,10 @@ export class SettingsApp {
                         <div style="font-size: 12px; color: #333;">日记</div>
                         <input type="number" id="phone-image-diary-width" min="64" max="2048" step="64" value="${diaryWidth}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
                         <input type="number" id="phone-image-diary-height" min="64" max="2048" step="64" value="${diaryHeight}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
+
+                        <div style="font-size: 12px; color: #333;">正文</div>
+                        <input type="number" id="phone-image-story-width" min="64" max="2048" step="64" value="${storyWidth}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
+                        <input type="number" id="phone-image-story-height" min="64" max="2048" step="64" value="${storyHeight}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
 
                         <div style="font-size: 12px; color: #333;">全局兜底</div>
                         <input type="number" id="phone-image-width" min="64" max="2048" step="64" value="${width}" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; box-sizing: border-box;">
@@ -7216,6 +7227,8 @@ export class SettingsApp {
                 'phone-image-x-height': 1024,
                 'phone-image-diary-width': 512,
                 'phone-image-diary-height': 512,
+                'phone-image-story-width': 832,
+                'phone-image-story-height': 1216,
                 'phone-image-width': 832,
                 'phone-image-height': 1216
             };
@@ -7243,6 +7256,8 @@ export class SettingsApp {
             xHeight: readPresetNumber('phone-image-x-height', 1024, 64, 2048, true),
             diaryWidth: readPresetNumber('phone-image-diary-width', 512, 64, 2048, true),
             diaryHeight: readPresetNumber('phone-image-diary-height', 512, 64, 2048, true),
+            storyWidth: readPresetNumber('phone-image-story-width', 832, 64, 2048, true),
+            storyHeight: readPresetNumber('phone-image-story-height', 1216, 64, 2048, true),
             width: readPresetNumber('phone-image-width', 832, 64, 2048, true),
             height: readPresetNumber('phone-image-height', 1216, 64, 2048, true),
             steps: readPresetNumber('phone-image-steps', 28, 1, 50, true),
@@ -7286,6 +7301,7 @@ export class SettingsApp {
             await setPresetDimensionPair('phone-image-weibo-width', 'phone-image-weibo-height', preset.weiboWidth, preset.weiboHeight, 1024, 1024);
             await setPresetDimensionPair('phone-image-x-width', 'phone-image-x-height', preset.xWidth, preset.xHeight, 1024, 1024);
             await setPresetDimensionPair('phone-image-diary-width', 'phone-image-diary-height', preset.diaryWidth, preset.diaryHeight, 512, 512);
+            await setPresetDimensionPair('phone-image-story-width', 'phone-image-story-height', preset.storyWidth, preset.storyHeight, 832, 1216);
             await setPresetDimensionPair('phone-image-width', 'phone-image-height', preset.width, preset.height, 832, 1216);
             await setPresetNumber('phone-image-steps', preset.steps, 28, 1, 50, true);
             await setPresetNumber('phone-image-scale', preset.scale, 6, 0, 50, false);
@@ -7309,6 +7325,8 @@ export class SettingsApp {
             xHeight: readPresetNumber('phone-image-x-height', 1024, 64, 2048, true),
             diaryWidth: readPresetNumber('phone-image-diary-width', 512, 64, 2048, true),
             diaryHeight: readPresetNumber('phone-image-diary-height', 512, 64, 2048, true),
+            storyWidth: readPresetNumber('phone-image-story-width', 832, 64, 2048, true),
+            storyHeight: readPresetNumber('phone-image-story-height', 1216, 64, 2048, true),
             width: readPresetNumber('phone-image-width', 832, 64, 2048, true),
             height: readPresetNumber('phone-image-height', 1216, 64, 2048, true)
         });
@@ -7347,6 +7365,7 @@ export class SettingsApp {
             await setPresetDimensionPair('phone-image-weibo-width', 'phone-image-weibo-height', preset.weiboWidth, preset.weiboHeight, 1024, 1024);
             await setPresetDimensionPair('phone-image-x-width', 'phone-image-x-height', preset.xWidth, preset.xHeight, 1024, 1024);
             await setPresetDimensionPair('phone-image-diary-width', 'phone-image-diary-height', preset.diaryWidth, preset.diaryHeight, 512, 512);
+            await setPresetDimensionPair('phone-image-story-width', 'phone-image-story-height', preset.storyWidth, preset.storyHeight, 832, 1216);
             await setPresetDimensionPair('phone-image-width', 'phone-image-height', preset.width, preset.height, 832, 1216);
         };
         const fillOpenAIImagePresetSelect = (presets, activeId = '') => {
@@ -7841,6 +7860,8 @@ export class SettingsApp {
                 xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
+                storyWidth: preset?.storyWidth,
+                storyHeight: preset?.storyHeight,
                 width: preset?.width,
                 height: preset?.height,
                 steps: preset?.steps,
@@ -7872,6 +7893,8 @@ export class SettingsApp {
                 xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
+                storyWidth: preset?.storyWidth,
+                storyHeight: preset?.storyHeight,
                 width: preset?.width,
                 height: preset?.height
             })).filter(preset => preset.name)
@@ -7932,6 +7955,8 @@ export class SettingsApp {
                 xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
+                storyWidth: preset?.storyWidth,
+                storyHeight: preset?.storyHeight,
                 width: preset?.width,
                 height: preset?.height,
                 steps: preset?.steps,
@@ -8006,6 +8031,8 @@ export class SettingsApp {
                 xHeight: preset?.xHeight,
                 diaryWidth: preset?.diaryWidth,
                 diaryHeight: preset?.diaryHeight,
+                storyWidth: preset?.storyWidth,
+                storyHeight: preset?.storyHeight,
                 width: preset?.width,
                 height: preset?.height,
                 updatedAt: Date.now()
@@ -10321,6 +10348,8 @@ export class SettingsApp {
             ['phone-image-x-height', 1024, 64, 2048, true],
             ['phone-image-diary-width', 512, 64, 2048, true],
             ['phone-image-diary-height', 512, 64, 2048, true],
+            ['phone-image-story-width', 832, 64, 2048, true],
+            ['phone-image-story-height', 1216, 64, 2048, true],
             ['phone-image-width', 832, 64, 2048, true],
             ['phone-image-height', 1216, 64, 2048, true],
             ['phone-image-steps', 28, 1, 50, true],
@@ -10343,6 +10372,8 @@ export class SettingsApp {
             'phone-image-x-height',
             'phone-image-diary-width',
             'phone-image-diary-height',
+            'phone-image-story-width',
+            'phone-image-story-height',
             'phone-image-width',
             'phone-image-height'
         ]);

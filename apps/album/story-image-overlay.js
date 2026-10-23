@@ -397,8 +397,24 @@ export class StoryImageOverlay {
     fitEmptyStage(stage) {
         const bounds = this.getStageFitBounds(stage);
         if (!bounds) return;
-        const size = Math.min(bounds.maxWidth, bounds.maxHeight);
-        stage.style.setProperty('--phone-story-image-empty-size', `${Math.round(size)}px`);
+        let configuredWidth = 832;
+        let configuredHeight = 1216;
+        try {
+            const config = window.VirtualPhone?.imageGenerationManager?.getConfig?.({ app: 'story' });
+            const width = Number(config?.width);
+            const height = Number(config?.height);
+            if (width > 0 && height > 0) {
+                configuredWidth = width;
+                configuredHeight = height;
+            }
+        } catch (_error) {
+            // Keep the story image defaults when provider configuration is unavailable.
+        }
+        const ratio = configuredWidth / configuredHeight;
+        const width = Math.min(bounds.maxWidth, bounds.maxHeight * ratio);
+        const height = width / ratio;
+        stage.style.setProperty('--phone-story-image-empty-width', `${Math.round(width)}px`);
+        stage.style.setProperty('--phone-story-image-empty-height', `${Math.round(height)}px`);
         stage.classList.add('has-fitted-empty');
     }
 

@@ -11,6 +11,16 @@ const source = fs
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const { ImageGenerationManager } = await import(moduleUrl);
 const manager = new ImageGenerationManager(null);
+const settingsSource = fs.readFileSync(new URL('../apps/settings/settings-app.js', import.meta.url), 'utf8');
+
+test('image settings expose and persist independent story dimensions', () => {
+    assert.match(settingsSource, /id="phone-image-story-width"[^>]*value="\$\{storyWidth\}"/);
+    assert.match(settingsSource, /id="phone-image-story-height"[^>]*value="\$\{storyHeight\}"/);
+    assert.match(settingsSource, /\['phone-image-story-width', 832, 64, 2048, true\]/);
+    assert.match(settingsSource, /\['phone-image-story-height', 1216, 64, 2048, true\]/);
+    assert.match(settingsSource, /storyWidth: readPresetNumber\('phone-image-story-width'/);
+    assert.match(settingsSource, /setPresetDimensionPair\('phone-image-story-width', 'phone-image-story-height'/);
+});
 
 test('provider bindings accept the story image app', () => {
     const storyManager = new ImageGenerationManager({
@@ -54,7 +64,9 @@ test('story image generation reads its independent prompt preset scope', () => {
         'phone-image-novelai-key': 'test-key',
         'phone-image-story-fixed-prompt': 'story fixed prompt',
         'phone-image-story-fixed-prompt-end': 'story ending prompt',
-        'phone-image-story-negative-prompt': 'story negative prompt'
+        'phone-image-story-negative-prompt': 'story negative prompt',
+        'phone-image-story-width': 896,
+        'phone-image-story-height': 1344
     };
     const storyManager = new ImageGenerationManager({
         get: key => values[key] ?? null
@@ -64,6 +76,8 @@ test('story image generation reads its independent prompt preset scope', () => {
     assert.equal(config.fixedPrompt, 'story fixed prompt');
     assert.equal(config.fixedPromptEnd, 'story ending prompt');
     assert.equal(config.negativePrompt, 'story negative prompt');
+    assert.equal(config.width, 896);
+    assert.equal(config.height, 1344);
 });
 
 test('X image generation uses independent provider, size, preset, and ComfyUI workflow scopes', () => {

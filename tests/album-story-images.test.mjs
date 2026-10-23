@@ -452,7 +452,9 @@ test('floating double-click opens the standalone story image card without openin
     assert.match(overlaySource, /scheduleStageFit\(\)/);
     assert.match(overlaySource, /window\.visualViewport\?\.height/);
     assert.match(overlaySource, /stopHostTouchGesture/);
-    assert.match(overlaySource, /--phone-story-image-empty-size/);
+    assert.match(overlaySource, /getConfig\?\.\(\{ app: 'story' \}\)/);
+    assert.match(overlaySource, /--phone-story-image-empty-width/);
+    assert.match(overlaySource, /--phone-story-image-empty-height/);
     assert.match(overlaySource, /outerHeight\(card\.querySelector\('\.phone-story-image-actions'\)\)/);
     assert.doesNotMatch(overlaySource, /viewportHeight \* 0\.64/);
     assert.doesNotMatch(overlaySource, /\$\{floorIndex \+ 1\}\s*\/\s*\$\{floors\.length\}/);
@@ -651,10 +653,10 @@ test('story image card uses the natural image ratio without black side backgroun
     const viewSource = fs.readFileSync(new URL('../apps/album/album-view.js', import.meta.url), 'utf8');
 
     assert.match(cssSource, /\.phone-story-image-stage\.has-loaded-image/);
-    assert.match(cssSource, /\.phone-story-image-stage\.has-fitted-empty\s*\{[^}]*width:\s*min\(100%, var\(--phone-story-image-empty-size\)\)[^}]*height:\s*var\(--phone-story-image-empty-size\)/s);
+    assert.match(cssSource, /\.phone-story-image-stage\.has-fitted-empty\s*\{[^}]*width:\s*min\(100%, var\(--phone-story-image-empty-width\)\)[^}]*height:\s*var\(--phone-story-image-empty-height\)/s);
     assert.match(
         fs.readFileSync(new URL('../apps/album/story-image-overlay.js', import.meta.url), 'utf8'),
-        /const size = Math\.min\(bounds\.maxWidth, bounds\.maxHeight\)/
+        /configuredWidth = 832[\s\S]*configuredHeight = 1216[\s\S]*const ratio = configuredWidth \/ configuredHeight/
     );
     assert.match(cssSource, /--phone-story-image-fitted-width/);
     assert.match(cssSource, /\.phone-story-image-front\.has-image\s*\{[^}]*background:\s*transparent/s);

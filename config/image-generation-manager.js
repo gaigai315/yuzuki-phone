@@ -812,6 +812,8 @@ export class ImageGenerationManager {
                 return { width: 1024, height: 1024 };
             case 'diary':
                 return { width: 512, height: 512 };
+            case 'story':
+                return { width: 832, height: 1216 };
             default:
                 return { width: 832, height: 1216 };
         }
@@ -932,6 +934,8 @@ export class ImageGenerationManager {
                 xHeight: preset.xHeight,
                 diaryWidth: preset.diaryWidth,
                 diaryHeight: preset.diaryHeight,
+                storyWidth: preset.storyWidth,
+                storyHeight: preset.storyHeight,
                 width: preset.width,
                 height: preset.height
             };
