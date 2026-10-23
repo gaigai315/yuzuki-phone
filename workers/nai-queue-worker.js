@@ -9,7 +9,7 @@ const CORS_HEADERS = {
 const QUEUE_STALE_MS = 15 * 60 * 1000;
 // A promoted waiter must poll to claim its turn before receiving a full lease.
 const CLAIM_WAIT_MS = 30 * 1000;
-const ACTIVE_STALE_MS = 8 * 60 * 1000;
+const ACTIVE_STALE_MS = 60 * 1000;
 const ACTIVE_MAX_MS = 12 * 60 * 1000;
 
 function json(data, init = {}) {

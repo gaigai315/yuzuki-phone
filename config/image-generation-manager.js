@@ -14,7 +14,7 @@ import { decompress as decompressZstd } from '../assets/vendor/fzstd.js';
 
 const NOVELAI_QUEUE_POLL_MS = 3000;
 const NOVELAI_QUEUE_WAIT_MS = 30 * 60 * 1000;
-const NOVELAI_QUEUE_HEARTBEAT_MS = 30 * 1000;
+const NOVELAI_QUEUE_HEARTBEAT_MS = 15 * 1000;
 const NOVELAI_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 
 export class ImageGenerationManager {
