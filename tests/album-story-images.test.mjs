@@ -1113,6 +1113,7 @@ test('story fixed-character variables resolve to WeChat tags before the provider
         assert.match(fixedCharacterList, /\{\{程昕晚\}\}/);
         assert.doesNotMatch(fixedCharacterList, /\{\{晚晚\}\}|\{\{user\}\}/);
         assert.doesNotMatch(fixedCharacterList, /black hair|blue eyes/);
+        assert.doesNotMatch(fixedCharacterList, /同一固定形象角色|按剧情中的称呼/);
         assert.match(
             app._injectStoryFixedImageCharacters('【当前已有固定形象tags角色】\n', fixedCharacterList),
             /【当前已有固定形象tags角色】\n- .*\{\{晓雨姐\}\}/

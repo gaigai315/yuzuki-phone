@@ -299,7 +299,7 @@ export class AlbumApp {
         if (!Array.isArray(entries) || entries.length === 0) return '暂无';
         return entries.map((entry) => {
             const variables = (entry.displayAliases || entry.aliases).map(alias => `{{${alias}}}`).join('、');
-            return `- ${variables}（同一固定形象角色；按剧情中的称呼原样输出其中一个变量）`;
+            return `- ${variables}`;
         }).join('\n');
     }
 
