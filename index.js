@@ -152,7 +152,8 @@ const ST_PHONE_CURRENT_UPDATE = {
     date: '2026-10-23',
     items: [
         '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。',
-        '【新增】NovelAI V5 Full 支持 Anime/Furry 模式与 Medium/High Effort；Medium 会自动使用官方节约模型并锁定兼容参数。'
+        '【新增】NovelAI V5 Full 支持 Anime/Furry 模式与 Medium/High Effort；Medium 会自动使用官方节约模型并锁定兼容参数。',
+        '【优化】优化正文生图功能。'
     ]
 };
 

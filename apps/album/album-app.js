@@ -326,17 +326,25 @@ export class AlbumApp {
 
         const unresolved = new Set();
         const replacements = [];
-        const prompt = String(rawTags || '').replace(/\{\{\s*([^{}\n]+?)\s*\}\}/g, (token, rawName) => {
+        const replacedPrompt = String(rawTags || '').replace(/\{\{\s*([^{}\n]+?)\s*\}\}/g, (_token, rawName) => {
             const name = this._normalizeStoryCharacterAlias(rawName);
             const key = name.replace(/\s+/g, '').toLowerCase();
             const fixedTags = tagsByAlias.get(key);
             if (!fixedTags) {
                 unresolved.add(name || String(rawName || '').trim());
-                return token;
+                return '';
             }
             replacements.push({ name, tags: fixedTags });
             return fixedTags;
         });
+        const prompt = replacedPrompt
+            .split('\n')
+            .map(line => line
+                .replace(/,[ \t]*(?=,)/g, '')
+                .replace(/^[ \t]*,[ \t]*/, '')
+                .replace(/[ \t]*,[ \t]*$/, '')
+                .trimEnd())
+            .join('\n');
         return { prompt, replacements, unresolved: [...unresolved] };
     }
 
@@ -509,7 +517,6 @@ export class AlbumApp {
             const result = await apiManager.callAI(messages, {
                 appId: 'story',
                 max_tokens: 520,
-                stream: false,
                 signal: options.signal
             });
             if (result?.aborted || options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -610,9 +617,6 @@ export class AlbumApp {
             this._assertStoryOperationCurrent(targetFloor, target.message, options);
             await this.albumData.setStoryFloorTags(targetFloor, tags, target.message);
             const resolved = this._resolveStoryFixedImageTags(tags);
-            if (resolved.unresolved.length > 0) {
-                throw new Error(`未找到以下固定形象角色的专属生图 Tags：${resolved.unresolved.map(name => `{{${name}}}`).join('、')}`);
-            }
             const result = await imageGenerationManager.generate({
                 app: 'story',
                 prompt: resolved.prompt,

@@ -397,7 +397,8 @@ export class StoryImageOverlay {
     fitEmptyStage(stage) {
         const bounds = this.getStageFitBounds(stage);
         if (!bounds) return;
-        stage.style.setProperty('--phone-story-image-empty-height', `${Math.round(bounds.maxHeight)}px`);
+        const size = Math.min(bounds.maxWidth, bounds.maxHeight);
+        stage.style.setProperty('--phone-story-image-empty-size', `${Math.round(size)}px`);
         stage.classList.add('has-fitted-empty');
     }
 

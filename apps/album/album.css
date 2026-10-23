@@ -1223,7 +1223,8 @@
 }
 
 #phone-story-image-overlay-root .phone-story-image-stage.has-fitted-empty {
-    height: var(--phone-story-image-empty-height) !important;
+    width: min(100%, var(--phone-story-image-empty-size)) !important;
+    height: var(--phone-story-image-empty-size) !important;
     min-height: 0 !important;
 }
 

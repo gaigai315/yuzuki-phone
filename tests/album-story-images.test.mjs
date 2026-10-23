@@ -452,7 +452,7 @@ test('floating double-click opens the standalone story image card without openin
     assert.match(overlaySource, /scheduleStageFit\(\)/);
     assert.match(overlaySource, /window\.visualViewport\?\.height/);
     assert.match(overlaySource, /stopHostTouchGesture/);
-    assert.match(overlaySource, /--phone-story-image-empty-height/);
+    assert.match(overlaySource, /--phone-story-image-empty-size/);
     assert.match(overlaySource, /outerHeight\(card\.querySelector\('\.phone-story-image-actions'\)\)/);
     assert.doesNotMatch(overlaySource, /viewportHeight \* 0\.64/);
     assert.doesNotMatch(overlaySource, /\$\{floorIndex \+ 1\}\s*\/\s*\$\{floors\.length\}/);
@@ -651,7 +651,11 @@ test('story image card uses the natural image ratio without black side backgroun
     const viewSource = fs.readFileSync(new URL('../apps/album/album-view.js', import.meta.url), 'utf8');
 
     assert.match(cssSource, /\.phone-story-image-stage\.has-loaded-image/);
-    assert.match(cssSource, /\.phone-story-image-stage\.has-fitted-empty\s*\{[^}]*height:\s*var\(--phone-story-image-empty-height\)/s);
+    assert.match(cssSource, /\.phone-story-image-stage\.has-fitted-empty\s*\{[^}]*width:\s*min\(100%, var\(--phone-story-image-empty-size\)\)[^}]*height:\s*var\(--phone-story-image-empty-size\)/s);
+    assert.match(
+        fs.readFileSync(new URL('../apps/album/story-image-overlay.js', import.meta.url), 'utf8'),
+        /const size = Math\.min\(bounds\.maxWidth, bounds\.maxHeight\)/
+    );
     assert.match(cssSource, /--phone-story-image-fitted-width/);
     assert.match(cssSource, /\.phone-story-image-front\.has-image\s*\{[^}]*background:\s*transparent/s);
     assert.doesNotMatch(cssSource, /\.phone-story-image-front img\s*\{[^}]*background:\s*#171a1e/s);
@@ -871,7 +875,7 @@ test('story tag generation uses the phone LLM API and stores returned tags', asy
         await app.generateStoryTags(7);
 
         assert.equal(callOptions.appId, 'story');
-        assert.equal(callOptions.stream, false);
+        assert.equal(callOptions.stream, undefined, 'story tags should inherit the active API stream setting');
         assert.equal(worldbookAppKey, 'story');
         assert.deepEqual(requestMessages.map(item => item.name || item.role), [
             'SYSTEM (正文生图破限词)',
@@ -1145,18 +1149,29 @@ test('story fixed-character variables resolve to WeChat tags before the provider
     }
 });
 
-test('story image generation rejects unknown fixed-character variables before provider dispatch', async () => {
+test('story image generation removes unknown fixed-character variables and continues provider dispatch', async () => {
     const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;
     const message = { is_user: false, mes: 'Unknown person.', extra: {} };
     let providerCalls = 0;
+    let providerPrompt = '';
     globalThis.window = {
         addEventListener() {},
         VirtualPhone: {
             imageGenerationManager: {
-                async generate() {
+                async generate(options) {
                     providerCalls += 1;
-                    return {};
+                    providerPrompt = options.prompt;
+                    return {
+                        provider: 'comfyui',
+                        model: 'workflow-test',
+                        imageUrl: 'data:image/png;base64,AAAA'
+                    };
+                }
+            },
+            imageManager: {
+                async _uploadToServer() {
+                    return '/backgrounds/phone_story_unknown.png';
                 }
             }
         }
@@ -1175,13 +1190,15 @@ test('story image generation rejects unknown fixed-character variables before pr
         app.albumData = {
             getStoryImageSettings: () => ({ autoPreviewEnabled: false }),
             getStoryFloor: () => ({ floor: 7, message, tags: '' }),
-            async setStoryFloorTags() {}
+            async setStoryFloorTags() {},
+            async attachStoryFloorImage() {}
         };
 
-        const result = await app.generateStoryImage(7, 'character1:\ngirl, {{不存在的角色}}');
-        assert.equal(result.success, false);
-        assert.match(String(result.error?.message || ''), /未找到.*\{\{不存在的角色\}\}/);
-        assert.equal(providerCalls, 0);
+        const result = await app.generateStoryImage(7, 'character1:\ngirl, {{不存在的角色}}, standing');
+        assert.equal(result.success, true);
+        assert.equal(providerCalls, 1);
+        assert.equal(providerPrompt, 'character1:\ngirl, standing');
+        assert.doesNotMatch(providerPrompt, /\{\{不存在的角色\}\}/);
     } finally {
         if (originalWindow === undefined) delete globalThis.window;
         else globalThis.window = originalWindow;
