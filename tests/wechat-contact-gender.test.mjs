@@ -172,6 +172,17 @@ test('contact identity matching includes nickname, user remark, and every real-n
     assert.equal(chat.name, 'RainyDay');
 });
 
+test('single-chat header uses the shared remark-first contact display name', () => {
+    const source = fs.readFileSync(new URL('../apps/wechat/wechat-app.js', import.meta.url), 'utf8');
+    const headerStart = source.indexOf('const getHeaderTitle = () => {');
+    const headerEnd = source.indexOf('const getMusicListenIndicator = () => {', headerStart);
+    const headerSource = source.slice(headerStart, headerEnd);
+
+    assert.ok(headerStart >= 0 && headerEnd > headerStart);
+    assert.match(headerSource, /this\.wechatData\.getContactDisplayName\?\.\(currentContact\)/);
+    assert.doesNotMatch(headerSource, /String\(currentContact\?\.name \|\| this\.currentChat\.name/);
+});
+
 test('smart contact loading sends its override first as system and keeps rules last as user', async () => {
     const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;

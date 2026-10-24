@@ -5619,7 +5619,11 @@ export class WechatApp {
                 const currentContact = this.currentChat.contactId
                     ? this.wechatData.getContact(this.currentChat.contactId)
                     : this.wechatData.getContactByName(this.currentChat.name);
-                const nickname = String(currentContact?.name || this.currentChat.name || '').trim();
+                const nickname = String(
+                    this.wechatData.getContactDisplayName?.(currentContact)
+                    || this.currentChat.name
+                    || ''
+                ).trim();
                 const isHoneyContact = currentContact?.sourceApp === 'honey' || currentContact?.sourceLabel === '蜜语' || currentContact?.sourceLabel === '主播';
                 if (!isHoneyContact) return nickname;
                 const honeyLabel = currentContact?.sourceLabel === '主播' || String(currentContact?.relation || '').includes('主播') ? '主播' : '蜜语';
