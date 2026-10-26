@@ -375,7 +375,7 @@ export class AlbumApp {
 
         const unresolved = new Set();
         const replacements = [];
-        const replacedPrompt = String(rawTags || '').replace(/\{\{\s*([^{}\n]+?)\s*\}\}/g, (_token, rawName) => {
+        const replacedVariables = String(rawTags || '').replace(/\{\{\s*([^{}\n]+?)\s*\}\}/g, (_token, rawName) => {
             const name = this._normalizeStoryCharacterAlias(rawName);
             const key = name.replace(/\s+/g, '').toLowerCase();
             const fixedTags = tagsByAlias.get(key);
@@ -386,6 +386,33 @@ export class AlbumApp {
             replacements.push({ name, tags: fixedTags });
             return fixedTags;
         });
+        let inCharacterBlock = false;
+        const replacedPrompt = replacedVariables.split('\n').map((line) => {
+            const sectionMatch = line.match(/^(\s*)([a-zA-Z][\w-]*\d*)\s*:\s*(.*)$/);
+            let content = line;
+            let prefix = '';
+            if (sectionMatch) {
+                const sectionName = sectionMatch[2].toLowerCase();
+                inCharacterBlock = /^character\d+$/.test(sectionName);
+                if (!inCharacterBlock) return line;
+                prefix = `${sectionMatch[1]}${sectionMatch[2]}:`;
+                content = sectionMatch[3];
+            }
+            if (!inCharacterBlock || !content.trim()) return line;
+
+            const resolvedContent = content.split(',').map((part) => {
+                const rawName = part.trim();
+                const name = this._normalizeStoryCharacterAlias(rawName);
+                const key = name.replace(/\s+/g, '').toLowerCase();
+                const fixedTags = tagsByAlias.get(key);
+                if (!fixedTags) return part;
+                replacements.push({ name, tags: fixedTags });
+                const leadingSpace = part.match(/^\s*/)?.[0] || '';
+                const trailingSpace = part.match(/\s*$/)?.[0] || '';
+                return `${leadingSpace}${fixedTags}${trailingSpace}`;
+            }).join(',');
+            return prefix ? `${prefix}${resolvedContent ? ` ${resolvedContent.trimStart()}` : ''}` : resolvedContent;
+        }).join('\n');
         const prompt = replacedPrompt
             .split('\n')
             .map(line => line

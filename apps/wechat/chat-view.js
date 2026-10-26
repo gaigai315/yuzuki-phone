@@ -44,6 +44,13 @@ const WECHAT_STICKER_ALAPI_CACHE_KEY = 'phone_wechat_alapi_sticker_cache_v1';
 const WECHAT_STICKER_ALAPI_CACHE_MAX = 240;
 const WECHAT_STICKER_ALAPI_CACHE_TTL = 90 * 24 * 60 * 60 * 1000;
 export const WECHAT_MESSAGE_PAGE_SIZE = 50;
+export const WECHAT_AI_IMAGE_TOTAL_CHAR_BUDGET = 384 * 1024;
+export const WECHAT_AI_IMAGE_MAX_CHAR_BUDGET = 320 * 1024;
+
+export function getWechatAiImageCharLimit(imageCount = 1) {
+    const count = Math.max(1, Number.parseInt(imageCount, 10) || 1);
+    return Math.min(WECHAT_AI_IMAGE_MAX_CHAR_BUDGET, Math.floor(WECHAT_AI_IMAGE_TOTAL_CHAR_BUDGET / count));
+}
 
 export function buildWechatCharacterCardInfo(character = null) {
     if (!character || typeof character !== 'object') return '';
@@ -11952,10 +11959,59 @@ renderChatRoom(chat) {
         });
     }
 
-    async _resolveWechatImageForAi(imageValue, cacheMap = null) {
+    async _compressWechatVisionDataUrl(dataUrl, maxChars = WECHAT_AI_IMAGE_MAX_CHAR_BUDGET) {
+        const normalized = normalizeImageDataUrlMime(String(dataUrl || '').trim());
+        const limit = Math.max(1, Number.parseInt(maxChars, 10) || WECHAT_AI_IMAGE_MAX_CHAR_BUDGET);
+        if (!/^data:image\//i.test(normalized)) throw new Error('无法识别要发送给 AI 的图片格式，本次请求已取消');
+        if (!/^data:image\/gif/i.test(normalized) && normalized.length <= limit) return normalized;
+        if (typeof Image !== 'function' || typeof document === 'undefined') {
+            throw new Error('当前环境无法压缩图片，本次图片未发送给 AI');
+        }
+
+        try {
+            const image = await new Promise((resolve, reject) => {
+                const nextImage = new Image();
+                nextImage.onload = () => resolve(nextImage);
+                nextImage.onerror = () => reject(new Error('decode_image_failed'));
+                nextImage.src = normalized;
+            });
+            const sourceWidth = Number(image.naturalWidth || image.width || 0);
+            const sourceHeight = Number(image.naturalHeight || image.height || 0);
+            if (!(sourceWidth > 0 && sourceHeight > 0)) throw new Error('无法读取图片尺寸，本次图片未发送给 AI');
+
+            let maxSide = Math.min(960, Math.max(sourceWidth, sourceHeight));
+            let quality = 0.72;
+            let smallest = '';
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+                const width = Math.max(1, Math.round(sourceWidth * scale));
+                const height = Math.max(1, Math.round(sourceHeight * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const context = canvas.getContext('2d');
+                if (!context) throw new Error('无法创建图片压缩画布，本次图片未发送给 AI');
+                context.fillStyle = '#fff';
+                context.fillRect(0, 0, width, height);
+                context.drawImage(image, 0, 0, width, height);
+                const candidate = canvas.toDataURL('image/jpeg', quality);
+                if (!smallest || candidate.length < smallest.length) smallest = candidate;
+                if (candidate.length <= limit) return candidate;
+                maxSide = Math.max(240, Math.floor(maxSide * 0.78));
+                quality = Math.max(0.32, quality - 0.08);
+            }
+            throw new Error(`图片压缩后仍超过中转限制（${smallest.length} > ${limit}），本次图片未发送给 AI`);
+        } catch (error) {
+            console.warn('[Wechat] AI 视觉图片处理失败，已取消本次请求:', error?.message || error);
+            throw error;
+        }
+    }
+
+    async _resolveWechatImageForAi(imageValue, cacheMap = null, options = {}) {
         const raw = String(imageValue || '').trim();
         if (!raw) return '';
-        if (/^data:image/i.test(raw)) return normalizeImageDataUrlMime(raw);
+        const maxChars = options.maxChars || WECHAT_AI_IMAGE_MAX_CHAR_BUDGET;
+        if (/^data:image/i.test(raw)) return this._compressWechatVisionDataUrl(raw, maxChars);
         if (cacheMap && cacheMap.has(raw)) return cacheMap.get(raw);
 
         const normalizedUrl = (() => {
@@ -11979,9 +12035,10 @@ renderChatRoom(chat) {
             if (!mime) throw new Error(`not_image_blob:${contentType || 'unknown'}`);
             const blob = new Blob([arrayBuffer], { type: mime });
             dataUrl = await this._blobToDataUrl(blob);
+            dataUrl = await this._compressWechatVisionDataUrl(dataUrl, maxChars);
         } catch (err) {
-            console.warn('[Wechat] 图片发送给AI失败，已降级为文字图片标记:', raw, err?.message || err);
-            dataUrl = '';
+            console.warn('[Wechat] 图片发送给 AI 失败，已取消本次请求:', raw, err?.message || err);
+            throw new Error(`图片未发送给 AI：${err?.message || '图片读取失败'}`);
         }
 
         if (cacheMap) {
@@ -12516,6 +12573,10 @@ renderChatRoom(chat) {
         const aiImageDataCache = new Map();
         const aiImageNotes = [];
         const aiImageTokenIds = [];
+        const latestVisionImageCount = latestUserMessages
+            .filter(message => message?.type === 'image' && message?.hiddenFromPrompt !== true)
+            .length;
+        const aiImageCharLimit = getWechatAiImageCharLimit(latestVisionImageCount);
 
         const musicListeningContext = !callMode
             ? this._buildMusicListeningContext(targetChat, userName)
@@ -12568,7 +12629,7 @@ renderChatRoom(chat) {
                 } else if (msg.type === 'image') {
                     const imageText = this._formatMessageContentForPrompt(msg, chat) || '[图片]';
                     const resolvedImageData = includeVisionImages
-                        ? await this._resolveWechatImageForAi(msg.content, aiImageDataCache)
+                        ? await this._resolveWechatImageForAi(msg.content, aiImageDataCache, { maxChars: aiImageCharLimit })
                         : '';
                     if (includeVisionImages && resolvedImageData && resolvedImageData.startsWith('data:image')) {
                         const imgId = `__ST_PHONE_IMAGE_${Date.now()}_${Math.random().toString(36).substr(2, 5)}__`;

@@ -1160,6 +1160,18 @@ test('story fixed-character variables resolve to WeChat tags before the provider
             'girl, silver hair, green eyes, girl, silver hair, green eyes, girl, silver hair, green eyes'
         );
 
+        const bareCharacterNames = app._resolveStoryFixedImageTags(
+            'scenePrompt:\n林晓雨, 程昕晚, indoors\n\ncharacter1:\ngirl, 林晓雨, standing\ncenter1:\nx:0.3,y:0.5\n\ncharacter2: girl, 程昕晚, sitting\ncenter2:\nx:0.7,y:0.5'
+        );
+        assert.match(bareCharacterNames.prompt, /scenePrompt:\n林晓雨, 程昕晚, indoors/);
+        assert.match(bareCharacterNames.prompt, /character1:\ngirl, girl, black hair, blue eyes, standing/);
+        assert.match(bareCharacterNames.prompt, /character2: girl, girl, silver hair, green eyes, sitting/);
+        assert.equal(bareCharacterNames.replacements.length, 2);
+
+        const partialName = app._resolveStoryFixedImageTags('character1:\ngirl, 小林晓雨, standing');
+        assert.match(partialName.prompt, /小林晓雨/);
+        assert.equal(partialName.replacements.length, 0);
+
         const rawTags = 'scenePrompt:\n2girls, indoors\n\ncharacter1:\ngirl, {{林晓雨}}, standing\ncenter1:\nx:0.3,y:0.5\n\ncharacter2:\ngirl, {{程昕晚}}, sitting\ncenter2:\nx:0.7,y:0.5';
         const result = await app.generateStoryImage(7, rawTags);
 
