@@ -17,7 +17,8 @@ test('current version publishes the 1.6.5 update notices', () => {
         '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。',
         '【新增】NovelAI V5 Full 支持 Anime/Furry 模式与 Medium/High Effort；Medium 会自动使用官方节约模型并锁定兼容参数。',
         '【优化】优化正文生图功能。',
-        '【新增】正文生图支持手动填写 Tags，并可在预览界面快速切换画风预设。'
+        '【新增】正文生图支持手动填写 Tags，并可在预览界面快速切换画风预设。',
+        '【修复】修复各 App 世界书设置可能跨角色串选的问题；现在按角色卡与 App 分别保存，并在同角色卡的不同聊天和用户 Persona 间保持一致。'
     ]);
     assert.equal(current.updates, undefined);
 });

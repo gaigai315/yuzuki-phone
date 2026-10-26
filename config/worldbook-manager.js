@@ -352,6 +352,25 @@ export class WorldbookManager {
             return 'lobby';
         }
         const characterId = context?.characterId;
+        const character = context?.characters?.[characterId];
+        const avatar = safeString(character?.avatar || character?.data?.avatar || '');
+        const characterName = safeString(character?.name || character?.data?.name || context?.name2 || '');
+        if (avatar) {
+            return safeStorageSegment(`avatar_${avatar}`);
+        }
+        const idText = characterId !== undefined && characterId !== null ? safeString(characterId) : '';
+        const rawKey = idText
+            ? `${idText}_${characterName || 'character'}`
+            : characterName;
+        return safeStorageSegment(rawKey || 'default_character');
+    }
+
+    _getLegacyCharacterScopeKey() {
+        const context = this._getContext();
+        if (this._isLobbyMode(context)) {
+            return 'lobby';
+        }
+        const characterId = context?.characterId;
         const characterName = safeString(context?.characters?.[characterId]?.name || context?.name2 || '');
         const idText = characterId !== undefined && characterId !== null ? safeString(characterId) : '';
         const rawKey = idText
@@ -533,104 +552,50 @@ export class WorldbookManager {
         return `phone_worldbook_selection_${appKey}_char_${this._getCharacterScopeKey()}`;
     }
 
-    getAppSelectionKey(appKey) {
-        return `phone_worldbook_selection_${appKey}`;
-    }
-
-    getGlobalSelectionKey(appKey) {
-        return `chat_worldbook_selection_${appKey}`;
+    getPreviousCharacterSelectionKey(appKey) {
+        return `phone_worldbook_selection_${appKey}_char_${this._getLegacyCharacterScopeKey()}`;
     }
 
     getPreviousChatScopedSelectionKey(appKey) {
-        return `chat_worldbook_selection_${appKey}_char_${this._getCharacterScopeKey()}`;
-    }
-
-    getLegacySelectionKey(appKey) {
-        return `phone-worldbook-selection-${appKey}`;
+        return `chat_worldbook_selection_${appKey}_char_${this._getLegacyCharacterScopeKey()}`;
     }
 
     getEnabledKey(appKey) {
         return `phone_worldbook_enabled_${appKey}_char_${this._getCharacterScopeKey()}`;
     }
 
-    getAppEnabledKey(appKey) {
-        return `phone_worldbook_enabled_${appKey}`;
-    }
-
-    getGlobalEnabledKey(appKey) {
-        return `chat_worldbook_enabled_${appKey}`;
+    getPreviousCharacterEnabledKey(appKey) {
+        return `phone_worldbook_enabled_${appKey}_char_${this._getLegacyCharacterScopeKey()}`;
     }
 
     getPreviousChatScopedEnabledKey(appKey) {
-        return `chat_worldbook_enabled_${appKey}_char_${this._getCharacterScopeKey()}`;
-    }
-
-    getLegacyEnabledKey(appKey) {
-        if (appKey === 'honey') return 'phone-honey-use-worldbook';
-        if (appKey === 'wechat') return 'wechat-use-worldbook';
-        if (appKey === 'games') return 'games-use-worldbook';
-        return '';
-    }
-
-    isSessionIsolatedApp(appKey) {
-        return appKey === 'wangxiang' || appKey === 'wangxiang-marketplace';
+        return `chat_worldbook_enabled_${appKey}_char_${this._getLegacyCharacterScopeKey()}`;
     }
 
     getEnabled(appKey) {
         const fallback = appKey === 'honey' ? false : true;
-        if (this.isSessionIsolatedApp(appKey)) {
-            const sessionRaw = this.storage?.get?.(this.getGlobalEnabledKey(appKey), undefined);
-            if (sessionRaw !== undefined && sessionRaw !== null) {
-                return parseBooleanSetting(sessionRaw, fallback);
-            }
-            const previousSessionRaw = this.storage?.get?.(this.getPreviousChatScopedEnabledKey(appKey), undefined);
-            return previousSessionRaw !== undefined && previousSessionRaw !== null
-                ? parseBooleanSetting(previousSessionRaw, fallback)
-                : fallback;
-        }
-        const scopedRaw = this.storage?.get?.(this.getEnabledKey(appKey), undefined);
+        const scopedKey = this.getEnabledKey(appKey);
+        const scopedRaw = this.storage?.get?.(scopedKey, undefined);
         if (scopedRaw !== undefined && scopedRaw !== null) {
             return parseBooleanSetting(scopedRaw, fallback);
         }
 
+        const previousCharacterRaw = this.storage?.get?.(this.getPreviousCharacterEnabledKey(appKey), undefined);
+        if (previousCharacterRaw !== undefined && previousCharacterRaw !== null) {
+            this._migrateScopedValue(scopedKey, previousCharacterRaw);
+            return parseBooleanSetting(previousCharacterRaw, fallback);
+        }
+
         const previousScopedRaw = this.storage?.get?.(this.getPreviousChatScopedEnabledKey(appKey), undefined);
         if (previousScopedRaw !== undefined && previousScopedRaw !== null) {
+            this._migrateScopedValue(scopedKey, previousScopedRaw);
             return parseBooleanSetting(previousScopedRaw, fallback);
-        }
-
-        const globalRaw = this.storage?.get?.(this.getGlobalEnabledKey(appKey), undefined);
-        if (globalRaw !== undefined && globalRaw !== null) {
-            return parseBooleanSetting(globalRaw, fallback);
-        }
-
-        const appRaw = this.storage?.get?.(this.getAppEnabledKey(appKey), undefined);
-        if (appRaw !== undefined && appRaw !== null) {
-            return parseBooleanSetting(appRaw, fallback);
-        }
-
-        const legacyKey = this.getLegacyEnabledKey(appKey);
-        if (legacyKey) {
-            const legacyRaw = this.storage?.get?.(legacyKey, undefined);
-            return parseBooleanSetting(legacyRaw, fallback);
         }
         return fallback;
     }
 
     async setEnabled(appKey, enabled) {
-        const keys = this.isSessionIsolatedApp(appKey)
-            ? uniqueStrings([
-                this.getGlobalEnabledKey(appKey),
-                this.getPreviousChatScopedEnabledKey(appKey)
-            ])
-            : uniqueStrings([
-                this.getEnabledKey(appKey),
-                this.getPreviousChatScopedEnabledKey(appKey),
-                this.getGlobalEnabledKey(appKey),
-                this.getAppEnabledKey(appKey)
-            ]);
-        for (const key of keys) {
-            await this.storage?.set?.(key, !!enabled);
-        }
+        await this.storage?.set?.(this.getEnabledKey(appKey), !!enabled);
         return !!enabled;
     }
 
@@ -639,27 +604,28 @@ export class WorldbookManager {
     }
 
     getSelectionState(appKey) {
-        if (this.isSessionIsolatedApp(appKey)) {
-            let sessionRaw = this.storage?.get?.(this.getGlobalSelectionKey(appKey), undefined);
-            if (sessionRaw === undefined || sessionRaw === null) {
-                sessionRaw = this.storage?.get?.(this.getPreviousChatScopedSelectionKey(appKey), undefined);
-            }
-            return this._parseSelectionState(sessionRaw);
+        const scopedKey = this.getSelectionKey(appKey);
+        let raw = this.storage?.get?.(scopedKey, undefined);
+        if (raw === undefined || raw === null) {
+            raw = this.storage?.get?.(this.getPreviousCharacterSelectionKey(appKey), undefined);
+            if (raw !== undefined && raw !== null) this._migrateScopedValue(scopedKey, raw);
         }
-        let raw = this.storage?.get?.(this.getSelectionKey(appKey), undefined);
         if (raw === undefined || raw === null) {
             raw = this.storage?.get?.(this.getPreviousChatScopedSelectionKey(appKey), undefined);
-        }
-        if (raw === undefined || raw === null) {
-            raw = this.storage?.get?.(this.getGlobalSelectionKey(appKey), undefined);
-        }
-        if (raw === undefined || raw === null) {
-            raw = this.storage?.get?.(this.getAppSelectionKey(appKey), undefined);
-        }
-        if (raw === undefined || raw === null) {
-            raw = this.storage?.get?.(this.getLegacySelectionKey(appKey), null);
+            if (raw !== undefined && raw !== null) this._migrateScopedValue(scopedKey, raw);
         }
         return this._parseSelectionState(raw);
+    }
+
+    _migrateScopedValue(key, value) {
+        try {
+            const pending = this.storage?.set?.(key, value);
+            pending?.catch?.((error) => {
+                console.warn(`[WorldbookManager] 迁移角色卡世界书设置失败: ${key}`, error);
+            });
+        } catch (error) {
+            console.warn(`[WorldbookManager] 迁移角色卡世界书设置失败: ${key}`, error);
+        }
     }
 
     _parseSelectionState(raw) {
@@ -694,17 +660,7 @@ export class WorldbookManager {
     }
 
     _getSelectionStorageKeys(appKey) {
-        return this.isSessionIsolatedApp(appKey)
-            ? uniqueStrings([
-                this.getGlobalSelectionKey(appKey),
-                this.getPreviousChatScopedSelectionKey(appKey)
-            ])
-            : uniqueStrings([
-                this.getSelectionKey(appKey),
-                this.getPreviousChatScopedSelectionKey(appKey),
-                this.getGlobalSelectionKey(appKey),
-                this.getAppSelectionKey(appKey)
-            ]);
+        return [this.getSelectionKey(appKey)];
     }
 
     async _writeSelectionState(appKey, selection) {

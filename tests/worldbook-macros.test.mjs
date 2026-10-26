@@ -88,3 +88,115 @@ test('worldbook selectors reuse cached reads without flooding successful book lo
     assert.match(worldbookSource, /this\._listPromises\.has\(requestKey\)/);
     assert.doesNotMatch(worldbookSource, /世界书读取结果/);
 });
+
+function createScopedManager(initialValues = {}) {
+    const values = new Map(Object.entries(initialValues));
+    const writes = [];
+    const manager = new WorldbookManager({
+        get: (key, fallback) => values.has(key) ? values.get(key) : fallback,
+        async set(key, value) {
+            writes.push([key, value]);
+            values.set(key, value);
+        },
+    });
+    return { manager, values, writes };
+}
+
+test('worldbook selections are shared across chats and personas for the same character card', async () => {
+    const { manager, writes } = createScopedManager();
+    let context = {
+        characterId: 3,
+        name1: '用户甲',
+        name2: '角色甲',
+        chatId: 'chat-a',
+        characters: [{}, {}, {}, { name: '角色甲', avatar: 'character-a.png' }],
+    };
+    manager._getContext = () => context;
+
+    await manager.setSelection('story', ['world:剧情书']);
+    const firstKey = manager.getSelectionKey('story');
+
+    context = {
+        characterId: 8,
+        name1: '用户乙',
+        name2: '角色改名后',
+        chatId: 'chat-b',
+        characters: Array.from({ length: 9 }, (_, index) => index === 8
+            ? { name: '角色改名后', avatar: 'character-a.png' }
+            : {}),
+    };
+
+    assert.equal(manager.getSelectionKey('story'), firstKey);
+    assert.deepEqual(manager.getSelection('story'), ['world:剧情书']);
+    assert.deepEqual(writes.map(([key]) => key), [firstKey]);
+});
+
+test('worldbook selections stay isolated by app and character card without global fallback leakage', async () => {
+    const { manager, values, writes } = createScopedManager({
+        phone_worldbook_selection_story: { initialized: true, ids: ['world:旧全局值'] },
+        chat_worldbook_selection_story: { initialized: true, ids: ['world:旧聊天值'] },
+    });
+    let context = {
+        characterId: 0,
+        name2: '角色甲',
+        chatId: 'chat-a',
+        characters: [{ name: '角色甲', avatar: 'character-a.png' }],
+    };
+    manager._getContext = () => context;
+
+    await manager.setSelection('story', ['world:正文专用']);
+    assert.deepEqual(manager.getSelection('story'), ['world:正文专用']);
+    assert.deepEqual(manager.getSelection('wechat'), []);
+
+    context = {
+        characterId: 1,
+        name2: '角色乙',
+        chatId: 'chat-a',
+        characters: [{}, { name: '角色乙', avatar: 'character-b.png' }],
+    };
+    assert.deepEqual(manager.getSelection('story'), []);
+    assert.equal(values.has(manager.getSelectionKey('story')), false);
+    assert.equal(writes.some(([key]) => key === 'phone_worldbook_selection_story'), false);
+    assert.equal(writes.some(([key]) => key === 'chat_worldbook_selection_story'), false);
+});
+
+test('legacy character-scoped worldbook settings migrate to the stable avatar key', async () => {
+    const legacySelection = { initialized: true, ids: ['world:旧角色勾选'], entryIdsBySource: {} };
+    const { manager, values } = createScopedManager({
+        phone_worldbook_selection_story_char_2_角色甲: legacySelection,
+        phone_worldbook_enabled_story_char_2_角色甲: false,
+    });
+    manager._getContext = () => ({
+        characterId: 2,
+        name2: '角色甲',
+        chatId: 'chat-a',
+        characters: [{}, {}, { name: '角色甲', avatar: 'character-a.png' }],
+    });
+
+    assert.deepEqual(manager.getSelection('story'), ['world:旧角色勾选']);
+    assert.equal(manager.getEnabled('story'), false);
+    await Promise.resolve();
+    assert.deepEqual(values.get('phone_worldbook_selection_story_char_avatar_character-a.png'), legacySelection);
+    assert.equal(values.get('phone_worldbook_enabled_story_char_avatar_character-a.png'), false);
+});
+
+test('worldbook enabled switches remain isolated by app and character card', async () => {
+    const { manager } = createScopedManager();
+    let context = {
+        characterId: 0,
+        name2: '角色甲',
+        characters: [{ name: '角色甲', avatar: 'character-a.png' }],
+    };
+    manager._getContext = () => context;
+
+    await manager.setEnabled('story', false);
+    assert.equal(manager.getEnabled('story'), false);
+    assert.equal(manager.getEnabled('wechat'), true);
+
+    context = {
+        characterId: 1,
+        name2: '角色乙',
+        characters: [{}, { name: '角色乙', avatar: 'character-b.png' }],
+    };
+    assert.equal(manager.getEnabled('story'), true);
+});
