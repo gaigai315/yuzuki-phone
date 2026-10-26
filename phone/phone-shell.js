@@ -242,6 +242,7 @@ export class PhoneShell {
 
             // 垂直滑动时的可滚动区域白名单
             const scrollableAreas =[
+                '.phone-story-image-preset',
                 '.home-dashboard', '.home-app-cluster-scroll',
                 '.chat-messages', '#voice-chat-messages', '#video-chat-messages',
                 '.quick-reply-panel', '.quick-time-column', '.emoji-panel', '.emoji-scroll',

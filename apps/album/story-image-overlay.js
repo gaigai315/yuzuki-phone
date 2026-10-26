@@ -203,12 +203,13 @@ export class StoryImageOverlay {
         const imageBusy = floor ? this.app.isStoryImageBusy(floor.floor) : false;
         const anyBusy = tagBusy || imageBusy;
         const tagGenerationDisabled = anyBusy || floor?.promptExcluded === true;
-        const showTagBack = floor && hasTags && this.tagBackFloors.has(floor.floor);
+        const showTagBack = floor && this.tagBackFloors.has(floor.floor);
         const editingTags = !!floor && !anyBusy && this.editingTagFloors.has(floor.floor);
         const currentProvider = floor
             ? (this.app.getCurrentStoryImageProvider?.() || floor.provider || '')
             : '';
         const providerLabel = STORY_PROVIDER_LABELS[currentProvider] || currentProvider;
+        const presetState = this.app.getStoryImagePresets?.() || { presets: [], activeId: '' };
         const root = this.getRoot();
 
         root.setAttribute('aria-hidden', 'false');
@@ -237,6 +238,10 @@ export class StoryImageOverlay {
                                 <div class="phone-story-image-face phone-story-image-back">
                                     <div class="phone-story-image-back-heading">
                                         <strong>Tags</strong>
+                                        <select class="phone-story-image-preset" aria-label="正文生图预设" title="切换正文生图预设" ${anyBusy || !presetState.presets.length ? 'disabled' : ''}>
+                                            <option value="">${presetState.presets.length ? '选择画风预设' : '暂无正文预设'}</option>
+                                            ${presetState.presets.map(preset => `<option value="${this.escapeAttr(preset.id)}" ${String(preset.id) === presetState.activeId ? 'selected' : ''}>${this.escapeHtml(preset.name)}</option>`).join('')}
+                                        </select>
                                         <div class="phone-story-image-back-tools">
                                             <button type="button" class="phone-story-image-tag-edit${editingTags ? ' is-editing' : ''}" aria-label="${editingTags ? '保存 Tags' : '编辑 Tags'}" title="${editingTags ? '保存 Tags' : '编辑 Tags'}" ${anyBusy ? 'disabled' : ''}>
                                                 <i class="fa-solid ${editingTags ? 'fa-check' : 'fa-pencil'}" aria-hidden="true"></i>
@@ -244,24 +249,24 @@ export class StoryImageOverlay {
                                             ${providerLabel ? `<small class="phone-story-image-provider" title="当前正文生图供应商：${this.escapeAttr(providerLabel)}">${this.escapeHtml(providerLabel)}</small>` : ''}
                                         </div>
                                     </div>
-                                    <textarea class="phone-story-image-tags" rows="8" placeholder="生成的 Tags 会显示在这里" ${editingTags ? '' : 'readonly'} ${anyBusy ? 'disabled' : ''}>${this.escapeHtml(tags)}</textarea>
+                                    <textarea class="phone-story-image-tags" rows="8" placeholder="可手动填写 Tags，也可自动生成" ${editingTags ? '' : 'readonly'} ${anyBusy ? 'disabled' : ''}>${this.escapeHtml(tags)}</textarea>
                                 </div>
                                 ${showTagBack ? `
                                     <button type="button" class="phone-story-image-return" aria-label="返回图片正面" title="返回图片">
                                         <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
                                     </button>
-                                ` : (hasTags || floor.imageUrl ? `
+                                ` : `
                                     <details class="phone-story-image-menu">
                                         <summary class="phone-story-image-more" aria-label="图片操作" title="图片操作"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary>
                                         <div class="phone-story-image-menu-items">
-                                            ${hasTags ? `<button type="button" class="phone-story-image-flip"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>查看 Tags</span></button>` : ''}
+                                            <button type="button" class="phone-story-image-flip"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>${hasTags ? '查看 Tags' : '填写 Tags'}</span></button>
                                             ${floor.imageUrl ? `
                                                 <button type="button" class="phone-story-image-delete" ${anyBusy ? 'disabled' : ''}><i class="fa-solid fa-trash-can" aria-hidden="true"></i>删除图片</button>
                                                 <button type="button" class="phone-story-image-download"><i class="fa-solid fa-download" aria-hidden="true"></i>下载图片</button>
                                             ` : ''}
                                         </div>
                                     </details>
-                                ` : '')}
+                                `}
                             </div>
                             <button type="button" class="phone-story-image-nav is-next" aria-label="下一正文楼层" ${floorIndex >= floors.length - 1 || anyBusy ? 'disabled' : ''}>
                                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
@@ -446,6 +451,21 @@ export class StoryImageOverlay {
     bindEvents(root, floors, floor, floorIndex) {
         if (!floor) return;
 
+        root.querySelector('.phone-story-image-preset')?.addEventListener('change', async event => {
+            const select = event.currentTarget;
+            if (!select.value) return;
+            select.disabled = true;
+            try {
+                await this.app.switchStoryImagePreset(select.value);
+                this.scheduleStageFit();
+            } catch (error) {
+                select.value = this.app.getStoryImagePresets().activeId;
+                this.app._showStoryNotification?.('切换预设失败', error?.message || String(error), '⚠️');
+            } finally {
+                select.disabled = false;
+            }
+        });
+
         const navigate = offset => {
             const target = floors[floorIndex + offset];
             if (!target) return;
@@ -456,6 +476,11 @@ export class StoryImageOverlay {
 
         root.querySelector('.phone-story-image-flip')?.addEventListener('click', () => {
             this.showTagBack(floor.floor);
+            if (!String(this.getTagDraft(floor.floor, floor.tags)).trim()
+                && !this.app.isStoryTagBusy(floor.floor)
+                && !this.app.isStoryImageBusy(floor.floor)) {
+                this.editingTagFloors.add(floor.floor);
+            }
             this.render();
         });
         root.querySelector('.phone-story-image-return')?.addEventListener('click', () => {

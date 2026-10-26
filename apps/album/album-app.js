@@ -179,6 +179,55 @@ export class AlbumApp {
         return '';
     }
 
+    getStoryImagePresets() {
+        const provider = this.getCurrentStoryImageProvider();
+        const openai = provider === 'openai';
+        const prefix = openai ? 'phone-image-openai' : 'phone-image';
+        const mapKey = openai ? `${prefix}-presets-by-app` : `${prefix}-prompt-presets-by-app`;
+        let presets = [];
+        try {
+            const raw = this.storage.get(mapKey);
+            const map = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw;
+            presets = provider !== 'comfyui' && Array.isArray(map?.story) ? map.story.filter(item => item?.id && item?.name) : [];
+        } catch (_error) { /* An empty list leaves the current settings intact. */ }
+        const activeKey = openai ? `${prefix}-story-active-preset` : `${prefix}-story-active-prompt-preset`;
+        return { presets, activeId: String(this.storage.get(activeKey) || ''), activeKey, prefix, openai };
+    }
+
+    async switchStoryImagePreset(id) {
+        const { presets, activeKey, prefix, openai } = this.getStoryImagePresets();
+        const preset = presets.find(item => String(item.id) === String(id));
+        if (!preset) return false;
+        const save = (key, value) => this.storage.set(key, value);
+        for (const [field, suffix] of [['fixedPrompt', 'fixed-prompt'], ['fixedPromptEnd', 'fixed-prompt-end'], ['negativePrompt', 'negative-prompt']]) {
+            await save(`${prefix}-story-${suffix}`, String(preset[field] || ''));
+        }
+        if (openai) await save(`${prefix}-story-prompt-draft-initialized`, true);
+        const fields = openai
+            ? { openaiModel: 'openai-model', openaiQuality: 'openai-quality' }
+            : { novelaiModel: 'novelai-model', novelaiMode: 'novelai-mode', novelaiEffort: 'novelai-effort', novelaiSampler: 'novelai-sampler', novelaiSchedule: 'novelai-schedule' };
+        for (const [field, suffix] of Object.entries(fields)) {
+            if (preset[field]) await save(`phone-image-${suffix}`, String(preset[field]));
+        }
+        const numbers = [
+            ['storyWidth', 'story-width', 832, 64, 2048, true],
+            ['storyHeight', 'story-height', 1216, 64, 2048, true]
+        ];
+        if (!openai) numbers.push(
+            ['steps', 'steps', 28, 1, 50, true], ['scale', 'scale', 6, 0, 50, false],
+            ['cfgRescale', 'cfg-rescale', 0.2, 0, 1, false], ['seed', 'seed', -1, -1, 4294967295, true]
+        );
+        for (const [field, suffix, fallback, min, max, integer] of numbers) {
+            if ((preset[field] === undefined || preset[field] === '') && !field.startsWith('story')) continue;
+            let value = Number(preset[field]);
+            if (!Number.isFinite(value) || (field.startsWith('story') && value < 64)) value = fallback;
+            value = Math.min(max, Math.max(min, value));
+            await save(`phone-image-${suffix}`, integer ? Math.round(value) : value);
+        }
+        await save(activeKey, String(preset.id));
+        return true;
+    }
+
     _cleanStoryTags(value = '') {
         const cleaned = String(value || '')
             .replace(/<think>[\s\S]*?<\/think>/gi, '')

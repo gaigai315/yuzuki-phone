@@ -8,6 +8,32 @@ const { AlbumData } = await import(dataModuleUrl);
 const promptManagerSource = fs.readFileSync(new URL('../config/prompt-manager.js', import.meta.url), 'utf8');
 const { PromptManager } = await import('../config/prompt-manager.js');
 
+test('story quick presets persist the same settings consumed by phone image generation', async () => {
+    const { AlbumApp } = await import('../apps/album/album-app.js');
+    const values = new Map([
+        ['phone-image-prompt-presets-by-app', JSON.stringify({ story: [{ id: 'ink', name: 'Ink', fixedPrompt: 'ink art', fixedPromptEnd: 'paper', negativePrompt: 'photo', storyWidth: 1024, storyHeight: 1536, steps: 30, scale: 5, seed: 0, novelaiModel: 'nai-diffusion-4-5-full' }] })],
+        ['phone-image-openai-presets-by-app', JSON.stringify({ story: [{ id: 'oil', name: 'Oil', fixedPrompt: 'oil painting', openaiModel: 'gpt-image-2', openaiQuality: 'high' }] })]
+    ]);
+    const app = Object.create(AlbumApp.prototype);
+    app.storage = { get: key => values.get(key), async set(key, value) { values.set(key, value); } };
+    app.getCurrentStoryImageProvider = () => 'novelai';
+    assert.equal(await app.switchStoryImagePreset('missing'), false);
+    assert.equal(await app.switchStoryImagePreset('ink'), true);
+    assert.equal(app.getStoryImagePresets().activeId, 'ink');
+    assert.equal(values.get('phone-image-story-fixed-prompt'), 'ink art');
+    assert.equal(values.get('phone-image-story-fixed-prompt-end'), 'paper');
+    assert.equal(values.get('phone-image-story-width'), 1024);
+    assert.equal(values.get('phone-image-seed'), 0);
+    assert.equal(values.get('phone-image-novelai-model'), 'nai-diffusion-4-5-full');
+    app.getCurrentStoryImageProvider = () => 'openai';
+    assert.equal(await app.switchStoryImagePreset('oil'), true);
+    assert.equal(app.getStoryImagePresets().activeId, 'oil');
+    assert.equal(values.get('phone-image-openai-story-fixed-prompt'), 'oil painting');
+    assert.equal(values.get('phone-image-openai-story-prompt-draft-initialized'), true);
+    assert.equal(values.get('phone-image-openai-quality'), 'high');
+    assert.equal(values.get('phone-image-story-active-prompt-preset'), 'ink');
+});
+
 function createFixture() {
     let saveCount = 0;
     const context = {
