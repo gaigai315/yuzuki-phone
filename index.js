@@ -43,7 +43,7 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.5';
+const ST_PHONE_VERSION = '1.6.6';
 const ST_PHONE_CSS_REVISION = '20261027-wechat-friend-request';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261021-user-fixed-tags';
@@ -155,13 +155,7 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-10-27',
     items: [
-        '【新增】NovelAI V5 Full 支持 Anime/Furry 模式与 Medium/High Effort；Medium 会自动使用官方节约模型并锁定兼容参数。',
-        '【新增】正文生图支持手动填写 Tags，并可在预览正反面快速切换画风预设。',
-        '【新增】微信支持设置线下提示词好友可见范围，隐藏后不向正文发送该好友的资料、固定形象 Tags 和单聊记录，并在重开后保留设置。',
-        '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。',
-        '【优化】优化正文生图功能。',
-        '【修复】修复微信个人图片可能因联系人昵称与真实姓名不一致，未使用最新固定形象 Tags 的问题；同时精简线下默认图片规则，固定形象名单仅发送已设置 Tags 好友的真实姓名。',
-        '【修复】修复各 App 世界书设置可能跨角色串选的问题；现在按角色卡与 App 分别保存，并在同角色卡的不同聊天和用户 Persona 间保持一致。'
+        '【新增】新增图标 APP 方案，可保存、切换、修改名称和删除图标方案。'
     ]
 };
 

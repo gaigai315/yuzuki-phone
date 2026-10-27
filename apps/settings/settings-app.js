@@ -1266,6 +1266,7 @@ export class SettingsApp {
             ? readStoredBool('phone-settings-general-operation-open')
             : legacyGeneralOfflineInjectionOpen;
         const isGeneralPersonalizationOpen = this.storage.get('phone-settings-general-personalization-open') === true;
+        const isGeneralIconSettingsOpen = this.storage.get('phone-settings-general-icon-settings-open') === true;
         const isGeneralTextColorOpen = this.storage.get('phone-settings-general-text-color-open') === true;
         const isGeneralTimeOpen = this.storage.get('phone-settings-general-time-open') === true;
         const isGeneralDataOpen = this.storage.get('phone-settings-general-data-open') === true;
@@ -2839,6 +2840,74 @@ export class SettingsApp {
                             </div>
                         </details>
 
+                        <details data-settings-fold-key="phone-settings-general-icon-settings-open" ${isGeneralIconSettingsOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
+                            <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
+                                <span>🖼️ 图标设置</span>
+                                ${SETTINGS_FOLD_ARROW_HTML}
+                            </summary>
+                            <div style="padding: 10px 10px 4px;">
+
+                            <div class="setting-item">
+                                <div class="setting-label">图标方案</div>
+                                <div style="display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:center; margin-top:8px; width:100%;">
+                                    <select id="app-icon-set-selector" style="display:block; width:100% !important; min-width:0 !important; max-width:none !important; box-sizing:border-box; height:34px; padding:0 8px; border:1px solid #e0e0e0; border-radius:8px; background:#fafafa; font-size:12px;">
+                                        ${this.renderIconSetOptions()}
+                                    </select>
+                                    <button type="button" id="save-app-icon-set" class="setting-btn" style="padding:6px 10px; font-size:12px;">保存</button>
+                                </div>
+                                <div style="display:flex; gap:8px; margin-top:8px;">
+                                    <button type="button" id="rename-app-icon-set" class="setting-btn" style="flex:1; padding:6px 10px; font-size:12px;">修改名称</button>
+                                    <button type="button" id="delete-app-icon-set" class="setting-btn" style="flex:1; padding:6px 10px; font-size:12px; color:#d9342b;">删除方案</button>
+                                </div>
+                            </div>
+
+                            <!-- APP图标设置 -->
+                            <div class="setting-item">
+                                <div class="setting-label">自定义APP图标</div>
+                                <div class="setting-desc">点击APP选择图片替换图标</div>
+                                <div class="app-icon-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px;">
+                                    ${this.renderAppIconUpload()}
+                                </div>
+                                <div style="margin-top: 10px;">
+                                    <button id="reset-app-icons-and-cleanup" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.88); backdrop-filter: blur(10px); border: 1px solid rgba(255,59,48,0.22); color: #d9342b; border-radius: 6px;">
+                                        <i class="fa-solid fa-rotate-left"></i> 恢复默认图标并清理上传
+                                    </button>
+                                    <div class="setting-desc" style="margin-top: 6px;">仅重置 APP 图标，尝试删除对应 /backgrounds 上传文件</div>
+                                </div>
+                            </div>
+
+                            <details class="setting-item app-name-custom-fold">
+                                <summary>
+                                    <span>
+                                        <span class="setting-label">自定义APP名称</span>
+                                        <span class="setting-desc">仅修改桌面和设置里的显示名称，不影响功能和数据</span>
+                                    </span>
+                                    ${SETTINGS_FOLD_ARROW_HTML}
+                                </summary>
+                                <div class="app-name-custom-list">
+                                    ${this.renderAppNameCustomization()}
+                                </div>
+                                <div style="margin-top: 10px; display: flex; gap: 8px;">
+                                    <button id="save-app-custom-names" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: #07c160; border: none; color: #fff; border-radius: 6px;">
+                                        <i class="fa-solid fa-check"></i> 保存名称
+                                    </button>
+                                    <button id="reset-app-custom-names" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.88); border: 1px solid rgba(0,0,0,0.12); color: #666; border-radius: 6px;">
+                                        <i class="fa-solid fa-rotate-left"></i> 恢复默认
+                                    </button>
+                                </div>
+                            </details>
+
+                            <!-- 🔥 快捷栏设置 -->
+                            <div class="setting-item">
+                                <div class="setting-label">底部快捷栏</div>
+                                <div class="setting-desc">选择4个应用显示在底部快捷栏</div>
+                                <div class="dock-config-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px;">
+                                    ${this.renderDockConfig()}
+                                </div>
+                            </div>
+                            </div>
+                        </details>
+
                         <details data-settings-fold-key="phone-settings-general-personalization-open" ${isGeneralPersonalizationOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
                                 <span>🎨 个性化</span>
@@ -2951,50 +3020,6 @@ export class SettingsApp {
                                 </div>
                             </details>
 
-                            <!-- APP图标设置 -->
-                            <div class="setting-item">
-                                <div class="setting-label">自定义APP图标</div>
-                                <div class="setting-desc">点击APP选择图片替换图标</div>
-                                <div class="app-icon-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px;">
-                                    ${this.renderAppIconUpload()}
-                                </div>
-                                <div style="margin-top: 10px;">
-                                    <button id="reset-app-icons-and-cleanup" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.88); backdrop-filter: blur(10px); border: 1px solid rgba(255,59,48,0.22); color: #d9342b; border-radius: 6px;">
-                                        <i class="fa-solid fa-rotate-left"></i> 恢复默认图标并清理上传
-                                    </button>
-                                    <div class="setting-desc" style="margin-top: 6px;">仅重置 APP 图标，尝试删除对应 /backgrounds 上传文件</div>
-                                </div>
-                            </div>
-
-                            <details class="setting-item app-name-custom-fold">
-                                <summary>
-                                    <span>
-                                        <span class="setting-label">自定义APP名称</span>
-                                        <span class="setting-desc">仅修改桌面和设置里的显示名称，不影响功能和数据</span>
-                                    </span>
-                                    ${SETTINGS_FOLD_ARROW_HTML}
-                                </summary>
-                                <div class="app-name-custom-list">
-                                    ${this.renderAppNameCustomization()}
-                                </div>
-                                <div style="margin-top: 10px; display: flex; gap: 8px;">
-                                    <button id="save-app-custom-names" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: #07c160; border: none; color: #fff; border-radius: 6px;">
-                                        <i class="fa-solid fa-check"></i> 保存名称
-                                    </button>
-                                    <button id="reset-app-custom-names" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.88); border: 1px solid rgba(0,0,0,0.12); color: #666; border-radius: 6px;">
-                                        <i class="fa-solid fa-rotate-left"></i> 恢复默认
-                                    </button>
-                                </div>
-                            </details>
-
-                            <!-- 🔥 快捷栏设置 -->
-                            <div class="setting-item">
-                                <div class="setting-label">底部快捷栏</div>
-                                <div class="setting-desc">选择4个应用显示在底部快捷栏</div>
-                                <div class="dock-config-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px;">
-                                    ${this.renderDockConfig()}
-                                </div>
-                            </div>
                             </div>
                         </details>
 
@@ -5201,6 +5226,28 @@ export class SettingsApp {
             </div>
         `;
     }
+    _getIconSets() {
+        const raw = this.storage.get('phone-app-icon-sets');
+        try { return Array.isArray(raw) ? raw : JSON.parse(raw || '[]'); } catch (e) { return []; }
+    }
+
+    renderIconSetOptions() {
+        const active = String(this.storage.get('phone-active-icon-set') || 'default');
+        const sets = this._getIconSets();
+        return [`<option value="default" ${active === 'default' ? 'selected' : ''}>默认图标</option>`, ...sets.map(set => `<option value="${this._escapeHtml(set.id)}" ${active === set.id ? 'selected' : ''}>${this._escapeHtml(set.name)}</option>`)].join('');
+    }
+
+    async _applyIconSet(setId) {
+        const id = String(setId || 'default');
+        const sets = this._getIconSets();
+        const set = sets.find(item => item.id === id);
+        this.imageManager.cache.appIcons = set ? { ...(set.icons || {}) } : {};
+        await this.imageManager.saveImages(this.imageManager.cache);
+        await this.storage.set('phone-active-icon-set', set ? id : 'default');
+        window.dispatchEvent(new CustomEvent('phone:updateAppIcon', { detail: { setId: set ? id : 'default' } }));
+        this.render();
+    }
+
     // 渲染APP图标上传
     renderAppIconUpload() {
         // 从APPS配置中获取
@@ -6527,6 +6574,8 @@ export class SettingsApp {
                 if (!file) return;
 
                 const appId = e.target.id.replace('upload-icon-', '');
+                const settingsBodyBeforeUpload = document.querySelector('#yzp-settings-app .app-body');
+                const settingsScrollTop = settingsBodyBeforeUpload?.scrollTop || 0;
 
                 // 重置input
                 e.target.value = '';
@@ -6561,14 +6610,68 @@ export class SettingsApp {
 
                     alert('✅ 图标上传成功！');
 
-                    // 重新渲染设置页面（保持在设置页面）
+                    // 重新渲染设置页面，并恢复上传前的滚动位置，方便继续上传下一个图标
                     this.render();
+                    const restoreSettingsScroll = () => {
+                        const nextSettingsBody = document.querySelector('#yzp-settings-app .app-body');
+                        if (nextSettingsBody) nextSettingsBody.scrollTop = settingsScrollTop;
+                    };
+                    requestAnimationFrame(() => {
+                        restoreSettingsScroll();
+                        requestAnimationFrame(restoreSettingsScroll);
+                    });
                 } catch (err) {
                     if (err.message !== '用户取消') {
                         alert('❌ 上传失败：' + formatImageUploadError(err));
                     }
                 }
             });
+        });
+
+        document.getElementById('app-icon-set-selector')?.addEventListener('change', async (e) => {
+            await this._applyIconSet(e.target.value);
+        });
+        document.getElementById('save-app-icon-set')?.addEventListener('click', async () => {
+            const sets = this._getIconSets();
+            const activeId = String(this.storage.get('phone-active-icon-set') || 'default');
+            const activeSet = sets.find(item => item.id === activeId);
+
+            if (activeSet) {
+                activeSet.icons = { ...(this.imageManager.cache.appIcons || {}) };
+                await this.storage.set('phone-app-icon-sets', JSON.stringify(sets));
+                alert(`✅ “${activeSet.name}”方案已更新`);
+                this.render();
+                return;
+            }
+
+            const name = prompt('请输入图标方案名称：', '我的图标方案');
+            if (!name || !name.trim()) return;
+            const id = `icon-set-${Date.now()}`;
+            sets.push({ id, name: name.trim().slice(0, 30), icons: { ...(this.imageManager.cache.appIcons || {}) } });
+            await this.storage.set('phone-app-icon-sets', JSON.stringify(sets));
+            await this.storage.set('phone-active-icon-set', id);
+            alert(`✅ “${name.trim().slice(0, 30)}”方案已保存`);
+            this.render();
+        });
+        document.getElementById('rename-app-icon-set')?.addEventListener('click', async () => {
+            const id = String(this.storage.get('phone-active-icon-set') || 'default');
+            if (id === 'default') { alert('默认图标不能修改名称'); return; }
+            const sets = this._getIconSets();
+            const set = sets.find(item => item.id === id);
+            if (!set) return;
+            const name = prompt('请输入新的方案名称：', set.name);
+            if (!name || !name.trim()) return;
+            set.name = name.trim().slice(0, 30);
+            await this.storage.set('phone-app-icon-sets', JSON.stringify(sets));
+            this.render();
+        });
+        document.getElementById('delete-app-icon-set')?.addEventListener('click', async () => {
+            const id = String(this.storage.get('phone-active-icon-set') || 'default');
+            if (id === 'default') { alert('默认图标不能删除'); return; }
+            const set = this._getIconSets().find(item => item.id === id);
+            if (!set || !confirm(`确定删除图标方案“${set.name}”吗？`)) return;
+            await this.storage.set('phone-app-icon-sets', JSON.stringify(this._getIconSets().filter(item => item.id !== id)));
+            await this._applyIconSet('default');
         });
 
         // 一键恢复默认APP图标 + 清理上传文件
@@ -6585,6 +6688,7 @@ export class SettingsApp {
 
             try {
                 const result = await this.imageManager.resetAppIconsAndCleanupUploads();
+                await this.storage.set('phone-active-icon-set', 'default');
 
                 const summary = [
                     `✅ 已恢复默认图标（${result.resetCount} 项）`,
@@ -12360,3 +12464,5 @@ export class SettingsApp {
         }
     }
 }
+
+
