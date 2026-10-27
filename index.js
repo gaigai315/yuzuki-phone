@@ -18,6 +18,10 @@ import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parse
 import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data.js';
 import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
 import {
+    acceptWechatFriendRequest,
+    parseWechatFriendRequests
+} from './apps/wechat/friend-request.js?v=20261027-offline-friend-request';
+import {
     getPhoneFloatingEntryReceiptFile,
     PHONE_FLOATING_ENTRY_DEFAULT_STYLE,
     PhoneFloatingEntry
@@ -40,7 +44,7 @@ import {
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.6.5';
-const ST_PHONE_CSS_REVISION = '20261021-worldbook-entry-search';
+const ST_PHONE_CSS_REVISION = '20261027-wechat-friend-request';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261021-user-fixed-tags';
 const ST_PHONE_WECHAT_MODULE_REVISION = '20261027-offline-friend-visibility';
@@ -1477,7 +1481,7 @@ if (window.GGP_Loaded) {
             import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
             import('./config/api-manager.js?v=20261009-unified-sse-parser'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20261021-story-fixed-character-tags'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20261027-offline-friend-request'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
         import('./config/image-generation-manager.js?v=20261021-nai-character-coordinates'),
             import('./config/worldbook-manager.js?v=20261021-worldbook-lazy-load')
@@ -2299,6 +2303,124 @@ if (window.GGP_Loaded) {
                 await handleWechatHoneyInviteAction({ action, contactName: safeContactName, chatId, message });
             });
         });
+    }
+
+    const wechatFriendRequestPopupQueue = [];
+    const seenWechatFriendRequestFingerprints = new Set();
+    let wechatFriendRequestPopupActive = false;
+
+    async function getWechatDataForFriendRequest() {
+        if (!window.VirtualPhone) window.VirtualPhone = {};
+        let wechatData = window.VirtualPhone.wechatApp?.wechatData
+            || window.VirtualPhone.cachedWechatData
+            || null;
+        if (wechatData) return wechatData;
+        const module = await import('./apps/wechat/wechat-data.js?v=20261027-offline-friend-request');
+        wechatData = new module.WechatData(storage);
+        window.VirtualPhone.cachedWechatData = wechatData;
+        return wechatData;
+    }
+
+    function refreshWechatAfterFriendRequest() {
+        const wechatApp = window.VirtualPhone?.wechatApp;
+        if (!wechatApp) return;
+        if (window.VirtualPhone.cachedWechatData && wechatApp.wechatData !== window.VirtualPhone.cachedWechatData) {
+            wechatApp.wechatData = window.VirtualPhone.cachedWechatData;
+        }
+        if (!document.querySelector('.call-fullscreen')) wechatApp.render?.();
+    }
+
+    function showNextWechatFriendRequestPopup() {
+        // 手机面板被关闭/重绘后，旧 overlay 可能已被 DOM 一并移除；不要让 active 状态卡死队列。
+        if (wechatFriendRequestPopupActive
+            && !document.getElementById('st-phone-wechat-friend-request-modal')) {
+            wechatFriendRequestPopupActive = false;
+        }
+        if (wechatFriendRequestPopupActive || wechatFriendRequestPopupQueue.length === 0) return;
+        const item = wechatFriendRequestPopupQueue.shift();
+        const request = item.request || {};
+        wechatFriendRequestPopupActive = true;
+        document.getElementById('st-phone-wechat-friend-request-modal')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'st-phone-wechat-friend-request-modal';
+        overlay.className = 'st-phone-wechat-friend-request-modal';
+        overlay.innerHTML = `
+            <div class="st-phone-wechat-friend-request-panel" role="dialog" aria-modal="true" aria-labelledby="st-phone-wechat-friend-request-title">
+                <div class="st-phone-wechat-friend-request-brand">
+                    <span class="st-phone-wechat-friend-request-icon"><i class="fa-brands fa-weixin"></i></span>
+                    <span>微信</span>
+                </div>
+                <div id="st-phone-wechat-friend-request-title" class="st-phone-wechat-friend-request-title">好友申请</div>
+                <div class="st-phone-wechat-friend-request-profile">
+                    <span class="st-phone-wechat-friend-request-avatar"><i class="fa-solid fa-user"></i></span>
+                    <div class="st-phone-wechat-friend-request-identity">
+                        <strong>${escapePhoneHtml(request.nickname)}</strong>
+                        <span>${escapePhoneHtml(request.realName)} · ${escapePhoneHtml(request.gender)}</span>
+                    </div>
+                </div>
+                <div class="st-phone-wechat-friend-request-reason">${request.reason ? escapePhoneHtml(request.reason) : '请求添加你为朋友'}</div>
+                <div class="st-phone-wechat-friend-request-actions">
+                    <button type="button" data-action="reject" class="st-phone-wechat-friend-request-button is-reject">拒绝</button>
+                    <button type="button" data-action="accept" class="st-phone-wechat-friend-request-button is-accept">接受</button>
+                </div>
+            </div>
+        `;
+        // 挂到 html 根节点：body/手机面板可能被主题或抽屉加 transform，
+        // 会改变 fixed 的包含块并把弹窗顶到上方；根节点能保持真正的视口坐标系。
+        (document.documentElement || document.body).appendChild(overlay);
+
+        const finish = () => {
+            overlay.remove();
+            wechatFriendRequestPopupActive = false;
+            setTimeout(showNextWechatFriendRequestPopup, 80);
+        };
+        overlay.querySelector('[data-action="reject"]')?.addEventListener('click', finish);
+        overlay.querySelector('[data-action="accept"]')?.addEventListener('click', async () => {
+            const buttons = overlay.querySelectorAll('.st-phone-wechat-friend-request-button');
+            buttons.forEach(button => { button.disabled = true; });
+            try {
+                const wechatData = await getWechatDataForFriendRequest();
+                const result = acceptWechatFriendRequest(wechatData, request);
+                if (window.VirtualPhone?.wechatApp && window.VirtualPhone.wechatApp.wechatData !== wechatData) {
+                    window.VirtualPhone.wechatApp.wechatData = wechatData;
+                }
+                refreshWechatAfterFriendRequest();
+                if (result.status === 'created') {
+                    showUnifiedPhoneNotification('微信', `已添加好友：${request.nickname}`, '💬', {
+                        name: '微信',
+                        content: `你已通过 ${request.nickname} 的好友申请`,
+                        timeText: '刚刚',
+                        senderKey: `wechat:friend-request:${result.contact?.id || request.realName}`
+                    });
+                } else if (result.status === 'restored') {
+                    showUnifiedPhoneNotification('微信', `${request.realName} 已恢复到线下好友列表`, '💬');
+                } else {
+                    showUnifiedPhoneNotification('微信', `${request.realName} 已经是你的好友`, '💬');
+                }
+            } catch (error) {
+                console.error('[微信好友申请] 接受失败:', error);
+                showUnifiedPhoneNotification('微信', `接受好友申请失败：${error?.message || error}`, '⚠️');
+            } finally {
+                finish();
+            }
+        });
+    }
+
+    function processWechatFriendRequestTags(text, source = {}) {
+        const requests = parseWechatFriendRequests(text);
+        if (requests.length === 0) return 0;
+        const conversationId = getCurrentTavernConversationIdentity();
+        const floor = Number(source.tavernMessageIndex);
+        const swipeId = Number(source.swipeId || 0);
+        requests.forEach((request, index) => {
+            const fingerprint = [conversationId, floor, swipeId, source.batchId || '', index, request.realName, request.nickname].join('::');
+            if (seenWechatFriendRequestFingerprints.has(fingerprint)) return;
+            seenWechatFriendRequestFingerprints.add(fingerprint);
+            wechatFriendRequestPopupQueue.push({ request, fingerprint });
+        });
+        showNextWechatFriendRequestPopup();
+        return requests.length;
     }
 
     function compareSemver(a, b) {
@@ -10019,6 +10141,11 @@ if (window.GGP_Loaded) {
                         markUnread: true
                     });
                     processWechatLikeTagsInSourceOrder(text, index, currentBatchId, isHistoryReplay, exactReplayForMessage);
+                    processWechatFriendRequestTags(text, {
+                        tavernMessageIndex: index,
+                        swipeId: swipeIndex,
+                        batchId: currentBatchId
+                    });
                     processWechatOfflinePaymentTags(text, {
                         tavernMessageIndex: index,
                         batchId: currentBatchId,
@@ -10408,6 +10535,10 @@ if (window.GGP_Loaded) {
     }
 
     function onChatChanged() {
+        wechatFriendRequestPopupQueue.length = 0;
+        wechatFriendRequestPopupActive = false;
+        seenWechatFriendRequestFingerprints.clear();
+        document.getElementById('st-phone-wechat-friend-request-modal')?.remove();
         // 🔄 切换会话时清空自动微博队列，避免旧会话任务串入新会话
         resetAutoWeiboQueue('chat_changed');
         resetAutoDiaryQueue('chat_changed');

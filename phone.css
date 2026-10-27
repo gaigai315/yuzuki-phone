@@ -9065,6 +9065,169 @@ input:checked + .toggle-slider:before {
     text-align: center !important;
 }
 
+/* 正文微信好友申请：默认覆盖页面；显示在手机内时由脚本挂到 phone-screen，避免移动端裁切。 */
+#st-phone-wechat-friend-request-modal.st-phone-wechat-friend-request-modal {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    z-index: 2147483400 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 20px !important;
+    box-sizing: border-box !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+#st-phone-wechat-friend-request-modal.st-phone-wechat-friend-request-modal.is-phone-hosted {
+    position: absolute !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-panel {
+    width: min(340px, calc(100vw - 40px)) !important;
+    max-height: min(520px, calc(100dvh - 40px)) !important;
+    overflow: hidden !important;
+    padding: 18px 18px 16px !important;
+    border: 1px solid rgba(255, 255, 255, 0.7) !important;
+    border-radius: 18px !important;
+    box-sizing: border-box !important;
+    background: rgba(250, 250, 250, 0.97) !important;
+    color: #202020 !important;
+    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.28) !important;
+}
+
+#st-phone-wechat-friend-request-modal.is-phone-hosted .st-phone-wechat-friend-request-panel {
+    width: min(340px, calc(100% - 28px)) !important;
+    max-height: calc(100% - 28px) !important;
+    overflow-y: auto !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-panel {
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-brand {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 7px !important;
+    color: #707070 !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-icon {
+    color: #07c160 !important;
+    font-size: 19px !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-title {
+    margin-top: 12px !important;
+    font-size: 20px !important;
+    font-weight: 650 !important;
+    line-height: 1.25 !important;
+    text-align: center !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-profile {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    margin-top: 18px !important;
+    padding: 13px !important;
+    border-radius: 12px !important;
+    background: #ffffff !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-avatar {
+    flex: 0 0 48px !important;
+    width: 48px !important;
+    height: 48px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 9px !important;
+    background: #e7e7e7 !important;
+    color: #8c8c8c !important;
+    font-size: 22px !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-identity {
+    min-width: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 5px !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-identity strong {
+    overflow: hidden !important;
+    color: #1f1f1f !important;
+    font-size: 16px !important;
+    line-height: 1.2 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-identity span,
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-reason {
+    color: #858585 !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-reason {
+    display: block !important;
+    width: 100% !important;
+    min-height: 18px !important;
+    margin-top: 12px !important;
+    padding: 0 4px !important;
+    text-align: center !important;
+    text-wrap: balance !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    margin-top: 18px !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-button {
+    min-height: 42px !important;
+    margin: 0 !important;
+    padding: 0 14px !important;
+    border: 0 !important;
+    border-radius: 9px !important;
+    box-shadow: none !important;
+    font-family: inherit !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    line-height: 42px !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-button.is-reject {
+    background: #ececec !important;
+    color: #454545 !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-button.is-accept {
+    background: #07c160 !important;
+    color: #ffffff !important;
+}
+
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-button:disabled {
+    opacity: 0.55 !important;
+    cursor: default !important;
+}
+
 /* 酒馆正文中的微信零钱线上支付小票。 */
 .mes_text .st-phone-payment-receipt,
 .mes_text .st-phone-payment-receipt * {
