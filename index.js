@@ -153,7 +153,7 @@ const ST_PHONE_CURRENT_UPDATE = {
     items: [
         '【新增】NovelAI V5 Full 支持 Anime/Furry 模式与 Medium/High Effort；Medium 会自动使用官方节约模型并锁定兼容参数。',
         '【新增】正文生图支持手动填写 Tags，并可在预览正反面快速切换画风预设。',
-        '【新增】微信支持设置线下提示词好友可见范围，可提前隐藏指定好友并在重开后保留设置。',
+        '【新增】微信支持设置线下提示词好友可见范围，隐藏后不向正文发送该好友的资料、固定形象 Tags 和单聊记录，并在重开后保留设置。',
         '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。',
         '【优化】优化正文生图功能。',
         '【修复】修复微信个人图片可能因联系人昵称与真实姓名不一致，未使用最新固定形象 Tags 的问题。',
@@ -12234,6 +12234,28 @@ if (window.GGP_Loaded) {
                                         const includeHoneyOfflineRaw = storage.get('offline-honey-chat-enabled');
                                         const includeHoneyOffline = includeHoneyOfflineRaw === true || includeHoneyOfflineRaw === 'true' || includeHoneyOfflineRaw === 1;
                                         const contacts = Array.isArray(wechatDataParsed.contacts) ? wechatDataParsed.contacts : [];
+                                        const hiddenOfflineContactIds = new Set(
+                                            (Array.isArray(wechatDataParsed?.userInfo?.offlinePromptHiddenContactIds)
+                                                ? wechatDataParsed.userInfo.offlinePromptHiddenContactIds
+                                                : [])
+                                                .map(id => String(id || '').trim())
+                                                .filter(Boolean)
+                                        );
+                                        const normalizeOfflineContactAlias = value => String(value || '').trim().toLowerCase();
+                                        const hiddenOfflineContactAliases = new Set(
+                                            contacts
+                                                .filter(contact => hiddenOfflineContactIds.has(String(contact?.id || '').trim()))
+                                                .flatMap(contact => [contact?.name, contact?.nickname, contact?.remark, contact?.realName])
+                                                .map(normalizeOfflineContactAlias)
+                                                .filter(Boolean)
+                                        );
+                                        const isOfflinePromptHiddenSingleChat = (chat) => {
+                                            if (!chat || chat.type === 'group') return false;
+                                            const contactId = String(chat.contactId || '').trim();
+                                            if (contactId && hiddenOfflineContactIds.has(contactId)) return true;
+                                            if (hiddenOfflineContactIds.has(String(chat.id || '').trim())) return true;
+                                            return hiddenOfflineContactAliases.has(normalizeOfflineContactAlias(chat.name));
+                                        };
                                         const customEmojis = Array.isArray(wechatDataParsed.customEmojis) ? wechatDataParsed.customEmojis : [];
                                         const contactMap = new Map(
                                             contacts
@@ -12307,6 +12329,7 @@ if (window.GGP_Loaded) {
                                         };
                                         if (includeHoneyOffline) {
                                             for (const contact of contacts) {
+                                                if (hiddenOfflineContactIds.has(String(contact?.id || '').trim())) continue;
                                                 if (!isHoneySource(contact)) continue;
                                                 const honeyHostName = resolveHoneyOfflineHostName(contact);
                                                 const honeySummary = await readHoneyOfflineSummary(contact);
@@ -12523,6 +12546,7 @@ if (window.GGP_Loaded) {
                                         const honeyInviteStates = [];
                                         allChats.forEach((chat) => {
                                             if (!chat || chat.type === 'group' || !chat.honeyInviteState) return;
+                                            if (isOfflinePromptHiddenSingleChat(chat)) return;
                                             const state = chat.honeyInviteState;
                                             const decision = String(state?.decision || '').trim();
                                             if (!decision) return;
@@ -12570,6 +12594,9 @@ if (window.GGP_Loaded) {
 
                                         // 🔥 线下模式：使用线下专属的条数限制
                                         for (const chat of allChats) {
+                                            if (isOfflinePromptHiddenSingleChat(chat)) {
+                                                continue;
+                                            }
                                             const offlineHistoryInjectRaw = chat?.injectOfflineHistoryEnabled;
                                             const shouldInjectOfflineHistory = offlineHistoryInjectRaw !== false
                                                 && offlineHistoryInjectRaw !== 'false'

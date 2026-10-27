@@ -29,11 +29,22 @@ test('the former add button opens a scoped offline-friend visibility picker', ()
     assert.doesNotMatch(appSource, /id="wechat-add"/);
     assert.doesNotMatch(appSource, /showAddFriendMenu\(/);
     assert.match(appSource, /id="wechat-offline-friend-settings"[\s\S]*?fa-gear/);
+    assert.match(appSource, /this\.currentView === 'contacts' \? `[\s\S]*?id="wechat-offline-friend-settings"/);
     assert.match(appSource, /showOfflineFriendVisibilitySettings\(\)/);
-    assert.match(appSource, /勾选的好友不会出现在正文线下模式的微信好友列表中/);
+    assert.match(appSource, /包括好友资料、固定形象 Tags 和单聊记录/);
+    assert.match(appSource, /群聊记录仍会正常发送/);
     assert.match(cssSource, /#phone-panel-content \.phone-screen \.wechat-offline-friends-overlay/);
     assert.match(cssSource, /\.wechat-offline-friends-list\s*\{[^}]*touch-action:\s*pan-y[^}]*overscroll-behavior:\s*contain/s);
     assert.match(shellSource, /'\.wechat-offline-friends-list'/);
+});
+
+test('contacts hidden from offline prompts are visibly dimmed without disabling interaction', () => {
+    assert.match(contactsSource, /getOfflinePromptHiddenContactIds/);
+    assert.match(contactsSource, /is-offline-prompt-hidden/);
+    assert.match(contactsSource, /wechat-contact-offline-hidden-mark[\s\S]*?fa-eye-slash/);
+    assert.match(appSource, /\.contact-item\.is-offline-prompt-hidden\s*\{[^}]*opacity:\s*0\.58/s);
+    assert.doesNotMatch(appSource, /\.contact-item\.is-offline-prompt-hidden\s*\{[^}]*pointer-events:\s*none/s);
+    assert.match(appSource, /this\.currentView === 'contacts' && !this\.currentChat\) this\.render\(\)/);
 });
 
 test('offline prompt construction excludes hidden friends and their fixed image tags', () => {
@@ -47,4 +58,20 @@ test('offline prompt construction excludes hidden friends and their fixed image 
     assert.ok(friendPush > hiddenGuard);
     assert.ok(tagRead > hiddenGuard);
     assert.match(indexSource, /offlinePromptHiddenContactIds/);
+});
+
+test('offline history construction skips hidden direct chats while retaining groups', () => {
+    const hiddenChatHelper = indexSource.indexOf('const isOfflinePromptHiddenSingleChat = (chat) => {');
+    const groupGuard = indexSource.indexOf("if (!chat || chat.type === 'group') return false;", hiddenChatHelper);
+    const contactIdGuard = indexSource.indexOf('hiddenOfflineContactIds.has(contactId)', groupGuard);
+    const chatLoop = indexSource.indexOf('for (const chat of allChats)', contactIdGuard);
+    const hiddenChatGuard = indexSource.indexOf('if (isOfflinePromptHiddenSingleChat(chat)) {', chatLoop);
+    const messageRead = indexSource.indexOf('wechatDataInstance.getMessages(chat.id)', hiddenChatGuard);
+
+    assert.ok(hiddenChatHelper >= 0);
+    assert.ok(groupGuard > hiddenChatHelper);
+    assert.ok(contactIdGuard > groupGuard);
+    assert.ok(chatLoop > contactIdGuard);
+    assert.ok(hiddenChatGuard > chatLoop);
+    assert.ok(messageRead > hiddenChatGuard);
 });

@@ -11,7 +11,7 @@
  * ======================================================== */
 // 微信APP主程序
 import { ChatView } from './chat-view.js?v=20261027-contact-tag-aliases';
-import { ContactsView } from './contacts-view.js?v=20261021-contact-identities';
+import { ContactsView } from './contacts-view.js?v=20261027-offline-friend-visibility';
 import { MomentsView } from './moments-view.js?v=20261021-user-real-name';
 import { WechatData } from './wechat-data.js?v=20261027-offline-friend-visibility';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
@@ -3314,6 +3314,26 @@ export class WechatApp {
     font-weight: 500;
 }
 
+.wechat-app .contact-item.is-offline-prompt-hidden {
+    opacity: 0.58;
+}
+
+.wechat-app .contact-item.is-offline-prompt-hidden:active {
+    opacity: 0.72;
+}
+
+.wechat-app .wechat-contact-offline-hidden-mark {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    margin-right: 16px;
+    color: #777;
+    font-size: 11px;
+    line-height: 1;
+}
+
 .letter-index {
     position: absolute;
     right: 2px;
@@ -5667,9 +5687,11 @@ export class WechatApp {
                 <button class="wechat-header-btn" id="wechat-search">
                     <i class="fa-solid fa-search"></i>
                 </button>
-                <button class="wechat-header-btn" id="wechat-offline-friend-settings" title="线下好友可见设置" aria-label="线下好友可见设置">
-                    <i class="fa-solid fa-gear"></i>
-                </button>
+                ${this.currentView === 'contacts' ? `
+                    <button class="wechat-header-btn" id="wechat-offline-friend-settings" title="线下好友可见设置" aria-label="线下好友可见设置">
+                        <i class="fa-solid fa-gear"></i>
+                    </button>
+                ` : ''}
             `;
         };
 
@@ -9614,7 +9636,7 @@ export class WechatApp {
                     <strong>线下好友可见设置</strong>
                     <button type="button" class="wechat-offline-friends-done">完成</button>
                 </header>
-                <div class="wechat-offline-friends-tip">勾选的好友不会出现在正文线下模式的微信好友列表中。通讯录与在线聊天不受影响。</div>
+                <div class="wechat-offline-friends-tip">勾选的好友不会发送到正文线下提示词，包括好友资料、固定形象 Tags 和单聊记录。通讯录与在线聊天不受影响，群聊记录仍会正常发送。</div>
                 <div class="wechat-offline-friends-count">已隐藏 <span>${hiddenIds.size}</span> 人</div>
                 <div class="wechat-offline-friends-list">
                     ${contacts.length ? contacts.map((contact, index) => {
@@ -9676,6 +9698,7 @@ export class WechatApp {
             }
             this.phoneShell?.showNotification?.('微信', selectedIds.length ? `已在线下提示词中隐藏 ${selectedIds.length} 位好友` : '已恢复显示全部好友', '✅');
             close();
+            if (this.currentView === 'contacts' && !this.currentChat) this.render();
         });
     }
 }

@@ -211,6 +211,13 @@ export class ContactsView {
 
     render() {
         const contacts = this.app.wechatData.getContacts();
+        const offlineHiddenContactIds = new Set(
+            (this.app.wechatData.getOfflinePromptHiddenContactIds?.()
+                || this.app.wechatData.getUserInfo?.()?.offlinePromptHiddenContactIds
+                || [])
+                .map(id => String(id || '').trim())
+                .filter(Boolean)
+        );
         const groupChats = this.app.wechatData.getChatList()
             .filter(chat => chat?.type === 'group')
             .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'));
@@ -257,8 +264,9 @@ export class ContactsView {
                                     const isHoneyContact = contact.sourceApp === 'honey' || contact.sourceLabel === '蜜语' || contact.sourceLabel === '主播';
                                     const honeyLabel = contact.sourceLabel === '主播' || String(contact.relation || '').includes('主播') ? '主播' : '蜜语';
                                     const displayName = this._getContactDisplayName(contact);
+                                    const isOfflineHidden = offlineHiddenContactIds.has(String(contact.id || '').trim());
                                     return `
-                                    <div class="contact-item" data-contact-id="${contact.id}">
+                                    <div class="contact-item${isOfflineHidden ? ' is-offline-prompt-hidden' : ''}" data-contact-id="${contact.id}" ${isOfflineHidden ? 'aria-label="已从线下提示词隐藏"' : ''}>
                                         <div class="contact-avatar">
                                             ${this.app.renderAvatar(contact.avatar, '👤', displayName)}
                                         </div>
@@ -267,6 +275,7 @@ export class ContactsView {
                                             ${isHoneyContact
                                                 ? `<span style="flex-shrink:0; display:inline-flex; align-items:center; gap:4px; padding:2px 6px; margin-right:16px; border-radius:999px; background:rgba(255,105,180,0.14); color:#ff5fa2; font-size:10px; line-height:1; border:1px solid rgba(255,105,180,0.24);"><i class="fa-solid fa-heart" style="font-size:9px;"></i>${honeyLabel}</span>`
                                                 : ''}
+                                            ${isOfflineHidden ? '<span class="wechat-contact-offline-hidden-mark" title="已从线下提示词隐藏" aria-hidden="true"><i class="fa-solid fa-eye-slash"></i></span>' : ''}
                                         </div>
                                     </div>
                                 `;}).join('')}
