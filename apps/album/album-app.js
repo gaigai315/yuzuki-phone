@@ -485,6 +485,60 @@ export class AlbumApp {
         return content;
     }
 
+    _getStoryMemoryPermissions() {
+        try {
+            const raw = this.storage?.get?.('phone_memory_permissions');
+            const all = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+            return { allowTable: true, allowVector: true, ...(all?.story || {}) };
+        } catch (_) { return { allowTable: true, allowVector: true }; }
+    }
+
+    async _buildStoryMemoryMessages(queryText = '') {
+        const perms = this._getStoryMemoryPermissions();
+        const memory = window.YuzukiMemory;
+        if (!memory) return [];
+        const messages = [];
+        let pluginSettings = {};
+        try { pluginSettings = memory.GlobalSettings?.get?.('yzm_memory_global_plugin_settings', {}) || {}; } catch (_) { pluginSettings = {}; }
+        const tableInjectionEnabled = pluginSettings.injectMemoryTable !== false && pluginSettings.injectTable !== false;
+        if (perms.allowTable === true && tableInjectionEnabled) {
+            try {
+                const fallbackState = memory.VariableInjector?.createDefaultState?.() || {};
+                const state = memory.Storage?.loadState?.(fallbackState) || fallbackState;
+                const tableMessages = memory.VariableInjector?.buildTableMessages?.(state) || [];
+                tableMessages.forEach((message, index) => {
+                    const content = String(message?.content || message?.text || '').trim();
+                    if (!content) return;
+                    messages.push({
+                        role: 'system',
+                        content,
+                        name: message?.name || `SYSTEM (记忆表格${index + 1})`,
+                        isPhoneMessage: true,
+                        yzmMemoryInjectionType: 'table'
+                    });
+                });
+            } catch (error) { console.warn('[正文生图] 读取记忆表格失败:', error); }
+        }
+        if (perms.allowVector === true && String(queryText || '').trim()) {
+            try {
+                const results = await memory.VectorStore?.search?.(String(queryText).trim(), null, { ignoreInjectionSetting: false });
+                const vectorItems = (Array.isArray(results) ? results : []).slice(0, 8);
+                vectorItems.forEach((item, index) => {
+                    const content = String(item?.text || '').trim();
+                    if (!content) return;
+                    messages.push({
+                        role: 'system',
+                        content: `【记忆插件向量检索 ${index + 1}】\n${content}\n\n仅作为当前楼层背景参考，不得把无关记忆直接画入画面。`,
+                        name: 'SYSTEM (记忆向量检索)',
+                        isPhoneMessage: true,
+                        yzmMemoryInjectionType: 'vector'
+                    });
+                });
+            } catch (error) { console.warn('[正文生图] 向量检索失败:', error); }
+        }
+        return messages;
+    }
+
     async _buildStoryTagMessages(source, targetFloor) {
         const promptManager = window.VirtualPhone?.promptManager;
         promptManager?.ensureLoaded?.();
@@ -551,6 +605,8 @@ export class AlbumApp {
             previousUserText ? `${variables.user}: ${previousUserText}` : '',
             `${variables.char}: ${storyMessageText}`
         ].filter(Boolean).join('\n\n');
+        const memoryMessages = await this._buildStoryMemoryMessages(`${contextLines}\n${storyMessageText}`);
+        messages.push(...memoryMessages);
         messages.push({
             role: 'user',
             content: `Selected story floor ${targetFloor}:\n<story>\n${contextLines}\n</story>\n\nGenerate the final image prompt now.`,

@@ -5288,6 +5288,7 @@ export class SettingsApp {
             x: { allowSummary: false, allowTable: false, allowVector: false },
             diary: { allowSummary: true, allowVector: true },
             wangxiang: { allowSummary: true, allowTable: true, allowVector: true },
+            story: { allowSummary: false, allowTable: true, allowVector: true },
             honey: { allowSummary: false, allowTable: false, allowVector: false },
             phone_online: { allowSummary: false, allowTable: false, allowVector: false }
         };
@@ -5325,6 +5326,7 @@ export class SettingsApp {
             { id: 'x', name: 'X', desc: '公开动态与评论场景' },
             { id: 'diary', name: '日记', desc: '日记生成场景' },
             { id: 'wangxiang', name: '万象', desc: '任务大厅生成场景' },
+            { id: 'story', name: '正文生图', desc: '根据当前正文楼层生成图片 TAG' },
             { id: 'honey', name: '蜜语', desc: '直播互动场景' },
             { id: 'phone_online', name: '通话', desc: '语音/视频通话场景' }
         ];

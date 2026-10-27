@@ -619,6 +619,7 @@ export class ApiManager {
                 x: { allowSummary: false, allowTable: false, allowVector: false },
                 diary: { allowSummary: true, allowVector: true },
                 wangxiang: { allowSummary: true, allowTable: true, allowVector: true },
+            story: { allowSummary: false, allowTable: true, allowVector: true },
                 games: { allowSummary: false, allowTable: false, allowVector: false },
                 honey: { allowSummary: false, allowTable: false, allowVector: false },
                 phone_online: { allowSummary: false, allowTable: false, allowVector: false }
