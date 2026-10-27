@@ -7,6 +7,7 @@ import { WechatData } from '../apps/wechat/wechat-data.js';
 const appSource = fs.readFileSync(new URL('../apps/wechat/wechat-app.js', import.meta.url), 'utf8');
 const contactsSource = fs.readFileSync(new URL('../apps/wechat/contacts-view.js', import.meta.url), 'utf8');
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+const promptSource = fs.readFileSync(new URL('../config/prompt-manager.js', import.meta.url), 'utf8');
 const cssSource = fs.readFileSync(new URL('../phone.css', import.meta.url), 'utf8');
 const shellSource = fs.readFileSync(new URL('../phone/phone-shell.js', import.meta.url), 'utf8');
 
@@ -47,17 +48,30 @@ test('contacts hidden from offline prompts are visibly dimmed without disabling 
     assert.match(appSource, /this\.currentView === 'contacts' && !this\.currentChat\) this\.render\(\)/);
 });
 
-test('offline prompt construction excludes hidden friends and their fixed image tags', () => {
+test('offline prompt construction lists only real names of visible friends with fixed image tags', () => {
     const hiddenSet = indexSource.indexOf('const hiddenOfflineContactIds = new Set(');
     const hiddenGuard = indexSource.indexOf("if (hiddenOfflineContactIds.has(String(c?.id || '').trim())) return;", hiddenSet);
     const friendPush = indexSource.indexOf('contactNames.push(', hiddenGuard);
-    const tagRead = indexSource.indexOf('const tags = String(c?.naiPromptTags', hiddenGuard);
+    const realNameRead = indexSource.indexOf("const realName = String(c?.realName || '')", hiddenGuard);
+    const fixedTagCheck = indexSource.indexOf('const hasFixedImageTags = String(c?.naiPromptTags', realNameRead);
+    const realNamePush = indexSource.indexOf('personalImageRealNames.push(realName)', fixedTagCheck);
 
     assert.ok(hiddenSet >= 0);
     assert.ok(hiddenGuard > hiddenSet);
     assert.ok(friendPush > hiddenGuard);
-    assert.ok(tagRead > hiddenGuard);
+    assert.ok(realNameRead > hiddenGuard);
+    assert.ok(fixedTagCheck > realNameRead);
+    assert.ok(realNamePush > fixedTagCheck);
+    assert.doesNotMatch(indexSource, /personalImageTagRows\.push\(`\{\{\$\{userImageVariableName\}\}\}/);
     assert.match(indexSource, /offlinePromptHiddenContactIds/);
+});
+
+test('both built-in offline presets use the concise fixed-image friend list rules', () => {
+    assert.equal((promptSource.match(/【当前已有固定形象的微信好友】/g) || []).length, 6);
+    assert.equal((promptSource.match(/微信图片发送描述格式：/g) || []).length, 2);
+    assert.equal((promptSource.match(/若角色不在【当前已有固定形象的微信好友】列表中/g) || []).length, 2);
+    assert.equal((promptSource.match(/不要在标签名里写\{\{user\}\}姓名/g) || []).length, 2);
+    assert.doesNotMatch(promptSource, /【当前可用个人图片固定tag】/);
 });
 
 test('offline history construction skips hidden direct chats while retaining groups', () => {

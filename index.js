@@ -156,7 +156,7 @@ const ST_PHONE_CURRENT_UPDATE = {
         '【新增】微信支持设置线下提示词好友可见范围，隐藏后不向正文发送该好友的资料、固定形象 Tags 和单聊记录，并在重开后保留设置。',
         '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。',
         '【优化】优化正文生图功能。',
-        '【修复】修复微信个人图片可能因联系人昵称与真实姓名不一致，未使用最新固定形象 Tags 的问题。',
+        '【修复】修复微信个人图片可能因联系人昵称与真实姓名不一致，未使用最新固定形象 Tags 的问题；同时精简线下默认图片规则，固定形象名单仅发送已设置 Tags 好友的真实姓名。',
         '【修复】修复各 App 世界书设置可能跨角色串选的问题；现在按角色卡与 App 分别保存，并在同角色卡的不同聊天和用户 Persona 间保持一致。'
     ]
 };
@@ -12986,19 +12986,8 @@ if (window.GGP_Loaded) {
                                                             })}`;
                                                         }
                                                         const contactNames = [];
-                                                        const personalImageTagRows = [];
+                                                        const personalImageRealNames = [];
                                                         const groupItems = [];
-                                                        const userTags = String(wechatDataParsed?.userInfo?.naiPromptTags || wechatDataParsed?.userInfo?.imageTags || '')
-                                                            .split(/[,，\n]+/)
-                                                            .map(tag => tag.trim())
-                                                            .filter(Boolean)
-                                                            .join(', ');
-                                                        const userImageVariableName = String(
-                                                            wechatDataParsed?.userInfo?.realName
-                                                            || wechatDataParsed?.userInfo?.name
-                                                            || 'user'
-                                                        ).replace(/[{}\r\n]/g, '').trim() || 'user';
-                                                        if (userTags) personalImageTagRows.push(`{{${userImageVariableName}}}：${userTags}`);
                                                         const hiddenOfflineContactIds = new Set(
                                                             (Array.isArray(wechatDataParsed?.userInfo?.offlinePromptHiddenContactIds)
                                                                 ? wechatDataParsed.userInfo.offlinePromptHiddenContactIds
@@ -13011,12 +13000,13 @@ if (window.GGP_Loaded) {
                                                             if (hiddenOfflineContactIds.has(String(c?.id || '').trim())) return;
                                                             const name = String(c?.remark || c?.nickname || c?.name || c?.realName || '').trim();
                                                             if (name) contactNames.push(c?.blocked ? `${name}（已拉黑）` : name);
-                                                            const tags = String(c?.naiPromptTags || c?.imageTags || '')
+                                                            const realName = String(c?.realName || '').replace(/[{}\r\n]/g, '').trim();
+                                                            const hasFixedImageTags = String(c?.naiPromptTags || c?.imageTags || '')
                                                                 .split(/[,，\n]+/)
-                                                                .map(tag => tag.trim())
-                                                                .filter(Boolean)
-                                                                .join(', ');
-                                                            if (name && tags) personalImageTagRows.push(`${name}：${tags}`);
+                                                                .some(tag => tag.trim());
+                                                            if (realName && hasFixedImageTags && !personalImageRealNames.includes(realName)) {
+                                                                personalImageRealNames.push(realName);
+                                                            }
                                                         });
                                                         const chats = wechatDataParsed.chats || [];
                                                         chats.forEach(chat => {
@@ -13035,7 +13025,7 @@ if (window.GGP_Loaded) {
                                                         if (contactNames.length > 0) parts.push(`好友：${wechatFriendsList}`);
                                                         if (groupItems.length > 0) parts.push(`群聊：${wechatGroupsList}`);
                                                         wechatContactsList = parts.join('；') || '暂无联系人';
-                                                        personalImageTagInfo = personalImageTagRows.length > 0 ? personalImageTagRows.join('\n') : '暂无';
+                                                        personalImageTagInfo = personalImageRealNames.length > 0 ? personalImageRealNames.join('\n') : '暂无';
                                                     } else {
                                                         wechatContactsList = '暂无联系人';
                                                         wechatFriendsList = '暂无好友';
