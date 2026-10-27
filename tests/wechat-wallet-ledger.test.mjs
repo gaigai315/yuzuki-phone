@@ -58,7 +58,7 @@ test('wallet filters retain full native select hit areas inside the ledger heade
     assert.match(source, /\.wechat-wallet-ledger-filter-label \{[\s\S]*?padding: 0 24px 0 2px;[\s\S]*?pointer-events: none;/);
     assert.match(source, /\['shopping', '线下支付'\]/);
     assert.match(source, /shopping: '线下支付'/);
-    assert.match(indexSource, /ST_PHONE_WECHAT_MODULE_REVISION = '20261021-user-real-name'/);
+    assert.match(indexSource, /ST_PHONE_WECHAT_MODULE_REVISION = '20261027-offline-friend-visibility'/);
 });
 
 test('credit-card bills are clickable and use the in-phone repayment flow', () => {

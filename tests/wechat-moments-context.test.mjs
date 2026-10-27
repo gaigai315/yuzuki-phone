@@ -111,6 +111,45 @@ test('personal image tag context identifies the user by real name', () => {
     );
 });
 
+test('personal image generation resolves fixed tags by contact binding or real name, never nickname', () => {
+    const contact = {
+        id: 'contact-light',
+        name: '炽光',
+        nickname: '炽光',
+        remark: '红毛',
+        realName: '陆泽年',
+        naiPromptTags: 'short hair, red hair, dark red eyes'
+    };
+    const view = Object.create(ChatView.prototype);
+    view.app = {
+        currentChat: { id: 'chat-light', type: 'single', contactId: contact.id, name: '红毛' },
+        wechatData: {
+            getContacts: () => [contact],
+            getContact: id => id === contact.id ? contact : null
+        }
+    };
+
+    const oldNicknameMessage = { mediaType: '个人图片', usePersonalReference: true, from: '修改前的昵称' };
+    assert.equal(
+        view._buildWechatImagePromptWithContactTags(oldNicknameMessage, 'standing, front view'),
+        'short hair, red hair, dark red eyes, standing, front view'
+    );
+
+    contact.naiPromptTags = 'long hair, white hair, blue eyes';
+    view.app.currentChat = { id: 'group-light', type: 'group', name: '测试群' };
+    const nicknameMessage = { mediaType: '个人图片', usePersonalReference: true, from: '炽光' };
+    assert.equal(
+        view._buildWechatImagePromptWithContactTags(nicknameMessage, 'standing, front view'),
+        'standing, front view'
+    );
+
+    const realNameMessage = { mediaType: '个人图片', usePersonalReference: true, from: '陆泽年' };
+    assert.equal(
+        view._buildWechatImagePromptWithContactTags(realNameMessage, 'standing, front view'),
+        'long hair, white hair, blue eyes, standing, front view'
+    );
+});
+
 test('single-chat AI context includes existing moments from the current friend', () => {
     const { view, chat } = createView({
         moments: [{

@@ -1111,8 +1111,19 @@
     height: 36px !important;
 }
 
-#phone-story-image-overlay-root .phone-story-image-floor-label {
+#phone-story-image-overlay-root .phone-story-image-preset-picker {
+    position: relative !important;
     width: min(190px, 100%) !important;
+    min-width: 0 !important;
+    justify-self: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    z-index: 8 !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-floor-label {
+    width: 100% !important;
     min-width: 0 !important;
     overflow: hidden !important;
     display: inline-flex !important;
@@ -1134,6 +1145,23 @@
     text-align: center !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
+    cursor: pointer !important;
+    list-style: none !important;
+    touch-action: manipulation !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-floor-label::-webkit-details-marker {
+    display: none !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-floor-label strong {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    font: inherit !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
 }
 
 #phone-story-image-overlay-root .phone-story-image-floor-label::before,
@@ -1142,6 +1170,128 @@
     color: currentColor !important;
     font-size: 6px !important;
     line-height: 1 !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-floor-label:focus-visible {
+    outline: 2px solid #3d88c9 !important;
+    outline-offset: 2px !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-popover {
+    position: absolute !important;
+    top: calc(100% + 8px) !important;
+    left: 50% !important;
+    width: min(260px, calc(100vw - 32px)) !important;
+    overflow: hidden !important;
+    padding: 7px !important;
+    border: 1px solid rgba(255, 255, 255, 0.78) !important;
+    border-radius: 16px !important;
+    background: rgba(252, 251, 249, 0.94) !important;
+    color: #4b5260 !important;
+    box-shadow: 0 16px 40px rgba(28, 34, 41, 0.24) !important;
+    backdrop-filter: blur(22px) saturate(125%) !important;
+    -webkit-backdrop-filter: blur(22px) saturate(125%) !important;
+    transform: translateX(-50%) !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-picker:not([open]) .phone-story-image-preset-popover {
+    display: none !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-popover-heading {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+    padding: 6px 8px 8px !important;
+    border-bottom: 1px solid rgba(75, 82, 96, 0.1) !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-popover-heading span {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    line-height: 1.3 !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-popover-heading small {
+    overflow: hidden !important;
+    color: #858b94 !important;
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-options {
+    max-height: min(240px, 38vh) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding-top: 4px !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+    scrollbar-width: thin !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-option {
+    width: 100% !important;
+    min-height: 38px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 9px !important;
+    margin: 0 !important;
+    padding: 7px 9px !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    color: #4b5260 !important;
+    box-shadow: none !important;
+    font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif !important;
+    text-align: left !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-option:hover,
+#phone-story-image-overlay-root .phone-story-image-preset-option:focus-visible {
+    background: rgba(89, 116, 145, 0.09) !important;
+    outline: none !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-option.is-active {
+    background: rgba(89, 116, 145, 0.12) !important;
+    color: #365d82 !important;
+    font-weight: 650 !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-option:disabled {
+    opacity: 0.48 !important;
+    cursor: wait !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-check {
+    width: 18px !important;
+    min-width: 18px !important;
+    height: 18px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid rgba(75, 82, 96, 0.18) !important;
+    border-radius: 50% !important;
+    color: transparent !important;
+    font-size: 9px !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-option.is-active .phone-story-image-preset-check {
+    border-color: #6f93b5 !important;
+    background: #6f93b5 !important;
+    color: #fff !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-preset-empty {
+    padding: 14px 8px !important;
+    color: #9298a0 !important;
+    font-size: 11px !important;
+    line-height: 1.4 !important;
+    text-align: center !important;
 }
 
 #phone-story-image-overlay-root .phone-story-image-nav {
@@ -1676,11 +1826,14 @@
     }
 
     #phone-story-image-overlay-root .phone-story-image-floor-label {
-        width: min(168px, 100%) !important;
         gap: 10px !important;
         padding: 6px 12px !important;
         border-radius: 22px !important;
         font-size: 13px !important;
+    }
+
+    #phone-story-image-overlay-root .phone-story-image-preset-picker {
+        width: min(168px, 100%) !important;
     }
 
     #phone-story-image-overlay-root .phone-story-image-card-body {

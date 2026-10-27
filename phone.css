@@ -8864,6 +8864,207 @@ input:checked + .toggle-slider:before {
     text-align: center;
 }
 
+/* 微信线下提示词好友可见设置。 */
+#phone-panel-content .phone-screen .wechat-offline-friends-overlay {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 1250 !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: stretch !important;
+    background: rgba(0, 0, 0, 0.28) !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-dialog {
+    width: 100% !important;
+    max-height: calc(100% - 38px) !important;
+    min-height: min(68%, 520px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 12px 12px 0 0 !important;
+    background: #f4f4f4 !important;
+    color: #252525 !important;
+    box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.16) !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-header {
+    flex: 0 0 50px !important;
+    min-height: 50px !important;
+    display: grid !important;
+    grid-template-columns: 48px minmax(0, 1fr) 54px !important;
+    align-items: center !important;
+    padding: 0 7px !important;
+    border: 0 !important;
+    border-bottom: 1px solid #dedede !important;
+    background: #ededed !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-header strong {
+    overflow: hidden !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+    text-align: center !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-close,
+#phone-panel-content .phone-screen .wechat-offline-friends-done {
+    height: 36px !important;
+    min-height: 36px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 5px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    line-height: 36px !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-close {
+    width: 36px !important;
+    color: #292929 !important;
+    font-size: 17px !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-done {
+    width: 50px !important;
+    color: #078a45 !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-tip {
+    flex: 0 0 auto !important;
+    padding: 11px 15px 9px !important;
+    background: #f4f4f4 !important;
+    color: #777 !important;
+    font-size: 11px !important;
+    line-height: 1.45 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-count {
+    flex: 0 0 34px !important;
+    min-height: 34px !important;
+    display: flex !important;
+    align-items: center !important;
+    padding: 0 15px !important;
+    border-top: 1px solid #e4e4e4 !important;
+    border-bottom: 1px solid #e4e4e4 !important;
+    background: #fff !important;
+    color: #777 !important;
+    font-size: 11px !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-count span {
+    margin: 0 3px !important;
+    color: #078a45 !important;
+    font-weight: 600 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-list {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    background: #fff !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-row {
+    min-height: 58px !important;
+    display: grid !important;
+    grid-template-columns: 40px minmax(0, 1fr) 22px !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 6px 15px !important;
+    border-bottom: 1px solid #eee !important;
+    background: #fff !important;
+    cursor: pointer !important;
+    box-sizing: border-box !important;
+    touch-action: manipulation !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-row input {
+    display: none !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-avatar {
+    width: 40px !important;
+    height: 40px !important;
+    overflow: hidden !important;
+    border-radius: 6px !important;
+    background: #e8e8e8 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-avatar img,
+#phone-panel-content .phone-screen .wechat-offline-friends-avatar .wechat-avatar {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-identity {
+    min-width: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-identity > span,
+#phone-panel-content .phone-screen .wechat-offline-friends-identity > small {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-identity > span {
+    color: #252525 !important;
+    font-size: 14px !important;
+    line-height: 1.3 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-identity > small {
+    color: #929292 !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-check {
+    width: 20px !important;
+    height: 20px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid #b9b9b9 !important;
+    border-radius: 50% !important;
+    color: transparent !important;
+    font-size: 10px !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-row input:checked ~ .wechat-offline-friends-check {
+    border-color: #078a45 !important;
+    background: #078a45 !important;
+    color: #fff !important;
+}
+
+#phone-panel-content .phone-screen .wechat-offline-friends-empty {
+    padding: 42px 16px !important;
+    color: #888 !important;
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+    text-align: center !important;
+}
+
 /* 酒馆正文中的微信零钱线上支付小票。 */
 .mes_text .st-phone-payment-receipt,
 .mes_text .st-phone-payment-receipt * {

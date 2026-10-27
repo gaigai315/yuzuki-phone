@@ -5326,18 +5326,28 @@ renderChatRoom(chat) {
         if (mediaType === '图片' && !explicitPersonalReference && !/^\[\s*个人图片\s*\]/.test(contentText)) return null;
         const senderName = String(message.from || message.sender || message.contactName || '').trim();
         if (!senderName || senderName === 'me') return null;
-        const contacts = this.app?.wechatData?.getContacts?.() || [];
+        const wechatData = this.app?.wechatData;
+        const contacts = wechatData?.getContacts?.() || [];
+        const currentChat = this.app?.currentChat;
+        const messageContactId = String(message.contactId || message.senderId || '').trim();
+        const directChatContactId = currentChat?.type !== 'group'
+            ? String(currentChat?.contactId || '').trim()
+            : '';
+        const linkedContactId = messageContactId || directChatContactId;
+        const linkedContact = linkedContactId
+            ? (wechatData?.getContact?.(linkedContactId)
+                || contacts.find(contact => String(contact?.id || '').trim() === linkedContactId))
+            : null;
+        if (linkedContact) return linkedContact;
+
         const normalize = (value) => this._normalizeLookupName(value);
         const senderKey = normalize(senderName);
-        return contacts.find(contact => this.app.wechatData._isSameLookupName?.(contact.name, senderName))
-            || contacts.find(contact => String(contact?.name || '').trim() === senderName)
-            || contacts.find(contact => {
-                const contactKey = normalize(contact?.name);
-                return contactKey
-                    && senderKey
-                    && (contactKey.includes(senderKey) || senderKey.includes(contactKey));
-            })
-            || null;
+        if (!senderKey) return null;
+        return contacts.find(contact => String(contact?.realName || '')
+            .split(/[、,，/|｜；;]+/)
+            .map(alias => normalize(alias))
+            .filter(Boolean)
+            .includes(senderKey)) || null;
     }
 
     _buildWechatImagePromptWithContactTags(message = {}, promptText = '') {

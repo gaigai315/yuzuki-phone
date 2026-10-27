@@ -43,7 +43,7 @@ const ST_PHONE_VERSION = '1.6.5';
 const ST_PHONE_CSS_REVISION = '20261021-worldbook-entry-search';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261021-user-fixed-tags';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261021-user-real-name';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261027-offline-friend-visibility';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -149,12 +149,14 @@ const WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX = '-user-set';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-23',
+    date: '2026-10-27',
     items: [
-        '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。',
         '【新增】NovelAI V5 Full 支持 Anime/Furry 模式与 Medium/High Effort；Medium 会自动使用官方节约模型并锁定兼容参数。',
+        '【新增】正文生图支持手动填写 Tags，并可在预览正反面快速切换画风预设。',
+        '【新增】微信支持设置线下提示词好友可见范围，可提前隐藏指定好友并在重开后保留设置。',
+        '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。',
         '【优化】优化正文生图功能。',
-        '【新增】正文生图支持手动填写 Tags，并可在预览界面快速切换画风预设。',
+        '【修复】修复微信个人图片可能因联系人昵称与真实姓名不一致，未使用最新固定形象 Tags 的问题。',
         '【修复】修复各 App 世界书设置可能跨角色串选的问题；现在按角色卡与 App 分别保存，并在同角色卡的不同聊天和用户 Persona 间保持一致。'
     ]
 };
@@ -12970,8 +12972,16 @@ if (window.GGP_Loaded) {
                                                             || 'user'
                                                         ).replace(/[{}\r\n]/g, '').trim() || 'user';
                                                         if (userTags) personalImageTagRows.push(`{{${userImageVariableName}}}：${userTags}`);
+                                                        const hiddenOfflineContactIds = new Set(
+                                                            (Array.isArray(wechatDataParsed?.userInfo?.offlinePromptHiddenContactIds)
+                                                                ? wechatDataParsed.userInfo.offlinePromptHiddenContactIds
+                                                                : [])
+                                                                .map(id => String(id || '').trim())
+                                                                .filter(Boolean)
+                                                        );
                                                         const contacts = wechatDataParsed.contacts || [];
                                                         contacts.forEach(c => {
+                                                            if (hiddenOfflineContactIds.has(String(c?.id || '').trim())) return;
                                                             const name = String(c?.remark || c?.nickname || c?.name || c?.realName || '').trim();
                                                             if (name) contactNames.push(c?.blocked ? `${name}（已拉黑）` : name);
                                                             const tags = String(c?.naiPromptTags || c?.imageTags || '')

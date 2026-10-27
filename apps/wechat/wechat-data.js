@@ -1370,6 +1370,11 @@ export class WechatData {
             normalized.name = this._getRuntimeUserName();
         }
         normalized.realName = String(normalized.realName || '').trim();
+        normalized.offlinePromptHiddenContactIds = [...new Set(
+            (Array.isArray(normalized.offlinePromptHiddenContactIds) ? normalized.offlinePromptHiddenContactIds : [])
+                .map(id => String(id || '').trim())
+                .filter(Boolean)
+        )];
 
         normalized.ttsProvider = String(normalized.ttsProvider || '').trim();
         normalized.ttsVoice = String(normalized.ttsVoice || '').trim();
@@ -1396,6 +1401,7 @@ export class WechatData {
             avatar: '',
             signature: '',
             naiPromptTags: '',
+            offlinePromptHiddenContactIds: [],
             ttsProvider: '',
             ttsVoices: {},
             ttsVoice: '',
@@ -2568,8 +2574,30 @@ export class WechatData {
         if (Object.prototype.hasOwnProperty.call(updates, 'realName')) {
             updates.realName = String(updates.realName || '').trim();
         }
+        if (Object.prototype.hasOwnProperty.call(updates, 'offlinePromptHiddenContactIds')) {
+            updates.offlinePromptHiddenContactIds = [...new Set(
+                (Array.isArray(updates.offlinePromptHiddenContactIds) ? updates.offlinePromptHiddenContactIds : [])
+                    .map(id => String(id || '').trim())
+                    .filter(Boolean)
+            )];
+        }
         Object.assign(this.data.userInfo, updates);
         this.saveData();
+    }
+
+    getOfflinePromptHiddenContactIds() {
+        return [...new Set(
+            (Array.isArray(this.data?.userInfo?.offlinePromptHiddenContactIds)
+                ? this.data.userInfo.offlinePromptHiddenContactIds
+                : [])
+                .map(id => String(id || '').trim())
+                .filter(Boolean)
+        )];
+    }
+
+    setOfflinePromptHiddenContactIds(contactIds = []) {
+        this.updateUserInfo({ offlinePromptHiddenContactIds: contactIds });
+        return this.getOfflinePromptHiddenContactIds();
     }
 
     _normalizeChatBackground(background) {

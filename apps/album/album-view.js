@@ -7,7 +7,7 @@
 
 import { PHONE_CONFIG } from '../../config/apps.js';
 
-export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.3&r=20261021-album-lazy-folds', import.meta.url).href;
+export const ALBUM_CSS_URL = new URL('./album.css?v=1.2.3&r=20261027-story-preset-picker', import.meta.url).href;
 
 export class AlbumView {
     constructor(app) {

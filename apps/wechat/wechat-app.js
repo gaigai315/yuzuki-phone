@@ -10,10 +10,10 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20261021-user-real-name';
+import { ChatView } from './chat-view.js?v=20261027-contact-tag-aliases';
 import { ContactsView } from './contacts-view.js?v=20261021-contact-identities';
 import { MomentsView } from './moments-view.js?v=20261021-user-real-name';
-import { WechatData } from './wechat-data.js?v=20261021-user-real-name';
+import { WechatData } from './wechat-data.js?v=20261027-offline-friend-visibility';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
@@ -5667,8 +5667,8 @@ export class WechatApp {
                 <button class="wechat-header-btn" id="wechat-search">
                     <i class="fa-solid fa-search"></i>
                 </button>
-                <button class="wechat-header-btn" id="wechat-add">
-                    <i class="fa-solid fa-plus"></i>
+                <button class="wechat-header-btn" id="wechat-offline-friend-settings" title="线下好友可见设置" aria-label="线下好友可见设置">
+                    <i class="fa-solid fa-gear"></i>
                 </button>
             `;
         };
@@ -6488,9 +6488,9 @@ export class WechatApp {
             if (element) element.onclick = handler; // 🔥 使用 onclick 覆盖
         };
 
-        // 首页的“+”号和搜索按钮
+        // 首页搜索与线下提示词好友可见设置
         addClickListener('#wechat-search', () => this.showSearch());
-        addClickListener('#wechat-add', () => this.showAddFriendMenu());
+        addClickListener('#wechat-offline-friend-settings', () => this.showOfflineFriendVisibilitySettings());
 
         // 通用返回按钮
         addClickListener('#wechat-back', () => {
@@ -9591,12 +9591,91 @@ export class WechatApp {
         });
     }
 
-    // 🔥 新增：显示添加菜单（替代 showAddMenu）
-    showAddFriendMenu() {
-        this.currentView = 'contacts';
-        this.render(); // 先渲染通讯录视图
-        setTimeout(() => {
-            this.contactsView.showAddFriendPage(); // 再打开添加好友页面
-        }, 50);
+    showOfflineFriendVisibilitySettings() {
+        document.querySelector('.wechat-offline-friends-overlay')?.remove();
+
+        const contacts = (this.wechatData.getContacts?.() || [])
+            .filter(contact => String(contact?.id || '').trim());
+        const hiddenIds = new Set(this.wechatData.getOfflinePromptHiddenContactIds?.()
+            || this.wechatData.getUserInfo?.()?.offlinePromptHiddenContactIds
+            || []);
+        const escapeHtml = value => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+        const overlay = document.createElement('div');
+        overlay.className = 'wechat-offline-friends-overlay';
+        overlay.innerHTML = `
+            <section class="wechat-offline-friends-dialog" role="dialog" aria-modal="true" aria-label="线下好友可见设置">
+                <header class="wechat-offline-friends-header">
+                    <button type="button" class="wechat-offline-friends-close" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
+                    <strong>线下好友可见设置</strong>
+                    <button type="button" class="wechat-offline-friends-done">完成</button>
+                </header>
+                <div class="wechat-offline-friends-tip">勾选的好友不会出现在正文线下模式的微信好友列表中。通讯录与在线聊天不受影响。</div>
+                <div class="wechat-offline-friends-count">已隐藏 <span>${hiddenIds.size}</span> 人</div>
+                <div class="wechat-offline-friends-list">
+                    ${contacts.length ? contacts.map((contact, index) => {
+                        const contactId = String(contact.id || '').trim();
+                        const displayName = String(this.wechatData.getContactDisplayName?.(contact)
+                            || contact.remark || contact.nickname || contact.name || contact.realName || '未命名好友').trim();
+                        const realName = String(contact.realName || '').trim();
+                        return `
+                            <label class="wechat-offline-friends-row" role="checkbox" aria-checked="${hiddenIds.has(contactId)}">
+                                <input type="checkbox" data-contact-index="${index}" ${hiddenIds.has(contactId) ? 'checked' : ''}>
+                                <span class="wechat-offline-friends-avatar">${this.renderAvatar(contact.avatar, '👤', displayName)}</span>
+                                <span class="wechat-offline-friends-identity">
+                                    <span>${escapeHtml(displayName)}</span>
+                                    ${realName && realName !== displayName ? `<small>${escapeHtml(realName)}</small>` : ''}
+                                </span>
+                                <span class="wechat-offline-friends-check"><i class="fa-solid fa-check"></i></span>
+                            </label>
+                        `;
+                    }).join('') : '<div class="wechat-offline-friends-empty">当前还没有联系人</div>'}
+                </div>
+            </section>
+        `;
+
+        const mount = document.querySelector('.phone-view-current .wechat-app')
+            || document.querySelector('.phone-view-current')
+            || document.querySelector('.phone-screen');
+        if (!mount) return;
+        mount.appendChild(overlay);
+
+        const updateCount = () => {
+            const count = overlay.querySelectorAll('.wechat-offline-friends-row input:checked').length;
+            const node = overlay.querySelector('.wechat-offline-friends-count span');
+            if (node) node.textContent = String(count);
+        };
+        const close = () => overlay.remove();
+        overlay.querySelector('.wechat-offline-friends-close')?.addEventListener('click', close);
+        overlay.addEventListener('click', event => {
+            if (event.target === overlay) close();
+        });
+        overlay.querySelectorAll('.wechat-offline-friends-row').forEach(row => {
+            const input = row.querySelector('input[data-contact-index]');
+            if (!input) return;
+            row.addEventListener('click', event => {
+                event.preventDefault();
+                input.checked = !input.checked;
+                row.setAttribute('aria-checked', input.checked ? 'true' : 'false');
+                updateCount();
+            });
+        });
+        overlay.querySelector('.wechat-offline-friends-done')?.addEventListener('click', () => {
+            const selectedIds = [...overlay.querySelectorAll('.wechat-offline-friends-row input:checked')]
+                .map(input => contacts[Number(input.dataset.contactIndex)]?.id)
+                .map(id => String(id || '').trim())
+                .filter(Boolean);
+            if (typeof this.wechatData.setOfflinePromptHiddenContactIds === 'function') {
+                this.wechatData.setOfflinePromptHiddenContactIds(selectedIds);
+            } else {
+                this.wechatData.updateUserInfo?.({ offlinePromptHiddenContactIds: selectedIds });
+            }
+            this.phoneShell?.showNotification?.('微信', selectedIds.length ? `已在线下提示词中隐藏 ${selectedIds.length} 位好友` : '已恢复显示全部好友', '✅');
+            close();
+        });
     }
 }

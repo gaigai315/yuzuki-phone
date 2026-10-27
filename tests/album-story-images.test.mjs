@@ -34,6 +34,19 @@ test('story quick presets persist the same settings consumed by phone image gene
     assert.equal(values.get('phone-image-story-active-prompt-preset'), 'ink');
 });
 
+test('story image floor pill opens a hidden front-side preset picker', () => {
+    const overlaySource = fs.readFileSync(new URL('../apps/album/story-image-overlay.js', import.meta.url), 'utf8');
+    const cssSource = fs.readFileSync(new URL('../apps/album/album.css', import.meta.url), 'utf8');
+
+    assert.match(overlaySource, /class="phone-story-image-preset-picker"/);
+    assert.match(overlaySource, /class="phone-story-image-floor-label"[^>]*title="点击切换正文生图预设"/);
+    assert.match(overlaySource, /role="menuitemradio" aria-checked="\$\{isActive\}"/);
+    assert.match(overlaySource, /classList\.contains\('is-active'\)/);
+    assert.match(overlaySource, /await this\.app\.switchStoryImagePreset\(presetId\)/);
+    assert.match(cssSource, /\.phone-story-image-preset-picker:not\(\[open\]\) \.phone-story-image-preset-popover\s*\{[^}]*display:\s*none/s);
+    assert.match(cssSource, /\.phone-story-image-preset-options\s*\{[^}]*touch-action:\s*pan-y[^}]*overscroll-behavior:\s*contain/s);
+});
+
 function createFixture() {
     let saveCount = 0;
     const context = {

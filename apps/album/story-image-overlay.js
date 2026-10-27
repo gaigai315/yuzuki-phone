@@ -28,7 +28,7 @@ export class StoryImageOverlay {
         this._navigationRequestId = 0;
         this._onKeyDown = event => {
             if (event.key === 'Escape') {
-                const menu = document.querySelector(`#${STORY_OVERLAY_ROOT_ID} .phone-story-image-menu[open]`);
+                const menu = document.querySelector(`#${STORY_OVERLAY_ROOT_ID} details[open]`);
                 if (menu) { menu.open = false; menu.querySelector('summary')?.focus(); }
                 else this.close();
             }
@@ -37,6 +37,9 @@ export class StoryImageOverlay {
             event.stopPropagation();
             if (!event.target.closest?.('.phone-story-image-menu')) {
                 event.currentTarget.querySelector?.('.phone-story-image-menu[open]')?.removeAttribute('open');
+            }
+            if (!event.target.closest?.('.phone-story-image-preset-picker')) {
+                event.currentTarget.querySelector?.('.phone-story-image-preset-picker[open]')?.removeAttribute('open');
             }
             if (event.target === event.currentTarget) this.close();
         };
@@ -210,6 +213,7 @@ export class StoryImageOverlay {
             : '';
         const providerLabel = STORY_PROVIDER_LABELS[currentProvider] || currentProvider;
         const presetState = this.app.getStoryImagePresets?.() || { presets: [], activeId: '' };
+        const activePreset = presetState.presets.find(preset => String(preset.id) === String(presetState.activeId));
         const root = this.getRoot();
 
         root.setAttribute('aria-hidden', 'false');
@@ -217,7 +221,28 @@ export class StoryImageOverlay {
             <section class="phone-story-image-card" role="dialog" aria-modal="false" aria-label="正文生图">
                 <header class="phone-story-image-card-header">
                     <span class="phone-story-image-header-spacer" aria-hidden="true"></span>
-                    <strong class="phone-story-image-floor-label">${floor ? `第${floor.floor}楼` : '正文生图'}</strong>
+                    <details class="phone-story-image-preset-picker">
+                        <summary class="phone-story-image-floor-label" aria-label="选择正文生图预设" title="点击切换正文生图预设">
+                            <strong>${floor ? `第${floor.floor}楼` : '正文生图'}</strong>
+                        </summary>
+                        <div class="phone-story-image-preset-popover" role="menu" aria-label="正文生图预设">
+                            <div class="phone-story-image-preset-popover-heading">
+                                <span>正文生图预设</span>
+                                <small>当前：${this.escapeHtml(activePreset?.name || '未选择')}</small>
+                            </div>
+                            <div class="phone-story-image-preset-options">
+                                ${presetState.presets.length ? presetState.presets.map(preset => {
+                                    const isActive = String(preset.id) === String(presetState.activeId);
+                                    return `
+                                        <button type="button" class="phone-story-image-preset-option${isActive ? ' is-active' : ''}" data-preset-id="${this.escapeAttr(preset.id)}" role="menuitemradio" aria-checked="${isActive}" ${anyBusy ? 'disabled' : ''}>
+                                            <span class="phone-story-image-preset-check" aria-hidden="true"><i class="fa-solid fa-check"></i></span>
+                                            <span>${this.escapeHtml(preset.name)}</span>
+                                        </button>
+                                    `;
+                                }).join('') : '<div class="phone-story-image-preset-empty">暂无可用预设</div>'}
+                            </div>
+                        </div>
+                    </details>
                     <span class="phone-story-image-header-spacer" aria-hidden="true"></span>
                 </header>
                 <div class="phone-story-image-card-body">
@@ -449,6 +474,27 @@ export class StoryImageOverlay {
     }
 
     bindEvents(root, floors, floor, floorIndex) {
+        root.querySelectorAll('.phone-story-image-preset-option').forEach(button => {
+            button.addEventListener('click', async event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const presetId = event.currentTarget.dataset.presetId;
+                if (!presetId || event.currentTarget.classList.contains('is-active')) {
+                    root.querySelector('.phone-story-image-preset-picker')?.removeAttribute('open');
+                    return;
+                }
+                root.querySelectorAll('.phone-story-image-preset-option').forEach(option => { option.disabled = true; });
+                try {
+                    const switched = await this.app.switchStoryImagePreset(presetId);
+                    if (!switched) throw new Error('预设不存在或已被删除');
+                    this.render();
+                } catch (error) {
+                    root.querySelectorAll('.phone-story-image-preset-option').forEach(option => { option.disabled = false; });
+                    this.app._showStoryNotification?.('切换预设失败', error?.message || String(error), '⚠️');
+                }
+            });
+        });
+
         if (!floor) return;
 
         root.querySelector('.phone-story-image-preset')?.addEventListener('change', async event => {
