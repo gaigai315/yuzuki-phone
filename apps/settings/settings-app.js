@@ -3025,7 +3025,7 @@ export class SettingsApp {
                                     </button>
                                 </div>
                                 <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                    <button type="button" id="export-home-css-presets" class="setting-btn" style="padding: 6px 8px; font-size: 12px;">导出全部方案</button>
+                                    <button type="button" id="export-home-css-presets" class="setting-btn" style="padding: 6px 8px; font-size: 12px;">导出方案</button>
                                     <button type="button" id="import-home-css-presets" class="setting-btn" style="padding: 6px 8px; font-size: 12px;">导入方案</button>
                                     <input type="file" id="import-home-css-presets-file" accept="application/json,.json" style="display:none;">
                                 </div>
@@ -6411,17 +6411,25 @@ export class SettingsApp {
             this.phoneShell?.showNotification?.('已清空', '当前桌面样式已恢复默认', '✅');
         });
         document.getElementById('export-home-css-presets')?.addEventListener('click', () => {
+            const { activeId, preset } = getCurrentHomeCssPreset();
+            if (!preset) {
+                this.phoneShell?.showNotification?.('提示', '请先选择一个样式方案', 'ℹ️');
+                return;
+            }
             const payload = JSON.stringify({
-                type: 'yuzuki-phone-home-css-presets',
+                type: 'yuzuki-phone-home-css-preset',
                 version: 1,
-                activeId: String(this.storage.get(HOME_CSS_ACTIVE_KEY) || ''),
-                presets: this._getHomeCssPresets()
+                activeId,
+                preset: {
+                    name: preset.name,
+                    css: preset.css
+                }
             }, null, 2);
             const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'yuzuki-phone-home-css-presets.json';
+            link.download = 'yuzuki-phone-home-css-preset.json';
             link.click();
             URL.revokeObjectURL(url);
         });
@@ -6434,7 +6442,15 @@ export class SettingsApp {
             if (!file) return;
             try {
                 const parsed = JSON.parse(await file.text());
-                const source = Array.isArray(parsed) ? parsed : parsed?.presets;
+                const source = Array.isArray(parsed)
+                    ? parsed
+                    : Array.isArray(parsed?.presets)
+                        ? parsed.presets
+                        : parsed?.preset
+                            ? [parsed.preset]
+                            : (parsed && (typeof parsed.name === 'string' || typeof parsed.css === 'string'))
+                                ? [parsed]
+                                : null;
                 if (!Array.isArray(source)) throw new Error('文件中没有样式方案');
                 const presets = source.map((item, index) => ({
                     id: `home_css_${Date.now()}_${index}`,

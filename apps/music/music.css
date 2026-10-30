@@ -1416,6 +1416,53 @@
     margin-top: 8px;
 }
 
+/* ========== 音乐设置页继承桌面壁纸 ========== */
+#phone-panel-content .phone-screen .music-app.music-wallpaper-shell {
+    background-color: var(--phone-chat-bg, #ededed);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+#phone-panel-content .phone-screen .music-wallpaper-shell .music-settings,
+#phone-panel-content .phone-screen .music-wallpaper-shell .music-settings-body {
+    background: transparent;
+}
+
+#phone-panel-content .phone-screen .music-wallpaper-shell .music-settings-header {
+    background: rgba(255, 255, 255, 0.34);
+    border-bottom-color: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(20px) saturate(145%);
+    -webkit-backdrop-filter: blur(20px) saturate(145%);
+}
+
+#phone-panel-content .phone-screen .music-wallpaper-shell .music-settings-group-title,
+#phone-panel-content .phone-screen .music-wallpaper-shell .music-settings-item-desc {
+    color: var(--phone-global-text, #333);
+    opacity: 0.7;
+}
+
+#phone-panel-content .phone-screen .music-wallpaper-shell .phone-prompt-fold {
+    background: rgba(255, 255, 255, 0.24);
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    backdrop-filter: blur(12px) saturate(135%);
+    -webkit-backdrop-filter: blur(12px) saturate(135%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+}
+
+#phone-panel-content .phone-screen .music-wallpaper-shell .phone-prompt-fold-header {
+    background: transparent;
+}
+
+#phone-panel-content .phone-screen .music-wallpaper-shell .phone-prompt-fold-content {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+#phone-panel-content .phone-screen .music-wallpaper-shell .music-prompt-area textarea {
+    background: rgba(255, 255, 255, 0.56);
+    border-color: rgba(255, 255, 255, 0.42);
+}
+
 /* ========== 搜索模态框 ========== */
 .music-search-modal {
     position: absolute;

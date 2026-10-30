@@ -13,6 +13,8 @@
 // 🎵 音乐APP - 视图层 (高级 SVG 图标库)
 // ========================================
 
+import { PHONE_CONFIG } from '../../config/apps.js';
+
 const SVG_NOTE = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" opacity="0.4"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>`;
 const SVG_PLAY = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
 const SVG_PAUSE = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
@@ -65,7 +67,7 @@ export class MusicView {
     // ========== CSS 注入 ==========
 
     _injectCSS() {
-        const cssHref = new URL('./music.css?v=1.0.17', import.meta.url).href;
+        const cssHref = new URL('./music.css?v=1.0.18', import.meta.url).href;
         let link = document.getElementById('music-app-style');
 
         if (link) {
@@ -134,12 +136,33 @@ export class MusicView {
 
     // ========== A. 设置页 ==========
 
+    _getSystemWallpaper() {
+        let wallpaper = '';
+        try {
+            wallpaper = String(window.VirtualPhone?.imageManager?.getWallpaper?.() || '').trim();
+        } catch (e) {
+            // 图片管理器不可用时继续读取当前存储。
+        }
+        if (!wallpaper) {
+            try {
+                wallpaper = String(this.app.storage?.get?.('phone-wallpaper') || '').trim();
+            } catch (e) {
+                // 无自定义壁纸时使用系统默认壁纸。
+            }
+        }
+        return wallpaper || String(PHONE_CONFIG.defaultWallpaper || '').trim();
+    }
+
     renderSettings() {
         this._injectCSS();
         const data = this.app.musicData;
         const storage = this.app.storage;
 
         const showFloating = storage.get('music_show_floating', false);
+        const wallpaper = this._getSystemWallpaper();
+        const wallpaperStyle = wallpaper
+            ? `background-image: url(${JSON.stringify(wallpaper)});`
+            : '';
 
         // 获取提示词
         let promptContent = '';
@@ -150,7 +173,7 @@ export class MusicView {
         }
 
         const html = `
-            <div class="music-app" data-view="music-settings">
+            <div class="music-app${wallpaper ? ' music-wallpaper-shell' : ''}" data-view="music-settings" style="${this._escapeAttr(wallpaperStyle)}">
                 <div class="music-settings">
                     <div class="music-settings-header">
                         <div class="music-settings-header-left">
