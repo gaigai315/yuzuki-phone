@@ -580,10 +580,28 @@ export class ImageUploadManager {
         return false;
     }
 
+    _isSavedAppIconPath(pathLike) {
+        const target = this._normalizeBackgroundPath(pathLike);
+        if (!target) return false;
+        try {
+            const raw = this.storage?.get?.('phone-app-icon-sets');
+            const sets = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+            return Array.isArray(sets) && sets.some(set => Object.values(set?.icons || {})
+                .some(path => this._normalizeBackgroundPath(path) === target));
+        } catch (e) {
+            // Keep files when saved schemes cannot be inspected safely.
+            return true;
+        }
+    }
+
     async deleteManagedBackgroundByPath(pathLike, options = {}) {
         const filename = this._extractBackgroundFilename(pathLike);
         if (!filename) {
             return { attempted: false, success: false, filename: null };
+        }
+
+        if (this._isSavedAppIconPath(pathLike)) {
+            return { attempted: false, success: false, filename, skipped: 'saved-icon-set' };
         }
 
         if (options.skipIfReferenced === true && this._countManagedBackgroundReferences(pathLike, options) > 0) {
@@ -677,6 +695,7 @@ export class ImageUploadManager {
 
         const filesToDelete = [...new Set(
             Object.values(iconMap)
+                .filter(path => !this._isSavedAppIconPath(path))
                 .map(path => this._extractBackgroundFilename(path))
                 .filter(Boolean)
         )];

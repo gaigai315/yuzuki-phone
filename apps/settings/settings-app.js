@@ -2884,10 +2884,12 @@ export class SettingsApp {
 
                             <div class="setting-item yzp-settings-icon-presets">
                                 <div class="setting-label">图标方案</div>
-                                <div style="display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:center; margin-top:8px; width:100%;">
+                                <div class="setting-desc">新建会将当前图标保存为独立方案；保存会更新所选方案。制作另一套图标，请先新建。</div>
+                                <div style="display:grid; grid-template-columns:minmax(0, 1fr) auto auto; gap:8px; align-items:center; margin-top:8px; width:100%;">
                                     <select id="app-icon-set-selector" style="display:block; width:100% !important; min-width:0 !important; max-width:none !important; box-sizing:border-box; height:34px; padding:0 8px; border:1px solid #e0e0e0; border-radius:8px; background:#fafafa; font-size:12px;">
                                         ${this.renderIconSetOptions()}
                                     </select>
+                                    <button type="button" id="new-app-icon-set" class="setting-btn" style="padding:6px 10px; font-size:12px;">新建</button>
                                     <button type="button" id="save-app-icon-set" class="setting-btn" style="padding:6px 10px; font-size:12px;">保存</button>
                                 </div>
                                 <div style="display:flex; gap:8px; margin-top:8px;">
@@ -5278,6 +5280,21 @@ export class SettingsApp {
         return [`<option value="default" ${active === 'default' ? 'selected' : ''}>默认图标</option>`, ...sets.map(set => `<option value="${this._escapeHtml(set.id)}" ${active === set.id ? 'selected' : ''}>${this._escapeHtml(set.name)}</option>`)].join('');
     }
 
+    async _createIconSet() {
+        const name = prompt('请输入新图标方案名称：', `图标方案 ${this._getIconSets().length + 1}`);
+        if (!name || !name.trim()) return;
+        const sets = this._getIconSets();
+        const baseId = `icon-set-${Date.now()}`;
+        let id = baseId;
+        for (let suffix = 2; sets.some(item => item.id === id); suffix++) id = `${baseId}-${suffix}`;
+        const savedName = name.trim().slice(0, 30);
+        sets.push({ id, name: savedName, icons: { ...(this.imageManager.cache.appIcons || {}) } });
+        await this.storage.set('phone-app-icon-sets', JSON.stringify(sets));
+        await this.storage.set('phone-active-icon-set', id);
+        alert(`✅ “${savedName}”方案已新建，后续保存将更新此方案`);
+        this.render();
+    }
+
     async _applyIconSet(setId) {
         const id = String(setId || 'default');
         const sets = this._getIconSets();
@@ -6653,6 +6670,9 @@ export class SettingsApp {
         document.getElementById('app-icon-set-selector')?.addEventListener('change', async (e) => {
             await this._applyIconSet(e.target.value);
         });
+        document.getElementById('new-app-icon-set')?.addEventListener('click', async () => {
+            await this._createIconSet();
+        });
         document.getElementById('save-app-icon-set')?.addEventListener('click', async () => {
             const sets = this._getIconSets();
             const activeId = String(this.storage.get('phone-active-icon-set') || 'default');
@@ -6666,14 +6686,7 @@ export class SettingsApp {
                 return;
             }
 
-            const name = prompt('请输入图标方案名称：', '我的图标方案');
-            if (!name || !name.trim()) return;
-            const id = `icon-set-${Date.now()}`;
-            sets.push({ id, name: name.trim().slice(0, 30), icons: { ...(this.imageManager.cache.appIcons || {}) } });
-            await this.storage.set('phone-app-icon-sets', JSON.stringify(sets));
-            await this.storage.set('phone-active-icon-set', id);
-            alert(`✅ “${name.trim().slice(0, 30)}”方案已保存`);
-            this.render();
+            await this._createIconSet();
         });
         document.getElementById('rename-app-icon-set')?.addEventListener('click', async () => {
             const id = String(this.storage.get('phone-active-icon-set') || 'default');
