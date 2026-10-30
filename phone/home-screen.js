@@ -469,7 +469,7 @@ export class HomeScreen {
     }
     
     renderAppIcon(app) {
-        const badge = app.badge > 0 ? `<span class="app-badge">${app.badge}</span>` : '';
+        const badge = this.renderAppBadge(app);
         const iconImage = this._getAppIconImage(app);
         
         const iconStyle = '';
@@ -490,8 +490,122 @@ export class HomeScreen {
             </div>
         `;
     }
+
+    _getAppIconVisibleBounds(image) {
+        const full = { left: 0, top: 0, right: 1, bottom: 1 };
+        if (!image?.naturalWidth || !image?.naturalHeight) return full;
+        const source = image.currentSrc || image.src;
+        this._appIconBoundsCache ||= new Map();
+        if (this._appIconBoundsCache.has(source)) return this._appIconBoundsCache.get(source);
+
+        let bounds = full;
+        try {
+            const scale = Math.min(1, 256 / Math.max(image.naturalWidth, image.naturalHeight));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+            canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+            const context = canvas.getContext('2d', { willReadFrequently: true });
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+            const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+            let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    if (data[(y * canvas.width + x) * 4 + 3] <= 16) continue;
+                    left = Math.min(left, x);
+                    top = Math.min(top, y);
+                    right = Math.max(right, x);
+                    bottom = Math.max(bottom, y);
+                }
+            }
+            if (right >= left && bottom >= top) {
+                bounds = { left: left / canvas.width, top: top / canvas.height,
+                    right: (right + 1) / canvas.width, bottom: (bottom + 1) / canvas.height };
+            }
+        } catch (e) {
+            // 无法读取跨域图片时按图片框定位，仍能跟随 CSS 尺寸变化。
+        }
+        if (this._appIconBoundsCache.size >= 64) {
+            this._appIconBoundsCache.delete(this._appIconBoundsCache.keys().next().value);
+        }
+        this._appIconBoundsCache.set(source, bounds);
+        return bounds;
+    }
+
+    _syncAppBadgeLayout() {
+        const root = this.phoneShell?.screen?.querySelector?.('.home-screen');
+        if (!root) return;
+        root.querySelectorAll('.yzp-home-app-grid > .yzp-home-app-icon').forEach(element => {
+            const badge = element.querySelector(':scope > .app-badge');
+            const icon = element.querySelector('.yzp-home-app-icon-bg');
+            if (!badge || !icon) return;
+            const box = element.getBoundingClientRect();
+            const iconBox = icon.getBoundingClientRect();
+            if (!box.width || !box.height || !element.offsetWidth || !element.offsetHeight) return;
+            let left = iconBox.left, top = iconBox.top, right = iconBox.right, bottom = iconBox.bottom;
+            const image = icon.querySelector('img');
+            if (image?.naturalWidth && image?.naturalHeight) {
+                const bounds = this._getAppIconVisibleBounds(image);
+                const rect = image.getBoundingClientRect();
+                const style = getComputedStyle(image);
+                const contain = Math.min(rect.width / image.naturalWidth, rect.height / image.naturalHeight);
+                const fit = style.objectFit;
+                let width = rect.width, height = rect.height;
+                if (fit === 'contain' || fit === 'cover' || fit === 'scale-down') {
+                    const scale = fit === 'cover'
+                        ? Math.max(rect.width / image.naturalWidth, rect.height / image.naturalHeight)
+                        : fit === 'scale-down' ? Math.min(1, contain) : contain;
+                    width = image.naturalWidth * scale;
+                    height = image.naturalHeight * scale;
+                } else if (fit === 'none') {
+                    width = image.naturalWidth;
+                    height = image.naturalHeight;
+                }
+                const positions = style.objectPosition.split(/\s+/);
+                const position = value => value?.endsWith('%') ? parseFloat(value) / 100 : .5;
+                const x = rect.left + (rect.width - width) * position(positions[0]);
+                const y = rect.top + (rect.height - height) * position(positions[1]);
+                left = Math.max(iconBox.left, rect.left, x + width * bounds.left);
+                top = Math.max(iconBox.top, rect.top, y + height * bounds.top);
+                right = Math.min(iconBox.right, rect.right, x + width * bounds.right);
+                bottom = Math.min(iconBox.bottom, rect.bottom, y + height * bounds.bottom);
+            }
+            if (right <= left || bottom <= top) return;
+            // 换算回桌面的布局坐标，兼容整个手机被缩放的情况。
+            const scaleX = box.width / element.offsetWidth;
+            const scaleY = box.height / element.offsetHeight;
+            const size = Math.min(18, Math.max(9, Math.min((right - left) / scaleX, (bottom - top) / scaleY) * .34));
+            badge.classList.add('yzp-home-app-badge', 'yzp-home-badge-positioned');
+            badge.style.setProperty('--yzp-home-badge-size', `${size}px`);
+            // 图标铺满格子时把气泡稍向内收，避免首排被滚动窗口裁掉。
+            const badgeWidth = badge.getBoundingClientRect().width / scaleX || size;
+            const x = Math.max(badgeWidth / 2, Math.min(element.offsetWidth - badgeWidth / 2, (right - box.left) / scaleX - size * .1));
+            const y = Math.max(size / 2, (top - box.top) / scaleY + size * .1);
+            badge.style.setProperty('--yzp-home-badge-left', `${x}px`);
+            badge.style.setProperty('--yzp-home-badge-top', `${y}px`);
+        });
+    }
+
+    _bindAppBadgeLayout() {
+        this._appBadgeResizeObserver?.disconnect();
+        const root = this.phoneShell?.screen?.querySelector?.('.home-screen');
+        if (!root) return;
+        this._appBadgeImageListeners ||= new WeakSet();
+        if (typeof ResizeObserver === 'function') {
+            this._appBadgeResizeObserver ||= new ResizeObserver(() => this._syncAppBadgeLayout());
+            root.querySelectorAll('.yzp-home-app-grid > .yzp-home-app-icon, .yzp-home-app-icon-bg, .yzp-home-custom-icon-img')
+                .forEach(element => this._appBadgeResizeObserver.observe(element));
+        }
+        root.querySelectorAll('.yzp-home-app-icon-bg img').forEach(image => {
+            if (this._appBadgeImageListeners.has(image)) return;
+            this._appBadgeImageListeners.add(image);
+            image.addEventListener('load', () => this._syncAppBadgeLayout());
+            image.addEventListener('error', () => this._syncAppBadgeLayout());
+        });
+        this._syncAppBadgeLayout();
+    }
     
     bindEvents() {
+        this._bindAppBadgeLayout();
         const icons = this.phoneShell.screen.querySelectorAll('.yzp-home-app-action, .yzp-home-dock-app, .app-icon, .dock-app');
         icons.forEach(icon => {
             const releaseGuardForNewPress = () => {
@@ -711,11 +825,12 @@ export class HomeScreen {
 
             if (!badge) {
                 badge = document.createElement('span');
-                badge.className = 'app-badge';
+                badge.className = 'app-badge yzp-home-app-badge';
                 element.appendChild(badge);
             }
             badge.textContent = String(badgeCount);
         });
+        this._syncAppBadgeLayout();
         return true;
     }
 

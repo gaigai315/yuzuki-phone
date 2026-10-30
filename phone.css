@@ -2540,6 +2540,36 @@
     line-height: 1.2;
 }
 
+/* 桌面角标跟随图标可见区域，避免上传缩小后的透明留白造成偏移。 */
+#phone-panel-content .phone-screen .yzp-home-app-grid > .yzp-home-app-icon > .yzp-home-app-badge {
+    visibility: hidden;
+    position: absolute !important;
+    left: var(--yzp-home-badge-left, 50%) !important;
+    top: var(--yzp-home-badge-top, 0px) !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: auto !important;
+    min-width: var(--yzp-home-badge-size, 12px) !important;
+    height: var(--yzp-home-badge-size, 12px) !important;
+    margin: 0 !important;
+    padding: 0 calc(var(--yzp-home-badge-size, 12px) * .22) !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    font-size: calc(var(--yzp-home-badge-size, 12px) * .65) !important;
+    line-height: 1 !important;
+    transform: translate(-50%, -50%) !important;
+    pointer-events: none !important;
+    z-index: 4 !important;
+}
+
+#phone-panel-content .phone-screen .yzp-home-app-grid > .yzp-home-app-icon > .yzp-home-badge-positioned {
+    visibility: visible;
+}
+
 /* ========================================
    🎯 Dock栏玻璃效果
    ======================================== */
