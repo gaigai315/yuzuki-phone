@@ -6429,7 +6429,11 @@ export class SettingsApp {
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'yuzuki-phone-home-css-preset.json';
+            const filename = String(preset.name || '桌面样式')
+                .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-')
+                .trim()
+                .replace(/[. ]+$/g, '') || '桌面样式';
+            link.download = /\.json$/i.test(filename) ? filename : `${filename}.json`;
             link.click();
             URL.revokeObjectURL(url);
         });
