@@ -156,7 +156,11 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-10-27',
     items: [
-        '【新增】新增图标 APP 方案，可保存、切换、修改名称和删除图标方案。'
+        '【新增】新增图标 APP 方案，可保存、切换、修改名称和删除图标方案。',
+        '【修复】拆分日记手动生成的每批楼层数与自动写日记的触发楼层数，两个设置现在可以独立保存。',
+        '【新增】桌面 CSS 支持多套样式方案，可新建、保存、切换、重命名、删除以及导入导出。',
+        '【优化】微调设置页面布局与功能分类，统一设置图标样式并优化桌面、微信记忆和悬浮图标设置入口。',
+        '【新增】小票背景颜色设置，可在「设置 → 常规 → 颜色」中自定义，支持实时预览与保存；分隔线、条码和装饰线跟随小票文字颜色，适配深浅色主题。'
     ]
 };
 
@@ -10927,12 +10931,14 @@ if (window.GGP_Loaded) {
         // 只读取全局文字颜色（默认黑色）
         const globalTextColor = storage.get('phone-global-text') || '#000000';
         const phoneFrameColor = storage.get('phone-frame-color') || '#1a1a1a';
+        const receiptBackgroundColor = String(storage.get('phone-receipt-background') || '#fbfcff').trim();
         const phoneShellScale = storage.get('phone-shell-scale') || 100;
         const phoneFontScale = storage.get('phone-font-scale') || PHONE_FONT_SCALE_DEFAULT;
 
         // 设置CSS变量
         applyGlobalTextColor(globalTextColor);
         document.documentElement.style.setProperty('--phone-frame-color', phoneFrameColor);
+        document.documentElement.style.setProperty('--phone-receipt-background', /^#[0-9a-f]{6}$/i.test(receiptBackgroundColor) ? receiptBackgroundColor : '#fbfcff');
         applyPhoneShellScale(phoneShellScale);
         applyGlobalFontScale(phoneFontScale);
 

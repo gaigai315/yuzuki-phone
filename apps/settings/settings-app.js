@@ -41,6 +41,7 @@ const PHONE_FONT_SCALE_MAX = 130;
 const PHONE_FONT_SCALE_DEFAULT = 100;
 const PHONE_FRAME_COLOR_DEFAULT = '#1a1a1a';
 const PHONE_GLOBAL_TEXT_COLOR_DEFAULT = '#000000';
+const PHONE_RECEIPT_BACKGROUND_DEFAULT = '#fbfcff';
 const OPENCODE_GO_PROVIDER = 'opencode_go';
 const OPENCODE_GO_BASE_URL = 'https://opencode.ai/zen/go/v1';
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
@@ -1323,6 +1324,7 @@ export class SettingsApp {
             : '';
         const globalTextColor = normalizePhoneHexColor(this.storage.get('phone-global-text'), PHONE_GLOBAL_TEXT_COLOR_DEFAULT);
         const phoneFrameColor = normalizePhoneHexColor(this.storage.get('phone-frame-color'), PHONE_FRAME_COLOR_DEFAULT);
+        const receiptBackgroundColor = normalizePhoneHexColor(this.storage.get('phone-receipt-background'), PHONE_RECEIPT_BACKGROUND_DEFAULT);
         const phoneShellScale = normalizePhoneShellScalePercent(this.storage.get('phone-shell-scale') || PHONE_SHELL_SCALE_DEFAULT);
         const phoneFontScale = normalizePhoneFontScalePercent(this.storage.get('phone-font-scale') || PHONE_FONT_SCALE_DEFAULT);
         const html = `
@@ -2503,6 +2505,12 @@ export class SettingsApp {
                     .settings-app .setting-btn[style*="color:#d9"] {
                         color: revert !important;
                     }
+                    /* 桌面样式方案的控件统一跟随手机文字色，隔离酒馆按钮文字主题。 */
+                    #phone-panel-content .phone-screen #yzp-settings-app .yzp-settings-home-css :is(button, button *, select, option, textarea) {
+                        color: var(--phone-global-text, #000000) !important;
+                        -webkit-text-fill-color: var(--phone-global-text, #000000) !important;
+                        text-shadow: none !important;
+                    }
                     #yzp-settings-app.settings-app.yzp-settings-app.yzp-settings-safe-render.settings-has-wallpaper *,
                     #yzp-settings-app.settings-app.yzp-settings-app.yzp-settings-safe-render.settings-has-wallpaper *::before,
                     #yzp-settings-app.settings-app.yzp-settings-app.yzp-settings-safe-render.settings-has-wallpaper *::after {
@@ -2991,7 +2999,7 @@ export class SettingsApp {
                                 </div>
                             </div>
 
-                            <details class="setting-item app-name-custom-fold">
+                            <details class="setting-item app-name-custom-fold yzp-settings-home-css">
                                 <summary>
                                     <span>
                                         <span class="setting-label">桌面 CSS 样式方案</span>
@@ -3081,6 +3089,27 @@ export class SettingsApp {
                                             aria-label="选择全局文字颜色">
                                         <span class="yzp-frame-color-control-swatch" style="--yzp-frame-control-color: ${globalTextColor};" aria-hidden="true"></span>
                                         <span class="yzp-frame-color-control-value">${globalTextColor}</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-toggle">
+                                    <div>
+                                        <div class="setting-label">小票背景颜色</div>
+                                        <div class="setting-desc">调整正文支付小票底色，深色主题可用 #242424</div>
+                                    </div>
+                                    <button type="button"
+                                            id="phone-receipt-background-trigger"
+                                            class="yzp-frame-color-control"
+                                            data-color="${receiptBackgroundColor}"
+                                            data-color-storage-key="phone-receipt-background"
+                                            data-color-default="${PHONE_RECEIPT_BACKGROUND_DEFAULT}"
+                                            data-color-picker-title="选择小票背景颜色"
+                                            data-color-picker-label="小票背景颜色"
+                                            data-color-preview-kind="receipt"
+                                            aria-label="选择小票背景颜色">
+                                        <span class="yzp-frame-color-control-swatch" style="--yzp-frame-control-color: ${receiptBackgroundColor};" aria-hidden="true"></span>
+                                        <span class="yzp-frame-color-control-value">${receiptBackgroundColor}</span>
                                     </button>
                                 </div>
                             </div>
@@ -5936,6 +5965,8 @@ export class SettingsApp {
                     } else {
                         globalDocument.documentElement.style.setProperty('--phone-global-text', color);
                     }
+                } else if (previewKind === 'receipt') {
+                    globalDocument.documentElement.style.setProperty('--phone-receipt-background', color);
                 } else {
                     globalDocument.documentElement.style.setProperty('--phone-frame-color', color);
                 }

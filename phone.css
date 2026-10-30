@@ -9295,12 +9295,13 @@ input:checked + .toggle-slider:before {
 }
 
 .mes_text .st-phone-payment-receipt {
-    --st-phone-payment-receipt-paper: #fbfcff;
+    --st-phone-payment-receipt-paper: var(--phone-receipt-background, #fbfcff);
     --st-phone-payment-receipt-inline-padding: 9px;
     --st-phone-payment-receipt-qty-column: 27px;
     --st-phone-payment-receipt-price-column: 48px;
     --st-phone-payment-receipt-shadow: var(--SmartThemeShadowColor, rgba(115, 139, 205, 0.34));
-    --st-phone-payment-receipt-dot-color: color-mix(in srgb, var(--st-phone-payment-receipt-shadow) 72%, currentColor);
+    --st-phone-payment-receipt-line-color: currentColor;
+    --st-phone-payment-receipt-dot-color: var(--st-phone-payment-receipt-line-color);
     --st-phone-payment-receipt-dot-pattern: radial-gradient(circle, var(--st-phone-payment-receipt-dot-color) 0 1px, transparent 1.15px);
     --st-phone-payment-receipt-notch-top-y: 132px;
     --st-phone-payment-receipt-notch-bottom-y: calc(100% - 94px);
@@ -9330,7 +9331,7 @@ input:checked + .toggle-slider:before {
     position: absolute;
     z-index: -1;
     inset: 0;
-    border: 1px solid var(--st-phone-payment-receipt-shadow);
+    border: 1px solid var(--st-phone-payment-receipt-line-color);
     border-radius: 4px;
     background: var(--st-phone-payment-receipt-paper);
     clip-path: polygon(
@@ -9397,7 +9398,7 @@ input:checked + .toggle-slider:before {
     align-items: center;
     width: 100%;
     padding: 0 1px 7px;
-    border-bottom: 1px solid var(--st-phone-payment-receipt-shadow);
+    border-bottom: 1px solid var(--st-phone-payment-receipt-line-color);
 }
 
 .mes_text .st-phone-payment-receipt-brand::before,
@@ -9409,7 +9410,7 @@ input:checked + .toggle-slider:before {
     display: block;
     width: 18px;
     height: 18px;
-    border: 1px solid var(--st-phone-payment-receipt-shadow);
+    border: 1px solid var(--st-phone-payment-receipt-line-color);
     border-radius: 50%;
     background: transparent;
     box-sizing: border-box;
@@ -9553,7 +9554,7 @@ input:checked + .toggle-slider:before {
     width: 24px;
     height: 22px;
     flex: 0 0 24px;
-    color: var(--st-phone-payment-receipt-shadow);
+    color: inherit;
     font-size: 21px;
     line-height: 1;
 }
@@ -9613,7 +9614,7 @@ input:checked + .toggle-slider:before {
 .mes_text .st-phone-payment-receipt-item-mark {
     display: block;
     flex: 0 0 12px;
-    color: var(--st-phone-payment-receipt-shadow);
+    color: inherit;
     font-size: 10px;
     font-weight: 400;
     line-height: 1;
@@ -9775,15 +9776,15 @@ input:checked + .toggle-slider:before {
     display: block;
     width: 94%;
     height: 20px;
-    border-right: 2px solid var(--st-phone-payment-receipt-shadow);
-    border-left: 1px solid var(--st-phone-payment-receipt-shadow);
+    border-right: 2px solid var(--st-phone-payment-receipt-line-color);
+    border-left: 1px solid var(--st-phone-payment-receipt-line-color);
     background: repeating-linear-gradient(
         90deg,
-        var(--st-phone-payment-receipt-shadow) 0 1px,
+        var(--st-phone-payment-receipt-line-color) 0 1px,
         transparent 1px 3px,
-        var(--st-phone-payment-receipt-shadow) 3px 5px,
+        var(--st-phone-payment-receipt-line-color) 3px 5px,
         transparent 5px 7px,
-        var(--st-phone-payment-receipt-shadow) 7px 8px,
+        var(--st-phone-payment-receipt-line-color) 7px 8px,
         transparent 8px 11px
     );
 }
@@ -9792,7 +9793,7 @@ input:checked + .toggle-slider:before {
     display: block;
     width: 94%;
     overflow: hidden;
-    color: var(--st-phone-payment-receipt-shadow);
+    color: inherit;
     font-size: 4px;
     font-weight: 400;
     line-height: 1;
@@ -9819,7 +9820,7 @@ input:checked + .toggle-slider:before {
     display: block;
     height: 1px;
     flex: 1 1 auto;
-    background: var(--st-phone-payment-receipt-shadow);
+    background: var(--st-phone-payment-receipt-line-color);
     content: "";
 }
 

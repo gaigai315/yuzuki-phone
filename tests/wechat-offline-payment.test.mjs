@@ -302,7 +302,7 @@ test('offline payment receipt uses the fixed layout copy and scoped CSS', () => 
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-barcode-area::before\s*\{[\s\S]*?top: 0;[\s\S]*?bottom: 4px;[\s\S]*?background-repeat: repeat-y;/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-barcode-copy\s*\{/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-decoration-star\s*\{[\s\S]*?color: var\(--st-phone-payment-receipt-dot-color\);/);
-    assert.match(phoneCssSource, /\.st-phone-payment-receipt-thanks::before,[\s\S]*?\.st-phone-payment-receipt-thanks::after\s*\{[\s\S]*?background: var\(--st-phone-payment-receipt-shadow\);/);
+    assert.match(phoneCssSource, /\.st-phone-payment-receipt-thanks::before,[\s\S]*?\.st-phone-payment-receipt-thanks::after\s*\{[\s\S]*?background: var\(--st-phone-payment-receipt-line-color\);/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-brand::before/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-brand::after/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-footer::before/);
@@ -328,7 +328,7 @@ test('offline payment receipt uses the fixed layout copy and scoped CSS', () => 
     assert.doesNotMatch(receiptCssSource, /border(?:-(?:top|right|bottom|left))?:\s*[^;]*(?:dashed|dotted)/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-table-head\s*\{[\s\S]*?background: var\(--st-phone-payment-receipt-shadow\);/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-total\s*\{[\s\S]*?background: var\(--st-phone-payment-receipt-shadow\);/);
-    assert.match(phoneCssSource, /\.st-phone-payment-receipt-barcode\s*\{[\s\S]*?border-right: 2px solid var\(--st-phone-payment-receipt-shadow\);[\s\S]*?border-left: 1px solid var\(--st-phone-payment-receipt-shadow\);[\s\S]*?repeating-linear-gradient\([\s\S]*?var\(--st-phone-payment-receipt-shadow\) 0 1px,/);
+    assert.match(phoneCssSource, /\.st-phone-payment-receipt-barcode\s*\{[\s\S]*?border-right: 2px solid var\(--st-phone-payment-receipt-line-color\);[\s\S]*?border-left: 1px solid var\(--st-phone-payment-receipt-line-color\);[\s\S]*?repeating-linear-gradient\([\s\S]*?var\(--st-phone-payment-receipt-line-color\) 0 1px,/);
     assert.equal(fs.existsSync(new URL('../assets/fonts/fusion-pixel-10px-proportional-sc/fusion-pixel-10px-proportional-sc.woff2', import.meta.url)), true);
     assert.equal(fs.existsSync(new URL('../assets/fonts/fusion-pixel-10px-proportional-sc/OFL.txt', import.meta.url)), true);
     assert.match(phoneCssSource, /--st-phone-payment-receipt-inline-padding: 9px/);
@@ -378,7 +378,7 @@ test('offline payment receipt renders parsed quantity units and multiple item ro
     assert.match(phoneCssSource, /--st-phone-payment-receipt-price-column: 48px/);
     assert.match(phoneCssSource, /grid-template-columns: minmax\(0, 1fr\) var\(--st-phone-payment-receipt-qty-column\) var\(--st-phone-payment-receipt-price-column\)/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-item-main\s*\{[\s\S]*?display: flex;[\s\S]*?min-width: 0;/);
-    assert.match(phoneCssSource, /\.st-phone-payment-receipt-item-mark\s*\{[\s\S]*?color: var\(--st-phone-payment-receipt-shadow\);/);
+    assert.match(phoneCssSource, /\.st-phone-payment-receipt-item-mark\s*\{[\s\S]*?color: inherit;/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-item-dots\s*\{[\s\S]*?flex: 1 1 12px;[\s\S]*?background-image: var\(--st-phone-payment-receipt-dot-pattern\);[\s\S]*?background-repeat: repeat-x;/);
     assert.match(phoneCssSource, /\.st-phone-payment-receipt-item-qty\s*\{\s*text-align: center;/);
 });
