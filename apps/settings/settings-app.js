@@ -2505,8 +2505,9 @@ export class SettingsApp {
                     .settings-app .setting-btn[style*="color:#d9"] {
                         color: revert !important;
                     }
-                    /* 桌面样式方案的控件统一跟随手机文字色，隔离酒馆按钮文字主题。 */
-                    #phone-panel-content .phone-screen #yzp-settings-app .yzp-settings-home-css :is(button, button *, select, option, textarea) {
+                    /* 图标和桌面样式方案的控件统一跟随手机文字色，隔离酒馆按钮文字主题。 */
+                    #phone-panel-content .phone-screen #yzp-settings-app .yzp-settings-home-css :is(button, button *, select, option, textarea),
+                    #phone-panel-content .phone-screen #yzp-settings-app .yzp-settings-icon-presets :is(button, button *, select, option) {
                         color: var(--phone-global-text, #000000) !important;
                         -webkit-text-fill-color: var(--phone-global-text, #000000) !important;
                         text-shadow: none !important;
@@ -2881,7 +2882,7 @@ export class SettingsApp {
                                 </div>
                             </fieldset>
 
-                            <div class="setting-item">
+                            <div class="setting-item yzp-settings-icon-presets">
                                 <div class="setting-label">图标方案</div>
                                 <div style="display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:center; margin-top:8px; width:100%;">
                                     <select id="app-icon-set-selector" style="display:block; width:100% !important; min-width:0 !important; max-width:none !important; box-sizing:border-box; height:34px; padding:0 8px; border:1px solid #e0e0e0; border-radius:8px; background:#fafafa; font-size:12px;">

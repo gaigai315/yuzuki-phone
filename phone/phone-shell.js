@@ -790,6 +790,10 @@ export class PhoneShell {
                 return timeManager.getRealTime()?.time;
             }
             const storyTime = timeManager.getCurrentStoryTime();
+            if (storyTime?.isReal) {
+                this._lastStatusBarStoryTime = null;
+                return storyTime.time;
+            }
             if (storyTime?.time && !storyTime.isReal) {
                 this._lastStatusBarStoryTime = storyTime;
                 return storyTime.time;
@@ -827,6 +831,8 @@ export class PhoneShell {
         if (timeEl) {
             timeEl.textContent = this.getCurrentTime();
         }
+        const home = window.VirtualPhone?.home;
+        if (home?.phoneShell === this) home.updateTimeDisplay?.();
     }
 
     // 🔥 辅助方法：通过历史栈精准判断是否在主屏幕

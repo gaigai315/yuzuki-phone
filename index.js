@@ -6237,6 +6237,7 @@ if (window.GGP_Loaded) {
         applyPhonePanelDesktopPosition();
         schedulePhonePanelViewportUpdate();
         startPhonePanelViewportWatchdog(1200);
+        phoneShell?.updateStatusBarTime?.();
 
         // 自动唤起来电/转线上时也必须补上外部点击关闭监听
         panel.removeEventListener('click', handlePanelClick);
@@ -10649,6 +10650,8 @@ if (window.GGP_Loaded) {
             homeScreen.apps = currentApps;
             homeScreen.render();
         }
+
+        phoneShell?.updateStatusBarTime?.();
 
         // 切换会话后重新处理标签隐藏
         setTimeout(hidePhoneTags, 500);

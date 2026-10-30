@@ -153,7 +153,8 @@ export class HomeScreen {
         return `
             <div class="home-time yzp-home-time${dateInfo.isAncient ? ' is-ancient' : ''}">
                 <div class="time-large yzp-home-time-large">${this.getCurrentTime()}</div>
-                <div class="date yzp-home-date">${this._escapeHtml(dateInfo.date)}${dateInfo.weekday ? ` ${this._escapeHtml(dateInfo.weekday)}` : ''}</div>
+                <div class="date yzp-home-date" data-home-date="${this._escapeHtml(dateInfo.date)}">${this._escapeHtml(dateInfo.date)}${dateInfo.weekday ? ` ${this._escapeHtml(dateInfo.weekday)}` : ''}</div>
+                <div class="yzp-home-css-data" data-home-data="clock" aria-hidden="true"></div>
             </div>
             <div class="app-grid yzp-home-app-grid">
                 ${this.apps.map(app => this.renderAppIcon(app)).join('')}
@@ -487,8 +488,87 @@ export class HomeScreen {
                 </div>
                 ${badge}
                 <div class="app-name yzp-home-app-name">${this._escapeHtml(this._getAppDisplayName(app))}</div>
+                ${app.id === 'calendar' || app.id === 'honey' ? `<div class="yzp-home-css-data" data-home-data="${app.id}" aria-hidden="true"></div>` : ''}
             </div>
         `;
+    }
+
+    // Optional, presentation-only data for custom desktop CSS; no app storage is read or written.
+    getHomeCalendarDays() {
+        const tm = window.VirtualPhone?.timeManager;
+        const info = tm?.getCurrentStoryTime?.() || tm?.getCurrentTime?.() || this._getCurrentPhoneTimeInfo();
+        const match = String(info?.date || '').match(/(\d{1,6})[-\/年]\s*(\d{1,2})[-\/月]\s*(\d{1,2})\s*日?/);
+        if (!match) return [];
+        const [year, month, day] = match.slice(1).map(Number);
+        const date = new Date(0);
+        date.setUTCFullYear(year, month - 1, day);
+        date.setUTCHours(12, 0, 0, 0);
+        if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return [];
+        const weekday = date.getUTCDay();
+        return Array.from({ length: 7 }, (_, index) => {
+            const value = new Date(date);
+            value.setUTCDate(day - weekday + index);
+            return { year: value.getUTCFullYear(), month: value.getUTCMonth() + 1,
+                day: value.getUTCDate(), weekday: '日一二三四五六'[index], current: index === weekday };
+        });
+    }
+
+    getHomeCardAvatars() {
+        const context = window.VirtualPhone?.storage?.getContext?.() || window.SillyTavern?.getContext?.() || {};
+        const selected = document.querySelector('#user_avatar_block .avatar-container.selected img')
+            || document.querySelector('#rm_button_panel_persona img');
+        const avatarUrl = (value, directory) => {
+            const text = String(value || '').trim();
+            if (!text || text === 'none') return '';
+            return /^(?:https?:|blob:|\/)/i.test(text) ? text : `/${directory}/${encodeURIComponent(text)}`;
+        };
+        const characterId = context.characterId;
+        const character = !context.groupId && characterId !== undefined && characterId !== null && characterId !== ''
+            ? context.characters?.[characterId] : null;
+        return {
+            user: String(selected?.currentSrc || selected?.src || '').trim()
+                || avatarUrl(context.user_avatar || context.userAvatar, 'User Avatars'),
+            char: avatarUrl(character?.avatar, 'characters'),
+            userName: String(context.name1 || 'User'),
+            charName: String(character?.name || context.name2 || 'Char')
+        };
+    }
+
+    _pickHomeClockKaomoji() {
+        const choices = ['(｡･ω･｡)', '(≧▽≦)', '(๑˃ᴗ˂๑)', '(´꒳`)', '(*´▽`*)'];
+        const available = choices.filter(face => face !== this._homeClockKaomoji);
+        this._homeClockKaomoji = available[Math.floor(Math.random() * available.length)];
+        return this._homeClockKaomoji;
+    }
+
+    updateHomeCssData() {
+        const root = this.phoneShell?.screen?.querySelector('.home-screen');
+        if (!root) return;
+        const calendar = root.querySelector('[data-home-data="calendar"]');
+        if (calendar) {
+            const days = this.getHomeCalendarDays();
+            const html = days.length ? days.map(day => `<span class="yzp-home-calendar-day${day.current ? ' is-current' : ''}" data-date="${day.year}-${String(day.month).padStart(2, '0')}-${String(day.day).padStart(2, '0')}"><span class="yzp-home-calendar-weekday">${day.weekday}</span><span class="yzp-home-calendar-number">${day.day}</span></span>`).join('')
+                : '<span class="yzp-home-calendar-fallback">打开日历 · 查看日程</span>';
+            if (calendar._yzpDataHtml !== html) { calendar.innerHTML = html; calendar._yzpDataHtml = html; }
+        }
+        const clock = root.querySelector('[data-home-data="clock"]');
+        const honey = root.querySelector('[data-home-data="honey"]');
+        const avatars = clock || honey ? this.getHomeCardAvatars() : null;
+        if (clock) {
+            const image = avatars.char || avatars.user;
+            const face = this._homeClockKaomoji || this._pickHomeClockKaomoji();
+            const html = `<span class="yzp-home-clock-portrait"><span class="yzp-home-clock-avatar">${image
+                ? `<img src="${this._escapeHtml(image)}" alt="" draggable="false">`
+                : '<span class="yzp-home-clock-placeholder">C</span>'}</span><span class="yzp-home-clock-bubble">${this._escapeHtml(face)}</span></span><span class="yzp-home-clock-decoration">ﾉ &gt; . &lt; マ ☆!!</span>`;
+            if (clock._yzpDataHtml !== html) { clock.innerHTML = html; clock._yzpDataHtml = html; }
+        }
+        if (honey) {
+            const avatar = role => `<span class="yzp-home-pair-avatar yzp-home-pair-${role}">${avatars[role]
+                ? `<img src="${this._escapeHtml(avatars[role])}" alt="${this._escapeHtml(avatars[`${role}Name`])}" draggable="false">`
+                : `<span class="yzp-home-pair-placeholder">${role === 'user' ? 'U' : 'C'}</span>`}</span>`;
+            const html = `${avatar('user')}<span class="yzp-home-pair-heart">♥</span>${avatar('char')}`;
+            if (honey._yzpDataHtml !== html) { honey.innerHTML = html; honey._yzpDataHtml = html; }
+        }
     }
 
     _getAppIconVisibleBounds(image) {
@@ -605,6 +685,8 @@ export class HomeScreen {
     }
     
     bindEvents() {
+        this._pickHomeClockKaomoji();
+        this.updateHomeCssData();
         this._bindAppBadgeLayout();
         const icons = this.phoneShell.screen.querySelectorAll('.yzp-home-app-action, .yzp-home-dock-app, .app-icon, .dock-app');
         icons.forEach(icon => {
@@ -783,6 +865,7 @@ export class HomeScreen {
         });
         root.querySelectorAll('.home-time > .date, .yzp-home-time > .yzp-home-date').forEach(el => {
             el.textContent = currentDate;
+            el.setAttribute('data-home-date', cardDate.date);
         });
         root.querySelectorAll('.home-time-date .date, .yzp-home-time-date .yzp-home-date').forEach(el => {
             el.textContent = cardDate.date;
@@ -791,6 +874,8 @@ export class HomeScreen {
             el.textContent = cardDate.weekday;
             el.hidden = cardDate.isAncient;
         });
+
+        this.updateHomeCssData();
 
         return true;
     }

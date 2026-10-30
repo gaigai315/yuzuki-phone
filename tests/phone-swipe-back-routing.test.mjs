@@ -232,6 +232,9 @@ test('a fresh home icon press releases the return guard before the click', async
         const shell = new PhoneShell();
         const icon = { dataset: { app: 'wechat' } };
         shell.screen = {
+            querySelector() {
+                return null;
+            },
             querySelectorAll() {
                 return [icon];
             }

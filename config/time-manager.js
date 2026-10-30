@@ -327,13 +327,22 @@ export class TimeManager {
      * @returns {Object} { time: "14:30", date: "2044年10月28日", weekday: "星期三", timestamp: 1730102400000 }
      */
     getCurrentStoryTime() {
+    const context = this.getContext();
+    const hasCharacter = context?.characterId !== undefined && context?.characterId !== null && context?.characterId !== '';
+    const hasGroup = context?.groupId !== undefined && context?.groupId !== null && context?.groupId !== '';
+    // Closing a chat is an explicit empty context, not a temporary context lookup failure.
+    // Check before the TTL cache so leaving a chat immediately restores the real clock.
+    if (context && !hasCharacter && !hasGroup) {
+        this.clearCache();
+        this._lastStableStoryTime = null;
+        return this.getRealTime();
+    }
     // 🔥 检查缓存是否有效
     const now = Date.now();
     if (this._cache && (now - this._cacheTimestamp) < this._cacheTTL) {
         return this._cache;
     }
 
-    const context = this.getContext();
     const manualSyncTime = this._getRecentManualSyncTime();
 
     // 🔹 情况1：上下文短暂不可用时，优先保留当前聊天的剧情时间，避免状态栏跳回现实时间

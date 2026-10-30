@@ -982,6 +982,11 @@
     border-radius: inherit !important;
 }
 
+/* Data hooks become visible only when a custom desktop stylesheet opts in. */
+#phone-panel-content .phone-screen .home-screen .yzp-home-css-data {
+    display: none;
+}
+
 .phone-screen .home-screen,
 .phone-screen .home-screen * {
     box-sizing: border-box !important;

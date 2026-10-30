@@ -214,3 +214,34 @@ test('ancient chat time is not replaced by saved or phone time from the modern e
     assert.equal(current.weekday, '');
     assert.equal(current.isAncient, true);
 });
+
+test('closing a chat bypasses cached story time and leaves saved story data intact', () => {
+    const saved = JSON.stringify({date: '2103年6月2日', time: '13:15', source: 'manual-sync'});
+    const values = {'story-current-time': saved};
+    const manager = createTimeManager(values);
+    let context = {characterId: 0, chatId: 'story'};
+    manager.getContext = () => context;
+    manager.getPhoneLastMessageTime = () => null;
+    manager.isOfflineTimeSourceEnabled = () => false;
+    manager.getRealTime = () => ({date: '2026年10月31日', time: '14:00', isReal: true});
+    assert.equal(manager.getCurrentStoryTime().date, '2103年6月2日');
+    assert.ok(manager._cache);
+    context = {characterId: undefined, groupId: null, chatId: undefined, name2: ''};
+    assert.deepEqual(manager.getCurrentStoryTime(), manager.getRealTime());
+    assert.equal(manager._lastStableStoryTime, null);
+    assert.equal(manager._cache, null);
+    assert.equal(values['story-current-time'], saved);
+    context = {characterId: 0, chatId: 'story'};
+    assert.equal(manager.getCurrentStoryTime().date, '2103年6月2日');
+});
+
+test('a temporarily unavailable context retains story time while an active group is not treated as the lobby', () => {
+    const manager = createTimeManager();
+    const story = {date: '2103年6月2日', time: '13:15', source: 'chat'};
+    manager._rememberStableStoryTime(story);
+    manager.getContext = () => null;
+    assert.equal(manager.getCurrentStoryTime().time, '13:15');
+    manager.clearCache();
+    manager.getContext = () => ({groupId: 'group', characterId: undefined});
+    assert.equal(manager.getCurrentStoryTime().time, '13:15');
+});
