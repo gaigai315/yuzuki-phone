@@ -787,6 +787,7 @@ export class DiaryView {
         const autoSettings = this.app.diaryData.getAutoSettings();
         const autoEnabled = autoSettings.autoEnabled || false;
         const autoFloor = autoSettings.autoFloor || 50;
+        const manualBatchSize = autoSettings.manualBatchSize || 50;
         const batchMode = autoSettings.batchMode !== false;
         
         const context = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : null;
@@ -874,7 +875,7 @@ export class DiaryView {
                             </div>
                             <div class="diary-s-row">
                                 <span class="diary-s-label">每批楼层数</span>
-                                <input type="number" id="diary-batch-size" min="10" max="200" value="${autoFloor}" class="diary-s-input" style="width: 70px;">
+                                <input type="number" id="diary-batch-size" min="10" max="200" value="${manualBatchSize}" class="diary-s-input" style="width: 70px;">
                             </div>
                             <div class="diary-s-desc" style="opacity: 0.6; display: flex; align-items: center; gap: 8px; margin-top: 4px;">当前总楼层: ${totalFloor}，上次记录到: <input type="number" id="diary-manual-last-input" min="0" max="${totalFloor}" value="${displayLastIndex}" class="diary-s-input" style="width: 55px; height: 22px; padding: 0 4px; font-size: 11px;"><button class="diary-s-btn diary-s-btn-primary" id="diary-manual-last-save" style="padding: 2px 8px; font-size: 11px; min-width: auto;">修正</button></div>
                             <button class="diary-s-btn diary-s-btn-primary" id="diary-manual-run" style="width: 100%; margin-top: 8px; padding: 10px;">
@@ -1224,8 +1225,6 @@ export class DiaryView {
             const val = Math.max(10, Math.min(9999, parseInt(e.target.value) || 50));
             e.target.value = val;
             this.app.diaryData.setAutoSettings({ autoFloor: val });
-            const batchSizeInput = document.getElementById('diary-batch-size');
-            if (batchSizeInput) batchSizeInput.value = val;
         };
 
         const batchModeToggle = document.getElementById('diary-s-batch');
@@ -1237,9 +1236,7 @@ export class DiaryView {
         if (batchSizeInput) batchSizeInput.onchange = (e) => {
             const val = Math.max(10, Math.min(200, parseInt(e.target.value) || 50));
             e.target.value = val;
-            this.app.diaryData.setAutoSettings({ autoFloor: val });
-            const autoFloorInput = document.getElementById('diary-s-floor');
-            if (autoFloorInput) autoFloorInput.value = val;
+            this.app.diaryData.setAutoSettings({ manualBatchSize: val });
         };
 
         // 🔥 新增：手动日记修正楼层按钮点击事件

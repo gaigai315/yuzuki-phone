@@ -45,7 +45,8 @@ const OPENCODE_GO_PROVIDER = 'opencode_go';
 const OPENCODE_GO_BASE_URL = 'https://opencode.ai/zen/go/v1';
 const LOBBY_LINK_CHARACTER_IDS_KEY = 'phone-lobby-link-character-ids';
 const LOBBY_LINK_GROUP_IDS_KEY = 'phone-lobby-link-group-ids';
-const CARD_LAYOUT_CUSTOM_CSS_KEY = 'phone-card-layout-custom-css';
+const HOME_CSS_PRESETS_KEY = 'phone-home-css-presets';
+const HOME_CSS_ACTIVE_KEY = 'phone-home-css-active';
 const SETTINGS_IMAGE_MAX_FILE_SIZE = 20 * 1024 * 1024;
 const NOVELAI_VIBE_IMPORT_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const NOVELAI_VIBE_IMPORT_MAX_GROUPS = 32;
@@ -73,6 +74,7 @@ const WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS = [
 ];
 const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS.slice(0, 3);
 const WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX = '-user-set';
+const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_ONLINE_PROACTIVE_ENABLED_KEY = 'wechat_online_proactive_enabled';
 const WECHAT_ONLINE_PROACTIVE_INTERVAL_KEY = 'wechat_online_proactive_interval_minutes';
 const LOBBY_WECHAT_ONLINE_PROACTIVE_ENABLED_KEY = 'phone_lobby_wechat_online_proactive_enabled';
@@ -269,28 +271,36 @@ export class SettingsApp {
         }
     }
 
-    _getCardLayoutCssTemplate() {
+    _getHomeCssTemplate() {
         return [
-            '/* 只会作用于卡片式首页，可按需隐藏原卡片、加贴纸或换背景 */',
-            '#phone-panel-content .phone-screen .home-layout-cards .home-time-card {',
-            '    background-image: url("你的时间卡贴图地址");',
-            '    background-size: cover;',
-            '    background-position: center;',
+            '/* 基础图标桌面 CSS：可直接调整背景、时间、图标网格和底部 Dock */',
+            '#phone-panel-content .phone-screen .home-layout-icons {',
+            '    /* background: linear-gradient(180deg, #fff, #eef3ff); */',
             '}',
             '',
-            '#phone-panel-content .phone-screen .home-layout-cards .home-app-cluster {',
-            '    background-image: url("你的常用应用卡片贴图地址");',
-            '    background-size: 100% 100%;',
+            '#phone-panel-content .phone-screen .home-layout-icons .home-time {',
+            '    /* padding-top: 32px; */',
             '}',
             '',
-            '#phone-panel-content .phone-screen .home-layout-cards .home-social-card {',
-            '    background-image: url("你的社交平台卡片贴图地址");',
-            '    background-size: 100% 100%;',
+            '#phone-panel-content .phone-screen .home-layout-icons .app-grid {',
+            '    /* grid-template-columns: repeat(4, 1fr); */',
             '}',
             '',
-            '/* 隐藏某块：取消下一行注释即可 */',
-            '/* #phone-panel-content .phone-screen .home-layout-cards .home-music-card { display: none !important; } */'
+            '/* 图片背景示例：请使用自己的图床地址 */',
+            '/* #phone-panel-content .phone-screen .home-layout-icons { background-image: url("https://example.com/your-bg.jpg"); } */'
         ].join('\n');
+    }
+
+    _getHomeCssPresets() {
+        const raw = this.storage.get(HOME_CSS_PRESETS_KEY);
+        let parsed = raw;
+        try { if (typeof raw === 'string') parsed = JSON.parse(raw); } catch (e) { parsed = []; }
+        if (!Array.isArray(parsed)) parsed = [];
+        return parsed.map((item, index) => ({
+            id: String(item?.id || `home_css_${Date.now()}_${index}`),
+            name: String(item?.name || `桌面样式 ${index + 1}`).trim() || `桌面样式 ${index + 1}`,
+            css: String(item?.css || '')
+        }));
     }
 
     _getAppDisplayName(app, customNames = null) {
@@ -695,7 +705,27 @@ export class SettingsApp {
 
     async _saveWechatOfflineInjectionToggle(key, enabled) {
         await this.storage.set(`${key}${WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX}`, true);
+        await this.storage.set(`${key}${WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX}`, !!enabled);
         await this.storage.set(key, !!enabled);
+    }
+
+    async _syncWechatOfflineTogglesForInterop(enabled) {
+        for (const key of WECHAT_INITIAL_ENABLED_OFFLINE_KEYS) {
+            const preferenceKey = `${key}${WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX}`;
+            const storedPreference = this.storage.get(preferenceKey);
+            const hasPreference = storedPreference !== undefined && storedPreference !== null && storedPreference !== '';
+            const preferredValue = hasPreference
+                ? this._isStorageTruthy(preferenceKey)
+                : (this.storage.get(key) !== false && this.storage.get(key) !== 'false');
+            if (!hasPreference) await this.storage.set(preferenceKey, preferredValue);
+            const nextValue = enabled ? preferredValue : false;
+            await this.storage.set(key, nextValue);
+            const toggle = document.getElementById(key);
+            if (toggle) {
+                toggle.checked = nextValue;
+                toggle.disabled = !enabled;
+            }
+        }
     }
 
     _isWechatOnlineOnlyModeEnabled(context = null) {
@@ -1278,9 +1308,10 @@ export class SettingsApp {
             ? storedFloatingEntryStyle
             : PHONE_FLOATING_ENTRY_DEFAULT_STYLE;
         const phoneExtensionBaseUrl = window.VirtualPhone?.extensionBaseUrl || new URL('../../', import.meta.url).href;
-        const homeLayoutRaw = String(this.storage.get('phone-home-layout') || 'icons');
-        const homeLayout = homeLayoutRaw === 'cards' ? 'cards' : 'icons';
-        const cardLayoutCustomCss = String(this.storage.get(CARD_LAYOUT_CUSTOM_CSS_KEY) || '');
+        const homeCssPresets = this._getHomeCssPresets();
+        const storedHomeCssActive = String(this.storage.get(HOME_CSS_ACTIVE_KEY) || '');
+        const homeCssActive = homeCssPresets.find(item => item.id === storedHomeCssActive)?.id || homeCssPresets[0]?.id || '';
+        const homeCssActivePreset = homeCssPresets.find(item => item.id === homeCssActive) || { name: '桌面样式 1', css: '' };
         // 加载壁纸和颜色设置
         const customWallpaper = this.imageManager.getWallpaper();
         const wallpaper = customWallpaper || PHONE_CONFIG.defaultWallpaper;
@@ -1290,7 +1321,6 @@ export class SettingsApp {
         const wallpaperStyle = useSettingsWallpaper
             ? `background-image: url('${String(wallpaper).replace(/'/g, "\\'")}'); background-size: cover; background-position: center;`
             : '';
-        const cardTimeImage = this.storage.get('phone-card-time-image') || null;
         const globalTextColor = normalizePhoneHexColor(this.storage.get('phone-global-text'), PHONE_GLOBAL_TEXT_COLOR_DEFAULT);
         const phoneFrameColor = normalizePhoneHexColor(this.storage.get('phone-frame-color'), PHONE_FRAME_COLOR_DEFAULT);
         const phoneShellScale = normalizePhoneShellScalePercent(this.storage.get('phone-shell-scale') || PHONE_SHELL_SCALE_DEFAULT);
@@ -2506,7 +2536,7 @@ export class SettingsApp {
                     <div class="phone-settings-tab-content ${this.currentTab === 'general' ? 'is-active' : 'is-hidden'}" id="tab-general" role="tabpanel" ${this.currentTab === 'general' ? '' : 'hidden'}>
                         <!-- 当前角色信息 -->
                         <div class="setting-section yzp-settings-current-context">
-                            <div class="setting-section-title yzp-settings-current-context-title">📱 当前角色</div>
+                            <div class="setting-section-title yzp-settings-current-context-title"><i class="fa-solid fa-user yzp-settings-section-icon" aria-hidden="true"></i> 当前角色</div>
                             <div class="setting-item yzp-settings-current-context-item">
                                 <div class="setting-label">${charBlockLabel}</div>
                                 <div class="setting-value">${charName}</div>
@@ -2524,12 +2554,12 @@ export class SettingsApp {
                             1. 开启“互通模式”或“线上模式”，二选一<br>
                             2. 互通模式为正文与小手机线上内容互通<br>
                             3. 线上模式为小手机内容不与正文互通；线上模式分为同步现实时间/同步剧情时间。<br>
-                            4. 线上注入设置不分“互通模式”或“线上模式”模式，仅为使用小手机上聊天时设置。
+                            4. 微信记忆设置用于控制小手机微信聊天使用的正文记忆范围。
                         </div>
 
                         <details data-settings-section="operation" data-settings-fold-key="phone-settings-general-operation-open" ${isGeneralOperationOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>⚙️ 操作设置</span>
+                                <span><i class="fa-solid fa-gear yzp-settings-section-icon" aria-hidden="true"></i> 操作设置</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
@@ -2595,45 +2625,12 @@ export class SettingsApp {
                                 </label>
                             </div>
 
-                            <div class="setting-item setting-toggle phone-floating-entry-toggle" style="margin-top: 10px;">
-                                <div>
-                                    <div class="setting-label">使用悬浮图标</div>
-                                    <div class="setting-desc">在酒馆页面显示可拖动的手机入口；点击即可打开手机</div>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="setting-phone-floating-entry-enabled" ${isPhoneFloatingEntryEnabled ? 'checked' : ''}>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-
-                            <fieldset class="phone-floating-entry-style-picker">
-                                <legend class="setting-label">悬浮图标样式</legend>
-                                <div class="setting-desc">选择后立即应用，拖动图标可调整位置</div>
-                                <div class="phone-floating-entry-style-grid">
-                                    ${PHONE_FLOATING_ENTRY_STYLES.map(item => {
-                                        const imageUrl = new URL(item.file, phoneExtensionBaseUrl).href;
-                                        return `
-                                            <label class="phone-floating-entry-style-option" title="${this._escapeHtml(item.label)}">
-                                                <input type="radio"
-                                                       name="phone-floating-entry-style"
-                                                       value="${this._escapeHtml(item.id)}"
-                                                       ${phoneFloatingEntryStyle === item.id ? 'checked' : ''}>
-                                                <span class="phone-floating-entry-style-preview">
-                                                    <img src="${this._escapeHtml(imageUrl)}" alt="" draggable="false">
-                                                </span>
-                                                <span class="phone-floating-entry-style-name">${this._escapeHtml(item.label)}</span>
-                                            </label>
-                                        `;
-                                    }).join('')}
-                                </div>
-                            </fieldset>
-
                             </div>
                         </details>
 
                         <details data-settings-section="online-mode" data-settings-fold-key="phone-settings-general-online-mode-open" ${isGeneralOnlineModeOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>📱 线上模式设置</span>
+                                <span><i class="fa-solid fa-mobile-screen-button yzp-settings-section-icon" aria-hidden="true"></i> 线上模式设置</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div data-settings-online-mode-content style="padding: 10px 10px 4px;"></div>
@@ -2641,12 +2638,10 @@ export class SettingsApp {
 
                         <details data-settings-section="online-injection" data-settings-fold-key="phone-settings-general-online-injection-open" ${isGeneralOnlineInjectionOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>📨 线上注入设置</span>
+                                <span><i class="fa-solid fa-brain yzp-settings-section-icon" aria-hidden="true"></i> 微信记忆设置</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
-
-                            <div class="settings-subsection-title">📱 手机内微信线上聊天</div>
 
                             <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
                                 <span style="font-size: 14px; color: #000;">正文上下文楼层</span>
@@ -2687,12 +2682,10 @@ export class SettingsApp {
 
                         <details data-settings-section="interaction" data-settings-fold-key="phone-settings-general-interaction-open" ${isGeneralInteractionOpen ? 'open' : ''} style="margin: 12px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>📡 互动模式</span>
+                                <span><i class="fa-solid fa-comments yzp-settings-section-icon" aria-hidden="true"></i> 互动模式</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div data-settings-interaction-content style="padding: 10px 10px 4px;">
-
-                            <div class="settings-subsection-title">微信线下记录</div>
 
                             <div class="setting-item setting-toggle">
                                 <div>
@@ -2842,10 +2835,43 @@ export class SettingsApp {
 
                         <details data-settings-fold-key="phone-settings-general-icon-settings-open" ${isGeneralIconSettingsOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>🖼️ 图标设置</span>
+                                <span><i class="fa-solid fa-icons yzp-settings-section-icon" aria-hidden="true"></i> 图标设置</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
+
+                            <div class="setting-item setting-toggle phone-floating-entry-toggle">
+                                <div>
+                                    <div class="setting-label">使用悬浮图标</div>
+                                    <div class="setting-desc">在酒馆页面显示可拖动的手机入口；点击即可打开手机</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="setting-phone-floating-entry-enabled" ${isPhoneFloatingEntryEnabled ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <fieldset class="phone-floating-entry-style-picker">
+                                <legend class="setting-label">悬浮图标样式</legend>
+                                <div class="setting-desc">选择后立即应用，拖动图标可调整位置</div>
+                                <div class="phone-floating-entry-style-grid">
+                                    ${PHONE_FLOATING_ENTRY_STYLES.map(item => {
+                                        const imageUrl = new URL(item.file, phoneExtensionBaseUrl).href;
+                                        return `
+                                            <label class="phone-floating-entry-style-option" title="${this._escapeHtml(item.label)}">
+                                                <input type="radio"
+                                                       name="phone-floating-entry-style"
+                                                       value="${this._escapeHtml(item.id)}"
+                                                       ${phoneFloatingEntryStyle === item.id ? 'checked' : ''}>
+                                                <span class="phone-floating-entry-style-preview">
+                                                    <img src="${this._escapeHtml(imageUrl)}" alt="" draggable="false">
+                                                </span>
+                                                <span class="phone-floating-entry-style-name">${this._escapeHtml(item.label)}</span>
+                                            </label>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </fieldset>
 
                             <div class="setting-item">
                                 <div class="setting-label">图标方案</div>
@@ -2910,23 +2936,10 @@ export class SettingsApp {
 
                         <details data-settings-fold-key="phone-settings-general-personalization-open" ${isGeneralPersonalizationOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>🎨 个性化</span>
+                                <span><i class="fa-solid fa-display yzp-settings-section-icon" aria-hidden="true"></i> 桌面设置</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
-
-                            <div class="setting-item">
-                                <div class="setting-toggle">
-                                    <div>
-                                        <div class="setting-label">桌面布局</div>
-                                        <div class="setting-desc">图标布局为默认桌面；卡片布局显示桌面组件</div>
-                                    </div>
-                                    <select id="phone-home-layout" style="width: 112px; height: 34px; padding: 0 8px; border: 1px solid rgba(18, 24, 38, 0.12); border-radius: 10px; background: #f8fafc; color: #111827; font-size: 12px;">
-                                        <option value="icons" ${homeLayout === 'icons' ? 'selected' : ''}>图标布局</option>
-                                        <option value="cards" ${homeLayout === 'cards' ? 'selected' : ''}>卡片布局</option>
-                                    </select>
-                                </div>
-                            </div>
 
                             <div class="setting-item">
                                 <div class="setting-label">小手机整体大小</div>
@@ -2978,45 +2991,43 @@ export class SettingsApp {
                                 </div>
                             </div>
 
-                            <div class="setting-item">
-                                <div class="setting-label">卡片布局时间图片</div>
-                                <div class="setting-desc">用于卡片布局顶部时间区域；最大20MB，HEIC请先转为JPG/PNG</div>
-                                <div style="margin-top: 10px; display: flex; gap: 8px;">
-                                    <button type="button" id="choose-card-time-image-btn" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
-                                        <i class="fa-regular fa-images"></i> 选择图片
-                                    </button>
-                                    <input type="file" id="upload-card-time-image" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0;">
-                                    <button id="delete-card-time-image" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); color: #999; border-radius: 6px;">
-                                        <i class="fa-solid fa-xmark"></i> 清除
-                                    </button>
-                                </div>
-                                <div id="card-time-image-preview" style="margin-top: 10px; max-height: 100px; overflow: hidden; border-radius: 8px; ${cardTimeImage ? '' : 'display: none;'}">
-                                    <img src="${cardTimeImage || ''}" style="width: 100%; height: auto; display: ${cardTimeImage ? 'block' : 'none'};">
-                                </div>
-                            </div>
-
                             <details class="setting-item app-name-custom-fold">
                                 <summary>
                                     <span>
-                                        <span class="setting-label">卡片式首页 CSS</span>
-                                        <span class="setting-desc">给卡片布局写自定义 CSS，可隐藏原卡片或套贴纸样式</span>
+                                        <span class="setting-label">桌面 CSS 样式方案</span>
+                                        <span class="setting-desc">针对基础图标布局自定义背景、时间、图标网格、Dock、动画和排版，可保存多套方案</span>
                                     </span>
                                     ${SETTINGS_FOLD_ARROW_HTML}
                                 </summary>
-                                <textarea id="phone-card-layout-custom-css"
+                                <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 10px;">
+                                    <select id="phone-home-css-preset-select" style="width: 100%; height: 34px; padding: 0 8px; border: 1px solid rgba(18, 24, 38, 0.12); border-radius: 8px; background: #f8fafc; color: #111827; font-size: 12px;">
+                                        ${homeCssPresets.length ? homeCssPresets.map(item => `<option value="${this._escapeHtml(item.id)}" ${item.id === homeCssActive ? 'selected' : ''}>${this._escapeHtml(item.name)}</option>`).join('') : '<option value="">暂无样式方案</option>'}
+                                    </select>
+                                    <button type="button" id="new-home-css-preset" class="setting-btn" style="padding: 6px 10px; font-size: 12px;">新建</button>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                                    <button type="button" id="rename-home-css-preset" class="setting-btn" style="padding: 6px 8px; font-size: 12px;">重命名</button>
+                                    <button type="button" id="delete-home-css-preset" class="setting-btn" style="padding: 6px 8px; font-size: 12px; color: #d9342b;">删除方案</button>
+                                </div>
+                                <textarea id="phone-home-custom-css"
                                           spellcheck="false"
-                                          placeholder="在这里写卡片式首页 CSS"
-                                          style="width: 100%; min-height: 150px; max-height: 42vh; resize: vertical; box-sizing: border-box; margin-top: 10px; padding: 9px 10px; border: 1px solid #e0e0e0; border-radius: 9px; background: #fbfbfb; color: #111; font-size: 11px; line-height: 1.45; font-family: Consolas, Monaco, monospace;">${this._escapeHtml(cardLayoutCustomCss)}</textarea>
+                                          placeholder="在这里写基础图标布局 CSS"
+                                          style="width: 100%; min-height: 150px; max-height: 42vh; resize: vertical; box-sizing: border-box; margin-top: 10px; padding: 9px 10px; border: 1px solid #e0e0e0; border-radius: 9px; background: #fbfbfb; color: #111; font-size: 11px; line-height: 1.45; font-family: Consolas, Monaco, monospace;">${this._escapeHtml(homeCssActivePreset.css)}</textarea>
                                 <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
-                                    <button type="button" id="save-card-layout-css" class="setting-btn" style="padding: 6px 8px; font-size: 12px; background: #07c160; border: none; color: #fff; border-radius: 6px;">
+                                    <button type="button" id="save-home-css" class="setting-btn" style="padding: 6px 8px; font-size: 12px; background: #07c160; border: none; color: #fff; border-radius: 6px;">
                                         保存
                                     </button>
-                                    <button type="button" id="insert-card-layout-css-template" class="setting-btn" style="padding: 6px 8px; font-size: 12px; background: #f8fafc; border: 1px solid rgba(0,0,0,0.12); color: #374151; border-radius: 6px;">
+                                    <button type="button" id="insert-home-css-template" class="setting-btn" style="padding: 6px 8px; font-size: 12px; background: #f8fafc; border: 1px solid rgba(0,0,0,0.12); color: #374151; border-radius: 6px;">
                                         示例
                                     </button>
-                                    <button type="button" id="clear-card-layout-css" class="setting-btn" style="padding: 6px 8px; font-size: 12px; background: rgba(255,255,255,0.88); border: 1px solid rgba(255,59,48,0.22); color: #d9342b; border-radius: 6px;">
+                                    <button type="button" id="clear-home-css" class="setting-btn" style="padding: 6px 8px; font-size: 12px; background: rgba(255,255,255,0.88); border: 1px solid rgba(255,59,48,0.22); color: #d9342b; border-radius: 6px;">
                                         清空
                                     </button>
+                                </div>
+                                <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                    <button type="button" id="export-home-css-presets" class="setting-btn" style="padding: 6px 8px; font-size: 12px;">导出全部方案</button>
+                                    <button type="button" id="import-home-css-presets" class="setting-btn" style="padding: 6px 8px; font-size: 12px;">导入方案</button>
+                                    <input type="file" id="import-home-css-presets-file" accept="application/json,.json" style="display:none;">
                                 </div>
                             </details>
 
@@ -3025,7 +3036,7 @@ export class SettingsApp {
 
                         <details data-settings-fold-key="phone-settings-general-text-color-open" ${isGeneralTextColorOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>🎨 颜色</span>
+                                <span><i class="fa-solid fa-palette yzp-settings-section-icon" aria-hidden="true"></i> 颜色</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
@@ -3078,7 +3089,7 @@ export class SettingsApp {
 
                         <details data-settings-fold-key="phone-settings-general-time-open" ${isGeneralTimeOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>⏰ 时间管理</span>
+                                <span><i class="fa-regular fa-clock yzp-settings-section-icon" aria-hidden="true"></i> 时间管理</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
@@ -3109,7 +3120,7 @@ export class SettingsApp {
 
                         <details data-settings-fold-key="phone-settings-general-data-open" ${isGeneralDataOpen ? 'open' : ''} style="margin: 8px 0 8px; border: 1px solid #ececec; border-radius: 10px; background: #fff; overflow: hidden;">
                             <summary style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-size: 13px; font-weight: 700; color: #333; background: #fafafa;">
-                                <span>💾 数据管理</span>
+                                <span><i class="fa-solid fa-chart-column yzp-settings-section-icon" aria-hidden="true"></i> 数据管理</span>
                                 ${SETTINGS_FOLD_ARROW_HTML}
                             </summary>
                             <div style="padding: 10px 10px 4px;">
@@ -6259,28 +6270,6 @@ export class SettingsApp {
             this.phoneShell?.showNotification?.('已更换', successMessage, '✅');
             return true;
         };
-        const applyCardTimeImagePath = async (pathLike, successMessage = '时间卡片图片已更换') => {
-            const nextImage = String(pathLike || '').trim();
-            if (!nextImage) throw new Error('时间卡片图片路径无效');
-            if (nextImage === String(this.storage.get('phone-card-time-image') || '').trim()) {
-                this.phoneShell?.showNotification?.('提示', '当前已经在使用这张时间卡片图片', 'ℹ️');
-                return false;
-            }
-
-            await this.storage.set('phone-card-time-image', nextImage);
-            const preview = getActiveSettingsRoot()?.querySelector('#card-time-image-preview')
-                || document.getElementById('card-time-image-preview');
-            const img = preview?.querySelector('img');
-            if (preview && img) {
-                preview.style.display = 'block';
-                img.style.display = 'block';
-                img.src = nextImage;
-            }
-            window.VirtualPhone?.home?.render?.({ forceDomRefresh: true });
-            this.phoneShell?.showNotification?.('已更换', successMessage, '✅');
-            return true;
-        };
-
         document.getElementById('choose-wallpaper-btn')?.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -6292,52 +6281,34 @@ export class SettingsApp {
                     return;
                 }
                 if (source !== 'album') return;
-
                 if (!(picker.albumData?.getImages?.() || []).length) {
                     this.phoneShell?.showNotification?.('提示', '相册 App 里还没有可复用的图片', 'ℹ️');
                     return;
                 }
                 const image = await picker.chooseImage({ title: '选择壁纸' });
-                if (!image) return;
-                await applyWallpaperPath(image.path, '已复用相册中的图片作为壁纸');
+                if (image) await applyWallpaperPath(image.path, '已复用相册中的图片作为壁纸');
             } catch (err) {
                 console.warn('[Settings] 从相册选择壁纸失败:', err);
                 this.phoneShell?.showNotification?.('更换失败', err?.message || '壁纸更换失败', '❌');
             }
         });
-
         document.getElementById('upload-wallpaper')?.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
+            const file = e.target.files?.[0];
             if (!file) return;
-
-            // 重置input
             e.target.value = '';
-
             try {
-                // 使用裁剪器
                 const cropper = new ImageCropper({
-                    title: '裁剪壁纸',
-                    outputWidth: 400,
-                    outputHeight: 800,
-                    fitMode: 'contain',
-                    preserveSourceAspectRatio: true,
-                    quality: 0.85,
-                    maxFileSize: SETTINGS_IMAGE_MAX_FILE_SIZE
+                    title: '裁剪壁纸', outputWidth: 400, outputHeight: 800,
+                    fitMode: 'contain', preserveSourceAspectRatio: true,
+                    quality: 0.85, maxFileSize: SETTINGS_IMAGE_MAX_FILE_SIZE
                 });
-
                 const croppedImage = await cropper.open(file);
-
-                // 🔥 上传到服务端，避免 Base64 撑大存档
                 const serverUrl = await this.imageManager._uploadToServer(croppedImage, 'wallpaper', { allowBase64Fallback: false });
                 await applyWallpaperPath(serverUrl, '壁纸已上传并保留到相册 App');
             } catch (err) {
-                if (err.message !== '用户取消') {
-                    alert('❌ 上传失败：' + formatImageUploadError(err));
-                }
+                if (err.message !== '用户取消') alert('❌ 上传失败：' + formatImageUploadError(err));
             }
         });
-        
-        // 恢复默认壁纸时只解除绑定，旧图继续保留在相册 App。
         document.querySelectorAll('.settings-app #delete-wallpaper').forEach((deleteWallpaperBtn) => deleteWallpaperBtn.addEventListener('click', async (event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -6345,150 +6316,138 @@ export class SettingsApp {
             const ok = await this._showPhoneConfirm({
                 title: '恢复默认壁纸',
                 message: '确定恢复默认壁纸吗？当前图片会继续保留在相册 App，之后可以重新选择。',
-                confirmText: '恢复默认',
-                cancelText: '取消',
-                danger: false,
-                host: activeSettingsRoot
+                confirmText: '恢复默认', cancelText: '取消', danger: false, host: activeSettingsRoot
             });
             if (!ok) return;
-
             this.imageManager.cache.wallpaper = null;
             await this.imageManager.saveImages(this.imageManager.cache);
-
             const preview = activeSettingsRoot?.querySelector('#wallpaper-preview') || document.getElementById('wallpaper-preview');
-            if (preview) {
-                preview.style.display = 'block';
-                const img = preview.querySelector('img');
-                if (img) {
-                    img.style.display = 'block';
-                    img.src = PHONE_CONFIG.defaultWallpaper;
-                }
-            }
-
+            const img = preview?.querySelector('img');
+            if (preview && img) { preview.style.display = 'block'; img.style.display = 'block'; img.src = PHONE_CONFIG.defaultWallpaper; }
             if (activeSettingsRoot) {
                 activeSettingsRoot.classList.add('settings-has-wallpaper');
                 activeSettingsRoot.style.backgroundImage = `url("${PHONE_CONFIG.defaultWallpaper.replace(/"/g, '\\"')}")`;
                 activeSettingsRoot.style.backgroundSize = 'cover';
                 activeSettingsRoot.style.backgroundPosition = 'center';
             }
-
-            // 通知主屏幕更新
-            window.dispatchEvent(new CustomEvent('phone:updateWallpaper', { 
-                detail: { wallpaper: null } 
-            }));
-            
+            window.dispatchEvent(new CustomEvent('phone:updateWallpaper', { detail: { wallpaper: null } }));
             this.phoneShell?.showNotification?.('已恢复', '手机壁纸已恢复为默认背景', '✅');
         }));
-
-        document.getElementById('choose-card-time-image-btn')?.addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            try {
-                const picker = this._getAlbumImagePicker();
-                const source = await picker.chooseSource({ title: '选择时间卡片图片来源' });
-                if (source === 'device') {
-                    document.getElementById('upload-card-time-image')?.click?.();
-                    return;
-                }
-                if (source !== 'album') return;
-
-                if (!(picker.albumData?.getImages?.() || []).length) {
-                    this.phoneShell?.showNotification?.('提示', '相册 App 里还没有可复用的图片', 'ℹ️');
-                    return;
-                }
-                const image = await picker.chooseImage({ title: '选择时间卡片图片' });
-                if (!image) return;
-                await applyCardTimeImagePath(image.path, '已复用相册中的时间卡片图片');
-            } catch (err) {
-                console.warn('[Settings] 从相册选择时间卡片图片失败:', err);
-                this.phoneShell?.showNotification?.('更换失败', err?.message || '时间卡片图片更换失败', '❌');
-            }
+        const homeCssPresetSelect = document.getElementById('phone-home-css-preset-select');
+        const homeCssTextarea = document.getElementById('phone-home-custom-css');
+        const saveHomeCssPresets = async (presets, activeId = '') => {
+            await this.storage.set(HOME_CSS_PRESETS_KEY, JSON.stringify(presets));
+            if (activeId) await this.storage.set(HOME_CSS_ACTIVE_KEY, activeId);
+            window.dispatchEvent(new CustomEvent('phone:updateHomeCss'));
+        };
+        const getCurrentHomeCssPreset = () => {
+            const presets = this._getHomeCssPresets();
+            const activeId = String(homeCssPresetSelect?.value || this.storage.get(HOME_CSS_ACTIVE_KEY) || presets[0]?.id || '');
+            return { presets, activeId, preset: presets.find(item => item.id === activeId) || null };
+        };
+        homeCssPresetSelect?.addEventListener('change', async (e) => {
+            const activeId = String(e.target.value || '');
+            const presets = this._getHomeCssPresets();
+            const preset = presets.find(item => item.id === activeId);
+            if (!preset) return;
+            await this.storage.set(HOME_CSS_ACTIVE_KEY, activeId);
+            if (homeCssTextarea) homeCssTextarea.value = preset.css;
+            window.dispatchEvent(new CustomEvent('phone:updateHomeCss'));
         });
-
-        document.getElementById('upload-card-time-image')?.addEventListener('change', async (e) => {
+        document.getElementById('new-home-css-preset')?.addEventListener('click', async () => {
+            const presets = this._getHomeCssPresets();
+            const id = `home_css_${Date.now()}`;
+            const name = prompt('请输入新样式方案名称', `桌面样式 ${presets.length + 1}`)?.trim();
+            if (!name) return;
+            presets.push({ id, name, css: '' });
+            await saveHomeCssPresets(presets, id);
+            this.phoneShell?.showNotification?.('已新建', `样式方案“${name}”已创建`, '✅');
+            this.render();
+        });
+        document.getElementById('rename-home-css-preset')?.addEventListener('click', async () => {
+            const { presets, activeId, preset } = getCurrentHomeCssPreset();
+            if (!preset) return;
+            const name = prompt('请输入新的方案名称', preset.name)?.trim();
+            if (!name) return;
+            preset.name = name;
+            await saveHomeCssPresets(presets, activeId);
+            this.phoneShell?.showNotification?.('已重命名', `样式方案已改为“${name}”`, '✅');
+            this.render();
+        });
+        document.getElementById('delete-home-css-preset')?.addEventListener('click', async () => {
+            const { presets, activeId, preset } = getCurrentHomeCssPreset();
+            if (!preset) return;
+            if (!confirm(`确定删除样式方案“${preset.name}”吗？`)) return;
+            const next = presets.filter(item => item.id !== activeId);
+            const nextActive = next[0]?.id || '';
+            await this.storage.set(HOME_CSS_PRESETS_KEY, JSON.stringify(next));
+            if (nextActive) await this.storage.set(HOME_CSS_ACTIVE_KEY, nextActive);
+            else await this.storage.remove(HOME_CSS_ACTIVE_KEY);
+            window.dispatchEvent(new CustomEvent('phone:updateHomeCss'));
+            this.render();
+        });
+        document.getElementById('save-home-css')?.addEventListener('click', async () => {
+            const { presets, activeId, preset } = getCurrentHomeCssPreset();
+            if (!preset) {
+                this.phoneShell?.showNotification?.('提示', '请先新建一个样式方案', 'ℹ️');
+                return;
+            }
+            preset.css = String(homeCssTextarea?.value || '');
+            await saveHomeCssPresets(presets, activeId);
+            this.phoneShell?.showNotification?.('已保存', `“${preset.name}”已应用到基础图标桌面`, '✅');
+        });
+        document.getElementById('insert-home-css-template')?.addEventListener('click', () => {
+            if (!homeCssTextarea) return;
+            homeCssTextarea.value = this._getHomeCssTemplate();
+            homeCssTextarea.focus();
+        });
+        document.getElementById('clear-home-css')?.addEventListener('click', async () => {
+            if (!confirm('确定清空当前桌面样式方案吗？')) return;
+            if (homeCssTextarea) homeCssTextarea.value = '';
+            const { presets, activeId, preset } = getCurrentHomeCssPreset();
+            if (!preset) return;
+            preset.css = '';
+            await saveHomeCssPresets(presets, activeId);
+            this.phoneShell?.showNotification?.('已清空', '当前桌面样式已恢复默认', '✅');
+        });
+        document.getElementById('export-home-css-presets')?.addEventListener('click', () => {
+            const payload = JSON.stringify({
+                type: 'yuzuki-phone-home-css-presets',
+                version: 1,
+                activeId: String(this.storage.get(HOME_CSS_ACTIVE_KEY) || ''),
+                presets: this._getHomeCssPresets()
+            }, null, 2);
+            const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'yuzuki-phone-home-css-presets.json';
+            link.click();
+            URL.revokeObjectURL(url);
+        });
+        document.getElementById('import-home-css-presets')?.addEventListener('click', () => {
+            document.getElementById('import-home-css-presets-file')?.click?.();
+        });
+        document.getElementById('import-home-css-presets-file')?.addEventListener('change', async (e) => {
             const file = e.target.files?.[0];
-            if (!file) return;
             e.target.value = '';
-
+            if (!file) return;
             try {
-                const cropper = new ImageCropper({
-                    title: '裁剪时间卡片图片',
-                    outputWidth: 800,
-                    outputHeight: 320,
-                    preserveTransparency: true,
-                    outputFormat: ['image/png', 'image/svg+xml', 'image/webp'].includes(String(file.type || '').toLowerCase()) ? 'image/png' : 'image/jpeg',
-                    quality: 0.85,
-                    maxFileSize: SETTINGS_IMAGE_MAX_FILE_SIZE
-                });
-
-                const croppedImage = await cropper.open(file);
-                const serverUrl = await this.imageManager._uploadToServer(croppedImage, 'card_time', { allowBase64Fallback: false });
-                await applyCardTimeImagePath(serverUrl, '时间卡片图片已上传并保留到相册 App');
+                const parsed = JSON.parse(await file.text());
+                const source = Array.isArray(parsed) ? parsed : parsed?.presets;
+                if (!Array.isArray(source)) throw new Error('文件中没有样式方案');
+                const presets = source.map((item, index) => ({
+                    id: `home_css_${Date.now()}_${index}`,
+                    name: String(item?.name || `导入样式 ${index + 1}`).trim() || `导入样式 ${index + 1}`,
+                    css: String(item?.css || '')
+                }));
+                if (!presets.length) throw new Error('没有可导入的样式方案');
+                await saveHomeCssPresets(presets, presets[0].id);
+                this.phoneShell?.showNotification?.('导入成功', `已导入 ${presets.length} 套桌面样式`, '✅');
+                this.render();
             } catch (err) {
-                if (err.message !== '用户取消') {
-                    alert('❌ 上传失败：' + formatImageUploadError(err));
-                }
+                this.phoneShell?.showNotification?.('导入失败', err?.message || 'JSON 文件格式不正确', '❌');
             }
-        });
-
-        document.getElementById('delete-card-time-image')?.addEventListener('click', async (event) => {
-            const activeSettingsRoot = event.currentTarget?.closest?.('.settings-app') || settingsRoot;
-            const ok = await this._showPhoneConfirm({
-                title: '清除时间卡片图片',
-                message: '确定清除当前时间卡片图片吗？图片会继续保留在相册 App，之后可以重新选择。',
-                confirmText: '清除',
-                cancelText: '取消',
-                danger: false,
-                host: activeSettingsRoot
-            });
-            if (!ok) return;
-
-            await this.storage.remove('phone-card-time-image');
-
-            const preview = document.getElementById('card-time-image-preview');
-            const img = preview?.querySelector('img');
-            if (preview && img) {
-                preview.style.display = 'none';
-                img.style.display = 'none';
-                img.src = '';
-            }
-
-            window.VirtualPhone?.home?.render?.({ forceDomRefresh: true });
-            this.phoneShell?.showNotification?.('已清除', '时间卡片图片已清除，原图仍保留在相册 App', '✅');
-        });
-
-        document.getElementById('phone-home-layout')?.addEventListener('change', async (e) => {
-            const value = String(e.target.value || 'icons') === 'cards' ? 'cards' : 'icons';
-            await this.storage.set('phone-home-layout', value);
-            this.phoneShell?.syncHomeLayoutChromeClass?.();
-            window.VirtualPhone?.home?.render?.({ forceDomRefresh: true });
-        });
-
-        document.getElementById('save-card-layout-css')?.addEventListener('click', async () => {
-            const textarea = document.getElementById('phone-card-layout-custom-css');
-            const cssText = String(textarea?.value || '').trim();
-            await this.storage.set(CARD_LAYOUT_CUSTOM_CSS_KEY, cssText);
-            window.dispatchEvent(new CustomEvent('phone:updateCardLayoutCss'));
-            window.VirtualPhone?.home?.render?.({ forceDomRefresh: true });
-            this.phoneShell?.showNotification?.('已保存', '卡片式首页 CSS 已生效', '✅');
-        });
-
-        document.getElementById('insert-card-layout-css-template')?.addEventListener('click', () => {
-            const textarea = document.getElementById('phone-card-layout-custom-css');
-            if (!textarea) return;
-            textarea.value = this._getCardLayoutCssTemplate();
-            textarea.focus();
-        });
-
-        document.getElementById('clear-card-layout-css')?.addEventListener('click', async () => {
-            const ok = confirm('确定清空卡片式首页 CSS 吗？');
-            if (!ok) return;
-            const textarea = document.getElementById('phone-card-layout-custom-css');
-            if (textarea) textarea.value = '';
-            await this.storage.set(CARD_LAYOUT_CUSTOM_CSS_KEY, '');
-            window.dispatchEvent(new CustomEvent('phone:updateCardLayoutCss'));
-            window.VirtualPhone?.home?.render?.({ forceDomRefresh: true });
-            this.phoneShell?.showNotification?.('已清空', '卡片式首页 CSS 已恢复默认', '✅');
         });
 
         const phoneShellScaleSlider = document.getElementById('phone-shell-scale-slider');
@@ -6752,7 +6711,6 @@ export class SettingsApp {
                 await this.storage.set(onlineOnlyModeKey, false);
                 await this.storage.set(proactiveEnabledKey, false);
                 await this.storage.set(onlineOnlyRealTimeKey, false);
-                await this._ensureInitialWechatOfflineInjectionToggles();
                 await window.VirtualPhone?.resetWechatOnlineProactiveSessionTimer?.('switch_to_interop');
                 const onlineOnlyToggle = document.getElementById('setting-wechat-online-only-mode');
                 if (onlineOnlyToggle) onlineOnlyToggle.checked = false;
@@ -6760,12 +6718,9 @@ export class SettingsApp {
                 if (proactiveToggle) proactiveToggle.checked = false;
                 const realTimeToggle = document.getElementById('setting-wechat-online-real-time-enabled');
                 if (realTimeToggle) realTimeToggle.checked = false;
-                WECHAT_OFFLINE_INJECTION_TOGGLE_KEYS.forEach((key) => {
-                    const toggle = document.getElementById(key);
-                    if (toggle) toggle.disabled = false;
-                });
-                this.render();
             }
+            await this._syncWechatOfflineTogglesForInterop(enabled);
+            this.render();
         });
 
         // 线上模式切换：与互通模式互斥；仅暂时禁用线下注入，不覆盖用户偏好
@@ -12464,5 +12419,6 @@ export class SettingsApp {
         }
     }
 }
+
 
 

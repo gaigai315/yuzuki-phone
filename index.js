@@ -150,6 +150,7 @@ const WECHAT_INITIAL_ENABLED_OFFLINE_KEYS = [
     'offline-group-chat-enabled'
 ];
 const WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX = '-user-set';
+const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
@@ -6660,23 +6661,16 @@ if (window.GGP_Loaded) {
                 void storage.set(interopKey, interopEnabled);
             }
 
-            if (interopEnabled) {
-                WECHAT_INITIAL_ENABLED_OFFLINE_KEYS.forEach((key) => {
-                    const userSetKey = `${key}${WECHAT_OFFLINE_INJECTION_USER_SET_SUFFIX}`;
-                    if (!isEnabled(storage.get(userSetKey))) {
-                        void storage.set(key, true);
-                    } else if (!hasStoredValue(storage.get(key))) {
-                        // 已有用户偏好标记但值意外缺失时，仍使用默认开启值。
-                        void storage.set(key, true);
-                    }
-                });
-            } else {
-                WECHAT_INITIAL_ENABLED_OFFLINE_KEYS.forEach((key) => {
-                    if (!hasStoredValue(storage.get(key))) {
-                        void storage.set(key, true);
-                    }
-                });
-            }
+            WECHAT_INITIAL_ENABLED_OFFLINE_KEYS.forEach((key) => {
+                const preferenceKey = `${key}${WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX}`;
+                const storedPreference = storage.get(preferenceKey);
+                const hasPreference = hasStoredValue(storedPreference);
+                const preferredValue = hasPreference
+                    ? isEnabled(storedPreference)
+                    : (hasStoredValue(storage.get(key)) ? isEnabled(storage.get(key)) : true);
+                if (!hasPreference) void storage.set(preferenceKey, preferredValue);
+                void storage.set(key, interopEnabled ? preferredValue : false);
+            });
         } catch (error) {
             console.warn('[Wechat] 初始化互动模式默认设置失败:', error);
         }

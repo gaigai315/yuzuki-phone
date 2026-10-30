@@ -261,6 +261,7 @@ export class DiaryData {
         return {
             autoEnabled: settings.autoEnabled === true,
             autoFloor: Math.max(10, Math.min(9999, parseInt(settings.autoFloor, 10) || 50)),
+            manualBatchSize: Math.max(10, Math.min(200, parseInt(settings.manualBatchSize, 10) || parseInt(settings.autoFloor, 10) || 50)),
             batchMode: settings.batchMode !== false
         };
     }
@@ -274,6 +275,7 @@ export class DiaryData {
 
         next.autoEnabled = next.autoEnabled === true;
         next.autoFloor = Math.max(10, Math.min(9999, parseInt(next.autoFloor, 10) || 50));
+        next.manualBatchSize = Math.max(10, Math.min(200, parseInt(next.manualBatchSize, 10) || 50));
         next.batchMode = next.batchMode !== false;
 
         this.storage.set('diary_auto_settings', JSON.stringify(next));

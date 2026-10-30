@@ -1314,8 +1314,7 @@ export class PhoneShell {
 
     syncHomeLayoutChromeClass() {
         if (!this.container) return;
-        const layout = String(window.VirtualPhone?.storage?.get?.('phone-home-layout') || 'icons');
-        this.container.classList.toggle('phone-card-home-layout', layout === 'cards');
+        this.container.classList.remove('phone-card-home-layout');
     }
 
     // 🔥 绑定 Home 指示器点击事件

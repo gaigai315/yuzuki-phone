@@ -12,9 +12,10 @@
 // 主屏幕
 import { APPS, PHONE_CONFIG } from '../config/apps.js'; // 🔥🔥🔥 这一行必须改！
 
-const CARD_LAYOUT_CUSTOM_CSS_KEY = 'phone-card-layout-custom-css';
-const CARD_LAYOUT_CUSTOM_STYLE_ID = 'phone-card-layout-custom-css-style';
-const CARD_LAYOUT_GUARD_STYLE_ID = 'phone-card-layout-guard-css-style';
+const HOME_CSS_PRESETS_KEY = 'phone-home-css-presets';
+const HOME_CSS_ACTIVE_KEY = 'phone-home-css-active';
+const HOME_CUSTOM_STYLE_ID = 'phone-home-custom-css-style';
+const LEGACY_CARD_LAYOUT_KEYS = ['phone-home-layout', 'phone-card-layout-custom-css', 'phone-card-time-image'];
 
 export class HomeScreen {
     constructor(phoneShell, apps) {
@@ -29,6 +30,7 @@ export class HomeScreen {
         } else {
             this.wallpaper = PHONE_CONFIG.defaultWallpaper;
         }
+        void this._cleanupLegacyCardLayout();
     }
 
     // 🔥 新增：判断当前是否为主屏幕
@@ -50,16 +52,15 @@ export class HomeScreen {
             ? `background-image: url('${wallpaper}'); background-size: cover; background-position: center;`
             : '';
 
-        const homeLayout = this.getHomeLayout();
-        const hasCardCustomCss = homeLayout === 'cards' && !!this.getCardLayoutCustomCssText();
-        const cardCustomClass = hasCardCustomCss ? ' home-card-custom-css-active yzp-home-card-custom-css-active' : '';
-        this.preloadCardLayoutCustomCss();
+        const hasHomeCustomCss = !!this.getActiveHomeCssText();
+        const customClass = hasHomeCustomCss ? ' home-custom-css-active yzp-home-custom-css-active' : '';
+        this.preloadHomeCustomCss();
 
         const html = `
-            <div class="home-screen yzp-home-screen home-layout-${homeLayout} yzp-home-layout-${homeLayout}${cardCustomClass}"${renderKeyAttr}>
+            <div class="home-screen yzp-home-screen home-layout-icons yzp-home-layout-icons${customClass}"${renderKeyAttr}>
                 <div class="wallpaper" style="${wallpaperStyle}"></div>
 
-                ${homeLayout === 'cards' ? this.renderCardLayout() : this.renderIconLayout()}
+                ${this.renderIconLayout()}
 
                 <div class="dock yzp-home-dock">
                     ${this.renderDock()}
@@ -84,10 +85,7 @@ export class HomeScreen {
         return true;
     }
 
-    getHomeLayout() {
-        const layout = String(window.VirtualPhone?.storage?.get('phone-home-layout') || 'icons');
-        return layout === 'cards' ? 'cards' : 'icons';
-    }
+    getHomeLayout() { return 'icons'; }
 
     _getWallpaperImage() {
         try {
@@ -98,72 +96,56 @@ export class HomeScreen {
         }
     }
 
-    getCardLayoutCustomCssText() {
-        return String(window.VirtualPhone?.storage?.get?.(CARD_LAYOUT_CUSTOM_CSS_KEY) || '').trim();
+    _getHomeCssPresets() {
+        const raw = window.VirtualPhone?.storage?.get?.(HOME_CSS_PRESETS_KEY);
+        let parsed = raw;
+        try { if (typeof raw === 'string') parsed = JSON.parse(raw); } catch (e) { parsed = []; }
+        if (!Array.isArray(parsed)) return [];
+        return parsed.map((item, index) => ({
+            id: String(item?.id || `home_css_${index}_${Date.now()}`),
+            name: String(item?.name || `桌面样式 ${index + 1}`).trim() || `桌面样式 ${index + 1}`,
+            css: String(item?.css || '')
+        }));
     }
 
-    applyCardLayoutCustomCss() {
-        const existing = document.getElementById(CARD_LAYOUT_CUSTOM_STYLE_ID);
-        existing?.remove();
-        const existingGuard = document.getElementById(CARD_LAYOUT_GUARD_STYLE_ID);
-        existingGuard?.remove();
+    getActiveHomeCssText() {
+        const presets = this._getHomeCssPresets();
+        const activeId = String(window.VirtualPhone?.storage?.get?.(HOME_CSS_ACTIVE_KEY) || '');
+        return String((presets.find(item => item.id === activeId) || presets[0])?.css || '').trim();
+    }
 
-        if (this.getHomeLayout() !== 'cards') return;
-        const cssText = this.getCardLayoutCustomCssText();
+    _cleanupLegacyCardLayout() {
+        const storage = window.VirtualPhone?.storage;
+        if (!storage) return;
+        LEGACY_CARD_LAYOUT_KEYS.forEach(key => { try { void storage.remove?.(key); } catch (e) {} });
+        document.getElementById('phone-card-layout-custom-css-style')?.remove();
+        document.getElementById('phone-card-layout-guard-css-style')?.remove();
+        document.querySelectorAll('style[data-scope="phone-card-layout"], style[data-scope="phone-card-layout-guard"]').forEach(style => style.remove());
+    }
+
+    applyHomeCustomCss() {
+        document.getElementById(HOME_CUSTOM_STYLE_ID)?.remove();
+        const cssText = this.getActiveHomeCssText();
         if (cssText) {
             const style = document.createElement('style');
-            style.id = CARD_LAYOUT_CUSTOM_STYLE_ID;
-            style.setAttribute('data-scope', 'phone-card-layout');
+            style.id = HOME_CUSTOM_STYLE_ID;
+            style.setAttribute('data-scope', 'phone-home-custom-css');
             style.textContent = cssText;
             (this.phoneShell?.screen || document.head).appendChild(style);
         }
-
-        this.applyCardLayoutGuardCss();
     }
 
-    preloadCardLayoutCustomCss() {
-        document.getElementById(CARD_LAYOUT_CUSTOM_STYLE_ID)?.remove();
-        document.getElementById(CARD_LAYOUT_GUARD_STYLE_ID)?.remove();
-        if (this.getHomeLayout() !== 'cards') return;
-
-        const cssText = this.getCardLayoutCustomCssText();
+    preloadHomeCustomCss() {
+        document.getElementById(HOME_CUSTOM_STYLE_ID)?.remove();
+        const cssText = this.getActiveHomeCssText();
         if (cssText) {
             const style = document.createElement('style');
-            style.id = CARD_LAYOUT_CUSTOM_STYLE_ID;
-            style.setAttribute('data-scope', 'phone-card-layout');
+            style.id = HOME_CUSTOM_STYLE_ID;
+            style.setAttribute('data-scope', 'phone-home-custom-css');
             style.setAttribute('data-owner', 'document-head');
             style.textContent = cssText;
             document.head.appendChild(style);
         }
-        this.applyCardLayoutGuardCss(document.head);
-    }
-
-    applyCardLayoutGuardCss(host = null) {
-        const style = document.createElement('style');
-        style.id = CARD_LAYOUT_GUARD_STYLE_ID;
-        style.setAttribute('data-scope', 'phone-card-layout-guard');
-        style.textContent = `
-            #phone-panel-content .phone-screen .home-layout-cards .dock {
-                position: absolute !important;
-                left: 50% !important;
-                right: auto !important;
-                top: auto !important;
-                width: auto !important;
-                max-width: calc(100% - 12%) !important;
-                height: auto !important;
-                transform: translateX(-50%) !important;
-                box-sizing: border-box !important;
-            }
-
-            @media (min-width: 501px) {
-                #phone-panel-content .phone-screen .home-layout-cards .dock {
-                    width: calc(100% - 12%) !important;
-                    bottom: 11.5% !important;
-                }
-            }
-
-        `;
-        (host || this.phoneShell?.screen || document.head).appendChild(style);
     }
 
     renderIconLayout() {
@@ -177,40 +159,6 @@ export class HomeScreen {
                 ${this.apps.map(app => this.renderAppIcon(app)).join('')}
             </div>
         `;
-    }
-
-    renderCardLayout() {
-        const timeCardImage = this.getCardTimeImage();
-        const timeCardImageStyle = timeCardImage
-            ? ` style="background-image:url('${timeCardImage}');"`
-            : '';
-        const cardDate = this.getCurrentDateParts();
-        return `
-            <div class="home-dashboard yzp-home-dashboard">
-                <section class="home-time-card yzp-home-time-card yzp-home-floating-time${timeCardImage ? ' has-image' : ''}${cardDate.isAncient ? ' is-ancient' : ''}"${timeCardImageStyle}>
-                    <div class="home-time-info yzp-home-time-info">
-                        <div class="time-large yzp-home-time-large">${this.getCurrentTime()}</div>
-                        <div class="home-time-date yzp-home-time-date">
-                            <div class="date yzp-home-date">${this._escapeHtml(cardDate.date)}</div>
-                            <div class="home-time-weekday yzp-home-time-weekday"${cardDate.isAncient ? ' hidden' : ''}>${this._escapeHtml(cardDate.weekday)}</div>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="home-app-cluster yzp-home-app-cluster">
-                    <div class="home-app-cluster-scroll yzp-home-app-cluster-scroll">
-                        ${this.renderClusterApps()}
-                    </div>
-                </section>
-                ${this.renderSocialCard()}
-                ${this.renderSettingsCard()}
-                ${this.renderMusicCard()}
-            </div>
-        `;
-    }
-
-    getCardTimeImage() {
-        return window.VirtualPhone?.storage?.get?.('phone-card-time-image') || null;
     }
 
     getAppById(appId) {
@@ -575,10 +523,11 @@ export class HomeScreen {
             });
         }
 
-        if (!this._cardLayoutCssEventBound) {
-            this._cardLayoutCssEventBound = true;
-            window.addEventListener('phone:updateCardLayoutCss', () => {
-                this.applyCardLayoutCustomCss();
+        if (!this._homeCssEventBound) {
+            this._homeCssEventBound = true;
+            window.addEventListener('phone:updateHomeCss', () => {
+                this.applyHomeCustomCss();
+                this.render({ forceDomRefresh: true });
             });
         }
 
@@ -762,9 +711,7 @@ export class HomeScreen {
 
             if (!badge) {
                 badge = document.createElement('span');
-                badge.className = root.classList.contains('home-layout-cards')
-                    ? 'app-badge yzp-home-app-badge'
-                    : 'app-badge';
+                badge.className = 'app-badge';
                 element.appendChild(badge);
             }
             badge.textContent = String(badgeCount);
