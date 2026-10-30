@@ -3004,7 +3004,7 @@ export class SettingsApp {
                                 <summary>
                                     <span>
                                         <span class="setting-label">桌面 CSS 样式方案</span>
-                                        <span class="setting-desc">针对基础图标布局自定义背景、时间、图标网格、Dock、动画和排版，可保存多套方案</span>
+                                        <span class="setting-desc">针对基础图标布局自定义背景、时间、图标网格、Dock、动画和排版，可保存多套方案；导入会新增方案，保留原有方案</span>
                                     </span>
                                     ${SETTINGS_FOLD_ARROW_HTML}
                                 </summary>
@@ -6488,14 +6488,25 @@ export class SettingsApp {
                                 ? [parsed]
                                 : null;
                 if (!Array.isArray(source)) throw new Error('文件中没有样式方案');
-                const presets = source.map((item, index) => ({
-                    id: `home_css_${Date.now()}_${index}`,
-                    name: String(item?.name || `导入样式 ${index + 1}`).trim() || `导入样式 ${index + 1}`,
-                    css: String(item?.css || '')
-                }));
-                if (!presets.length) throw new Error('没有可导入的样式方案');
-                await saveHomeCssPresets(presets, presets[0].id);
-                this.phoneShell?.showNotification?.('导入成功', `已导入 ${presets.length} 套桌面样式`, '✅');
+                if (!source.length) throw new Error('没有可导入的样式方案');
+                // Import adds schemes to the current collection instead of replacing it.
+                const existingPresets = this._getHomeCssPresets();
+                const usedIds = new Set(existingPresets.map(item => item.id));
+                const usedNames = new Set(existingPresets.map(item => item.name));
+                const importedAt = Date.now();
+                const importedPresets = source.map((item, index) => {
+                    const baseId = `home_css_${importedAt}_${index}`;
+                    let id = baseId;
+                    for (let suffix = 2; usedIds.has(id); suffix++) id = `${baseId}_${suffix}`;
+                    usedIds.add(id);
+                    const baseName = String(item?.name || `导入样式 ${index + 1}`).trim() || `导入样式 ${index + 1}`;
+                    let name = baseName;
+                    for (let suffix = 2; usedNames.has(name); suffix++) name = `${baseName} (${suffix})`;
+                    usedNames.add(name);
+                    return { id, name, css: String(item?.css || '') };
+                });
+                await saveHomeCssPresets([...existingPresets, ...importedPresets], importedPresets[0].id);
+                this.phoneShell?.showNotification?.('导入成功', `已新增 ${importedPresets.length} 套桌面样式，原有方案已保留`, '✅');
                 this.render();
             } catch (err) {
                 this.phoneShell?.showNotification?.('导入失败', err?.message || 'JSON 文件格式不正确', '❌');
