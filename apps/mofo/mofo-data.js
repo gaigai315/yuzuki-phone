@@ -183,6 +183,24 @@ export class MofoData {
         );
         if (!hasLetterFields) return safeState;
 
+        // The ten-column template owns pagination; p1-p5 are input fragments only.
+        if (source.includes('data-letter-layout="ten-columns"')) {
+            const characters = Array.from(['p1', 'p2', 'p3', 'p4', 'p5']
+                .map(key => this._templateValueToString(safeState[key]).trim()).join(''));
+            const rows = 26;
+            const needsSecondPage = characters.length > rows * 9;
+            const firstPageSize = needsSecondPage ? rows * 10 : characters.length;
+            const makeColumns = (text, count) => Array.from({ length: count }, (_, index) => ({
+                text: text.slice(index * rows, index === count - 1 ? undefined : (index + 1) * rows).join('')
+            }));
+            return {
+                ...safeState,
+                letterHasSecondPage: needsSecondPage,
+                letterFirstColumns: makeColumns(characters.slice(0, firstPageSize), needsSecondPage ? 10 : 9),
+                letterSecondColumns: makeColumns(characters.slice(firstPageSize), 9)
+            };
+        }
+
         const parts = ['p1', 'p2', 'p3', 'p4', 'p5']
             .map(key => this._templateValueToString(safeState[key]).trim());
         const overflowParts = parts.slice(3).filter(Boolean);
