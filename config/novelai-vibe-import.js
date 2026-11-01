@@ -56,17 +56,19 @@ export function parseNovelAIVibeGroupPayload(payload, options = {}) {
         throw new Error('Vibe 文件内容不是有效对象');
     }
     const isBundle = payload.identifier === 'novelai-vibe-transfer-bundle' && Array.isArray(payload.vibes);
+    const isSingleVibe = payload.identifier === 'novelai-vibe-transfer';
     if (isBundle && payload.vibes.length > MAX_VIBES_PER_IMPORT) {
         throw new Error(`单次最多导入 ${MAX_VIBES_PER_IMPORT} 个 Vibe`);
     }
     const bundleGroupName = String(options.defaultGroupName || '导入的 Vibe 组').trim() || '导入的 Vibe 组';
-    const sourceVibeData = isBundle
-        ? Object.fromEntries(payload.vibes.map((vibe, index) => [String(vibe?.id || `bundle-vibe-${index + 1}`), vibe]))
+    const officialVibes = isBundle ? payload.vibes : isSingleVibe ? [payload] : null;
+    const sourceVibeData = officialVibes
+        ? Object.fromEntries(officialVibes.map((vibe, index) => [String(vibe?.id || `bundle-vibe-${index + 1}`), vibe]))
         : payload.vibeData;
-    const sourceGroups = isBundle
+    const sourceGroups = officialVibes
         ? {
             [bundleGroupName]: {
-                vibes: payload.vibes.map((vibe, index) => ({
+                vibes: officialVibes.map((vibe, index) => ({
                     vibeDataId: String(vibe?.id || `bundle-vibe-${index + 1}`),
                     strength: vibe?.importInfo?.strength
                 }))

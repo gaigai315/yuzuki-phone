@@ -107,6 +107,40 @@ test('official NovelAI Vibe bundles import as one named group', () => {
     assert.equal(parsed.groups[0].items[0].encoding, encoding);
 });
 
+test('single official NovelAI Vibe files import with their encoding and parameters', () => {
+    const encoding = makeEncoding(0x8c);
+    const payload = {
+        identifier: 'novelai-vibe-transfer',
+        version: 1,
+        type: 'encoding',
+        id: 'single-vibe-id',
+        name: 'cab4df-45d677',
+        encodings: { 'v4-5full': { unknown: { encoding, params: { information_extracted: 0.5 } } } },
+        importInfo: { model: 'nai-diffusion-4-5-full', information_extracted: 0.5, strength: 0.4 }
+    };
+    let id = 0;
+    const parsed = parseNovelAIVibeGroupPayload(payload, {
+        defaultGroupName: '黑白纹理',
+        createId: () => `single-${++id}`
+    });
+    assert.equal(parsed.skipped, 0);
+    assert.equal(parsed.groups.length, 1);
+    assert.equal(parsed.groups[0].name, '黑白纹理');
+    assert.equal(parsed.groups[0].items.length, 1);
+    assert.deepEqual(parsed.groups[0].items[0], {
+        id: 'single-1', name: 'cab4df-45d677', image: '', encoding,
+        encodingModel: 'nai-diffusion-4-5-full', encodingVariant: 'v4-5full',
+        strength: 0.4, informationExtracted: 0.5, cacheSecretKey: 'single-vibe-id'
+    });
+    const zeroValues = parseNovelAIVibeGroupPayload({
+        ...payload, id: undefined, importInfo: { ...payload.importInfo, strength: 0, information_extracted: 0 }
+    });
+    assert.equal(zeroValues.groups[0].items[0].strength, 0);
+    assert.equal(zeroValues.groups[0].items[0].informationExtracted, 0);
+    assert.throws(() => parseNovelAIVibeGroupPayload({ ...payload, encodings: {} }), /没有可用的 Vibe 编码/);
+    assert.throws(() => parseNovelAIVibeGroupPayload({ ...payload, type: 'image' }), /没有可用的 Vibe 编码/);
+});
+
 test('NovelAI Vibe imports enforce per-group and aggregate limits', () => {
     const encoding = makeEncoding(0x42);
     const vibeData = Object.fromEntries(Array.from({ length: 17 }, (_, index) => [

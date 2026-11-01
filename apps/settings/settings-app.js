@@ -8938,7 +8938,7 @@ export class SettingsApp {
                             throw new Error(`${file.name} 不是有效的 JSON 文件`);
                         }
                         const defaultGroupName = String(file.name || '')
-                            .replace(/\.naiv4vibebundle\.json$/i, '')
+                            .replace(/\.naiv4vibe(?:bundle)?\.json$/i, '')
                             .replace(/\.json$/i, '')
                             .trim();
                         const parsed = parseNovelAIVibeGroupPayload(payload, {

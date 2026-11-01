@@ -6,21 +6,16 @@ const updateLog = JSON.parse(fs.readFileSync(new URL('../update-log.json', impor
 const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 
-test('current version publishes the 1.6.5 update notices', () => {
+test('current version publishes only the 1.6.7 fix notices', () => {
     const current = updateLog.versions[manifest.version];
 
-    assert.equal(manifest.version, '1.6.5');
-    assert.match(indexSource, /const ST_PHONE_VERSION = '1\.6\.5';/);
-    assert.deepEqual(Object.keys(updateLog.versions), ['1.6.5']);
-    assert.equal(current.date, '2026-10-27');
+    assert.equal(manifest.version, '1.6.7');
+    assert.match(indexSource, /const ST_PHONE_VERSION = '1\.6\.7';/);
+    assert.deepEqual(Object.keys(updateLog.versions), ['1.6.7']);
+    assert.equal(current.date, '2026-11-01');
     assert.deepEqual(current.items, [
-        '【新增】NovelAI V5 Full 支持 Anime/Furry 模式与 Medium/High Effort；Medium 会自动使用官方节约模型并锁定兼容参数。',
-        '【新增】正文生图支持手动填写 Tags，并可在预览正反面快速切换画风预设。',
-        '【新增】微信支持设置线下提示词好友可见范围，隐藏后不向正文发送该好友的资料、固定形象 Tags 和单聊记录，并在重开后保留设置。',
-        '【优化】优化背景图片上传逻辑，完整保留竖图上下内容，修复微博等背景上传时被强制裁剪的问题。',
-        '【优化】优化正文生图功能。',
-        '【修复】修复微信个人图片可能因联系人昵称与真实姓名不一致，未使用最新固定形象 Tags 的问题；同时精简线下默认图片规则，固定形象名单仅发送已设置 Tags 好友的真实姓名。',
-        '【修复】修复各 App 世界书设置可能跨角色串选的问题；现在按角色卡与 App 分别保存，并在同角色卡的不同聊天和用户 Persona 间保持一致。'
+        '【修复】适配 TT 新版文件下载接口，修复正文生图、相册预览及批量下载提示“TT 原生下载模块不可用”的问题；取消保存不再误报成功，批量下载会停止后续操作。',
+        '【修复】补全 NovelAI 单个 .naiv4vibe.json 文件导入支持，保留文件中的模型、信息提取量和强度参数，并按文件名建立 Vibe 组。'
     ]);
     assert.equal(current.updates, undefined);
 });
@@ -39,7 +34,7 @@ test('fallback announcement matches the current update log', () => {
     assert.ok(start >= 0 && end > start, 'fallback update block should exist');
 
     const block = indexSource.slice(start, end);
-    assert.match(block, /date: '2026-10-27'/);
+    assert.match(block, /date: '2026-11-01'/);
     for (const item of updateLog.versions[manifest.version].items) {
         assert.ok(block.includes(item), 'fallback should include each current announcement item');
     }

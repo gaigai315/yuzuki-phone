@@ -43,7 +43,7 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.6';
+const ST_PHONE_VERSION = '1.6.7';
 const ST_PHONE_CSS_REVISION = '20261027-wechat-friend-request';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261021-user-fixed-tags';
@@ -154,13 +154,10 @@ const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-10-27',
+    date: '2026-11-01',
     items: [
-        '【新增】新增图标 APP 方案，可保存、切换、修改名称和删除图标方案。',
-        '【修复】拆分日记手动生成的每批楼层数与自动写日记的触发楼层数，两个设置现在可以独立保存。',
-        '【新增】桌面 CSS 支持多套样式方案，可新建、保存、切换、重命名、删除以及导入导出。',
-        '【优化】微调设置页面布局与功能分类，统一设置图标样式并优化桌面、微信记忆和悬浮图标设置入口。',
-        '【新增】小票背景颜色设置，可在「设置 → 常规 → 颜色」中自定义，支持实时预览与保存；分隔线、条码和装饰线跟随小票文字颜色，适配深浅色主题。'
+        '【修复】适配 TT 新版文件下载接口，修复正文生图、相册预览及批量下载提示“TT 原生下载模块不可用”的问题；取消保存不再误报成功，批量下载会停止后续操作。',
+        '【修复】补全 NovelAI 单个 .naiv4vibe.json 文件导入支持，保留文件中的模型、信息提取量和强度参数，并按文件名建立 Vibe 组。'
     ]
 };
 
