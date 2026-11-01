@@ -443,6 +443,24 @@ test('forum import template hides duplicate comment totals and visible floor lab
     assert.doesNotMatch(template.cssText, /forum-mofo-floor|forum-mofo-comment-head/);
 });
 
+test('quick-panel CSS preserves the same responsive rules as the bubble renderer', () => {
+    const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+    const start = source.indexOf('const scopeMofoCssText =');
+    const end = source.indexOf('const buildWechatListHtml =', start);
+    assert.ok(start >= 0 && end > start);
+    const scopePanelCss = new Function('scopeMofoCss', `${source.slice(start, end)}; return scopeMofoCssText;`)(scopeMofoCss);
+    const css = `.letter-mofo{width:360px}
+@media(max-width:430px){.letter-mofo{width:276px}.letter-mofo .letter-mofo-phone{height:446px}}
+@media(prefers-reduced-motion:reduce){.letter-mofo .letter-mofo-track{transition:none}}`;
+    for (const scope of ['.preview', '#mofo-standalone-preview-root .mofo-runtime-view']) {
+        const panelCss = scopePanelCss(css, scope);
+        assert.equal(panelCss, scopeMofoCss(css, scope));
+        assert.ok(panelCss.includes(`@media(max-width:430px){${scope} .letter-mofo{width:276px}`));
+        assert.ok(panelCss.includes(`@media(prefers-reduced-motion:reduce){${scope} .letter-mofo .letter-mofo-track`));
+        assert.doesNotMatch(panelCss, /\.mofo-runtime-view\s+@media|\.preview\s+@media/);
+    }
+});
+
 test('CSS scoping keeps media rules and confines selectors to one render surface', () => {
     const css = scopeMofoCss('.forum-card{color:red}\n@media(max-width:430px){.forum-card,.forum-title{font-size:14px}}', '.scope-one');
     assert.match(css, /\.scope-one \.forum-card\{color:red\}/);

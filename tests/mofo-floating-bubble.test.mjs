@@ -172,6 +172,38 @@ test('Mofo preview click keeps the floating bubble and refreshes preview data', 
     assert.doesNotMatch(source, /if \(item\.inlineRenderEnabled !== false\) \{[\s\S]*?hideMofoUpdateBubble/);
 });
 
+test('Mofo panel and bubble send the latest bubble-mode item to the same preview', async () => {
+    const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+    const panelStart = source.indexOf('const openMofoStandalonePreview = async');
+    const panelEnd = source.indexOf('const getEditingMofo =', panelStart);
+    const clickStart = source.indexOf('            bubble.onclick = () => {');
+    const clickEnd = source.indexOf('\n            };', clickStart);
+    assert.ok(panelStart >= 0 && panelEnd > panelStart && clickEnd > clickStart);
+    for (const inlineRenderEnabled of [false, undefined]) {
+        const stale = { id: 'letter', state: { p1: '旧信' }, inlineRenderEnabled };
+        if (inlineRenderEnabled === undefined) delete stale.inlineRenderEnabled;
+        const current = { ...stale, state: { p1: '新信' }, bubbleHtmlTemplate: '<article>{{p1}}</article>' };
+        const mofoData = { getItemById: () => current };
+        const calls = [];
+        const preview = (data, item) => calls.push({ data, item });
+        const openPanel = new Function('syncMofoItemFromCurrentChat', 'openMofoPreview', 'mofoData',
+            `${source.slice(panelStart, panelEnd)}; return openMofoStandalonePreview;`)(async () => current, preview, mofoData);
+        await openPanel(stale);
+        const click = new Function('openMofoPreview', 'mofoData', 'item', 'mofoId', `
+            const bubble = {};
+            let suppressNextBubbleClick = false;
+            ${source.slice(clickStart, clickEnd)} };
+            return bubble.onclick;
+        `)(preview, mofoData, stale, stale.id);
+        click();
+        assert.equal(calls.length, 2);
+        assert.equal(calls[0].data, mofoData);
+        assert.deepEqual(calls[0], calls[1]);
+        assert.equal(calls[0].item.state.p1, '新信');
+        assert.equal(calls[0].item.bubbleHtmlTemplate, current.bubbleHtmlTemplate);
+    }
+});
+
 test('Mofo refresh prunes stale inline cards after the inline toggle is disabled', () => {
     const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 

@@ -157,7 +157,8 @@ const ST_PHONE_CURRENT_UPDATE = {
     date: '2026-11-01',
     items: [
         '【修复】适配 TT 新版文件下载接口，修复正文生图、相册预览及批量下载提示“TT 原生下载模块不可用”的问题；取消保存不再误报成功，批量下载会停止后续操作。',
-        '【修复】补全 NovelAI 单个 .naiv4vibe.json 文件导入支持，保留文件中的模型、信息提取量和强度参数，并按文件名建立 Vibe 组。'
+        '【修复】补全 NovelAI 单个 .naiv4vibe.json 文件导入支持，保留文件中的模型、信息提取量和强度参数，并按文件名建立 Vibe 组。',
+        '【修复】统一魔坊气泡模式下的面板与气泡预览，修复笺札等模板排版不一致、正文超出的问题，并保留手机适配和历史翻页。'
     ]
 };
 
@@ -3230,6 +3231,513 @@ if (window.GGP_Loaded) {
     //  新增：魔坊动态更新气泡 & 全局速览弹窗
     // ==========================================
     if (!window.VirtualPhone) window.VirtualPhone = {};
+    function ensureMofoGlobalStyles(hostDoc) {
+        let style = hostDoc.getElementById('mofo-global-bubble-style');
+        if (!style) {
+            style = hostDoc.createElement('style');
+            style.id = 'mofo-global-bubble-style';
+            (hostDoc.head || hostDoc.documentElement).appendChild(style);
+        }
+        style.textContent = `
+            #mofo-global-bubble-root {
+                position: fixed;
+                inset: 0;
+                z-index: 2147483646;
+                pointer-events: none;
+                isolation: isolate;
+                --mofo-bubble-accent: var(--SmartThemeShadowColor, var(--SmartThemeQuoteColor, #a1aebb));
+                --mofo-bubble-text: var(--SmartThemeBodyColor, #3f3737);
+                --mofo-bubble-highlight: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.82));
+            }
+            .mofo-update-bubble {
+                position: fixed;
+                width: 44px;
+                height: 44px;
+                padding: 0;
+                transform: translate(-50%, -50%) scale(0.9);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background:
+                    radial-gradient(150% 150% at 30% 30%, color-mix(in srgb, var(--mofo-bubble-highlight) 32%, transparent), rgba(255,255,255,0.02)),
+                    color-mix(in srgb, var(--mofo-bubble-accent) 10%, transparent);
+                box-shadow:
+                    inset 6px 0 12px color-mix(in srgb, var(--mofo-bubble-accent) 30%, rgba(255,255,255,0.2)),
+                    inset -6px 0 12px color-mix(in srgb, var(--mofo-bubble-accent) 18%, rgba(255,255,255,0.18)),
+                    inset 0 -6px 12px color-mix(in srgb, var(--mofo-bubble-accent) 16%, rgba(255,255,255,0.14)),
+                    inset 0 6px 12px color-mix(in srgb, var(--mofo-bubble-highlight) 82%, rgba(255,255,255,0.72)),
+                    0 7px 14px rgba(0,0,0,0.08);
+                box-sizing: border-box;
+                z-index: 2147483646;
+                cursor: grab;
+                opacity: 0;
+                pointer-events: auto;
+                touch-action: none;
+                user-select: none;
+                transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, filter 0.2s ease;
+            }
+            .mofo-update-bubble::before {
+                content: '';
+                position: absolute;
+                top: 22%;
+                left: 30%;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: color-mix(in srgb, var(--mofo-bubble-highlight) 92%, white);
+                filter: blur(1px);
+                box-shadow: 0 0 5px rgba(255,255,255,0.5);
+                pointer-events: none;
+            }
+            .mofo-update-bubble::after {
+                content: '';
+                position: absolute;
+                top: 38%;
+                left: 20%;
+                width: 3px;
+                height: 3px;
+                border-radius: 50%;
+                background: color-mix(in srgb, var(--mofo-bubble-highlight) 80%, white);
+                filter: blur(0.5px);
+                pointer-events: none;
+            }
+            .mofo-update-bubble.show {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+                animation: mofoBubbleFloat 3s ease-in-out infinite;
+            }
+            .mofo-update-bubble:hover {
+                transform: translate(-50%, -50%) scale(1.025);
+                filter: brightness(1.02);
+            }
+            .mofo-update-bubble:active { transform: translate(-50%, -50%) scale(0.98); }
+            .mofo-update-bubble.is-dragging,
+            .mofo-update-bubble.is-dragging:hover,
+            .mofo-update-bubble.is-dragging:active {
+                cursor: grabbing;
+                animation: none;
+                transform: translate(-50%, -50%) scale(1.025);
+                transition: opacity 0.2s ease, filter 0.2s ease;
+            }
+            .mofo-bubble-rank-mini {
+                position: relative;
+                z-index: 1;
+                width: 100%;
+                min-width: 0;
+                padding: 0 6px;
+                background: transparent;
+                border: 0;
+                box-shadow: none;
+                box-sizing: border-box;
+            }
+            .mofo-bubble-rank-row {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-width: 0;
+            }
+            .mofo-bubble-rank-name {
+                font-size: 8px;
+                line-height: 1.18;
+                color: var(--mofo-bubble-text);
+                white-space: normal;
+                overflow: hidden;
+                text-align: center;
+                font-weight: 700;
+                letter-spacing: 0;
+                text-shadow: 0 1px 2px color-mix(in srgb, var(--mofo-bubble-highlight) 70%, transparent);
+                max-width: 100%;
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow-wrap: anywhere;
+            }
+            @media (max-width: 640px), (pointer: coarse) {
+                .mofo-update-bubble {
+                    width: 36px;
+                    height: 36px;
+                }
+                .mofo-bubble-rank-mini {
+                    padding: 0 5px;
+                }
+                .mofo-bubble-rank-name {
+                    font-size: 7px;
+                    line-height: 1.18;
+                    letter-spacing: 0;
+                }
+                .mofo-update-bubble::before {
+                    width: 6px;
+                    height: 6px;
+                }
+                .mofo-update-bubble::after {
+                    width: 3px;
+                    height: 3px;
+                }
+            }
+            #mofo-global-preview-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.4);
+                z-index: 2147483647;
+                opacity: 0;
+                transition: opacity 0.2s ease;
+                backdrop-filter: blur(3px);
+                -webkit-backdrop-filter: blur(3px);
+            }
+            #mofo-global-preview-pop {
+                position: fixed;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                max-width: min(92vw, 920px);
+                max-height: 85vh;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                overscroll-behavior: contain;
+                box-sizing: border-box;
+                animation: mofoPopIn 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+            #mofo-global-preview-pop .mofo-history-nav {
+                flex: 0 0 auto;
+                min-height: 44px;
+                display: grid;
+                grid-template-columns: minmax(76px, 1fr) auto minmax(76px, 1fr);
+                align-items: center;
+                gap: 8px;
+                margin: 8px 0 0;
+                padding: 5px;
+                border: 1px solid rgba(255,255,255,0.48);
+                border-radius: 8px;
+                background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #f7f8fa) 88%, transparent);
+                box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+                backdrop-filter: blur(14px);
+                -webkit-backdrop-filter: blur(14px);
+                color: var(--SmartThemeBodyColor, #273244);
+                box-sizing: border-box;
+            }
+            #mofo-global-preview-pop .mofo-history-nav[hidden] {
+                display: none !important;
+            }
+            #mofo-global-preview-pop .mofo-history-button {
+                min-width: 0;
+                min-height: 34px;
+                margin: 0;
+                padding: 5px 9px;
+                border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor, #273244) 20%, transparent);
+                border-radius: 6px;
+                background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #fff) 82%, transparent);
+                color: inherit;
+                font: inherit;
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1.2;
+                letter-spacing: 0;
+                cursor: pointer;
+                white-space: nowrap;
+                box-sizing: border-box;
+            }
+            #mofo-global-preview-pop .mofo-history-button:disabled {
+                opacity: 0.35;
+                cursor: default;
+            }
+            #mofo-global-preview-pop .mofo-history-count {
+                min-width: 72px;
+                font-size: 11px;
+                line-height: 1.25;
+                font-weight: 700;
+                letter-spacing: 0;
+                text-align: center;
+                white-space: nowrap;
+            }
+            #mofo-global-preview-pop .mofo-history-content {
+                min-width: 0;
+                min-height: 0;
+                max-width: 100%;
+                overflow: auto;
+                touch-action: pan-x pan-y;
+                overscroll-behavior: contain;
+                scrollbar-width: none;
+                -ms-overflow-style: none;
+                box-sizing: border-box;
+            }
+            #mofo-global-preview-pop .mofo-history-content::-webkit-scrollbar {
+                width: 0;
+                height: 0;
+                display: none;
+            }
+            @media (max-width: 640px), (pointer: coarse) {
+                #mofo-global-preview-pop .mofo-history-nav {
+                    min-height: 48px;
+                    grid-template-columns: minmax(68px, 1fr) auto minmax(68px, 1fr);
+                    gap: 5px;
+                    margin-top: 6px;
+                    padding: 4px;
+                }
+                #mofo-global-preview-pop .mofo-history-button {
+                    min-height: 40px;
+                    padding: 4px 7px;
+                    font-size: 12px;
+                }
+                #mofo-global-preview-pop .mofo-history-count {
+                    min-width: 62px;
+                    font-size: 10px;
+                }
+                #mofo-global-preview-pop .forum-mofo {
+                    width: min(340px, calc(100vw - 28px)) !important;
+                    max-width: calc(100vw - 28px) !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-card {
+                    border-radius: 9px !important;
+                    padding: 14px 13px !important;
+                    margin-bottom: 10px !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-author-row { gap: 9px !important; }
+                #mofo-global-preview-pop .forum-mofo-avatar {
+                    width: 28px !important;
+                    height: 28px !important;
+                    flex-basis: 28px !important;
+                    font-size: 10.5px !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-author { font-size: 12px !important; }
+                #mofo-global-preview-pop .forum-mofo-meta { font-size: 10px !important; }
+                #mofo-global-preview-pop .forum-mofo-title {
+                    margin: 12px 0 10px !important;
+                    font-size: 15px !important;
+                    line-height: 1.42 !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-content,
+                #mofo-global-preview-pop .forum-mofo-comment-text {
+                    font-size: 11.5px !important;
+                    line-height: 1.65 !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-content p { margin-bottom: 10px !important; }
+                #mofo-global-preview-pop .forum-mofo-actions {
+                    gap: 14px !important;
+                    margin-top: 14px !important;
+                    padding-top: 10px !important;
+                    font-size: 10px !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-comments-title {
+                    padding-bottom: 10px !important;
+                    margin-bottom: 14px !important;
+                    font-size: 12px !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-comment {
+                    gap: 9px !important;
+                    margin-bottom: 18px !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-comment-name { font-size: 11.5px !important; }
+                #mofo-global-preview-pop .forum-mofo-comment-text { margin: 5px 0 !important; }
+                #mofo-global-preview-pop .forum-mofo-comment-meta {
+                    gap: 10px !important;
+                    font-size: 9.5px !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-nested {
+                    margin-top: 8px !important;
+                    padding: 8px 10px !important;
+                    font-size: 10.5px !important;
+                    line-height: 1.55 !important;
+                }
+                #mofo-global-preview-pop .forum-mofo-more { font-size: 9.5px !important; }
+                #mofo-global-preview-pop .forum-mofo-empty { font-size: 10.5px !important; }
+            }
+            @keyframes mofoBubbleFloat {
+                0%, 100% { transform: translate(-50%, -50%) scale(1); }
+                50% { transform: translate(-50%, calc(-50% - 12px)) scale(1); }
+            }
+            @keyframes mofoPopIn { 0% { transform: translate(-50%, -50%) scale(0.94); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+        `;
+    }
+
+    function openMofoPreview(mofoData, previewItem) {
+        const mofoId = previewItem.id;
+        const hostDoc = (() => {
+            let hostWindow = window;
+            try {
+                let probe = window;
+                while (probe.parent && probe.parent !== probe) {
+                    const next = probe.parent;
+                    if (!next.document?.body) break;
+                    probe = next;
+                }
+                hostWindow = probe;
+            } catch (e) {}
+            try {
+                return hostWindow.document || document;
+            } catch (e) {
+                return document;
+            }
+        })();
+        const hostWin = hostDoc.defaultView || window;
+
+        const escapeHtml = (text) => String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        const sanitizePreviewHtml = (html) => String(html || '')
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+            .replace(/\son[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '')
+            .replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\2/gi, ' $1="#"');
+
+        ensureMofoGlobalStyles(hostDoc);
+        const bubbleHistoryEnabled = previewItem.bubbleHistoryEnabled !== false;
+        const history = bubbleHistoryEnabled ? getMofoBubbleHistory(mofoData, mofoId) : [];
+        if (history.length === 0) {
+            history.push({
+                messageIndex: Number.isInteger(previewItem.lastMessageIndex) ? previewItem.lastMessageIndex : null,
+                payload: String(previewItem.lastPayload || ''),
+                state: previewItem.state || {}
+            });
+        }
+        let activeHistoryIndex = history.length - 1;
+
+        const htmlTemplate = String(
+            previewItem.bubbleHtmlTemplate
+            || previewItem.htmlTemplate
+            || previewItem.templateHtml
+            || previewItem['html模板']
+            || ''
+        ).trim();
+        const renderPreviewState = (state = {}) => {
+            let innerHtml = '';
+            if (htmlTemplate && typeof mofoData.renderTemplate === 'function') {
+                innerHtml = sanitizePreviewHtml(
+                    mofoData.renderTemplate(htmlTemplate, getMofoRuntimeTemplateState(state))
+                );
+            }
+            if (innerHtml.trim()) return innerHtml;
+
+            const rows = Object.entries(state || {}).map(([k, v]) => `
+                <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:6px; padding:8px; background:#f5f8ff; border-radius:8px;">
+                    <span style="color:#3c5277; font-size:12px;">${escapeHtml(k)}</span>
+                    <strong style="color:#1f2f46; font-size:12px;">${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v ?? ''))}</strong>
+                </div>
+            `).join('');
+            return `<div class="mofo-preview-card" style="padding:12px; background:#fff; border-radius:12px;">
+                <div style="font-size:14px; font-weight:bold; margin-bottom:10px;">${escapeHtml(previewItem.name)}</div>
+                ${rows || '<div class="mofo-runtime-empty" style="text-align:center; color:#999; padding:20px;">暂无数据</div>'}
+            </div>`;
+        };
+
+        // 模板样式只作用于内容区，不影响统一的楼层翻页控件。
+        const scopeClass = 'mofo-global-scope-' + Date.now();
+        const cssText = scopeMofoCss(previewItem.cssText || '', `.${scopeClass}`);
+
+        // --- 创建遮罩层与卡片 ---
+        const oldOverlay = hostDoc.getElementById('mofo-global-preview-overlay');
+        oldOverlay?.remove();
+        const overlay = hostDoc.createElement('div');
+        overlay.id = 'mofo-global-preview-overlay';
+
+        const pop = hostDoc.createElement('div');
+        pop.id = 'mofo-global-preview-pop';
+        pop.className = 'mofo-global-preview-shell';
+
+        const styleElement = hostDoc.createElement('style');
+        styleElement.textContent = cssText;
+
+        const historyNav = hostDoc.createElement('div');
+        historyNav.className = 'mofo-history-nav';
+        historyNav.innerHTML = `
+            <button type="button" class="mofo-history-button mofo-history-prev" aria-label="查看上一楼">‹ 上一楼</button>
+            <span class="mofo-history-count" aria-live="polite"></span>
+            <button type="button" class="mofo-history-button mofo-history-next" aria-label="查看下一楼">下一楼 ›</button>
+        `;
+
+        const historyContent = hostDoc.createElement('div');
+        historyContent.className = `mofo-history-content ${scopeClass}`;
+
+        pop.appendChild(styleElement);
+        pop.appendChild(historyContent);
+        pop.appendChild(historyNav);
+        overlay.appendChild(pop);
+        (hostDoc.documentElement || hostDoc.body).appendChild(overlay);
+
+        const previousButton = historyNav.querySelector('.mofo-history-prev');
+        const nextButton = historyNav.querySelector('.mofo-history-next');
+        const historyCount = historyNav.querySelector('.mofo-history-count');
+
+        const positionPop = () => {
+            if (!pop.isConnected) return;
+            const vv = hostWin.visualViewport;
+            const viewWidth = vv?.width || hostWin.innerWidth || window.innerWidth;
+            const viewHeight = vv?.height || hostWin.innerHeight || window.innerHeight;
+            const offsetLeft = vv?.offsetLeft || 0;
+            const offsetTop = vv?.offsetTop || 0;
+            pop.style.left = `${offsetLeft + (viewWidth / 2)}px`;
+            pop.style.top = `${offsetTop + (viewHeight / 2)}px`;
+            pop.style.maxWidth = `${Math.min(920, Math.max(240, viewWidth - 28))}px`;
+            const availableHeight = Math.max(240, Math.min(viewHeight - 28, viewHeight * 0.85));
+            pop.style.maxHeight = `${availableHeight}px`;
+            const navHeight = historyNav.hidden ? 0 : (historyNav.offsetHeight + 8);
+            historyContent.style.maxHeight = `${Math.max(180, availableHeight - navHeight)}px`;
+        };
+
+        const renderActiveHistory = () => {
+            const entry = history[activeHistoryIndex] || history[history.length - 1];
+            historyContent.innerHTML = renderPreviewState(entry?.state || {});
+            historyContent.scrollTop = 0;
+            historyContent.scrollLeft = 0;
+            previousButton.disabled = activeHistoryIndex <= 0;
+            nextButton.disabled = activeHistoryIndex >= history.length - 1;
+            historyNav.hidden = !bubbleHistoryEnabled || history.length <= 1;
+            historyCount.textContent = Number.isInteger(entry?.messageIndex)
+                ? `第${entry.messageIndex}楼`
+                : `第${activeHistoryIndex + 1}楼`;
+            positionPop();
+        };
+
+        const previewController = new AbortController();
+        hostWin.addEventListener('resize', positionPop, { passive: true, signal: previewController.signal });
+        if (hostWin.visualViewport) {
+            hostWin.visualViewport.addEventListener('resize', positionPop, { passive: true, signal: previewController.signal });
+            hostWin.visualViewport.addEventListener('scroll', positionPop, { passive: true, signal: previewController.signal });
+        }
+        previousButton.addEventListener('click', () => {
+            if (activeHistoryIndex <= 0) return;
+            activeHistoryIndex -= 1;
+            renderActiveHistory();
+        }, { signal: previewController.signal });
+        nextButton.addEventListener('click', () => {
+            if (activeHistoryIndex >= history.length - 1) return;
+            activeHistoryIndex += 1;
+            renderActiveHistory();
+        }, { signal: previewController.signal });
+        renderActiveHistory();
+
+        // 淡入
+        setTimeout(() => { overlay.style.opacity = '1'; }, 10);
+
+        let overlayClosed = false;
+        const closeOverlay = () => {
+            if (overlayClosed) return;
+            overlayClosed = true;
+            previewController.abort();
+            overlay.style.opacity = '0';
+            setTimeout(() => overlay.remove(), 200);
+        };
+
+        // 点击空白处关闭
+        const closeByOutside = (e) => {
+            const target = e?.target;
+            if (!target) return;
+            if (pop.contains(target)) return;
+            closeOverlay();
+        };
+        overlay.addEventListener('pointerdown', closeByOutside, true);
+        overlay.addEventListener('mousedown', closeByOutside, true);
+        overlay.addEventListener('touchstart', closeByOutside, { passive: true, capture: true });
+        hostDoc.addEventListener('pointerdown', closeByOutside, { capture: true, signal: previewController.signal });
+        hostDoc.addEventListener('mousedown', closeByOutside, { capture: true, signal: previewController.signal });
+        hostDoc.addEventListener('touchstart', closeByOutside, { passive: true, capture: true, signal: previewController.signal });
+    }
+
     window.VirtualPhone.showMofoUpdateBubble = async function (mofoId, options = {}) {
         const isCurrent = typeof options.isCurrent === 'function' ? options.isCurrent : () => true;
         try {
@@ -3266,333 +3774,7 @@ if (window.GGP_Loaded) {
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
-            const sanitizePreviewHtml = (html) => String(html || '')
-                .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-                .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
-                .replace(/\son[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '')
-                .replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\2/gi, ' $1="#"');
-
-            // 1. 注入气泡和弹窗的基础 CSS (只注入一次)
-            {
-                let style = hostDoc.getElementById('mofo-global-bubble-style');
-                if (!style) {
-                    style = hostDoc.createElement('style');
-                    style.id = 'mofo-global-bubble-style';
-                    (hostDoc.head || hostDoc.documentElement).appendChild(style);
-                }
-                style.textContent = `
-                    #mofo-global-bubble-root {
-                        position: fixed;
-                        inset: 0;
-                        z-index: 2147483646;
-                        pointer-events: none;
-                        isolation: isolate;
-                        --mofo-bubble-accent: var(--SmartThemeShadowColor, var(--SmartThemeQuoteColor, #a1aebb));
-                        --mofo-bubble-text: var(--SmartThemeBodyColor, #3f3737);
-                        --mofo-bubble-highlight: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.82));
-                    }
-                    .mofo-update-bubble {
-                        position: fixed;
-                        width: 44px;
-                        height: 44px;
-                        padding: 0;
-                        transform: translate(-50%, -50%) scale(0.9);
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        background:
-                            radial-gradient(150% 150% at 30% 30%, color-mix(in srgb, var(--mofo-bubble-highlight) 32%, transparent), rgba(255,255,255,0.02)),
-                            color-mix(in srgb, var(--mofo-bubble-accent) 10%, transparent);
-                        box-shadow:
-                            inset 6px 0 12px color-mix(in srgb, var(--mofo-bubble-accent) 30%, rgba(255,255,255,0.2)),
-                            inset -6px 0 12px color-mix(in srgb, var(--mofo-bubble-accent) 18%, rgba(255,255,255,0.18)),
-                            inset 0 -6px 12px color-mix(in srgb, var(--mofo-bubble-accent) 16%, rgba(255,255,255,0.14)),
-                            inset 0 6px 12px color-mix(in srgb, var(--mofo-bubble-highlight) 82%, rgba(255,255,255,0.72)),
-                            0 7px 14px rgba(0,0,0,0.08);
-                        box-sizing: border-box;
-                        z-index: 2147483646;
-                        cursor: grab;
-                        opacity: 0;
-                        pointer-events: auto;
-                        touch-action: none;
-                        user-select: none;
-                        transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, filter 0.2s ease;
-                    }
-                    .mofo-update-bubble::before {
-                        content: '';
-                        position: absolute;
-                        top: 22%;
-                        left: 30%;
-                        width: 8px;
-                        height: 8px;
-                        border-radius: 50%;
-                        background: color-mix(in srgb, var(--mofo-bubble-highlight) 92%, white);
-                        filter: blur(1px);
-                        box-shadow: 0 0 5px rgba(255,255,255,0.5);
-                        pointer-events: none;
-                    }
-                    .mofo-update-bubble::after {
-                        content: '';
-                        position: absolute;
-                        top: 38%;
-                        left: 20%;
-                        width: 3px;
-                        height: 3px;
-                        border-radius: 50%;
-                        background: color-mix(in srgb, var(--mofo-bubble-highlight) 80%, white);
-                        filter: blur(0.5px);
-                        pointer-events: none;
-                    }
-                    .mofo-update-bubble.show {
-                        transform: translate(-50%, -50%) scale(1);
-                        opacity: 1;
-                        animation: mofoBubbleFloat 3s ease-in-out infinite;
-                    }
-                    .mofo-update-bubble:hover {
-                        transform: translate(-50%, -50%) scale(1.025);
-                        filter: brightness(1.02);
-                    }
-                    .mofo-update-bubble:active { transform: translate(-50%, -50%) scale(0.98); }
-                    .mofo-update-bubble.is-dragging,
-                    .mofo-update-bubble.is-dragging:hover,
-                    .mofo-update-bubble.is-dragging:active {
-                        cursor: grabbing;
-                        animation: none;
-                        transform: translate(-50%, -50%) scale(1.025);
-                        transition: opacity 0.2s ease, filter 0.2s ease;
-                    }
-                    .mofo-bubble-rank-mini {
-                        position: relative;
-                        z-index: 1;
-                        width: 100%;
-                        min-width: 0;
-                        padding: 0 6px;
-                        background: transparent;
-                        border: 0;
-                        box-shadow: none;
-                        box-sizing: border-box;
-                    }
-                    .mofo-bubble-rank-row {
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        min-width: 0;
-                    }
-                    .mofo-bubble-rank-name {
-                        font-size: 8px;
-                        line-height: 1.18;
-                        color: var(--mofo-bubble-text);
-                        white-space: normal;
-                        overflow: hidden;
-                        text-align: center;
-                        font-weight: 700;
-                        letter-spacing: 0;
-                        text-shadow: 0 1px 2px color-mix(in srgb, var(--mofo-bubble-highlight) 70%, transparent);
-                        max-width: 100%;
-                        display: -webkit-box;
-                        -webkit-line-clamp: 2;
-                        -webkit-box-orient: vertical;
-                        overflow-wrap: anywhere;
-                    }
-                    @media (max-width: 640px), (pointer: coarse) {
-                        .mofo-update-bubble {
-                            width: 36px;
-                            height: 36px;
-                        }
-                        .mofo-bubble-rank-mini {
-                            padding: 0 5px;
-                        }
-                        .mofo-bubble-rank-name {
-                            font-size: 7px;
-                            line-height: 1.18;
-                            letter-spacing: 0;
-                        }
-                        .mofo-update-bubble::before {
-                            width: 6px;
-                            height: 6px;
-                        }
-                        .mofo-update-bubble::after {
-                            width: 3px;
-                            height: 3px;
-                        }
-                    }
-                    #mofo-global-preview-overlay {
-                        position: fixed;
-                        inset: 0;
-                        background: rgba(0,0,0,0.4);
-                        z-index: 2147483647;
-                        opacity: 0;
-                        transition: opacity 0.2s ease;
-                        backdrop-filter: blur(3px);
-                        -webkit-backdrop-filter: blur(3px);
-                    }
-                    #mofo-global-preview-pop {
-                        position: fixed;
-                        left: 50%;
-                        top: 50%;
-                        transform: translate(-50%, -50%);
-                        max-width: min(92vw, 920px);
-                        max-height: 85vh;
-                        overflow: hidden;
-                        display: flex;
-                        flex-direction: column;
-                        align-items: stretch;
-                        overscroll-behavior: contain;
-                        box-sizing: border-box;
-                        animation: mofoPopIn 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
-                    }
-                    #mofo-global-preview-pop .mofo-history-nav {
-                        flex: 0 0 auto;
-                        min-height: 44px;
-                        display: grid;
-                        grid-template-columns: minmax(76px, 1fr) auto minmax(76px, 1fr);
-                        align-items: center;
-                        gap: 8px;
-                        margin: 8px 0 0;
-                        padding: 5px;
-                        border: 1px solid rgba(255,255,255,0.48);
-                        border-radius: 8px;
-                        background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #f7f8fa) 88%, transparent);
-                        box-shadow: 0 6px 18px rgba(0,0,0,0.12);
-                        backdrop-filter: blur(14px);
-                        -webkit-backdrop-filter: blur(14px);
-                        color: var(--SmartThemeBodyColor, #273244);
-                        box-sizing: border-box;
-                    }
-                    #mofo-global-preview-pop .mofo-history-nav[hidden] {
-                        display: none !important;
-                    }
-                    #mofo-global-preview-pop .mofo-history-button {
-                        min-width: 0;
-                        min-height: 34px;
-                        margin: 0;
-                        padding: 5px 9px;
-                        border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor, #273244) 20%, transparent);
-                        border-radius: 6px;
-                        background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #fff) 82%, transparent);
-                        color: inherit;
-                        font: inherit;
-                        font-size: 12px;
-                        font-weight: 700;
-                        line-height: 1.2;
-                        letter-spacing: 0;
-                        cursor: pointer;
-                        white-space: nowrap;
-                        box-sizing: border-box;
-                    }
-                    #mofo-global-preview-pop .mofo-history-button:disabled {
-                        opacity: 0.35;
-                        cursor: default;
-                    }
-                    #mofo-global-preview-pop .mofo-history-count {
-                        min-width: 72px;
-                        font-size: 11px;
-                        line-height: 1.25;
-                        font-weight: 700;
-                        letter-spacing: 0;
-                        text-align: center;
-                        white-space: nowrap;
-                    }
-                    #mofo-global-preview-pop .mofo-history-content {
-                        min-width: 0;
-                        min-height: 0;
-                        max-width: 100%;
-                        overflow: auto;
-                        touch-action: pan-x pan-y;
-                        overscroll-behavior: contain;
-                        scrollbar-width: none;
-                        -ms-overflow-style: none;
-                        box-sizing: border-box;
-                    }
-                    #mofo-global-preview-pop .mofo-history-content::-webkit-scrollbar {
-                        width: 0;
-                        height: 0;
-                        display: none;
-                    }
-                    @media (max-width: 640px), (pointer: coarse) {
-                        #mofo-global-preview-pop .mofo-history-nav {
-                            min-height: 48px;
-                            grid-template-columns: minmax(68px, 1fr) auto minmax(68px, 1fr);
-                            gap: 5px;
-                            margin-top: 6px;
-                            padding: 4px;
-                        }
-                        #mofo-global-preview-pop .mofo-history-button {
-                            min-height: 40px;
-                            padding: 4px 7px;
-                            font-size: 12px;
-                        }
-                        #mofo-global-preview-pop .mofo-history-count {
-                            min-width: 62px;
-                            font-size: 10px;
-                        }
-                        #mofo-global-preview-pop .forum-mofo {
-                            width: min(340px, calc(100vw - 28px)) !important;
-                            max-width: calc(100vw - 28px) !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-card {
-                            border-radius: 9px !important;
-                            padding: 14px 13px !important;
-                            margin-bottom: 10px !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-author-row { gap: 9px !important; }
-                        #mofo-global-preview-pop .forum-mofo-avatar {
-                            width: 28px !important;
-                            height: 28px !important;
-                            flex-basis: 28px !important;
-                            font-size: 10.5px !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-author { font-size: 12px !important; }
-                        #mofo-global-preview-pop .forum-mofo-meta { font-size: 10px !important; }
-                        #mofo-global-preview-pop .forum-mofo-title {
-                            margin: 12px 0 10px !important;
-                            font-size: 15px !important;
-                            line-height: 1.42 !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-content,
-                        #mofo-global-preview-pop .forum-mofo-comment-text {
-                            font-size: 11.5px !important;
-                            line-height: 1.65 !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-content p { margin-bottom: 10px !important; }
-                        #mofo-global-preview-pop .forum-mofo-actions {
-                            gap: 14px !important;
-                            margin-top: 14px !important;
-                            padding-top: 10px !important;
-                            font-size: 10px !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-comments-title {
-                            padding-bottom: 10px !important;
-                            margin-bottom: 14px !important;
-                            font-size: 12px !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-comment {
-                            gap: 9px !important;
-                            margin-bottom: 18px !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-comment-name { font-size: 11.5px !important; }
-                        #mofo-global-preview-pop .forum-mofo-comment-text { margin: 5px 0 !important; }
-                        #mofo-global-preview-pop .forum-mofo-comment-meta {
-                            gap: 10px !important;
-                            font-size: 9.5px !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-nested {
-                            margin-top: 8px !important;
-                            padding: 8px 10px !important;
-                            font-size: 10.5px !important;
-                            line-height: 1.55 !important;
-                        }
-                        #mofo-global-preview-pop .forum-mofo-more { font-size: 9.5px !important; }
-                        #mofo-global-preview-pop .forum-mofo-empty { font-size: 10.5px !important; }
-                    }
-                    @keyframes mofoBubbleFloat {
-                        0%, 100% { transform: translate(-50%, -50%) scale(1); }
-                        50% { transform: translate(-50%, calc(-50% - 12px)) scale(1); }
-                    }
-                    @keyframes mofoPopIn { 0% { transform: translate(-50%, -50%) scale(0.94); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
-                `;
-            }
+            ensureMofoGlobalStyles(hostDoc);
 
             let bubbleRoot = hostDoc.getElementById('mofo-global-bubble-root');
             if (!bubbleRoot) {
@@ -3893,156 +4075,7 @@ if (window.GGP_Loaded) {
                     return;
                 }
                 const previewItem = mofoData?.getItemById?.(mofoId) || item;
-                const bubbleHistoryEnabled = previewItem.bubbleHistoryEnabled !== false;
-                const history = bubbleHistoryEnabled ? getMofoBubbleHistory(mofoData, mofoId) : [];
-                if (history.length === 0) {
-                    history.push({
-                        messageIndex: Number.isInteger(previewItem.lastMessageIndex) ? previewItem.lastMessageIndex : null,
-                        payload: String(previewItem.lastPayload || ''),
-                        state: previewItem.state || {}
-                    });
-                }
-                let activeHistoryIndex = history.length - 1;
-
-                const htmlTemplate = String(
-                    previewItem.bubbleHtmlTemplate
-                    || previewItem.htmlTemplate
-                    || previewItem.templateHtml
-                    || previewItem['html模板']
-                    || ''
-                ).trim();
-                const renderPreviewState = (state = {}) => {
-                    let innerHtml = '';
-                    if (htmlTemplate && typeof mofoData.renderTemplate === 'function') {
-                        innerHtml = sanitizePreviewHtml(
-                            mofoData.renderTemplate(htmlTemplate, getMofoRuntimeTemplateState(state))
-                        );
-                    }
-                    if (innerHtml.trim()) return innerHtml;
-
-                    const rows = Object.entries(state || {}).map(([k, v]) => `
-                        <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:6px; padding:8px; background:#f5f8ff; border-radius:8px;">
-                            <span style="color:#3c5277; font-size:12px;">${escapeHtml(k)}</span>
-                            <strong style="color:#1f2f46; font-size:12px;">${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v ?? ''))}</strong>
-                        </div>
-                    `).join('');
-                    return `<div class="mofo-preview-card" style="padding:12px; background:#fff; border-radius:12px;">
-                        <div style="font-size:14px; font-weight:bold; margin-bottom:10px;">${escapeHtml(previewItem.name)}</div>
-                        ${rows || '<div class="mofo-runtime-empty" style="text-align:center; color:#999; padding:20px;">暂无数据</div>'}
-                    </div>`;
-                };
-
-                // 模板样式只作用于内容区，不影响统一的楼层翻页控件。
-                const scopeClass = 'mofo-global-scope-' + Date.now();
-                const cssText = scopeMofoCss(previewItem.cssText || '', `.${scopeClass}`);
-
-                // --- 创建遮罩层与卡片 ---
-                const oldOverlay = hostDoc.getElementById('mofo-global-preview-overlay');
-                oldOverlay?.remove();
-                const overlay = hostDoc.createElement('div');
-                overlay.id = 'mofo-global-preview-overlay';
-
-                const pop = hostDoc.createElement('div');
-                pop.id = 'mofo-global-preview-pop';
-                pop.className = 'mofo-global-preview-shell';
-
-                const styleElement = hostDoc.createElement('style');
-                styleElement.textContent = cssText;
-
-                const historyNav = hostDoc.createElement('div');
-                historyNav.className = 'mofo-history-nav';
-                historyNav.innerHTML = `
-                    <button type="button" class="mofo-history-button mofo-history-prev" aria-label="查看上一楼">‹ 上一楼</button>
-                    <span class="mofo-history-count" aria-live="polite"></span>
-                    <button type="button" class="mofo-history-button mofo-history-next" aria-label="查看下一楼">下一楼 ›</button>
-                `;
-
-                const historyContent = hostDoc.createElement('div');
-                historyContent.className = `mofo-history-content ${scopeClass}`;
-
-                pop.appendChild(styleElement);
-                pop.appendChild(historyContent);
-                pop.appendChild(historyNav);
-                overlay.appendChild(pop);
-                (hostDoc.documentElement || hostDoc.body).appendChild(overlay);
-
-                const previousButton = historyNav.querySelector('.mofo-history-prev');
-                const nextButton = historyNav.querySelector('.mofo-history-next');
-                const historyCount = historyNav.querySelector('.mofo-history-count');
-
-                const positionPop = () => {
-                    if (!pop.isConnected) return;
-                    const vv = hostWin.visualViewport;
-                    const viewWidth = vv?.width || hostWin.innerWidth || window.innerWidth;
-                    const viewHeight = vv?.height || hostWin.innerHeight || window.innerHeight;
-                    const offsetLeft = vv?.offsetLeft || 0;
-                    const offsetTop = vv?.offsetTop || 0;
-                    pop.style.left = `${offsetLeft + (viewWidth / 2)}px`;
-                    pop.style.top = `${offsetTop + (viewHeight / 2)}px`;
-                    pop.style.maxWidth = `${Math.min(920, Math.max(240, viewWidth - 28))}px`;
-                    const availableHeight = Math.max(240, Math.min(viewHeight - 28, viewHeight * 0.85));
-                    pop.style.maxHeight = `${availableHeight}px`;
-                    const navHeight = historyNav.hidden ? 0 : (historyNav.offsetHeight + 8);
-                    historyContent.style.maxHeight = `${Math.max(180, availableHeight - navHeight)}px`;
-                };
-
-                const renderActiveHistory = () => {
-                    const entry = history[activeHistoryIndex] || history[history.length - 1];
-                    historyContent.innerHTML = renderPreviewState(entry?.state || {});
-                    historyContent.scrollTop = 0;
-                    historyContent.scrollLeft = 0;
-                    previousButton.disabled = activeHistoryIndex <= 0;
-                    nextButton.disabled = activeHistoryIndex >= history.length - 1;
-                    historyNav.hidden = !bubbleHistoryEnabled || history.length <= 1;
-                    historyCount.textContent = Number.isInteger(entry?.messageIndex)
-                        ? `第${entry.messageIndex}楼`
-                        : `第${activeHistoryIndex + 1}楼`;
-                    positionPop();
-                };
-
-                const previewController = new AbortController();
-                hostWin.addEventListener('resize', positionPop, { passive: true, signal: previewController.signal });
-                if (hostWin.visualViewport) {
-                    hostWin.visualViewport.addEventListener('resize', positionPop, { passive: true, signal: previewController.signal });
-                    hostWin.visualViewport.addEventListener('scroll', positionPop, { passive: true, signal: previewController.signal });
-                }
-                previousButton.addEventListener('click', () => {
-                    if (activeHistoryIndex <= 0) return;
-                    activeHistoryIndex -= 1;
-                    renderActiveHistory();
-                }, { signal: previewController.signal });
-                nextButton.addEventListener('click', () => {
-                    if (activeHistoryIndex >= history.length - 1) return;
-                    activeHistoryIndex += 1;
-                    renderActiveHistory();
-                }, { signal: previewController.signal });
-                renderActiveHistory();
-
-                // 淡入
-                setTimeout(() => { overlay.style.opacity = '1'; }, 10);
-
-                let overlayClosed = false;
-                const closeOverlay = () => {
-                    if (overlayClosed) return;
-                    overlayClosed = true;
-                    previewController.abort();
-                    overlay.style.opacity = '0';
-                    setTimeout(() => overlay.remove(), 200);
-                };
-
-                // 点击空白处关闭
-                const closeByOutside = (e) => {
-                    const target = e?.target;
-                    if (!target) return;
-                    if (pop.contains(target)) return;
-                    closeOverlay();
-                };
-                overlay.addEventListener('pointerdown', closeByOutside, true);
-                overlay.addEventListener('mousedown', closeByOutside, true);
-                overlay.addEventListener('touchstart', closeByOutside, { passive: true, capture: true });
-                hostDoc.addEventListener('pointerdown', closeByOutside, { capture: true, signal: previewController.signal });
-                hostDoc.addEventListener('mousedown', closeByOutside, { capture: true, signal: previewController.signal });
-                hostDoc.addEventListener('touchstart', closeByOutside, { passive: true, capture: true, signal: previewController.signal });
+                openMofoPreview(mofoData, previewItem);
             };
         } catch (e) {
             console.error('魔坊气泡生成失败:', e);
@@ -4930,23 +4963,8 @@ if (window.GGP_Loaded) {
                         return { ok: true, html: safeHtml };
                     };
                     const scopeMofoCssText = (cssText = '', scopeSelector = '.mofo-runtime-view') => {
-                        const source = String(cssText || '').replace(/<\/style/gi, '<\\/style');
-                        if (!source.trim()) return '';
-                        return source.replace(/(^|[{}])(\s*[^@{}][^{}]*?)\{/g, (_all, boundary, selectorGroup) => {
-                            const scopedSelectors = String(selectorGroup || '')
-                                .split(',')
-                                .map((part) => {
-                                    const selector = String(part || '').trim();
-                                    if (!selector) return '';
-                                    if (/^(from|to|\d+%)$/i.test(selector)) return selector;
-                                    if (/^(html|body|:root)$/i.test(selector)) return scopeSelector;
-                                    if (selector.startsWith(scopeSelector)) return selector;
-                                    return `${scopeSelector} ${selector}`;
-                                })
-                                .filter(Boolean);
-                            if (scopedSelectors.length === 0) return _all;
-                            return `${boundary}${scopedSelectors.join(', ')}{`;
-                        });
+                        // 与气泡入口共用作用域处理，避免换行后的 @media 被误当成选择器。
+                        return scopeMofoCss(cssText, scopeSelector);
                     };
 
                     const buildWechatListHtml = () => {
@@ -5231,6 +5249,12 @@ if (window.GGP_Loaded) {
                         if (!itemInput) return;
                         const syncedItem = await syncMofoItemFromCurrentChat(itemInput);
                         const item = JSON.parse(JSON.stringify(syncedItem || itemInput));
+
+                        // 气泡模式的面板入口直接复用气泡预览，统一模板、容器和历史翻页。
+                        if (item.inlineRenderEnabled !== true) {
+                            openMofoPreview(mofoData, item);
+                            return;
+                        }
 
                         const hostDoc = (() => {
                             let hostWindow = window;
