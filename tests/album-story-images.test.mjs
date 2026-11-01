@@ -754,9 +754,93 @@ test('story image overlay exposes a mobile-safe download action with the origina
     assert.match(overlaySource, /phoneShell\?\.downloadImage === 'function'/);
     assert.match(overlaySource, /phoneShell\?\._downloadImageFromViewer/);
     assert.match(overlaySource, /import\('\/scripts\/file-export\.js'\)/);
-    assert.match(overlaySource, /fileExport\.downloadBlobWithRuntime\(blob, fileName/);
+    assert.match(overlaySource, /fileExport\.deliverBlob\(blob, fileName\)/);
     assert.match(cssSource, /#phone-story-image-overlay-root \.phone-story-image-download/);
     assert.match(shellSource, /async downloadImage\(imageUrl, filename = 'phone-image'\)/);
+});
+
+test('TT media downloads use host delivery and distinguish success, cancellation and failure', async t => {
+    const source = fs.readFileSync(new URL('../apps/album/story-image-overlay.js', import.meta.url), 'utf8');
+    const nativeModule = `data:text/javascript;base64,${Buffer.from(
+        'export async function deliverBlob(blob, fileName) { return window.deliver(blob, fileName); }'
+    ).toString('base64')}`;
+    const testSource = source.replace("import('/scripts/file-export.js')", `import('${nativeModule}')`);
+    const { StoryImageOverlay } = await import(`data:text/javascript;base64,${Buffer.from(testSource).toString('base64')}`);
+    const notifications = [];
+    const calls = [];
+    const blob = new Blob(['image bytes'], { type: 'image/webp' });
+    let delivery = { delivered: true };
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+        calls.push([url, options]);
+        return { ok: true, blob: async () => blob };
+    });
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    t.after(() => {
+        if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+        else delete globalThis.window;
+    });
+    globalThis.window = {
+        __TAURITAVERN__: { invoke: { safeInvoke() {} } },
+        async deliver(actualBlob, fileName) {
+            assert.equal(actualBlob, blob);
+            assert.equal(fileName, 'picture.webp');
+            if (delivery instanceof Error) throw delivery;
+            return delivery;
+        }
+    };
+    const overlay = new StoryImageOverlay({
+        _showStoryNotification: (...args) => notifications.push(args),
+        phoneShell: { downloadImage() { assert.fail('TT must use native delivery'); } }
+    });
+    assert.equal(overlay.isTauriRuntime(), true);
+    assert.deepEqual(await overlay.downloadMediaFile('/backgrounds/picture.webp', 'picture.webp'), { delivered: true });
+    assert.deepEqual(calls[0], ['/backgrounds/picture.webp', { credentials: 'include', cache: 'no-store' }]);
+    assert.equal(notifications.length, 1);
+    await overlay.downloadMediaFile('/backgrounds/picture.webp', 'picture.webp', { notify: false });
+    delivery = { delivered: false };
+    assert.deepEqual(await overlay.downloadMediaFile('/backgrounds/picture.webp', 'picture.webp'), { delivered: false });
+    delivery = new Error('native write failed');
+    await assert.rejects(overlay.downloadMediaFile('/backgrounds/picture.webp', 'picture.webp'), /native write failed/);
+    t.mock.method(globalThis, 'fetch', async () => ({ ok: false, status: 404 }));
+    await assert.rejects(overlay.downloadMediaFile('/backgrounds/missing.webp', 'picture.webp'), /HTTP 404/);
+    assert.equal(notifications.length, 1);
+});
+
+test('album batch download stops on native cancellation and restores the controls', async t => {
+    const { AlbumView } = await import('../apps/album/album-view.js');
+    const calls = [];
+    const notifications = [];
+    const view = new AlbumView({
+        storyImageOverlay: {
+            async downloadMediaFile(src) {
+                calls.push(src);
+                return { delivered: calls.length === 1 };
+            }
+        },
+        phoneShell: { showNotification: (...args) => notifications.push(args) }
+    });
+    view.images = ['a', 'b', 'c'].map(path => ({ path, src: `/${path}.png`, filename: `${path}.png` }));
+    view.selectedPaths = new Set(['a', 'b', 'c']);
+    const button = { disabled: false };
+    let refreshed = false;
+    view.refreshSelectionUI = () => {
+        refreshed = true;
+        button.disabled = false;
+    };
+    const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    t.after(() => {
+        if (documentDescriptor) Object.defineProperty(globalThis, 'document', documentDescriptor);
+        else delete globalThis.document;
+    });
+    globalThis.document = {
+        querySelector: selector => selector === '#album-download-selected' ? button : null
+    };
+    await view.downloadSelectedImages();
+    assert.deepEqual(calls, ['/a.png', '/b.png']);
+    assert.deepEqual(notifications, [['相册', '已下载 1 项，已取消后续下载', 'ℹ️']]);
+    assert.equal(view.isBulkDownloading, false);
+    assert.equal(refreshed, true);
+    assert.equal(button.disabled, false);
 });
 
 test('story image actions share a bottom-right menu that opens upward', () => {

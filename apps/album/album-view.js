@@ -760,24 +760,30 @@ export class AlbumView {
         this.isBulkDownloading = true;
         let successCount = 0;
         let failureCount = 0;
+        let cancelled = false;
         try {
             for (const media of selected) {
                 try {
-                    await this.app.storyImageOverlay.downloadMediaFile(
+                    const result = await this.app.storyImageOverlay.downloadMediaFile(
                         media.src,
                         media.filename || `album-${Date.now()}.${media.mediaType === 'video' ? 'mp4' : 'png'}`,
                         { notify: false }
                     );
+                    if (result?.delivered === false) {
+                        cancelled = true;
+                        break;
+                    }
                     successCount += 1;
                 } catch (error) {
                     failureCount += 1;
                     console.error('下载所选相册媒体失败:', media.path, error);
                 }
             }
-            const summary = failureCount
+            let summary = failureCount
                 ? `已下载 ${successCount} 项，${failureCount} 项失败`
                 : `已下载 ${successCount} 项`;
-            this.app.phoneShell?.showNotification?.('相册', summary, failureCount ? '⚠️' : '✅');
+            if (cancelled) summary += '，已取消后续下载';
+            this.app.phoneShell?.showNotification?.('相册', summary, failureCount ? '⚠️' : cancelled ? 'ℹ️' : '✅');
         } finally {
             this.isBulkDownloading = false;
             this.refreshSelectionUI();

@@ -657,14 +657,13 @@ export class StoryImageOverlay {
             if (!response.ok) throw new Error(`读取图片失败（HTTP ${response.status}）`);
             const blob = await response.blob();
             const fileExport = await import('/scripts/file-export.js');
-            if (typeof fileExport.downloadBlobWithRuntime !== 'function') {
+            if (typeof fileExport.deliverBlob !== 'function') {
                 throw new Error('TT 原生下载模块不可用');
             }
-            const result = await fileExport.downloadBlobWithRuntime(blob, fileName, {
-                fallbackName: 'story-image.png'
-            });
-            const destination = String(result?.savedPath || result?.displayName || fileName).trim();
-            if (notify) this.app._showStoryNotification?.('相册', `文件已保存：${destination}`, '✅');
+            const result = await fileExport.deliverBlob(blob, fileName);
+            if (notify && result?.delivered === true) {
+                this.app._showStoryNotification?.('相册', `已导出：${fileName}`, '✅');
+            }
             return result;
         }
 
@@ -692,7 +691,7 @@ export class StoryImageOverlay {
 
     isTauriRuntime() {
         return typeof window !== 'undefined'
-            && typeof window.__TAURI__?.core?.invoke === 'function';
+            && typeof window.__TAURITAVERN__?.invoke?.safeInvoke === 'function';
     }
 
     getStoryImageDownloadName(floor = {}) {
