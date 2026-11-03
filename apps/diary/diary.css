@@ -1653,3 +1653,79 @@
 }
 
 /* 复用手机设置的 toggle-switch（如果已有则跳过） */
+
+/* 新增与导入共用页头：避开手机状态栏，按钮与标题保持同一行。 */
+#phone-panel-content .phone-screen .diary-app .diary-compose-header {
+    position: relative;
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) 56px;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 76px;
+    margin: 0;
+    padding: 40px 12px 0;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-compose-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 24px;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-compose-header > button {
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    min-width: 0;
+    max-width: 56px;
+    height: 36px;
+    min-height: 36px;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-compose-cancel {
+    background: transparent;
+    box-shadow: none;
+    font-size: 20px;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-edit-body,
+#phone-panel-content .phone-screen .diary-app .diary-import-body {
+    min-height: 0;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-edit-textarea {
+    min-height: 0;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-toc-list {
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-toc-item {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}

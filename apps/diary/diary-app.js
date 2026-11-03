@@ -14,7 +14,7 @@
 // ========================================
 
 import { DiaryData } from './diary-data.js?v=20261021-user-real-name';
-import { DiaryView } from './diary-view.js';
+import { DiaryView } from './diary-view.js?r=20261103-layout-gestures';
 
 export class DiaryApp {
     constructor(phoneShell, storage) {

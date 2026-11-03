@@ -39,7 +39,7 @@ export class DiaryView {
         const link = document.createElement('link');
         link.id = 'diary-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./diary.css?v=1.0.0', import.meta.url).href;
+        link.href = new URL('./diary.css?v=1.0.0&r=20261103-compose-header', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
     }
@@ -266,6 +266,20 @@ export class DiaryView {
         };
 
         let longPressTimer = null;
+        let pressStart = null;
+        let suppressPressClick = false;
+        let lastTouchTime = 0;
+        const clearPressTimer = () => {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        };
+        const cancelPressForScroll = () => {
+            clearPressTimer();
+            pressStart = null;
+            suppressPressClick = true;
+        };
+        const tocList = document.querySelector('.phone-view-current .diary-toc-list');
+        if (tocList) tocList.onscroll = cancelPressForScroll;
         const deleteSelectedBtn = document.getElementById('diary-delete-selected');
         if (deleteSelectedBtn) deleteSelectedBtn.onclick = () => {
             const entries = this._sortEntries(this.app.diaryData.getEntries());
@@ -370,33 +384,54 @@ export class DiaryView {
                 };
             }
 
-            item.addEventListener('mousedown', (e) => {
+            item.addEventListener('pointerdown', (e) => {
+                clearPressTimer();
+                if (e.pointerType === 'touch') lastTouchTime = Date.now();
+                if (!e.isPrimary || e.button !== 0) {
+                    cancelPressForScroll();
+                    return;
+                }
+                suppressPressClick = false;
                 if (e.target.closest('.diary-toc-item-actions') || e.target.closest('.diary-toc-select')) return;
+                pressStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
                 longPressTimer = setTimeout(() => {
+                    clearPressTimer();
+                    if (!pressStart || !item.isConnected) return;
+                    suppressPressClick = true;
+                    pressStart = null;
                     enterManageModeForItem(item.dataset.id);
-                }, 1000); 
+                }, e.pointerType === 'touch' ? 650 : 1000);
             });
 
-            item.addEventListener('touchstart', (e) => {
-                if (e.target.closest('.diary-toc-item-actions') || e.target.closest('.diary-toc-select')) return;
-                longPressTimer = setTimeout(() => {
-                    enterManageModeForItem(item.dataset.id);
-                }, 500); 
-            });
-
-            const clearTimer = () => clearTimeout(longPressTimer);
-            item.addEventListener('mouseup', clearTimer);
-            item.addEventListener('mouseleave', clearTimer);
-            item.addEventListener('touchend', clearTimer);
-            item.addEventListener('touchcancel', clearTimer);
+            item.addEventListener('pointermove', (e) => {
+                if (!pressStart || e.pointerId !== pressStart.id) return;
+                if (Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > 8) {
+                    cancelPressForScroll();
+                }
+            }, { passive: true });
+            const endPress = () => {
+                clearPressTimer();
+                pressStart = null;
+            };
+            item.addEventListener('pointerup', endPress);
+            item.addEventListener('pointerleave', endPress);
+            item.addEventListener('pointercancel', cancelPressForScroll);
 
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
+                // 触屏只使用上面的计时器，避免系统长按菜单绕过滑动取消。
+                if (e.pointerType === 'touch' || Date.now() - lastTouchTime < 1500) return;
+                clearPressTimer();
                 enterManageModeForItem(item.dataset.id);
             });
 
             // 🔥 核心：点击事件改为 onclick
             item.onclick = (e) => {
+                if (suppressPressClick) {
+                    suppressPressClick = false;
+                    e.preventDefault();
+                    return;
+                }
                 if (e.target.closest('.diary-toc-item-actions') || e.target.closest('.diary-toc-select')) return;
                 if (this.tocManageMode) {
                     const id = String(item.dataset.id || '');
@@ -1496,9 +1531,9 @@ export class DiaryView {
         const html = `
             <div class="diary-app">
                 <div class="diary-edit-view diary-new-view">
-                    <div class="diary-page-header">
-                        <button class="diary-page-back" id="diary-new-cancel" title="取消">✕</button>
-                        <div class="diary-page-date">新增日记</div>
+                    <div class="diary-compose-header">
+                        <button type="button" class="diary-compose-cancel" id="diary-new-cancel" title="取消" aria-label="取消">✕</button>
+                        <div class="diary-compose-title">新增日记</div>
                         <button class="diary-edit-save-btn" id="diary-new-save">保存</button>
                     </div>
                     <div class="diary-edit-body">
@@ -1545,9 +1580,9 @@ export class DiaryView {
         const html = `
             <div class="diary-app">
                 <div class="diary-edit-view diary-import-view">
-                    <div class="diary-page-header">
-                        <button class="diary-page-back" id="diary-import-cancel" title="取消">✕</button>
-                        <div class="diary-page-date">批量导入</div>
+                    <div class="diary-compose-header">
+                        <button type="button" class="diary-compose-cancel" id="diary-import-cancel" title="取消" aria-label="取消">✕</button>
+                        <div class="diary-compose-title">批量导入</div>
                         <button class="diary-edit-save-btn" id="diary-import-save">导入</button>
                     </div>
                     <div class="diary-import-body">
