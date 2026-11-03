@@ -242,6 +242,7 @@ export class PhoneShell {
 
             // 垂直滑动时的可滚动区域白名单
             const scrollableAreas =[
+                '.wechat-forward-list', '.wechat-forward-preview', '.wechat-forward-record-body', '.wechat-file-text-input',
                 '.phone-story-image-preset',
                 '.home-dashboard', '.home-app-cluster-scroll', '.yzp-home-app-grid',
                 '.chat-messages', '#voice-chat-messages', '#video-chat-messages',

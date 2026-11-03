@@ -1919,6 +1919,272 @@ export class WechatApp {
     font-size: 18px;
 }
 
+#phone-panel-content .wechat-message-selection-bar {
+    justify-content: space-evenly;
+    gap: 4px;
+}
+
+#phone-panel-content .wechat-forward-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0,0,0,.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+}
+#phone-panel-content .wechat-forward-dialog {
+    width: 100%;
+    max-width: 380px;
+    max-height: 85%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    color: #222;
+    border-radius: 12px;
+    padding: 20px 18px 16px;
+    box-sizing: border-box;
+    gap: 12px;
+}
+#phone-panel-content .wechat-forward-heading { font-size: 16px; font-weight: 600; line-height: 1.4; }
+#phone-panel-content .wechat-forward-preview {
+    white-space: pre-wrap;
+    overflow: auto;
+    max-height: min(100px, 16vh);
+    flex-shrink: 0;
+    background: #f7f7f7;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+#phone-panel-content .wechat-forward-section-title {
+    border-top: 1px solid #e8e8e8;
+    padding-top: 14px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+#phone-panel-content .wechat-forward-list {
+    overflow-y: auto;
+    min-height: 0;
+    margin: -4px -6px 0;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+#phone-panel-content .wechat-forward-dialog button {
+    appearance: none;
+    transform: none;
+    margin: 0;
+    min-height: 40px;
+    height: auto;
+    border: 0;
+    border-radius: 8px;
+    padding: 10px;
+    background: #f4f4f4;
+    color: #222;
+    font-size: 13px;
+    line-height: 1.4;
+    cursor: pointer;
+    box-shadow: none;
+}
+#phone-panel-content .wechat-forward-list .wechat-forward-target {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 62px;
+    padding: 10px 6px;
+    background: transparent;
+    border-radius: 0;
+    text-align: left;
+}
+#phone-panel-content .wechat-forward-target::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 58px;
+    right: 6px;
+    height: 1px;
+    background: #ededed;
+}
+#phone-panel-content .wechat-forward-target:last-child::after { display: none; }
+#phone-panel-content .wechat-forward-target.is-selected { background: #f0f8f2; }
+#phone-panel-content .wechat-forward-avatar {
+    display: block;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: #eee;
+    font-size: 18px;
+}
+#phone-panel-content .wechat-forward-avatar img { width: 100%; height: 100%; object-fit: cover; }
+#phone-panel-content .wechat-forward-name {
+    min-width: 0;
+    flex: 1;
+    color: #191919;
+    font-size: 15px;
+    line-height: 1.5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#phone-panel-content .wechat-forward-check {
+    flex: 0 0 22px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #07a95a;
+    visibility: hidden;
+}
+#phone-panel-content .wechat-forward-check svg {
+    display: block;
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transform: none;
+}
+#phone-panel-content .wechat-forward-target.is-selected .wechat-forward-check { visibility: visible; }
+#phone-panel-content .wechat-forward-empty { color: #888; font-size: 13px; padding: 12px 6px; }
+#phone-panel-content .wechat-forward-actions { display: flex; gap: 10px; flex-shrink: 0; border-top: 1px solid #e8e8e8; padding-top: 14px; }
+#phone-panel-content .wechat-forward-actions button { flex: 1; }
+#phone-panel-content .wechat-forward-actions button[data-action="send"] { background: #07a95a; color: white; }
+#phone-panel-content .wechat-forward-actions button:disabled { opacity: .4; cursor: default; }
+
+#phone-panel-content .wechat-forward-record-card {
+    width: 228px;
+    max-width: 100%;
+    box-sizing: border-box;
+    background: #fff;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    overflow: hidden;
+    color: #191919;
+    text-align: left;
+    cursor: pointer;
+}
+#phone-panel-content .wechat-forward-record-card:focus-visible { outline: 2px solid #07a95a; outline-offset: 2px; }
+#phone-panel-content .wechat-forward-record-title {
+    padding: 12px 12px 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#phone-panel-content .wechat-forward-record-summary {
+    margin: 6px 12px 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #888;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-height: 4.8em;
+}
+#phone-panel-content .wechat-forward-record-footer {
+    display: flex;
+    justify-content: space-between;
+    border-top: 1px solid #eee;
+    padding: 7px 12px;
+    color: #999;
+    font-size: 10px;
+    line-height: 1.4;
+}
+#phone-panel-content .wechat-forward-record-dialog { height: 75%; }
+#phone-panel-content .wechat-forward-record-dialog .wechat-forward-heading { overflow-wrap: anywhere; }
+#phone-panel-content .wechat-forward-record-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+    border-radius: 8px;
+    background: #f7f7f7;
+    color: #333;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 13px;
+    line-height: 1.75;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+#phone-panel-content .wechat-forward-record-body.wechat-forward-record-structured {
+    white-space: normal;
+    background: #fff;
+    padding: 0;
+}
+#phone-panel-content .wechat-forward-record-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 0;
+}
+#phone-panel-content .wechat-forward-record-entry .wechat-forward-avatar {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+}
+#phone-panel-content .wechat-forward-record-entry-main {
+    flex: 1;
+    min-width: 0;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #ededed;
+}
+#phone-panel-content .wechat-forward-record-entry:last-child .wechat-forward-record-entry-main { border-bottom: none; }
+#phone-panel-content .wechat-forward-record-entry-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    column-gap: 8px;
+    row-gap: 2px;
+    color: #999;
+    font-size: 11px;
+    line-height: 1.5;
+    margin-bottom: 5px;
+}
+#phone-panel-content .wechat-forward-record-sender { overflow-wrap: anywhere; }
+#phone-panel-content .wechat-forward-record-time { white-space: nowrap; font-size: 10px; margin-left: auto; }
+#phone-panel-content .wechat-forward-record-entry-text { white-space: pre-wrap; color: #191919; line-height: 1.7; overflow-wrap: anywhere; }
+#phone-panel-content .wechat-file-card-main { display: flex; align-items: center; gap: 14px; padding: 18px 12px; min-height: 44px; }
+#phone-panel-content .wechat-file-card-title { flex: 1; min-width: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#phone-panel-content .wechat-file-card-icon { display: flex; align-items: center; justify-content: center; width: 42px; height: 48px; flex-shrink: 0; border-radius: 5px; background: #f6aa42; color: #fff; font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; line-height: 1; letter-spacing: 0; }
+#phone-panel-content .wechat-file-card-icon.is-word { background: #3478ce; font-size: 25px; }
+#phone-panel-content .wechat-file-card-icon.is-excel { background: #2b9662; font-size: 25px; }
+#phone-panel-content .wechat-file-card-icon.is-powerpoint { background: #dc7145; font-size: 25px; }
+#phone-panel-content .wechat-file-card-icon.is-pdf { background: #db5757; }
+#phone-panel-content .wechat-file-compose-hint { font-size: 11px; color: #888; line-height: 1.5; }
+#phone-panel-content .wechat-file-compose-label { display: flex; flex-direction: column; gap: 6px; min-height: 0; color: #666; font-size: 12px; }
+#phone-panel-content .wechat-file-compose-dialog input,
+#phone-panel-content .wechat-file-compose-dialog textarea {
+    width: 100%; box-sizing: border-box; margin: 0; padding: 10px; border: 1px solid #e5e5e5; border-radius: 6px;
+    background: #f7f7f7; color: #191919; font: inherit; font-size: 14px; line-height: 1.6; box-shadow: none;
+}
+#phone-panel-content .wechat-file-compose-dialog .wechat-file-text-input {
+    height: 180px; min-height: 70px; max-height: 30vh; resize: vertical;
+    touch-action: pan-y; overscroll-behavior: contain;
+}
+#phone-panel-content .wechat-file-compose-error { color: #b23a32; font-size: 12px; }
+
 /* 特殊消息类型 */
 .message-image {
     max-width: 100%;

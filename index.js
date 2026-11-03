@@ -33,6 +33,7 @@ import {
     renderOfflineWechatPaymentReceipt
 } from './apps/wechat/offline-payment.js?v=1.6.1&r=20261011-payment-boundaries-and-flexible-years';
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
+import { parseWechatFile, formatWechatFile, tokenizeWechatFiles } from './apps/wechat/file-message.js';
 import { StoryImageAutoScheduler } from './apps/album/story-image-auto-scheduler.js';
 import { buildInlineReplyWechatList } from './apps/wechat/inline-reply-order.js';
 import {
@@ -156,6 +157,8 @@ const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
     date: '2026-11-03',
     items: [
+        '【新增】微信转发聊天记录功能。',
+        '【新增】微信文件发送功能，支持填写标题与文字内容、点击文件卡片查看全文，并同步支持线上及正文中的角色文件消息。',
         '【修复】适配 TT 新版文件下载接口，修复正文生图、相册预览及批量下载提示“TT 原生下载模块不可用”的问题；取消保存不再误报成功，批量下载会停止后续操作。',
         '【修复】补全 NovelAI 单个 .naiv4vibe.json 文件导入支持，保留文件中的模型、信息提取量和强度参数，并按文件名建立 Vibe 组。',
         '【修复】统一魔坊气泡模式下的面板与气泡预览，修复笺札等模板排版不一致、正文超出的问题，并保留手机适配和历史翻页。',
@@ -7930,6 +7933,8 @@ if (window.GGP_Loaded) {
 
             // 🔥 兼容：AI 直接照抄模板变量时，避免 date 字段残留占位符干扰解析
             content = content.replace(/\{\{STORY_DATE\}\}/gi, '');
+            const fileTokens = tokenizeWechatFiles(content);
+            content = fileTokens.text;
             const wangxiangTaskTokens = tokenizeWangxiangTaskTags(content, {
                 tokenPrefix: 'ST_PHONE_OFFLINE_WANGXIANG_TASK',
                 idPrefix: 'wechat-invitation',
@@ -7954,7 +7959,7 @@ if (window.GGP_Loaded) {
 
             const pushCurrentMessage = (message) => {
                 const token = String(message?.content || '').trim();
-                const taskSpecial = wangxiangTaskTokens.tokenMap.get(token);
+                const taskSpecial = fileTokens.tokenMap.get(token) || wangxiangTaskTokens.tokenMap.get(token);
                 if (taskSpecial) {
                     currentMessages.push({
                         ...message,
@@ -8212,6 +8217,8 @@ if (window.GGP_Loaded) {
     // 🔧 辅助函数：解析消息类型
     function parseMessageType(msgObj) {
         const content = msgObj.content;
+        const file = parseWechatFile(content);
+        if (file) { Object.assign(msgObj, file); return; }
 
         // [拨打微信语音] / [拨打微信群语音] / [发起群视频通话]（兼容全角方括号【】）
         const wechatCallMatch = String(content || '').match(/[［\[]\s*(?:拨打|发起)\s*(?:微信)?(群)?(语音|视频)(?:通话)?\s*[］\]]|【\s*(?:拨打|发起)\s*(?:微信)?(群)?(语音|视频)(?:通话)?\s*】/);
@@ -8766,6 +8773,8 @@ if (window.GGP_Loaded) {
                     time: finalTime,
                     date: data.date || baseDate,
                     type: msg.type || 'text',
+                    fileTitle: msg.fileTitle,
+                    fileText: msg.fileText,
                     mediaType: msg.mediaType,
                     imagePrompt: msg.imagePrompt,
                     usePersonalReference: msg.usePersonalReference,
@@ -12873,6 +12882,17 @@ if (window.GGP_Loaded) {
                                                         content = formatXCardForOfflinePrompt(msg);
                                                     } else if (msg.type === 'wangxiang_task_card' || msg.type === 'wangxiang_task_confirmation' || msg.type === 'wangxiang_task_invitation') {
                                                         content = formatWangxiangTaskForOfflinePrompt(msg);
+                                                    } else if (msg.type === 'file_card') {
+                                                        content = formatWechatFile(msg.fileTitle, msg.fileText);
+                                                    } else if (msg.type === 'forward_card') {
+                                                        // 转发卡片的 content 保存了完整原文和原消息时间，不能走类型占位符兜底。
+                                                        const savedContent = String(msg.content || '').trim();
+                                                        const entries = Array.isArray(msg.forwardEntries) ? msg.forwardEntries : [];
+                                                        const entryContent = entries.map(entry => {
+                                                            const originalTime = [entry.date, entry.time].filter(Boolean).join(' ');
+                                                            return `${entry.sender || '未知发言人'}${originalTime ? `（${originalTime}）` : ''}：${entry.content || ''}`;
+                                                        }).join('\n\n');
+                                                        content = savedContent || (entryContent ? `【转发聊天记录】\n${entryContent}` : '[聊天记录内容缺失]');
                                                     } else if (msg.type === 'poker_card') {
                                                         const poker = msg.pokerData || {};
                                                         content = poker.content || poker.desc || msg.content || '[德州扑克分享]';

@@ -6,7 +6,7 @@ const updateLog = JSON.parse(fs.readFileSync(new URL('../update-log.json', impor
 const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 
-test('current version publishes only the 1.6.7 fix notices', () => {
+test('current version publishes the 1.6.7 update notices', () => {
     const current = updateLog.versions[manifest.version];
 
     assert.equal(manifest.version, '1.6.7');
@@ -14,6 +14,8 @@ test('current version publishes only the 1.6.7 fix notices', () => {
     assert.deepEqual(Object.keys(updateLog.versions), ['1.6.7']);
     assert.equal(current.date, '2026-11-03');
     assert.deepEqual(current.items, [
+        '【新增】微信转发聊天记录功能。',
+        '【新增】微信文件发送功能，支持填写标题与文字内容、点击文件卡片查看全文，并同步支持线上及正文中的角色文件消息。',
         '【修复】适配 TT 新版文件下载接口，修复正文生图、相册预览及批量下载提示“TT 原生下载模块不可用”的问题；取消保存不再误报成功，批量下载会停止后续操作。',
         '【修复】补全 NovelAI 单个 .naiv4vibe.json 文件导入支持，保留文件中的模型、信息提取量和强度参数，并按文件名建立 Vibe 组。',
         '【修复】统一魔坊气泡模式下的面板与气泡预览，修复笺札等模板排版不一致、正文超出的问题，并保留手机适配和历史翻页。',

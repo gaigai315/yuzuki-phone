@@ -13,6 +13,7 @@
 import { GlobalSocialStore } from '../../config/global-social-store.js';
 import { parseImagePromptDescriptionPair, readBalancedImagePromptGroup } from '../../config/image-prompt-format.js';
 import { parseWechatVoiceContent } from './voice-text.js';
+import { parseWechatFile } from './file-message.js';
 import {
     createWalletCreditBillingState,
     getWalletCreditBillingStatus,
@@ -3216,6 +3217,10 @@ export class WechatData {
     }
     
        addMessage(chatId, message) {
+        if (!message.type || message.type === 'text') {
+            const file = parseWechatFile(message.content);
+            if (file) Object.assign(message, file);
+        }
         // 🔥 关键修复：先触发懒加载，避免在“未打开聊天”的情况下把历史消息数组覆盖成空
         const loadedMessages = this.getMessages(chatId);
         if (!Array.isArray(loadedMessages)) {
@@ -3605,6 +3610,10 @@ getMessagePreview(message) {
             return '[万象任务邀请]';
         case 'poker_card':
             return '[德州扑克分享]';
+        case 'forward_card':
+            return '[聊天记录]';
+        case 'file_card':
+            return `[文件] ${message.fileTitle || '文件'}`;
         case 'werewolf_card':
             return '[狼人杀复盘分享]';
         case 'undercover_card':

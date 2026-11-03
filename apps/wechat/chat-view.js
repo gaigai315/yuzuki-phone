@@ -11,6 +11,7 @@ import { CALL_HANGUP_RULE, parseCallHangupReply } from '../../config/call-hangup
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 import { startCallTimer } from '../../config/call-timer.js';
+import { parseWechatFile, formatWechatFile, tokenizeWechatFiles, getWechatFileAppearance } from './file-message.js';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { captureWechatChatSnapshot } from './chat-snapshot.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
@@ -3350,6 +3351,9 @@ renderChatRoom(chat) {
                     <i class="fa-regular fa-trash-can"></i>
                     <span>删除${selectedCount > 0 ? `(${selectedCount})` : ''}</span>
                 </button>
+                <button class="wechat-message-selection-action ${selectedCount > 0 ? '' : 'is-disabled'}" data-action="forward" ${selectedCount > 0 ? '' : 'disabled'}>
+                    <i class="fa-solid fa-share"></i><span>转发</span>
+                </button>
                 <button class="wechat-message-selection-action is-close" data-action="cancel" aria-label="退出多选">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
@@ -3386,6 +3390,11 @@ renderChatRoom(chat) {
     _bindMessageSelectionBarEvents(bar) {
         if (!bar || bar.dataset.bound === '1') return;
         bar.dataset.bound = '1';
+        bar.querySelector('[data-action="forward"]')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.showMessageForwardDialog();
+        });
         bar?.querySelector('[data-action="delete"]')?.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -3413,6 +3422,11 @@ renderChatRoom(chat) {
         if (!targetBar) return;
         const selectedCount = this.selectedMessageIds?.size || 0;
         const deleteBtn = targetBar.querySelector('[data-action="delete"]');
+        const forwardBtn = targetBar.querySelector('[data-action="forward"]');
+        if (forwardBtn) {
+            forwardBtn.disabled = selectedCount <= 0;
+            forwardBtn.classList.toggle('is-disabled', selectedCount <= 0);
+        }
         const deleteTailBtn = targetBar.querySelector('[data-action="delete-tail"]');
 
         if (deleteBtn) {
@@ -3427,6 +3441,196 @@ renderChatRoom(chat) {
             deleteTailBtn.disabled = selectedCount <= 0;
             deleteTailBtn.classList.toggle('is-disabled', selectedCount <= 0);
         }
+    }
+
+    _buildSelectedForwardEntries() {
+        const data = this.app.wechatData;
+        const sourceId = this._getCurrentMessageSelectionChatId();
+        const source = data.getChat(sourceId);
+        if (!source || !this._isMessageSelectionActiveForCurrentChat()) return [];
+        const user = data.getUserInfo();
+        return data.getMessages(sourceId)
+            .filter(msg => this.selectedMessageIds.has(String(msg.id)))
+            .map(msg => {
+                const content = this._formatMessageContentForPrompt({ ...msg, type: msg.type || 'text' }, source);
+                if (!content) return null;
+                const contact = data.getContact(msg.from);
+                const sender = msg.from === 'me' ? (user.name || '用户')
+                    : (data.getContact(msg.from)?.name || (msg.from === 'char' ? source.name : msg.from) || source.name);
+                const avatar = msg.from === 'me' ? user.avatar : (msg.avatar || contact?.avatar || (source.type !== 'group' ? source.avatar : ''));
+                return {
+                    sender, avatar: /^data:/i.test(String(avatar || '')) ? '' : (avatar || ''), content,
+                    date: String(msg.date || ''), time: String(msg.time || ''),
+                    timestamp: Number.isFinite(Number(msg.timestamp)) ? Number(msg.timestamp) : 0
+                };
+            }).filter(Boolean);
+    }
+
+    _formatForwardEntryTime(entry) {
+        let date = String(entry.date || '').trim();
+        let time = String(entry.time || '').trim();
+        if (Number(entry.timestamp) > 0) {
+            if (!date) date = this._formatWechatDateFromTimestamp(entry.timestamp);
+            if (!time) time = this._formatWechatTimeFromTimestamp(entry.timestamp);
+        }
+        date = date.replace(/^(\d{1,6})[-/]\s*(\d{1,2})[-/]\s*(\d{1,2})$/, '$1年$2月$3日');
+        return [date, time].filter(Boolean).join(' ');
+    }
+
+    _buildSelectedForwardContent(entries = this._buildSelectedForwardEntries()) {
+        const source = this.app.wechatData.getChat(this._getCurrentMessageSelectionChatId());
+        if (!source) return '';
+        const lines = entries.map(entry => {
+            const time = this._formatForwardEntryTime(entry);
+            return `${entry.sender}${time ? `（${time}）` : ''}：${entry.content}`;
+        });
+        return lines.length ? `【转发聊天记录：${source.name}】\n${lines.join('\n\n')}` : '';
+    }
+
+    _getMessageForwardTargets() {
+        const data = this.app.wechatData;
+        const sourceId = this._getCurrentMessageSelectionChatId();
+        const contacts = data.getContacts();
+        return [
+            ...contacts.filter(c => !c.blocked).map(c => ({
+                key: `friend:${c.id}`, name: data.getContactDisplayName(c) || c.name,
+                contactId: c.id, type: 'single', avatar: c.avatar
+            })),
+            ...data.getChatList().filter(c => c.type !== 'group' && c.id !== sourceId
+                && !contacts.some(contact => contact.id === c.contactId || contact.name === c.name)
+                && !this._isBlockedSingleChat(c)).map(c => ({
+                key: `chat:${c.id}`, name: c.name, chatId: c.id, type: 'single', avatar: c.avatar
+            })),
+            ...data.getChatList().filter(c => c.type === 'group' && c.id !== sourceId).map(c => ({
+                key: `group:${c.id}`, name: c.name, chatId: c.id, type: 'group', avatar: c.avatar
+            }))
+        ];
+    }
+
+    _sendForwardedMessages(target, content, entries = this._buildSelectedForwardEntries()) {
+        if (!content) throw new Error('没有可转发的消息');
+        const data = this.app.wechatData;
+        if (target.type !== 'group' && data.getContact(target.contactId)?.blocked) throw new Error('该好友已被拉黑');
+        const chat = target.chatId ? data.getChat(target.chatId) : data.createChat(target);
+        if (!chat) throw new Error('目标聊天不存在');
+        const timeFields = this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : {};
+        const added = data.addMessage(chat.id, {
+            from: 'me', type: 'forward_card', content, avatar: data.getUserInfo().avatar,
+            forwardEntries: entries.map(entry => ({ ...entry })),
+            batchId: `forward_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            ...timeFields
+        });
+        if (added === false) throw new Error('消息未能保存');
+        return chat;
+    }
+
+    showMessageForwardDialog() {
+        const entries = this._buildSelectedForwardEntries();
+        const content = this._buildSelectedForwardContent(entries);
+        if (!content) {
+            this.app.phoneShell.showNotification('提示', '请选择可转发的聊天消息', 'ℹ️');
+            return;
+        }
+        const root = this.getCurrentWechatView();
+        if (!root) return;
+        root.querySelector('.wechat-forward-overlay')?.remove();
+        const targets = this._getMessageForwardTargets();
+        const overlay = document.createElement('div');
+        overlay.className = 'wechat-forward-overlay';
+        overlay.innerHTML = `<div class="wechat-forward-dialog" role="dialog" aria-modal="true" aria-label="转发聊天记录">
+            <div class="wechat-forward-heading">转发聊天记录</div>
+            <div class="wechat-forward-preview">${this._escapeHtml(content)}</div>
+            <div class="wechat-forward-section-title">转发给</div>
+            <div class="wechat-forward-list">${targets.map((target, index) => `
+                <button type="button" class="wechat-forward-target" data-target="${index}" aria-pressed="false">
+                    <span class="wechat-forward-avatar" aria-hidden="true">${this.app.renderAvatar(target.avatar, target.type === 'group' ? '👥' : '👤', target.name)}</span>
+                    <span class="wechat-forward-name">${this._escapeHtml(target.name)}</span>
+                    <span class="wechat-forward-check" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 12.5 9.5 17 19 7" /></svg></span>
+                </button>`).join('') || '<p class="wechat-forward-empty">暂无可转发的好友或群聊</p>'}</div>
+            <div class="wechat-forward-actions"><button type="button" data-action="close">取消</button><button type="button" data-action="send" disabled>发送</button></div>
+        </div>`;
+        root.appendChild(overlay);
+        let chosen = null;
+        const send = overlay.querySelector('[data-action="send"]');
+        overlay.addEventListener('click', e => {
+            e.stopPropagation();
+            if (e.target === overlay || e.target.closest('[data-action="close"]')) overlay.remove();
+            const button = e.target.closest('[data-target]');
+            if (button) {
+                chosen = targets[Number(button.dataset.target)];
+                overlay.querySelectorAll('[data-target]').forEach(el => {
+                    el.classList.toggle('is-selected', el === button);
+                    el.setAttribute('aria-pressed', String(el === button));
+                });
+                send.disabled = false;
+            }
+        });
+        send.addEventListener('click', () => {
+            if (!chosen || send.disabled) return;
+            send.disabled = true;
+            try {
+                this._sendForwardedMessages(chosen, content, entries);
+                overlay.remove();
+                this.exitMessageSelectionMode();
+                this.app.phoneShell.showNotification('转发成功', `已转发给 ${chosen.name}`, '✅');
+            } catch (error) {
+                send.disabled = false;
+                this.app.phoneShell.showNotification('转发失败', error.message, '⚠️');
+            }
+        });
+    }
+
+    _getForwardedRecord(msg) {
+        const content = String(msg?.content || '');
+        const header = content.match(/^【转发聊天记录：([^\r\n]*)】\r?\n/);
+        if (msg?.type !== 'forward_card' && !((msg?.type === 'text' || !msg?.type) && header)) return null;
+        return {
+            title: header ? `${header[1]}的聊天记录` : '聊天记录',
+            content: header ? content.slice(header[0].length) : content
+        };
+    }
+
+    _renderForwardedRecordCard(msg) {
+        const record = this._getForwardedRecord(msg);
+        if (!record) return '';
+        const preview = record.content.split(/\r?\n/).filter(line => line.trim()).slice(0, 3).join('\n');
+        return `<div class="wechat-forward-record-card" data-msg-id="${this._escapeHtml(msg.id || '')}" role="button" tabindex="0" aria-label="查看聊天记录">
+            <div class="wechat-forward-record-title">${this._escapeHtml(record.title)}</div>
+            <div class="wechat-forward-record-summary">${this._escapeHtml(preview)}</div>
+            <div class="wechat-forward-record-footer"><span>聊天记录</span><span>查看详情</span></div>
+        </div>`;
+    }
+
+    openForwardedRecord(messageId) {
+        const msg = this.app.wechatData.getMessages(this.app.currentChat?.id)
+            .find(item => String(item.id) === String(messageId));
+        const record = this._getForwardedRecord(msg);
+        const root = this.getCurrentWechatView();
+        if (!record || !root) return;
+        root.querySelector('.wechat-forward-record-overlay')?.remove();
+        const modal = document.createElement('div');
+        modal.className = 'wechat-forward-overlay wechat-forward-record-overlay';
+        modal.innerHTML = `<div class="wechat-forward-dialog wechat-forward-record-dialog" role="dialog" aria-modal="true" aria-label="聊天记录详情">
+            <div class="wechat-forward-heading">${this._escapeHtml(record.title)}</div>
+            <div class="wechat-forward-record-body${msg.forwardEntries?.length ? ' wechat-forward-record-structured' : ''}">${this._renderForwardedRecordDetails(msg, record)}</div>
+            <div class="wechat-forward-actions"><button type="button" data-action="close">关闭</button></div>
+        </div>`;
+        root.appendChild(modal);
+        modal.addEventListener('click', e => {
+            e.stopPropagation();
+            if (e.target === modal || e.target.closest('[data-action="close"]')) modal.remove();
+        });
+    }
+
+    _renderForwardedRecordDetails(msg, record = this._getForwardedRecord(msg)) {
+        if (!Array.isArray(msg.forwardEntries) || !msg.forwardEntries.length) return this._escapeHtml(record?.content || '');
+        return msg.forwardEntries.map(entry => `<div class="wechat-forward-record-entry">
+            <div class="wechat-forward-avatar" aria-hidden="true">${this.app.renderAvatar(entry.avatar, '👤', entry.sender)}</div>
+            <div class="wechat-forward-record-entry-main">
+                <div class="wechat-forward-record-entry-header"><span class="wechat-forward-record-sender">${this._escapeHtml(entry.sender)}</span><span class="wechat-forward-record-time">${this._escapeHtml(this._formatForwardEntryTime(entry))}</span></div>
+                <div class="wechat-forward-record-entry-text">${this._escapeHtml(entry.content)}</div>
+            </div>
+        </div>`).join('');
     }
 
     _syncMessageSelectionDom(messageId = '') {
@@ -3741,12 +3945,22 @@ renderChatRoom(chat) {
         const contentStr = String(msg?.content || '').trim();
         const inlineVoiceNewMatch = /^(?:\[\s*(?:语音条|语音)\s*\]|【\s*(?:语音条|语音)\s*】)\s*[:：]?\s*(.+)$/i.exec(contentStr);
         const inlineVoiceOldMatch = /^\[语音\s*(\d+)秒?\]\(?([^)]*)\)?$/i.exec(contentStr);
-        const effectiveType = (msg.type === 'text' || !msg.type)
+        const effectiveType = this._getForwardedRecord(msg) ? 'forward_card' : (msg.type === 'text' || !msg.type)
             && (inlineVoiceNewMatch || inlineVoiceOldMatch)
             ? 'voice'
             : msg.type;
 
         switch (effectiveType) {
+            case 'forward_card':
+                messageBody = this._renderForwardedRecordCard(msg);
+                break;
+            case 'file_card': {
+                const appearance = getWechatFileAppearance(msg.fileTitle);
+                messageBody = `<div class="wechat-forward-record-card wechat-file-card" data-msg-id="${this._escapeHtml(msg.id || '')}" role="button" tabindex="0" aria-label="打开文件">
+                    <div class="wechat-file-card-main"><div class="wechat-file-card-title">${this._escapeHtml(msg.fileTitle || '文件')}</div><span class="wechat-file-card-icon is-${appearance.kind}" aria-hidden="true">${appearance.glyph}</span></div>
+                    <div class="wechat-forward-record-footer"><span>${appearance.label}</span><span>点击查看</span></div></div>`;
+                break;
+            }
             case 'image':
                 {
                     const isCustomEmojiImage = !!(msg.customEmojiId || msg.customEmojiName || msg.customEmojiDescription);
@@ -5808,7 +6022,8 @@ renderChatRoom(chat) {
             return '图片';
         };
 
-        if (msg.type === 'text') return String(msg.content || '');
+        if (msg.type === 'file_card') return formatWechatFile(msg.fileTitle, msg.fileText);
+        if (msg.type === 'forward_card' || msg.type === 'text') return String(msg.content || '');
         if (msg.type === 'image') {
             return `[图片]（${getImageDisplayName()}）`;
         }
@@ -6159,6 +6374,10 @@ renderChatRoom(chat) {
                 </div>
 
                 <!-- 第二排：转账、红包 -->
+                <div class="more-item" data-action="file">
+                    <div class="more-icon"><i class="fa-solid fa-folder" style="font-size: 14px;"></i></div>
+                    <div class="more-name">文件</div>
+                </div>
                 <div class="more-item" data-action="transfer">
                     <div class="more-icon">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -7624,6 +7843,8 @@ renderChatRoom(chat) {
 
     // 🔥 解析AI返回的特殊消息格式（转账/红包/定位/微博新闻/来电）
     parseSpecialMessage(content) {
+        const file = parseWechatFile(content);
+        if (file) return file;
         if (!content || typeof content !== 'string') return null;
         const trimmedContent = String(content || '').trim();
 
@@ -8280,6 +8501,32 @@ renderChatRoom(chat) {
     // 🔥 绑定红包/转账气泡的点击事件
     bindSpecialMessageEvents() {
         const currentView = this.getCurrentWechatView();
+        currentView.querySelectorAll('.wechat-file-card').forEach(card => {
+            if (card.dataset.fileBound === '1') return;
+            card.dataset.fileBound = '1';
+            const open = e => {
+                if (this._isMessageSelectionActiveForCurrentChat()) return;
+                e.preventDefault();
+                e.stopPropagation();
+                this.openWechatFile(card.dataset.msgId);
+            };
+            card.addEventListener('click', open);
+            card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') open(e); });
+        });
+        currentView.querySelectorAll('.wechat-forward-record-card:not(.wechat-file-card)').forEach(card => {
+            if (card.dataset.forwardBound === '1') return;
+            card.dataset.forwardBound = '1';
+            const open = (e) => {
+                if (this._isMessageSelectionActiveForCurrentChat()) return;
+                e.preventDefault();
+                e.stopPropagation();
+                this.openForwardedRecord(card.dataset.msgId);
+            };
+            card.addEventListener('click', open);
+            card.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') open(e);
+            });
+        });
         currentView.querySelectorAll('.message-redpacket').forEach(rp => {
             rp.addEventListener('click', (e) => {
                 if (this._isMessageSelectionActiveForCurrentChat()) return;
@@ -10951,6 +11198,8 @@ renderChatRoom(chat) {
             let backgroundGroupHints = {}; // 后台窗口的群聊提示 { "窗口名": true/false }
 
             let aiRawText = this._extractWechatTagPayloadOrSelf(aiResponseWithoutMoments);
+            const fileTokens = tokenizeWechatFiles(aiRawText);
+            aiRawText = fileTokens.text;
             const wangxiangTaskTokens = tokenizeWangxiangTaskTags(aiRawText, {
                 tokenPrefix: 'ST_PHONE_ONLINE_WANGXIANG_TASK',
                 idPrefix: 'wechat-invitation',
@@ -11377,6 +11626,11 @@ renderChatRoom(chat) {
             const expandMixedSpecialList = (list) => {
                 const out = [];
                 (list || []).forEach(item => {
+                    const file = fileTokens.tokenMap.get(String(item.content || '').trim());
+                    if (file) {
+                        out.push({ ...item, time: file.time || item.time, content: file.content, specialMessage: file });
+                        return;
+                    }
                     out.push(...this.splitMixedSpecialMessage(item));
                 });
                 return out;
@@ -13088,8 +13342,95 @@ renderChatRoom(chat) {
         ].filter(Boolean).join('\n\n');
     }
 
+    showWechatFileComposer() {
+        const chatId = this.app.currentChat?.id;
+        const root = this.getCurrentWechatView();
+        if (!chatId || !root) return;
+        if (this._isBlockedSingleChat(this.app.currentChat)) {
+            this._notifyBlockedChatSend(this.app.currentChat);
+            return;
+        }
+        root.querySelector('.wechat-file-compose-overlay')?.remove();
+        const modal = document.createElement('div');
+        modal.className = 'wechat-forward-overlay wechat-file-compose-overlay';
+        modal.innerHTML = `<div class="wechat-forward-dialog wechat-file-compose-dialog" role="dialog" aria-modal="true" aria-label="发送文件">
+            <div class="wechat-forward-heading">发送文件</div>
+            <label class="wechat-file-compose-label">文件标题<input class="wechat-file-title-input" type="text" placeholder="例如：会议纪要.docx、项目说明.pdf" maxlength="100"></label>
+            <div class="wechat-file-compose-hint">支持 doc、docx、pdf、xlsx、pptx、txt 等文件名，内容填写在下方。</div>
+            <label class="wechat-file-compose-label">文件内容<textarea class="wechat-file-text-input" placeholder="输入文件中的文字内容"></textarea></label>
+            <div class="wechat-file-compose-error" role="status"></div>
+            <div class="wechat-forward-actions"><button type="button" data-action="close">取消</button><button type="button" data-action="send">发送</button></div>
+        </div>`;
+        root.appendChild(modal);
+        modal.addEventListener('click', e => {
+            e.stopPropagation();
+            if (e.target === modal || e.target.closest('[data-action="close"]')) modal.remove();
+        });
+        const send = modal.querySelector('[data-action="send"]');
+        send.addEventListener('click', () => {
+            if (send.disabled) return;
+            const title = modal.querySelector('.wechat-file-title-input').value.trim();
+            const text = modal.querySelector('.wechat-file-text-input').value.trim();
+            if (!title || !text) {
+                modal.querySelector('.wechat-file-compose-error').textContent = '请填写文件标题和内容';
+                return;
+            }
+            send.disabled = true;
+            try {
+                this._sendWechatFile(chatId, title, text);
+                modal.remove();
+                this._collapseTransientInputPanels({ render: false });
+                this._getCurrentChatRoom(chatId)?.querySelector('.more-panel')?.remove();
+                if (String(this.app.currentChat?.id) === String(chatId)) {
+                    this.smartUpdateMessages(this.app.wechatData.getMessages(chatId), this.app.wechatData.getUserInfo(), { chatId });
+                }
+                this._enqueuePendingChat(chatId);
+            } catch (error) {
+                send.disabled = false;
+                modal.querySelector('.wechat-file-compose-error').textContent = error.message;
+            }
+        });
+    }
+
+    _sendWechatFile(chatId, title, text) {
+        if (!String(title || '').trim() || !String(text || '').trim()) throw new Error('请填写文件标题和内容');
+        const data = this.app.wechatData;
+        const chat = data.getChat(chatId);
+        if (!chat || this._isBlockedSingleChat(chat)) throw new Error('当前聊天无法发送文件');
+        const added = data.addMessage(chatId, {
+            from: 'me', type: 'file_card', fileTitle: title.trim(), fileText: text.trim(),
+            content: formatWechatFile(title, text), avatar: data.getUserInfo().avatar,
+            batchId: `file_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            ...(this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : {})
+        });
+        if (added === false) throw new Error('文件未能保存');
+        return added;
+    }
+
+    openWechatFile(messageId) {
+        const root = this.getCurrentWechatView();
+        const msg = this.app.wechatData.getMessages(this.app.currentChat?.id).find(item => String(item.id) === String(messageId));
+        if (!root || msg?.type !== 'file_card') return;
+        root.querySelector('.wechat-file-detail-overlay')?.remove();
+        const modal = document.createElement('div');
+        modal.className = 'wechat-forward-overlay wechat-file-detail-overlay';
+        modal.innerHTML = `<div class="wechat-forward-dialog wechat-forward-record-dialog" role="dialog" aria-modal="true" aria-label="文件内容">
+            <div class="wechat-forward-heading">${this._escapeHtml(msg.fileTitle || '文件')}</div>
+            <div class="wechat-forward-record-body">${this._escapeHtml(msg.fileText || '')}</div>
+            <div class="wechat-forward-actions"><button type="button" data-action="close">关闭</button></div>
+        </div>`;
+        root.appendChild(modal);
+        modal.addEventListener('click', e => {
+            e.stopPropagation();
+            if (e.target === modal || e.target.closest('[data-action="close"]')) modal.remove();
+        });
+    }
+
     async handleMoreAction(action) {
         switch (action) {
+            case 'file':
+                this.showWechatFileComposer();
+                break;
             case 'emoji':
                 // 🔥 打开表情面板
                 this.showMore = false;
