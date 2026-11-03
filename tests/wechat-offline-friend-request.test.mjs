@@ -52,7 +52,7 @@ function createWechatData({ contacts = [], hiddenIds = [] } = {}) {
     };
 }
 
-test('friend request parser supports the required same-name boundary and validates gender', () => {
+test('friend request parser supports the legacy same-name boundary and validates gender', () => {
     const parsed = parseWechatFriendRequests(`正文
 <好友申请>
 好友昵称：阿年
@@ -73,6 +73,28 @@ test('friend request parser supports the required same-name boundary and validat
         gender: '男',
         reason: '想认识你'
     }]);
+});
+
+test('friend request parser supports closed tags, consecutive requests, and empty reasons', () => {
+    const parsed = parseWechatFriendRequests(`正文
+<好友申请>
+好友昵称：阿年
+真实姓名：陆泽年
+性别：男
+申请理由：想认识你
+</好友申请>
+<好友申请>
+好友昵称：小雨
+真实姓名：林雨
+性别：女
+申请理由：
+</好友申请>
+后续正文`);
+
+    assert.deepEqual(parsed, [
+        { nickname: '阿年', realName: '陆泽年', gender: '男', reason: '想认识你' },
+        { nickname: '小雨', realName: '林雨', gender: '女', reason: '' }
+    ]);
 });
 
 test('existing contacts are matched only by exact real name and hidden contacts are restored', () => {
@@ -122,7 +144,8 @@ test('accepting a new request creates a contact, direct chat, and gray system me
 test('both default offline prompts expose the unique request format without hiding the tag', () => {
     assert.equal((promptSource.match(/微信好友列表下显示的为当前\{\{user\}\}微信好友/g) || []).length, 2);
     assert.equal((promptSource.match(/性别只可填写男\/女/g) || []).length, 2);
-    assert.equal((promptSource.match(/<好友申请>/g) || []).length, 4);
+    assert.equal((promptSource.match(/<好友申请>/g) || []).length, 2);
+    assert.equal((promptSource.match(/<\/好友申请>/g) || []).length, 2);
     assert.doesNotMatch(indexSource, /replace\([^\n]*好友申请/);
     assert.doesNotMatch(indexSource, /scrubTagsFromChatHistory\(\[[\s\S]*?好友申请/);
 });

@@ -5992,6 +5992,34 @@ export class WechatApp {
             .some(item => this._normalizeAvatarPathForLookup(item).replace(/\\/g, '/') === normalized);
     }
 
+    _resolveCharacterCardAvatarForName(name = '') {
+        const safeName = String(name || '').trim();
+        if (!safeName) return '';
+        const contacts = this.wechatData?.getContacts?.() || [];
+        const contact = contacts.find(item => [
+            item.id, item.name, item.nickname, item.remark,
+            this.wechatData?.getContactDisplayName?.(item)
+        ].some(value => String(value || '').trim() === safeName));
+        const realName = String(contact?.realName || '').trim();
+        if (!realName) return '';
+        // 自定义上传始终优先，角色卡头像只替换默认头像。
+        const storedAvatar = String(contact.avatar || '').trim();
+        if (this._isCustomAvatarValue(storedAvatar) && !this._isWechatAvatarPoolAssetValue(storedAvatar)) return '';
+        try {
+            const context = this.wechatData?.storage?.getContext?.()
+                || (typeof SillyTavern !== 'undefined' ? SillyTavern.getContext() : null);
+            const character = context?.characters?.[context.characterId];
+            const characterName = String(character?.name || character?.data?.name || '').trim();
+            // 完整名字严格相等，不拆分别名，不做包含或部分匹配。
+            if (!characterName || realName !== characterName) return '';
+            const avatarFile = String(character?.avatar || '').trim();
+            if (!avatarFile || avatarFile === 'none') return '';
+            return `/characters/${encodeURIComponent(avatarFile)}`;
+        } catch (e) {
+            return '';
+        }
+    }
+
     _resolveContactGenderByName(name = '') {
         const safeName = String(name || '').trim();
         if (!safeName) return 'unknown';
@@ -6242,7 +6270,8 @@ export class WechatApp {
         if (this._shouldApplyContactPoolAvatar(defaultEmoji, fallbackName)) {
             const resolvedGender = this._resolveContactGenderByName(fallbackName);
             const resolvedGroup = this._resolveContactAvatarGroupByName(fallbackName);
-            autoAvatar = this._resolveAutoAvatarForName(fallbackName, resolvedGender, resolvedGroup);
+            autoAvatar = this._resolveCharacterCardAvatarForName(fallbackName)
+                || this._resolveAutoAvatarForName(fallbackName, resolvedGender, resolvedGroup);
         }
 
         // 用户自定义头像优先；如果图片资源被删除/失效，自动回退到性别默认头像。

@@ -12,11 +12,13 @@ test('current version publishes only the 1.6.7 fix notices', () => {
     assert.equal(manifest.version, '1.6.7');
     assert.match(indexSource, /const ST_PHONE_VERSION = '1\.6\.7';/);
     assert.deepEqual(Object.keys(updateLog.versions), ['1.6.7']);
-    assert.equal(current.date, '2026-11-01');
+    assert.equal(current.date, '2026-11-03');
     assert.deepEqual(current.items, [
         '【修复】适配 TT 新版文件下载接口，修复正文生图、相册预览及批量下载提示“TT 原生下载模块不可用”的问题；取消保存不再误报成功，批量下载会停止后续操作。',
         '【修复】补全 NovelAI 单个 .naiv4vibe.json 文件导入支持，保留文件中的模型、信息提取量和强度参数，并按文件名建立 Vibe 组。',
-        '【修复】统一魔坊气泡模式下的面板与气泡预览，修复笺札等模板排版不一致、正文超出的问题，并保留手机适配和历史翻页。'
+        '【修复】统一魔坊气泡模式下的面板与气泡预览，修复笺札等模板排版不一致、正文超出的问题，并保留手机适配和历史翻页。',
+        '【修复】补全两份微信默认线下提示词中好友申请的结束标签，确保标准好友申请格式可正确解析，支持连续多条申请及申请理由留空。',
+        '【优化】微信联系人真实姓名与当前角色卡完整名字严格一致时，默认头像自动继承角色卡头像；用户自定义上传头像始终优先，部分名字或包含关系不匹配时继续使用默认头像池。'
     ]);
     assert.equal(current.updates, undefined);
 });
@@ -35,7 +37,7 @@ test('fallback announcement matches the current update log', () => {
     assert.ok(start >= 0 && end > start, 'fallback update block should exist');
 
     const block = indexSource.slice(start, end);
-    assert.match(block, /date: '2026-11-01'/);
+    assert.match(block, /date: '2026-11-03'/);
     for (const item of updateLog.versions[manifest.version].items) {
         assert.ok(block.includes(item), 'fallback should include each current announcement item');
     }

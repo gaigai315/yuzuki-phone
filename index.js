@@ -47,7 +47,7 @@ const ST_PHONE_VERSION = '1.6.7';
 const ST_PHONE_CSS_REVISION = '20261027-wechat-friend-request';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261021-user-fixed-tags';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261027-offline-friend-visibility';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261103-character-card-avatar';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -154,11 +154,13 @@ const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-11-01',
+    date: '2026-11-03',
     items: [
         '【修复】适配 TT 新版文件下载接口，修复正文生图、相册预览及批量下载提示“TT 原生下载模块不可用”的问题；取消保存不再误报成功，批量下载会停止后续操作。',
         '【修复】补全 NovelAI 单个 .naiv4vibe.json 文件导入支持，保留文件中的模型、信息提取量和强度参数，并按文件名建立 Vibe 组。',
-        '【修复】统一魔坊气泡模式下的面板与气泡预览，修复笺札等模板排版不一致、正文超出的问题，并保留手机适配和历史翻页。'
+        '【修复】统一魔坊气泡模式下的面板与气泡预览，修复笺札等模板排版不一致、正文超出的问题，并保留手机适配和历史翻页。',
+        '【修复】补全两份微信默认线下提示词中好友申请的结束标签，确保标准好友申请格式可正确解析，支持连续多条申请及申请理由留空。',
+        '【优化】微信联系人真实姓名与当前角色卡完整名字严格一致时，默认头像自动继承角色卡头像；用户自定义上传头像始终优先，部分名字或包含关系不匹配时继续使用默认头像池。'
     ]
 };
 
@@ -1478,7 +1480,7 @@ if (window.GGP_Loaded) {
             import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
             import('./config/api-manager.js?v=20261009-unified-sse-parser'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20261027-offline-friend-request'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20261103-friend-request-closing-tag'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
         import('./config/image-generation-manager.js?v=20261021-nai-character-coordinates'),
             import('./config/worldbook-manager.js?v=20261021-worldbook-lazy-load')

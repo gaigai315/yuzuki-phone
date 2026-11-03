@@ -263,3 +263,46 @@ test('avatar pools never fall back across genders', () => {
     app._avatarPool.male = [];
     assert.deepEqual(app._getAvatarPoolByGender('male'), ['male-elder-1']);
 });
+
+test('character card avatar requires the entire real name and preserves uploaded avatars', () => {
+    const app = Object.create(WechatApp.prototype);
+    const contact = { id: 'orion', name: '星星', realName: 'Orion', avatar: '' };
+    const character = { name: 'Orion', avatar: 'Orion 卡.png' };
+    app.wechatData = {
+        getContacts: () => [contact],
+        getContactDisplayName: item => item.name,
+        storage: { getContext: () => ({ characters: [character], characterId: 0 }) }
+    };
+    app._avatarPool = { all: [] };
+    app._missingAvatarPaths = new Set();
+    app._ensureWechatAvatarPoolLoaded = () => {};
+    app._shouldApplyContactPoolAvatar = () => true;
+    app._resolveContactGenderByName = () => 'male';
+    app._resolveContactAvatarGroupByName = () => '';
+    app._resolveAutoAvatarForName = () => '/apps/wechat/avatars/male001.jpg';
+
+    const cardUrl = `/characters/${encodeURIComponent(character.avatar)}`;
+    assert.ok(app.renderAvatar('', '👤', '星星').includes(`src="${cardUrl}"`));
+    contact.avatar = '/apps/wechat/avatars/male001.jpg';
+    assert.ok(app.renderAvatar(contact.avatar, '👤', '星星').includes(`src="${cardUrl}"`));
+
+    contact.avatar = '/backgrounds/phone_contact_custom.png';
+    assert.equal(app._resolveCharacterCardAvatarForName('星星'), '');
+    assert.ok(app.renderAvatar(contact.avatar, '👤', '星星').includes(`src="${contact.avatar}"`));
+    contact.avatar = '';
+
+    for (const name of ['Orion、Alice', 'Orion Alice', 'orion', 'Ori']) {
+        character.name = name;
+        assert.equal(app._resolveCharacterCardAvatarForName('星星'), '');
+        assert.ok(app.renderAvatar('', '👤', '星星').includes('src="/apps/wechat/avatars/male001.jpg"'));
+    }
+    character.name = 'Orion';
+    contact.realName = 'Orion、Alice';
+    assert.equal(app._resolveCharacterCardAvatarForName('星星'), '');
+    contact.realName = 'Orion';
+    character.avatar = 'new.png';
+    assert.equal(app._resolveCharacterCardAvatarForName('星星'), '/characters/new.png');
+    assert.equal(contact.avatar, '');
+    character.avatar = '';
+    assert.equal(app._resolveCharacterCardAvatarForName('星星'), '');
+});
