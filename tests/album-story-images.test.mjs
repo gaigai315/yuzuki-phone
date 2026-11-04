@@ -759,6 +759,38 @@ test('story image overlay exposes a mobile-safe download action with the origina
     assert.match(shellSource, /async downloadImage\(imageUrl, filename = 'phone-image'\)/);
 });
 
+test('story image overlay forwards local images through the optional Duang public API', async t => {
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    t.after(() => {
+        if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+        else delete globalThis.window;
+    });
+    const calls = [];
+    Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        writable: true,
+        value: {
+            DuangDuang: {
+                async openImage(...args) {
+                    calls.push(args);
+                    return true;
+                }
+            }
+        }
+    });
+    const { StoryImageOverlay } = await import(`../apps/album/story-image-overlay.js?test=duang-api-${Date.now()}`);
+    const overlay = new StoryImageOverlay({ albumData: { getStoryFloors: () => [] } });
+
+    assert.equal(await overlay.openStoryImageInDuang({ floor: 12, imageUrl: '/backgrounds/phone_story.png' }), true);
+    assert.deepEqual(calls, [[
+        '/backgrounds/phone_story.png',
+        { alt: '第12楼正文生图', source: 'yuzuki-phone' }
+    ]]);
+
+    delete globalThis.window.DuangDuang;
+    assert.equal(await overlay.openStoryImageInDuang({ floor: 12, imageUrl: '/backgrounds/phone_story.png' }), false);
+});
+
 test('TT media downloads use host delivery and distinguish success, cancellation and failure', async t => {
     const source = fs.readFileSync(new URL('../apps/album/story-image-overlay.js', import.meta.url), 'utf8');
     const nativeModule = `data:text/javascript;base64,${Buffer.from(
@@ -853,6 +885,9 @@ test('story image actions share a bottom-right menu that opens upward', () => {
     assert.doesNotMatch(menuMarkup, /返回图片/);
     assert.match(menuMarkup, /phone-story-image-delete/);
     assert.match(menuMarkup, /phone-story-image-download/);
+    assert.match(menuMarkup, /canOpenInDuang \? '<button type="button" class="phone-story-image-duang"/);
+    assert.match(overlaySource, /await this\.openStoryImageInDuang\(floor\)/);
+    assert.match(cssSource, /#phone-story-image-overlay-root \.phone-story-image-duang/);
     assert.match(overlaySource, /showTagBack \? `[\s\S]*?phone-story-image-return/);
     assert.match(overlaySource, /phone-story-image-return'[\s\S]*?showImageFront\(floor\.floor\)[\s\S]*?this\.render\(\)/);
     assert.match(cssSource, /\.phone-story-image-menu\s*\{[^}]*bottom:\s*10px[^}]*right:\s*10px/s);

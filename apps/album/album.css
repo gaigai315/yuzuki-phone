@@ -1434,6 +1434,7 @@
 #phone-story-image-overlay-root .phone-story-image-menu:not([open]) .phone-story-image-menu-items { display: none !important; }
 #phone-story-image-overlay-root .phone-story-image-download,
 #phone-story-image-overlay-root .phone-story-image-delete,
+#phone-story-image-overlay-root .phone-story-image-duang,
 #phone-story-image-overlay-root .phone-story-image-flip {
     display: flex !important;
     align-items: center !important;

@@ -89,6 +89,23 @@ export class StoryImageOverlay {
         this.render();
     }
 
+    getDuangDuangApi() {
+        if (typeof window === 'undefined') return null;
+        const api = window.DuangDuang;
+        return api && typeof api.openImage === 'function' ? api : null;
+    }
+
+    async openStoryImageInDuang(floor = {}) {
+        const imageUrl = String(floor.imageUrl || '').trim();
+        const api = this.getDuangDuangApi();
+        if (!imageUrl || !api) return false;
+        await api.openImage(imageUrl, {
+            alt: `第${floor.floor || ''}楼正文生图`,
+            source: 'yuzuki-phone'
+        });
+        return true;
+    }
+
     setActiveFloor(requestedFloor = null) {
         const floors = this.app.albumData.getStoryFloors();
         if (floors.length === 0) {
@@ -214,6 +231,7 @@ export class StoryImageOverlay {
         const providerLabel = STORY_PROVIDER_LABELS[currentProvider] || currentProvider;
         const presetState = this.app.getStoryImagePresets?.() || { presets: [], activeId: '' };
         const activePreset = presetState.presets.find(preset => String(preset.id) === String(presetState.activeId));
+        const canOpenInDuang = !!floor?.imageUrl && !!this.getDuangDuangApi();
         const root = this.getRoot();
 
         root.setAttribute('aria-hidden', 'false');
@@ -286,6 +304,7 @@ export class StoryImageOverlay {
                                         <div class="phone-story-image-menu-items">
                                             <button type="button" class="phone-story-image-flip"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>${hasTags ? '查看 Tags' : '填写 Tags'}</span></button>
                                             ${floor.imageUrl ? `
+                                                ${canOpenInDuang ? '<button type="button" class="phone-story-image-duang"><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i>果冻捏捏</button>' : ''}
                                                 <button type="button" class="phone-story-image-delete" ${anyBusy ? 'disabled' : ''}><i class="fa-solid fa-trash-can" aria-hidden="true"></i>删除图片</button>
                                                 <button type="button" class="phone-story-image-download"><i class="fa-solid fa-download" aria-hidden="true"></i>下载图片</button>
                                             ` : ''}
@@ -588,6 +607,26 @@ export class StoryImageOverlay {
         root.querySelector('.phone-story-image-action.is-image')?.addEventListener('click', () => {
             this.editingTagFloors.delete(floor.floor);
             this.app.generateStoryImage(floor.floor, tagsInput?.value || floor.tags);
+        });
+        root.querySelector('.phone-story-image-duang')?.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+            const button = event.currentTarget;
+            button.disabled = true;
+            root.querySelector('.phone-story-image-menu')?.removeAttribute('open');
+            try {
+                const opened = await this.openStoryImageInDuang(floor);
+                if (!opened) throw new Error('Duang 果冻插件未加载或版本不支持外部调用');
+            } catch (error) {
+                console.error('[StoryImageOverlay] 打开 Duang 果冻失败:', error);
+                this.app._showStoryNotification?.(
+                    '正文生图',
+                    `果冻捏捏打开失败：${String(error?.message || error || '未知错误')}`,
+                    '⚠️'
+                );
+            } finally {
+                if (button.isConnected) button.disabled = false;
+            }
         });
         root.querySelector('.phone-story-image-delete')?.addEventListener('click', async event => {
             event.preventDefault();
