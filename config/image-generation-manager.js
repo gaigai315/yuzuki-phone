@@ -1835,12 +1835,34 @@ export class ImageGenerationManager {
             });
         }
 
-        const response = await fetch(url.toString(), {
-            method,
-            headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
-            body: method === 'POST' ? JSON.stringify(body || {}) : undefined
-        });
-        const text = await response.text().catch(() => '');
+        // Queue operations reuse the same task/token, so retrying a lost response
+        // does not create another image generation or another queue entry.
+        const requestBody = method === 'POST' ? JSON.stringify(body || {}) : undefined;
+        let response;
+        let text;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 12000);
+            try {
+                response = await fetch(url.toString(), {
+                    method,
+                    headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
+                    body: requestBody,
+                    signal: controller.signal
+                });
+                text = await response.text();
+                break;
+            } catch (cause) {
+                if (attempt === 2) {
+                    const error = new Error(`NAI 共享队列连接失败（${path}，${url.origin}）：${controller.signal.aborted ? '请求超时' : '网络请求失败'}，已尝试 3 次。请检查队列地址、网络/代理及浏览器跨域拦截；fetch 插件调用栈不能单独确定故障来源。`);
+                    error.cause = cause;
+                    throw error;
+                }
+            } finally {
+                clearTimeout(timeout);
+            }
+            await this._sleep(1000 * (attempt + 1));
+        }
         let payload = null;
         try { payload = text ? JSON.parse(text) : null; } catch (e) { payload = null; }
         if (!response.ok) {
@@ -1875,11 +1897,13 @@ export class ImageGenerationManager {
         };
 
         try {
+            // The server may have accepted the task even if its response is lost.
+            // Attempt cleanup by task ID in that case as well.
+            joined = true;
             const joinedInfo = await this._queueRequest(baseUrl, '/queue', {
                 method: 'POST',
                 body: queuePayload
             });
-            joined = true;
             token = this._getQueueToken(joinedInfo);
             this._noticeQueueStatus(joinedInfo, true);
             if (joinedInfo?.can_run && token) {

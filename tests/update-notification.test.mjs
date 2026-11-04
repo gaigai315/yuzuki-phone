@@ -12,7 +12,7 @@ test('current version publishes the 1.6.7 update notices', () => {
     assert.equal(manifest.version, '1.6.7');
     assert.match(indexSource, /const ST_PHONE_VERSION = '1\.6\.7';/);
     assert.deepEqual(Object.keys(updateLog.versions), ['1.6.7']);
-    assert.equal(current.date, '2026-11-03');
+    assert.equal(current.date, '2026-11-04');
     assert.deepEqual(current.items, [
         '【新增】微信转发聊天记录功能。',
         '【新增】微信文件发送功能，支持填写标题与文字内容、点击文件卡片查看全文，并同步支持线上及正文中的角色文件消息。',
@@ -21,7 +21,9 @@ test('current version publishes the 1.6.7 update notices', () => {
         '【修复】统一魔坊气泡模式下的面板与气泡预览，修复笺札等模板排版不一致、正文超出的问题，并保留手机适配和历史翻页。',
         '【修复】补全两份微信默认线下提示词中好友申请的结束标签，确保标准好友申请格式可正确解析，支持连续多条申请及申请理由留空。',
         '【优化】微信联系人真实姓名与当前角色卡完整名字严格一致时，默认头像自动继承角色卡头像；用户自定义上传头像始终优先，部分名字或包含关系不匹配时继续使用默认头像池。',
-        '【修复】修正日记新增、导入页按钮错位，避免移动端滑动列表时误触长按删除。'
+        '【修复】修正日记新增、导入页按钮错位，避免移动端滑动列表时误触长按删除。',
+        '【新增】正文生图图片操作菜单新增“果冻捏捏”，安装兼容版 Duang 果冻后可将酒馆同源图片直接交给果冻弹窗互动；未安装时入口自动隐藏。',
+        '【优化】NAI 共享队列请求增加 12 秒超时、最多 3 次网络尝试与分阶段错误提示；重试时复用同一任务 ID，并在入队响应丢失时尝试清理队列任务。'
     ]);
     assert.equal(current.updates, undefined);
 });
@@ -40,7 +42,7 @@ test('fallback announcement matches the current update log', () => {
     assert.ok(start >= 0 && end > start, 'fallback update block should exist');
 
     const block = indexSource.slice(start, end);
-    assert.match(block, /date: '2026-11-03'/);
+    assert.match(block, /date: '2026-11-04'/);
     for (const item of updateLog.versions[manifest.version].items) {
         assert.ok(block.includes(item), 'fallback should include each current announcement item');
     }

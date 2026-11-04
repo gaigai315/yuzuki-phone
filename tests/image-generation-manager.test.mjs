@@ -13,6 +13,52 @@ const { ImageGenerationManager } = await import(moduleUrl);
 const manager = new ImageGenerationManager(null);
 const settingsSource = fs.readFileSync(new URL('../apps/settings/settings-app.js', import.meta.url), 'utf8');
 
+test('queue transport retries a lost response with the same task body', async () => {
+    const originalFetch = globalThis.fetch;
+    const queueManager = new ImageGenerationManager(null);
+    queueManager._sleep = async () => {};
+    const bodies = [];
+    globalThis.fetch = async (url, init) => {
+        bodies.push(init.body);
+        if (bodies.length === 1) throw new TypeError('Failed to fetch');
+        return new Response(JSON.stringify({ can_run: true, token: 'token' }));
+    };
+    try {
+        const result = await queueManager._queueRequest('https://queue.example', '/queue', {
+            method: 'POST', body: { task_id: 'same-task' }
+        });
+        assert.equal(result.token, 'token');
+        assert.deepEqual(bodies, ['{"task_id":"same-task"}', '{"task_id":"same-task"}']);
+    } finally { globalThis.fetch = originalFetch; }
+});
+
+test('queue transport reports the failed stage and preserves its cause', async () => {
+    const originalFetch = globalThis.fetch;
+    const queueManager = new ImageGenerationManager(null);
+    queueManager._sleep = async () => {};
+    const cause = new TypeError('Failed to fetch');
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; throw cause; };
+    try {
+        await assert.rejects(queueManager._queueRequest('https://queue.example', '/queue'), error => {
+            assert.match(error.message, /共享队列连接失败.*\/queue.*已尝试 3 次/);
+            assert.equal(error.cause, cause);
+            return true;
+        });
+        assert.equal(calls, 3);
+    } finally { globalThis.fetch = originalFetch; }
+});
+
+test('queue HTTP rejection is not retried as a network failure', async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; return new Response('{"error":"denied"}', { status: 403 }); };
+    try {
+        await assert.rejects(manager._queueRequest('https://queue.example', '/queue'), /403.*denied/);
+        assert.equal(calls, 1);
+    } finally { globalThis.fetch = originalFetch; }
+});
+
 test('image settings expose and persist independent story dimensions', () => {
     assert.match(settingsSource, /id="phone-image-story-width"[^>]*value="\$\{storyWidth\}"/);
     assert.match(settingsSource, /id="phone-image-story-height"[^>]*value="\$\{storyHeight\}"/);
