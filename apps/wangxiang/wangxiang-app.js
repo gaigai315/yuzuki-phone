@@ -163,6 +163,7 @@ export class WangxiangApp {
         this.marketplaceProducts = this._loadMarketplaceProducts();
         this.marketplaceOrders = this._loadMarketplaceOrders();
         this.inventoryItems = this._loadInventoryItems();
+        this.removedInventorySourceKeys = this._loadRemovedInventorySourceKeys();
         this.creditBalance = this._loadCreditBalance();
         this.deliveryAddresses = this._loadDeliveryAddresses();
         this._reconcileGeneratedTaskStatuses();
@@ -205,6 +206,7 @@ export class WangxiangApp {
         this.marketplaceProducts = [];
         this.marketplaceOrders = [];
         this.inventoryItems = [];
+        this.removedInventorySourceKeys = [];
         this.creditBalance = 0;
         this.deliveryAddresses = [];
         this.wangxiangView.currentTaskId = '';
@@ -259,7 +261,10 @@ export class WangxiangApp {
         if (!Array.isArray(this.inventoryItems)) this.inventoryItems = [];
         const sourceKey = String(item.sourceKey || '').trim();
         const name = String(item.name || '').replace(/\s+/g, ' ').trim();
-        if (!sourceKey || !name || this.inventoryItems.some(existing => String(existing?.sourceKey || '') === sourceKey)) {
+        if (!sourceKey
+            || !name
+            || this.removedInventorySourceKeys?.includes?.(sourceKey)
+            || this.inventoryItems.some(existing => String(existing?.sourceKey || '') === sourceKey)) {
             return null;
         }
         const inventoryItem = {
@@ -393,6 +398,38 @@ export class WangxiangApp {
 
     getCreditBalance() {
         return Math.max(0, Number(this.creditBalance || 0));
+    }
+
+    async clearCreditBalance() {
+        this._syncTaskDataScope();
+        const previousBalance = this.getCreditBalance();
+        this.creditBalance = 0;
+        await this._saveCreditBalance();
+        return previousBalance;
+    }
+
+    async removeInventoryStack(itemId) {
+        this._syncTaskDataScope();
+        const id = String(itemId || '').trim();
+        const target = this.inventoryItems.find(item => String(item?.id || '') === id);
+        if (!target) throw new Error('未找到背包物品');
+        const stackKey = String(target.name || '').replace(/\s+/g, '').toLocaleLowerCase();
+        const removed = this.inventoryItems.filter(item => (
+            String(item?.name || '').replace(/\s+/g, '').toLocaleLowerCase() === stackKey
+        ));
+        if (!removed.length) throw new Error('未找到背包物品');
+        const removedKeys = removed.map(item => String(item?.sourceKey || '')).filter(Boolean);
+        const keySet = new Set(removedKeys);
+        this.inventoryItems = this.inventoryItems.filter(item => !keySet.has(String(item?.sourceKey || '')));
+        this.removedInventorySourceKeys = Array.from(new Set([
+            ...(Array.isArray(this.removedInventorySourceKeys) ? this.removedInventorySourceKeys : []),
+            ...removedKeys
+        ])).slice(-1000);
+        await Promise.all([this._saveInventoryItems(), this._saveRemovedInventorySourceKeys()]);
+        return {
+            name: target.name,
+            quantity: removed.reduce((sum, item) => sum + Math.max(1, Number(item?.quantity || 1)), 0)
+        };
     }
 
     getWechatWalletBalance() {
@@ -1342,6 +1379,24 @@ export class WangxiangApp {
         return task;
     }
 
+    async removeCompletedTaskRecord(taskId) {
+        this._syncTaskDataScope();
+        const id = String(taskId || '').trim();
+        const task = this.managedTasks.find(item => String(item?.id || '') === id);
+        if (!task) throw new Error('未找到任务记录');
+        if (task.status !== 'completed') throw new Error('进行中的任务请使用“放弃任务”');
+        this.managedTasks = this.managedTasks.filter(item => String(item?.id || '') !== id);
+        this.taskProgressHistory = this.taskProgressHistory
+            .map(entry => ({
+                ...entry,
+                taskSnapshots: (Array.isArray(entry?.taskSnapshots) ? entry.taskSnapshots : [])
+                    .filter(snapshot => String(snapshot?.taskId || '') !== id)
+            }))
+            .filter(entry => entry.taskSnapshots.length > 0);
+        await Promise.all([this._saveManagedTasks(), this._saveTaskProgressHistory()]);
+        return task;
+    }
+
     async refreshTaskHall() {
         if (this.isRefreshingTasks) return null;
         this._syncTaskDataScope();
@@ -1787,6 +1842,20 @@ export class WangxiangApp {
         }
     }
 
+    _loadRemovedInventorySourceKeys() {
+        try {
+            const saved = this.storage?.get?.('wangxiang_removed_inventory_source_keys', null);
+            const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            return Array.from(new Set((Array.isArray(parsed) ? parsed : [])
+                .map(value => String(value || '').trim())
+                .filter(Boolean)))
+                .slice(-1000);
+        } catch (error) {
+            console.warn('[Wangxiang] 读取背包清理记录失败:', error);
+            return [];
+        }
+    }
+
     _loadCreditBalance() {
         const saved = this.storage?.get?.('wangxiang_credit_balance', 0);
         const value = Number(saved);
@@ -1839,6 +1908,7 @@ export class WangxiangApp {
         this.marketplaceProducts = this._loadMarketplaceProducts();
         this.marketplaceOrders = this._loadMarketplaceOrders();
         this.inventoryItems = this._loadInventoryItems();
+        this.removedInventorySourceKeys = this._loadRemovedInventorySourceKeys();
         this.creditBalance = this._loadCreditBalance();
         this.deliveryAddresses = this._loadDeliveryAddresses();
         this._reconcileGeneratedTaskStatuses();
@@ -1878,6 +1948,13 @@ export class WangxiangApp {
 
     _saveInventoryItems() {
         return Promise.resolve(this.storage?.set?.('wangxiang_inventory_items', JSON.stringify(this.inventoryItems)));
+    }
+
+    _saveRemovedInventorySourceKeys() {
+        return Promise.resolve(this.storage?.set?.(
+            'wangxiang_removed_inventory_source_keys',
+            JSON.stringify(this.removedInventorySourceKeys || [])
+        ));
     }
 
     _saveCreditBalance() {

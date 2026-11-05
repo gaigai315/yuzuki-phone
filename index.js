@@ -52,6 +52,7 @@ const ST_PHONE_WECHAT_MODULE_REVISION = '20261103-character-card-avatar';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
+const ST_PHONE_WANGXIANG_MODULE_REVISION = '20261106-cleanup-actions';
 const ST_PHONE_GLOBAL_CSS_URL = new URL(`./phone.css?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`, import.meta.url).href;
 const ST_PHONE_REGULAR_FONT_URL = new URL('./assets/vendor/fontawesome/fa-regular-400.woff2', import.meta.url).href;
 const ST_PHONE_HONEY_MODULE_URL = new URL(`./apps/honey/honey-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_HONEY_ASSET_REVISION}`, import.meta.url).href;
@@ -155,7 +156,7 @@ const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-11-04',
+    date: '2026-11-06',
     items: [
         '【新增】微信转发聊天记录功能。',
         '【新增】微信文件发送功能，支持填写标题与文字内容、点击文件卡片查看全文，并同步支持线上及正文中的角色文件消息。',
@@ -166,7 +167,8 @@ const ST_PHONE_CURRENT_UPDATE = {
         '【优化】微信联系人真实姓名与当前角色卡完整名字严格一致时，默认头像自动继承角色卡头像；用户自定义上传头像始终优先，部分名字或包含关系不匹配时继续使用默认头像池。',
         '【修复】修正日记新增、导入页按钮错位，避免移动端滑动列表时误触长按删除。',
         '【新增】正文生图图片操作菜单新增“果冻捏捏”，安装兼容版 Duang 果冻后可将酒馆同源图片直接交给果冻弹窗互动；未安装时入口自动隐藏。',
-        '【优化】NAI 共享队列请求增加 12 秒超时、最多 3 次网络尝试与分阶段错误提示；重试时复用同一任务 ID，并在入队响应丢失时尝试清理队列任务。'
+        '【优化】NAI 共享队列请求增加 12 秒超时、最多 3 次网络尝试与分阶段错误提示；重试时复用同一任务 ID，并在入队响应丢失时尝试清理队列任务。',
+        '【优化】万象已完成任务、背包物品与信用点支持长按清理；进行中任务仍通过放弃流程处理，清理前增加二次确认，并避免已删除背包奖励被自动补回。'
     ]
 };
 
@@ -9963,7 +9965,7 @@ if (window.GGP_Loaded) {
     }
 
     async function ensureWangxiangApp() {
-        const module = await import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
+        const module = await import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_WANGXIANG_MODULE_REVISION}`);
         if (!window.VirtualPhone.wangxiangApp) {
             window.VirtualPhone.wangxiangApp = new module.WangxiangApp(phoneShell, storage);
         }
@@ -11614,7 +11616,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '魔坊模块加载失败', '❌');
                         });
                 } else if (appId === 'wangxiang') {
-                    import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`)
+                    import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_WANGXIANG_MODULE_REVISION}`)
                         .then(async module => {
                             try {
                                 if (!window.VirtualPhone.wangxiangApp) {
@@ -13390,7 +13392,7 @@ if (window.GGP_Loaded) {
                                                 const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
                                                 managedTasks = Array.isArray(parsed) ? parsed : [];
                                             }
-                                            const wangxiangModule = await import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
+                                            const wangxiangModule = await import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_WANGXIANG_MODULE_REVISION}`);
                                             wangxiangTaskContent = wangxiangModule.buildWangxiangTaskInjectionContent(managedTasks);
                                         }
                                     } catch (e) {
@@ -13412,7 +13414,7 @@ if (window.GGP_Loaded) {
                                                 const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
                                                 orders = Array.isArray(parsed) ? parsed : [];
                                             }
-                                            const wangxiangModule = await import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
+                                            const wangxiangModule = await import(`./apps/wangxiang/wangxiang-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_WANGXIANG_MODULE_REVISION}`);
                                             const currentUserName = String(SillyTavern?.getContext?.()?.name1 || '用户');
                                             wangxiangOrderContent = wangxiangModule.buildWangxiangOrderInjectionContent(orders, currentUserName);
                                         }

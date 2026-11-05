@@ -1230,6 +1230,19 @@
     --wangxiang-managed-soft: rgba(255, 168, 76, 0.13);
 }
 
+#phone-panel-content .phone-screen .wangxiang-managed-task-card.is-completed,
+#phone-panel-content .phone-screen .wangxiang-inventory-item[data-inventory-item-id],
+#phone-panel-content .phone-screen [data-wangxiang-credit-balance] {
+    cursor: pointer;
+    -webkit-touch-callout: none;
+    user-select: none;
+}
+
+#phone-panel-content .phone-screen [data-wangxiang-credit-balance]:focus-visible {
+    outline: 1px solid #65dcff;
+    outline-offset: 2px;
+}
+
 #phone-panel-content .phone-screen .wangxiang-managed-task-icon {
     display: grid;
     width: 50px;

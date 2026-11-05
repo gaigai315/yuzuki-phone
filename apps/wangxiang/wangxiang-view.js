@@ -44,7 +44,7 @@ export class WangxiangView {
         const link = existingLink || document.createElement('link');
         link.id = 'wangxiang-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./wangxiang.css?v=20260917-response-debug', import.meta.url).href;
+        link.href = new URL('./wangxiang.css?v=20261106-cleanup-actions', import.meta.url).href;
         this._cssLoadingPromise = new Promise(resolve => {
             let settled = false;
             const finish = () => {
@@ -555,7 +555,7 @@ export class WangxiangView {
     _renderManagedTaskCard(task) {
         const accent = ['cyan', 'green', 'purple', 'orange'].includes(task.accent) ? task.accent : 'cyan';
         return `
-            <article class="wangxiang-managed-task-card is-${accent}${task.completed ? ' is-completed' : ''}" data-task-id="${this._escapeHtml(task.id)}">
+            <article class="wangxiang-managed-task-card is-${accent}${task.completed ? ' is-completed' : ''}" data-task-id="${this._escapeHtml(task.id)}"${task.completed ? ' title="长按删除已完成记录" aria-label="已完成任务，长按删除记录"' : ''}>
                 <div class="wangxiang-managed-task-icon" aria-hidden="true">
                     <i class="fa-solid ${this._escapeHtml(task.icon)}"></i>
                 </div>
@@ -788,7 +788,7 @@ export class WangxiangView {
                 <strong>${this._escapeHtml(this.app.getCurrentUserName?.() || '用户')}</strong>
             </div>
             <div class="wangxiang-order-balance-grid">
-                <div><span>信用点</span><strong>${this._escapeHtml(Number(credit).toLocaleString('zh-CN'))}</strong></div>
+                <div data-wangxiang-credit-balance role="button" tabindex="0" title="长按清零信用点" aria-label="信用点余额，长按清零"><span>信用点</span><strong>${this._escapeHtml(Number(credit).toLocaleString('zh-CN'))}</strong></div>
                 <div><span>微信零钱</span><strong>${wechat === null || wechat === undefined ? '未初始化' : `¥${Number(wechat).toFixed(2)}`}</strong></div>
             </div>
         `;
@@ -885,7 +885,7 @@ export class WangxiangView {
         const icon = item?.sourceType === 'task' && resolvedIcon === 'fa-box-open' ? 'fa-gift' : resolvedIcon;
         const sourceClass = item?.sourceType === 'task' ? 'is-task' : 'is-order';
         return `
-            <article class="wangxiang-inventory-item ${sourceClass}">
+            <article class="wangxiang-inventory-item ${sourceClass}" data-inventory-item-id="${this._escapeHtml(item?.id || '')}" title="长按删除背包物品" aria-label="背包物品，长按删除">
                 <div class="wangxiang-inventory-item-icon" aria-hidden="true"><i class="fa-solid ${icon}"></i></div>
                 <div class="wangxiang-inventory-item-main">
                     <div><h3>${this._escapeHtml(item?.name || '未命名物品')}</h3><strong>×${this._escapeHtml(item?.quantity || 1)}</strong></div>
@@ -1056,6 +1056,7 @@ export class WangxiangView {
         this._syncMarketplaceRefreshIndicator(root);
         this._bindMarketplaceOrderActions(root);
         this._bindInfoDetailActions(root);
+        this._bindCleanupActions(root);
         this._bindTaskActions(root);
     }
 
@@ -1637,6 +1638,116 @@ export class WangxiangView {
         overlay.classList.add('is-hidden');
         overlay.setAttribute('aria-hidden', 'true');
         delete overlay.dataset.productId;
+    }
+
+    _bindCleanupActions(root) {
+        if (root.dataset.cleanupActionsBound === '1') return;
+        root.dataset.cleanupActionsBound = '1';
+        let pressTimer = null;
+        let pressedTarget = null;
+        let pressStartX = 0;
+        let pressStartY = 0;
+        let suppressClickUntil = 0;
+
+        const resolveTarget = eventTarget => {
+            if (eventTarget?.closest?.('button, input, textarea, select, label, a')) return null;
+            const completedTask = eventTarget?.closest?.('.wangxiang-managed-task-card.is-completed[data-task-id]');
+            if (completedTask) return { type: 'task', element: completedTask };
+            const inventoryItem = eventTarget?.closest?.('.wangxiang-inventory-item[data-inventory-item-id]');
+            if (inventoryItem) return { type: 'inventory', element: inventoryItem };
+            const creditBalance = eventTarget?.closest?.('[data-wangxiang-credit-balance]');
+            if (creditBalance) return { type: 'credit', element: creditBalance };
+            return null;
+        };
+        const clearPress = () => {
+            if (pressTimer) clearTimeout(pressTimer);
+            pressTimer = null;
+            pressedTarget = null;
+        };
+        const runCleanup = async target => {
+            if (!target?.element?.isConnected) return;
+            try {
+                if (target.type === 'task') {
+                    const taskId = String(target.element.dataset.taskId || '');
+                    if (!taskId || !window.confirm('删除这条已完成任务记录？已发放的信用点和背包奖励不会撤回。')) return;
+                    const task = await this.app.removeCompletedTaskRecord(taskId);
+                    this._renderManagedTaskList(root);
+                    this._refreshTaskDetail(root);
+                    this.app.phoneShell?.showNotification?.('任务记录已删除', task.title || '已完成任务', '✅');
+                    return;
+                }
+                if (target.type === 'inventory') {
+                    const itemId = String(target.element.dataset.inventoryItemId || '');
+                    const itemName = target.element.querySelector('h3')?.textContent?.trim() || '该物品';
+                    if (!itemId || !window.confirm(`从背包删除“${itemName}”？同名堆叠物品会一并清理。`)) return;
+                    const removed = await this.app.removeInventoryStack(itemId);
+                    this._renderInventoryItems(root);
+                    this.app.phoneShell?.showNotification?.('背包物品已删除', `${removed.name} ×${removed.quantity}`, '✅');
+                    return;
+                }
+                if (target.type === 'credit') {
+                    const balance = this.app.getCreditBalance?.() || 0;
+                    if (balance <= 0) {
+                        this.app.phoneShell?.showNotification?.('信用点', '当前余额已经是 0', 'ℹ️');
+                        return;
+                    }
+                    if (!window.confirm(`将 ${Number(balance).toLocaleString('zh-CN')} 信用点清零？此操作无法撤销。`)) return;
+                    await this.app.clearCreditBalance();
+                    this._renderMarketplaceOrders(root);
+                    this.app.phoneShell?.showNotification?.('信用点已清零', '当前余额为 0', '✅');
+                }
+            } catch (error) {
+                this.app.phoneShell?.showNotification?.('清理失败', error?.message || '请稍后重试', '❌');
+            }
+        };
+        const startPress = event => {
+            if (event.pointerType === 'mouse' && event.button !== 0) return;
+            const target = resolveTarget(event.target);
+            if (!target) return;
+            clearPress();
+            pressedTarget = target;
+            pressStartX = Number(event.clientX || 0);
+            pressStartY = Number(event.clientY || 0);
+            pressTimer = setTimeout(() => {
+                pressTimer = null;
+                suppressClickUntil = Date.now() + 500;
+                const cleanupTarget = pressedTarget;
+                pressedTarget = null;
+                runCleanup(cleanupTarget);
+            }, 550);
+        };
+        const movePress = event => {
+            if (!pressTimer) return;
+            const dx = Math.abs(Number(event.clientX || 0) - pressStartX);
+            const dy = Math.abs(Number(event.clientY || 0) - pressStartY);
+            if (dx > 16 || dy > 16) clearPress();
+        };
+
+        root.addEventListener('pointerdown', startPress);
+        root.addEventListener('pointermove', movePress);
+        root.addEventListener('pointerup', clearPress);
+        root.addEventListener('pointercancel', clearPress);
+        root.addEventListener('pointerleave', clearPress);
+        root.addEventListener('contextmenu', event => {
+            const target = resolveTarget(event.target);
+            if (!target) return;
+            event.preventDefault();
+            suppressClickUntil = Date.now() + 500;
+            clearPress();
+            runCleanup(target);
+        });
+        root.addEventListener('keydown', event => {
+            if (event.repeat || !['Enter', ' '].includes(event.key)) return;
+            const target = resolveTarget(event.target);
+            if (target?.type !== 'credit') return;
+            event.preventDefault();
+            runCleanup(target);
+        });
+        root.addEventListener('click', event => {
+            if (Date.now() >= suppressClickUntil || !resolveTarget(event.target)) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        });
     }
 
     _bindTaskActions(root) {
