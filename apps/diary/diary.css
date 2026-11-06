@@ -865,6 +865,7 @@
 }
 
 .diary-photo-card.is-flipped .diary-photo-back {
+    display: block;
     opacity: 1;
     pointer-events: auto;
 }
@@ -918,6 +919,9 @@
 }
 
 .diary-photo-back {
+    /* 隐藏时移除独立滚动区，避免照片背面截获正文滚动和系统滚动截屏。 */
+    display: none;
+    pointer-events: none;
     position: absolute;
     left: 0;
     right: 0;
