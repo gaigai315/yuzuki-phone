@@ -544,7 +544,7 @@ export class DiaryView {
         let imageUrl = '';
         try {
             shell.showNotification?.('日记长图', '正在生成整篇日记，请稍候…', '♡');
-            const { captureDiarySnapshot } = await import('./diary-snapshot.js?r=20261107-long-image');
+            const { captureDiarySnapshot } = await import('./diary-snapshot.js?r=20261107-sharp-image');
             const { blob } = await captureDiarySnapshot(page);
             imageUrl = URL.createObjectURL(blob);
             const filename = `日记-${title}-${Date.now()}.png`;

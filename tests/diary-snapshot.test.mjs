@@ -3,6 +3,12 @@ import test from 'node:test';
 import { getDiarySnapshotSize } from '../apps/diary/diary-snapshot.js';
 import { DiaryView } from '../apps/diary/diary-view.js';
 
+test('diary export gives narrow mobile pages three pixels per CSS pixel', () => {
+    // 用户原来的 330px 正文只导出 495px，新默认导出 990px。
+    assert.deepEqual(getDiarySnapshotSize(330, 2573), { width: 990, height: 7719 });
+    assert.deepEqual(getDiarySnapshotSize(393, 2689), { width: 1179, height: 8067 });
+});
+
 test('diary export retains the complete page aspect ratio within mobile canvas limits', () => {
     assert.deepEqual(getDiarySnapshotSize(400, 3000, 1.5), { width: 600, height: 4500 });
     for (const [width, height] of [[400, 12000], [2000, 10000], [400, 20000]]) {

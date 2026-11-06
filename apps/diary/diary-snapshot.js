@@ -1,7 +1,7 @@
 // 日记长图：把当前排版与图片内联到 SVG，再由浏览器绘制为 PNG。
 // 只在内存中处理导出文件，不写入日记或插件存储。
 
-export function getDiarySnapshotSize(width, height, preferredScale = 2) {
+export function getDiarySnapshotSize(width, height, preferredScale = 3) {
     if (![width, height, preferredScale].every(value => Number.isFinite(value) && value > 0)) {
         throw new Error('无法读取日记尺寸');
     }
@@ -144,7 +144,8 @@ export async function captureDiarySnapshot(sourcePage) {
 
     const width = Math.ceil(sourceBody.getBoundingClientRect().width);
     const height = Math.ceil(Math.max(sourceBody.scrollHeight, sourceBody.clientHeight));
-    const size = getDiarySnapshotSize(width, height, window.innerWidth <= 768 ? 1.5 : 2);
+    // 统一以三倍 CSS 分辨率导出，手机也保留足够的文字像素；超长日记仍受画布上限保护。
+    const size = getDiarySnapshotSize(width, height);
     const fonts = new Set();
     const clone = cloneStyledElement(sourcePage, fonts);
     const body = clone.querySelector('.diary-page-body');
@@ -167,7 +168,8 @@ export async function captureDiarySnapshot(sourcePage) {
     clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
     const markup = new XMLSerializer().serializeToString(clone);
     const fontMarkup = new XMLSerializer().serializeToString(Object.assign(document.createElement('style'), { textContent: fontCss }));
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%">${fontMarkup}${markup}</foreignObject></svg>`;
+    // SVG 本身使用最终像素尺寸，viewBox 保持原排版坐标，避免先按 CSS 像素栅格化再放大。
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width}" height="${size.height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"><foreignObject width="${width}" height="${height}">${fontMarkup}${markup}</foreignObject></svg>`;
     const image = await loadSvgImage(svg);
     const canvas = document.createElement('canvas');
     canvas.width = size.width;
@@ -177,7 +179,7 @@ export async function captureDiarySnapshot(sourcePage) {
         if (!context) throw new Error('当前浏览器无法生成日记长图');
         context.fillStyle = '#f5f2ee';
         context.fillRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0);
         const blob = await new Promise((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error('长图编码失败，请重试')), 'image/png'));
         return { blob, ...size };
     } finally {
