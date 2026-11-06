@@ -15,16 +15,18 @@
 
 /* ==================== 封面视图 ==================== */
 .diary-app {
-    --diary-text-primary: var(--phone-global-text, #4f3f30);
-    --diary-text-secondary: color-mix(in srgb, var(--phone-global-text, #4f3f30) 72%, transparent);
-    --diary-text-muted: color-mix(in srgb, var(--phone-global-text, #4f3f30) 56%, transparent);
+    --diary-text-primary: #000000;
+    --diary-paper-color: #FDF9F0;
+    --phone-global-text: var(--diary-text-primary);
+    --diary-text-secondary: color-mix(in srgb, var(--diary-text-primary) 72%, transparent);
+    --diary-text-muted: color-mix(in srgb, var(--diary-text-primary) 56%, transparent);
     width: 100%;
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: rgba(245, 242, 238, 0.95);
+    background: var(--diary-paper-color);
     color: var(--diary-text-primary) !important;
-    backdrop-filter: blur(10px);
+    backdrop-filter: none;
     overflow: hidden;
     position: relative;
     overscroll-behavior: none;
@@ -198,7 +200,7 @@
     border-radius: 50%;
     border: none;
     background: rgba(0,0,0,0.05);
-    color: #8a7a6a;
+    color: var(--diary-text-primary) !important;
     font-size: 14px;
     cursor: pointer;
     display: flex;
@@ -229,7 +231,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: #baa;
+    color: var(--diary-text-primary) !important;
     gap: 12px;
 }
 
@@ -320,7 +322,7 @@
     height: 28px;
     border: none;
     background: rgba(255, 59, 48, 0.15);
-    color: #ff3b30;
+    color: var(--diary-text-primary) !important;
     border-radius: 50%;
     font-size: 12px;
     cursor: pointer;
@@ -346,7 +348,7 @@
     height: 28px;
     border: none;
     background: rgba(0, 122, 255, 0.15);
-    color: #007aff;
+    color: var(--diary-text-primary) !important;
     border-radius: 50%;
     font-size: 12px;
     cursor: pointer;
@@ -358,7 +360,7 @@
 
 .diary-delete-all-btn {
     background: rgba(255, 59, 48, 0.15) !important;
-    color: #ff3b30 !important;
+    color: var(--diary-text-primary) !important;
 }
 
 .diary-delete-all-btn:active {
@@ -384,7 +386,7 @@
     border: none;
     border-radius: 20px;
     background: rgba(180, 160, 140, 0.3);
-    color: #5a4a3a;
+    color: var(--diary-text-primary) !important;
     font-size: 14px;
     cursor: pointer;
     transition: background 0.2s;
@@ -400,7 +402,7 @@
     border-radius: 50%;
     border: none;
     background: rgba(0,0,0,0.05);
-    color: #8a7a6a;
+    color: var(--diary-text-primary) !important;
     font-size: 16px;
     cursor: pointer;
     display: flex;
@@ -435,7 +437,7 @@
 .diary-page-date {
     font-size: 15px;
     font-weight: 600; /* 加粗一点更有标题感 */
-    color: #5a4a3a;
+    color: var(--diary-text-primary) !important;
     flex: 1; /* 🌟 占据中间所有的剩余空间 */
     text-align: center; /* 🌟 强制文字居中 */
     white-space: nowrap;
@@ -462,9 +464,9 @@
     pointer-events: none;
     background: linear-gradient(
         to bottom,
-        rgba(245, 242, 238, 0.98) 0%,
-        rgba(245, 242, 238, 0.94) 68%,
-        rgba(245, 242, 238, 0) 100%
+        var(--diary-paper-color) 0%,
+        var(--diary-paper-color) 68%,
+        transparent 100%
     );
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
@@ -616,7 +618,7 @@
     padding: 30px 14px 26px;
     box-sizing: border-box;
     border-radius: 12px;
-    background: rgba(255, 250, 240, 0.82);
+    background: var(--diary-paper-color);
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
 }
 
@@ -799,7 +801,7 @@
     height: 6px;
     border: 1px solid currentColor;
     border-radius: 50%;
-    background: #fffaf0;
+    background: var(--diary-paper-color);
 }
 
 .diary-bujo-signature {
@@ -888,7 +890,7 @@
     transform: rotate(2deg);
     transition: transform 0.16s ease, box-shadow 0.16s ease;
     touch-action: manipulation;
-    color: #5a4a3a !important;
+    color: var(--diary-text-primary) !important;
 }
 
 .diary-photo-memory[data-photo-count="2"],
@@ -1021,7 +1023,7 @@
     font-size: 12px;
     line-height: 1.3;
     text-align: center;
-    color: rgba(79, 63, 48, 0.58) !important;
+    color: var(--diary-text-primary) !important;
 }
 
 .diary-photo-back-text {
@@ -1031,7 +1033,7 @@
     text-align: left;
     white-space: pre-wrap;
     word-break: break-word;
-    color: rgba(79, 63, 48, 0.86) !important;
+    color: var(--diary-text-primary) !important;
     padding-top: 22px;
 }
 
@@ -1060,7 +1062,7 @@
     align-items: center;
     justify-content: center;
     background: rgba(255, 253, 248, 0.72);
-    color: #9b7652 !important;
+    color: var(--diary-text-primary) !important;
     font-size: 20px;
     line-height: 1;
 }
@@ -1070,7 +1072,7 @@
     font-size: 12px;
     line-height: 1.45;
     text-align: center;
-    color: rgba(90, 74, 58, 0.68) !important;
+    color: var(--diary-text-primary) !important;
     word-break: keep-all;
 }
 
@@ -1083,7 +1085,7 @@
     padding: 6px 8px;
     border-radius: 4px;
     background: rgba(255, 253, 248, 0.82);
-    color: #7b6049 !important;
+    color: var(--diary-text-primary) !important;
     font-size: 12px;
     line-height: 1.3;
     text-align: center;
@@ -1091,7 +1093,7 @@
 }
 
 .diary-photo-status-error {
-    color: #9a3f35 !important;
+    color: var(--diary-text-primary) !important;
 }
 
 .diary-photo-tool {
@@ -1100,7 +1102,7 @@
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: rgba(79, 63, 48, 0.66) !important;
+    color: var(--diary-text-primary) !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1131,7 +1133,7 @@
 }
 
 .diary-photo-tool:active {
-    color: rgba(79, 63, 48, 0.92) !important;
+    color: var(--diary-text-primary) !important;
 }
 
 .diary-photo-regenerate {
@@ -1153,7 +1155,7 @@
     font-size: 12px;
     line-height: 1.3;
     text-align: center;
-    color: rgba(79, 63, 48, 0.76) !important;
+    color: var(--diary-text-primary) !important;
     letter-spacing: 1px;
     white-space: nowrap;
     overflow: hidden;
@@ -1202,7 +1204,7 @@
 
 .diary-setting-label {
     font-size: 12px;
-    color: #8a7a6a;
+    color: var(--diary-text-primary) !important;
     margin-bottom: 6px;
 }
 
@@ -1222,7 +1224,7 @@
     border: 1px solid #e8e0d4;
     border-radius: 6px;
     background: #faf6ef;
-    color: #5a4a3a !important;
+    color: var(--diary-text-primary) !important;
     cursor: pointer;
     text-align: center;
     transition: background 0.15s;
@@ -1257,7 +1259,7 @@
 
 .diary-generating-text {
     font-size: 14px;
-    color: #9a8a7a;
+    color: var(--diary-text-primary) !important;
 }
 
 /* ==================== 手写按钮（手动生成） ==================== */
@@ -1269,7 +1271,7 @@
     margin: 16px;
     padding: 12px;
     background: linear-gradient(135deg, #d4a853, #c49a40);
-    color: #fff !important;
+    color: var(--diary-text-primary) !important;
     border: none;
     border-radius: 10px;
     font-size: 15px;
@@ -1338,7 +1340,7 @@
 
 .diary-batch-info {
     font-size: 12px;
-    color: #baa89a;
+    color: var(--diary-text-primary) !important;
     margin-top: 6px;
 }
 
@@ -1356,7 +1358,7 @@
     border-radius: 50%;
     border: none;
     background: rgba(0,0,0,0.05);
-    color: #8a7a6a;
+    color: var(--diary-text-primary) !important;
     font-size: 16px;
     cursor: pointer;
     display: flex;
@@ -1374,7 +1376,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    background-color: rgba(255, 255, 255, 0.15);
+    background-color: var(--diary-paper-color);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     overflow: hidden;
@@ -1583,7 +1585,7 @@
     width: 100%;
     min-width: 0;
     min-height: 22px;
-    color: #5a4a3a;
+    color: var(--diary-text-primary) !important;
     font-size: 15px;
     font-weight: 600;
     line-height: 22px;
@@ -1627,7 +1629,7 @@
 .diary-edit-actions .diary-edit-cancel-btn {
     border: 1px solid #cfc5b8;
     background: rgba(255, 255, 255, 0.72);
-    color: #685a4d;
+    color: var(--diary-text-primary) !important;
 }
 
 .diary-edit-body {
@@ -1663,7 +1665,7 @@
     border: none;
     border-radius: 6px;
     background: #d4a853;
-    color: #fff !important;
+    color: var(--diary-text-primary) !important;
     font-size: 13px;
     cursor: pointer;
 }
@@ -1685,7 +1687,7 @@
 .diary-import-preview {
     font-size: 12px;
     line-height: 1.5;
-    color: #7a6958 !important;
+    color: var(--diary-text-primary) !important;
 }
 
 .diary-import-tools {
@@ -1723,7 +1725,7 @@
 
 .phone-body-panel .diary-app .diary-write-btn,
 .phone-body-panel .diary-app .diary-edit-save-btn {
-    color: #fff !important;
+    color: var(--diary-text-primary) !important;
 }
 
 .phone-body-panel .diary-app .diary-s-btn-primary,
@@ -1811,4 +1813,56 @@
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
+}
+
+/* 日记配色独立于手机全局文字，图片与颜色选择器保留自己的色彩。 */
+#phone-panel-content .phone-screen .diary-app {
+    -webkit-text-fill-color: currentColor;
+}
+
+#phone-panel-content .phone-screen .diary-app :where(
+    p, span, strong, em, small, label, a, li, dt, dd,
+    h1, h2, h3, h4, h5, h6, button, input, textarea, select, option, div
+) {
+    -webkit-text-fill-color: currentColor;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-color-row {
+    gap: 10px;
+    min-height: 42px;
+    margin-bottom: 10px;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-settings-view {
+    background: var(--diary-paper-color);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-settings-body {
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-s-section {
+    backdrop-filter: none;
+}
+
+#phone-panel-content .phone-screen .diary-app :is(
+    .diary-s-input, .diary-s-textarea, .diary-edit-textarea, .diary-import-textarea
+) {
+    background: var(--diary-paper-color) !important;
+    box-shadow: none !important;
+    border-color: color-mix(in srgb, var(--diary-text-primary) 35%, transparent) !important;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-photo-card {
+    background: var(--diary-paper-color);
+    border-color: var(--diary-paper-color);
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-bujo-nav-btn,
+#phone-panel-content .phone-screen .diary-app .diary-s-btn {
+    background: color-mix(in srgb, var(--diary-paper-color) 92%, var(--diary-text-primary));
+    border-color: color-mix(in srgb, var(--diary-text-primary) 35%, transparent);
 }

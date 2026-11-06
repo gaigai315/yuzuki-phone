@@ -146,9 +146,11 @@ export async function captureDiarySnapshot(sourcePage) {
     const height = Math.ceil(Math.max(sourceBody.scrollHeight, sourceBody.clientHeight));
     // 统一以三倍 CSS 分辨率导出，手机也保留足够的文字像素；超长日记仍受画布上限保护。
     const size = getDiarySnapshotSize(width, height);
+    const paperColor = window.getComputedStyle(sourcePage).getPropertyValue('--diary-paper-color').trim() || '#f5f2ee';
     const fonts = new Set();
     const clone = cloneStyledElement(sourcePage, fonts);
     const body = clone.querySelector('.diary-page-body');
+    clone.style.backgroundColor = paperColor;
     for (const node of [clone, body]) {
         Object.assign(node.style, {
             position: 'relative', top: '0', left: '0', margin: '0',
@@ -177,7 +179,7 @@ export async function captureDiarySnapshot(sourcePage) {
     try {
         const context = canvas.getContext('2d');
         if (!context) throw new Error('当前浏览器无法生成日记长图');
-        context.fillStyle = '#f5f2ee';
+        context.fillStyle = paperColor;
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(image, 0, 0);
         const blob = await new Promise((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error('长图编码失败，请重试')), 'image/png'));

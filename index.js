@@ -45,7 +45,7 @@ import {
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.6.7';
-const ST_PHONE_CSS_REVISION = '20261027-wechat-friend-request';
+const ST_PHONE_CSS_REVISION = '20261107-diary-colors-2';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261021-user-fixed-tags';
 const ST_PHONE_WECHAT_MODULE_REVISION = '20261103-character-card-avatar';
@@ -1568,7 +1568,7 @@ if (window.GGP_Loaded) {
     // 🔥 按需加载设置模块
     async function loadSettingsModule() {
         if (!SettingsApp) {
-            const module = await import(`./apps/settings/settings-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}`);
+            const module = await import(`./apps/settings/settings-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}-20261107-colors`);
             SettingsApp = module.SettingsApp;
         }
         return SettingsApp;
@@ -10389,7 +10389,7 @@ if (window.GGP_Loaded) {
                     const diaryGeneration = autoDiaryState._autoDiaryGeneration;
                     autoDiaryState._autoDiaryProbeCount += 1;
                     // 懒加载 DiaryData 检查楼层差
-                    import('./apps/diary/diary-data.js?v=20261021-user-real-name').then(module => {
+                    import('./apps/diary/diary-data.js?v=20261107-diary-colors-2').then(module => {
                         const diaryData = window.VirtualPhone.diaryApp?.diaryData
                             || new module.DiaryData(storage);
                         const diaryConfig = diaryData.getAutoSettings();
@@ -11474,7 +11474,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '微信模块加载失败', '❌');
                         });
                 } else if (appId === 'diary') {
-                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261107-diary-sharp-image`)
+                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261107-diary-colors-2`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.diaryApp) {
@@ -13325,7 +13325,7 @@ if (window.GGP_Loaded) {
                                         if (diaryInjectEnabled) {
                                             let diaryData = window.VirtualPhone?.diaryApp?.diaryData || null;
                                             if (!diaryData) {
-                                                const diaryModule = await import('./apps/diary/diary-data.js?v=20261021-user-real-name');
+                                                const diaryModule = await import('./apps/diary/diary-data.js?v=20261107-diary-colors-2');
                                                 diaryData = new diaryModule.DiaryData(storage);
                                             }
                                             diaryHistoryContent = diaryData?.buildOfflineInjectionContent?.() || '';

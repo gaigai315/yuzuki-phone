@@ -12,6 +12,7 @@
 // ========================================
 // 📔 日记数据引擎 - 存储与AI调用
 // ========================================
+import { readDiaryAppearance } from './diary-theme.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { extractImagePromptItems, removeImagePromptItems } from '../../config/image-prompt-format.js';
 
@@ -90,120 +91,13 @@ export class DiaryData {
         this.storage.set('diary_settings', JSON.stringify(this._settings || {}));
     }
 
-   // ==================== 背景图管理 ====================
-
-    // 🔥 核心魔法：将 base64 图片转换为实体文件并上传到酒馆的 backgrounds 文件夹
-    async _uploadImageToServer(base64, type) {
-        if (!base64 || !base64.startsWith('data:image')) return base64; // 如果已经是链接则跳过
-        try {
-            const uploadedUrl = await window.VirtualPhone?.imageManager?.uploadDataUrl?.(base64, `diary_${type}`);
-            if (!uploadedUrl) throw new Error('图片上传管理器未初始化');
-            return uploadedUrl;
-        } catch (e) {
-            console.error('[Diary] 上传图片到服务器文件夹失败:', e);
-            throw e instanceof Error ? e : new Error('上传失败');
-        }
+    getAppearance() {
+        return readDiaryAppearance(this.storage);
     }
 
+    // 旧背景仅保留路径用于删除日记时回收文件，不再渲染或上传背景。
     getPageBg(entryId) {
-        const settings = this.getSettings();
-        return settings[`bg_${entryId}`] || null;
-    }
-
-    async setPageBg(entryId, base64) {
-        const settings = this.getSettings();
-        const oldUrl = String(settings[`bg_${entryId}`] || '').trim();
-        let nextUrl = '';
-        if (base64) {
-            nextUrl = await this._uploadImageToServer(base64, `page_${entryId}`);
-            settings[`bg_${entryId}`] = nextUrl;
-        } else {
-            delete settings[`bg_${entryId}`];
-        }
-        this.saveSettings();
-        this._cleanupReplacedDiaryImage(oldUrl, nextUrl);
-    }
-
-    getGlobalBg() {
-        // 优先读取服务器存储的路径，如果没有则兼容读取旧版的本地缓存防止丢失
-        return this.storage.get('global_diary_bg_global') || localStorage.getItem('diary_shared_bg_global') || null;
-    }
-
-    async setGlobalBg(base64) {
-        const oldUrl = String(this.storage.get('global_diary_bg_global') || '').trim();
-        let nextUrl = '';
-        if (base64) {
-            nextUrl = await this._uploadImageToServer(base64, 'global');
-            // 使用 storage.set 会存入酒馆服务器的 settings.json 中，突破浏览器限制
-            this.storage.set('global_diary_bg_global', nextUrl);
-        } else {
-            this.storage.remove('global_diary_bg_global');
-        }
-        this._cleanupReplacedDiaryImage(oldUrl, nextUrl);
-    }
-
-    getCoverBg() {
-        return this.storage.get('global_diary_bg_cover') || localStorage.getItem('diary_shared_bg_cover') || null;
-    }
-
-    async setCoverBg(base64) {
-        const oldUrl = String(this.storage.get('global_diary_bg_cover') || '').trim();
-        let nextUrl = '';
-        if (base64) {
-            nextUrl = await this._uploadImageToServer(base64, 'cover');
-            this.storage.set('global_diary_bg_cover', nextUrl);
-        } else {
-            this.storage.remove('global_diary_bg_cover');
-        }
-        this._cleanupReplacedDiaryImage(oldUrl, nextUrl);
-    }
-
-    getTocBg() {
-        return this.storage.get('global_diary_bg_toc') || localStorage.getItem('diary_shared_bg_toc') || null;
-    }
-
-    async setTocBg(base64) {
-        const oldUrl = String(this.storage.get('global_diary_bg_toc') || '').trim();
-        let nextUrl = '';
-        if (base64) {
-            nextUrl = await this._uploadImageToServer(base64, 'toc');
-            this.storage.set('global_diary_bg_toc', nextUrl);
-        } else {
-            this.storage.remove('global_diary_bg_toc');
-        }
-        this._cleanupReplacedDiaryImage(oldUrl, nextUrl);
-    }
-
-    async resetDefaultBackgrounds() {
-        const bgKeys = [
-            ['global_diary_bg_cover', 'diary_shared_bg_cover'],
-            ['global_diary_bg_toc', 'diary_shared_bg_toc'],
-            ['global_diary_bg_global', 'diary_shared_bg_global']
-        ];
-        const managedImages = [];
-
-        bgKeys.forEach(([storageKey, legacyKey]) => {
-            managedImages.push(this.storage.get(storageKey));
-            try {
-                managedImages.push(localStorage.getItem(legacyKey));
-            } catch (e) { }
-        });
-
-        await Promise.all(bgKeys.map(async ([storageKey, legacyKey]) => {
-            await this.storage.remove(storageKey);
-            try {
-                localStorage.removeItem(legacyKey);
-            } catch (e) { }
-        }));
-
-        const cleanupPaths = [...new Set(managedImages
-            .map(path => this._normalizeManagedDiaryImagePath(path))
-            .filter(Boolean))];
-
-        return {
-            cleanupCount: cleanupPaths.length,
-            cleanup: () => this._cleanupManagedDiaryImages(cleanupPaths)
-        };
+        return this.getSettings()[`bg_${entryId}`] || null;
     }
 
     // ==================== 行间距 ====================

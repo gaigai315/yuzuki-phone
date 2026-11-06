@@ -12,6 +12,8 @@
 // ========================================
 // 📔 日记视图 - UI渲染与交互
 // ========================================
+import { bindPhoneColorPickers } from '../../phone/color-picker.js';
+import { readDiaryAppearance, DIARY_TEXT_COLOR_DEFAULT, DIARY_PAPER_COLOR_DEFAULT, DIARY_TEXT_COLOR_KEY, DIARY_PAPER_COLOR_KEY } from './diary-theme.js';
 import { extractImagePromptItems } from '../../config/image-prompt-format.js';
 
 export class DiaryView {
@@ -39,7 +41,7 @@ export class DiaryView {
         const link = document.createElement('link');
         link.id = 'diary-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./diary.css?v=1.0.0&r=20261107-long-image', import.meta.url).href;
+        link.href = new URL('./diary.css?v=1.0.0&r=20261107-diary-colors-2', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
     }
@@ -63,24 +65,35 @@ export class DiaryView {
         return result;
     }
 
+    _appearanceStyle() {
+        const { textColor, paperColor } = this.app.diaryData.getAppearance?.() || readDiaryAppearance(this.app.diaryData.storage);
+        return `--diary-text-primary:${textColor};--diary-paper-color:${paperColor};`;
+    }
+
+    _renderColorControl(label, kind, key, defaultColor) {
+        return `<div class="diary-s-row diary-color-row">
+            <span class="diary-s-label">${label}</span>
+            <button type="button" class="yzp-frame-color-control" data-color-storage-key="${key}"
+                data-color-default="${defaultColor}" data-color-preview-kind="${kind}"
+                data-color-picker-title="选择${label}" data-color-picker-label="${label}" aria-label="选择${label}">
+                <span class="yzp-frame-color-control-swatch" aria-hidden="true"></span>
+                <span class="yzp-frame-color-control-value"></span>
+            </button>
+        </div>`;
+    }
+
     // ==================== 封面视图 ====================
 
     renderCover() {
         const data = this.app.diaryData;
         const entries = data.getEntries();
-        const coverBg = data.getCoverBg();
-        const bgStyle = coverBg ? `background-image: url('${coverBg}'); background-size: cover; background-position: center;` : '';
-        const showText = !coverBg;
-
         const html = `
-            <div class="diary-app">
-                <div class="diary-cover" id="diary-cover" style="${bgStyle}">
-                    ${showText ? `
+            <div class="diary-app" style="${this._appearanceStyle()}">
+                <div class="diary-cover" id="diary-cover">
                         <div class="diary-cover-decoration"></div>
                         <div class="diary-cover-title">我 的 日 记</div>
                         <div class="diary-cover-subtitle">${entries.length > 0 ? `共 ${entries.length} 篇` : '尚无记录'}</div>
                         <div class="diary-cover-decoration"></div>
-                    ` : ''}
                     <div class="diary-clasp" id="diary-clasp">
                         <div class="diary-clasp-strap"></div>
                     </div>
@@ -113,8 +126,6 @@ export class DiaryView {
         const data = this.app.diaryData;
         const entries = data.getEntries();
         const sorted = this._sortEntries(entries);
-        const tocBg = data.getTocBg();
-        const bgStyle = tocBg ? `background-image: url('${tocBg}'); background-size: cover; background-position: center;` : '';
         const enterClass = this.isBackNav ? '' : 'diary-view-enter';
 
         let listHtml;
@@ -184,8 +195,8 @@ export class DiaryView {
         ` : '';
 
         const html = `
-            <div class="diary-app">
-                <div class="diary-toc ${enterClass}" style="${bgStyle}">
+            <div class="diary-app" style="${this._appearanceStyle()}">
+                <div class="diary-toc ${enterClass}">
                     <div class="diary-toc-header">
                         <div class="diary-toc-actions">
                             ${deleteSelectedBtn}
@@ -480,22 +491,18 @@ export class DiaryView {
 
         const lineHeight = data.getGlobalLineHeight();
         const fontSize = data.getGlobalFontSize();
-        const pageBg = data.getPageBg(entry.id) || data.getGlobalBg();
         const enterClass = this.isBackNav ? '' : 'diary-view-enter';
 
-        const bgHtml = pageBg ? `<div class="diary-page-bg" style="background-image: url('${pageBg}');"></div>` : '';
-        const bodyClass = pageBg ? 'diary-page-body has-bg' : 'diary-page-body';
         const parsedDiary = data.parseDiaryContent(entry.content);
         const diaryTitle = parsedDiary.title || '无标题';
         const diaryPhotos = data.normalizeEntryPhotos(entry);
         if (diaryPhotos.length) data.saveEntries();
 
         const html = `
-            <div class="diary-app diary-app-reading">
+            <div class="diary-app diary-app-reading" style="${this._appearanceStyle()}">
                 <div class="diary-page ${enterClass}">
                     <div class="diary-page-status-safe" aria-hidden="true"></div>
-                    ${bgHtml}
-                    <div class="${bodyClass}" id="diary-page-body">
+                    <div class="diary-page-body" id="diary-page-body">
                         ${this._renderBujoDiaryPage(entry, parsedDiary, { fontSize, lineHeight })}
                     </div>
                 </div>
@@ -544,7 +551,7 @@ export class DiaryView {
         let imageUrl = '';
         try {
             shell.showNotification?.('日记长图', '正在生成整篇日记，请稍候…', '♡');
-            const { captureDiarySnapshot } = await import('./diary-snapshot.js?r=20261107-sharp-image');
+            const { captureDiarySnapshot } = await import('./diary-snapshot.js?r=20261107-diary-colors-2');
             const { blob } = await captureDiarySnapshot(page);
             imageUrl = URL.createObjectURL(blob);
             const filename = `日记-${title}-${Date.now()}.png`;
@@ -822,7 +829,7 @@ export class DiaryView {
                 <div class="diary-bujo-divider">diary content</div>
 
                 <div class="diary-page-content diary-bujo-content" id="diary-page-content" style="font-size: ${options.fontSize}px; line-height: ${options.lineHeight};">
-                    ${contentHtml || '<span style="color:#baa;">（空白页）</span>'}
+                    ${contentHtml || '<span class="diary-empty-page">（空白页）</span>'}
                 </div>
 
                 <div class="diary-bujo-footer">
@@ -886,7 +893,7 @@ export class DiaryView {
         const useDiaryWorldbook = window.VirtualPhone?.worldbookManager?.getEnabled?.('diary') ?? true;
 
         const html = `
-            <div class="diary-app">
+            <div class="diary-app" style="${this._appearanceStyle()}">
                 <div class="diary-settings-view ${enterClass}">
                     <div class="diary-toc-header">
                         <div class="diary-toc-title">日记设置</div>
@@ -920,21 +927,12 @@ export class DiaryView {
                             </div>
                         </div>
 
-                        <!-- 背景图设置 -->
                         <div class="diary-s-section">
-                            <div class="diary-s-section-title">背景图设置</div>
-                            <div class="diary-s-desc">自定义日记各页面的背景图片</div>
-                            <div class="diary-s-btn-row" style="margin-top: 8px; justify-content: flex-start;">
-                                <label class="diary-s-btn diary-s-btn-primary" for="diary-bg-cover">📔 封面</label>
-                                <input type="file" id="diary-bg-cover" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display:none;">
-                                <label class="diary-s-btn diary-s-btn-primary" for="diary-bg-toc">📋 目录</label>
-                                <input type="file" id="diary-bg-toc" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display:none;">
-                                <label class="diary-s-btn diary-s-btn-primary" for="diary-bg-global">📄 日记</label>
-                                <input type="file" id="diary-bg-global" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display:none;">
-                            </div>
-                            <button class="diary-s-btn diary-s-btn-warn" id="diary-bg-reset-default" style="width: 100%; margin-top: 8px;">
-                                恢复默认背景并清理上传文件
-                            </button>
+                            <div class="diary-s-section-title">日记配色</div>
+                            <div class="diary-s-desc">独立设置日记文字与纸张颜色，封面、目录及装饰线条同步文字颜色。</div>
+                            ${this._renderColorControl('日记文字颜色', 'text', DIARY_TEXT_COLOR_KEY, DIARY_TEXT_COLOR_DEFAULT)}
+                            ${this._renderColorControl('正文背景颜色', 'paper', DIARY_PAPER_COLOR_KEY, DIARY_PAPER_COLOR_DEFAULT)}
+                            <button type="button" class="diary-s-btn" id="diary-colors-reset">恢复默认配色</button>
                         </div>
 
                         <!-- 手动生成日记 -->
@@ -1084,73 +1082,27 @@ export class DiaryView {
             this.tocOrder = e.target.checked ? 'desc' : 'asc';
         };
 
-        const bgCover = document.getElementById('diary-bg-cover');
-        if (bgCover) bgCover.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            e.target.value = '';
-            const base64 = await this._processImage(file);
-            if (base64) {
-                try {
-                    await this.app.diaryData.setCoverBg(base64);
-                    this.render();
-                    alert('✅ 封面背景已成功上传到酒馆服务器');
-                } catch (err) {
-                    alert('❌ 封面背景上传失败：' + (err?.message || err));
-                }
-            }
+        const settingsRoot = document.getElementById('diary-settings-back')?.closest('.diary-app');
+        const data = this.app.diaryData;
+        const previewColor = (color, kind) => {
+            settingsRoot?.style.setProperty(kind === 'text' ? '--diary-text-primary' : '--diary-paper-color', color);
         };
-
-        const bgToc = document.getElementById('diary-bg-toc');
-        if (bgToc) bgToc.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            e.target.value = '';
-            const base64 = await this._processImage(file);
-            if (base64) {
-                try {
-                    await this.app.diaryData.setTocBg(base64);
-                    this.render();
-                    alert('✅ 目录背景已成功上传到酒馆服务器');
-                } catch (err) {
-                    alert('❌ 目录背景上传失败：' + (err?.message || err));
-                }
+        bindPhoneColorPickers(settingsRoot, {
+            storage: data.storage,
+            previewColor,
+            onError: label => this.app.phoneShell.showNotification?.('保存失败', `${label}未保存`, '⚠️')
+        });
+        document.getElementById('diary-colors-reset')?.addEventListener('click', async () => {
+            await data.storage.set(DIARY_TEXT_COLOR_KEY, DIARY_TEXT_COLOR_DEFAULT);
+            await data.storage.set(DIARY_PAPER_COLOR_KEY, DIARY_PAPER_COLOR_DEFAULT);
+            for (const trigger of settingsRoot.querySelectorAll('[data-color-storage-key]')) {
+                const color = trigger.dataset.colorDefault;
+                trigger.dataset.color = color;
+                trigger.querySelector('.yzp-frame-color-control-swatch')?.style.setProperty('--yzp-frame-control-color', color);
+                trigger.querySelector('.yzp-frame-color-control-value').textContent = color;
+                previewColor(color, trigger.dataset.colorPreviewKind);
             }
-        };
-
-        const bgGlobal = document.getElementById('diary-bg-global');
-        if (bgGlobal) bgGlobal.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            e.target.value = '';
-            const base64 = await this._processImage(file);
-            if (base64) {
-                try {
-                    await this.app.diaryData.setGlobalBg(base64);
-                    this.render();
-                    alert('✅ 日记默认背景已成功上传到酒馆服务器');
-                } catch (err) {
-                    alert('❌ 日记默认背景上传失败：' + (err?.message || err));
-                }
-            }
-        };
-
-        const bgResetDefault = document.getElementById('diary-bg-reset-default');
-        if (bgResetDefault) bgResetDefault.onclick = async () => {
-            if (!confirm('确定恢复默认日记背景，并清理已上传的封面、目录、日记背景文件吗？')) return;
-            try {
-                bgResetDefault.disabled = true;
-                bgResetDefault.textContent = '正在恢复...';
-                const result = await this.app.diaryData.resetDefaultBackgrounds();
-                result?.cleanup?.();
-                this.render();
-                alert(`✅ 已恢复默认背景，并开始清理 ${result?.cleanupCount || 0} 个上传文件`);
-            } catch (err) {
-                bgResetDefault.disabled = false;
-                bgResetDefault.textContent = '恢复默认背景并清理上传文件';
-                alert('❌ 恢复默认背景失败：' + (err?.message || err));
-            }
-        };
+        });
 
         const manualRun = document.getElementById('diary-manual-run');
         if (manualRun) manualRun.onclick = async () => {
@@ -1531,7 +1483,7 @@ export class DiaryView {
         const diaryTitle = this._extractTitle(entry.content);
 
         const html = `
-            <div class="diary-app">
+            <div class="diary-app" style="${this._appearanceStyle()}">
                 <div class="diary-edit-view">
                     <div class="diary-edit-header">
                         <div class="diary-edit-title">${this._escapeHtml(diaryTitle)}</div>
@@ -1577,7 +1529,7 @@ export class DiaryView {
 
     renderNewEntry() {
         const html = `
-            <div class="diary-app">
+            <div class="diary-app" style="${this._appearanceStyle()}">
                 <div class="diary-edit-view diary-new-view">
                     <div class="diary-compose-header">
                         <button type="button" class="diary-compose-cancel" id="diary-new-cancel" title="取消" aria-label="取消">✕</button>
@@ -1626,7 +1578,7 @@ export class DiaryView {
 
     renderImport() {
         const html = `
-            <div class="diary-app">
+            <div class="diary-app" style="${this._appearanceStyle()}">
                 <div class="diary-edit-view diary-import-view">
                     <div class="diary-compose-header">
                         <button type="button" class="diary-compose-cancel" id="diary-import-cancel" title="取消" aria-label="取消">✕</button>
@@ -1742,56 +1694,6 @@ export class DiaryView {
 
     // ==================== 图片处理与杂项 ====================
 
-    async _processImage(file) {
-        try {
-            try {
-                const { ImageCropper } = await import('../settings/image-cropper.js');
-                const exportFormat = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-                const cropper = new ImageCropper({
-                    title: '裁剪图片',
-                    outputWidth: 600,
-                    outputHeight: 1050,
-                    outputFormat: exportFormat,
-                    quality: exportFormat === 'image/png' ? undefined : 0.6,
-                    maxFileSize: 5 * 1024 * 1024
-                });
-                return await cropper.open(file);
-            } catch (cropErr) {
-                return await this._compressImage(file);
-            }
-        } catch (err) {
-            if (err.message !== '用户取消') {
-                console.error('[DiaryView] 图片处理失败:', err);
-            }
-            return null;
-        }
-    }
-
-    _compressImage(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const maxW = 600;
-                    const scale = Math.min(1, maxW / img.width);
-                    canvas.width = img.width * scale;
-                    canvas.height = img.height * scale;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    const exportFormat = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-                    const quality = exportFormat === 'image/png' ? undefined : 0.6;
-                    resolve(canvas.toDataURL(exportFormat, quality));
-                };
-                img.onerror = reject;
-                img.src = e.target.result;
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    }
-
     _getPromptManager() {
         const pm = window.VirtualPhone?.promptManager;
         if (pm) pm.ensureLoaded();
@@ -1857,7 +1759,7 @@ export class DiaryView {
 
     _formatContent(content) {
         const blocks = this._formatContentParts(content).filter(part => part !== '__DIARY_PHOTO__');
-        return `<div class="diary-text-body">${blocks.join('') || '<span style="color:#baa;">（空白页）</span>'}</div>`;
+        return `<div class="diary-text-body">${blocks.join('') || '<span class="diary-empty-page">（空白页）</span>'}</div>`;
     }
 
     _formatContentParts(content) {
