@@ -815,6 +815,48 @@
     border-bottom: 3px solid rgba(220, 80, 80, 0.4);
 }
 
+#phone-panel-content .phone-screen .diary-app .diary-bujo-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 30px;
+    min-height: 32px;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-bujo-footer .diary-bujo-signature {
+    margin-top: 0;
+    margin-left: auto;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-bujo-export-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 32px;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 5px;
+    transform: rotate(-4deg);
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-bujo-export-btn svg {
+    display: block;
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-bujo-export-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+
 .diary-photo-memory {
     position: relative;
     z-index: 1;

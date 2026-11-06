@@ -39,7 +39,7 @@ export class DiaryView {
         const link = document.createElement('link');
         link.id = 'diary-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./diary.css?v=1.0.0&r=20261107-system-scroll-v2', import.meta.url).href;
+        link.href = new URL('./diary.css?v=1.0.0&r=20261107-long-image', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
     }
@@ -525,7 +525,50 @@ export class DiaryView {
             this.render();
         };
 
+        const exportBtn = document.getElementById('diary-page-export');
+        if (exportBtn) exportBtn.onclick = () => this._exportDiaryLongImage(exportBtn);
+
         this._bindDiaryPhotoEvents();
+    }
+
+    async _exportDiaryLongImage(button) {
+        if (this._isExportingDiary) return;
+        const page = button?.closest('.diary-page');
+        if (!page) return;
+        const shell = this.app.phoneShell;
+        const entry = this.app.diaryData.getEntry(this.currentEntryId);
+        const title = this.app.diaryData.parseDiaryContent(entry?.content || '').title || '日记';
+        this._isExportingDiary = true;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        let imageUrl = '';
+        try {
+            shell.showNotification?.('日记长图', '正在生成整篇日记，请稍候…', '♡');
+            const { captureDiarySnapshot } = await import('./diary-snapshot.js?r=20261107-long-image');
+            const { blob } = await captureDiarySnapshot(page);
+            imageUrl = URL.createObjectURL(blob);
+            const filename = `日记-${title}-${Date.now()}.png`;
+            shell.showImageViewer(imageUrl, { alt: `${title} · 日记长图`, downloadName: filename });
+            const overlay = shell.container?.querySelector('.phone-image-viewer-overlay');
+            if (!overlay) throw new Error('无法打开长图预览');
+            // 预览关闭后释放临时图片；不把生成的图片存入聊天或设置。
+            const previewUrl = imageUrl;
+            const observer = new MutationObserver(() => {
+                if (overlay.isConnected) return;
+                observer.disconnect();
+                URL.revokeObjectURL(previewUrl);
+            });
+            observer.observe(overlay.parentNode, { childList: true });
+            imageUrl = '';
+            shell.showNotification?.('日记长图', '长图已生成，点击预览右上角下载保存', '♡');
+        } catch (error) {
+            if (imageUrl) URL.revokeObjectURL(imageUrl);
+            shell.showNotification?.('日记长图', String(error?.message || '生成失败，请重试'), '❌');
+        } finally {
+            this._isExportingDiary = false;
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+        }
     }
 
     _bindDiaryPhotoEvents() {
@@ -782,7 +825,12 @@ export class DiaryView {
                     ${contentHtml || '<span style="color:#baa;">（空白页）</span>'}
                 </div>
 
-                ${signature ? `<div class="diary-bujo-signature"><span>${this._escapeHtml(signature)}</span></div>` : ''}
+                <div class="diary-bujo-footer">
+                    <button class="diary-bujo-nav-btn diary-bujo-export-btn" id="diary-page-export" type="button" title="保存日记长图" aria-label="保存日记长图" data-diary-export-ignore>
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 20s-8-5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 9c0 6-8 11-8 11Z"/></svg>
+                    </button>
+                    ${signature ? `<div class="diary-bujo-signature"><span>${this._escapeHtml(signature)}</span></div>` : ''}
+                </div>
             </div>
         `;
     }
