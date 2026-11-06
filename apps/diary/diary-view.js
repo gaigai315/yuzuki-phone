@@ -39,7 +39,7 @@ export class DiaryView {
         const link = document.createElement('link');
         link.id = 'diary-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./diary.css?v=1.0.0&r=20261107-photo-scroll', import.meta.url).href;
+        link.href = new URL('./diary.css?v=1.0.0&r=20261107-system-scroll-v2', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
     }
@@ -491,7 +491,7 @@ export class DiaryView {
         if (diaryPhotos.length) data.saveEntries();
 
         const html = `
-            <div class="diary-app">
+            <div class="diary-app diary-app-reading">
                 <div class="diary-page ${enterClass}">
                     <div class="diary-page-status-safe" aria-hidden="true"></div>
                     ${bgHtml}
@@ -638,7 +638,7 @@ export class DiaryView {
             const displayUrl = imageUrl && status === 'done'
                 ? imageUrl
                 : this._getDiaryFallbackPhotoUrl(entry, photo, index);
-            const imageHtml = `<img class="diary-photo-img" src="${this._escapeAttr(displayUrl)}" alt="${prompt || reason || '日记照片'}" loading="eager" decoding="async">`;
+            const imageHtml = `<img class="diary-photo-img" src="${this._escapeAttr(displayUrl)}" alt="${prompt || reason || '日记照片'}" loading="eager" decoding="async" draggable="false">`;
             const statusHtml = status === 'failed'
                 ? `<div class="diary-photo-status diary-photo-status-error">生成失败，点↻重试</div>`
                 : (status === 'loading'

@@ -14,7 +14,7 @@
 // ========================================
 
 import { DiaryData } from './diary-data.js?v=20261021-user-real-name';
-import { DiaryView } from './diary-view.js?r=20261107-photo-scroll';
+import { DiaryView } from './diary-view.js?r=20261107-system-scroll-v2';
 
 export class DiaryApp {
     constructor(phoneShell, storage) {

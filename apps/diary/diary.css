@@ -552,6 +552,39 @@
     background-image: none;
 }
 
+/* 阅读页使用与微信聊天一致的单轴滚动；不让整页滤镜和动画结束态继续包裹滚动内容。 */
+#phone-panel-content .phone-screen .diary-app.diary-app-reading {
+    min-height: 0;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    touch-action: pan-y !important;
+}
+
+#phone-panel-content .phone-screen .diary-app-reading > .diary-page {
+    min-height: 0;
+    touch-action: pan-y !important;
+    animation-fill-mode: backwards;
+}
+
+#phone-panel-content .phone-screen .diary-app-reading .diary-page-body {
+    min-height: 0;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    touch-action: pan-y !important;
+    overscroll-behavior: contain;
+    scroll-behavior: auto;
+}
+
+#phone-panel-content .phone-screen .diary-app-reading .diary-photo-card {
+    touch-action: pan-y !important;
+}
+
+#phone-panel-content .phone-screen .diary-app-reading .diary-photo-img {
+    /* 点击由照片卡片处理，图片自身不接管拖动/长按手势。 */
+    pointer-events: none;
+    -webkit-user-drag: none;
+}
+
 .diary-page-bg {
     position: absolute;
     top: 0;
@@ -845,18 +878,20 @@
     transform: translateX(-38px) translateY(14px) rotate(var(--diary-photo-rotate));
 }
 
-.diary-photo-memory[data-photo-count="2"] .diary-photo-card:active,
-.diary-photo-memory[data-photo-count="3"] .diary-photo-card:active {
-    transform: translateX(0) translateY(0) rotate(var(--diary-photo-rotate)) scale(0.985);
-}
+@media (hover: hover) and (pointer: fine) {
+    .diary-photo-memory[data-photo-count="2"] .diary-photo-card:active,
+    .diary-photo-memory[data-photo-count="3"] .diary-photo-card:active {
+        transform: translateX(0) translateY(0) rotate(var(--diary-photo-rotate)) scale(0.985);
+    }
 
-.diary-photo-memory[data-photo-count="2"] .diary-photo-stack-1:active,
-.diary-photo-memory[data-photo-count="3"] .diary-photo-stack-1:active {
-    transform: translateX(38px) translateY(12px) rotate(var(--diary-photo-rotate)) scale(0.985);
-}
+    .diary-photo-memory[data-photo-count="2"] .diary-photo-stack-1:active,
+    .diary-photo-memory[data-photo-count="3"] .diary-photo-stack-1:active {
+        transform: translateX(38px) translateY(12px) rotate(var(--diary-photo-rotate)) scale(0.985);
+    }
 
-.diary-photo-memory[data-photo-count="3"] .diary-photo-stack-2:active {
-    transform: translateX(-38px) translateY(14px) rotate(var(--diary-photo-rotate)) scale(0.985);
+    .diary-photo-memory[data-photo-count="3"] .diary-photo-stack-2:active {
+        transform: translateX(-38px) translateY(14px) rotate(var(--diary-photo-rotate)) scale(0.985);
+    }
 }
 
 .diary-photo-card.is-flipped .diary-photo-front {
@@ -875,9 +910,11 @@
     outline-offset: 2px;
 }
 
-.diary-photo-memory:not([data-photo-count="2"]):not([data-photo-count="3"]) .diary-photo-card:active {
-    transform: rotate(var(--diary-photo-rotate)) scale(0.985);
-    box-shadow: 0 8px 16px rgba(58, 43, 28, 0.16), 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+@media (hover: hover) and (pointer: fine) {
+    .diary-photo-memory:not([data-photo-count="2"]):not([data-photo-count="3"]) .diary-photo-card:active {
+        transform: rotate(var(--diary-photo-rotate)) scale(0.985);
+        box-shadow: 0 8px 16px rgba(58, 43, 28, 0.16), 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+    }
 }
 
 .diary-photo-tape {
