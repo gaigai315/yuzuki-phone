@@ -95,10 +95,14 @@ export class DiaryData {
         return readDiaryAppearance(this.storage);
     }
 
-    async _uploadImageToServer(base64, type) {
-        if (!base64 || !base64.startsWith('data:image')) return base64;
+    async _uploadImageToServer(image, type) {
+        const isFile = typeof Blob !== 'undefined' && image instanceof Blob;
+        if (!isFile && (!image || !image.startsWith('data:image'))) return image;
         try {
-            const uploadedUrl = await window.VirtualPhone?.imageManager?.uploadDataUrl?.(base64, `diary_${type}`);
+            const manager = window.VirtualPhone?.imageManager;
+            const uploadedUrl = isFile
+                ? await manager?.uploadOriginalImage?.(image, `diary_${type}`)
+                : await manager?.uploadDataUrl?.(image, `diary_${type}`);
             if (!uploadedUrl) throw new Error('图片上传管理器未初始化');
             return uploadedUrl;
         } catch (error) {
@@ -119,9 +123,9 @@ export class DiaryData {
         return this.storage.get('global_diary_bg_cover') || this._getLegacyBackground('diary_shared_bg_cover');
     }
 
-    async setCoverBg(base64) {
+    async setCoverBg(image) {
         const oldUrl = String(this.getCoverBg() || '').trim();
-        const nextUrl = base64 ? await this._uploadImageToServer(base64, 'cover') : '';
+        const nextUrl = image ? await this._uploadImageToServer(image, 'cover') : '';
         if (nextUrl) await this.storage.set('global_diary_bg_cover', nextUrl);
         else await this.storage.remove('global_diary_bg_cover');
         this._cleanupReplacedDiaryImage(oldUrl, nextUrl);
@@ -131,9 +135,9 @@ export class DiaryData {
         return this.storage.get('global_diary_bg_toc') || this._getLegacyBackground('diary_shared_bg_toc');
     }
 
-    async setTocBg(base64) {
+    async setTocBg(image) {
         const oldUrl = String(this.getTocBg() || '').trim();
-        const nextUrl = base64 ? await this._uploadImageToServer(base64, 'toc') : '';
+        const nextUrl = image ? await this._uploadImageToServer(image, 'toc') : '';
         if (nextUrl) await this.storage.set('global_diary_bg_toc', nextUrl);
         else await this.storage.remove('global_diary_bg_toc');
         this._cleanupReplacedDiaryImage(oldUrl, nextUrl);

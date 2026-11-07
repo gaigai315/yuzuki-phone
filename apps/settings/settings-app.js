@@ -12,7 +12,7 @@
 // 设置APP
 import { normalizePhoneHexColor } from '../../config/phone-colors.js';
 import { bindPhoneColorPickers } from '../../phone/color-picker.js';
-import { ImageUploadManager } from './image-upload.js?v=20261021-album-media-cache';
+import { ImageUploadManager } from './image-upload.js?v=20261108-original-background';
 import { ImageCropper } from './image-cropper.js';
 import { AlbumData } from '../album/album-data.js';
 import { AlbumImagePicker } from '../album/album-image-picker.js';
@@ -2917,7 +2917,7 @@ export class SettingsApp {
                             <!-- 壁纸设置 -->
                             <div class="setting-item">
                                 <div class="setting-label">手机壁纸</div>
-                                <div class="setting-desc">支持 jpg/png/webp，最大20MB；HEIC请先转为JPG/PNG</div>
+                                <div class="setting-desc">原图上传，保留原始画质；支持 jpg/png/webp，最大20MB；HEIC请先转为JPG/PNG</div>
                                 <div style="margin-top: 10px; display: flex; gap: 8px;">
                                     <button type="button" id="choose-wallpaper-btn" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
                                         <i class="fa-regular fa-images"></i> 选择壁纸
@@ -6057,13 +6057,7 @@ export class SettingsApp {
             if (!file) return;
             e.target.value = '';
             try {
-                const cropper = new ImageCropper({
-                    title: '裁剪壁纸', outputWidth: 400, outputHeight: 800,
-                    fitMode: 'contain', preserveSourceAspectRatio: true,
-                    quality: 0.85, maxFileSize: SETTINGS_IMAGE_MAX_FILE_SIZE
-                });
-                const croppedImage = await cropper.open(file);
-                const serverUrl = await this.imageManager._uploadToServer(croppedImage, 'wallpaper', { allowBase64Fallback: false });
+                const serverUrl = await this.imageManager.uploadOriginalImage(file, 'wallpaper');
                 await applyWallpaperPath(serverUrl, '壁纸已上传并保留到相册 App');
             } catch (err) {
                 if (err.message !== '用户取消') alert('❌ 上传失败：' + formatImageUploadError(err));

@@ -13,8 +13,8 @@
 // 📔 日记APP - 核心控制器
 // ========================================
 
-import { DiaryData } from './diary-data.js?v=20261107-diary-cover-toc-bg';
-import { DiaryView } from './diary-view.js?r=20261108-full-background-fill';
+import { DiaryData } from './diary-data.js?v=20261108-original-background';
+import { DiaryView } from './diary-view.js?r=20261108-original-background';
 
 export class DiaryApp {
     constructor(phoneShell, storage) {

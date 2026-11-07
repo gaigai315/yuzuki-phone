@@ -41,7 +41,7 @@ export class DiaryView {
         const link = document.createElement('link');
         link.id = 'diary-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./diary.css?v=1.0.0&r=20261108-full-background-fill', import.meta.url).href;
+        link.href = new URL('./diary.css?v=1.0.0&r=20261108-original-background', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
     }
@@ -946,7 +946,7 @@ export class DiaryView {
 
                         <div class="diary-s-section">
                             <div class="diary-s-section-title">封面与目录背景</div>
-                            <div class="diary-s-desc">封面与目录背景保留完整图片，随页面宽高铺满；比例不同时会有拉伸。日记正文背景由上方颜色控制。</div>
+                            <div class="diary-s-desc">封面与目录背景原图上传，不压缩画质；随页面宽高铺满，比例不同时会有拉伸。日记正文背景由上方颜色控制。</div>
                             <div class="diary-s-btn-row diary-background-upload-row">
                                 <label class="diary-s-btn diary-s-btn-primary" for="diary-bg-cover">📔 封面</label>
                                 <input type="file" id="diary-bg-cover" accept="image/png, image/jpeg, image/gif, image/webp, image/*" hidden>
@@ -1134,10 +1134,8 @@ export class DiaryView {
                 const file = event.target.files?.[0];
                 event.target.value = '';
                 if (!file) return;
-                const base64 = await this._processImage(file);
-                if (!base64) return;
                 try {
-                    await setter(base64);
+                    await setter(file);
                     this.app.phoneShell.showNotification?.('上传成功', successMessage, '✅');
                 } catch (error) {
                     this.app.phoneShell.showNotification?.('上传失败', error?.message || '请重试', '⚠️');
@@ -1751,45 +1749,6 @@ export class DiaryView {
     }
 
     // ==================== 图片处理与杂项 ====================
-
-    async _processImage(file) {
-        try {
-            // 仅等比缩小整张图片；封面和目录不使用固定比例裁剪器。
-            return await this._compressImage(file);
-        } catch (error) {
-            console.error('[DiaryView] 背景图片处理失败:', error);
-            this.app.phoneShell.showNotification?.('图片处理失败', error?.message || '请重试', '⚠️');
-            return null;
-        }
-    }
-
-    _compressImage(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = event => {
-                const image = new Image();
-                image.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const scale = Math.min(1, 600 / image.width);
-                    canvas.width = Math.max(1, Math.round(image.width * scale));
-                    canvas.height = Math.max(1, Math.round(image.height * scale));
-                    const context = canvas.getContext('2d');
-                    if (!context) {
-                        reject(new Error('当前浏览器无法处理图片'));
-                        return;
-                    }
-                    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-                    const exportFormat = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-                    resolve(canvas.toDataURL(exportFormat, exportFormat === 'image/png' ? undefined : 0.6));
-                    canvas.width = canvas.height = 0;
-                };
-                image.onerror = () => reject(new Error('无法读取图片'));
-                image.src = event.target.result;
-            };
-            reader.onerror = () => reject(new Error('无法读取图片'));
-            reader.readAsDataURL(file);
-        });
-    }
 
     _getPromptManager() {
         const pm = window.VirtualPhone?.promptManager;

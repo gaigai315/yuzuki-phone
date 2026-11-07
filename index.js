@@ -1544,7 +1544,7 @@ if (window.GGP_Loaded) {
         ] = await Promise.all([
             import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261103-diary-scroll`),
             import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
-            import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261021-album-media-cache`)
+            import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261108-original-background`)
         ]);
 
         PhoneShell = phoneShellModule.PhoneShell;
@@ -1572,7 +1572,7 @@ if (window.GGP_Loaded) {
     // 🔥 按需加载设置模块
     async function loadSettingsModule() {
         if (!SettingsApp) {
-            const module = await import(`./apps/settings/settings-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}-20261107-colors`);
+            const module = await import(`./apps/settings/settings-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}-20261108-original-background`);
             SettingsApp = module.SettingsApp;
         }
         return SettingsApp;
@@ -11487,7 +11487,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '微信模块加载失败', '❌');
                         });
                 } else if (appId === 'diary') {
-                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261108-full-background-fill`)
+                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261108-original-background`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.diaryApp) {

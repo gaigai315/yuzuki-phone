@@ -415,14 +415,35 @@ export class ImageUploadManager {
     // ========================================
     // 📤 上传接口
     // ========================================
+    _validateImageFile(file) {
+        const fileName = String(file?.name || '').trim();
+        const fileType = String(file?.type || '').trim().toLowerCase();
+        if (!file || !(fileType.startsWith('image/') || (!fileType && /\.(png|jpe?g|gif|webp|svg|bmp|avif|heic|heif)$/i.test(fileName)))) {
+            throw new Error('请选择图片文件');
+        }
+        if (/(?:heic|heif)$/i.test(fileName) || /heic|heif/i.test(fileType)) {
+            throw new Error('当前浏览器通常无法直接读取 HEIC/HEIF 图片，请先在相册中导出或转换为 JPG/PNG 后再上传');
+        }
+        if (file.size > 20 * 1024 * 1024) throw new Error('图片大小不能超过20MB');
+        return { fileName, fileType };
+    }
+
+    async uploadOriginalImage(file, prefix, options = {}) {
+        const { fileName, fileType } = this._validateImageFile(file);
+        const mimeByExtension = {
+            png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+            webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', avif: 'image/avif'
+        };
+        // 某些移动端文件选择器不提供 MIME；补全类型但不改变文件字节。
+        const original = fileType ? file : file.slice(0, file.size, mimeByExtension[fileName.split('.').pop().toLowerCase()]);
+        return this.uploadBlob(original, prefix, options);
+    }
+
     async uploadWallpaper(file) {
-        return this.processImage(file, async (base64) => {
-            await this.deleteManagedBackgroundByPath(this.cache.wallpaper, { quiet: true });
-            const serverUrl = await this._uploadToServer(base64, 'wallpaper', { allowBase64Fallback: false });
-            this.cache.wallpaper = serverUrl;
-            await this._saveCache();
-            return serverUrl;
-        });
+        const serverUrl = await this.uploadOriginalImage(file, 'wallpaper');
+        this.cache.wallpaper = serverUrl;
+        await this._saveCache();
+        return serverUrl;
     }
 
     async uploadAppIcon(appId, file) {
@@ -447,18 +468,10 @@ export class ImageUploadManager {
 
     async processImage(file, callback) {
         return new Promise((resolve, reject) => {
-            const fileName = String(file?.name || '').trim();
-            const fileType = String(file?.type || '').trim().toLowerCase();
-            const isLikelyImage = !!file && (fileType.startsWith('image/') || (!fileType && /\.(png|jpe?g|gif|webp|svg|bmp|avif|heic|heif)$/i.test(fileName)));
-            if (!isLikelyImage) {
-                return reject(new Error('请选择图片文件'));
-            }
-            if (/(?:heic|heif)$/i.test(fileName) || /heic|heif/i.test(fileType)) {
-                return reject(new Error('当前浏览器通常无法直接读取 HEIC/HEIF 图片，请先在相册中导出或转换为 JPG/PNG 后再上传'));
-            }
-            const maxFileSize = 20 * 1024 * 1024;
-            if (file.size > maxFileSize) {
-                return reject(new Error('图片大小不能超过20MB'));
+            try {
+                this._validateImageFile(file);
+            } catch (error) {
+                return reject(error);
             }
 
             const reader = new FileReader();
