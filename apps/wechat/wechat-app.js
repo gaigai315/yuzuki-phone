@@ -13,7 +13,8 @@
 import { ChatView } from './chat-view.js?v=20261027-contact-tag-aliases';
 import { ContactsView } from './contacts-view.js?v=20261027-offline-friend-visibility';
 import { MomentsView } from './moments-view.js?v=20261021-user-real-name';
-import { WechatData } from './wechat-data.js?v=20261027-offline-friend-visibility';
+import { WechatData } from './wechat-data.js?v=20261108-user-avatar';
+import { normalizeWechatUserAvatar } from './user-avatar.js';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
@@ -6452,6 +6453,19 @@ export class WechatApp {
         this._clearMissingWechatAvatarPath(normalizedPath);
     }
 
+    handleWechatUserAvatarImageError(img) {
+        if (!img) return;
+        const failedAvatar = img.getAttribute('data-avatar-src') || img.getAttribute('src') || '';
+        this.wechatData.markUserAvatarFailed(failedAvatar);
+        const nextAvatar = this.wechatData.getUserAvatarCandidates()[0] || '';
+        if (nextAvatar) {
+            img.setAttribute('data-avatar-src', nextAvatar);
+            img.src = nextAvatar;
+        } else {
+            img.remove();
+        }
+    }
+
     _clearMissingWechatAvatarPath(pathLike = '') {
         const path = this._normalizeAvatarPathForLookup(pathLike);
         if (!path) return false;
@@ -6531,6 +6545,14 @@ export class WechatApp {
 
         const initialHtml = `<div style="position:relative;width:100%;height:100%;background:#fff;color:#000;border:none;outline:none;box-shadow:none;"><span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);line-height:1;white-space:nowrap;">${escapeHtml(initial)}</span></div>`;
         const imageStyle = 'display:block;width:100%;height:100%;object-fit:cover;border:none;outline:none;box-shadow:none;border-radius:inherit;';
+
+        if (defaultEmoji === '😊') {
+            const userAvatar = normalizeWechatUserAvatar(avatarStr);
+            if (!userAvatar) return initialHtml;
+            // 只更新这张图片；网络错误不删除用户上传记录，也不重绘含输入框的页面。
+            const errorHandler = 'window.VirtualPhone?.wechatApp?.handleWechatUserAvatarImageError?.(this)';
+            return `<span style="display:block;position:relative;width:100%;height:100%;">${initialHtml}<img src="${escapeAttr(userAvatar)}" data-avatar-src="${escapeAttr(userAvatar)}" style="${imageStyle};position:absolute;inset:0;" onerror="${errorHandler}"></span>`;
+        }
 
         let autoAvatar = '';
         if (this._shouldApplyContactPoolAvatar(defaultEmoji, fallbackName)) {

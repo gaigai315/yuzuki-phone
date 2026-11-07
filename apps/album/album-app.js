@@ -6,8 +6,8 @@
  * ======================================================== */
 
 import { AlbumData } from './album-data.js?v=1.4.4&r=20261021-album-lazy-folds';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261021-album-lazy-folds';
-import { StoryImageOverlay } from './story-image-overlay.js?v=20261104-duang-integration';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261107-cancel-story-tags';
+import { StoryImageOverlay } from './story-image-overlay.js?v=20261107-cancel-story-tags';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 
 export class AlbumApp {
@@ -17,6 +17,7 @@ export class AlbumApp {
         this._cssRenderPending = false;
         this._cssReadyPromise = null;
         this.storyTagBusyFloors = new Set();
+        this.storyTagAbortControllers = new Map();
         this.storyImageBusyFloors = new Set();
 
         this._preloadCSS();
@@ -155,6 +156,19 @@ export class AlbumApp {
 
     isStoryTagBusy(floor) {
         return this.storyTagBusyFloors.has(Number(floor));
+    }
+
+    isStoryTagStopping(floor) {
+        return this.storyTagAbortControllers.get(Number(floor))?.signal?.aborted === true;
+    }
+
+    cancelStoryTagGeneration(floor) {
+        const targetFloor = Number(floor);
+        const controller = this.storyTagAbortControllers.get(targetFloor);
+        if (!controller || controller.signal.aborted) return false;
+        controller.abort();
+        this._refreshStoryImageSurface();
+        return true;
     }
 
     isStoryImageBusy(floor) {
@@ -641,21 +655,30 @@ export class AlbumApp {
             return { success: false, reason: 'api-unavailable' };
         }
 
+        const controller = new AbortController();
+        const externalSignal = options.signal;
+        const forwardExternalAbort = () => controller.abort();
+        if (externalSignal?.aborted) controller.abort();
+        else externalSignal?.addEventListener?.('abort', forwardExternalAbort, { once: true });
+        const operationOptions = { ...options, signal: controller.signal };
+
+        this.storyTagAbortControllers.set(targetFloor, controller);
         this.storyTagBusyFloors.add(targetFloor);
         this._refreshStoryImageSurface();
         try {
-            this._assertStoryOperationCurrent(targetFloor, source.message, options);
+            this._assertStoryOperationCurrent(targetFloor, source.message, operationOptions);
             const messages = await this._buildStoryTagMessages(source, targetFloor);
+            this._assertStoryOperationCurrent(targetFloor, source.message, operationOptions);
             const result = await apiManager.callAI(messages, {
                 appId: 'story',
                 max_tokens: 520,
-                signal: options.signal
+                signal: controller.signal
             });
-            if (result?.aborted || options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+            if (result?.aborted || controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
             if (result?.success === false) throw new Error(result?.error || '小手机 API 未能生成 TAG');
             const tags = this._cleanStoryTags(result?.summary || result?.content || result?.text || '');
             if (!tags) throw new Error('小手机 API 返回的 TAG 为空');
-            this._assertStoryOperationCurrent(targetFloor, source.message, options);
+            this._assertStoryOperationCurrent(targetFloor, source.message, operationOptions);
             await this.albumData.setStoryFloorTags(targetFloor, tags, source.message);
             this.storyImageOverlay.clearTagDraft(targetFloor);
             this.storyImageOverlay.showTagBack(targetFloor);
@@ -664,7 +687,7 @@ export class AlbumApp {
             }
             return { success: true, floor: targetFloor, tags, message: source.message };
         } catch (error) {
-            const aborted = options.signal?.aborted === true || error?.name === 'AbortError';
+            const aborted = controller.signal.aborted === true || error?.name === 'AbortError';
             const stale = error?.code === 'STORY_FLOOR_STALE';
             if (aborted) return { success: false, reason: 'aborted', aborted: true, error };
             if (stale) return { success: false, reason: 'stale-floor', stale: true, error };
@@ -674,6 +697,10 @@ export class AlbumApp {
             }
             return { success: false, reason: 'request-failed', error };
         } finally {
+            externalSignal?.removeEventListener?.('abort', forwardExternalAbort);
+            if (this.storyTagAbortControllers.get(targetFloor) === controller) {
+                this.storyTagAbortControllers.delete(targetFloor);
+            }
             this.storyTagBusyFloors.delete(targetFloor);
             this._refreshStoryImageSurface();
         }

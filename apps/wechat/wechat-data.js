@@ -14,6 +14,7 @@ import { GlobalSocialStore } from '../../config/global-social-store.js';
 import { parseImagePromptDescriptionPair, readBalancedImagePromptGroup } from '../../config/image-prompt-format.js';
 import { parseWechatVoiceContent } from './voice-text.js';
 import { parseWechatFile } from './file-message.js';
+import { getTavernUserAvatarCandidates, isTavernPersonaAvatar, normalizeWechatUserAvatar } from './user-avatar.js';
 import {
     createWalletCreditBillingState,
     getWalletCreditBillingStatus,
@@ -1828,21 +1829,35 @@ export class WechatData {
     }
 
     _getSillyTavernPersonaAvatar() {
+        return this._getSillyTavernPersonaAvatarCandidates()[0] || '';
+    }
+
+    _getSillyTavernPersonaAvatarCandidates() {
         try {
-            // 根据酒馆的 DOM 结构，精准抓取当前选中的 Persona 头像
-            const selectedAvatarEl = document.querySelector('#user_avatar_block .avatar-container.selected img');
-            if (selectedAvatarEl && selectedAvatarEl.src) {
-                return selectedAvatarEl.src;
-            }
-            // 兜底抓取：部分酒馆主题的顶部快捷栏头像
-            const topBarAvatar = document.querySelector('#rm_button_panel_persona img');
-            if (topBarAvatar && topBarAvatar.src) {
-                return topBarAvatar.src;
-            }
+            return getTavernUserAvatarCandidates();
         } catch (e) {
             console.warn('[微信数据] 获取默认Persona头像失败:', e);
         }
-        return '';
+        return [];
+    }
+
+    getUserAvatarCandidates() {
+        const info = this.data.userInfo || {};
+        const storedAvatar = normalizeWechatUserAvatar(info.avatar);
+        // 无来源标记的旧 Persona 路径随酒馆更新；未知来源的上传图继续保留。
+        const customAvatar = info.avatarSource !== 'persona'
+            && (info.avatarSource === 'custom' || !isTavernPersonaAvatar(storedAvatar))
+            ? storedAvatar : '';
+        const candidates = [customAvatar, ...this._getSillyTavernPersonaAvatarCandidates()];
+        return [...new Set(candidates.filter(Boolean))]
+            .filter(avatar => !this._failedUserAvatarPaths?.has(avatar));
+    }
+
+    markUserAvatarFailed(avatar) {
+        const normalized = normalizeWechatUserAvatar(avatar);
+        if (!normalized) return;
+        this._failedUserAvatarPaths ??= new Set();
+        this._failedUserAvatarPaths.add(normalized);
     }
 
     getUserInfo() {
@@ -1856,15 +1871,9 @@ export class WechatData {
         const withGlobalBg = globalChatListBackground === (withGlobalChatBackground.chatListBackground || '')
             ? withGlobalChatBackground
             : { ...withGlobalChatBackground, chatListBackground: globalChatListBackground };
-        // 如果用户没有手动上传过自定义头像，则动态抓取酒馆默认的 Persona 头像
-        if (!withGlobalBg.avatar || withGlobalBg.avatar.trim() === '') {
-            const stAvatar = this._getSillyTavernPersonaAvatar();
-            if (stAvatar) {
-                // 返回一个包含了默认头像的拷贝，绝不污染原始数据库
-                return { ...withGlobalBg, avatar: stAvatar };
-            }
-        }
-        return withGlobalBg;
+        // 解析结果只用于显示，不将酒馆头像或网络失败状态写回用户存档。
+        const avatar = this.getUserAvatarCandidates()[0] || '';
+        return avatar === withGlobalBg.avatar ? withGlobalBg : { ...withGlobalBg, avatar };
     }
 
     _normalizeWalletTransactions(records = []) {
@@ -2572,6 +2581,11 @@ export class WechatData {
     
     updateUserInfo(info) {
         const updates = info && typeof info === 'object' ? { ...info } : {};
+        if (Object.prototype.hasOwnProperty.call(updates, 'avatar')) {
+            updates.avatar = normalizeWechatUserAvatar(updates.avatar);
+            updates.avatarSource = updates.avatar ? 'custom' : 'persona';
+            this._failedUserAvatarPaths?.delete(updates.avatar);
+        }
         if (Object.prototype.hasOwnProperty.call(updates, 'realName')) {
             updates.realName = String(updates.realName || '').trim();
         }

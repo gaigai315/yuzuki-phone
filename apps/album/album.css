@@ -1763,6 +1763,17 @@
     box-shadow: 0 3px 10px rgba(82, 71, 57, 0.08) !important;
 }
 
+#phone-story-image-overlay-root .phone-story-image-action.is-tag.is-cancel {
+    color: #a34b4b !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-action.is-tag.is-cancel .phone-story-image-action-icon {
+    border-color: #d9a4a4 !important;
+    background: #fff5f5 !important;
+    color: #b34f4f !important;
+    box-shadow: 0 3px 10px rgba(136, 55, 55, 0.12) !important;
+}
+
 #phone-story-image-overlay-root .phone-story-image-action.is-image .phone-story-image-action-icon {
     border: 1px solid #d8b24e !important;
     background: #caa13a !important;

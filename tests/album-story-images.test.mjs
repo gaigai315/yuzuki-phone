@@ -478,6 +478,10 @@ test('floating double-click opens the standalone story image card without openin
     assert.match(overlaySource, /getCurrentStoryImageProvider/);
     assert.match(overlaySource, /currentProvider[\s\S]*floor\.provider/);
     assert.match(overlaySource, /生成 Tags/);
+    assert.match(overlaySource, /停止生成 Tags/);
+    assert.match(overlaySource, /cancelStoryTagGeneration\(floor\.floor\)/);
+    assert.match(appSource, /storyTagAbortControllers = new Map\(\)/);
+    assert.match(cssSource, /\.phone-story-image-action\.is-tag\.is-cancel/);
     assert.match(overlaySource, /fa-pencil/);
     assert.match(overlaySource, /phone-story-image-flip/);
     assert.match(overlaySource, /fa-rotate/);
@@ -1062,6 +1066,70 @@ test('story tag generation uses the phone LLM API and stores returned tags', asy
         else globalThis.window = originalWindow;
         if (originalDocument === undefined) delete globalThis.document;
         else globalThis.document = originalDocument;
+    }
+});
+
+test('story tag generation can be cancelled without saving returned tags', async () => {
+    const { AlbumApp } = await import('../apps/album/album-app.js');
+    const app = Object.create(AlbumApp.prototype);
+    const message = { is_user: false, mes: 'A rainy scene.', extra: {} };
+    let requestSignal = null;
+    let saveCount = 0;
+
+    app.storyTagBusyFloors = new Set();
+    app.storyTagAbortControllers = new Map();
+    app.storyImageBusyFloors = new Set();
+    app.storyImageOverlay = {
+        clearTagDraft() {},
+        showTagBack() {},
+        refresh() {}
+    };
+    app.albumData = {
+        getStoryTagSource: () => ({
+            floor: 7,
+            message,
+            messageText: 'A rainy scene.',
+            previousUserText: '',
+            userName: 'User',
+            characterName: 'Character'
+        }),
+        getStoryFloor: () => ({ floor: 7, message }),
+        async setStoryFloorTags() { saveCount += 1; }
+    };
+    app._buildStoryTagMessages = async () => [{ role: 'user', content: 'Generate tags.' }];
+
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+        VirtualPhone: {
+            apiManager: {
+                callAI(_messages, options) {
+                    requestSignal = options.signal;
+                    return new Promise(resolve => {
+                        options.signal.addEventListener('abort', () => {
+                            resolve({ success: true, summary: 'rain, window' });
+                        }, { once: true });
+                    });
+                }
+            }
+        }
+    };
+
+    try {
+        const pending = app.generateStoryTags(7);
+        await Promise.resolve();
+        assert.equal(app.isStoryTagBusy(7), true);
+        assert.equal(app.cancelStoryTagGeneration(7), true);
+        assert.equal(requestSignal?.aborted, true);
+
+        const result = await pending;
+        assert.equal(result.success, false);
+        assert.equal(result.aborted, true);
+        assert.equal(saveCount, 0);
+        assert.equal(app.isStoryTagBusy(7), false);
+        assert.equal(app.storyTagAbortControllers.has(7), false);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
     }
 });
 

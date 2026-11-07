@@ -12,8 +12,12 @@ test('current version publishes the 1.6.7 update notices', () => {
     assert.equal(manifest.version, '1.6.7');
     assert.match(indexSource, /const ST_PHONE_VERSION = '1\.6\.7';/);
     assert.deepEqual(Object.keys(updateLog.versions), ['1.6.7']);
-    assert.equal(current.date, '2026-11-06');
+    assert.equal(current.date, '2026-11-08');
     assert.deepEqual(current.items, [
+        '【修复】兼容 TT“开始新的聊天”确认流程，修复从旧聊天开始新聊天时微信等手机数据未继承的问题，并保留取消操作与跨角色隔离保护。',
+        '【修复】微信用户头像优先读取酒馆当前 Persona，兼容旧存档无效头像与移动端资源路径；保留手动上传头像，图片加载失败时自动回退且不删除原存档。',
+        '【新增】正文生图生成 Tags 时支持点击“停止生成 Tags”中断请求；中断后的结果不会保存，也不会继续自动生成图片。',
+        '【优化】日记新增独立纸张色与墨水色设置，提示词面板、照片背面及照片显影状态会同步主题配色，并优化阅读与长图导出的样式表现。',
         '【新增】微信转发聊天记录功能。',
         '【新增】微信文件发送功能，支持填写标题与文字内容、点击文件卡片查看全文，并同步支持线上及正文中的角色文件消息。',
         '【修复】适配 TT 新版文件下载接口，修复正文生图、相册预览及批量下载提示“TT 原生下载模块不可用”的问题；取消保存不再误报成功，批量下载会停止后续操作。',
@@ -44,7 +48,7 @@ test('fallback announcement matches the current update log', () => {
     assert.ok(start >= 0 && end > start, 'fallback update block should exist');
 
     const block = indexSource.slice(start, end);
-    assert.match(block, /date: '2026-11-06'/);
+    assert.match(block, /date: '2026-11-08'/);
     for (const item of updateLog.versions[manifest.version].items) {
         assert.ok(block.includes(item), 'fallback should include each current announcement item');
     }

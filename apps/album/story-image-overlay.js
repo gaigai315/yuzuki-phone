@@ -220,9 +220,10 @@ export class StoryImageOverlay {
         const tags = floor ? this.getTagDraft(floor.floor, floor.tags) : '';
         const hasTags = !!String(tags || '').trim();
         const tagBusy = floor ? this.app.isStoryTagBusy(floor.floor) : false;
+        const tagStopping = floor ? this.app.isStoryTagStopping?.(floor.floor) === true : false;
         const imageBusy = floor ? this.app.isStoryImageBusy(floor.floor) : false;
         const anyBusy = tagBusy || imageBusy;
-        const tagGenerationDisabled = anyBusy || floor?.promptExcluded === true;
+        const tagGenerationDisabled = imageBusy || (!tagBusy && floor?.promptExcluded === true);
         const showTagBack = floor && this.tagBackFloors.has(floor.floor);
         const editingTags = !!floor && !anyBusy && this.editingTagFloors.has(floor.floor);
         const currentProvider = floor
@@ -317,11 +318,11 @@ export class StoryImageOverlay {
                             </button>
                         </div>
                         <div class="phone-story-image-actions">
-                            <button type="button" class="phone-story-image-action is-tag" ${tagGenerationDisabled ? 'disabled' : ''} ${floor.promptExcluded ? 'title="该楼层已从提示词中排除"' : ''}>
+                            <button type="button" class="phone-story-image-action is-tag${tagBusy ? ' is-cancel' : ''}" ${tagGenerationDisabled ? 'disabled' : ''} ${tagBusy ? `aria-label="${tagStopping ? '正在停止 Tags 生成' : '停止生成 Tags'}" title="${tagStopping ? '正在停止' : '点击中断 Tags 生成'}"` : (floor.promptExcluded ? 'title="该楼层已从提示词中排除"' : '')}>
                                 <span class="phone-story-image-action-icon">
-                                    <i class="fa-solid ${tagBusy ? 'fa-spinner fa-spin' : 'fa-pencil'}" aria-hidden="true"></i>
+                                    <i class="fa-solid ${tagBusy ? 'fa-stop' : 'fa-pencil'}" aria-hidden="true"></i>
                                 </span>
-                                <span>${tagBusy ? '正在生成 Tags' : '生成 Tags'}</span>
+                                <span>${tagBusy ? (tagStopping ? '正在停止' : '停止生成 Tags') : '生成 Tags'}</span>
                             </button>
                             <button type="button" class="phone-story-image-action is-image" ${anyBusy || !hasTags ? 'disabled' : ''}>
                                 <span class="phone-story-image-action-icon">
@@ -592,6 +593,10 @@ export class StoryImageOverlay {
             setEditingState(false);
         });
         root.querySelector('.phone-story-image-action.is-tag')?.addEventListener('click', async () => {
+            if (this.app.isStoryTagBusy(floor.floor)) {
+                this.app.cancelStoryTagGeneration(floor.floor);
+                return;
+            }
             this.editingTagFloors.delete(floor.floor);
             const tagsResult = await this.app.generateStoryTags(floor.floor, {
                 expectedMessage: floor.message
