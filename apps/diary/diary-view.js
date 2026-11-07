@@ -41,7 +41,7 @@ export class DiaryView {
         const link = document.createElement('link');
         link.id = 'diary-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./diary.css?v=1.0.0&r=20261107-diary-developing', import.meta.url).href;
+        link.href = new URL('./diary.css?v=1.0.0&r=20261108-full-background-fill', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
     }
@@ -88,7 +88,7 @@ export class DiaryView {
         const data = this.app.diaryData;
         const entries = data.getEntries();
         const coverBg = data.getCoverBg();
-        const bgStyle = coverBg ? `background-image: url('${coverBg}'); background-size: cover; background-position: center;` : '';
+        const bgStyle = coverBg ? `background-image: url('${coverBg}'); background-size: 100% 100%; background-position: center; background-repeat: no-repeat;` : '';
         const showText = !coverBg;
         const html = `
             <div class="diary-app" style="${this._appearanceStyle()}">
@@ -132,7 +132,7 @@ export class DiaryView {
         const entries = data.getEntries();
         const sorted = this._sortEntries(entries);
         const tocBg = data.getTocBg();
-        const bgStyle = tocBg ? `background-image: url('${tocBg}'); background-size: cover; background-position: center;` : '';
+        const bgStyle = tocBg ? `background-image: url('${tocBg}'); background-size: 100% 100%; background-position: center; background-repeat: no-repeat;` : '';
         const enterClass = this.isBackNav ? '' : 'diary-view-enter';
 
         let listHtml;
@@ -946,7 +946,7 @@ export class DiaryView {
 
                         <div class="diary-s-section">
                             <div class="diary-s-section-title">封面与目录背景</div>
-                            <div class="diary-s-desc">上传封面或目录背景图；日记正文背景由上方颜色控制。</div>
+                            <div class="diary-s-desc">封面与目录背景保留完整图片，随页面宽高铺满；比例不同时会有拉伸。日记正文背景由上方颜色控制。</div>
                             <div class="diary-s-btn-row diary-background-upload-row">
                                 <label class="diary-s-btn diary-s-btn-primary" for="diary-bg-cover">📔 封面</label>
                                 <input type="file" id="diary-bg-cover" accept="image/png, image/jpeg, image/gif, image/webp, image/*" hidden>
@@ -1754,22 +1754,8 @@ export class DiaryView {
 
     async _processImage(file) {
         try {
-            try {
-                const { ImageCropper } = await import('../settings/image-cropper.js');
-                const exportFormat = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-                const cropper = new ImageCropper({
-                    title: '裁剪背景图片',
-                    outputWidth: 600,
-                    outputHeight: 1050,
-                    outputFormat: exportFormat,
-                    quality: exportFormat === 'image/png' ? undefined : 0.6,
-                    maxFileSize: 5 * 1024 * 1024
-                });
-                return await cropper.open(file);
-            } catch (cropError) {
-                if (cropError?.message === '用户取消') return null;
-                return await this._compressImage(file);
-            }
+            // 仅等比缩小整张图片；封面和目录不使用固定比例裁剪器。
+            return await this._compressImage(file);
         } catch (error) {
             console.error('[DiaryView] 背景图片处理失败:', error);
             this.app.phoneShell.showNotification?.('图片处理失败', error?.message || '请重试', '⚠️');
