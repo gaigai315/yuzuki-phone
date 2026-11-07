@@ -1833,6 +1833,16 @@
     margin-bottom: 10px;
 }
 
+#phone-panel-content .phone-screen .diary-app .diary-background-upload-row {
+    justify-content: flex-start;
+    margin-top: 8px;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-background-reset {
+    width: 100%;
+    margin-top: 8px;
+}
+
 #phone-panel-content .phone-screen .diary-app .diary-settings-view {
     background: var(--diary-paper-color);
     backdrop-filter: none;

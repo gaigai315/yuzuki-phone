@@ -95,6 +95,70 @@ export class DiaryData {
         return readDiaryAppearance(this.storage);
     }
 
+    async _uploadImageToServer(base64, type) {
+        if (!base64 || !base64.startsWith('data:image')) return base64;
+        try {
+            const uploadedUrl = await window.VirtualPhone?.imageManager?.uploadDataUrl?.(base64, `diary_${type}`);
+            if (!uploadedUrl) throw new Error('图片上传管理器未初始化');
+            return uploadedUrl;
+        } catch (error) {
+            console.error('[Diary] 上传背景图片失败:', error);
+            throw error instanceof Error ? error : new Error('上传失败');
+        }
+    }
+
+    _getLegacyBackground(key) {
+        try {
+            return localStorage.getItem(key) || null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    getCoverBg() {
+        return this.storage.get('global_diary_bg_cover') || this._getLegacyBackground('diary_shared_bg_cover');
+    }
+
+    async setCoverBg(base64) {
+        const oldUrl = String(this.getCoverBg() || '').trim();
+        const nextUrl = base64 ? await this._uploadImageToServer(base64, 'cover') : '';
+        if (nextUrl) await this.storage.set('global_diary_bg_cover', nextUrl);
+        else await this.storage.remove('global_diary_bg_cover');
+        this._cleanupReplacedDiaryImage(oldUrl, nextUrl);
+    }
+
+    getTocBg() {
+        return this.storage.get('global_diary_bg_toc') || this._getLegacyBackground('diary_shared_bg_toc');
+    }
+
+    async setTocBg(base64) {
+        const oldUrl = String(this.getTocBg() || '').trim();
+        const nextUrl = base64 ? await this._uploadImageToServer(base64, 'toc') : '';
+        if (nextUrl) await this.storage.set('global_diary_bg_toc', nextUrl);
+        else await this.storage.remove('global_diary_bg_toc');
+        this._cleanupReplacedDiaryImage(oldUrl, nextUrl);
+    }
+
+    async resetDefaultBackgrounds() {
+        const backgrounds = [
+            ['global_diary_bg_cover', 'diary_shared_bg_cover'],
+            ['global_diary_bg_toc', 'diary_shared_bg_toc']
+        ];
+        const managedImages = [];
+        for (const [storageKey, legacyKey] of backgrounds) {
+            managedImages.push(this.storage.get(storageKey), this._getLegacyBackground(legacyKey));
+            await this.storage.remove(storageKey);
+            try { localStorage.removeItem(legacyKey); } catch (error) { }
+        }
+        const cleanupPaths = [...new Set(managedImages
+            .map(path => this._normalizeManagedDiaryImagePath(path))
+            .filter(Boolean))];
+        return {
+            cleanupCount: cleanupPaths.length,
+            cleanup: () => this._cleanupManagedDiaryImages(cleanupPaths)
+        };
+    }
+
     // 旧背景仅保留路径用于删除日记时回收文件，不再渲染或上传背景。
     getPageBg(entryId) {
         return this.getSettings()[`bg_${entryId}`] || null;

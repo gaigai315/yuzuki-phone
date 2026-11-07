@@ -44,3 +44,38 @@ test('diary prompt folds and photo backs use the selected paper and ink variable
     assert.match(view, /phone-prompt-fold-title">📔 日记提示词<\/div>/);
     assert.doesNotMatch(view, /日记生成提示词/);
 });
+
+test('diary keeps cover and table-of-contents uploads while omitting page background uploads', async () => {
+    const saved = new Map();
+    const storage = {
+        get: key => saved.get(key),
+        set: async (key, value) => saved.set(key, value),
+        remove: async key => saved.delete(key)
+    };
+    const previousWindow = globalThis.window;
+    const previousLocalStorage = globalThis.localStorage;
+    globalThis.window = {};
+    globalThis.localStorage = { getItem: () => null, removeItem() {} };
+    try {
+        const data = new DiaryData(storage);
+        await data.setCoverBg('/backgrounds/phone_diary_cover_test.png');
+        await data.setTocBg('/backgrounds/phone_diary_toc_test.png');
+        assert.equal(data.getCoverBg(), '/backgrounds/phone_diary_cover_test.png');
+        assert.equal(data.getTocBg(), '/backgrounds/phone_diary_toc_test.png');
+        await data.resetDefaultBackgrounds();
+        assert.equal(data.getCoverBg(), null);
+        assert.equal(data.getTocBg(), null);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+        if (previousLocalStorage === undefined) delete globalThis.localStorage;
+        else globalThis.localStorage = previousLocalStorage;
+    }
+
+    const view = fs.readFileSync(new URL('../apps/diary/diary-view.js', import.meta.url), 'utf8');
+    assert.match(view, /id="diary-bg-cover"/);
+    assert.match(view, /id="diary-bg-toc"/);
+    assert.doesNotMatch(view, /id="diary-bg-global"/);
+    assert.match(view, /const coverBg = data\.getCoverBg\(\)/);
+    assert.match(view, /const tocBg = data\.getTocBg\(\)/);
+});

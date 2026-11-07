@@ -41,7 +41,7 @@ export class DiaryView {
         const link = document.createElement('link');
         link.id = 'diary-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./diary.css?v=1.0.0&r=20261107-diary-colors-3', import.meta.url).href;
+        link.href = new URL('./diary.css?v=1.0.0&r=20261107-diary-backgrounds', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
     }
@@ -87,13 +87,18 @@ export class DiaryView {
     renderCover() {
         const data = this.app.diaryData;
         const entries = data.getEntries();
+        const coverBg = data.getCoverBg();
+        const bgStyle = coverBg ? `background-image: url('${coverBg}'); background-size: cover; background-position: center;` : '';
+        const showText = !coverBg;
         const html = `
             <div class="diary-app" style="${this._appearanceStyle()}">
-                <div class="diary-cover" id="diary-cover">
+                <div class="diary-cover" id="diary-cover" style="${bgStyle}">
+                    ${showText ? `
                         <div class="diary-cover-decoration"></div>
                         <div class="diary-cover-title">我 的 日 记</div>
                         <div class="diary-cover-subtitle">${entries.length > 0 ? `共 ${entries.length} 篇` : '尚无记录'}</div>
                         <div class="diary-cover-decoration"></div>
+                    ` : ''}
                     <div class="diary-clasp" id="diary-clasp">
                         <div class="diary-clasp-strap"></div>
                     </div>
@@ -126,6 +131,8 @@ export class DiaryView {
         const data = this.app.diaryData;
         const entries = data.getEntries();
         const sorted = this._sortEntries(entries);
+        const tocBg = data.getTocBg();
+        const bgStyle = tocBg ? `background-image: url('${tocBg}'); background-size: cover; background-position: center;` : '';
         const enterClass = this.isBackNav ? '' : 'diary-view-enter';
 
         let listHtml;
@@ -196,7 +203,7 @@ export class DiaryView {
 
         const html = `
             <div class="diary-app" style="${this._appearanceStyle()}">
-                <div class="diary-toc ${enterClass}">
+                <div class="diary-toc ${enterClass}" style="${bgStyle}">
                     <div class="diary-toc-header">
                         <div class="diary-toc-actions">
                             ${deleteSelectedBtn}
@@ -935,6 +942,20 @@ export class DiaryView {
                             <button type="button" class="diary-s-btn" id="diary-colors-reset">恢复默认配色</button>
                         </div>
 
+                        <div class="diary-s-section">
+                            <div class="diary-s-section-title">封面与目录背景</div>
+                            <div class="diary-s-desc">上传封面或目录背景图；日记正文背景由上方颜色控制。</div>
+                            <div class="diary-s-btn-row diary-background-upload-row">
+                                <label class="diary-s-btn diary-s-btn-primary" for="diary-bg-cover">📔 封面</label>
+                                <input type="file" id="diary-bg-cover" accept="image/png, image/jpeg, image/gif, image/webp, image/*" hidden>
+                                <label class="diary-s-btn diary-s-btn-primary" for="diary-bg-toc">📋 目录</label>
+                                <input type="file" id="diary-bg-toc" accept="image/png, image/jpeg, image/gif, image/webp, image/*" hidden>
+                            </div>
+                            <button type="button" class="diary-s-btn diary-s-btn-warn diary-background-reset" id="diary-bg-reset-default">
+                                恢复默认封面与目录背景
+                            </button>
+                        </div>
+
                         <!-- 手动生成日记 -->
                         <div class="diary-s-section">
                             <div class="diary-s-section-title">手动生成日记</div>
@@ -1101,6 +1122,41 @@ export class DiaryView {
                 trigger.querySelector('.yzp-frame-color-control-swatch')?.style.setProperty('--yzp-frame-control-color', color);
                 trigger.querySelector('.yzp-frame-color-control-value').textContent = color;
                 previewColor(color, trigger.dataset.colorPreviewKind);
+            }
+        });
+
+        const bindBackgroundUpload = (inputId, setter, successMessage) => {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            input.onchange = async event => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (!file) return;
+                const base64 = await this._processImage(file);
+                if (!base64) return;
+                try {
+                    await setter(base64);
+                    this.app.phoneShell.showNotification?.('上传成功', successMessage, '✅');
+                } catch (error) {
+                    this.app.phoneShell.showNotification?.('上传失败', error?.message || '请重试', '⚠️');
+                }
+            };
+        };
+        bindBackgroundUpload('diary-bg-cover', value => data.setCoverBg(value), '封面背景已更新');
+        bindBackgroundUpload('diary-bg-toc', value => data.setTocBg(value), '目录背景已更新');
+
+        document.getElementById('diary-bg-reset-default')?.addEventListener('click', async event => {
+            const button = event.currentTarget;
+            if (!confirm('确定恢复默认封面与目录背景，并清理对应的上传文件吗？')) return;
+            button.disabled = true;
+            try {
+                const result = await data.resetDefaultBackgrounds();
+                result?.cleanup?.();
+                this.app.phoneShell.showNotification?.('已恢复', '封面与目录已恢复默认背景', '✅');
+            } catch (error) {
+                this.app.phoneShell.showNotification?.('恢复失败', error?.message || '请重试', '⚠️');
+            } finally {
+                button.disabled = false;
             }
         });
 
@@ -1693,6 +1749,59 @@ export class DiaryView {
     }
 
     // ==================== 图片处理与杂项 ====================
+
+    async _processImage(file) {
+        try {
+            try {
+                const { ImageCropper } = await import('../settings/image-cropper.js');
+                const exportFormat = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+                const cropper = new ImageCropper({
+                    title: '裁剪背景图片',
+                    outputWidth: 600,
+                    outputHeight: 1050,
+                    outputFormat: exportFormat,
+                    quality: exportFormat === 'image/png' ? undefined : 0.6,
+                    maxFileSize: 5 * 1024 * 1024
+                });
+                return await cropper.open(file);
+            } catch (cropError) {
+                if (cropError?.message === '用户取消') return null;
+                return await this._compressImage(file);
+            }
+        } catch (error) {
+            console.error('[DiaryView] 背景图片处理失败:', error);
+            this.app.phoneShell.showNotification?.('图片处理失败', error?.message || '请重试', '⚠️');
+            return null;
+        }
+    }
+
+    _compressImage(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = event => {
+                const image = new Image();
+                image.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const scale = Math.min(1, 600 / image.width);
+                    canvas.width = Math.max(1, Math.round(image.width * scale));
+                    canvas.height = Math.max(1, Math.round(image.height * scale));
+                    const context = canvas.getContext('2d');
+                    if (!context) {
+                        reject(new Error('当前浏览器无法处理图片'));
+                        return;
+                    }
+                    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                    const exportFormat = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+                    resolve(canvas.toDataURL(exportFormat, exportFormat === 'image/png' ? undefined : 0.6));
+                    canvas.width = canvas.height = 0;
+                };
+                image.onerror = () => reject(new Error('无法读取图片'));
+                image.src = event.target.result;
+            };
+            reader.onerror = () => reject(new Error('无法读取图片'));
+            reader.readAsDataURL(file);
+        });
+    }
 
     _getPromptManager() {
         const pm = window.VirtualPhone?.promptManager;
