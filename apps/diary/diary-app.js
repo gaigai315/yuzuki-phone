@@ -14,7 +14,7 @@
 // ========================================
 
 import { DiaryData } from './diary-data.js?v=20261107-diary-colors-2';
-import { DiaryView } from './diary-view.js?r=20261107-diary-colors-2';
+import { DiaryView } from './diary-view.js?r=20261107-diary-colors-3';
 
 export class DiaryApp {
     constructor(phoneShell, storage) {

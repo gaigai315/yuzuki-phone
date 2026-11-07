@@ -1010,9 +1010,9 @@
     opacity: 0;
     padding: 14px 12px;
     overflow-y: auto;
-    background: #f8f0df;
-    border: 1px solid rgba(110, 92, 68, 0.18);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+    background: var(--diary-paper-color);
+    border: 1px solid color-mix(in srgb, var(--diary-text-primary) 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--diary-text-primary) 10%, transparent);
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
     overscroll-behavior: contain;
@@ -1859,6 +1859,39 @@
 #phone-panel-content .phone-screen .diary-app .diary-photo-card {
     background: var(--diary-paper-color);
     border-color: var(--diary-paper-color);
+}
+
+#phone-panel-content .phone-screen .diary-app .phone-prompt-fold,
+#phone-panel-content .phone-screen .diary-app .phone-prompt-fold-header,
+#phone-panel-content .phone-screen .diary-app .phone-prompt-fold-content {
+    background: var(--diary-paper-color) !important;
+    color: var(--diary-text-primary) !important;
+    border-color: color-mix(in srgb, var(--diary-text-primary) 24%, transparent) !important;
+    box-shadow: none !important;
+}
+
+#phone-panel-content .phone-screen .diary-app :is(
+    .phone-prompt-fold-title, .phone-prompt-fold-arrow,
+    .phone-worldbook-source-name, .phone-worldbook-source-meta,
+    .phone-worldbook-search-result, .phone-worldbook-status
+) {
+    color: var(--diary-text-primary) !important;
+    -webkit-text-fill-color: var(--diary-text-primary) !important;
+}
+
+#phone-panel-content .phone-screen .diary-app :is(
+    .phone-worldbook-search, .phone-worldbook-entry-trigger,
+    .phone-prompt-preset-select
+) {
+    background: var(--diary-paper-color) !important;
+    color: var(--diary-text-primary) !important;
+    -webkit-text-fill-color: var(--diary-text-primary) !important;
+    border-color: color-mix(in srgb, var(--diary-text-primary) 28%, transparent) !important;
+    box-shadow: none !important;
+}
+
+#phone-panel-content .phone-screen .diary-app .phone-worldbook-source-row {
+    border-color: color-mix(in srgb, var(--diary-text-primary) 18%, transparent) !important;
 }
 
 #phone-panel-content .phone-screen .diary-app .diary-bujo-nav-btn,

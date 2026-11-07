@@ -4,6 +4,7 @@ import { DiaryData } from '../apps/diary/diary-data.js';
 import { PhoneStorage } from '../config/storage.js';
 import { DIARY_TEXT_COLOR_KEY, DIARY_PAPER_COLOR_KEY } from '../apps/diary/diary-theme.js';
 import { parsePhoneHexColor, phoneHexToRgb, phoneRgbToHsv, phoneHsvToRgb, phoneRgbToHex } from '../config/phone-colors.js';
+import fs from 'node:fs';
 
 test('diary colors ignore phone text and old background images, and restore saved appearance', () => {
     const saved = new Map([
@@ -32,4 +33,14 @@ test('shared picker color conversions preserve black, white, gray and hue bounda
     }
     assert.equal(parsePhoneHexColor('abc'), '#AABBCC');
     assert.equal(parsePhoneHexColor('invalid'), null);
+});
+
+test('diary prompt folds and photo backs use the selected paper and ink variables', () => {
+    const css = fs.readFileSync(new URL('../apps/diary/diary.css', import.meta.url), 'utf8');
+    const view = fs.readFileSync(new URL('../apps/diary/diary-view.js', import.meta.url), 'utf8');
+    assert.match(css, /\.diary-photo-back\s*\{[\s\S]*?background:\s*var\(--diary-paper-color\)/);
+    assert.match(css, /\.diary-app \.phone-prompt-fold,[\s\S]*?background:\s*var\(--diary-paper-color\) !important/);
+    assert.match(css, /\.phone-worldbook-search,[\s\S]*?\.phone-prompt-preset-select[\s\S]*?background:\s*var\(--diary-paper-color\) !important/);
+    assert.match(view, /phone-prompt-fold-title">📔 日记提示词<\/div>/);
+    assert.doesNotMatch(view, /日记生成提示词/);
 });

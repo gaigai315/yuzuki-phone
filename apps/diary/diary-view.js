@@ -41,7 +41,7 @@ export class DiaryView {
         const link = document.createElement('link');
         link.id = 'diary-css';
         link.rel = 'stylesheet';
-        link.href = new URL('./diary.css?v=1.0.0&r=20261107-diary-colors-2', import.meta.url).href;
+        link.href = new URL('./diary.css?v=1.0.0&r=20261107-diary-colors-3', import.meta.url).href;
         document.head.appendChild(link);
         this._cssLoaded = true;
     }
@@ -1026,7 +1026,7 @@ export class DiaryView {
                             <div class="phone-prompt-fold" data-default-open="false">
                                 <div class="phone-prompt-fold-header">
                                     <div class="phone-prompt-fold-main">
-                                        <div class="phone-prompt-fold-title">📔 日记生成提示词</div>
+                                        <div class="phone-prompt-fold-title">📔 日记提示词</div>
                                         <div class="phone-prompt-fold-desc">默认折叠，展开后可编辑完整提示词。</div>
                                     </div>
                                     <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow"></i>
