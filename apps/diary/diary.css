@@ -1048,10 +1048,9 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    border: 1px dashed rgba(110, 92, 68, 0.28);
-    background:
-        linear-gradient(135deg, rgba(255,255,255,0.34), rgba(255,255,255,0)),
-        #e8dfd1;
+    border: 1px dashed color-mix(in srgb, var(--diary-text-primary) 28%, transparent);
+    background: var(--diary-paper-color);
+    color: var(--diary-text-primary) !important;
 }
 
 .diary-photo-spark {
@@ -1084,8 +1083,10 @@
     transform: translateY(-50%);
     padding: 6px 8px;
     border-radius: 4px;
-    background: rgba(255, 253, 248, 0.82);
+    border: 1px solid color-mix(in srgb, var(--diary-text-primary) 24%, transparent);
+    background: color-mix(in srgb, var(--diary-paper-color) 88%, var(--diary-text-primary));
     color: var(--diary-text-primary) !important;
+    box-shadow: none;
     font-size: 12px;
     line-height: 1.3;
     text-align: center;
@@ -1869,6 +1870,22 @@
 #phone-panel-content .phone-screen .diary-app .diary-photo-card {
     background: var(--diary-paper-color);
     border-color: var(--diary-paper-color);
+}
+
+#phone-panel-content .phone-screen .diary-app :is(
+    .diary-photo-placeholder, .diary-photo-developing
+) {
+    background: var(--diary-paper-color) !important;
+    color: var(--diary-text-primary) !important;
+    -webkit-text-fill-color: var(--diary-text-primary) !important;
+    border-color: color-mix(in srgb, var(--diary-text-primary) 28%, transparent) !important;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-photo-status {
+    background: color-mix(in srgb, var(--diary-paper-color) 88%, var(--diary-text-primary)) !important;
+    color: var(--diary-text-primary) !important;
+    -webkit-text-fill-color: var(--diary-text-primary) !important;
+    border-color: color-mix(in srgb, var(--diary-text-primary) 24%, transparent) !important;
 }
 
 #phone-panel-content .phone-screen .diary-app .phone-prompt-fold,

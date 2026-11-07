@@ -11474,7 +11474,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '微信模块加载失败', '❌');
                         });
                 } else if (appId === 'diary') {
-                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261107-diary-cover-toc-bg`)
+                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261107-diary-developing`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.diaryApp) {

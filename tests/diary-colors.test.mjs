@@ -79,3 +79,12 @@ test('diary keeps cover and table-of-contents uploads while omitting page backgr
     assert.match(view, /const coverBg = data\.getCoverBg\(\)/);
     assert.match(view, /const tocBg = data\.getTocBg\(\)/);
 });
+
+test('diary developing photos use themed placeholders and status colors', () => {
+    const css = fs.readFileSync(new URL('../apps/diary/diary.css', import.meta.url), 'utf8');
+    const view = fs.readFileSync(new URL('../apps/diary/diary-view.js', import.meta.url), 'utf8');
+    assert.match(view, /status === 'loading' \|\| status === 'failed'[\s\S]*?diary-photo-placeholder diary-photo-developing/);
+    assert.match(css, /\.diary-photo-placeholder\s*\{[\s\S]*?background:\s*var\(--diary-paper-color\)/);
+    assert.match(css, /\.diary-photo-status\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--diary-paper-color\) 88%, var\(--diary-text-primary\)\)/);
+    assert.doesNotMatch(css, /\.diary-photo-status\s*\{[\s\S]*?background:\s*rgba\(255, 253, 248/);
+});

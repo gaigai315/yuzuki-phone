@@ -14,7 +14,7 @@
 // ========================================
 
 import { DiaryData } from './diary-data.js?v=20261107-diary-cover-toc-bg';
-import { DiaryView } from './diary-view.js?r=20261107-diary-cover-toc-bg';
+import { DiaryView } from './diary-view.js?r=20261107-diary-developing';
 
 export class DiaryApp {
     constructor(phoneShell, storage) {
