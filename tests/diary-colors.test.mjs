@@ -45,6 +45,13 @@ test('diary prompt folds and photo backs use the selected paper and ink variable
     assert.doesNotMatch(view, /日记生成提示词/);
 });
 
+test('diary import and compose views follow the selected paper and ink colors', () => {
+    const css = fs.readFileSync(new URL('../apps/diary/diary.css', import.meta.url), 'utf8');
+    assert.match(css, /\.diary-app \.diary-edit-view\s*\{[\s\S]*?background:\s*var\(--diary-paper-color\) !important/);
+    assert.match(css, /\.diary-app \.diary-edit-save-btn\s*\{[\s\S]*?var\(--diary-paper-color\)[\s\S]*?var\(--diary-text-primary\)/);
+    assert.match(css, /\.diary-app \.diary-edit-textarea::placeholder\s*\{[\s\S]*?var\(--diary-text-secondary\)/);
+});
+
 test('diary keeps cover and table-of-contents uploads while omitting page background uploads', async () => {
     const saved = new Map();
     const storage = {
