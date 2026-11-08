@@ -993,7 +993,7 @@ export class SettingsApp {
             minimax_cn: { url: 'https://api.minimaxi.com/v1/t2a_v2', model: 'speech-02-hd', voice: 'female-shaonv' },
             minimax_intl: { url: 'https://api.minimax.io/v1/t2a_v2', model: 'speech-2.8-hd', voice: 'Chinese (Mandarin)_Warm_Girl' },
             openai: { url: 'https://api.openai.com/v1/audio/speech', model: 'tts-1', voice: 'alloy' },
-            fish: { url: 'https://api.fish.audio/v1/tts', model: 's2.1-pro-free', voice: '' },
+            fish: { url: 'https://api.fish.audio/compat/v1/audio/speech', model: 's2.1-pro-free', voice: '' },
             indextts: { url: 'http://127.0.0.1:7880/v1/audio/speech', model: 'index-tts2', voice: 'default.wav' },
             nimo: { url: 'https://api.xiaomimimo.com/v1', model: 'mimo-v2.5-tts', voice: 'mimo_default' },
             volcengine: { url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', model: 'seed-tts-2.0', voice: 'BV700_streaming', resourceId: 'seed-tts-2.0' }
@@ -1013,7 +1013,7 @@ export class SettingsApp {
                 { value: 'https://api.openai.com/v1/audio/speech', label: 'OpenAI 官方' }
             ],
             fish: [
-                { value: 'https://api.fish.audio/v1/tts', label: 'Fish Audio 官方' }
+                { value: 'https://api.fish.audio/compat/v1/audio/speech', label: 'Fish Audio 官方（兼容 TT）' }
             ],
             indextts: [
                 { value: 'http://127.0.0.1:7880/v1/audio/speech', label: 'IndexTTS OpenAI 兼容版' },
@@ -3302,7 +3302,7 @@ export class SettingsApp {
                                                value="${currentTtsModel}"
                                                placeholder="选择预设或手动输入模型名"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                                        <div id="phone-tts-models-result" class="setting-desc" style="margin-top: 6px; display: ${['nimo', 'indextts', 'fish'].includes(currentTtsProvider) ? 'block' : 'none'} !important;">${currentTtsProvider === 'indextts' ? '旧兼容版可拉取 /v1/models；雨落版使用 /api/clone，无需 API Key。' : (currentTtsProvider === 'nimo' ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。' : (currentTtsProvider === 'fish' ? '免费模型必须使用 s2.1-pro-free；请求会通过酒馆 /proxy 转发。' : ''))}</div>
+                                        <div id="phone-tts-models-result" class="setting-desc" style="margin-top: 6px; display: ${['nimo', 'indextts', 'fish'].includes(currentTtsProvider) ? 'block' : 'none'} !important;">${currentTtsProvider === 'indextts' ? '旧兼容版可拉取 /v1/models；雨落版使用 /api/clone，无需 API Key。' : (currentTtsProvider === 'nimo' ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。' : (currentTtsProvider === 'fish' ? 's2.1-pro-free 等普通模型可直连 Fish 官方兼容接口，支持 TT 酒馆；Drama 模型仍需酒馆代理或中转。' : ''))}</div>
                                     </div>
 
                                     <div id="phone-tts-nimo-relay-setting" class="setting-item" style="display: ${currentTtsProvider === 'nimo' ? 'block' : 'none'} !important;">
@@ -10356,7 +10356,8 @@ export class SettingsApp {
                 { value: 's2.1-pro-free', label: 's2.1-pro-free（免费）' },
                 { value: 's2.1-pro', label: 's2.1-pro（付费）' },
                 { value: 's2-pro', label: 's2-pro（付费）' },
-                { value: 'drama-3-preview', label: 'drama-3-preview（预览）' }
+                { value: 's1', label: 's1' },
+                { value: 'drama-3', label: 'drama-3（需代理或中转）' }
             ],
             indextts: [
                 { value: 'index-tts2', label: 'index-tts2' }
@@ -10452,7 +10453,7 @@ export class SettingsApp {
                     ? '旧兼容版可拉取 /v1/models；雨落版使用 /api/clone，无需 API Key。'
                     : (provider === 'nimo'
                         ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。'
-                        : (provider === 'fish' ? '免费模型必须使用 s2.1-pro-free；请求会通过酒馆 /proxy 转发。' : ''));
+                        : (provider === 'fish' ? 's2.1-pro-free 等普通模型可直连 Fish 官方兼容接口，支持 TT 酒馆；Drama 模型仍需酒馆代理或中转。' : ''));
                 ttsModelsResult.style.color = '#666';
             }
             if (ttsModelPreset) {

@@ -35,7 +35,7 @@ export class TtsManager {
                 voice: 'alloy'
             },
             fish: {
-                url: 'https://api.fish.audio/v1/tts',
+                url: 'https://api.fish.audio/compat/v1/audio/speech',
                 model: 's2.1-pro-free',
                 voice: ''
             },
@@ -84,9 +84,10 @@ export class TtsManager {
         return String(fallback || '').trim() || 'minimax_cn';
     }
 
-    _resolveFishEndpoint(apiUrl = '') {
+    _resolveFishTransport(apiUrl = '', model = '') {
         let raw = String(apiUrl || this._getProviderDefaults('fish').url || '').trim();
-        if (raw.startsWith('/proxy/')) raw = raw.slice('/proxy/'.length);
+        const forceProxy = raw.startsWith('/proxy/');
+        if (forceProxy) raw = raw.slice('/proxy/'.length);
         if (!raw) throw new Error('缺少 Fish Audio API 地址');
 
         let endpoint;
@@ -99,11 +100,30 @@ export class TtsManager {
             throw new Error('Fish Audio API 地址必须为不含账号、查询参数的 HTTPS 地址');
         }
 
+        const safeModel = String(model || '').trim();
+        const official = endpoint.hostname.toLowerCase() === 'api.fish.audio';
+        const compatModels = new Set(['s2.1-pro-free', 's2.1-pro', 's2-pro', 's1']);
         const path = endpoint.pathname.replace(/\/+$/, '');
+        const explicitCompat = /\/(?:compat\/v1|v1)\/audio\/speech$/i.test(path);
+        const compatible = official ? compatModels.has(safeModel) : explicitCompat;
+
+        if (compatible) {
+            if (official) endpoint.pathname = '/compat/v1/audio/speech';
+            return {
+                url: forceProxy && !official ? `/proxy/${endpoint.href}` : endpoint.href,
+                compatible: true,
+                official
+            };
+        }
+
         endpoint.pathname = /\/v1\/tts$/i.test(path)
             ? path
-            : `${path.replace(/\/v1$/i, '')}/v1/tts`;
-        return `/proxy/${endpoint.href}`;
+            : `${path.replace(/\/(?:compat\/v1\/audio\/speech|v1\/audio\/speech|v1)$/i, '')}/v1/tts`;
+        return {
+            url: forceProxy || official ? `/proxy/${endpoint.href}` : endpoint.href,
+            compatible: false,
+            official
+        };
     }
 
     _detectAudioMime(bytes = new Uint8Array()) {
@@ -921,7 +941,7 @@ export class TtsManager {
 
         if (provider === 'fish') {
             const safeModel = String(model || 's2.1-pro-free').trim() || 's2.1-pro-free';
-            const officialModels = ['s2.1-pro-free', 's2.1-pro', 's2-pro', 's1', 'drama-3-preview'];
+            const officialModels = ['s2.1-pro-free', 's2.1-pro', 's2-pro', 's1', 'drama-3', 'drama-3-preview'];
             const rawApiUrl = String(apiUrl || this._getProviderDefaults('fish').url || '').trim();
             const parsedApiUrl = rawApiUrl.startsWith('/proxy/') ? rawApiUrl.slice('/proxy/'.length) : rawApiUrl;
             try {
@@ -932,6 +952,7 @@ export class TtsManager {
             } catch (error) {
                 if (error?.message?.startsWith('Fish Audio 官方模型无效')) throw error;
             }
+            const transport = this._resolveFishTransport(apiUrl, safeModel);
 
             const controller = new AbortController();
             let timedOut = false;
@@ -944,20 +965,35 @@ export class TtsManager {
             }, 120000);
 
             try {
-                const response = await this._getRawFetch()(this._resolveFishEndpoint(apiUrl), {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`,
-                        'model': safeModel
-                    },
-                    signal: controller.signal,
-                    body: JSON.stringify({
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                };
+                const body = transport.compatible
+                    ? {
+                        model: `fish-audio/${safeModel}`,
+                        input: inputText,
+                        voice,
+                        response_format: 'mp3',
+                        provider: {
+                            options: {
+                                'fish-audio': { latency: 'normal' }
+                            }
+                        }
+                    }
+                    : {
                         text: inputText,
                         reference_id: voice,
                         format: 'mp3',
                         latency: 'normal'
-                    })
+                    };
+                if (!transport.compatible) headers.model = safeModel;
+
+                const response = await this._getRawFetch()(transport.url, {
+                    method: 'POST',
+                    headers,
+                    signal: controller.signal,
+                    body: JSON.stringify(body)
                 });
                 if (!response.ok) {
                     const errorText = await response.text().catch(() => '');
@@ -969,7 +1005,9 @@ export class TtsManager {
                     const hints = {
                         401: 'API Key 无效或已失效',
                         402: '账户额度不足或当前模型需要付费额度',
-                        404: '请确认酒馆 config.yaml 已开启 enableCorsProxy，并检查 API 地址',
+                        404: transport.compatible
+                            ? '请检查 API 地址、模型和音色 ID'
+                            : '此模型需要 Fish 原生接口；原版酒馆请开启 enableCorsProxy，TT 酒馆请使用允许跨域的 Fish 中转',
                         429: '请求过于频繁或免费服务繁忙，请稍后重试'
                     };
                     const hint = hints[response.status] || message || '请求失败';
@@ -990,7 +1028,9 @@ export class TtsManager {
                 if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
                 if (timedOut) throw new Error('Fish Audio 请求超时（120 秒）');
                 if (error instanceof TypeError) {
-                    throw new Error('Fish Audio 请求失败，请检查网络、Base URL 和酒馆 enableCorsProxy 设置');
+                    throw new Error(transport.compatible
+                        ? 'Fish Audio 请求失败，请检查网络、Base URL 和接口跨域设置'
+                        : 'Fish Audio 原生接口连接失败；原版酒馆请开启 enableCorsProxy，TT 酒馆请使用允许跨域的 Fish 中转');
                 }
                 throw error;
             } finally {

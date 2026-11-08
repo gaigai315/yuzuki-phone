@@ -9,10 +9,11 @@ test('diary selection boxes stay hidden until management mode overrides host inp
     assert.match(css, /\.diary-toc\.diary-toc-managing \.diary-toc-select\s*\{[^}]*display:\s*block\s*!important/s);
 });
 
-test('diary table-of-contents uses pen for a new entry and gear for settings', () => {
+test('diary table-of-contents uses the heading for settings and a bottom quill for writing', () => {
     const source = fs.readFileSync(new URL('../apps/diary/diary-view.js', import.meta.url), 'utf8');
-    assert.match(source, /id="diary-add-entry"[^>]*>[\s\S]*?fa-solid fa-pen/);
-    assert.match(source, /id="diary-manual-write"[^>]*>[\s\S]*?fa-solid fa-gear/);
+    assert.match(source, /class="diary-toc-quill diary-toc-entry-control" id="diary-add-entry"/);
+    assert.match(source, /class="diary-toc-compose-dock">\$\{entryTools\}/);
+    assert.match(source, /<button[^>]*class="diary-toc-heading" id="diary-manual-write"/);
     assert.doesNotMatch(source, /id="diary-import-entry"/);
 });
 
@@ -25,11 +26,41 @@ test('diary batch import entry lives below the prompt editor in settings', () =>
     assert.match(source, /openImportBtn\.onclick = \(\) => \{[\s\S]*?currentView = 'import'/);
 });
 
+test('diary heading opens settings and quill opens a new entry', () => {
+    const originalDocument = globalThis.document;
+    const heading = {};
+    const quill = {};
+    globalThis.document = {
+        getElementById: id => ({ 'diary-manual-write': heading, 'diary-add-entry': quill })[id] || null,
+        querySelector: () => null,
+        querySelectorAll: () => []
+    };
+    try {
+        const view = new DiaryView({});
+        view.currentView = 'toc';
+        let renders = 0;
+        view.render = () => { renders++; };
+        view._bindTOCEvents();
+        heading.onclick();
+        assert.equal(view.currentView, 'settings');
+        assert.equal(view._previousView, 'toc');
+        view.currentView = 'toc';
+        quill.onclick();
+        assert.equal(view.currentView, 'new');
+        assert.equal(view._previousView, 'toc');
+        assert.equal(renders, 2);
+    } finally {
+        if (originalDocument === undefined) delete globalThis.document;
+        else globalThis.document = originalDocument;
+    }
+});
+
 test('diary table-of-contents uses the themed chapter and lunar-orbit layout', () => {
     const source = fs.readFileSync(new URL('../apps/diary/diary-view.js', import.meta.url), 'utf8');
     const css = fs.readFileSync(new URL('../apps/diary/diary.css', import.meta.url), 'utf8');
-    assert.match(source, /diary-toc-heading-cn">目录<\/div>/);
-    assert.match(source, /diary-toc-heading-en">Table of Contents<\/div>/);
+    assert.match(source, /diary-toc-heading-cn">目录<\/span>/);
+    assert.match(source, /diary-toc-heading-en">Whispers of Time<\/span>/);
+    assert.match(css, /diary-toc-heading-en[\s\S]*Snell Roundhand[\s\S]*Segoe Script/);
     assert.match(source, /class="diary-toc-orbit"/);
     assert.match(source, /diary-toc-orbit-ticks-minor/);
     assert.match(source, /diary-toc-orbit-ticks-major/);
@@ -44,7 +75,7 @@ test('diary table-of-contents uses the themed chapter and lunar-orbit layout', (
     assert.match(css, /min-height:\s*calc\(64px \* var\(--diary-toc-card-scale\)\)/);
     assert.match(css, /\.diary-toc-item-date\s*\{[\s\S]*?flex:\s*0 0 calc\(54px \* var\(--diary-toc-card-scale\)\)/);
     assert.match(source, /class="diary-toc-scroll-space"/);
-    assert.match(css, /\.diary-toc-heading-rule\s*\{[^}]*width:\s*150px/s);
+    assert.match(css, /\.diary-toc-heading-rule\s*\{[^}]*width:\s*110px/s);
 });
 
 test('diary orbit scrolling keeps five slots visible and hides entries beyond the window', () => {

@@ -19,7 +19,7 @@ function createStorage(values = {}) {
     };
 }
 
-test('Fish TTS uses SillyTavern CorsProxy and sends the free model explicitly', async () => {
+test('Fish TTS uses the official browser-compatible endpoint for supported models', async () => {
     const storage = createStorage({
         'phone-tts-provider': 'fish',
         'phone-tts-fish-key': 'sk-fish-test',
@@ -43,14 +43,19 @@ test('Fish TTS uses SillyTavern CorsProxy and sends the free model explicitly', 
 
     try {
         const blobUrl = await manager.requestTTS('你好，Fish Audio。');
-        assert.equal(request.url, '/proxy/https://api.fish.audio/v1/tts');
+        assert.equal(request.url, 'https://api.fish.audio/compat/v1/audio/speech');
         assert.equal(request.init.headers.Authorization, 'Bearer sk-fish-test');
-        assert.equal(request.init.headers.model, 's2.1-pro-free');
+        assert.equal(request.init.headers.model, undefined);
         assert.deepEqual(JSON.parse(request.init.body), {
-            text: '你好，Fish Audio。',
-            reference_id: 'voice-model-id',
-            format: 'mp3',
-            latency: 'normal'
+            model: 'fish-audio/s2.1-pro-free',
+            input: '你好，Fish Audio。',
+            voice: 'voice-model-id',
+            response_format: 'mp3',
+            provider: {
+                options: {
+                    'fish-audio': { latency: 'normal' }
+                }
+            }
         });
         URL.revokeObjectURL(blobUrl);
     } finally {
@@ -58,7 +63,7 @@ test('Fish TTS uses SillyTavern CorsProxy and sends the free model explicitly', 
     }
 });
 
-test('Fish TTS normalizes a service root and rejects unknown official models', async () => {
+test('Fish TTS normalizes official endpoints and rejects unknown official models', async () => {
     const manager = new TtsManager(createStorage({
         'phone-tts-provider': 'fish',
         'phone-tts-fish-key': 'sk-fish-test',
@@ -67,11 +72,57 @@ test('Fish TTS normalizes a service root and rejects unknown official models', a
         'phone-tts-fish-voice': 'voice-model-id'
     }));
 
-    assert.equal(manager._resolveFishEndpoint('https://api.fish.audio'), '/proxy/https://api.fish.audio/v1/tts');
+    assert.deepEqual(manager._resolveFishTransport('https://api.fish.audio/v1/tts', 's2.1-pro-free'), {
+        url: 'https://api.fish.audio/compat/v1/audio/speech',
+        compatible: true,
+        official: true
+    });
+    assert.deepEqual(manager._resolveFishTransport('https://api.fish.audio/compat/v1/audio/speech', 'drama-3'), {
+        url: '/proxy/https://api.fish.audio/v1/tts',
+        compatible: false,
+        official: true
+    });
     await assert.rejects(
         manager.requestTTS('不会发出请求'),
         /Fish Audio 官方模型无效：typo-free-model/
     );
+});
+
+test('Fish native-only models keep the SillyTavern proxy request format', async () => {
+    const manager = new TtsManager(createStorage({
+        'phone-tts-provider': 'fish',
+        'phone-tts-fish-key': 'sk-fish-test',
+        'phone-tts-fish-url': 'https://api.fish.audio/compat/v1/audio/speech',
+        'phone-tts-fish-model': 'drama-3',
+        'phone-tts-fish-voice': 'voice-model-id'
+    }));
+    const originalFetch = globalThis.fetch;
+    let request = null;
+
+    globalThis.fetch = async (url, init = {}) => {
+        request = { url: String(url), init };
+        return new Response(new Uint8Array([
+            0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]), {
+            status: 200,
+            headers: { 'Content-Type': 'audio/mpeg' }
+        });
+    };
+
+    try {
+        const blobUrl = await manager.requestTTS('Drama 测试。');
+        assert.equal(request.url, '/proxy/https://api.fish.audio/v1/tts');
+        assert.equal(request.init.headers.model, 'drama-3');
+        assert.deepEqual(JSON.parse(request.init.body), {
+            text: 'Drama 测试。',
+            reference_id: 'voice-model-id',
+            format: 'mp3',
+            latency: 'normal'
+        });
+        URL.revokeObjectURL(blobUrl);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
 });
 
 test('Fish provider is exposed in global and per-contact TTS settings', () => {
@@ -85,7 +136,7 @@ test('TTS URL presets only include endpoints for the selected provider', () => {
     const app = Object.create(SettingsApp.prototype);
 
     assert.deepEqual(app._getTtsUrlPresetOptions('fish'), [
-        { value: 'https://api.fish.audio/v1/tts', label: 'Fish Audio 官方' }
+        { value: 'https://api.fish.audio/compat/v1/audio/speech', label: 'Fish Audio 官方（兼容 TT）' }
     ]);
     assert.deepEqual(app._getTtsUrlPresetOptions('indextts').map(item => item.value), [
         'http://127.0.0.1:7880/v1/audio/speech',

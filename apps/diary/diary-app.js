@@ -14,7 +14,7 @@
 // ========================================
 
 import { DiaryData } from './diary-data.js?v=20261108-original-background';
-import { DiaryView } from './diary-view.js?r=20261108-toc-orbit-scroll-window';
+import { DiaryView } from './diary-view.js?r=20261109-cover-ready';
 
 export class DiaryApp {
     constructor(phoneShell, storage) {
@@ -25,14 +25,20 @@ export class DiaryApp {
 
         // 监听滑动返回
         window.addEventListener('phone:swipeBack', (event) => this.handleSwipeBack(event));
-        window.addEventListener('phone:goHome', () => this.diaryView._setTOCManageMode(false));
+        window.addEventListener('phone:goHome', () => {
+            this.diaryView.cancelPendingCover();
+            this.diaryView._setTOCManageMode(false);
+        });
         window.addEventListener('phone:openApp', event => {
-            if (event?.detail?.appId !== 'diary') this.diaryView._setTOCManageMode(false);
+            if (event?.detail?.appId !== 'diary') {
+                this.diaryView.cancelPendingCover();
+                this.diaryView._setTOCManageMode(false);
+            }
         });
     }
 
     render() {
-        this.diaryView.render();
+        return this.diaryView.render();
     }
 
     handleSwipeBack(event) {
@@ -74,6 +80,7 @@ export class DiaryApp {
     
     // 清空缓存（切换聊天时调用）
     clearCache() {
+        this.diaryView.cancelPendingCover();
         this.diaryData.clearCache();
         this.diaryView._setTOCManageMode(false);
         this.diaryView.currentView = 'cover';

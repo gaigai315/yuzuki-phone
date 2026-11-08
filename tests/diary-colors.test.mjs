@@ -83,7 +83,7 @@ test('diary keeps cover and table-of-contents uploads while omitting page backgr
     assert.match(view, /id="diary-bg-cover"/);
     assert.match(view, /id="diary-bg-toc"/);
     assert.doesNotMatch(view, /id="diary-bg-global"/);
-    assert.match(view, /const coverBg = data\.getCoverBg\(\)/);
+    assert.match(view, /(?:const|let) coverBg = data\.getCoverBg\(\)/);
     assert.match(view, /const tocBg = data\.getTocBg\(\)/);
 });
 

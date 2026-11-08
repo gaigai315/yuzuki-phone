@@ -24,6 +24,9 @@ export class DiaryView {
         this.settingsPanelOpen = false;
         this.tocOrder = 'desc';
         this._cssLoaded = false;
+        this._cssReady = null;
+        this._coverRenderToken = 0;
+        this._coverBackground = null;
         this._previousView = 'cover';
         this.isBackNav = false; 
         this.tocManageMode = false;
@@ -35,20 +38,25 @@ export class DiaryView {
     }
 
     loadCSS() {
-        if (this._cssLoaded) return;
-        if (document.getElementById('diary-css')) {
-            this._cssLoaded = true;
-            return;
+        if (this._cssReady) return this._cssReady;
+        const existing = document.getElementById('diary-css');
+        const link = existing || document.createElement('link');
+        this._cssReady = link.sheet ? Promise.resolve() : new Promise(resolve => {
+            link.addEventListener('load', resolve, { once: true });
+            link.addEventListener('error', resolve, { once: true });
+        });
+        if (!existing) {
+            link.id = 'diary-css';
+            link.rel = 'stylesheet';
+            link.href = new URL('./diary.css?v=1.0.0&r=20261109-cover-ready', import.meta.url).href;
+            document.head.appendChild(link);
         }
-        const link = document.createElement('link');
-        link.id = 'diary-css';
-        link.rel = 'stylesheet';
-        link.href = new URL('./diary.css?v=1.0.0&r=20261108-toc-orbit-card-gap', import.meta.url).href;
-        document.head.appendChild(link);
         this._cssLoaded = true;
+        return this._cssReady;
     }
 
     render() {
+        this.cancelPendingCover();
         this.loadCSS();
         if (this.currentView !== 'toc' && this.tocManageMode) {
             this.tocManageMode = false;
@@ -90,10 +98,42 @@ export class DiaryView {
 
     // ==================== 封面视图 ====================
 
-    renderCover() {
+    cancelPendingCover() {
+        this._coverRenderToken++;
+    }
+
+    _prepareCoverBackground(src) {
+        if (this._coverBackground?.src === src) return this._coverBackground.ready;
+        const image = new Image();
+        const loaded = new Promise(resolve => {
+            image.onload = () => resolve(true);
+            image.onerror = () => resolve(false);
+        });
+        const cached = { src, image, ready: null };
+        cached.ready = loaded.then(async success => {
+            if (success && typeof image.decode === 'function') {
+                try { await image.decode(); } catch { success = false; }
+            }
+            if (!success && this._coverBackground === cached) this._coverBackground = null;
+            return success;
+        });
+        this._coverBackground = cached;
+        image.src = src;
+        return cached.ready;
+    }
+
+    async renderCover() {
+        const token = ++this._coverRenderToken;
         const data = this.app.diaryData;
+        let coverBg = data.getCoverBg();
+        const [imageReady] = await Promise.all([
+            coverBg ? this._prepareCoverBackground(coverBg) : true,
+            this.loadCSS()
+        ]);
+        if (token !== this._coverRenderToken || this.currentView !== 'cover') return;
+        // 图片失败时显示可打开的默认封面，不修改用户保存的背景路径。
+        if (!imageReady) coverBg = '';
         const entries = data.getEntries();
-        const coverBg = data.getCoverBg();
         const bgStyle = coverBg ? `background-image: url('${coverBg}'); background-size: 100% 100%; background-position: center; background-repeat: no-repeat;` : '';
         const showText = !coverBg;
         const html = `
@@ -113,7 +153,9 @@ export class DiaryView {
         `;
 
         this.app.phoneShell.setContent(html, 'diary-' + this.currentView);
-        requestAnimationFrame(() => this._bindCoverEvents());
+        requestAnimationFrame(() => {
+            if (token === this._coverRenderToken && this.currentView === 'cover') this._bindCoverEvents();
+        });
     }
 
     _bindCoverEvents() {
@@ -294,8 +336,8 @@ export class DiaryView {
             <button class="diary-toc-btn diary-toc-manage-control" id="diary-toc-manage-done" title="完成">完成</button>
         ` : '';
         const entryTools = `
-            <button class="diary-toc-btn diary-add-btn diary-pencil-btn diary-toc-entry-control" id="diary-add-entry" title="新增日记">
-                <i class="fa-solid fa-pen" aria-hidden="true"></i>
+            <button type="button" class="diary-toc-quill diary-toc-entry-control" id="diary-add-entry" title="写日记" aria-label="写日记">
+                <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
             </button>
         `;
 
@@ -306,16 +348,12 @@ export class DiaryView {
                         <div class="diary-toc-actions">
                             ${deleteSelectedBtn}
                             ${manageBtns}
-                            ${entryTools}
-                            <button class="diary-toc-btn diary-pencil-btn" id="diary-manual-write" title="设置">
-                                <i class="fa-solid fa-gear" aria-hidden="true"></i>
-                            </button>
                         </div>
-                        <div class="diary-toc-heading">
-                            <div class="diary-toc-heading-cn">目录</div>
-                            <div class="diary-toc-heading-en">Table of Contents</div>
-                            <div class="diary-toc-heading-rule"><span></span></div>
-                        </div>
+                        <button type="button" class="diary-toc-heading" id="diary-manual-write" aria-label="日记设置">
+                            <span class="diary-toc-heading-cn">目录</span>
+                            <span class="diary-toc-heading-en">Whispers of Time</span>
+                            <span class="diary-toc-heading-rule" aria-hidden="true"><span></span></span>
+                        </button>
                     </div>
                     <div class="diary-toc-orbit" aria-hidden="true">
                         <span class="diary-toc-orbit-ring diary-toc-orbit-ring-outer"></span>
@@ -333,6 +371,7 @@ export class DiaryView {
                         ${listHtml}
                         <div class="diary-toc-scroll-space" aria-hidden="true"></div>
                     </div>
+                    <div class="diary-toc-compose-dock">${entryTools}</div>
                 </div>
             </div>
         `;

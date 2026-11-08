@@ -344,8 +344,8 @@
 /* 参考书籍目录的章节布局；装饰色全部取自日记纸张色与文字色。 */
 #phone-panel-content .phone-screen .diary-app .diary-toc > .diary-toc-header {
     flex: 0 0 auto;
-    min-height: 164px;
-    padding: 40px 18px 14px;
+    min-height: 104px;
+    padding: 28px 18px 10px;
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -365,35 +365,58 @@
 
 #phone-panel-content .phone-screen .diary-app .diary-toc > .diary-toc-header .diary-toc-actions {
     position: absolute;
-    top: 40px;
+    display: none;
+    bottom: 18px;
     right: 16px;
     left: 16px;
     justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-toc-managing > .diary-toc-header .diary-toc-actions {
+    display: flex;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-toc-managing .diary-toc-heading {
+    visibility: hidden;
 }
 
 #phone-panel-content .phone-screen .diary-app .diary-toc-heading {
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: min(78%, 260px);
+    width: min(78%, 220px);
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font: inherit;
+    text-transform: none;
     color: var(--diary-text-primary) !important;
-    pointer-events: none;
+    cursor: pointer;
+    touch-action: manipulation;
 }
 
 #phone-panel-content .phone-screen .diary-app .diary-toc-heading-cn {
     font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
-    font-size: 32px;
+    font-size: 24px;
     line-height: 1.1;
     font-weight: 500;
     letter-spacing: 0;
 }
 
 #phone-panel-content .phone-screen .diary-app .diary-toc-heading-en {
-    margin-top: 5px;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 13px;
-    line-height: 1.2;
-    font-style: italic;
+    margin-top: 4px;
+    font-family: "Snell Roundhand", "Segoe Script", "Apple Chancery", "Brush Script MT", "URW Chancery L", cursive;
+    font-size: 12px;
+    line-height: 1.1;
+    font-style: normal;
+    font-weight: 400;
+    letter-spacing: 0;
     opacity: 0.78;
 }
 
@@ -401,9 +424,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 150px;
-    height: 14px;
-    margin-top: 8px;
+    width: 110px;
+    height: 10px;
+    margin-top: 6px;
 }
 
 #phone-panel-content .phone-screen .diary-app .diary-toc-heading-rule::before,
@@ -419,12 +442,59 @@
 }
 
 #phone-panel-content .phone-screen .diary-app .diary-toc-heading-rule span {
-    width: 9px;
-    height: 9px;
-    margin: 0 12px;
+    width: 6px;
+    height: 6px;
+    margin: 0 10px;
     border: 1px solid var(--diary-toc-line);
     border-radius: 50%;
     box-shadow: 0 0 8px var(--diary-toc-glow);
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-toc-compose-dock {
+    flex: 0 0 58px;
+    position: relative;
+    z-index: 3;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-toc-quill {
+    position: absolute;
+    right: 16px;
+    bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 8px;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: none;
+    color: var(--diary-text-primary) !important;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-toc-quill .fa-pen-to-square {
+    display: block;
+    font-size: 26px;
+    line-height: 1;
+    flex: 0 0 auto;
+    opacity: 0.8;
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-toc-quill:active {
+    background: var(--diary-toc-line-soft);
+}
+
+#phone-panel-content .phone-screen .diary-app .diary-toc-heading:focus-visible,
+#phone-panel-content .phone-screen .diary-app .diary-toc-quill:focus-visible {
+    outline: 1px solid var(--diary-text-primary);
+    outline-offset: 3px;
 }
 
 #phone-panel-content .phone-screen .diary-app .diary-toc-item {
