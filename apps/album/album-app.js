@@ -395,7 +395,7 @@ export class AlbumApp {
             const fixedTags = tagsByAlias.get(key);
             if (!fixedTags) {
                 unresolved.add(name || String(rawName || '').trim());
-                return '';
+                return _token;
             }
             replacements.push({ name, tags: fixedTags });
             return fixedTags;
@@ -676,8 +676,10 @@ export class AlbumApp {
             });
             if (result?.aborted || controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
             if (result?.success === false) throw new Error(result?.error || '小手机 API 未能生成 TAG');
-            const tags = this._cleanStoryTags(result?.summary || result?.content || result?.text || '');
-            if (!tags) throw new Error('小手机 API 返回的 TAG 为空');
+            const cleanedTags = this._cleanStoryTags(result?.summary || result?.content || result?.text || '');
+            if (!cleanedTags) throw new Error('小手机 API 返回的 TAG 为空');
+            // 提前展开固定形象，供用户检查和修改；发送时不再改写这些内容。
+            const tags = this._resolveStoryFixedImageTags(cleanedTags).prompt;
             this._assertStoryOperationCurrent(targetFloor, source.message, operationOptions);
             await this.albumData.setStoryFloorTags(targetFloor, tags, source.message);
             this.storyImageOverlay.clearTagDraft(targetFloor);
@@ -775,10 +777,9 @@ export class AlbumApp {
         try {
             this._assertStoryOperationCurrent(targetFloor, target.message, options);
             await this.albumData.setStoryFloorTags(targetFloor, tags, target.message);
-            const resolved = this._resolveStoryFixedImageTags(tags);
             const result = await imageGenerationManager.generate({
                 app: 'story',
-                prompt: resolved.prompt,
+                prompt: tags,
                 signal: options.signal
             });
             this._assertStoryOperationCurrent(targetFloor, target.message, options);

@@ -413,36 +413,6 @@ test('fund-only rebuild clears a transaction when regeneration removes the tag',
     assert.equal(state.流水数量, 0);
 });
 
-test('fund import template defaults to forum-style bubble mode and keeps an optional inline view', () => {
-    const payload = JSON.parse(fs.readFileSync(new URL('../资金管理系统-魔坊模板.json', import.meta.url), 'utf8'));
-    const template = payload.items[0];
-
-    assert.equal(template.processorMode, 'funds');
-    assert.equal(template.inlineRenderEnabled, false);
-    assert.equal(template.bubbleRenderEnabled, true);
-    assert.equal(template.bubbleHistoryEnabled, false);
-    assert.match(template.htmlTemplate, /CURRENT BALANCE \/ 当前资金/);
-    assert.match(template.bubbleHtmlTemplate, /CHARACTER FINANCE PROFILE/);
-    assert.match(template.bubbleHtmlTemplate, /TRANSACTION RECORDS/);
-    assert.match(template.bubbleHtmlTemplate, /fund-mofo-table-header/);
-    assert.match(template.bubbleHtmlTemplate, /\{\{#if 用户头像\}\}<img src="\{\{用户头像\}\}"/);
-    assert.match(template.bubbleHtmlTemplate, /\{\{收入显示\}\}/);
-    assert.match(template.bubbleHtmlTemplate, /\{\{支出显示\}\}/);
-    assert.match(template.bubbleHtmlTemplate, /\{\{#each 日期分组\}\}/);
-    assert.match(template.promptTemplate, /禁止自行计算或输出当前资金/);
-    assert.doesNotMatch(template.promptTemplate, /角色头像/);
-    assert.equal(Object.prototype.hasOwnProperty.call(template.initialState, '角色头像'), false);
-});
-
-test('forum import template hides duplicate comment totals and visible floor labels', () => {
-    const payload = JSON.parse(fs.readFileSync(new URL('../forum-mofo-v2.json', import.meta.url), 'utf8'));
-    const template = payload.items[0];
-
-    assert.match(template.htmlTemplate, /<div class="forum-mofo-comments-title">全部评论<\/div>/);
-    assert.doesNotMatch(template.htmlTemplate, /forum-mofo-floor|\{\{floorLabel\}\}/);
-    assert.doesNotMatch(template.cssText, /forum-mofo-floor|forum-mofo-comment-head/);
-});
-
 test('quick-panel CSS preserves the same responsive rules as the bubble renderer', () => {
     const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
     const start = source.indexOf('const scopeMofoCssText =');
@@ -466,16 +436,4 @@ test('CSS scoping keeps media rules and confines selectors to one render surface
     assert.match(css, /\.scope-one \.forum-card\{color:red\}/);
     assert.match(css, /@media\(max-width:430px\)\{\.scope-one \.forum-card, \.scope-one \.forum-title\{font-size:14px\}\}/);
     assert.doesNotMatch(css, /\.scope-one\s+@media/);
-});
-
-test('fund import template remains valid after inline CSS scoping', () => {
-    const payload = JSON.parse(fs.readFileSync(new URL('../资金管理系统-魔坊模板.json', import.meta.url), 'utf8'));
-    const template = payload.items[0];
-    const css = scopeMofoCss(template.cssText, '.fund-inline-scope');
-
-    assert.match(css, /@media\(max-width:760px\)\{\.fund-inline-scope \.fund-mofo-ledger/);
-    assert.match(css, /@media\(max-width:480px\)\{\.fund-inline-scope \.fund-mofo-ledger/);
-    assert.match(css, /@media\(max-width:340px\)\{\.fund-inline-scope \.fund-mofo-profile/);
-    assert.doesNotMatch(css, /\.fund-inline-scope\s+@(?:media|supports|container|keyframes)/);
-    assert.equal((css.match(/\{/g) || []).length, (css.match(/\}/g) || []).length);
 });

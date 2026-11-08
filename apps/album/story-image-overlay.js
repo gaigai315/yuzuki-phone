@@ -144,9 +144,12 @@ export class StoryImageOverlay {
 
     getTagDraft(floor, fallback = '') {
         const targetFloor = Number(floor);
-        return this.tagDrafts.has(targetFloor)
-            ? this.tagDrafts.get(targetFloor)
-            : String(fallback || '');
+        if (this.tagDrafts.has(targetFloor)) return this.tagDrafts.get(targetFloor);
+        const savedTags = String(fallback || '');
+        // 兼容旧楼层中尚未展开的变量，并固定本次显示的内容，避免刷新覆盖手动编辑。
+        const tags = this.app._resolveStoryFixedImageTags?.(savedTags)?.prompt ?? savedTags;
+        if (tags !== savedTags) this.setTagDraft(targetFloor, tags);
+        return tags;
     }
 
     _getImageDimensions(imageUrl = '') {
@@ -588,7 +591,7 @@ export class StoryImageOverlay {
             editButton.disabled = false;
             if (!result?.success) return;
             if (tagsInput) tagsInput.value = result.tags;
-            this.clearTagDraft(floor.floor);
+            this.setTagDraft(floor.floor, result.tags);
             this.editingTagFloors.delete(floor.floor);
             setEditingState(false);
         });

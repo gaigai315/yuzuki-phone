@@ -1274,12 +1274,13 @@ test('story image generation uses the story provider route, uploads the result, 
 });
 
 
-test('story fixed-character variables resolve to WeChat tags before the provider route', async () => {
+test('story fixed-character tags expand before editing and saved edits reach the provider unchanged', async () => {
     const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;
     const message = { is_user: false, mes: 'Two people meet.', extra: {} };
     let providerPrompt = '';
     let attached = null;
+    let savedTags = '';
     globalThis.window = {
         addEventListener() {},
         VirtualPhone: {
@@ -1346,8 +1347,9 @@ test('story fixed-character variables resolve to WeChat tags before the provider
         );
         app.albumData = {
             getStoryImageSettings: () => ({ autoPreviewEnabled: false }),
-            getStoryFloor: () => ({ floor: 7, message, tags: '' }),
-            async setStoryFloorTags() {},
+            getStoryFloor: () => ({ floor: 7, message, tags: savedTags }),
+            getStoryTagSource: () => ({ floor: 7, message, messageText: message.mes }),
+            async setStoryFloorTags(_floor, tags) { savedTags = tags; },
             async attachStoryFloorImage(floor, imageUrl, details) {
                 attached = { floor, imageUrl, details };
             }
@@ -1373,14 +1375,37 @@ test('story fixed-character variables resolve to WeChat tags before the provider
         assert.equal(partialName.replacements.length, 0);
 
         const rawTags = 'scenePrompt:\n2girls, indoors\n\ncharacter1:\ngirl, {{林晓雨}}, standing\ncenter1:\nx:0.3,y:0.5\n\ncharacter2:\ngirl, {{程昕晚}}, sitting\ncenter2:\nx:0.7,y:0.5';
-        const result = await app.generateStoryImage(7, rawTags);
+        app._buildStoryTagMessages = async () => [];
+        window.VirtualPhone.apiManager = { async callAI() { return { content: rawTags }; } };
+        const generated = await app.generateStoryTags(7);
+        assert.equal(generated.success, true);
+        assert.equal(savedTags, generated.tags);
+        assert.match(savedTags, /girl, black hair, blue eyes, standing/);
+        assert.match(savedTags, /girl, silver hair, green eyes, sitting/);
+        assert.doesNotMatch(savedTags, /\{\{/);
+        assert.equal(app.storyImageOverlay.getTagDraft(7, savedTags), savedTags);
+
+        // Existing floors expand when first displayed, without rewriting the stored floor.
+        const expandedLegacyTags = app._resolveStoryFixedImageTags(rawTags).prompt;
+        assert.equal(app.storyImageOverlay.getTagDraft(8, rawTags), expandedLegacyTags);
+        assert.equal(app.storyImageOverlay.tagDrafts.get(8), expandedLegacyTags);
+        app.storyImageOverlay.setTagDraft(8, 'character1:\ngirl, hand edited');
+        assert.equal(app.storyImageOverlay.getTagDraft(8, rawTags), 'character1:\ngirl, hand edited');
+
+        const edited = generated.tags.replace('black hair, blue eyes', 'red hair, brown eyes');
+        const saved = await app.saveStoryTags(7, edited);
+        assert.equal(saved.success, true);
+        assert.equal(savedTags, edited);
+        window.VirtualPhone.cachedWechatData.data.contacts[0].naiPromptTags = 'girl, blonde hair';
+        const result = await app.generateStoryImage(7);
 
         assert.equal(result.success, true);
-        assert.match(providerPrompt, /girl, black hair, blue eyes, standing/);
+        assert.equal(providerPrompt, saved.tags);
+        assert.match(providerPrompt, /girl, red hair, brown eyes, standing/);
         assert.match(providerPrompt, /girl, silver hair, green eyes, sitting/);
         assert.doesNotMatch(providerPrompt, /\{\{林晓雨\}\}/);
         assert.doesNotMatch(providerPrompt, /\{\{程昕晚\}\}/);
-        assert.equal(attached.details.tags, app._cleanStoryTags(rawTags));
+        assert.equal(attached.details.tags, saved.tags);
         assert.equal(attached.details.provider, 'comfyui');
     } finally {
         if (originalWindow === undefined) delete globalThis.window;
@@ -1390,7 +1415,7 @@ test('story fixed-character variables resolve to WeChat tags before the provider
     }
 });
 
-test('story image generation removes unknown fixed-character variables and continues provider dispatch', async () => {
+test('story image generation preserves missing character variables without resolving again before dispatch', async () => {
     const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;
     const message = { is_user: false, mes: 'Unknown person.', extra: {} };
@@ -1399,6 +1424,14 @@ test('story image generation removes unknown fixed-character variables and conti
     globalThis.window = {
         addEventListener() {},
         VirtualPhone: {
+            cachedWechatData: {
+                data: {
+                    contacts: [
+                        { name: '已配置角色', naiPromptTags: 'girl, black hair' },
+                        { name: '空白角色', naiPromptTags: '   ' }
+                    ]
+                }
+            },
             imageGenerationManager: {
                 async generate(options) {
                     providerCalls += 1;
@@ -1435,11 +1468,18 @@ test('story image generation removes unknown fixed-character variables and conti
             async attachStoryFloorImage() {}
         };
 
-        const result = await app.generateStoryImage(7, 'character1:\ngirl, {{不存在的角色}}, standing');
+        const rawTags = 'character1:\ngirl, {{不存在的角色}}, {{空白角色}}, standing';
+        const resolved = app._resolveStoryFixedImageTags(rawTags);
+        assert.equal(resolved.prompt, rawTags);
+        assert.deepEqual(resolved.unresolved, ['不存在的角色', '空白角色']);
+        assert.equal(app.storyImageOverlay.getTagDraft(7, rawTags), rawTags);
+        // Even a known variable deliberately saved by the user is sent as written.
+        const saved = await app.saveStoryTags(7, `${rawTags}, {{已配置角色}}`);
+        assert.equal(saved.success, true);
+        const result = await app.generateStoryImage(7, saved.tags);
         assert.equal(result.success, true);
         assert.equal(providerCalls, 1);
-        assert.equal(providerPrompt, 'character1:\ngirl, standing');
-        assert.doesNotMatch(providerPrompt, /\{\{不存在的角色\}\}/);
+        assert.equal(providerPrompt, saved.tags);
     } finally {
         if (originalWindow === undefined) delete globalThis.window;
         else globalThis.window = originalWindow;
