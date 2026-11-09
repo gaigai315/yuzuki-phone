@@ -1357,10 +1357,15 @@ export class DiaryView {
                 const batchSizeInput = document.getElementById('diary-batch-size');
                 const batchSize = parseInt(batchSizeInput?.value) || 50;
                 const data = this.app.diaryData;
+                const isBatched = batchModeEnabled && (end - start) > batchSize;
 
-                if (batchModeEnabled && (end - start) > batchSize) {
-                    const generatedEntries = await data.batchGenerateDiary(start, end, batchSize, (current, total, status) => {
+                if (isBatched) {
+                    await data.batchGenerateDiary(start, end, batchSize, (current, total, status, completedBatch) => {
                         if (isStaleRun()) return;
+                        if (completedBatch) {
+                            const shell = window.VirtualPhone?.phoneShell || this.app.phoneShell;
+                            shell?.showNotification?.('日记', `第 ${current}/${total} 批完成，本批新增 ${completedBatch.count} 篇（${completedBatch.startIndex}-${completedBatch.endIndex} 层）`, '📱');
+                        }
                         this._setDiaryGenerationState({
                             running: true,
                             stopping: false,
@@ -1370,7 +1375,6 @@ export class DiaryView {
                         });
                         this._syncDiaryGenerationStatusUI();
                     });
-                    generatedCount = Array.isArray(generatedEntries) ? generatedEntries.length : 0;
                 } else {
                     this._setDiaryGenerationState({
                         running: true,
@@ -1416,7 +1420,7 @@ export class DiaryView {
                         finishedAt: Date.now()
                     });
                     const shell = window.VirtualPhone?.phoneShell || this.app.phoneShell;
-                    shell?.showNotification?.('日记', `手动写日记完成，新增 ${generatedCount} 篇`, '📱');
+                    if (!isBatched) shell?.showNotification?.('日记', `手动写日记完成，新增 ${generatedCount} 篇`, '📱');
                 }
                 this._syncDiaryGenerationStatusUI();
             } catch (err) {

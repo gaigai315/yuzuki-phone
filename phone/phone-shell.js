@@ -11,6 +11,7 @@
  * ======================================================== */
 // 手机外壳
 import { PHONE_CONFIG } from '../config/apps.js';
+import { prepareWechatBackground } from './background-ready.js?v=20261110-wechat-background';
 
 export class PhoneShell {
     constructor() {
@@ -1191,6 +1192,11 @@ export class PhoneShell {
 
     setContent(html, viewId = null) {
         if (!this.screen) return;
+        const revealVersion = this._backgroundRevealVersion = (this._backgroundRevealVersion || 0) + 1;
+        const visibleView = this.screen.querySelector('.phone-view-current');
+        const previousView = this._backgroundPendingTarget === visibleView
+            ? this._backgroundPendingPreviousView || visibleView
+            : visibleView;
         this.syncHomeLayoutChromeClass();
 
         // 1. 自动推断 viewId
@@ -1240,6 +1246,11 @@ export class PhoneShell {
             targetView.setAttribute('data-raw-html', html);
         }
         this._scopePhoneFormControls(targetView);
+        const backgroundReady = previousView && previousView !== targetView
+            ? prepareWechatBackground(targetView)
+            : null;
+        this._backgroundPendingTarget = backgroundReady ? targetView : null;
+        this._backgroundPendingPreviousView = backgroundReady ? previousView : null;
 
         // 6. 图层 Z-Index 管理（完美的 iOS/微信 原生堆叠效果）
         const allViews = stack.querySelectorAll('[data-view-id]');
@@ -1256,6 +1267,7 @@ export class PhoneShell {
                 v.style.transform = 'translate3d(0,0,0)';
                 v.style.transition = 'none';
                 v.style.opacity = '1';
+                v.style.pointerEvents = '';
             } else if (historyIndex === this.viewHistory.length - 2) {
                 // 上一页（垫在下面，滑动返回时可见）
                 v.className = 'phone-view-layer phone-view-prev';
@@ -1272,10 +1284,32 @@ export class PhoneShell {
             }
         });
 
+        if (backgroundReady) {
+            // Initialize the new page normally, but keep the old page painted
+            // beneath it until the background has loaded and decoded.
+            targetView.style.opacity = '0';
+            targetView.style.pointerEvents = 'none';
+            previousView.style.display = 'block';
+            previousView.style.opacity = '1';
+            previousView.style.zIndex = '5';
+            previousView.style.pointerEvents = 'none';
+            void backgroundReady.then(() => {
+                if (this._backgroundRevealVersion !== revealVersion) return;
+                targetView.style.opacity = '1';
+                targetView.style.pointerEvents = '';
+                this._backgroundPendingTarget = null;
+                this._backgroundPendingPreviousView = null;
+                if (!this.viewHistory.some(item => item.id === previousView.getAttribute('data-view-id'))) {
+                    previousView.remove();
+                }
+            });
+        }
+
         // 7. 垃圾回收：清理被滑走并弹出的孤儿页面
         allViews.forEach(v => {
             const id = v.getAttribute('data-view-id');
             if (!this.viewHistory.find(item => item.id === id)) {
+                if (backgroundReady && v === previousView) return;
                 v.remove(); // 连同背景图缓存一起彻底销毁
             }
         });
@@ -1294,6 +1328,10 @@ export class PhoneShell {
         const targetView = allViews.find(view => view.getAttribute('data-view-id') === safeViewId);
         if (!targetView) return false;
 
+        this._backgroundRevealVersion = (this._backgroundRevealVersion || 0) + 1;
+        this._backgroundPendingTarget = null;
+        this._backgroundPendingPreviousView = null;
+
         this.syncHomeLayoutChromeClass();
         this._syncChromeThemeForView(
             safeViewId,
@@ -1309,6 +1347,7 @@ export class PhoneShell {
         targetView.style.transform = 'translate3d(0,0,0)';
         targetView.style.transition = 'none';
         targetView.style.opacity = '1';
+        targetView.style.pointerEvents = '';
 
         allViews.forEach(view => {
             if (view !== targetView) view.remove();

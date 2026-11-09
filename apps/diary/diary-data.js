@@ -1303,7 +1303,7 @@ export class DiaryData {
      * @param {number} startIndex - 起始楼层
      * @param {number} endIndex - 结束楼层
      * @param {number} batchSize - 每批楼层数
-     * @param {Function} onProgress - 进度回调 (current, total, status)
+     * @param {Function} onProgress - 进度回调 (current, total, status, completedBatch?)，完成批次时附带本批篇数与楼层范围
      * @returns {Promise<Array>} 生成的日记条目数组
      */
     async batchGenerateDiary(startIndex, endIndex, batchSize = 50, onProgress = null, isAuto = false, options = {}) {
@@ -1357,7 +1357,9 @@ export class DiaryData {
                 if (isAuto) this.setAutoLastFloor(endIndex);
                 if (window.VirtualPhone?.diaryBatchProgress) window.VirtualPhone.diaryBatchProgress.current = 1;
                 setGenerationState({ running: true, status: '完成', current: 1, total: 1 });
-                if (onProgress) onProgress(1, 1, '完成');
+                const completedBatch = { count: diaries.length, startIndex, endIndex };
+                if (isAuto) this._notifyAutoDiaryGenerated(diaries.length, startIndex, endIndex, { current: 1, total: 1 });
+                if (onProgress) onProgress(1, 1, '完成', completedBatch);
             } else {
                 for (let i = 0; i < batchCount; i++) {
                     if (this.stopBatch) {
@@ -1406,6 +1408,10 @@ export class DiaryData {
                             results.push(entry);
                         }
                         if (isAuto) this.setAutoLastFloor(bEnd);
+                        if (isAuto) this._notifyAutoDiaryGenerated(diaries.length, bStart, bEnd, { current: i + 1, total: batchCount });
+                        if (onProgress) onProgress(i + 1, batchCount, `已完成 ${i + 1}/${batchCount}`, {
+                            count: diaries.length, startIndex: bStart, endIndex: bEnd
+                        });
                     } catch (err) {
                         console.error(`[DiaryData] 批次 ${i + 1} 失败:`, err);
                         setGenerationState({ running: true, error: true, status: `批次 ${i + 1} 失败: ${err.message}`, current: i, total: batchCount });
@@ -1462,8 +1468,7 @@ export class DiaryData {
 
             if (batchMode && (endIndex - startIndex) > batchSize) {
                 // 🔥 核心修改：传入 isAuto = true
-                const generatedEntries = await this.batchGenerateDiary(startIndex, endIndex, batchSize, null, true, { chatId: expectedChatId });
-                this._notifyAutoDiaryGenerated(generatedEntries.length, startIndex, endIndex);
+                await this.batchGenerateDiary(startIndex, endIndex, batchSize, null, true, { chatId: expectedChatId });
             } else {
                 if (expectedChatId && this.getCurrentChatIdentity() !== expectedChatId) return;
                 const diaries = await this.callAIToWriteDiary(startIndex, endIndex);
@@ -1488,19 +1493,22 @@ export class DiaryData {
         }
     }
 
-    _notifyAutoDiaryGenerated(count, startIndex, endIndex) {
+    _notifyAutoDiaryGenerated(count, startIndex, endIndex, batch = null) {
         const safeCount = Number(count) || 0;
-        if (safeCount <= 0) return;
+        if (safeCount <= 0 && !batch) return;
 
         const notify = window.VirtualPhone?.notify;
         if (typeof notify !== 'function') return;
 
-        notify('日记', `自动写日记完成，新增 ${safeCount} 篇`, '📱', {
+        const message = batch
+            ? `第 ${batch.current}/${batch.total} 批完成，本批新增 ${safeCount} 篇（${startIndex}-${endIndex} 层）`
+            : `自动写日记完成，新增 ${safeCount} 篇`;
+        notify('日记', message, '📱', {
             avatarText: '记',
             avatarBg: '#5b6cff',
             avatarColor: '#ffffff',
             name: '日记',
-            content: `自动写日记完成，新增 ${safeCount} 篇（${startIndex}-${endIndex} 层）`,
+            content: batch ? message : `${message}（${startIndex}-${endIndex} 层）`,
             timeText: '刚刚',
             senderKey: 'diary:auto'
         });

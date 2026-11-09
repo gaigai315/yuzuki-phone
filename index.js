@@ -1529,7 +1529,7 @@ if (window.GGP_Loaded) {
             homeScreenModule,
             imageUploadModule
         ] = await Promise.all([
-            import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261103-diary-scroll`),
+            import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261110-wechat-background`),
             import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
             import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261108-original-background`)
         ]);
@@ -10389,7 +10389,7 @@ if (window.GGP_Loaded) {
                     const diaryGeneration = autoDiaryState._autoDiaryGeneration;
                     autoDiaryState._autoDiaryProbeCount += 1;
                     // 懒加载 DiaryData 检查楼层差
-                    import('./apps/diary/diary-data.js?v=20261107-diary-cover-toc-bg').then(module => {
+                    import('./apps/diary/diary-data.js?v=20261110-batch-notifications').then(module => {
                         const diaryData = window.VirtualPhone.diaryApp?.diaryData
                             || new module.DiaryData(storage);
                         const diaryConfig = diaryData.getAutoSettings();
@@ -11474,7 +11474,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '微信模块加载失败', '❌');
                         });
                 } else if (appId === 'diary') {
-                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261109-selection-binding`)
+                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261110-batch-notifications`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.diaryApp) {
@@ -13325,7 +13325,7 @@ if (window.GGP_Loaded) {
                                         if (diaryInjectEnabled) {
                                             let diaryData = window.VirtualPhone?.diaryApp?.diaryData || null;
                                             if (!diaryData) {
-                                                const diaryModule = await import('./apps/diary/diary-data.js?v=20261107-diary-cover-toc-bg');
+                                                const diaryModule = await import('./apps/diary/diary-data.js?v=20261110-batch-notifications');
                                                 diaryData = new diaryModule.DiaryData(storage);
                                             }
                                             diaryHistoryContent = diaryData?.buildOfflineInjectionContent?.() || '';
