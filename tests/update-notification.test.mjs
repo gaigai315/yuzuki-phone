@@ -14,7 +14,7 @@ test('current version publishes the 1.6.8 update notices', () => {
     assert.equal(current.date, '2026-11-08');
     assert.deepEqual(current.items, [
         '【优化】日记会等待 CSS 与封面背景加载完成后再渲染，减少首次打开时的样式闪烁、布局错位和封面背景缺失，并优化目录与写日记按钮布局。',
-        '【优化】Fish Audio 普通模型改用官方兼容接口直连，支持 TT 酒馆，无需开启酒馆后端代理；Drama 模型仍需代理或中转。'
+        '【优化】Fish Audio 支持公益站及兼容 TT 酒馆。'
     ]);
     assert.equal(current.updates, undefined);
 });

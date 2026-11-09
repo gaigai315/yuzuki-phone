@@ -1013,7 +1013,8 @@ export class SettingsApp {
                 { value: 'https://api.openai.com/v1/audio/speech', label: 'OpenAI 官方' }
             ],
             fish: [
-                { value: 'https://api.fish.audio/compat/v1/audio/speech', label: 'Fish Audio 官方（兼容 TT）' }
+                { value: 'https://api.fish.audio/compat/v1/audio/speech', label: 'Fish 官方' },
+                { value: '__fish_public__', label: '公益站 / 中转' }
             ],
             indextts: [
                 { value: 'http://127.0.0.1:7880/v1/audio/speech', label: 'IndexTTS OpenAI 兼容版' },
@@ -1049,6 +1050,37 @@ export class SettingsApp {
         if (scoped) return scoped;
         if (legacyKey && provider !== 'volcengine' && provider === this._getCurrentTtsProvider()) {
             return String(this.storage.get(legacyKey) || '').trim();
+        }
+        return '';
+    }
+
+    _getFishEndpointMode() {
+        const stored = String(this.storage.get(this._getTtsProviderConfigKey('fish', 'endpoint-mode')) || '').trim();
+        if (stored === 'official' || stored === 'public') return stored;
+        const raw = String(this.storage.get(this._getTtsProviderConfigKey('fish', 'url'))
+            || (this._getCurrentTtsProvider() === 'fish' ? this.storage.get('phone-tts-url') : '')
+            || '').trim();
+        return raw && !/api\.fish\.audio/i.test(raw) ? 'public' : 'official';
+    }
+
+    _getFishConnectionValue(mode, field) {
+        const safeMode = mode === 'public' ? 'public' : 'official';
+        const specific = String(this.storage.get(this._getTtsProviderConfigKey('fish', `${safeMode}-${field}`)) || '').trim();
+        if (specific) return specific;
+        const genericUrl = String(this.storage.get(this._getTtsProviderConfigKey('fish', 'url'))
+            || (this._getCurrentTtsProvider() === 'fish' ? this.storage.get('phone-tts-url') : '')
+            || '').trim();
+        const genericKey = String(this.storage.get(this._getTtsProviderConfigKey('fish', 'key'))
+            || (this._getCurrentTtsProvider() === 'fish' ? this.storage.get('phone-tts-key') : '')
+            || '').trim();
+        const genericIsPublic = !!genericUrl && !/api\.fish\.audio/i.test(genericUrl);
+        if (field === 'url') {
+            if (safeMode === 'official') return this._getTtsProviderDefaults('fish').url;
+            return genericIsPublic ? genericUrl : '';
+        }
+        if (field === 'key') {
+            if (safeMode === 'public') return genericIsPublic ? genericKey : '';
+            return genericIsPublic ? '' : genericKey;
         }
         return '';
     }
@@ -1124,8 +1156,13 @@ export class SettingsApp {
         const wechatOnlineProactiveInterval = readNonNegativeStorageNumber(this.storage, wechatOnlineProactiveIntervalKey, 10, 9999) || 10;
         const currentTtsProvider = this._getCurrentTtsProvider();
         const currentTtsDefaults = this._getTtsProviderDefaults(currentTtsProvider);
-        const currentTtsUrl = this._getTtsProviderValue(currentTtsProvider, 'url', 'phone-tts-url') || currentTtsDefaults.url || '';
-        const currentTtsKey = this._getTtsProviderValue(currentTtsProvider, 'key', 'phone-tts-key');
+        const currentTtsFishEndpointMode = this._getFishEndpointMode();
+        const currentTtsUrl = currentTtsProvider === 'fish'
+            ? this._getFishConnectionValue(currentTtsFishEndpointMode, 'url')
+            : (this._getTtsProviderValue(currentTtsProvider, 'url', 'phone-tts-url') || currentTtsDefaults.url || '');
+        const currentTtsKey = currentTtsProvider === 'fish'
+            ? this._getFishConnectionValue(currentTtsFishEndpointMode, 'key')
+            : this._getTtsProviderValue(currentTtsProvider, 'key', 'phone-tts-key');
         const currentTtsModel = this._getTtsProviderValue(currentTtsProvider, 'model', 'phone-tts-model') || currentTtsDefaults.model || '';
         const currentTtsVoice = this._getTtsProviderValue(currentTtsProvider, 'voice', 'phone-tts-voice');
         const currentTtsNimoRelayUrl = this._getTtsProviderValue('nimo', 'relay-url') || DEFAULT_MIMO_TTS_RELAY_URL;
@@ -3302,7 +3339,7 @@ export class SettingsApp {
                                                value="${currentTtsModel}"
                                                placeholder="选择预设或手动输入模型名"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                                        <div id="phone-tts-models-result" class="setting-desc" style="margin-top: 6px; display: ${['nimo', 'indextts', 'fish'].includes(currentTtsProvider) ? 'block' : 'none'} !important;">${currentTtsProvider === 'indextts' ? '旧兼容版可拉取 /v1/models；雨落版使用 /api/clone，无需 API Key。' : (currentTtsProvider === 'nimo' ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。' : (currentTtsProvider === 'fish' ? 's2.1-pro-free 等普通模型可直连 Fish 官方兼容接口，支持 TT 酒馆；Drama 模型仍需酒馆代理或中转。' : ''))}</div>
+                                        <div id="phone-tts-models-result" class="setting-desc" style="margin-top: 6px; display: ${['nimo', 'indextts', 'fish'].includes(currentTtsProvider) ? 'block' : 'none'} !important;">${currentTtsProvider === 'indextts' ? '旧兼容版可拉取 /v1/models；雨落版使用 /api/clone，无需 API Key。' : (currentTtsProvider === 'nimo' ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。' : (currentTtsProvider === 'fish' ? '支持 Fish 官方及公益站。公益站可填根地址、/v1 或完整接口，系统会自动识别并尝试可用接口；Drama 模型在 TT 中仍需可跨域的公益站或中转。' : ''))}</div>
                                     </div>
 
                                     <div id="phone-tts-nimo-relay-setting" class="setting-item" style="display: ${currentTtsProvider === 'nimo' ? 'block' : 'none'} !important;">
@@ -3318,16 +3355,16 @@ export class SettingsApp {
 
                                     <div class="setting-item">
                                         <div style="display: flex; align-items: center; justify-content: space-between;">
-                                            <span id="phone-tts-voice-label" style="font-size: 14px; color: #000;">${currentTtsProvider === 'indextts' ? '参考音频 / 音色 ID' : (currentTtsProvider === 'fish' ? 'Fish 音色 ID (reference_id)' : '音色 ID (Voice)')}</span>
+                                            <span id="phone-tts-voice-label" style="font-size: 14px; color: #000;">${currentTtsProvider === 'indextts' ? '参考音频 / 音色 ID' : (currentTtsProvider === 'fish' ? (currentTtsFishEndpointMode === 'public' ? '公益站音色地址 / ID' : 'Fish 音色 ID (reference_id)') : '音色 ID (Voice)')}</span>
                                             <select id="phone-tts-voice-preset" style="width: 140px; height: 30px; padding: 0 4px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 11px; background: #fafafa;">
-                                                <option value="">-- 历史音色 --</option>
+                                                <option value="">-- 快速选择 --</option>
                                             </select>
                                         </div>
                                         <input type="text" id="phone-tts-voice"
                                                value="${currentTtsVoice}"
-                                               placeholder="${currentTtsProvider === 'indextts' ? '雨落版例如 demo_boy.wav 或 F:/voices/角色.wav' : (currentTtsProvider === 'fish' ? '例如 9a9cf47702da476aa4629e2506d4a857' : '')}"
+                                               placeholder="${currentTtsProvider === 'indextts' ? '雨落版例如 demo_boy.wav 或 F:/voices/角色.wav' : (currentTtsProvider === 'fish' ? (currentTtsFishEndpointMode === 'public' ? '例如 voice-107' : '例如 9a9cf47702da476aa4629e2506d4a857') : '')}"
                                                style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 12px; background: #fafafa; margin-top: 6px; box-sizing: border-box;">
-                                        <div id="phone-tts-voice-help" class="setting-desc" style="margin-top: 4px; display: ${['indextts', 'fish'].includes(currentTtsProvider) ? 'block' : 'none'} !important;">${currentTtsProvider === 'fish' ? '填写 Fish 音色库或复刻模型的 ID；仅使用本人或已获授权的声音。' : '雨落版填写 resources/prompt_audio 内的文件名或参考音频绝对路径；旧兼容版填写 Voice。'}</div>
+                                        <div id="phone-tts-voice-help" class="setting-desc" style="margin-top: 4px; display: ${['indextts', 'fish'].includes(currentTtsProvider) ? 'block' : 'none'} !important;">${currentTtsProvider === 'fish' ? (currentTtsFishEndpointMode === 'public' ? '填写音色页面 /v/ 后面的地址，例如 voice-107；也可填写公益站支持的 UUID。' : '填写 Fish 音色库或复刻模型的 reference_id；仅使用本人或已获授权的声音。') : '雨落版填写 resources/prompt_audio 内的文件名或参考音频绝对路径；旧兼容版填写 Voice。'}</div>
                                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
                                             <button id="phone-tts-preview" style="padding: 2px 8px; border: none; background: none; color: #1677ff; font-size: 10px; cursor: pointer;">试听当前音色</button>
                                             <button id="phone-tts-voice-delete" style="padding: 2px 8px; border: none; background: none; color: #ff3b30; font-size: 10px; cursor: pointer;">删除当前音色</button>
@@ -10430,20 +10467,42 @@ export class SettingsApp {
             setProviderFieldVisible(ttsMainProviderOptions, provider !== 'volcengine');
             setProviderFieldVisible(ttsNimoRelaySetting, provider === 'nimo');
             setProviderFieldVisible(ttsNimoCloneSetting, provider === 'nimo');
+            setProviderFieldVisible(ttsFetchModelsBtn, provider === 'nimo' || provider === 'indextts');
+            const fishMode = this._getFishEndpointMode();
             if (ttsUrlPreset) {
                 const urlPresets = this._getTtsUrlPresetOptions(provider);
                 ttsUrlPreset.innerHTML = this._renderTtsUrlPresetOptions(provider);
                 ttsUrlPreset.disabled = urlPresets.length <= 1;
-                ttsUrlPreset.value = urlPresets.length === 1 ? urlPresets[0].value : '';
+                if (provider === 'fish') {
+                    ttsUrlPreset.value = fishMode === 'official'
+                        ? 'https://api.fish.audio/compat/v1/audio/speech'
+                        : '__fish_public__';
+                    if (ttsUrl) ttsUrl.placeholder = fishMode === 'official'
+                        ? 'Fish 官方接口地址'
+                        : '例如 https://公益站域名 或 https://公益站域名/v1';
+                } else {
+                    ttsUrlPreset.value = urlPresets.length === 1 ? urlPresets[0].value : '';
+                    if (ttsUrl) ttsUrl.placeholder = '例如 http://127.0.0.1:9001/api/clone';
+                }
             }
-            if (ttsMainKeyLabel) ttsMainKeyLabel.textContent = provider === 'indextts' ? 'API Key（可留空）' : 'API Key';
-            if (ttsKey) ttsKey.placeholder = provider === 'indextts' ? 'IndexTTS 本地无需填写' : 'MiniMax/OpenAI/Fish/MiMo API Key';
-            if (ttsVoiceLabel) ttsVoiceLabel.textContent = provider === 'indextts' ? '参考音频 / 音色 ID' : (provider === 'fish' ? 'Fish 音色 ID (reference_id)' : '音色 ID (Voice)');
-            if (ttsVoice) ttsVoice.placeholder = provider === 'indextts' ? '雨落版例如 demo_boy.wav 或 F:/voices/角色.wav' : (provider === 'fish' ? '例如 9a9cf47702da476aa4629e2506d4a857' : '');
+            if (ttsMainKeyLabel) ttsMainKeyLabel.textContent = provider === 'indextts'
+                ? 'API Key（可留空）'
+                : (provider === 'fish' ? (fishMode === 'public' ? '公益站 API Key' : 'Fish 官方 API Key') : 'API Key');
+            if (ttsKey) ttsKey.placeholder = provider === 'indextts'
+                ? 'IndexTTS 本地无需填写'
+                : (provider === 'fish' ? (fishMode === 'public' ? '填写公益站 Key' : '填写 Fish 官方 Key') : 'MiniMax/OpenAI/MiMo API Key');
+            if (ttsVoiceLabel) ttsVoiceLabel.textContent = provider === 'indextts'
+                ? '参考音频 / 音色 ID'
+                : (provider === 'fish' ? (fishMode === 'public' ? '公益站音色地址 / ID' : 'Fish 音色 ID (reference_id)') : '音色 ID (Voice)');
+            if (ttsVoice) ttsVoice.placeholder = provider === 'indextts'
+                ? '雨落版例如 demo_boy.wav 或 F:/voices/角色.wav'
+                : (provider === 'fish' ? (fishMode === 'public' ? '例如 voice-107' : '例如 9a9cf47702da476aa4629e2506d4a857') : '');
             setProviderFieldVisible(ttsVoiceHelp, provider === 'indextts' || provider === 'fish');
             if (ttsVoiceHelp) {
                 ttsVoiceHelp.textContent = provider === 'fish'
-                    ? '填写 Fish 音色库或复刻模型的 ID；仅使用本人或已获授权的声音。'
+                    ? (fishMode === 'public'
+                        ? '填写音色页面 /v/ 后面的地址，例如 voice-107；也可填写公益站支持的 UUID。'
+                        : '填写 Fish 音色库或复刻模型的 reference_id；仅使用本人或已获授权的声音。')
                     : '雨落版填写 resources/prompt_audio 内的文件名或参考音频绝对路径；旧兼容版填写 Voice。';
             }
             if (ttsModelsResult) {
@@ -10453,7 +10512,7 @@ export class SettingsApp {
                     ? '旧兼容版可拉取 /v1/models；雨落版使用 /api/clone，无需 API Key。'
                     : (provider === 'nimo'
                         ? 'MiMo 公益站可从当前站点 /v1/models 拉取可用模型。'
-                        : (provider === 'fish' ? 's2.1-pro-free 等普通模型可直连 Fish 官方兼容接口，支持 TT 酒馆；Drama 模型仍需酒馆代理或中转。' : ''));
+                        : (provider === 'fish' ? '支持 Fish 官方及公益站。公益站可填根地址、/v1 或完整接口，系统会自动识别并尝试可用接口；Drama 模型在 TT 中仍需可跨域的公益站或中转。' : ''));
                 ttsModelsResult.style.color = '#666';
             }
             if (ttsModelPreset) {
@@ -10662,6 +10721,34 @@ export class SettingsApp {
             await this.storage.set(`phone-tts-fallback-${safeGender}-provider`, provider);
             await this.storage.set(`phone-tts-fallback-${safeGender}-voice`, voice);
         };
+        const saveCurrentFishConnection = async () => {
+            if (getCurrentMainProviderFromForm() !== 'fish') return;
+            const mode = this._getFishEndpointMode();
+            const key = String(ttsKey?.value || '').trim();
+            await this.storage.set(this._getTtsProviderConfigKey('fish', `${mode}-key`), key);
+            if (mode === 'public') {
+                await this.storage.set(this._getTtsProviderConfigKey('fish', 'public-url'), String(ttsUrl?.value || '').trim());
+            }
+        };
+        const switchFishConnection = async (mode) => {
+            await saveCurrentFishConnection();
+            const safeMode = mode === 'public' ? 'public' : 'official';
+            await this.storage.set('phone-tts-main-provider', 'fish');
+            await this.storage.set('phone-tts-provider', 'fish');
+            await this.storage.set(this._getTtsProviderConfigKey('fish', 'endpoint-mode'), safeMode);
+            if (ttsProvider) ttsProvider.value = 'fish';
+            const nextUrl = this._getFishConnectionValue(safeMode, 'url');
+            const nextKey = this._getFishConnectionValue(safeMode, 'key');
+            if (ttsUrl) {
+                ttsUrl.value = nextUrl;
+                await setMainTtsProviderField('url', nextUrl, 'phone-tts-url');
+            }
+            if (ttsKey) {
+                ttsKey.value = nextKey;
+                await setMainTtsProviderField('key', nextKey, 'phone-tts-key');
+            }
+            refreshTtsPresetOptions();
+        };
         refreshTtsPresetOptions();
 
         if (ttsProvider) ttsProvider.addEventListener('change', async (e) => {
@@ -10669,8 +10756,12 @@ export class SettingsApp {
             await this.storage.set('phone-tts-provider', val);
             // 联动填充默认 URL 和模型
             const d = this._getTtsProviderDefaults(val);
-            const nextUrl = normalizeTtsProviderUrl(val, this._getTtsProviderValue(val, 'url') || d.url || '');
-            const nextKey = this._getTtsProviderValue(val, 'key') || '';
+            const nextUrl = val === 'fish'
+                ? this._getFishConnectionValue(this._getFishEndpointMode(), 'url')
+                : normalizeTtsProviderUrl(val, this._getTtsProviderValue(val, 'url') || d.url || '');
+            const nextKey = val === 'fish'
+                ? this._getFishConnectionValue(this._getFishEndpointMode(), 'key')
+                : (this._getTtsProviderValue(val, 'key') || '');
             const nextModel = this._getTtsProviderValue(val, 'model') || d.model || '';
             const nextVoice = this._getTtsProviderValue(val, 'voice') || d.voice || '';
             const nextAppId = this._getTtsProviderValue(val, 'app-id') || '';
@@ -10702,6 +10793,14 @@ export class SettingsApp {
         // 接口地址预设下拉 → 填入输入框
         if (ttsUrlPreset) ttsUrlPreset.addEventListener('change', async (e) => {
             const rawVal = e.target.value;
+            if (rawVal === '__fish_public__') {
+                await switchFishConnection('public');
+                return;
+            }
+            if (rawVal === 'https://api.fish.audio/compat/v1/audio/speech') {
+                await switchFishConnection('official');
+                return;
+            }
             if (rawVal === '__nimo_public__') {
                 await this.storage.set('phone-tts-main-provider', 'nimo');
                 await this.storage.set('phone-tts-provider', 'nimo');
@@ -10833,11 +10932,25 @@ export class SettingsApp {
             const nextModel = this._getTtsProviderValue(inferredProvider, 'model') || defaults.model || '';
             const nextVoice = this._getTtsProviderValue(inferredProvider, 'voice') || defaults.voice || '';
             await setMainTtsProviderField('url', nextUrl, 'phone-tts-url');
+            if (inferredProvider === 'fish') {
+                const mode = /api\.fish\.audio/i.test(nextUrl) ? 'official' : 'public';
+                await this.storage.set(this._getTtsProviderConfigKey('fish', 'endpoint-mode'), mode);
+                if (mode === 'public') {
+                    await this.storage.set(this._getTtsProviderConfigKey('fish', 'public-url'), nextUrl);
+                }
+            }
             if (ttsModel) { ttsModel.value = nextModel; await setMainTtsProviderField('model', nextModel, 'phone-tts-model'); }
             if (ttsVoice) { ttsVoice.value = nextVoice; await setMainTtsProviderField('voice', nextVoice, 'phone-tts-voice'); }
             refreshTtsPresetOptions();
         });
-        if (ttsKey) ttsKey.addEventListener('change', async (e) => { await setMainTtsProviderField('key', e.target.value, 'phone-tts-key'); });
+        if (ttsKey) ttsKey.addEventListener('change', async (e) => {
+            const value = String(e.target.value || '').trim();
+            if (getCurrentMainProviderFromForm() === 'fish') {
+                const mode = this._getFishEndpointMode();
+                await this.storage.set(this._getTtsProviderConfigKey('fish', `${mode}-key`), value);
+            }
+            await setMainTtsProviderField('key', value, 'phone-tts-key');
+        });
         if (ttsNimoRelayUrl) ttsNimoRelayUrl.addEventListener('change', async (e) => { await setNimoTtsField('relay-url', e.target.value); });
         if (ttsVolcKey) ttsVolcKey.addEventListener('change', async (e) => { await setVolcTtsField('key', e.target.value, 'phone-tts-key'); });
         if (ttsVolcAppId) ttsVolcAppId.addEventListener('change', async (e) => { await setVolcTtsField('app-id', e.target.value, 'phone-tts-volc-app-id'); });

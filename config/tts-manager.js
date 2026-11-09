@@ -14,6 +14,7 @@ export class TtsManager {
         this.storage = storage;
         this._csrfToken = null;
         this._csrfTokenPromise = null;
+        this._fishTransportCache = new Map();
         this._purgeNimoCloneLocalAudioResidue();
     }
 
@@ -72,6 +73,24 @@ export class TtsManager {
         return '';
     }
 
+    _getFishEndpointMode(apiUrl = '') {
+        const stored = String(this.storage?.get?.('phone-tts-fish-endpoint-mode') || '').trim();
+        if (stored === 'official' || stored === 'public') return stored;
+        const raw = String(apiUrl
+            || this.storage?.get?.('phone-tts-fish-url')
+            || (String(this.storage?.get?.('phone-tts-provider') || '').trim() === 'fish'
+                ? this.storage?.get?.('phone-tts-url')
+                : '')
+            || '').trim();
+        if (!raw) return 'official';
+        const target = raw.startsWith('/proxy/') ? raw.slice('/proxy/'.length) : raw;
+        try {
+            return new URL(target).hostname.toLowerCase() === 'api.fish.audio' ? 'official' : 'public';
+        } catch (_e) {
+            return 'official';
+        }
+    }
+
     _inferProviderFromUrl(apiUrl = '', fallback = 'minimax_cn') {
         const url = String(apiUrl || '').trim().toLowerCase();
         if (url.includes('minimaxi.com')) return 'minimax_cn';
@@ -105,25 +124,57 @@ export class TtsManager {
         const compatModels = new Set(['s2.1-pro-free', 's2.1-pro', 's2-pro', 's1']);
         const path = endpoint.pathname.replace(/\/+$/, '');
         const explicitCompat = /\/(?:compat\/v1|v1)\/audio\/speech$/i.test(path);
-        const compatible = official ? compatModels.has(safeModel) : explicitCompat;
+        const explicitNative = /\/v1\/tts$/i.test(path);
+        const cacheKey = official ? '' : `${endpoint.origin}${path || '/'}`;
+        const cachedFormat = cacheKey ? this._fishTransportCache.get(cacheKey) : '';
+        const ambiguous = !official && !explicitCompat && !explicitNative;
+        const compatible = official
+            ? compatModels.has(safeModel)
+            : explicitCompat || (!explicitNative && cachedFormat !== 'fish');
 
         if (compatible) {
-            if (official) endpoint.pathname = '/compat/v1/audio/speech';
-            return {
+            if (official) {
+                endpoint.pathname = '/compat/v1/audio/speech';
+            } else if (!explicitCompat) {
+                const basePath = path.replace(/\/v1$/i, '').replace(/\/+$/, '');
+                endpoint.pathname = `${basePath}/v1/audio/speech`.replace(/^\/\//, '/');
+            }
+            const result = {
                 url: forceProxy && !official ? `/proxy/${endpoint.href}` : endpoint.href,
                 compatible: true,
-                official
+                official,
+                format: 'openai'
             };
+            if (ambiguous) {
+                const nativeEndpoint = new URL(raw);
+                const nativePath = nativeEndpoint.pathname.replace(/\/+$/, '');
+                nativeEndpoint.pathname = `${nativePath.replace(/\/v1$/i, '').replace(/\/+$/, '')}/v1/tts`;
+                result.fallbackUrl = forceProxy ? `/proxy/${nativeEndpoint.href}` : nativeEndpoint.href;
+                result.cacheKey = cacheKey;
+            }
+            return result;
         }
 
-        endpoint.pathname = /\/v1\/tts$/i.test(path)
+        endpoint.pathname = explicitNative
             ? path
             : `${path.replace(/\/(?:compat\/v1\/audio\/speech|v1\/audio\/speech|v1)$/i, '')}/v1/tts`;
-        return {
+        const result = {
             url: forceProxy || official ? `/proxy/${endpoint.href}` : endpoint.href,
             compatible: false,
-            official
+            official,
+            format: 'fish'
         };
+        if (ambiguous) result.cacheKey = cacheKey;
+        return result;
+    }
+
+    _shouldFallbackFishTransport(response, errorText = '') {
+        const status = Number(response?.status || 0);
+        if (status === 405) return true;
+        if (status !== 404 && status !== 400) return false;
+        const text = String(errorText || '').trim();
+        if (!text) return status === 404;
+        return /(?:no route|route not found|endpoint not found|unsupported endpoint|method not allowed|"detail"\s*:\s*"not found"|^not found$)/i.test(text);
     }
 
     _detectAudioMime(bytes = new Uint8Array()) {
@@ -138,17 +189,35 @@ export class TtsManager {
     }
 
     _resolveConfig(options = {}) {
-        let provider = String(options.provider || this.storage?.get?.('phone-tts-provider') || 'minimax_cn').trim() || 'minimax_cn';
+        const storedProvider = String(this.storage?.get?.('phone-tts-provider') || '').trim();
+        let provider = String(options.provider || storedProvider || 'minimax_cn').trim() || 'minimax_cn';
         const rawLegacyUrl = String(this.storage?.get?.('phone-tts-url') || '').trim();
-        if (!options.provider && rawLegacyUrl) {
+        if (!options.provider && !storedProvider && rawLegacyUrl) {
             provider = this._inferProviderFromUrl(rawLegacyUrl, provider);
         }
 
         const defaults = this._getProviderDefaults(provider);
-        const apiKey = this._getStoredProviderValue(provider, 'key', 'phone-tts-key');
+        let apiKey = this._getStoredProviderValue(provider, 'key', 'phone-tts-key');
         const scopedUrl = this._getStoredProviderValue(provider, 'url');
         const legacyUrl = this._getStoredProviderValue(provider, 'url', 'phone-tts-url');
         let apiUrl = scopedUrl || (provider === 'volcengine' ? defaults.url : legacyUrl) || defaults.url || '';
+        let fishEndpointMode = '';
+        if (provider === 'fish') {
+            fishEndpointMode = String(options.endpointMode || this._getFishEndpointMode(apiUrl)).trim() || 'official';
+            const genericFishKey = apiKey;
+            if (fishEndpointMode === 'public') {
+                const publicUrl = String(this.storage?.get?.('phone-tts-fish-public-url') || '').trim();
+                const publicKey = String(this.storage?.get?.('phone-tts-fish-public-key') || '').trim();
+                const previousUrl = scopedUrl || legacyUrl;
+                const legacyCustomUrl = previousUrl && !/api\.fish\.audio/i.test(previousUrl) ? previousUrl : '';
+                apiUrl = String(options.apiUrl || publicUrl || legacyCustomUrl || '').trim();
+                apiKey = String(options.apiKey || publicKey || (legacyCustomUrl ? genericFishKey : '')).trim();
+            } else {
+                const officialKey = String(this.storage?.get?.('phone-tts-fish-official-key') || '').trim();
+                apiUrl = this._getProviderDefaults('fish').url;
+                apiKey = String(options.apiKey || officialKey || genericFishKey).trim();
+            }
+        }
         if (provider === 'minimax_intl' && /api\.minimax\.chat/i.test(apiUrl)) {
             apiUrl = defaults.url;
         }
@@ -171,7 +240,8 @@ export class TtsManager {
             voice,
             appId,
             resourceId,
-            relayUrl
+            relayUrl,
+            fishEndpointMode
         };
     }
 
@@ -952,7 +1022,7 @@ export class TtsManager {
             } catch (error) {
                 if (error?.message?.startsWith('Fish Audio 官方模型无效')) throw error;
             }
-            const transport = this._resolveFishTransport(apiUrl, safeModel);
+            let transport = this._resolveFishTransport(apiUrl, safeModel);
 
             const controller = new AbortController();
             let timedOut = false;
@@ -965,36 +1035,57 @@ export class TtsManager {
             }, 120000);
 
             try {
-                const headers = {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                };
-                const body = transport.compatible
-                    ? {
-                        model: `fish-audio/${safeModel}`,
-                        input: inputText,
-                        voice,
-                        response_format: 'mp3',
-                        provider: {
-                            options: {
-                                'fish-audio': { latency: 'normal' }
-                            }
-                        }
-                    }
-                    : {
-                        text: inputText,
-                        reference_id: voice,
-                        format: 'mp3',
-                        latency: 'normal'
+                const sendFishRequest = (currentTransport) => {
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
                     };
-                if (!transport.compatible) headers.model = safeModel;
+                    const body = currentTransport.compatible
+                        ? (currentTransport.official ? {
+                            model: `fish-audio/${safeModel}`,
+                            input: inputText,
+                            voice,
+                            response_format: 'mp3',
+                            provider: {
+                                options: {
+                                    'fish-audio': { latency: 'normal' }
+                                }
+                            }
+                        } : {
+                            model: safeModel,
+                            input: inputText,
+                            voice,
+                            response_format: 'mp3'
+                        })
+                        : {
+                            text: inputText,
+                            reference_id: voice,
+                            format: 'mp3',
+                            latency: 'normal'
+                        };
+                    if (!currentTransport.compatible) headers.model = safeModel;
+                    return this._getRawFetch()(currentTransport.url, {
+                        method: 'POST',
+                        headers,
+                        signal: controller.signal,
+                        body: JSON.stringify(body)
+                    });
+                };
 
-                const response = await this._getRawFetch()(transport.url, {
-                    method: 'POST',
-                    headers,
-                    signal: controller.signal,
-                    body: JSON.stringify(body)
-                });
+                let response = await sendFishRequest(transport);
+                if (!response.ok && transport.fallbackUrl) {
+                    const firstErrorText = await response.clone().text().catch(() => '');
+                    if (this._shouldFallbackFishTransport(response, firstErrorText)) {
+                        transport = {
+                            url: transport.fallbackUrl,
+                            compatible: false,
+                            official: false,
+                            format: 'fish',
+                            cacheKey: transport.cacheKey
+                        };
+                        response = await sendFishRequest(transport);
+                    }
+                }
                 if (!response.ok) {
                     const errorText = await response.text().catch(() => '');
                     let message = errorText;
@@ -1007,12 +1098,15 @@ export class TtsManager {
                         402: '账户额度不足或当前模型需要付费额度',
                         404: transport.compatible
                             ? '请检查 API 地址、模型和音色 ID'
-                            : '此模型需要 Fish 原生接口；原版酒馆请开启 enableCorsProxy，TT 酒馆请使用允许跨域的 Fish 中转',
+                            : (transport.official
+                                ? '此模型需要 Fish 原生接口；原版酒馆请开启 enableCorsProxy，TT 酒馆请使用允许跨域的 Fish 中转'
+                                : '请检查公益站地址、模型和音色 ID'),
                         429: '请求过于频繁或免费服务繁忙，请稍后重试'
                     };
                     const hint = hints[response.status] || message || '请求失败';
                     throw new Error(`Fish Audio HTTP ${response.status}：${String(hint).slice(0, 300)}`);
                 }
+                if (transport.cacheKey) this._fishTransportCache.set(transport.cacheKey, transport.format);
 
                 const contentLength = Number(response.headers.get('content-length') || 0);
                 if (contentLength > 25 * 1024 * 1024) throw new Error('Fish Audio 返回音频超过 25MB 限制');
@@ -1030,7 +1124,9 @@ export class TtsManager {
                 if (error instanceof TypeError) {
                     throw new Error(transport.compatible
                         ? 'Fish Audio 请求失败，请检查网络、Base URL 和接口跨域设置'
-                        : 'Fish Audio 原生接口连接失败；原版酒馆请开启 enableCorsProxy，TT 酒馆请使用允许跨域的 Fish 中转');
+                        : (transport.official
+                            ? 'Fish Audio 原生接口连接失败；原版酒馆请开启 enableCorsProxy，TT 酒馆请使用允许跨域的 Fish 中转'
+                            : 'Fish 公益站连接失败，请检查网络、接口格式和跨域设置'));
                 }
                 throw error;
             } finally {
