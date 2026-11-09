@@ -4210,7 +4210,7 @@ input:checked + .toggle-slider:before {
 }
 
 /* 手机边框颜色选择器：自绘控件，避免移动端原生颜色面板失控 */
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-control {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-control {
     width: auto !important;
     min-width: 0 !important;
     max-width: 132px !important;
@@ -4234,7 +4234,7 @@ input:checked + .toggle-slider:before {
     -webkit-tap-highlight-color: transparent;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-control-swatch {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-control-swatch {
     width: 36px !important;
     height: 36px !important;
     flex: 0 0 36px !important;
@@ -4247,7 +4247,7 @@ input:checked + .toggle-slider:before {
     box-shadow: 0 1px 3px rgba(18, 24, 38, 0.08) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-control-swatch::before {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-control-swatch::before {
     content: '';
     width: 100%;
     height: 100%;
@@ -4257,7 +4257,7 @@ input:checked + .toggle-slider:before {
     box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-control-value {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-control-value {
     width: 82px !important;
     height: 36px !important;
     flex: 0 0 82px !important;
@@ -4277,18 +4277,18 @@ input:checked + .toggle-slider:before {
     white-space: nowrap !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-control:hover .yzp-frame-color-control-swatch,
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-control:focus-visible .yzp-frame-color-control-swatch,
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-control:focus-visible .yzp-frame-color-control-value {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-control:hover .yzp-frame-color-control-swatch,
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-control:focus-visible .yzp-frame-color-control-swatch,
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-control:focus-visible .yzp-frame-color-control-value {
     border-color: rgba(76, 117, 170, 0.48) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-control:focus-visible {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-control:focus-visible {
     outline: 2px solid rgba(76, 117, 170, 0.24) !important;
     outline-offset: 3px !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-overlay {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-overlay {
     position: absolute !important;
     inset: 0 !important;
     z-index: 10060 !important;
@@ -4305,7 +4305,7 @@ input:checked + .toggle-slider:before {
     -webkit-backdrop-filter: blur(9px) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-dialog {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-dialog {
     width: min(100%, 336px) !important;
     max-width: 336px !important;
     max-height: calc(100% - 8px) !important;
@@ -4325,7 +4325,7 @@ input:checked + .toggle-slider:before {
     color: #18202c !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-header {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-header {
     height: 52px !important;
     min-height: 52px !important;
     flex: 0 0 52px !important;
@@ -4338,7 +4338,7 @@ input:checked + .toggle-slider:before {
     background: rgba(255, 255, 255, 0.92) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-header h3 {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-header h3 {
     grid-column: 2 !important;
     min-width: 0 !important;
     margin: 0 !important;
@@ -4350,7 +4350,7 @@ input:checked + .toggle-slider:before {
     text-align: center !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-close {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-close {
     grid-column: 3 !important;
     width: 34px !important;
     min-width: 34px !important;
@@ -4372,13 +4372,13 @@ input:checked + .toggle-slider:before {
     cursor: pointer !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-close:hover,
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-close:focus-visible {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-close:hover,
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-close:focus-visible {
     background: #f2f4f7 !important;
     color: #111827 !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-body {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-body {
     min-height: 0 !important;
     flex: 1 1 auto !important;
     display: flex !important;
@@ -4394,13 +4394,13 @@ input:checked + .toggle-slider:before {
     scrollbar-width: none !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-body::-webkit-scrollbar {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-body::-webkit-scrollbar {
     width: 0 !important;
     height: 0 !important;
     display: none !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-field {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-field {
     --yzp-frame-picker-hue: 0;
     position: relative !important;
     width: 100% !important;
@@ -4421,12 +4421,12 @@ input:checked + .toggle-slider:before {
     cursor: crosshair !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-field:focus-visible {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-field:focus-visible {
     outline: 2px solid rgba(76, 117, 170, 0.38) !important;
     outline-offset: 2px !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-field-pointer {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-field-pointer {
     position: absolute !important;
     left: 0;
     top: 100%;
@@ -4442,7 +4442,7 @@ input:checked + .toggle-slider:before {
     transform: translate(-50%, -50%) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-hue-row {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-hue-row {
     min-width: 0 !important;
     display: grid !important;
     grid-template-columns: 38px minmax(0, 1fr) 82px !important;
@@ -4450,7 +4450,7 @@ input:checked + .toggle-slider:before {
     gap: 9px !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-preview {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-preview {
     width: 38px !important;
     height: 38px !important;
     display: block !important;
@@ -4461,7 +4461,7 @@ input:checked + .toggle-slider:before {
     box-shadow: 0 0 0 1px rgba(18, 24, 38, 0.14), 0 1px 3px rgba(18, 24, 38, 0.10) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) input.yzp-frame-color-hue {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) input.yzp-frame-color-hue {
     width: 100% !important;
     min-width: 0 !important;
     height: 20px !important;
@@ -4478,7 +4478,7 @@ input:checked + .toggle-slider:before {
     pointer-events: auto !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) input.yzp-frame-color-hue::-webkit-slider-runnable-track {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) input.yzp-frame-color-hue::-webkit-slider-runnable-track {
     width: 100% !important;
     height: 8px !important;
     border: 1px solid rgba(18, 24, 38, 0.12) !important;
@@ -4487,7 +4487,7 @@ input:checked + .toggle-slider:before {
     box-shadow: none !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) input.yzp-frame-color-hue::-moz-range-track {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) input.yzp-frame-color-hue::-moz-range-track {
     width: 100% !important;
     height: 8px !important;
     border: 1px solid rgba(18, 24, 38, 0.12) !important;
@@ -4496,7 +4496,7 @@ input:checked + .toggle-slider:before {
     box-shadow: none !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) input.yzp-frame-color-hue::-webkit-slider-thumb {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) input.yzp-frame-color-hue::-webkit-slider-thumb {
     width: 19px !important;
     height: 19px !important;
     border: 2px solid #ffffff !important;
@@ -4508,7 +4508,7 @@ input:checked + .toggle-slider:before {
     box-shadow: 0 0 0 1px rgba(18, 24, 38, 0.46), 0 1px 3px rgba(18, 24, 38, 0.18) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) input.yzp-frame-color-hue::-moz-range-thumb {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) input.yzp-frame-color-hue::-moz-range-thumb {
     width: 17px !important;
     height: 17px !important;
     border: 2px solid #ffffff !important;
@@ -4517,7 +4517,7 @@ input:checked + .toggle-slider:before {
     box-shadow: 0 0 0 1px rgba(18, 24, 38, 0.46), 0 1px 3px rgba(18, 24, 38, 0.18) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) input.yzp-frame-color-hex {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) input.yzp-frame-color-hex {
     width: 82px !important;
     min-width: 82px !important;
     max-width: 82px !important;
@@ -4541,14 +4541,14 @@ input:checked + .toggle-slider:before {
     text-transform: uppercase !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-rgb-grid {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-rgb-grid {
     min-width: 0 !important;
     display: grid !important;
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     gap: 8px !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-rgb-grid label {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-rgb-grid label {
     min-width: 0 !important;
     display: flex !important;
     align-items: center !important;
@@ -4557,7 +4557,7 @@ input:checked + .toggle-slider:before {
     color: #667085 !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-rgb-grid label > span {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-rgb-grid label > span {
     width: 12px !important;
     flex: 0 0 12px !important;
     color: #667085 !important;
@@ -4567,7 +4567,7 @@ input:checked + .toggle-slider:before {
     text-align: center !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-rgb-grid input {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-rgb-grid input {
     width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
@@ -4589,18 +4589,18 @@ input:checked + .toggle-slider:before {
     text-align: center !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) input.yzp-frame-color-hex:focus,
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-rgb-grid input:focus {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) input.yzp-frame-color-hex:focus,
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-rgb-grid input:focus {
     border-color: rgba(76, 117, 170, 0.42) !important;
     box-shadow: 0 0 0 3px rgba(76, 117, 170, 0.08) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-rgb-grid input::-webkit-inner-spin-button,
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-rgb-grid input::-webkit-outer-spin-button {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-rgb-grid input::-webkit-inner-spin-button,
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-rgb-grid input::-webkit-outer-spin-button {
     display: none !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-footer {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-footer {
     flex: 0 0 auto !important;
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -4611,7 +4611,7 @@ input:checked + .toggle-slider:before {
     background: rgba(255, 255, 255, 0.96) !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-footer button {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-footer button {
     width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
@@ -4627,51 +4627,51 @@ input:checked + .toggle-slider:before {
     cursor: pointer !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-cancel {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-cancel {
     border: 1px solid rgba(18, 24, 38, 0.08) !important;
     background: #ffffff !important;
     color: #374151 !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-confirm {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-confirm {
     border: 1px solid #a9bfdd !important;
     background: #afc5e1 !important;
     color: #203550 !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-confirm:hover,
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-confirm:focus-visible {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-confirm:hover,
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-confirm:focus-visible {
     border-color: #91acd0 !important;
     background: #9fb8d8 !important;
 }
 
-#phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-confirm:disabled {
+#phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-confirm:disabled {
     cursor: wait !important;
     opacity: 0.62 !important;
 }
 
 @media (max-width: 360px) {
-    #phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-control-value {
+    #phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-control-value {
         width: 76px !important;
         flex-basis: 76px !important;
         padding: 0 5px !important;
         font-size: 10.5px !important;
     }
 
-    #phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-overlay {
+    #phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-overlay {
         padding: 9px !important;
     }
 
-    #phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-picker-body {
+    #phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-picker-body {
         padding: 12px !important;
     }
 
-    #phone-panel-content :is(#yzp-settings-app, .diary-app) .yzp-frame-color-hue-row {
+    #phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) .yzp-frame-color-hue-row {
         grid-template-columns: 36px minmax(0, 1fr) 78px !important;
         gap: 7px !important;
     }
 
-    #phone-panel-content :is(#yzp-settings-app, .diary-app) input.yzp-frame-color-hex {
+    #phone-panel-content :is(#yzp-settings-app, .diary-app, .wechat-app) input.yzp-frame-color-hex {
         width: 78px !important;
         min-width: 78px !important;
         max-width: 78px !important;
@@ -7959,10 +7959,30 @@ input:checked + .toggle-slider:before {
     -webkit-backdrop-filter: none !important;
 }
 
+/* 微信表单底色跟随酒馆主题；文字仍由微信字体颜色设置控制。 */
+#phone-panel-content .wechat-app {
+    --phone-form-background: var(--SmartThemeBlurTintColor, var(--SmartThemeChatTintColor, #f5f5f5));
+}
+
+#phone-panel-content .wechat-app :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
+    textarea,
+    select,
+    select option,
+    #save-user-profile
+):not(.yzp-frame-color-picker-overlay *) {
+    background: var(--phone-form-background) !important;
+}
+
+/* 颜色选择器保持自身配色，避免影响色板与颜色输入的辨识。 */
+#phone-panel-content .wechat-app .yzp-frame-color-picker-overlay {
+    --phone-form-background: #ffffff;
+}
+
 /* 2. 拯救所有表单控件 (对抗主题对裸标签 input, textarea, select 的 !important 劫持) */
 #phone-panel-content input:not(.diary-app *):not(.phone-secret-input):not(.phone-worldbook-search-input):not(.honey-app *):not(.wangxiang-app *):not(.wechat-app .chat-input):not([type="checkbox"]):not([type="range"]):not([type="color"]):not(#honey-chat-input):not(#video-chat-input):not(#voice-chat-input):not(#phone-call-input),
 #phone-panel-content textarea:not(.diary-app *):not(.honey-app *):not(.wangxiang-app *) {
-    background: #ffffff !important;
+    background: var(--phone-form-background, #ffffff) !important;
     background-image: none !important;
     box-shadow: none !important;
     border: 1px solid #e0e0e0 !important;
@@ -7974,7 +7994,7 @@ input:checked + .toggle-slider:before {
 
 /* select 单独处理：避免和固定高度(如 30px)控件冲突导致文字被截断 */
 #phone-panel-content select:not(.diary-app *):not(.honey-app *) {
-    background: #ffffff !important;
+    background: var(--phone-form-background, #ffffff) !important;
     background-image: none !important;
     box-shadow: none !important;
     border: 1px solid #e0e0e0 !important;

@@ -10,12 +10,15 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20261027-contact-tag-aliases';
-import { ContactsView } from './contacts-view.js?v=20261027-offline-friend-visibility';
-import { MomentsView } from './moments-view.js?v=20261021-user-real-name';
+import { ChatView } from './chat-view.js?v=20261109-readable-settings';
+import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
+import { MomentsView } from './moments-view.js?v=20261109-readable-settings';
 import { WechatData } from './wechat-data.js?v=20261108-user-avatar';
 import { normalizeWechatUserAvatar } from './user-avatar.js';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
+import { getWechatReadablePalette } from './readable-colors.js?v=20261109-readable-glass';
+import { bindPhoneColorPickers } from '../../phone/color-picker.js';
+import { normalizePhoneHexColor } from '../../config/phone-colors.js';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { formatWechatChatListTime } from './chat-list-time.js?v=20260717-wechat-list-time';
 import {
@@ -56,6 +59,7 @@ export class WechatApp {
         // 加载样式
         this._ensureChatCssPresetState();
         this.loadStyles();
+        this._applyWechatTextColor();
         // 应用用户自定义会话样式（气泡/头像框）
         this._applyCustomChatStyle(this._getUserCustomChatCss());
 
@@ -68,6 +72,91 @@ export class WechatApp {
                 }
             });
         }
+    }
+
+    _applyWechatTextColor(value = this.storage.get('phone-wechat-text-color')) {
+        const color = normalizePhoneHexColor(value, '#000000');
+        const palette = getWechatReadablePalette(color);
+        document.documentElement.style.setProperty('--wechat-text-color', color);
+        document.documentElement.style.setProperty('--wechat-readable-surface', palette.surface);
+        document.documentElement.style.setProperty('--wechat-readable-border', palette.border);
+        let style = document.getElementById('wechat-text-color-override');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'wechat-text-color-override';
+            style.setAttribute('data-owner', 'yuzuki-phone');
+            document.head.appendChild(style);
+        }
+        style.textContent = `
+            #phone-panel-content .wechat-app {
+                --phone-global-text: var(--wechat-text-color, #000000) !important;
+                --phone-text-color: var(--wechat-text-color, #000000) !important;
+            }
+            #phone-panel-content .wechat-app,
+            #phone-panel-content .wechat-app.wechat-app :not(.yzp-frame-color-picker-overlay, .yzp-frame-color-picker-overlay *) {
+                color: var(--wechat-text-color, #000000) !important;
+                text-shadow: none !important;
+            }
+            #phone-panel-content .wechat-app.wechat-readable-settings {
+                --phone-form-background: var(--wechat-readable-surface) !important;
+            }
+            #phone-panel-content .wechat-readable-settings #wechat-text-color-trigger .yzp-frame-color-control-value,
+            #phone-panel-content .wechat-app.wechat-readable-settings .wechat-header,
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(
+                button:not(.yzp-frame-color-control):not(.wechat-back-btn), input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+                textarea, select, option, .phone-prompt-fold, .phone-prompt-fold-header,
+                .yzp-frame-color-control-value
+            ):not(.yzp-frame-color-picker-overlay, .yzp-frame-color-picker-overlay *) {
+                background: var(--wechat-readable-surface) !important;
+                border-color: var(--wechat-readable-border) !important;
+                color: var(--wechat-text-color, #000000) !important;
+                -webkit-text-fill-color: var(--wechat-text-color, #000000) !important;
+                backdrop-filter: blur(18px) saturate(135%) !important;
+                -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
+            }
+            #phone-panel-content .wechat-app.wechat-readable-settings button.wechat-back-btn {
+                background: transparent !important;
+                background-image: none !important;
+                border: 0 !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+            }
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: #fff"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background:#fff"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: #fafafa"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background:#fafafa"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: #f9f9f9"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background:#f9f9f9"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: #f7f7f7"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background:#f7f7f7"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: #f5f5f5"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background:#f5f5f5"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: #f2f2f7"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background:#f2f2f7"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: #f0f0f0"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background:#f0f0f0"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: #ededed"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background:#ededed"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: rgba(255,255,255"],
+            #phone-panel-content .wechat-app.wechat-readable-settings :is(div, section, article, label)[style*="background: rgba(255, 255, 255"] {
+                background: var(--wechat-readable-surface) !important;
+                border-color: var(--wechat-readable-border) !important;
+                backdrop-filter: blur(18px) saturate(135%) !important;
+                -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
+            }
+            #phone-panel-content .wechat-app input::placeholder,
+            #phone-panel-content .wechat-app textarea::placeholder {
+                color: var(--wechat-text-color, #000000) !important;
+                opacity: 0.55;
+            }
+            #phone-panel-content .wechat-app.wechat-readable-settings input::placeholder,
+            #phone-panel-content .wechat-app.wechat-readable-settings textarea::placeholder {
+                opacity: 1;
+            }
+        `;
+        return color;
     }
 
     // 🔥 处理滑动返回（智能模拟点击原生返回按钮）
@@ -5653,6 +5742,10 @@ export class WechatApp {
         };
     }
 
+    _getReadableWechatShellClass(baseClass = 'wechat-app') {
+        return [...new Set(`${baseClass || 'wechat-app'} wechat-readable-settings`.split(/\s+/).filter(Boolean))].join(' ');
+    }
+
     // 显示提示词编辑器
     showPromptEditor(app, feature) {
         const promptManager = window.VirtualPhone?.promptManager;
@@ -5679,10 +5772,10 @@ export class WechatApp {
             return;
         }
         const shellBg = this._getMainShellBackgroundConfig();
-        const editorContentStyle = `${shellBg.contentBgStyle || 'background: #ededed;'} padding: 15px;`;
+        const editorContentStyle = `${shellBg.contentBgStyle || 'background: var(--wechat-readable-surface, #F5F6F8);'} padding: 15px;`;
 
         const html = `
-        <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
+        <div class="${this._getReadableWechatShellClass(shellBg.appClass)}" style="${shellBg.appStyle}">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-editor">
@@ -5698,7 +5791,7 @@ export class WechatApp {
             </div>
             
             <div class="wechat-content" style="${editorContentStyle}">
-                <div style="background: rgba(255,255,255,0.94); color: #1f2933; border-radius: 12px; padding: 15px;">
+                <div style="background: var(--wechat-readable-surface, #F5F6F8); border: 1px solid var(--wechat-readable-border, #8A8A8A); border-radius: 12px; padding: 15px;">
                     <div style="font-size: 16px; font-weight: 500; color: #1f2933; margin-bottom: 8px;">
                         ${prompt.name}
                     </div>
@@ -5712,8 +5805,8 @@ export class WechatApp {
                         width: 100%;
                         min-height: 300px;
                         padding: 12px;
-                        background: #f7f7f7;
-                        color: #1f2933;
+                        background: var(--wechat-readable-surface, #F5F6F8);
+                        color: var(--wechat-text-color, #000000);
                         caret-color: #07c160;
                         border: 1px solid #e5e5e5;
                         border-radius: 8px;
@@ -5727,8 +5820,8 @@ export class WechatApp {
                         <button id="reset-prompt" style="
                             flex: 1;
                             padding: 10px;
-                            background: #f0f0f0;
-                            color: #666;
+                            background: var(--wechat-readable-surface, #F5F6F8);
+                            color: var(--wechat-text-color, #000000);
                             border: none;
                             border-radius: 6px;
                             font-size: 14px;
@@ -8159,7 +8252,7 @@ export class WechatApp {
     showEditProfile() {
         const userInfo = this.wechatData.getUserInfo();
         const shellBg = this._getMainShellBackgroundConfig();
-        const profileContentStyle = `${shellBg.contentBgStyle || 'background: #f2f2f7;'} padding: 16px 12px;`;
+        const profileContentStyle = `${shellBg.contentBgStyle || 'background: var(--wechat-readable-surface, #FFFFFF);'} padding: 16px 12px;`;
         const ttsProviderOptions = this.contactsView?._getTtsProviderOptions?.() || [];
         const currentTtsProvider = this.contactsView?._getCurrentTtsProvider?.() || 'minimax_cn';
         const userTtsProvider = String(userInfo.ttsProvider || '').trim();
@@ -8185,7 +8278,7 @@ export class WechatApp {
         const avatarHtml = this.renderAvatar(userInfo.avatar, '😊', userInfo.name);
 
         const html = `
-        <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
+        <div class="${this._getReadableWechatShellClass(shellBg.appClass)}" style="${shellBg.appStyle}">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-profile-edit">
@@ -8199,12 +8292,12 @@ export class WechatApp {
             <div class="wechat-content wechat-profile-edit-content" style="${profileContentStyle}">
                 
                 <!-- 📸 头像卡片 -->
-                <div style="background: #fff; border-radius: 12px; padding: 24px 16px; text-align: center; margin-bottom: 16px;">
+                <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; padding: 24px 16px; text-align: center; margin-bottom: 16px;">
                     <div id="user-avatar-preview" style="
                         width: 72px;
                         height: 72px;
                         border-radius: 50%;
-                        background: #f0f0f0;
+                        background: var(--wechat-readable-surface, #FFFFFF);
                         margin: 0 auto 12px;
                         display: flex;
                         align-items: center;
@@ -8225,7 +8318,7 @@ export class WechatApp {
                 </div>
 
                 <!-- 📝 基础资料卡片 (iOS 列表风格) -->
-                <div style="background: #fff; border-radius: 12px; padding: 0 16px; margin-bottom: 16px;">
+                <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; padding: 0 16px; margin-bottom: 16px;">
                     <div style="display: flex; align-items: center; padding: 16px 0; border-bottom: 0.5px solid #f0f0f0;">
                         <div style="width: 70px; font-size: 15px; color: #000;">昵称</div>
                         <input type="text" id="user-name-input" placeholder="未设置" value="${safeUserName}" maxlength="20" style="
@@ -8251,7 +8344,7 @@ export class WechatApp {
                         <div style="font-size: 15px; color: #000; margin-bottom: 6px;">用户固定形象Tag</div>
                         <textarea id="user-nai-prompt-tags-input" placeholder="例如：1girl, long black hair, brown eyes, casual outfit" style="
                             width: 100%; min-height: 70px; padding: 10px; border: none; border-radius: 8px;
-                            background: #f9f9f9; font-size: 13px; color: #333; line-height: 1.45;
+                            background: var(--wechat-readable-surface, #FFFFFF); font-size: 13px; color: #333; line-height: 1.45;
                             font-family: inherit; resize: vertical; outline: none; box-sizing: border-box;
                         ">${safeNaiPromptTags}</textarea>
                         <div style="font-size: 11px; color: #8e8e93; line-height: 1.45; margin-top: 5px;">
@@ -8272,14 +8365,14 @@ export class WechatApp {
                     <div class="phone-prompt-fold-content" id="edit-user-tts-fold-content" aria-hidden="true">
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
                             <div style="font-size: 11px; color: #666;">历史音色快速填入</div>
-                            <select id="edit-user-tts-history-select" style="border: 1px solid #ddd; background: rgba(255,255,255,0.82); border-radius: 4px; font-size: 11px; padding: 2px 4px; outline: none; max-width: 128px;">
+                            <select id="edit-user-tts-history-select" style="border: 1px solid #ddd; background: var(--wechat-readable-surface, #FFFFFF); border-radius: 4px; font-size: 11px; padding: 2px 4px; outline: none; max-width: 128px;">
                                 <option value="">-- 历史音色 --</option>
                                 ${ttsHistoryOptions}
                             </select>
                         </div>
                         <label style="display: block; margin-bottom: 7px;">
                             <div style="font-size: 11px; color: #666; margin-bottom: 3px;">用户默认语音服务商</div>
-                            <select id="edit-user-tts-provider-select" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #ddd; background: rgba(255,255,255,0.82); border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+                            <select id="edit-user-tts-provider-select" style="width: 100%; height: 30px; padding: 0 8px; border: 1px solid #ddd; background: var(--wechat-readable-surface, #FFFFFF); border-radius: 6px; font-size: 12px; box-sizing: border-box;">
                                 <option value="" ${!userTtsProvider ? 'selected' : ''}>跟随全局设置</option>
                                 ${ttsProviderOptions.map(option => `
                                     <option value="${escapeAttr(option.id)}" ${userTtsProvider === option.id ? 'selected' : ''}>${escapeAttr(option.label)}</option>
@@ -8297,7 +8390,7 @@ export class WechatApp {
                                             ${option.id === currentTtsProvider ? '<span style="font-size: 10px; color: #07c160;">当前</span>' : ''}
                                         </div>
                                         <input type="text" class="edit-user-tts-provider-input" data-provider="${escapeAttr(option.id)}"
-                                               placeholder="${escapeAttr(option.placeholder)}" value="${escapeAttr(value)}" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; background: rgba(255,255,255,0.82); border-radius: 6px; font-size: 12px; box-sizing: border-box;">
+                                               placeholder="${escapeAttr(option.placeholder)}" value="${escapeAttr(value)}" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; background: var(--wechat-readable-surface, #FFFFFF); border-radius: 6px; font-size: 12px; box-sizing: border-box;">
                                     </label>
                                 `;
                             }).join('')}
@@ -8308,7 +8401,7 @@ export class WechatApp {
 
                 <!-- iOS蓝按钮 -->
                 <button id="save-user-profile" style="
-                    width: 100%; padding: 14px; background: #ffffff; color: #050505; 
+                    width: 100%; padding: 14px; background: var(--phone-form-background, #f5f5f5); color: #050505;
                     border: none; border-radius: 12px; font-size: 16px; font-weight: 500; 
                     cursor: pointer; margin-bottom: 20px; transition: transform 0.1s;
                 ">应用并保存所有更改</button>
@@ -8457,7 +8550,8 @@ export class WechatApp {
         const promptManager = window.VirtualPhone?.promptManager;
         const prompts = promptManager?.prompts?.wechat || {};
         const shellBg = this._getMainShellBackgroundConfig();
-        const settingsContentStyle = shellBg.contentBgStyle || 'background: #ededed;';
+        const wechatTextColor = normalizePhoneHexColor(this.storage.get('phone-wechat-text-color'), '#000000');
+        const settingsContentStyle = shellBg.contentBgStyle || 'background: var(--wechat-readable-surface, #FFFFFF);';
         const useWechatWorldbook = window.VirtualPhone?.worldbookManager?.getEnabled?.('wechat') ?? true;
         const userInfo = this.wechatData.getUserInfo();
         const momentsBackground = String(userInfo?.momentsBackground || '').trim();
@@ -8479,7 +8573,7 @@ export class WechatApp {
             ? `background-image:url('${momentsBackground}');background-size:cover;background-position:center;`
             : 'background:linear-gradient(135deg,#f3f4f6,#e9edf2);';
         const html = `
-        <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
+        <div class="${this._getReadableWechatShellClass(shellBg.appClass)}" style="${shellBg.appStyle}">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-settings">
@@ -8492,7 +8586,7 @@ export class WechatApp {
             
             <div class="wechat-content" style="${settingsContentStyle}">
                 <!-- 模式提示 -->
-<div style="background: #e3f2fd; border-radius: 12px; padding: 15px; margin: 15px;">
+<div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; padding: 15px; margin: 15px;">
     <div style="font-size: 14px; color: #1976d2;">
         <i class="fa-solid fa-info-circle"></i> 
         互动模式状态：${(() => {
@@ -8510,7 +8604,7 @@ export class WechatApp {
 </div>
 
                 <!-- 生成上下文设置 -->
-                <div style="background: #fff; border-radius: 12px; margin: 15px; padding: 15px;">
+                <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; margin: 15px; padding: 15px;">
                     <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 12px;">
                         生成上下文
                     </div>
@@ -8543,7 +8637,7 @@ export class WechatApp {
                 </div>
 
                 <!-- 功能提示词设置 -->
-                <div style="background: #fff; border-radius: 12px; margin: 15px; padding: 15px;">
+                <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; margin: 15px; padding: 15px;">
                     <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 15px;">
                         📝 功能提示词
                     </div>
@@ -8564,7 +8658,7 @@ export class WechatApp {
                             </div>
                             <button class="edit-prompt-btn" data-feature="override" style="
                                 padding: 6px 12px;
-                                background: #f0f0f0;
+                                background: var(--wechat-readable-surface, #FFFFFF);
                                 border: none;
                                 border-radius: 4px;
                                 font-size: 12px;
@@ -8590,7 +8684,7 @@ export class WechatApp {
                             </div>
                             <button class="edit-prompt-btn" data-feature="offline" style="
                                 padding: 6px 12px;
-                                background: #f0f0f0;
+                                background: var(--wechat-readable-surface, #FFFFFF);
                                 border: none;
                                 border-radius: 4px;
                                 font-size: 12px;
@@ -8617,7 +8711,7 @@ export class WechatApp {
                             </div>
 
                             <!-- 子项1：微信聊天 -->
-                            <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+                            <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 8px; padding: 12px; margin-bottom: 10px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">💬 微信聊天</span>
                                 </div>
@@ -8626,7 +8720,7 @@ export class WechatApp {
                                 </div>
                                 <button class="edit-prompt-btn" data-feature="online" style="
                                     padding: 5px 10px;
-                                    background: #fff;
+                                    background: var(--wechat-readable-surface, #FFFFFF);
                                     border: 1px solid #e0e0e0;
                                     border-radius: 4px;
                                     font-size: 11px;
@@ -8636,7 +8730,7 @@ export class WechatApp {
                             </div>
 
                             <!-- 子项2：语音通话 -->
-                            <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+                            <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 8px; padding: 12px; margin-bottom: 10px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">📞 语音通话</span>
                                 </div>
@@ -8645,7 +8739,7 @@ export class WechatApp {
                                 </div>
                                 <button class="edit-prompt-btn" data-feature="voiceCall" style="
                                     padding: 5px 10px;
-                                    background: #fff;
+                                    background: var(--wechat-readable-surface, #FFFFFF);
                                     border: 1px solid #e0e0e0;
                                     border-radius: 4px;
                                     font-size: 11px;
@@ -8655,7 +8749,7 @@ export class WechatApp {
                             </div>
 
                             <!-- 子项3：视频通话 -->
-                            <div style="background: #f9f9f9; border-radius: 8px; padding: 12px;">
+                            <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 8px; padding: 12px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">📹 视频通话</span>
                                 </div>
@@ -8664,7 +8758,7 @@ export class WechatApp {
                                 </div>
                                 <button class="edit-prompt-btn" data-feature="videoCall" style="
                                     padding: 5px 10px;
-                                    background: #fff;
+                                    background: var(--wechat-readable-surface, #FFFFFF);
                                     border: 1px solid #e0e0e0;
                                     border-radius: 4px;
                                     font-size: 11px;
@@ -8674,7 +8768,7 @@ export class WechatApp {
                             </div>
 
                             <!-- 子项4：群聊 -->
-                            <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                            <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 8px; padding: 12px; margin-top: 10px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">👥 群聊</span>
                                 </div>
@@ -8683,7 +8777,7 @@ export class WechatApp {
                                 </div>
                                 <button class="edit-prompt-btn" data-feature="groupChat" style="
                                     padding: 5px 10px;
-                                    background: #fff;
+                                    background: var(--wechat-readable-surface, #FFFFFF);
                                     border: 1px solid #e0e0e0;
                                     border-radius: 4px;
                                     font-size: 11px;
@@ -8693,7 +8787,7 @@ export class WechatApp {
                             </div>
 
                             <!-- 子项5：群语音通话 -->
-                            <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                            <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 8px; padding: 12px; margin-top: 10px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">👥📞 群语音通话</span>
                                 </div>
@@ -8702,7 +8796,7 @@ export class WechatApp {
                                 </div>
                                 <button class="edit-prompt-btn" data-feature="groupVoiceCall" style="
                                     padding: 5px 10px;
-                                    background: #fff;
+                                    background: var(--wechat-readable-surface, #FFFFFF);
                                     border: 1px solid #e0e0e0;
                                     border-radius: 4px;
                                     font-size: 11px;
@@ -8712,7 +8806,7 @@ export class WechatApp {
                             </div>
 
                             <!-- 子项6：群视频通话 -->
-                            <div style="background: #f9f9f9; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                            <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 8px; padding: 12px; margin-top: 10px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                                     <span style="font-size: 14px;">👥📹 群视频通话</span>
                                 </div>
@@ -8721,7 +8815,7 @@ export class WechatApp {
                                 </div>
                                 <button class="edit-prompt-btn" data-feature="groupVideoCall" style="
                                     padding: 5px 10px;
-                                    background: #fff;
+                                    background: var(--wechat-readable-surface, #FFFFFF);
                                     border: 1px solid #e0e0e0;
                                     border-radius: 4px;
                                     font-size: 11px;
@@ -8748,7 +8842,7 @@ export class WechatApp {
                             </div>
                             <button class="edit-prompt-btn" data-feature="moments" style="
                                 padding: 6px 12px;
-                                background: #f0f0f0;
+                                background: var(--wechat-readable-surface, #FFFFFF);
                                 border: none;
                                 border-radius: 4px;
                                 font-size: 12px;
@@ -8762,7 +8856,7 @@ export class WechatApp {
                                 </div>
                                 <button class="edit-prompt-btn" data-feature="momentsInteraction" style="
                                     padding: 6px 12px;
-                                    background: #f0f0f0;
+                                    background: var(--wechat-readable-surface, #FFFFFF);
                                     border: none;
                                     border-radius: 4px;
                                     font-size: 12px;
@@ -8789,7 +8883,7 @@ export class WechatApp {
                             </div>
                             <button class="edit-prompt-btn" data-feature="loadContactsOverride" style="
                                 padding: 6px 12px;
-                                background: #f0f0f0;
+                                background: var(--wechat-readable-surface, #FFFFFF);
                                 border: none;
                                 border-radius: 4px;
                                 font-size: 12px;
@@ -8815,7 +8909,7 @@ export class WechatApp {
                             </div>
                             <button class="edit-prompt-btn" data-feature="loadContacts" style="
                                 padding: 6px 12px;
-                                background: #f0f0f0;
+                                background: var(--wechat-readable-surface, #FFFFFF);
                                 border: none;
                                 border-radius: 4px;
                                 font-size: 12px;
@@ -8827,12 +8921,12 @@ export class WechatApp {
                 </div>
 
                 <!-- 表情包 API 设置 -->
-                <div style="background: #fff; border-radius: 12px; margin: 15px; padding: 12px;">
+                <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; margin: 15px; padding: 12px;">
                     <div style="font-size: 13px; font-weight: 600; color: #333; margin-bottom: 8px;">
                         🖼️ 表情包 API 密钥
                     </div>
                     <div style="display: flex; gap: 6px;">
-                        <div class="phone-secret-field" style="flex: 1; min-width: 0; border: 1px solid #e5e5e5; border-radius: 6px; background: #fff;">
+                        <div class="phone-secret-field" style="flex: 1; min-width: 0; border: 1px solid #e5e5e5; border-radius: 6px; background: var(--wechat-readable-surface, #FFFFFF);">
                             <input type="text" class="phone-secret-input phone-secret-masked" id="alapi-token-input" placeholder="输入 ALAPI Token"
                                    value="${window.VirtualPhone?.storage?.get('global_alapi_token') || ''}" style="
                                 width: 100%;
@@ -8850,7 +8944,7 @@ export class WechatApp {
                         </div>
                         <button id="save-alapi-token-btn" style="
                             padding: 8px 12px;
-                            background: #07c160;
+                            background: var(--wechat-readable-surface, #FFFFFF);
                             color: #fff;
                             border: none;
                             border-radius: 6px;
@@ -8862,7 +8956,7 @@ export class WechatApp {
                 </div>
 
                 <!-- 头像管理 -->
-                <div style="background: #fff; border-radius: 12px; margin: 15px; padding: 15px;">
+                <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; margin: 15px; padding: 15px;">
                     <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px;">
                         👤 头像管理器
                     </div>
@@ -8874,7 +8968,7 @@ export class WechatApp {
                         padding: 10px 12px;
                         border: 1px solid #e7e7e7;
                         border-radius: 8px;
-                        background: #fafafa;
+                        background: var(--wechat-readable-surface, #FFFFFF);
                         color: #333;
                         font-size: 13px;
                         cursor: pointer;
@@ -8882,9 +8976,23 @@ export class WechatApp {
                 </div>
 
                 <!-- 外观背景设置 -->
-                <div style="background: #fff; border-radius: 12px; margin: 15px; padding: 15px;">
+                <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; margin: 15px; padding: 15px;">
                     <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 12px;">
                         外观背景
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px;">
+                        <div style="min-width: 0; flex: 1;">
+                            <div style="font-size: 14px;">微信字体颜色</div>
+                            <div style="font-size: 12px; line-height: 1.45; margin-top: 4px;">控制微信内所有文字，默认黑色；设置页底色自动适配，保证清晰。</div>
+                        </div>
+                        <button type="button" id="wechat-text-color-trigger" class="yzp-frame-color-control"
+                                data-color="${wechatTextColor}" data-color-storage-key="phone-wechat-text-color"
+                                data-color-default="#000000" data-color-picker-title="选择微信字体颜色"
+                                data-color-picker-label="微信字体颜色" data-color-preview-kind="wechat-text"
+                                aria-label="选择微信字体颜色">
+                            <span class="yzp-frame-color-control-swatch" style="--yzp-frame-control-color: ${wechatTextColor};" aria-hidden="true"></span>
+                            <span class="yzp-frame-color-control-value">${wechatTextColor}</span>
+                        </button>
                     </div>
                     <input type="file" id="wechat-settings-moments-bg-upload" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display: none;">
                     <div style="display: flex; align-items: center; gap: 12px;">
@@ -8902,7 +9010,7 @@ export class WechatApp {
                             padding: 9px 10px;
                             border: 1px solid #e7e7e7;
                             border-radius: 8px;
-                            background: #fafafa;
+                            background: var(--wechat-readable-surface, #FFFFFF);
                             color: #222;
                             font-size: 13px;
                             cursor: pointer;
@@ -8920,7 +9028,7 @@ export class WechatApp {
                 </div>
 
                 <!-- 会话样式 -->
-                <div style="background: #fff; border-radius: 12px; margin: 15px; padding: 15px;">
+                <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; margin: 15px; padding: 15px;">
                     <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 10px;">
                         💬 会话样式
                     </div>
@@ -8930,7 +9038,7 @@ export class WechatApp {
                     <div style="position: relative; margin-bottom: 10px;">
                         <select id="chat-css-profile-select" style="
                             width: 100%; padding: 9px 30px 9px 10px; border: 1px solid #e7e7e7; border-radius: 8px;
-                            background: #fafafa; font-size: 13px; color: #000;
+                            background: var(--wechat-readable-surface, #FFFFFF); font-size: 13px; color: #000;
                             -webkit-appearance: none; outline: none; cursor: pointer;
                         ">
                             <option value="" ${hasActiveChatCssProfile ? '' : 'selected'} disabled>-- 请选择会话样式预设 --</option>
@@ -8940,20 +9048,20 @@ export class WechatApp {
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px;">
                         <button id="new-css-profile-btn" style="
-                            min-width: 0; padding: 8px 6px; background: #fff; color: #333;
+                            min-width: 0; padding: 8px 6px; background: var(--wechat-readable-surface, #FFFFFF); color: #333;
                             border: 1px solid #e7e7e7; border-radius: 8px; font-size: 12px; cursor: pointer;
                         ">新增预设</button>
                         <button id="import-css-profile-btn" style="
-                            min-width: 0; padding: 8px 6px; background: #fff; color: #333;
+                            min-width: 0; padding: 8px 6px; background: var(--wechat-readable-surface, #FFFFFF); color: #333;
                             border: 1px solid #e7e7e7; border-radius: 8px; font-size: 12px; cursor: pointer;
                         "><i class="fa-solid fa-file-import" style="margin-right: 4px;"></i>导入 TXT</button>
                         <button id="save-css-profile-btn" ${canEditActiveChatCssProfile ? '' : 'disabled'} style="
-                            min-width: 0; padding: 8px 6px; background: #07c160; color: #fff;
+                            min-width: 0; padding: 8px 6px; background: var(--wechat-readable-surface, #FFFFFF); color: #fff;
                             border: none; border-radius: 8px; font-size: 12px; cursor: ${canEditActiveChatCssProfile ? 'pointer' : 'default'};
                             opacity: ${canEditActiveChatCssProfile ? '1' : '0.45'};
                         ">保存当前</button>
                         <button id="delete-css-profile-btn" ${canEditActiveChatCssProfile ? '' : 'disabled'} style="
-                            min-width: 0; padding: 8px 6px; background: #fff; color: #ff3b30;
+                            min-width: 0; padding: 8px 6px; background: var(--wechat-readable-surface, #FFFFFF); color: #ff3b30;
                             border: 1px solid #f1c6c2; border-radius: 8px; font-size: 12px; cursor: ${canEditActiveChatCssProfile ? 'pointer' : 'default'};
                             opacity: ${canEditActiveChatCssProfile ? '1' : '0.45'};
                         ">删除预设</button>
@@ -8971,14 +9079,14 @@ export class WechatApp {
                 </div>
 
                 <!-- 数据管理 -->
-                <div style="background: #fff3cd; border-radius: 12px; padding: 15px; margin: 15px; border: 1px solid #ffc107;">
+                <div style="background: var(--wechat-readable-surface, #FFFFFF); border-radius: 12px; padding: 15px; margin: 15px; border: 1px solid #ffc107;">
                     <div style="font-size: 14px; font-weight: 600; color: #856404; margin-bottom: 12px;">
                         <i class="fa-solid fa-triangle-exclamation"></i> 数据管理
                     </div>
                     <button id="clear-wechat-data" style="
                         width: 100%;
                         padding: 12px;
-                        background: #fff;
+                        background: var(--wechat-readable-surface, #FFFFFF);
                         border: 1px solid #ffc107;
                         border-radius: 8px;
                         color: #856404;
@@ -8994,6 +9102,11 @@ export class WechatApp {
 
         this.phoneShell.setContent(html);
         this.renderWechatWorldbookList();
+        bindPhoneColorPickers(document.getElementById('wechat-text-color-trigger')?.closest('.wechat-app'), {
+            storage: this.storage,
+            previewColor: color => this._applyWechatTextColor(color),
+            onError: () => this.phoneShell.showNotification('保存失败', '微信字体颜色保存失败，请重试', '⚠️')
+        });
 
         // 返回按钮
         const backBtn = document.getElementById('back-from-settings');
@@ -9428,7 +9541,7 @@ export class WechatApp {
             : '<div style="font-size:13px; color:#888; text-align:center; padding:24px 12px;">通讯录为空，先添加联系人。</div>';
 
         const html = `
-            <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
+            <div class="${this._getReadableWechatShellClass(shellBg.appClass)}" style="${shellBg.appStyle}">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-avatar-manager">
@@ -9645,7 +9758,7 @@ export class WechatApp {
         const shellBg = this._getMainShellBackgroundConfig();
         const loadContactsContentStyle = `${shellBg.contentBgStyle || 'background: #ededed;'} padding: 20px;`;
         const html = `
-        <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
+        <div class="${this._getReadableWechatShellClass(shellBg.appClass)}" style="${shellBg.appStyle}">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-load">
@@ -9756,7 +9869,7 @@ export class WechatApp {
     // 🗑️ 显示清空数据确认界面
     showClearDataConfirm() {
         const html = `
-        <div class="wechat-app">
+        <div class="wechat-app wechat-readable-settings">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-clear">
@@ -9836,7 +9949,7 @@ export class WechatApp {
     }
     showSearch() {
         const html = `
-        <div class="wechat-app">
+        <div class="wechat-app wechat-readable-settings">
             <div class="wechat-header" style="background: #f7f7f7; gap: 10px;">
                <div style="flex-grow: 1; display:flex; align-items:center; background:#fff; border-radius:6px; padding: 8px 10px;">
     <i class="fa-solid fa-search" style="color:#aaa; margin-right: 5px;"></i>

@@ -48,7 +48,7 @@ const ST_PHONE_VERSION = '1.6.8';
 const ST_PHONE_CSS_REVISION = '20261107-diary-colors-2';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261107-cancel-story-tags';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261108-user-avatar';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261109-transparent-back-button';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -10922,7 +10922,7 @@ if (window.GGP_Loaded) {
                 --settings-muted-text-color: ${safeColor} !important;
             }
 
-            #phone-panel-content .phone-screen:not(:has(.honey-app)):not(:has(.games-app)):not(:has(.music-app)) :is(
+            #phone-panel-content .phone-screen:not(:has(.wechat-app)):not(:has(.honey-app)):not(:has(.games-app)):not(:has(.music-app)) :is(
                 .app-name, .home-social-name, .home-mini-name,
                 .home-card-title, .home-card-desc, .home-settings-title, .home-settings-chevron,
                 .home-time, .time-large, .date, .home-time-date, .home-time-weekday,

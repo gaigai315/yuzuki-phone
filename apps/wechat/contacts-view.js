@@ -1307,7 +1307,7 @@ export class ContactsView {
         document.querySelectorAll('.contact-action-menu').forEach(menu => menu.remove());
 
         const html = `
-            <div class="wechat-app">
+            <div class="wechat-app wechat-readable-settings">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-delete-contact">
@@ -1482,7 +1482,7 @@ export class ContactsView {
 
     showAddFriendPage() {
         const html = `
-            <div class="wechat-app">
+            <div class="wechat-app wechat-readable-settings">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-add-friend">
@@ -1729,7 +1729,7 @@ export class ContactsView {
         const contacts = this.app.wechatData.getContacts();
 
         const html = `
-            <div class="wechat-app">
+            <div class="wechat-app wechat-readable-settings">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-create-group">
@@ -1905,7 +1905,7 @@ export class ContactsView {
         const defaultName = members.slice(0, 3).map(([name]) => name).join('、') + (members.length > 3 ? '...' : '');
 
         const html = `
-            <div class="wechat-app">
+            <div class="wechat-app wechat-readable-settings">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-group-name">

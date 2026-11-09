@@ -13903,7 +13903,7 @@ renderChatRoom(chat) {
         const isBlocked = this._isBlockedSingleChat(currentChat);
         const shellBg = this._getChatSettingsShellBackgroundConfig();
         const html = `
-            <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
+            <div class="${this.app._getReadableWechatShellClass(shellBg.appClass)}" style="${shellBg.appStyle}">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-menu">
@@ -14082,13 +14082,14 @@ renderChatRoom(chat) {
         const allChatsBgActive = String(userInfo.globalChatBackground || '').trim();
         const shellBg = this._getChatSettingsShellBackgroundConfig();
         const pickerContentStyle = `${shellBg.contentBgStyle} padding: 20px;`;
+        const readableShellClass = this.app._getReadableWechatShellClass(shellBg.appClass);
         const backgroundActionButtonStyle = `
             width: 100%;
             min-height: 54px;
             padding: 9px 8px;
-            background: #ffffff;
-            color: #333;
-            border: 1px solid #d8d8d8;
+            background: var(--wechat-readable-surface, #F5F6F8);
+            color: var(--wechat-text-color, #000000);
+            border: 1px solid var(--wechat-readable-border, #8A8A8A);
             border-radius: 8px;
             font-size: 13px;
             font-weight: 500;
@@ -14097,7 +14098,7 @@ renderChatRoom(chat) {
         `;
 
         const html = `
-            <div class="${shellBg.appClass}" style="${shellBg.appStyle}">
+            <div class="${readableShellClass}" style="${shellBg.appStyle}">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-bg">
@@ -14110,15 +14111,15 @@ renderChatRoom(chat) {
                 
                 <div class="wechat-content" style="${pickerContentStyle}">
                     <!-- 上传自定义背景 -->
-                    <div style="background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 15px; text-align: center;">
+                    <div style="background: var(--wechat-readable-surface, #F5F6F8); border: 1px solid var(--wechat-readable-border, #8A8A8A); border-radius: 10px; padding: 20px; margin-bottom: 15px; text-align: center;">
                         <div style="font-size: 14px; color: #999; margin-bottom: 12px;">上传自定义背景</div>
                         <input type="file" id="bg-upload" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="display: none;">
                         <button id="upload-bg-btn" style="
                             width: 100%;
                             padding: 12px;
-                            background: #ffffff;
-                            color: #333;
-                            border: 1px solid #d8d8d8;
+                            background: var(--wechat-readable-surface, #F5F6F8);
+                            color: var(--wechat-text-color, #000000);
+                            border: 1px solid var(--wechat-readable-border, #8A8A8A);
                             border-radius: 8px;
                             font-size: 14px;
                             font-weight: 500;
@@ -14129,7 +14130,7 @@ renderChatRoom(chat) {
                     </div>
 
                     <!-- 微信背景同步 -->
-                    <div style="background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 15px;">
+                    <div style="background: var(--wechat-readable-surface, #F5F6F8); border: 1px solid var(--wechat-readable-border, #8A8A8A); border-radius: 10px; padding: 20px; margin-bottom: 15px;">
                         <div style="font-size: 14px; color: #999; margin-bottom: 4px;">微信背景同步</div>
                         <div style="font-size: 11px; color: #07c160; margin-bottom: 12px;">
                             微信主页：${listBgActive ? '已同步' : '未同步'} · 所有会话默认：${allChatsBgActive ? '已设置' : '未设置'}
@@ -14142,7 +14143,7 @@ renderChatRoom(chat) {
                     </div>
                     
                     <!-- 预设背景 -->
-                    <div style="background: #fff; border-radius: 10px; padding: 20px;">
+                    <div style="background: var(--wechat-readable-surface, #F5F6F8); border: 1px solid var(--wechat-readable-border, #8A8A8A); border-radius: 10px; padding: 20px;">
                         <div style="font-size: 14px; color: #999; margin-bottom: 4px;">预设背景</div>
                         <div style="font-size: 11px; color: #07c160; margin-bottom: 15px;">💡 短按设为当前聊天，长按设为全局默认</div>
                         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
@@ -15130,7 +15131,7 @@ renderChatRoom(chat) {
     // 📋 显示删除聊天确认界面
     showDeleteConfirm() {
         const html = `
-            <div class="wechat-app">
+            <div class="wechat-app wechat-readable-settings">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-delete">
@@ -17774,7 +17775,7 @@ ${callTranscript}`;
     // 🎨 添加自定义表情弹窗
     showAddCustomEmojiDialog() {
         const html = `
-        <div class="wechat-app">
+        <div class="wechat-app wechat-readable-settings">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-add-emoji">
@@ -18487,7 +18488,7 @@ ${callTranscript}`;
         const userInfo = this.app.wechatData.getUserInfo();
 
         const html = `
-        <div class="wechat-app">
+        <div class="wechat-app wechat-readable-settings">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-group-settings">
@@ -18757,7 +18758,7 @@ ${callTranscript}`;
         });
 
         const html = `
-        <div class="wechat-app">
+        <div class="wechat-app wechat-readable-settings">
             <div class="wechat-header">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-add-member">

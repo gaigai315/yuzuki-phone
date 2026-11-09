@@ -3045,7 +3045,7 @@ export class SettingsApp {
                                 <div class="setting-toggle">
                                     <div>
                                         <div class="setting-label">全局文字颜色</div>
-                                        <div class="setting-desc">统一控制手机内所有文字的颜色</div>
+                                        <div class="setting-desc">控制跟随全局设置的文字；微信字体颜色请在微信设置中调整</div>
                                     </div>
                                     <button type="button"
                                             id="global-text-color-trigger"
