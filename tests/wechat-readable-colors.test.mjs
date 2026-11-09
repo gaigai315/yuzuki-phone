@@ -107,3 +107,11 @@ test('readable glass leaves the wechat back button transparent', () => {
         /button\.wechat-back-btn\s*\{[\s\S]*?background:\s*transparent\s*!important;[\s\S]*?box-shadow:\s*none\s*!important;/
     );
 });
+
+test('voice transcript uses the same readable glass palette as wechat text', () => {
+    assert.match(chatSource, /\['wechat-voice-transcript',[\s\S]*?voiceDisplay\.hasTranslation/);
+    assert.match(
+        wechatSource,
+        /\.wechat-voice-transcript\s*\{[\s\S]*?background:\s*var\(--wechat-readable-surface\)\s*!important;[\s\S]*?color:\s*var\(--wechat-text-color,[^)]+\)\s*!important;/
+    );
+});

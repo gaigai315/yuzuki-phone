@@ -4061,7 +4061,7 @@ renderChatRoom(chat) {
                 // 🔥 2. 语音转文字：仿照文本框手写样式，但不加 .message-text 类（为了避免小尾巴重复出现）
                 if (voiceText) {
                     messageBody += `
-                    <div class="${[voiceDisplay.hasTranslation ? 'wechat-translation-card' : '', showInnerThought ? 'wechat-inner-os-bubble' : ''].filter(Boolean).join(' ')}" style="
+                    <div class="${['wechat-voice-transcript', voiceDisplay.hasTranslation ? 'wechat-translation-card' : '', showInnerThought ? 'wechat-inner-os-bubble' : ''].filter(Boolean).join(' ')}" style="
                         position: relative;
                         padding: 7px 10px;
                         border-radius: 4px;

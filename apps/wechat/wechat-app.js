@@ -155,6 +155,15 @@ export class WechatApp {
             #phone-panel-content .wechat-app.wechat-readable-settings textarea::placeholder {
                 opacity: 1;
             }
+            #phone-panel-content .wechat-app .wechat-voice-transcript {
+                background: var(--wechat-readable-surface) !important;
+                border: 1px solid var(--wechat-readable-border) !important;
+                color: var(--wechat-text-color, #000000) !important;
+                -webkit-text-fill-color: var(--wechat-text-color, #000000) !important;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10) !important;
+                backdrop-filter: blur(14px) saturate(130%) !important;
+                -webkit-backdrop-filter: blur(14px) saturate(130%) !important;
+            }
         `;
         return color;
     }

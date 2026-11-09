@@ -48,7 +48,7 @@ const ST_PHONE_VERSION = '1.6.8';
 const ST_PHONE_CSS_REVISION = '20261107-diary-colors-2';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261107-cancel-story-tags';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261109-transparent-back-button';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261110-voice-transcript-contrast';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -156,10 +156,11 @@ const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-11-08',
+    date: '2026-11-10',
     items: [
         "【优化】日记会等待 CSS 与封面背景加载完成后再渲染，减少首次打开时的样式闪烁、布局错位和封面背景缺失，并优化目录与写日记按钮布局。",
-        "【优化】Fish Audio 支持公益站及兼容 TT 酒馆。"
+        "【优化】Fish Audio 支持公益站及兼容 TT 酒馆。",
+        "【优化】优化微信 CSS 渲染。"
     ]
 };
 
