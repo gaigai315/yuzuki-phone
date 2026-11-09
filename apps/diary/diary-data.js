@@ -1567,7 +1567,7 @@ export class DiaryData {
             if (diaryPrompt) return diaryPrompt;
         }
 
-        return `请根据以下聊天记录，以${context.name2 || '角色'}的口吻写一篇日记，体现情感变化。\n\n聊天记录：\n{{chatHistory}}`;
+        return `请根据所提供的聊天记录，以${context.name2 || '角色'}的口吻写一篇日记，体现情感变化。`;
     }
 
     /**

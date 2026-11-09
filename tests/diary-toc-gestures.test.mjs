@@ -15,6 +15,7 @@ test('diary table-of-contents uses the heading for settings and a bottom quill f
     assert.match(source, /class="diary-toc-compose-dock">\$\{entryTools\}/);
     assert.match(source, /<button[^>]*class="diary-toc-heading" id="diary-manual-write"/);
     assert.doesNotMatch(source, /id="diary-import-entry"/);
+    assert.doesNotMatch(source, /diary-toc-item-edit/);
 });
 
 test('diary batch import entry lives below the prompt editor in settings', () => {

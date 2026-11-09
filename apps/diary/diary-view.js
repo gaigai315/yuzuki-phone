@@ -319,7 +319,6 @@ export class DiaryView {
                         </div>
                         <i class="fa-solid fa-chevron-right diary-toc-item-chevron" aria-hidden="true"></i>
                         <div class="diary-toc-item-actions" style="display:none;">
-                            <button class="diary-toc-item-edit" data-id="${entry.id}">✏️</button>
                             <button class="diary-toc-item-delete" data-id="${entry.id}">🗑️</button>
                         </div>
                     </div>
@@ -487,7 +486,8 @@ export class DiaryView {
             alert('请先勾选日记');
             return false;
         };
-        document.getElementById('diary-toc-select-all')?.addEventListener('click', () => {
+        const selectAllBtn = document.getElementById('diary-toc-select-all');
+        if (selectAllBtn) selectAllBtn.onclick = () => {
             const entries = this.app.diaryData.getEntries();
             const sortedEntries = this._sortEntries(entries);
             const allSelected = sortedEntries.length > 0 && sortedEntries.every(entry => this.tocSelectedIds.has(String(entry.id)));
@@ -497,29 +497,31 @@ export class DiaryView {
                 sortedEntries.forEach(entry => this.tocSelectedIds.add(String(entry.id)));
             }
             syncTocSelectionUI();
-        });
-        document.getElementById('diary-toc-hide-selected')?.addEventListener('click', () => {
+        };
+        const hideSelectedBtn = document.getElementById('diary-toc-hide-selected');
+        if (hideSelectedBtn) hideSelectedBtn.onclick = () => {
             if (!ensureSelection()) return;
             this.app.diaryData.setEntriesOfflineHidden(selectedIds(), true);
             this.tocSelectedIds.clear();
             this.render();
-        });
-        document.getElementById('diary-toc-show-selected')?.addEventListener('click', () => {
+        };
+        const showSelectedBtn = document.getElementById('diary-toc-show-selected');
+        if (showSelectedBtn) showSelectedBtn.onclick = () => {
             if (!ensureSelection()) return;
             this.app.diaryData.setEntriesOfflineHidden(selectedIds(), false);
             this.tocSelectedIds.clear();
             this.render();
-        });
-        document.getElementById('diary-toc-manage-done')?.addEventListener('click', () => {
+        };
+        const manageDoneBtn = document.getElementById('diary-toc-manage-done');
+        if (manageDoneBtn) manageDoneBtn.onclick = () => {
             this._setTOCManageMode(false);
-        });
+        };
         document.querySelectorAll('.diary-toc-item').forEach(item => {
             // 🔥 防止重复绑定定时器事件
             if (item.dataset.bound) return;
             item.dataset.bound = 'true';
 
             const actionsDiv = item.querySelector('.diary-toc-item-actions');
-            const editBtn = item.querySelector('.diary-toc-item-edit');
             const deleteBtn = item.querySelector('.diary-toc-item-delete');
             const selectInput = item.querySelector('.diary-toc-select');
 
@@ -603,11 +605,6 @@ export class DiaryView {
                 this.currentView = 'page';
                 this.settingsPanelOpen = false;
                 this.render();
-            };
-
-            if (editBtn) editBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._openEditDialog(editBtn.dataset.id);
             };
 
             if (deleteBtn) deleteBtn.onclick = (e) => {

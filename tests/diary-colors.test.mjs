@@ -41,6 +41,8 @@ test('diary prompt folds and photo backs use the selected paper and ink variable
     assert.match(css, /\.diary-photo-back\s*\{[\s\S]*?background:\s*var\(--diary-paper-color\)/);
     assert.match(css, /\.diary-app \.phone-prompt-fold,[\s\S]*?background:\s*var\(--diary-paper-color\) !important/);
     assert.match(css, /\.phone-worldbook-search,[\s\S]*?\.phone-prompt-preset-select[\s\S]*?background:\s*var\(--diary-paper-color\) !important/);
+    assert.match(css, /\.phone-prompt-preset-new, \.phone-prompt-preset-delete[\s\S]*?background:\s*color-mix\(in srgb, var\(--diary-paper-color\) 88%, #000000\) !important/);
+    assert.match(css, /\.phone-prompt-preset-new, \.phone-prompt-preset-delete[\s\S]*?color:\s*var\(--diary-text-primary\) !important/);
     assert.match(view, /phone-prompt-fold-title">📔 日记提示词<\/div>/);
     assert.doesNotMatch(view, /日记生成提示词/);
 });

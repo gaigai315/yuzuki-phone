@@ -836,24 +836,6 @@
     flex-shrink: 0;
 }
 
-.diary-toc-item-edit {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: none;
-    background: rgba(0, 122, 255, 0.15);
-    color: var(--diary-text-primary) !important;
-    border-radius: 50%;
-    font-size: 12px;
-    cursor: pointer;
-}
-
-.diary-toc-item-edit:active {
-    background: rgba(0, 122, 255, 0.3);
-}
-
 .diary-delete-all-btn {
     background: rgba(255, 59, 48, 0.15) !important;
     color: var(--diary-text-primary) !important;
@@ -2457,6 +2439,15 @@
     -webkit-text-fill-color: var(--diary-text-primary) !important;
     border-color: color-mix(in srgb, var(--diary-text-primary) 28%, transparent) !important;
     box-shadow: none !important;
+}
+
+#phone-panel-content .phone-screen .diary-app :is(
+    .phone-prompt-preset-new, .phone-prompt-preset-delete
+) {
+    background: color-mix(in srgb, var(--diary-paper-color) 88%, #000000) !important;
+    color: var(--diary-text-primary) !important;
+    -webkit-text-fill-color: var(--diary-text-primary) !important;
+    border-color: color-mix(in srgb, var(--diary-text-primary) 35%, transparent) !important;
 }
 
 #phone-panel-content .phone-screen .diary-app .phone-worldbook-source-row {
