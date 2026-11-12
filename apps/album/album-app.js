@@ -9,6 +9,7 @@ import { AlbumData } from './album-data.js?v=1.4.4&r=20261021-album-lazy-folds';
 import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261107-cancel-story-tags';
 import { StoryImageOverlay } from './story-image-overlay.js?v=20261107-cancel-story-tags';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
+import { resolveImageMime } from '../../config/image-mime.js';
 
 export class AlbumApp {
     constructor(phoneShell, storage) {
@@ -854,10 +855,18 @@ export class AlbumApp {
             }
             const response = await fetch(safeUrl, { cache: 'no-store', signal: options.signal });
             if (!response.ok) throw new Error(`读取生图结果失败（HTTP ${response.status}）`);
-            const blob = await response.blob();
-            if (!String(blob.type || '').toLowerCase().startsWith('image/')) {
-                throw new Error('生图接口返回的内容不是有效图片');
+            const reportedMime = String(response.headers?.get?.('content-type') || '')
+                .split(';')[0]
+                .trim()
+                .toLowerCase();
+            const arrayBuffer = await response.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer || new ArrayBuffer(0));
+            const resolvedMime = resolveImageMime(bytes, reportedMime);
+            if (!bytes.length || !resolvedMime) {
+                const typeLabel = reportedMime || '未提供';
+                throw new Error(`生图接口返回的内容不是有效图片（Content-Type: ${typeLabel}）`);
             }
+            const blob = new Blob([bytes], { type: resolvedMime });
             storedUrl = await uploader.uploadBlob(blob, prefix, {
                 skipExistenceCheck: true,
                 signal: options.signal
