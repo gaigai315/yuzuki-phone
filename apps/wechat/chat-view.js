@@ -13648,7 +13648,7 @@ renderChatRoom(chat) {
         const avatarHtml = this.app.renderAvatar(chat.avatar, '👤', chat.name);
 
         const html = `
-        <div class="wechat-app">
+        <div class="wechat-app wechat-payment-compose-page wechat-transfer-compose-page">
             <!-- 顶部灰色区域 -->
             <div style="background: #ededed; padding: 34px 12px 14px 12px;">
                 <button class="wechat-back-btn" id="back-from-transfer" style="color:#000; background:none; border:none; font-size:14px; cursor:pointer; padding:0; margin-bottom:12px;">
@@ -17530,7 +17530,7 @@ ${callTranscript}`;
             ? `${groupTabs}<div class="wechat-redpacket-group-forms" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">${groupSingleForm}${groupPacketForm}</div>`
             : singleChatForm;
         const html = `
-        <div class="wechat-app">
+        <div class="wechat-app wechat-payment-compose-page wechat-redpacket-compose-page">
             <div class="wechat-header" style="background: #f7f7f7;">
                 <div class="wechat-header-left">
                     <button class="wechat-back-btn" id="back-from-redpacket" style="color: #000;">
@@ -18148,8 +18148,56 @@ ${callTranscript}`;
         return { message: updatedMessage, amount: claimAmount };
     }
 
+    _showIncomingRedPacketOpenPrompt(chatId, message = {}) {
+        const safeChatId = String(chatId || '').trim();
+        if (!safeChatId || !message?.id) return;
+
+        const currentView = document.querySelector('.phone-view-current')
+            || document.querySelector('.phone-screen');
+        if (!currentView) return;
+
+        currentView.querySelector('#wechat-redpacket-open-overlay')?.remove();
+
+        const senderName = String(message.from || this.app.currentChat?.name || '微信好友').trim() || '微信好友';
+        const contact = this.app.wechatData.getContactByName(senderName);
+        const avatarHtml = this.app.renderAvatar(contact?.avatar || '🧧', '🧧', senderName);
+        const overlay = document.createElement('div');
+        overlay.id = 'wechat-redpacket-open-overlay';
+        overlay.className = 'wechat-redpacket-open-overlay';
+        overlay.innerHTML = `
+            <div class="wechat-redpacket-open-backdrop"></div>
+            <div class="wechat-redpacket-open-dialog" role="dialog" aria-modal="true" aria-label="打开红包">
+                <div class="wechat-redpacket-open-card">
+                    <div class="wechat-redpacket-open-avatar">${avatarHtml}</div>
+                    <div class="wechat-redpacket-open-sender">${this._escapeHtml(senderName)}发来的红包</div>
+                    <div class="wechat-redpacket-open-wish">${this._escapeHtml(String(message.wish || '恭喜发财，大吉大利'))}</div>
+                    <button type="button" class="wechat-redpacket-open-button" id="confirm-open-redpacket" aria-label="打开红包">開</button>
+                </div>
+                <button type="button" class="wechat-redpacket-open-close" id="close-redpacket-prompt" aria-label="关闭">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        `;
+        currentView.appendChild(overlay);
+
+        const closePrompt = () => overlay.remove();
+        overlay.querySelector('#close-redpacket-prompt')?.addEventListener('click', closePrompt);
+        overlay.querySelector('.wechat-redpacket-open-backdrop')?.addEventListener('click', closePrompt);
+        overlay.querySelector('#confirm-open-redpacket')?.addEventListener('click', event => {
+            const button = event.currentTarget;
+            if (button.dataset.opening === '1') return;
+            button.dataset.opening = '1';
+            button.disabled = true;
+            overlay.classList.add('is-opening');
+            window.setTimeout(() => {
+                overlay.remove();
+                this.openRedPacket(message.id, { autoOpen: true });
+            }, 260);
+        });
+    }
+
     // 🧧 打开红包详情界面（全新）
-    openRedPacket(messageId) {
+    openRedPacket(messageId, { autoOpen = false } = {}) {
         const chatId = this.app.currentChat?.id;
         if (!chatId) return;
         const messages = this.app.wechatData.getMessages(chatId);
@@ -18158,6 +18206,23 @@ ${callTranscript}`;
 
         const initialPacketMode = String(message.packetMode || '').trim();
         const initialIsGroupPacket = message.isGroupPacket === true || initialPacketMode === 'group_lucky' || initialPacketMode === 'group_average';
+        const initialStatus = String(message.status || '').trim();
+        const userInfo = this.app.wechatData.getUserInfo?.() || {};
+        const userName = String(userInfo.name || '').trim();
+        const isMeInitially = message.from === 'me' || message.from === userName;
+        const hasCurrentUserClaimed = initialIsGroupPacket && Array.isArray(message.claims)
+            && message.claims.some(claim => this._normalizeLookupName(claim?.name) === this._normalizeLookupName(userName));
+        const canOpenIncomingPacket = !isMeInitially
+            && initialStatus !== 'refunded'
+            && (initialIsGroupPacket
+                ? initialStatus !== 'opened' && !hasCurrentUserClaimed
+                : initialStatus !== 'opened');
+
+        if (canOpenIncomingPacket && !autoOpen) {
+            this._showIncomingRedPacketOpenPrompt(chatId, message);
+            return;
+        }
+
         if (initialIsGroupPacket) {
             const claimResult = this._claimGroupRedPacketForCurrentUser(chatId, message);
             if (claimResult?.message) {
@@ -18247,7 +18312,7 @@ ${callTranscript}`;
         }).join('');
 
         const html = `
-            <div class="wechat-app" style="position: relative;">
+            <div class="wechat-app wechat-payment-fixed-page wechat-redpacket-detail-page" style="position: relative;">
                 <div id="redpacket-detail-view" style="
                     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
                     background-color: #fff; z-index: 10; display: flex; flex-direction: column;
@@ -18336,6 +18401,79 @@ ${callTranscript}`;
         return [date, normalizedTime].filter(Boolean).join(' ') || '时间未知';
     }
 
+    _acceptIncomingTransfer(chatId, message = {}) {
+        const safeChatId = String(chatId || '').trim();
+        const userName = String(this.app.wechatData.getUserInfo?.()?.name || '').trim();
+        const isMe = message.from === 'me' || message.from === userName;
+        const currentStatus = String(message.status || '').trim();
+        if (!safeChatId || !message?.id || isMe || currentStatus === 'received' || currentStatus === 'refunded') return null;
+
+        const transferReceivedTime = this._getTransferDetailPhoneTime(message);
+        const updatedMessage = this.app.wechatData.updateMessageById(safeChatId, message.id, {
+            status: 'received',
+            transferReceivedTime,
+            paymentHandledBy: userName || '用户',
+            paymentHandledAt: Date.now()
+        });
+        if (!updatedMessage) return null;
+
+        const amount = Number.parseFloat(message.amount || 0) || 0;
+        this.app.wechatData.updateWalletBalance(amount, null, {
+            type: 'transfer',
+            title: `转账收款-${String(message.from || this.app.currentChat?.name || '微信好友')}`,
+            detail: String(message.desc || '微信转账'),
+            source: 'wechat',
+            chatId: safeChatId,
+            counterparty: String(message.from || ''),
+            messageId: String(message.id),
+            referenceId: `wechat:transfer:receive:${message.id}`,
+            date: transferReceivedTime.date,
+            time: transferReceivedTime.time,
+            weekday: transferReceivedTime.weekday,
+            timestamp: transferReceivedTime.timestamp,
+            realTimestamp: message.realTimestamp,
+            fromMainChatTag: message.fromMainChatTag === true,
+            tavernMessageIndex: message.tavernMessageIndex,
+            batchId: message.batchId
+        });
+        this.app.wechatData.addMessage(safeChatId, this._buildPaymentStatusMessage(
+            updatedMessage,
+            '你已收款',
+            'transfer',
+            'accept',
+            message
+        ));
+
+        return { message: updatedMessage, amount, time: transferReceivedTime };
+    }
+
+    _refundIncomingTransfer(chatId, message = {}) {
+        const safeChatId = String(chatId || '').trim();
+        const userName = String(this.app.wechatData.getUserInfo?.()?.name || '').trim();
+        const isMe = message.from === 'me' || message.from === userName;
+        const currentStatus = String(message.status || '').trim();
+        if (!safeChatId || !message?.id || isMe || currentStatus === 'received' || currentStatus === 'refunded') return null;
+
+        const transferRefundedTime = this._getTransferDetailPhoneTime(message);
+        const updatedMessage = this.app.wechatData.updateMessageById(safeChatId, message.id, {
+            status: 'refunded',
+            transferRefundedTime,
+            paymentHandledBy: userName || '用户',
+            paymentHandledAt: Date.now()
+        });
+        if (!updatedMessage) return null;
+
+        this.app.wechatData.addMessage(safeChatId, this._buildPaymentStatusMessage(
+            updatedMessage,
+            '你已退回该笔转账',
+            'transfer',
+            'refund',
+            message
+        ));
+
+        return { message: updatedMessage, time: transferRefundedTime };
+    }
+
     // 💰 打开转账详情界面
     openTransferDetail(messageId) {
         const chatId = this.app.currentChat?.id;
@@ -18346,49 +18484,14 @@ ${callTranscript}`;
 
         const isMe = message.from === 'me' || message.from === this.app.wechatData.getUserInfo().name;
         const formattedAmount = parseFloat(message.amount || 0).toFixed(2);
-        let resolvedStatus = String(message.status || '').trim();
+        const resolvedStatus = String(message.status || '').trim();
         let resolvedMessage = message;
         let transferReceivedTime = message.transferReceivedTime || null;
         let transferRefundedTime = message.transferRefundedTime || null;
-        
-        // 对方发来的转账，如果还没被收款（用 status 记录），点击后存入钱包
-        if (!isMe && resolvedStatus !== 'received' && resolvedStatus !== 'refunded') {
-            transferReceivedTime = this._getTransferDetailPhoneTime(message);
-            const updatedMessage = this.app.wechatData.updateMessageById(chatId, messageId, {
-                status: 'received',
-                transferReceivedTime
-            });
-            resolvedMessage = updatedMessage || resolvedMessage;
-            resolvedStatus = String(updatedMessage?.status || 'received').trim();
-            this.app.wechatData.updateWalletBalance(parseFloat(formattedAmount), null, {
-                type: 'transfer',
-                title: `转账收入-${String(message.from || this.app.currentChat?.name || '微信好友')}`,
-                detail: String(message.desc || '微信转账'),
-                source: 'wechat',
-                chatId,
-                counterparty: String(message.from || ''),
-                messageId,
-                referenceId: `wechat:transfer:receive:${messageId}`,
-                date: transferReceivedTime.date,
-                time: transferReceivedTime.time,
-                weekday: transferReceivedTime.weekday,
-                timestamp: transferReceivedTime.timestamp,
-                realTimestamp: message.realTimestamp,
-                fromMainChatTag: message.fromMainChatTag === true,
-                tavernMessageIndex: message.tavernMessageIndex,
-                batchId: message.batchId
-            });
-            this.app.wechatData.addMessage(chatId, this._buildPaymentStatusMessage(
-                message,
-                '你已收款',
-                'transfer',
-                'accept',
-                message
-            ));
-        }
 
         const isTransferRefunded = resolvedStatus === 'refunded';
         const isTransferReceived = resolvedStatus === 'received';
+        const isPendingIncomingTransfer = !isMe && !isTransferRefunded && !isTransferReceived;
         if (isTransferReceived && !transferReceivedTime) {
             transferReceivedTime = this._getTransferDetailPhoneTime(message);
             resolvedMessage = this.app.wechatData.updateMessageById(chatId, messageId, {
@@ -18410,18 +18513,21 @@ ${callTranscript}`;
             ? (isMe ? '转账已退回' : '你已退回该笔转账')
             : (isMe
                 ? (isTransferReceived ? '对方已收款' : '待对方确认收款')
-                : '你已收款，资金已存入零钱');
+                : (isTransferReceived ? '你已收款，资金已存入零钱' : '待你收款'));
         const balanceLabel = isTransferRefunded
             ? (isMe ? '已退回零钱' : '未存入零钱')
-            : '零钱余额';
+            : (isTransferReceived ? '零钱余额' : '');
         const receiveTimeLabel = isTransferRefunded ? '退回时间' : '收款时间';
+        const statusIconClass = isPendingIncomingTransfer || (!isTransferReceived && !isTransferRefunded)
+            ? 'fa-regular fa-clock'
+            : (isTransferRefunded ? 'fa-solid fa-arrow-rotate-left' : 'fa-solid fa-check');
+        const statusIconModifier = isPendingIncomingTransfer || (!isTransferReceived && !isTransferRefunded)
+            ? 'is-pending'
+            : (isTransferRefunded ? 'is-refunded' : 'is-received');
 
         const html = `
-            <div class="wechat-app" style="position: relative;">
-                <div id="transfer-detail-view" style="
-                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-                    background-color: #fff; z-index: 10; display: flex; flex-direction: column;
-                ">
+            <div class="wechat-app wechat-payment-fixed-page wechat-transfer-detail-page" style="position: relative;">
+                <div id="transfer-detail-view" class="wechat-transfer-detail-view">
                     <!-- 顶部返回 -->
                     <div style="padding: 34px 12px 0;">
                         <div class="wechat-header-title" style="display:none;">转账详情</div>
@@ -18431,14 +18537,13 @@ ${callTranscript}`;
                     </div>
 
                     <!-- 主内容 -->
-                    <div style="text-align:center; padding: 24px 16px 0;">
-                        <!-- 绿色勾 -->
-                        <div style="width:44px; height:44px; border-radius:50%; background:#07c160; margin:0 auto 12px; display:flex; align-items:center; justify-content:center;">
-                            <i class="fa-solid fa-check" style="color:#fff; font-size:20px;"></i>
+                    <div class="wechat-transfer-detail-main">
+                        <div class="wechat-transfer-status-icon ${statusIconModifier}">
+                            <i class="${statusIconClass}"></i>
                         </div>
-                        <div style="font-size:12px; color:#000; margin-bottom:10px;">${statusTitle}</div>
-                        <div style="font-size:28px; font-weight:bold; color:#000; margin-bottom:4px;">¥ ${formattedAmount}</div>
-                        <div style="font-size:11px; color:#07c160; margin-bottom:16px;">${balanceLabel}</div>
+                        <div class="wechat-transfer-status-title">${statusTitle}</div>
+                        <div class="wechat-transfer-detail-amount">¥ ${formattedAmount}</div>
+                        ${balanceLabel ? `<div class="wechat-transfer-balance-label">${balanceLabel}</div>` : '<div class="wechat-transfer-balance-label is-empty"></div>'}
                     </div>
 
                     <!-- 时间信息 -->
@@ -18453,17 +18558,14 @@ ${callTranscript}`;
                         ` : ''}
                     </div>
 
-                    <!-- 零钱通广告 -->
-                    <div style="margin: 0 16px; border-top:1px solid #f0f0f0; padding:10px 0; display:flex; align-items:center;">
-                        <div style="width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,#f7d86c,#e6b422); margin-right:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                            <span style="font-size:12px;">💎</span>
+                    ${isPendingIncomingTransfer ? `
+                        <div class="wechat-transfer-pending-actions">
+                            <button type="button" id="receive-transfer" class="wechat-transfer-receive-button">收款</button>
+                            <div class="wechat-transfer-refund-hint">确认后资金将存入零钱。<button type="button" id="refund-transfer" class="wechat-transfer-refund-button">退还</button></div>
                         </div>
-                        <div style="flex:1; min-width:0;">
-                            <div style="font-size:10px; color:#888;">零钱通 七日年化2.59%</div>
-                            <div style="font-size:11px; color:#000;">转入零钱通 省心赚收益</div>
-                        </div>
-                        <button style="background:#07c160; color:#fff; border:none; border-radius:4px; padding:4px 12px; font-size:11px; cursor:pointer; flex-shrink:0;">转入</button>
-                    </div>
+                    ` : `
+                        <div class="wechat-transfer-detail-footer">账单详情</div>
+                    `}
                 </div>
             </div>
         `;
@@ -18473,6 +18575,32 @@ ${callTranscript}`;
         const currentView = document.querySelector('.phone-view-current') || document;
         const backBtn = currentView.querySelector('#back-from-transfer-detail');
         if (backBtn) backBtn.onclick = () => this.app.render();
+
+        const receiveButton = currentView.querySelector('#receive-transfer');
+        if (receiveButton) receiveButton.onclick = () => {
+            if (receiveButton.disabled) return;
+            receiveButton.disabled = true;
+            const result = this._acceptIncomingTransfer(chatId, message);
+            if (!result) {
+                this.openTransferDetail(messageId);
+                return;
+            }
+            this.app.phoneShell.showNotification('微信转账', `已存入零钱：¥${result.amount.toFixed(2)}`, '💰');
+            this.openTransferDetail(messageId);
+        };
+
+        const refundButton = currentView.querySelector('#refund-transfer');
+        if (refundButton) refundButton.onclick = () => {
+            if (refundButton.disabled) return;
+            refundButton.disabled = true;
+            const result = this._refundIncomingTransfer(chatId, message);
+            if (!result) {
+                this.openTransferDetail(messageId);
+                return;
+            }
+            this.app.phoneShell.showNotification('微信转账', '该笔转账已退回', '↩️');
+            this.openTransferDetail(messageId);
+        };
     }
 
     // 🔥 群聊设置页面（点击群聊头部标题进入）

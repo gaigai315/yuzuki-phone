@@ -50,6 +50,14 @@ test('wallet page uses the overview, shortcuts, and ledger panel layout', () => 
     assert.match(source, /每一份收支，都是生活的可爱印记/);
 });
 
+test('wallet pages force readable black text without recoloring circular icons', () => {
+    assert.match(source, /\.wechat-wallet-ledger-page \*:not\(i\),[\s\S]*?\.wechat-wallet-transfer-page \*:not\(i\) \{[\s\S]*?color: #000 !important;/);
+    assert.match(source, /\.wechat-wallet-transfer-input::placeholder \{[\s\S]*?color: #000 !important;[\s\S]*?opacity: 0\.45;/);
+    assert.match(source, /\.wechat-wallet-ledger-page \.wechat-wallet-shortcut-icon,[\s\S]*?\.wechat-wallet-transfer-page \.wechat-wallet-account-logo \{[\s\S]*?color: #fff !important;/);
+    assert.match(source, /\.wechat-app:not\(\.wechat-wallet-ledger-page\):not\(\.wechat-wallet-transfer-page\)/);
+    assert.match(source, /\.wechat-app\.wechat-wallet-ledger-page \*:not\(i\):not\(svg\):not\(path\),[\s\S]*?\.wechat-app\.wechat-wallet-transfer-page \*:not\(i\):not\(svg\):not\(path\) \{[\s\S]*?color: #000000 !important;/);
+});
+
 test('wallet filters retain full native select hit areas inside the ledger header', () => {
     assert.match(source, /\.wechat-wallet-ledger-panel-header \{[\s\S]*?grid-template-columns: minmax\(80px, 1fr\) auto;/);
     assert.match(source, /\.wechat-wallet-ledger-filters \{[\s\S]*?position: relative !important;[\s\S]*?grid-template-columns: 96px 88px !important;[\s\S]*?width: 192px !important;/);
@@ -58,7 +66,7 @@ test('wallet filters retain full native select hit areas inside the ledger heade
     assert.match(source, /\.wechat-wallet-ledger-filter-label \{[\s\S]*?padding: 0 24px 0 2px;[\s\S]*?pointer-events: none;/);
     assert.match(source, /\['shopping', '线下支付'\]/);
     assert.match(source, /shopping: '线下支付'/);
-    assert.match(indexSource, /ST_PHONE_WECHAT_MODULE_REVISION = '20261027-offline-friend-visibility'/);
+    assert.match(indexSource, /ST_PHONE_WECHAT_MODULE_REVISION = '20261114-fixed-payment-text'/);
 });
 
 test('credit-card bills are clickable and use the in-phone repayment flow', () => {
@@ -72,6 +80,21 @@ test('credit-card bills are clickable and use the in-phone repayment flow', () =
     assert.match(indexSource, /checkWalletCreditRepayments\(latestTime\)/);
     assert.match(indexSource, /phone:timeUpdated/);
     assert.match(phoneShellSource, /'\.wechat-wallet-repayment-body'/);
+});
+
+test('savings cards open an in-phone transfer-to-wallet page', () => {
+    assert.match(source, /data-wallet-savings-account-index="\$\{accountIndex\}"/);
+    assert.match(source, /showWalletSavingsTransferPage\(accountIndex\)/);
+    assert.match(source, /<div class="wechat-wallet-transfer-title">转入零钱<\/div>/);
+    assert.match(source, /id="wechat-wallet-transfer-amount"/);
+    assert.match(source, /id="wechat-wallet-transfer-all"/);
+    assert.match(source, /transferSavingsToWallet\?\.\(\{/);
+    assert.match(source, /\['bank_transfer', '银行卡转入'\]/);
+    assert.match(source, /bank_transfer: \{ className: 'is-bank-transfer'/);
+    assert.match(source, /\.wechat-wallet-transfer-scroll \{[\s\S]*?overflow-y: auto;[\s\S]*?touch-action: pan-y;[\s\S]*?overscroll-behavior: contain;/);
+    assert.match(phoneShellSource, /'\.wechat-wallet-transfer-scroll'/);
+    assert.match(source, /\.wechat-wallet-transfer-input::\-webkit-outer-spin-button,[\s\S]*?\.wechat-wallet-transfer-input::\-webkit-inner-spin-button \{[\s\S]*?appearance: none !important;[\s\S]*?\-webkit-appearance: none !important;/);
+    assert.match(source, /\.wechat-wallet-transfer-input \{[\s\S]*?\-moz-appearance: textfield !important;/);
 });
 
 test('wallet AI evaluation uses the tagged parser and persists the full asset profile', () => {

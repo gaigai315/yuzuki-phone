@@ -295,6 +295,54 @@ test('chat payments can use wallet or savings accounts and always appear in the 
     assert.equal(data.getWalletTransactions().length, 1);
 });
 
+test('savings accounts can transfer funds into WeChat wallet and roll back atomically', async () => {
+    const data = await createRepaymentData({ walletBalance: 150, savingsBalances: [500] });
+    data._getCurrentTavernMessageIndex = () => 12;
+    const storyTime = {
+        date: '2026年10月10日',
+        calendarDate: '2026年10月10日',
+        time: '12:30',
+        timestamp: 2
+    };
+
+    const failed = await data.transferSavingsToWallet({
+        accountIndex: 0,
+        accountTailNumber: '1000',
+        amount: 501,
+        storyTime
+    });
+    assert.equal(failed.success, false);
+    assert.equal(failed.reason, 'insufficient_balance');
+    assert.equal(data.getWalletBalance(), 150);
+    assert.equal(data.getWalletAssetProfile().savingsAccounts[0].balance, 500);
+
+    const transferred = await data.transferSavingsToWallet({
+        accountIndex: 0,
+        accountTailNumber: '1000',
+        amount: 125.25,
+        storyTime
+    });
+    assert.equal(transferred.success, true);
+    assert.equal(transferred.walletBalanceAfter, 275.25);
+    assert.equal(transferred.savingsBalanceAfter, 374.75);
+    assert.equal(data.getWalletBalance(), 275.25);
+    assert.equal(data.getWalletAssetProfile().savingsAccounts[0].balance, 374.75);
+
+    const transaction = data.getWalletTransactions()[0];
+    assert.equal(transaction.type, 'bank_transfer');
+    assert.equal(transaction.delta, 125.25);
+    assert.equal(transaction.balanceScope, 'wallet_transfer');
+    assert.equal(transaction.timelineLinked, true);
+    assert.equal(transaction.tavernMessageIndex, 12);
+    assert.equal(transaction.savingsBalanceBefore, 500);
+    assert.equal(transaction.savingsBalanceAfter, 374.75);
+
+    assert.equal(data._rollbackWalletTransactions(record => record.timelineLinked === true), true);
+    assert.equal(data.getWalletBalance(), 150);
+    assert.equal(data.getWalletAssetProfile().savingsAccounts[0].balance, 500);
+    assert.equal(data.getWalletTransactions().length, 0);
+});
+
 test('automatic repayment chooses one sufficient account after the due date is skipped', async () => {
     const data = await createRepaymentData({
         storyDate: '2026年10月10日',

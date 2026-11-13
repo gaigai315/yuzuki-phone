@@ -1878,7 +1878,7 @@ export class WechatData {
 
     _normalizeWalletTransactions(records = []) {
         if (!Array.isArray(records)) return [];
-        const allowedTypes = new Set(['transfer', 'redpacket', 'honey', 'shopping', 'repayment', 'other']);
+        const allowedTypes = new Set(['transfer', 'redpacket', 'honey', 'shopping', 'repayment', 'bank_transfer', 'other']);
         const seenIds = new Set();
         return records.map((record, index) => {
             if (!record || typeof record !== 'object') return null;
@@ -1912,12 +1912,20 @@ export class WechatData {
                 timelineLinked: record.timelineLinked === true,
                 tavernMessageIndex: Number.isFinite(tavernMessageIndex) ? tavernMessageIndex : undefined,
                 affectsBalance: record.affectsBalance !== false,
-                balanceScope: record.balanceScope === 'savings' ? 'savings' : 'wallet',
+                balanceScope: ['savings', 'wallet_transfer'].includes(record.balanceScope)
+                    ? record.balanceScope
+                    : 'wallet',
                 paymentSourceId: String(record.paymentSourceId || '').trim(),
                 savingsAccountIndex: Number.isInteger(Number(record.savingsAccountIndex))
                     ? Number(record.savingsAccountIndex)
                     : undefined,
                 savingsAccountTailNumber: String(record.savingsAccountTailNumber || '').trim(),
+                savingsBalanceBefore: Number.isFinite(Number(record.savingsBalanceBefore))
+                    ? Number(record.savingsBalanceBefore)
+                    : null,
+                savingsBalanceAfter: Number.isFinite(Number(record.savingsBalanceAfter))
+                    ? Number(record.savingsBalanceAfter)
+                    : null,
                 creditCardIndex: Number.isInteger(Number(record.creditCardIndex))
                     ? Number(record.creditCardIndex)
                     : undefined,
@@ -2294,7 +2302,7 @@ export class WechatData {
             id: String(meta.id || '').trim() || `wallet_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             delta: safeDelta,
             amount: Math.abs(safeDelta),
-            type: ['transfer', 'redpacket', 'honey', 'shopping', 'repayment', 'other'].includes(String(meta.type || '')) ? String(meta.type) : 'other',
+            type: ['transfer', 'redpacket', 'honey', 'shopping', 'repayment', 'bank_transfer', 'other'].includes(String(meta.type || '')) ? String(meta.type) : 'other',
             title: String(meta.title || (safeDelta > 0 ? '零钱收入' : '零钱支出')).trim(),
             detail: String(meta.detail || '').trim(),
             source: String(meta.source || meta.sourceApp || 'wechat').trim() || 'wechat',
@@ -2316,12 +2324,20 @@ export class WechatData {
             timelineLinked: meta.timelineLinked === true,
             tavernMessageIndex: Number.isFinite(tavernMessageIndex) ? tavernMessageIndex : undefined,
             batchId: String(meta.batchId || '').trim(),
-            balanceScope: meta.balanceScope === 'savings' ? 'savings' : 'wallet',
+            balanceScope: ['savings', 'wallet_transfer'].includes(meta.balanceScope)
+                ? meta.balanceScope
+                : 'wallet',
             paymentSourceId: String(meta.paymentSourceId || '').trim(),
             savingsAccountIndex: Number.isInteger(Number(meta.savingsAccountIndex))
                 ? Number(meta.savingsAccountIndex)
                 : undefined,
             savingsAccountTailNumber: String(meta.savingsAccountTailNumber || '').trim(),
+            savingsBalanceBefore: Number.isFinite(Number(meta.savingsBalanceBefore))
+                ? Number(meta.savingsBalanceBefore)
+                : null,
+            savingsBalanceAfter: Number.isFinite(Number(meta.savingsBalanceAfter))
+                ? Number(meta.savingsBalanceAfter)
+                : null,
             creditCardIndex: Number.isInteger(Number(meta.creditCardIndex))
                 ? Number(meta.creditCardIndex)
                 : undefined,
@@ -2376,7 +2392,24 @@ export class WechatData {
             if (record?.affectsBalance !== true) return;
             const key = String(record.walletKey || this.walletDefaultKey);
             const profile = this.data.walletAssetsByChat?.[key];
-            if (record.balanceScope === 'savings') {
+            if (record.balanceScope === 'wallet_transfer') {
+                const accounts = Array.isArray(profile?.savingsAccounts) ? profile.savingsAccounts : [];
+                let account = accounts[Number(record.savingsAccountIndex)];
+                if (!account || (record.savingsAccountTailNumber
+                    && String(account.tailNumber || '') !== String(record.savingsAccountTailNumber))) {
+                    account = accounts.find(item => String(item?.tailNumber || '') === String(record.savingsAccountTailNumber || ''));
+                }
+                const savingsBalanceBefore = Number(record.savingsBalanceBefore);
+                if (account && Number.isFinite(savingsBalanceBefore)) {
+                    account.balance = Math.max(0, Math.round(savingsBalanceBefore * 100) / 100);
+                }
+
+                const walletBalanceBefore = Number(record.balanceBefore);
+                if (Number.isFinite(walletBalanceBefore)) {
+                    this.data.walletByChat[key] = Math.max(0, Math.round(walletBalanceBefore * 100) / 100);
+                    this._syncWalletAssetBalance(key, this.data.walletByChat[key]);
+                }
+            } else if (record.balanceScope === 'savings') {
                 const accounts = Array.isArray(profile?.savingsAccounts) ? profile.savingsAccounts : [];
                 let account = accounts[Number(record.savingsAccountIndex)];
                 if (!account || (record.savingsAccountTailNumber
@@ -2512,6 +2545,96 @@ export class WechatData {
         }
         this.saveData();
         return { success: true, amount: spendAmount, balanceBefore, balanceAfter, source, reason: '' };
+    }
+
+    async transferSavingsToWallet({
+        accountIndex,
+        accountTailNumber = '',
+        amount,
+        storyTime = null,
+        chatId = null
+    } = {}) {
+        const entry = this._getMutableWalletAssetProfile(chatId);
+        const safeAccountIndex = Number.parseInt(accountIndex, 10);
+        const account = entry?.profile?.savingsAccounts?.[safeAccountIndex];
+        const expectedTailNumber = String(accountTailNumber || '').trim();
+        if (!account || (expectedTailNumber && String(account.tailNumber || '') !== expectedTailNumber)) {
+            return { success: false, reason: 'account_not_found' };
+        }
+
+        const parsedAmount = Number.parseFloat(amount);
+        const transferAmount = Number.isFinite(parsedAmount) ? Math.round(parsedAmount * 100) / 100 : 0;
+        const savingsBalanceBefore = Math.max(0, Math.round((Number(account.balance) || 0) * 100) / 100);
+        const rawWalletBalance = this.getWalletBalance(chatId);
+        const walletBalanceBefore = Math.max(0, Math.round((Number(rawWalletBalance) || 0) * 100) / 100);
+        if (transferAmount <= 0) {
+            return {
+                success: false,
+                reason: 'invalid_amount',
+                amount: transferAmount,
+                savingsBalanceBefore,
+                walletBalanceBefore
+            };
+        }
+        if (savingsBalanceBefore < transferAmount) {
+            return {
+                success: false,
+                reason: 'insufficient_balance',
+                amount: transferAmount,
+                savingsBalanceBefore,
+                walletBalanceBefore
+            };
+        }
+
+        const savingsBalanceAfter = Math.round((savingsBalanceBefore - transferAmount) * 100) / 100;
+        const walletBalanceAfter = Math.round((walletBalanceBefore + transferAmount) * 100) / 100;
+        account.balance = savingsBalanceAfter;
+        if (!this.data.walletByChat) this.data.walletByChat = {};
+        this.data.walletByChat[entry.key] = walletBalanceAfter;
+        this._syncWalletAssetBalance(entry.key, walletBalanceAfter);
+
+        const resolvedStoryTime = storyTime || this._getStoryTimeFallback();
+        const tavernMessageIndex = this._getCurrentTavernMessageIndex();
+        const tailText = account.tailNumber ? `尾号${account.tailNumber}` : '储蓄卡';
+        const transferId = `wallet_bank_transfer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const transaction = this._appendWalletTransaction(transferAmount, {
+            id: transferId,
+            type: 'bank_transfer',
+            title: '银行卡转入',
+            detail: `${String(account.bankName || '银行卡').trim()} · ${tailText}`,
+            source: 'wallet_bank_transfer',
+            sourceApp: 'wechat',
+            referenceId: transferId,
+            date: String(resolvedStoryTime?.date || '').trim(),
+            time: String(resolvedStoryTime?.time || '').trim(),
+            weekday: String(resolvedStoryTime?.weekday || '').trim(),
+            timestamp: Number(resolvedStoryTime?.timestamp) || undefined,
+            timelineLinked: true,
+            tavernMessageIndex,
+            balanceScope: 'wallet_transfer',
+            paymentSourceId: `bank:${safeAccountIndex}:${String(account.tailNumber || '')}`,
+            savingsAccountIndex: safeAccountIndex,
+            savingsAccountTailNumber: String(account.tailNumber || ''),
+            savingsBalanceBefore,
+            savingsBalanceAfter
+        }, {
+            affectsBalance: true,
+            balanceBefore: walletBalanceBefore,
+            balanceAfter: walletBalanceAfter,
+            walletKey: entry.key
+        });
+
+        await this.saveData();
+        return {
+            success: true,
+            amount: transferAmount,
+            account,
+            savingsBalanceBefore,
+            savingsBalanceAfter,
+            walletBalanceBefore,
+            walletBalanceAfter,
+            transaction
+        };
     }
 
     // 设置钱包金额（初始化用）

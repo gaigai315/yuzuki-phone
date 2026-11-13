@@ -248,7 +248,7 @@ export class PhoneShell {
                 '.home-dashboard', '.home-app-cluster-scroll', '.yzp-home-app-grid',
                 '.chat-messages', '#voice-chat-messages', '#video-chat-messages',
                 '.quick-reply-panel', '.quick-time-column', '.emoji-panel', '.emoji-scroll',
-                '.wechat-content', '.wechat-profile-edit-content', '.wechat-wallet-ledger-scroll', '.app-body', '.settings-app', '.app-name-custom-list', '.moments-list',
+                '.wechat-content', '.wechat-profile-edit-content', '.wechat-wallet-ledger-scroll', '.wechat-wallet-transfer-scroll', '.app-body', '.settings-app', '.app-name-custom-list', '.moments-list',
                 '.yzp-frame-color-picker-overlay', '.yzp-frame-color-picker-dialog', '.yzp-frame-color-picker-body',
                 '.wechat-moment-visibility-list', '.wechat-offline-friends-list',
                 '#tab-memory', '.settings-app #tab-memory',

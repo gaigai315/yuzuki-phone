@@ -48,7 +48,7 @@ const ST_PHONE_VERSION = '1.6.8';
 const ST_PHONE_CSS_REVISION = '20261107-diary-colors-2';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261112-story-image-mime';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261110-voice-transcript-contrast';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261114-fixed-payment-text';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -2323,7 +2323,7 @@ if (window.GGP_Loaded) {
             || window.VirtualPhone.cachedWechatData
             || null;
         if (wechatData) return wechatData;
-        const module = await import('./apps/wechat/wechat-data.js?v=20261108-user-avatar');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
         wechatData = new module.WechatData(storage);
         window.VirtualPhone.cachedWechatData = wechatData;
         return wechatData;
@@ -3014,7 +3014,7 @@ if (window.GGP_Loaded) {
             const latestTime = currentTime || tm?.getCurrentStoryTime?.();
             if (!latestTime?.date) return [];
 
-            const module = await import('./apps/wechat/wechat-data.js?v=20261108-user-avatar');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             const existingWechatData = window.VirtualPhone.wechatApp?.wechatData
                 || window.VirtualPhone.cachedWechatData
@@ -8463,7 +8463,7 @@ if (window.GGP_Loaded) {
         const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js?v=20261108-user-avatar').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer').then(module => {
             let wechatData;
 
             if (getCurrentTavernConversationIdentity() !== conversationId) {
@@ -9510,7 +9510,7 @@ if (window.GGP_Loaded) {
             const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js?v=20261108-user-avatar').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer').then(async module => {
                 let wechatData;
                 if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                     console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
@@ -9787,7 +9787,7 @@ if (window.GGP_Loaded) {
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
-            const module = await import('./apps/wechat/wechat-data.js?v=20261108-user-avatar');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             const context = getContext();
@@ -9834,7 +9834,7 @@ if (window.GGP_Loaded) {
         if (payments.length === 0) return [];
 
         const sourceConversationId = getCurrentTavernConversationIdentity();
-        const module = await import('./apps/wechat/wechat-data.js?v=20261108-user-avatar');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
         if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
             console.warn('⚠️ [线上支付] 扣款前会话已切换，丢弃旧会话回调');
             return [];
@@ -11786,7 +11786,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js?v=20261108-user-avatar');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -12016,7 +12016,7 @@ if (window.GGP_Loaded) {
                                     || window.VirtualPhone.cachedWechatData
                                     || null;
                                 if (!wechatDataInstance && storage) {
-                                    const module = await import('./apps/wechat/wechat-data.js?v=20261108-user-avatar');
+                                    const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
                                     if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                                         console.warn('⚠️ 微信删楼回滚期间会话已切换，丢弃旧会话回调');
                                         return;
@@ -12317,7 +12317,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js?v=20261108-user-avatar');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;

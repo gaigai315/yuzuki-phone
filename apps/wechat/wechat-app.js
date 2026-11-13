@@ -10,10 +10,10 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20261109-readable-settings';
+import { ChatView } from './chat-view.js?v=20261114-payment-interactions';
 import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
 import { MomentsView } from './moments-view.js?v=20261109-readable-settings';
-import { WechatData } from './wechat-data.js?v=20261108-user-avatar';
+import { WechatData } from './wechat-data.js?v=20261114-wallet-bank-transfer';
 import { normalizeWechatUserAvatar } from './user-avatar.js';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
 import { getWechatReadablePalette } from './readable-colors.js?v=20261109-readable-glass';
@@ -88,14 +88,95 @@ export class WechatApp {
             document.head.appendChild(style);
         }
         style.textContent = `
-            #phone-panel-content .wechat-app {
+            #phone-panel-content .wechat-app:not(.wechat-wallet-ledger-page):not(.wechat-wallet-transfer-page):not(.wechat-payment-fixed-page):not(.wechat-payment-compose-page) {
                 --phone-global-text: var(--wechat-text-color, #000000) !important;
                 --phone-text-color: var(--wechat-text-color, #000000) !important;
             }
-            #phone-panel-content .wechat-app,
-            #phone-panel-content .wechat-app.wechat-app :not(.yzp-frame-color-picker-overlay, .yzp-frame-color-picker-overlay *) {
+            #phone-panel-content .wechat-app:not(.wechat-wallet-ledger-page):not(.wechat-wallet-transfer-page):not(.wechat-payment-fixed-page):not(.wechat-payment-compose-page),
+            #phone-panel-content .wechat-app.wechat-app:not(.wechat-wallet-ledger-page):not(.wechat-wallet-transfer-page):not(.wechat-payment-fixed-page):not(.wechat-payment-compose-page) :not(
+                .yzp-frame-color-picker-overlay,
+                .yzp-frame-color-picker-overlay *,
+                .wechat-file-card,
+                .wechat-file-card *,
+                .message-redpacket,
+                .message-redpacket *,
+                .message-transfer,
+                .message-transfer *,
+                .wechat-redpacket-open-overlay,
+                .wechat-redpacket-open-overlay *,
+                .wechat-wallet-repayment-overlay,
+                .wechat-wallet-repayment-overlay *
+            ) {
                 color: var(--wechat-text-color, #000000) !important;
                 text-shadow: none !important;
+            }
+            #phone-panel-content .wechat-app.wechat-wallet-ledger-page,
+            #phone-panel-content .wechat-app.wechat-wallet-transfer-page {
+                --phone-global-text: #000000 !important;
+                --phone-text-color: #000000 !important;
+                color: #000000 !important;
+                text-shadow: none !important;
+            }
+            #phone-panel-content .wechat-app.wechat-wallet-ledger-page *:not(i):not(svg):not(path),
+            #phone-panel-content .wechat-app.wechat-wallet-transfer-page *:not(i):not(svg):not(path) {
+                color: #000000 !important;
+                text-shadow: none !important;
+            }
+            #phone-panel-content .wechat-app.wechat-wallet-ledger-page :is(
+                .wechat-wallet-shortcut-icon,
+                .wechat-wallet-account-logo,
+                .wechat-wallet-ledger-icon
+            ),
+            #phone-panel-content .wechat-app.wechat-wallet-transfer-page .wechat-wallet-account-logo {
+                color: #ffffff !important;
+            }
+            #phone-panel-content .wechat-app.wechat-wallet-ledger-page .wechat-wallet-ledger-stat-icon {
+                color: #5b6b59 !important;
+            }
+            #phone-panel-content .wechat-app.wechat-wallet-ledger-page .wechat-wallet-hero-emblem > span {
+                color: #8da287 !important;
+            }
+            #phone-panel-content .wechat-app .wechat-file-card,
+            #phone-panel-content .wechat-app .wechat-file-card-title,
+            #phone-panel-content .wechat-app .wechat-file-card .wechat-forward-record-footer,
+            #phone-panel-content .wechat-app .wechat-file-card .wechat-forward-record-footer span {
+                color: #000000 !important;
+                -webkit-text-fill-color: #000000 !important;
+                text-shadow: none !important;
+            }
+            #phone-panel-content .wechat-app .wechat-file-card .wechat-file-card-icon {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+            #phone-panel-content .wechat-app.wechat-payment-fixed-page,
+            #phone-panel-content .wechat-app.wechat-payment-compose-page {
+                --phone-global-text: #000000 !important;
+                --phone-text-color: #000000 !important;
+                color: #000000 !important;
+                text-shadow: none !important;
+            }
+            #phone-panel-content .wechat-app.wechat-payment-fixed-page *:not(i):not(svg):not(path) {
+                color: #000000 !important;
+                -webkit-text-fill-color: #000000 !important;
+                text-shadow: none !important;
+            }
+            #phone-panel-content .wechat-app.wechat-redpacket-detail-page #back-from-rp-detail,
+            #phone-panel-content .wechat-app.wechat-redpacket-detail-page #back-from-rp-detail i,
+            #phone-panel-content .wechat-app.wechat-transfer-detail-page .wechat-transfer-status-icon.is-received,
+            #phone-panel-content .wechat-app.wechat-transfer-detail-page .wechat-transfer-status-icon.is-received i,
+            #phone-panel-content .wechat-app.wechat-transfer-detail-page .wechat-transfer-status-icon.is-refunded,
+            #phone-panel-content .wechat-app.wechat-transfer-detail-page .wechat-transfer-status-icon.is-refunded i {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+            #phone-panel-content .wechat-app.wechat-transfer-detail-page .wechat-transfer-receive-button {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+            #phone-panel-content .wechat-app.wechat-transfer-detail-page .wechat-transfer-status-icon.is-pending,
+            #phone-panel-content .wechat-app.wechat-transfer-detail-page .wechat-transfer-status-icon.is-pending i {
+                color: #21aef3 !important;
+                -webkit-text-fill-color: #21aef3 !important;
             }
             #phone-panel-content .wechat-app.wechat-readable-settings {
                 --phone-form-background: var(--wechat-readable-surface) !important;
@@ -2265,8 +2346,13 @@ export class WechatApp {
 #phone-panel-content .wechat-forward-record-time { white-space: nowrap; font-size: 10px; margin-left: auto; }
 #phone-panel-content .wechat-forward-record-entry-text { white-space: pre-wrap; color: #191919; line-height: 1.7; overflow-wrap: anywhere; }
 #phone-panel-content .wechat-file-card-main { display: flex; align-items: center; gap: 14px; padding: 18px 12px; min-height: 44px; }
+#phone-panel-content .wechat-file-card,
+#phone-panel-content .wechat-file-card-title,
+#phone-panel-content .wechat-file-card .wechat-forward-record-footer,
+#phone-panel-content .wechat-file-card .wechat-forward-record-footer span { color: #000 !important; -webkit-text-fill-color: #000 !important; text-shadow: none !important; }
 #phone-panel-content .wechat-file-card-title { flex: 1; min-width: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #phone-panel-content .wechat-file-card-icon { display: flex; align-items: center; justify-content: center; width: 42px; height: 48px; flex-shrink: 0; border-radius: 5px; background: #f6aa42; color: #fff; font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; line-height: 1; letter-spacing: 0; }
+#phone-panel-content .wechat-file-card .wechat-file-card-icon { color: #fff !important; -webkit-text-fill-color: #fff !important; }
 #phone-panel-content .wechat-file-card-icon.is-word { background: #3478ce; font-size: 25px; }
 #phone-panel-content .wechat-file-card-icon.is-excel { background: #2b9662; font-size: 25px; }
 #phone-panel-content .wechat-file-card-icon.is-powerpoint { background: #dc7145; font-size: 25px; }
@@ -4452,6 +4538,233 @@ export class WechatApp {
 }
 
 /* ========================================
+   红包开启互动层 / 转账详情
+   ======================================== */
+#phone-panel-content .phone-screen .wechat-redpacket-open-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-dialog {
+    position: relative;
+    z-index: 1;
+    width: min(76%, 286px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-card {
+    position: relative;
+    width: 100%;
+    min-height: 390px;
+    box-sizing: border-box;
+    padding: 76px 22px 40px;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #f75b4f;
+    color: #f8dfae;
+    text-align: center;
+    box-shadow: 0 12px 32px rgba(98, 24, 17, 0.26);
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-card::after {
+    content: '';
+    position: absolute;
+    left: -12%;
+    right: -12%;
+    bottom: 70px;
+    height: 145px;
+    border-radius: 0 0 50% 50%;
+    border-bottom: 1px solid rgba(127, 37, 28, 0.22);
+    box-shadow: 0 8px 10px rgba(127, 37, 28, 0.13);
+    pointer-events: none;
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-avatar {
+    width: 34px;
+    height: 34px;
+    margin: 0 auto 10px;
+    overflow: hidden;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.85);
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-sender {
+    font-size: 13px;
+    color: #f8dfae;
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-wish {
+    margin-top: 12px;
+    font-size: 20px;
+    line-height: 1.4;
+    color: #f8dfae;
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-button {
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    bottom: 37px;
+    width: 76px;
+    height: 76px;
+    transform: translateX(-50%);
+    border: 0;
+    border-radius: 50%;
+    background: #f1d29a;
+    color: #5e5545;
+    font-family: serif;
+    font-size: 31px;
+    box-shadow: 0 3px 8px rgba(83, 40, 13, 0.35);
+    cursor: pointer;
+    transition: transform 0.25s ease;
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-overlay.is-opening .wechat-redpacket-open-button {
+    transform: translateX(-50%) rotateY(180deg) scale(0.92);
+}
+
+#phone-panel-content .phone-screen .wechat-redpacket-open-close {
+    width: 44px;
+    height: 44px;
+    margin-top: 26px;
+    border: 2px solid #d7a840;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.4);
+    color: #d7a840;
+    font-size: 22px;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-detail-page,
+#phone-panel-content .phone-screen .wechat-transfer-detail-view {
+    background: #fff;
+    color: #000;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-detail-view {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-detail-main {
+    padding: 50px 16px 0;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-status-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #07c160;
+    color: #fff;
+    font-size: 22px;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-status-icon.is-pending {
+    background: transparent;
+    color: #21aef3;
+    border: 3px solid #21aef3;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-status-icon.is-refunded {
+    background: #8a8a8a;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-status-title {
+    margin-bottom: 12px;
+    color: #000;
+    font-size: 16px;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-detail-amount {
+    margin-bottom: 7px;
+    color: #000;
+    font-size: 37px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-balance-label {
+    min-height: 18px;
+    margin-bottom: 22px;
+    color: #62769a;
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-pending-actions {
+    margin-top: auto;
+    padding: 0 38px 54px;
+    text-align: center;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-receive-button {
+    width: 100%;
+    height: 48px;
+    border: 0;
+    border-radius: 8px;
+    background: #07c160;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-receive-button:disabled {
+    opacity: 0.55;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-refund-hint {
+    margin-top: 18px;
+    color: #858585;
+    font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-refund-button {
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    color: #62769a;
+    font: inherit;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-transfer-detail-footer {
+    margin-top: auto;
+    padding-bottom: 32px;
+    color: #62769a;
+    font-size: 12px;
+    text-align: center;
+}
+
+/* ========================================
    微信钱包
    ======================================== */
 #phone-panel-content .phone-screen .wechat-app.wechat-wallet-ledger-page {
@@ -4922,14 +5235,27 @@ export class WechatApp {
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-savings-row {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
     min-height: 72px;
     padding: 10px;
     display: grid;
-    grid-template-columns: 38px minmax(0, 1fr) auto;
+    grid-template-columns: 38px minmax(0, 1fr) auto 10px;
     gap: 9px;
     align-items: center;
+    border: 0;
     border-bottom: 1px solid #eef0ed;
+    background: #fff;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     box-sizing: border-box;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-savings-row:active {
+    background: #f7f9f6;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-savings-row:last-child,
@@ -4991,6 +5317,227 @@ export class WechatApp {
 
 #phone-panel-content .phone-screen .wechat-wallet-savings-balance.is-compact {
     font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-savings-chevron {
+    color: #a8ada7;
+    font-size: 9px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-page {
+    height: 100%;
+    min-height: 0;
+    background: #f4f6f2;
+    color: #242924;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-scroll {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-nav {
+    min-height: 62px;
+    padding: 22px 12px 6px;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+    align-items: center;
+    box-sizing: border-box;
+    background: #fff;
+    border-bottom: 1px solid #e8ebe6;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-back {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #282d29;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-title {
+    text-align: center;
+    font-size: 16px;
+    font-weight: 650;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-body {
+    padding: 14px 12px 24px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-account {
+    padding: 14px;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    border: 1px solid #e2e6df;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 6px 18px rgba(46, 58, 47, 0.05);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-account .wechat-wallet-account-logo {
+    width: 40px;
+    height: 40px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-account-balance {
+    text-align: right;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-account-balance span,
+#phone-panel-content .phone-screen .wechat-wallet-transfer-account-balance strong {
+    display: block;
+    white-space: nowrap;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-account-balance span {
+    color: #909690;
+    font-size: 9px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-account-balance strong {
+    margin-top: 4px;
+    color: #252a26;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-form {
+    margin-top: 12px;
+    overflow: hidden;
+    border: 1px solid #e2e6df;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 6px 18px rgba(46, 58, 47, 0.05);
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-form-label {
+    padding: 14px 14px 0;
+    color: #6f766f;
+    font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-input-row {
+    min-height: 72px;
+    padding: 4px 14px 10px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    border-bottom: 1px solid #eceeea;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-currency {
+    color: #202520;
+    font-size: 27px;
+    font-weight: 600;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-input {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 48px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #202520 !important;
+    font-size: 29px !important;
+    font-weight: 600 !important;
+    line-height: 48px !important;
+    font-variant-numeric: tabular-nums;
+    appearance: textfield !important;
+    -moz-appearance: textfield !important;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-input::-webkit-outer-spin-button,
+#phone-panel-content .phone-screen .wechat-wallet-transfer-input::-webkit-inner-spin-button {
+    margin: 0 !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-input::placeholder {
+    color: #c6cbc4;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-all {
+    padding: 7px 0 7px 8px;
+    border: 0;
+    background: transparent;
+    color: #66845f;
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-destination {
+    min-height: 52px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #777e77;
+    font-size: 11px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-destination strong {
+    color: #2c312d;
+    font-size: 12px;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-error {
+    min-height: 20px;
+    padding: 9px 3px 4px;
+    color: #d85f5f;
+    font-size: 10px;
+    line-height: 1.45;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-submit {
+    width: 100%;
+    min-height: 44px;
+    margin-top: 8px;
+    border: 0;
+    border-radius: 9px;
+    background: #6e8c65;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-submit:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-note {
+    margin: 12px 6px 0;
+    color: #9aa09a;
+    font-size: 9px;
+    line-height: 1.55;
+    text-align: center;
 }
 
 #phone-panel-content .phone-screen .wechat-wallet-liability-row {
@@ -5486,6 +6033,7 @@ export class WechatApp {
 #phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-honey { background: #cf4f8d; }
 #phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-shopping { background: #e5a33b; }
 #phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-repayment { background: #d95f65; }
+#phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-bank-transfer { background: #4aa8dc; }
 #phone-panel-content .phone-screen .wechat-wallet-ledger-icon.is-other { background: #56a16a; }
 
 #phone-panel-content .phone-screen .wechat-wallet-ledger-copy,
@@ -5588,6 +6136,33 @@ export class WechatApp {
     color: #a1a5a0;
     font-size: 10px;
     background: #fff;
+}
+
+/* 钱包使用固定浅色背景，强制锁定文字为黑色，避免酒馆主题把文字改成白色。 */
+#phone-panel-content .phone-screen .wechat-wallet-ledger-page *:not(i),
+#phone-panel-content .phone-screen .wechat-wallet-transfer-page *:not(i) {
+    color: #000 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-transfer-input::placeholder {
+    color: #000 !important;
+    opacity: 0.45;
+}
+
+/* 彩色圆形图标仍保留白色图形，不跟随文字锁色。 */
+#phone-panel-content .phone-screen .wechat-wallet-ledger-page .wechat-wallet-shortcut-icon,
+#phone-panel-content .phone-screen .wechat-wallet-ledger-page .wechat-wallet-account-logo,
+#phone-panel-content .phone-screen .wechat-wallet-ledger-page .wechat-wallet-ledger-icon,
+#phone-panel-content .phone-screen .wechat-wallet-transfer-page .wechat-wallet-account-logo {
+    color: #fff !important;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-page .wechat-wallet-ledger-stat-icon {
+    color: #5b6b59 !important;
+}
+
+#phone-panel-content .phone-screen .wechat-wallet-ledger-page .wechat-wallet-hero-emblem > span {
+    color: #8da287 !important;
 }
 
 #phone-panel-content .phone-screen .wechat-contact-generation-error-overlay {
@@ -7075,6 +7650,7 @@ export class WechatApp {
             honey: { className: 'is-honey', icon: 'fa-droplet' },
             shopping: { className: 'is-shopping', icon: 'fa-cart-shopping' },
             repayment: { className: 'is-repayment', icon: 'fa-credit-card' },
+            bank_transfer: { className: 'is-bank-transfer', icon: 'fa-building-columns' },
             other: { className: 'is-other', icon: 'fa-wallet' }
         };
         return visuals[type] || visuals.other;
@@ -7112,7 +7688,8 @@ export class WechatApp {
                 redpacket: '微信红包',
                 honey: '蜜语',
                 shopping: '线下支付',
-                repayment: '信用卡还款'
+                repayment: '信用卡还款',
+                bank_transfer: '银行卡转入'
             }[record.type] || '微信零钱')).trim();
             return `${dateHeader}
                 <div class="wechat-wallet-ledger-row">
@@ -7174,18 +7751,19 @@ export class WechatApp {
 
     _renderWalletSavingsPanel(profile = {}, totals = {}) {
         const accounts = Array.isArray(profile?.savingsAccounts) ? profile.savingsAccounts : [];
-        const rows = accounts.map((account) => {
+        const rows = accounts.map((account, accountIndex) => {
             const balanceText = this._formatWalletNumber(account.balance);
             const balanceClass = balanceText.length > 13 ? 'is-compact' : '';
             return `
-                <div class="wechat-wallet-savings-row">
+                <button class="wechat-wallet-savings-row" type="button" data-wallet-savings-account-index="${accountIndex}" aria-label="从${this._escapeWalletHtml(account.bankName)}转入零钱">
                     <span class="wechat-wallet-account-logo is-savings"><i class="fa-solid fa-building-columns"></i></span>
                     <div class="wechat-wallet-account-copy">
                         <div class="wechat-wallet-account-name">${this._escapeWalletHtml(account.bankName)}</div>
                         <div class="wechat-wallet-account-detail">储蓄卡 · 尾号 ${this._escapeWalletHtml(account.tailNumber)}</div>
                     </div>
                     <div class="wechat-wallet-savings-balance ${balanceClass}">¥${balanceText}</div>
-                </div>
+                    <i class="fa-solid fa-chevron-right wechat-wallet-savings-chevron" aria-hidden="true"></i>
+                </button>
             `;
         }).join('');
         const summary = accounts.length ? `合计 ¥${this._formatWalletNumber(totals.savingsBalance)}` : '尚未配置';
@@ -7342,7 +7920,7 @@ export class WechatApp {
         if (resetMonth || !monthKeys.includes(this._walletLedgerMonth)) {
             this._walletLedgerMonth = latestMonth;
         }
-        if (!['all', 'transfer', 'redpacket', 'honey', 'shopping', 'repayment'].includes(this._walletLedgerType)) {
+        if (!['all', 'transfer', 'redpacket', 'honey', 'shopping', 'repayment', 'bank_transfer'].includes(this._walletLedgerType)) {
             this._walletLedgerType = 'all';
         }
 
@@ -7362,7 +7940,8 @@ export class WechatApp {
             ['redpacket', '红包'],
             ['honey', '蜜语'],
             ['shopping', '线下支付'],
-            ['repayment', '信用卡还款']
+            ['repayment', '信用卡还款'],
+            ['bank_transfer', '银行卡转入']
         ];
         const typeOptions = typeOptionEntries
             .map(([value, label]) => `<option value="${value}" ${value === this._walletLedgerType ? 'selected' : ''}>${label}</option>`)
@@ -7467,6 +8046,129 @@ export class WechatApp {
                 const cardIndex = Number.parseInt(button.dataset.walletCreditCardIndex, 10);
                 if (Number.isInteger(cardIndex)) this.showWalletCreditRepaymentModal(cardIndex);
             });
+        });
+        currentView.querySelectorAll('[data-wallet-savings-account-index]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const accountIndex = Number.parseInt(button.dataset.walletSavingsAccountIndex, 10);
+                if (Number.isInteger(accountIndex)) this.showWalletSavingsTransferPage(accountIndex);
+            });
+        });
+    }
+
+    showWalletSavingsTransferPage(accountIndex) {
+        const safeAccountIndex = Number.parseInt(accountIndex, 10);
+        const profile = this.wechatData.getWalletAssetProfile?.() || {};
+        const account = profile.savingsAccounts?.[safeAccountIndex];
+        if (!account) {
+            this.phoneShell.showNotification('银行卡', '没有找到这张储蓄卡', '⚠️');
+            this.showWalletPage({ section: 'bank' });
+            return;
+        }
+
+        const accountBalance = Math.max(0, Math.round((Number(account.balance) || 0) * 100) / 100);
+        const walletBalance = Math.max(0, Math.round((Number(this.wechatData.getWalletBalance?.()) || 0) * 100) / 100);
+        const tailText = account.tailNumber ? `储蓄卡 · 尾号 ${account.tailNumber}` : '储蓄卡';
+        const html = `
+            <div class="wechat-app wechat-wallet-transfer-page">
+                <div class="wechat-wallet-transfer-scroll">
+                    <header class="wechat-wallet-transfer-nav">
+                        <button class="wechat-wallet-transfer-back" id="back-from-wallet-transfer" type="button" title="返回" aria-label="返回">
+                            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                        </button>
+                        <div class="wechat-wallet-transfer-title">转入零钱</div>
+                        <span></span>
+                    </header>
+                    <main class="wechat-wallet-transfer-body">
+                        <section class="wechat-wallet-transfer-account">
+                            <span class="wechat-wallet-account-logo is-savings"><i class="fa-solid fa-building-columns"></i></span>
+                            <div class="wechat-wallet-account-copy">
+                                <div class="wechat-wallet-account-name">${this._escapeWalletHtml(account.bankName || '银行卡')}</div>
+                                <div class="wechat-wallet-account-detail">${this._escapeWalletHtml(tailText)}</div>
+                            </div>
+                            <div class="wechat-wallet-transfer-account-balance">
+                                <span>可转入</span>
+                                <strong>¥${this._formatWalletNumber(accountBalance)}</strong>
+                            </div>
+                        </section>
+                        <section class="wechat-wallet-transfer-form">
+                            <div class="wechat-wallet-transfer-form-label">转入金额</div>
+                            <div class="wechat-wallet-transfer-input-row">
+                                <span class="wechat-wallet-transfer-currency">¥</span>
+                                <input class="wechat-wallet-transfer-input" id="wechat-wallet-transfer-amount" type="number" inputmode="decimal" min="0.01" max="${accountBalance}" step="0.01" placeholder="0.00" autocomplete="off">
+                                <button class="wechat-wallet-transfer-all" id="wechat-wallet-transfer-all" type="button">全部转入</button>
+                            </div>
+                            <div class="wechat-wallet-transfer-destination">
+                                <span>转入账户</span>
+                                <strong>微信零钱 · 当前 ¥${this._formatWalletNumber(walletBalance)}</strong>
+                            </div>
+                        </section>
+                        <div class="wechat-wallet-transfer-error" id="wechat-wallet-transfer-error" aria-live="polite"></div>
+                        <button class="wechat-wallet-transfer-submit" id="wechat-wallet-transfer-submit" type="button" disabled>确认转入</button>
+                        <div class="wechat-wallet-transfer-note">转入后银行卡余额会相应减少，资金立即进入微信零钱并可用于红包、转账和支付。</div>
+                    </main>
+                </div>
+            </div>
+        `;
+        this.phoneShell.setContent(html);
+
+        const currentView = document.querySelector('.phone-view-current') || document;
+        const amountInput = currentView.querySelector('#wechat-wallet-transfer-amount');
+        const errorEl = currentView.querySelector('#wechat-wallet-transfer-error');
+        const submitBtn = currentView.querySelector('#wechat-wallet-transfer-submit');
+        let submitting = false;
+        const validateAmount = () => {
+            const amount = Math.round((Number.parseFloat(amountInput?.value || '0') || 0) * 100) / 100;
+            let error = '';
+            if (amountInput?.value && amount <= 0) error = '请输入大于 0 的金额';
+            else if (amount > accountBalance) error = '转入金额不能超过银行卡余额';
+            if (errorEl) errorEl.textContent = error;
+            if (submitBtn) submitBtn.disabled = submitting || amount <= 0 || amount > accountBalance;
+            return { amount, error };
+        };
+
+        currentView.querySelector('#back-from-wallet-transfer')?.addEventListener('click', () => {
+            this.showWalletPage({ section: 'bank' });
+        });
+        currentView.querySelector('#wechat-wallet-transfer-all')?.addEventListener('click', () => {
+            if (!amountInput) return;
+            amountInput.value = accountBalance > 0 ? accountBalance.toFixed(2) : '';
+            validateAmount();
+            amountInput.focus();
+        });
+        amountInput?.addEventListener('input', validateAmount);
+        submitBtn?.addEventListener('click', async () => {
+            const { amount, error } = validateAmount();
+            if (submitting || error || amount <= 0) return;
+            submitting = true;
+            submitBtn.disabled = true;
+            submitBtn.textContent = '转入中…';
+            try {
+                const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || {};
+                const result = await this.wechatData.transferSavingsToWallet?.({
+                    accountIndex: safeAccountIndex,
+                    accountTailNumber: String(account.tailNumber || ''),
+                    amount,
+                    storyTime
+                });
+                if (!result?.success) {
+                    const message = result?.reason === 'insufficient_balance'
+                        ? '银行卡余额不足，请重新输入金额'
+                        : (result?.reason === 'account_not_found' ? '银行卡信息已变化，请返回后重试' : '转入失败，请检查金额');
+                    if (errorEl) errorEl.textContent = message;
+                    return;
+                }
+                this.phoneShell.showNotification('转入成功', `已转入微信零钱 ¥${this._formatWalletNumber(result.amount)}`, '✓');
+                this.showWalletPage({ resetMonth: true, section: 'ledger' });
+            } catch (errorValue) {
+                console.error('❌ 银行卡转入零钱失败:', errorValue);
+                if (errorEl) errorEl.textContent = '转入失败，请稍后再试';
+            } finally {
+                submitting = false;
+                if (document.body.contains(submitBtn)) {
+                    submitBtn.textContent = '确认转入';
+                    validateAmount();
+                }
+            }
         });
     }
 
