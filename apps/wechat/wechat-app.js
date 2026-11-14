@@ -9769,8 +9769,8 @@ export class WechatApp {
                             border: 1px solid #e7e7e7; border-radius: 8px; font-size: 12px; cursor: pointer;
                         "><i class="fa-solid fa-file-import" style="margin-right: 4px;"></i>导入 TXT</button>
                         <button id="save-css-profile-btn" ${canEditActiveChatCssProfile ? '' : 'disabled'} style="
-                            min-width: 0; padding: 8px 6px; background: var(--wechat-readable-surface, #FFFFFF); color: #fff;
-                            border: none; border-radius: 8px; font-size: 12px; cursor: ${canEditActiveChatCssProfile ? 'pointer' : 'default'};
+                            min-width: 0; padding: 8px 6px; background: var(--wechat-readable-surface, #FFFFFF); color: #333;
+                            border: 1px solid #e7e7e7; border-radius: 8px; font-size: 12px; cursor: ${canEditActiveChatCssProfile ? 'pointer' : 'default'};
                             opacity: ${canEditActiveChatCssProfile ? '1' : '0.45'};
                         ">保存当前</button>
                         <button id="delete-css-profile-btn" ${canEditActiveChatCssProfile ? '' : 'disabled'} style="
