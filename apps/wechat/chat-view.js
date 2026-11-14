@@ -2685,6 +2685,20 @@ export class ChatView {
         return entries;
     }
 
+    _buildSingleChatContactProfileHeader(contact = {}, { userName = '用户', chatName = '', commonGroupList = '' } = {}) {
+        return [
+            `${userName}正在手机微信上和${chatName}聊天，请根据剧情和角色的人设性格进行互动回复。`,
+            '',
+            `📋 【当前聊天窗口名】：${chatName}`,
+            `📋 【与当前好友共同所在群聊】：${commonGroupList || '无'}`,
+            '',
+            '【当前聊天对象档案】',
+            `好友昵称：${String(contact.nickname || contact.name || chatName).trim()}`,
+            `好友真名：${String(contact.realName || '').trim() || '未填写'}`,
+            `关系：${String(contact.relation || '').trim() || '未填写'}`
+        ].join('\n');
+    }
+
     _getOnlineOverridePrompt(promptManager, replacements = {}) {
         let text = '';
         try {
@@ -12435,19 +12449,14 @@ renderChatRoom(chat) {
         }
 
         let contactProfileMessage = null;
+        let currentSingleChatContact = null;
         if (!isGroupChat) {
             const currentContact = targetChat?.contactId
                 ? this.app.wechatData.getContact(targetChat.contactId)
                 : this.app.wechatData.getContactByName(targetChat?.name || charName);
             if (currentContact) {
-                const contactNotes = [
-                    `【当前聊天对象档案】`,
-                    `联系人：${currentContact.name || targetChat?.name || charName}`
-                ];
-
-                if (currentContact.relation) {
-                    contactNotes.push(`关系：${currentContact.relation}`);
-                }
+                currentSingleChatContact = currentContact;
+                const contactNotes = [];
                 const supplementalSetting = this._getWechatSupplementalSetting(currentContact);
                 if (supplementalSetting) {
                     contactNotes.push(`补充微信设定：\n${supplementalSetting}`);
@@ -12724,6 +12733,19 @@ renderChatRoom(chat) {
         // 5.5️⃣ 手机聊天系统提示词（线上模式）
         // 🔥 放在跨聊天上下文之后，让AI先看历史再看规则
         // ========================================
+        if (!isGroupChat) {
+            const profileHeader = this._buildSingleChatContactProfileHeader(currentSingleChatContact || {}, {
+                userName,
+                chatName: targetChat?.name || charName,
+                commonGroupList: commonGroupListForSingleChat
+            });
+            contactProfileMessage = {
+                role: 'system',
+                content: [profileHeader, contactProfileMessage?.content].filter(Boolean).join('\n'),
+                name: 'SYSTEM (联系人设定)',
+                isPhoneMessage: true
+            };
+        }
         const promptManager = window.VirtualPhone?.promptManager;
         const myCustomEmojis = this.app.wechatData.getCustomEmojis();
         const customEmojiNames = Array.isArray(myCustomEmojis)

@@ -6,6 +6,25 @@ import { ChatView } from '../apps/wechat/chat-view.js';
 
 const chatViewSource = fs.readFileSync(new URL('../apps/wechat/chat-view.js', import.meta.url), 'utf8');
 
+test('single chat profile separates the window remark, friend nickname and real name', () => {
+    const view = Object.create(ChatView.prototype);
+    const text = view._buildSingleChatContactProfileHeader({
+        name: '旧昵称', nickname: '夜航', remark: '周倩', realName: '周倩真名', relation: '统战部同事'
+    }, { userName: '陆栀之', chatName: '周倩', commonGroupList: '工作群(周倩、陆栀之)' });
+    assert.ok(text.startsWith('陆栀之正在手机微信上和周倩聊天'));
+    assert.ok(text.includes('【当前聊天窗口名】：周倩'));
+    assert.ok(text.includes('【与当前好友共同所在群聊】：工作群(周倩、陆栀之)'));
+    assert.ok(text.includes('【当前聊天对象档案】\n好友昵称：夜航\n好友真名：周倩真名\n关系：统战部同事'));
+    assert.ok(text.indexOf('【与当前好友共同所在群聊】') < text.indexOf('【当前聊天对象档案】'));
+});
+
+test('single chat profile leaves missing real names explicit and works without a saved contact', () => {
+    const view = Object.create(ChatView.prototype);
+    const text = view._buildSingleChatContactProfileHeader({}, { userName: '用户', chatName: '朋友' });
+    assert.ok(text.includes('【与当前好友共同所在群聊】：无'));
+    assert.ok(text.includes('好友昵称：朋友\n好友真名：未填写\n关系：未填写'));
+});
+
 function normalizeName(value = '') {
     return String(value || '')
         .trim()
