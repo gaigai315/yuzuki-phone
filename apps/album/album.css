@@ -1536,6 +1536,32 @@
     font-size: 20px !important;
 }
 
+#phone-story-image-overlay-root .phone-story-image-picture-icon {
+    display: block !important;
+    width: 1em !important;
+    height: 1em !important;
+    flex: 0 0 1em !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    position: static !important;
+    color: inherit !important;
+    background: transparent !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: none !important;
+    animation: none !important;
+    transition: none !important;
+}
+
+#phone-story-image-overlay-root .phone-story-image-picture-icon,
+#phone-story-image-overlay-root .phone-story-image-picture-icon > * {
+    fill: none !important;
+    stroke: currentColor !important;
+    stroke-width: 1.8 !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+}
+
 #phone-story-image-overlay-root .phone-story-image-front.is-empty strong {
     color: #6f7780 !important;
     font-size: 13px !important;

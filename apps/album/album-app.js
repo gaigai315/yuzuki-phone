@@ -6,8 +6,8 @@
  * ======================================================== */
 
 import { AlbumData } from './album-data.js?v=1.4.4&r=20261021-album-lazy-folds';
-import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261107-cancel-story-tags';
-import { StoryImageOverlay } from './story-image-overlay.js?v=20261107-cancel-story-tags';
+import { ALBUM_CSS_URL, AlbumView } from './album-view.js?v=1.4.4&r=20261114-stable-picture-icons';
+import { StoryImageOverlay } from './story-image-overlay.js?v=20261114-stable-picture-icons';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { resolveImageMime } from '../../config/image-mime.js';
 
