@@ -1531,7 +1531,7 @@ if (window.GGP_Loaded) {
             homeScreenModule,
             imageUploadModule
         ] = await Promise.all([
-            import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261114-wechat-tab-shell`),
+            import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261115-view-layer-visibility`),
             import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=20261114-home-refresh`),
             import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261108-original-background`)
         ]);

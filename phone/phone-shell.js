@@ -416,6 +416,7 @@ export class PhoneShell {
 
                 // 🔥 添加滑动视觉反馈
                 if (slideTarget) {
+                    if (this.swipeAction === 'back') this._showSwipePreviousLayer(slideTarget);
                     const progress = Math.min(deltaX / this.swipeThreshold, 1);
                     slideTarget.style.transform = `translate3d(${deltaX * 0.85}px, 0, 0)`;
                     // 只有关闭手机时才改变透明度
@@ -583,6 +584,7 @@ export class PhoneShell {
                     : phoneBody;
 
                 if (pointerSlideTarget) {
+                    if (this.swipeAction === 'back') this._showSwipePreviousLayer(pointerSlideTarget);
                     const progress = Math.min(deltaX / this.swipeThreshold, 1);
                     pointerSlideTarget.style.transform = `translate3d(${deltaX * 0.85}px, 0, 0)`;
                     if (this.swipeAction === 'close') {
@@ -648,8 +650,22 @@ export class PhoneShell {
         window.addEventListener('blur', () => cancelPointerSwipe());
     }
 
+    _showSwipePreviousLayer(target) {
+        const previous = this.screen?.querySelector('.phone-view-prev');
+        if (!previous) return;
+        previous.style.visibility = 'visible';
+        target._phoneSwipePreviousLayer = previous;
+    }
+
     _resetSwipeLayer(target, { animate = false, resetOpacity = true } = {}) {
         if (!target || !target.isConnected) return;
+        const previous = target._phoneSwipePreviousLayer;
+        target._phoneSwipePreviousLayer = null;
+        const hidePrevious = () => {
+            if (previous?.classList.contains('phone-view-prev') && previous !== this._backgroundPendingPreviousView) {
+                previous.style.visibility = 'hidden';
+            }
+        };
         if (animate) {
             target.style.transition = 'transform 0.2s ease-out';
             target.style.transform = 'translate3d(0, 0, 0)';
@@ -659,12 +675,14 @@ export class PhoneShell {
                 target.style.transition = '';
                 target.style.transform = '';
                 if (resetOpacity) target.style.opacity = '';
+                hidePrevious();
             }, 220);
             return;
         }
         target.style.transition = '';
         target.style.transform = '';
         if (resetOpacity) target.style.opacity = '';
+        hidePrevious();
     }
 
     _dispatchSwipeBackWithFallback(target) {
@@ -1272,6 +1290,7 @@ export class PhoneShell {
                 // 当前置顶页面
                 v.className = 'phone-view-layer phone-view-current';
                 v.style.display = 'block';
+                v.style.visibility = 'visible';
                 v.style.zIndex = '10';
                 v.style.boxShadow = '-5px 0 20px rgba(0,0,0,0.15)';
                 v.style.transform = 'translate3d(0,0,0)';
@@ -1282,6 +1301,9 @@ export class PhoneShell {
                 // 上一页（垫在下面，滑动返回时可见）
                 v.className = 'phone-view-layer phone-view-prev';
                 v.style.display = 'block';
+                // Transparent pages must not composite the previous page's text or blur layers.
+                // Reveal this layer only while loading the next background or swiping back.
+                v.style.visibility = 'hidden';
                 v.style.zIndex = '5';
                 v.style.boxShadow = 'none';
                 v.style.transform = 'translate3d(0,0,0)';
@@ -1300,6 +1322,7 @@ export class PhoneShell {
             targetView.style.opacity = '0';
             targetView.style.pointerEvents = 'none';
             previousView.style.display = 'block';
+            previousView.style.visibility = 'visible';
             previousView.style.opacity = '1';
             previousView.style.zIndex = '5';
             previousView.style.pointerEvents = 'none';
@@ -1309,6 +1332,7 @@ export class PhoneShell {
                 targetView.style.pointerEvents = '';
                 this._backgroundPendingTarget = null;
                 this._backgroundPendingPreviousView = null;
+                previousView.style.visibility = 'hidden';
                 if (!this.viewHistory.some(item => item.id === previousView.getAttribute('data-view-id'))) {
                     previousView.remove();
                 }
@@ -1352,6 +1376,7 @@ export class PhoneShell {
 
         targetView.className = 'phone-view-layer phone-view-current';
         targetView.style.display = 'block';
+        targetView.style.visibility = 'visible';
         targetView.style.zIndex = '10';
         targetView.style.boxShadow = '-5px 0 20px rgba(0,0,0,0.15)';
         targetView.style.transform = 'translate3d(0,0,0)';
