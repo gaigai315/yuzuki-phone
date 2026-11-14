@@ -11572,10 +11572,15 @@ if (window.GGP_Loaded) {
                 'wechat-text-color-override',
                 'st-phone-css-isolation-guard'
             ];
-            orderedIds.forEach((id) => {
-                const node = document.getElementById(id);
-                if (node?.parentNode === head) head.appendChild(node);
-            });
+            const ownedStyles = orderedIds
+                .map(id => document.getElementById(id))
+                .filter(node => node?.parentNode === head);
+            const allStyles = Array.from(head.children)
+                .filter(node => node.matches('style, link[rel="stylesheet"]'));
+            const tail = allStyles.slice(-ownedStyles.length);
+            // 已处于目标顺序时不要移动，尤其不要重复摘下含 @font-face 的全局样式。
+            if (ownedStyles.every((node, index) => tail[index] === node)) return;
+            ownedStyles.forEach(node => head.appendChild(node));
         };
 
         const scheduleRestore = () => {
