@@ -420,7 +420,6 @@ export class WechatApp {
         if (!document.getElementById('wechat-styles')) {
             const style = document.createElement('style');
             style.id = 'wechat-styles';
-            style.setAttribute('data-owner', 'yuzuki-phone');
             style.textContent = `
 /* ========================================
    微信APP完整样式 - 高仿版
@@ -6651,15 +6650,15 @@ export class WechatApp {
             const defaultChatBg = this._getWechatAssetUrl('backgrounds/bg1.png');
             const targetBg = this.wechatData.getChatBackground(this.currentChat.id, defaultChatBg);
             if (targetBg.startsWith('data:') || targetBg.startsWith('/') || targetBg.startsWith('http')) {
-                appBgStyle = `background-image: url('${targetBg}') !important; background-size: cover !important; background-position: center !important; background-repeat: no-repeat !important;`;
+                appBgStyle = `background-image: url('${targetBg}'); background-size: cover; background-position: center;`;
             } else {
-                appBgStyle = `background: ${targetBg} !important;`;
+                appBgStyle = `background: ${targetBg};`;
             }
         } else if (hasMainShellBackground) {
             if (chatListBg.startsWith('data:') || chatListBg.startsWith('/') || chatListBg.startsWith('http')) {
-                appBgStyle = `background-image: url('${chatListBg}') !important; background-size: cover !important; background-position: center !important; background-repeat: no-repeat !important;`;
+                appBgStyle = `background-image: url('${chatListBg}'); background-size: cover; background-position: center;`;
             } else {
-                appBgStyle = `background: ${chatListBg} !important;`;
+                appBgStyle = `background: ${chatListBg};`;
             }
         }
 
