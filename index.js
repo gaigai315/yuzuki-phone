@@ -49,7 +49,7 @@ const ST_PHONE_VERSION = '1.6.9';
 const ST_PHONE_CSS_REVISION = '20261107-diary-colors-2';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261114-stable-picture-icons';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261114-fixed-payment-text';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261114-wechat-tab-shell';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -1531,7 +1531,7 @@ if (window.GGP_Loaded) {
             homeScreenModule,
             imageUploadModule
         ] = await Promise.all([
-            import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261110-wechat-background`),
+            import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261114-wechat-tab-shell`),
             import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=20261114-home-refresh`),
             import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261108-original-background`)
         ]);
@@ -10915,7 +10915,7 @@ if (window.GGP_Loaded) {
         const style = existing || document.createElement('style');
         style.id = styleId;
         style.setAttribute('data-owner', 'yuzuki-phone');
-        style.textContent = `
+        const cssText = `
             #phone-panel-content,
             #phone-panel-content .phone-screen,
             #phone-panel-content .phone-body-panel,
@@ -10952,8 +10952,8 @@ if (window.GGP_Loaded) {
                 text-shadow: none !important;
             }
         `;
-        if (existing) existing.remove();
-        document.head.appendChild(style);
+        if (style.textContent !== cssText) style.textContent = cssText;
+        if (!existing) document.head.appendChild(style);
     }
 
     function applyGlobalTextColor(color = null) {

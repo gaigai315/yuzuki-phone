@@ -12,6 +12,7 @@
 // 手机外壳
 import { PHONE_CONFIG } from '../config/apps.js';
 import { prepareWechatBackground } from './background-ready.js?v=20261110-wechat-background';
+import { patchWechatMainShell } from './wechat-main-shell.js?v=20261114';
 
 export class PhoneShell {
     constructor() {
@@ -1241,7 +1242,16 @@ export class PhoneShell {
 
         // 只有内容真正改变时才替换 HTML，彻底消灭 Base64 图片的重绘闪烁！
         if (normalize(prevRawHtml) !== normalize(html)) {
-            targetView.innerHTML = html;
+            let patched = false;
+            const mainShell = viewId === 'wechat-main' && previousView === targetView
+                ? targetView.querySelector('.wechat-app.wechat-main-shell') : null;
+            if (mainShell && /data-wechat-main-view=/.test(html)) {
+                const template = document.createElement('template');
+                template.innerHTML = html;
+                const nextShell = template.content.querySelector('.wechat-app.wechat-main-shell');
+                if (nextShell) patched = patchWechatMainShell(mainShell, nextShell);
+            }
+            if (!patched) targetView.innerHTML = html;
             // 存下原始生成的 HTML 字符串，作为指纹
             targetView.setAttribute('data-raw-html', html);
         }

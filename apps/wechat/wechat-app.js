@@ -413,7 +413,8 @@ export class WechatApp {
             styleTag.id = 'wechat-custom-chat-style';
             document.head.appendChild(styleTag);
         }
-        styleTag.textContent = String(cssText || '');
+        const nextCss = String(cssText || '');
+        if (styleTag.textContent !== nextCss) styleTag.textContent = nextCss;
     }
 
     loadStyles() {
@@ -6676,7 +6677,7 @@ export class WechatApp {
         const contentBgStyle = (this.currentChat || hasMainShellBackground) ? 'background: transparent;' : '';
 
         const html = `
-            <div class="${appClass}" style="${appBgStyle}">
+            <div class="${appClass}" ${isMainRootView ? `data-wechat-main-view="${this.currentView}"` : ''} style="${appBgStyle}">
                 <!-- 顶部栏 -->
                 <div class="${headerClass}">
                     <div class="wechat-header-left">
