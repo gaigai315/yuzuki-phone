@@ -1280,6 +1280,10 @@ export class ImageGenerationManager {
 
     async generate(options = {}) {
         const config = this.getConfig(options);
+        // 公开接口的额外负面词在读取预设后追加，避免作为配置覆盖项替换用户负面词。
+        if (typeof options.additionalNegativePrompt === 'string') {
+            options = { ...options, negativePrompt: options.additionalNegativePrompt };
+        }
         if (!config.enabled && options.ignoreEnabled !== true) throw new Error('生图功能未启用');
         if (!['sd', 'comfyui'].includes(config.provider) && !config.apiKey) throw new Error('缺少生图 API Key');
 

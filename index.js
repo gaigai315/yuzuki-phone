@@ -35,6 +35,7 @@ import {
 import { parseWechatVoiceContent } from './apps/wechat/voice-text.js';
 import { parseWechatFile, formatWechatFile, tokenizeWechatFiles } from './apps/wechat/file-message.js';
 import { StoryImageAutoScheduler } from './apps/album/story-image-auto-scheduler.js';
+import { createPublicImageAPI } from './config/public-image-api.js?v=1';
 import { buildInlineReplyWechatList } from './apps/wechat/inline-reply-order.js';
 import {
     combineMofoBeautifyTemplate,
@@ -1483,7 +1484,7 @@ if (window.GGP_Loaded) {
             import('./config/time-manager.js'),    // 👈 取消懒加载
         import('./config/prompt-manager.js?v=20261103-friend-request-closing-tag'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
-        import('./config/image-generation-manager.js?v=20261021-nai-character-coordinates'),
+        import('./config/image-generation-manager.js?v=20261114-public-image-api'),
             import('./config/worldbook-manager.js?v=20261021-worldbook-lazy-load')
         ]);
 
@@ -11673,6 +11674,7 @@ if (window.GGP_Loaded) {
                 promptManager: null,
                 ttsManager: ttsManager,
                 imageGenerationManager: imageGenerationManager,
+                imageAPI: createPublicImageAPI(() => window.VirtualPhone?.imageGenerationManager),
                 worldbookManager: worldbookManager,
                 applyPhoneShellScale: applyPhoneShellScale,
                 applyGlobalFontScale: applyGlobalFontScale,
@@ -11721,6 +11723,8 @@ if (window.GGP_Loaded) {
                 _autoCalendarProbeCount: 0,
                 _storyImageAutoRunning: false
             };
+
+            window.dispatchEvent(new CustomEvent('yuzuki-phone:image-api-ready', { detail: { version: 1 } }));
 
             try {
                 registerPaymentMessageFormatter();
@@ -12066,7 +12070,7 @@ if (window.GGP_Loaded) {
                             phoneShell?.showNotification('错误', '微信模块加载失败', '❌');
                         });
                 } else if (appId === 'diary') {
-                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261110-batch-notifications`)
+                    import(`./apps/diary/diary-app.js?v=${ST_PHONE_VERSION}&r=20261114-hidden-state`)
                         .then(module => {
                             try {
                                 if (!window.VirtualPhone.diaryApp) {

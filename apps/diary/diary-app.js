@@ -14,7 +14,7 @@
 // ========================================
 
 import { DiaryData } from './diary-data.js?v=20261110-batch-notifications';
-import { DiaryView } from './diary-view.js?r=20261110-batch-notifications';
+import { DiaryView } from './diary-view.js?r=20261114-hidden-state';
 
 export class DiaryApp {
     constructor(phoneShell, storage) {
