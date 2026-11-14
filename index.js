@@ -44,7 +44,7 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.8';
+const ST_PHONE_VERSION = '1.6.9';
 const ST_PHONE_CSS_REVISION = '20261107-diary-colors-2';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261112-story-image-mime';
@@ -156,11 +156,10 @@ const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-11-10',
+    date: '2026-11-14',
     items: [
-        "【优化】日记会等待 CSS 与封面背景加载完成后再渲染，减少首次打开时的样式闪烁、布局错位和封面背景缺失，并优化目录与写日记按钮布局。",
-        "【优化】Fish Audio 支持公益站及兼容 TT 酒馆。",
-        "【优化】优化微信 CSS 渲染。"
+        "【优化】增强微信窗口样式隔离，减少角色卡内置手机及其他美化正则对微信背景、输入栏、功能面板、图标和布局的影响。",
+        "【优化】优化微信红包和转账功能，支持转账退回，并支持将银行卡余额转入微信零钱。"
     ]
 };
 
@@ -239,6 +238,8 @@ if (window.GGP_Loaded) {
     let modulesLoaded = false;
     let _lastWechatConversationId = null; // 防串味：角色卡 + 酒馆聊天文件联合标识
     let _globalCssLoadingPromise = null;
+    let _phoneCssIsolationObserver = null;
+    let _phoneCssIsolationFrame = null;
     let _phoneStableViewportHeight = 0;
     let _phoneStableViewportWidth = 0;
     let _phoneViewportResizeTimer = null;
@@ -10988,10 +10989,14 @@ if (window.GGP_Loaded) {
         const styleId = 'st-phone-global-css';
         const existing = document.getElementById(styleId);
         if (existing?.getAttribute('data-version') === ST_PHONE_VERSION
-            && existing?.getAttribute('data-revision') === ST_PHONE_CSS_REVISION) return;
+            && existing?.getAttribute('data-revision') === ST_PHONE_CSS_REVISION) {
+            ensurePhoneCssIsolationGuard();
+            return;
+        }
 
         if (_globalCssLoadingPromise) {
             await _globalCssLoadingPromise;
+            ensurePhoneCssIsolationGuard();
             return;
         }
 
@@ -11011,6 +11016,7 @@ if (window.GGP_Loaded) {
 
                 const style = document.createElement('style');
                 style.id = styleId;
+                style.setAttribute('data-owner', 'yuzuki-phone');
                 style.setAttribute('data-source', ST_PHONE_GLOBAL_CSS_URL);
                 style.setAttribute('data-version', ST_PHONE_VERSION);
                 style.setAttribute('data-revision', ST_PHONE_CSS_REVISION);
@@ -11023,6 +11029,592 @@ if (window.GGP_Loaded) {
         })();
 
         await _globalCssLoadingPromise;
+        ensurePhoneCssIsolationGuard();
+    }
+
+    function ensurePhoneCssIsolationGuard() {
+        const head = document.head;
+        if (!head) return;
+
+        let guardStyle = document.getElementById('st-phone-css-isolation-guard');
+        if (!guardStyle) {
+            guardStyle = document.createElement('style');
+            guardStyle.id = 'st-phone-css-isolation-guard';
+            guardStyle.setAttribute('data-owner', 'yuzuki-phone');
+            guardStyle.textContent = `
+                /* Protect the phone from character-card/regex CSS injected into document.head. */
+                #phone-panel-content .phone-screen .wechat-app.wechat-app {
+                    width: 100% !important;
+                    height: 100% !important;
+                    min-width: 0 !important;
+                    min-height: 0 !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                    position: relative !important;
+                    overflow: hidden !important;
+                    box-sizing: border-box !important;
+                    isolation: isolate !important;
+                }
+
+                #phone-panel-content .phone-screen .phone-view-current:has(> .wechat-app) {
+                    display: block !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                    min-width: 0 !important;
+                    min-height: 0 !important;
+                    max-width: none !important;
+                    max-height: none !important;
+                    position: absolute !important;
+                    inset: 0 !important;
+                    overflow: hidden !important;
+                    box-sizing: border-box !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app > .wechat-header {
+                    flex: 0 0 68px !important;
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    height: 68px !important;
+                    min-height: 68px !important;
+                    max-height: 68px !important;
+                    position: relative !important;
+                    inset: auto !important;
+                    box-sizing: border-box !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app > .wechat-content.wechat-content {
+                    display: flex !important;
+                    flex: 1 1 0 !important;
+                    flex-direction: column !important;
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: none !important;
+                    height: 0 !important;
+                    min-height: 0 !important;
+                    max-height: none !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    position: relative !important;
+                    inset: auto !important;
+                    transform: none !important;
+                    overflow-x: hidden !important;
+                    overflow-y: auto !important;
+                    box-sizing: border-box !important;
+                    contain: layout style !important;
+                    overscroll-behavior-y: contain !important;
+                    touch-action: pan-y !important;
+                    -webkit-overflow-scrolling: touch !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app > .wechat-content.wechat-content:has(> .chat-room) {
+                    overflow: hidden !important;
+                    contain: layout paint !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .chat-room.chat-room {
+                    inset: 0 !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                    background-color: transparent !important;
+                    background-size: cover !important;
+                    background-position: center !important;
+                    background-repeat: no-repeat !important;
+                    overflow: hidden !important;
+                    width: auto !important;
+                    min-width: 0 !important;
+                    max-width: none !important;
+                    height: auto !important;
+                    min-height: 0 !important;
+                    max-height: none !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    box-sizing: border-box !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .chat-messages.chat-messages {
+                    flex: 1 1 0 !important;
+                    min-width: 0 !important;
+                    min-height: 0 !important;
+                    overflow-x: hidden !important;
+                    overflow-y: auto !important;
+                    background: transparent !important;
+                    box-sizing: border-box !important;
+                    width: 100% !important;
+                    max-width: none !important;
+                    height: 0 !important;
+                    max-height: none !important;
+                    margin: 0 !important;
+                    position: relative !important;
+                    inset: auto !important;
+                    transform: none !important;
+                    contain: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .chat-input-area.chat-input-area {
+                    display: flex !important;
+                    flex-direction: column !important;
+                    align-items: stretch !important;
+                    justify-content: flex-start !important;
+                    gap: 0 !important;
+                    width: 100% !important;
+                    flex: 0 0 auto !important;
+                    position: relative !important;
+                    left: auto !important;
+                    right: auto !important;
+                    bottom: auto !important;
+                    box-sizing: border-box !important;
+                    height: auto !important;
+                    min-height: 0 !important;
+                    max-height: none !important;
+                    margin: 0 !important;
+                    padding-top: 0 !important;
+                    overflow: hidden !important;
+                    contain: layout paint !important;
+                    transform: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .quick-reply-panel,
+                #phone-panel-content .phone-screen .wechat-app .quick-reply-panel :is(
+                    div, span, small, label, input, textarea, button
+                ) {
+                    color: #000000 !important;
+                    -webkit-text-fill-color: #000000 !important;
+                    text-shadow: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .quick-reply-panel :is(input, textarea)::placeholder {
+                    color: #000000 !important;
+                    -webkit-text-fill-color: #000000 !important;
+                    opacity: 0.45 !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .quick-reply-panel button.quick-reply-send {
+                    color: #ffffff !important;
+                    -webkit-text-fill-color: #ffffff !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .quick-reply-panel button.quick-reply-item > span:first-child {
+                    background: #eef9f2 !important;
+                    background-image: none !important;
+                    border: 0.5px solid #bfe8cf !important;
+                    box-shadow: 0 1px 5px rgba(7, 193, 96, 0.10) !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .quick-reply-panel button.quick-reply-item > span:first-child > i {
+                    color: #65c88a !important;
+                    -webkit-text-fill-color: #65c88a !important;
+                    text-shadow: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .chat-input-bar.chat-input-bar {
+                    width: 100% !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: space-between !important;
+                    gap: 4px !important;
+                    padding: 6px 8px !important;
+                    box-sizing: border-box !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .chat-input-area,
+                #phone-panel-content .phone-screen .wechat-app .chat-input-area *,
+                #phone-panel-content .phone-screen .wechat-app .chat-input-area *::before,
+                #phone-panel-content .phone-screen .wechat-app .chat-input-area *::after {
+                    box-sizing: border-box !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .chat-input-bar > div {
+                    min-width: 0 !important;
+                    max-width: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .chat-input-wrapper.chat-input-wrapper {
+                    display: block !important;
+                    flex: 1 1 0 !important;
+                    width: auto !important;
+                    min-width: 0 !important;
+                    max-width: none !important;
+                    height: auto !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    position: relative !important;
+                    inset: auto !important;
+                    transform: none !important;
+                    overflow: visible !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app input.chat-input.chat-input {
+                    appearance: none !important;
+                    -webkit-appearance: none !important;
+                    display: block !important;
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: none !important;
+                    height: 32px !important;
+                    min-height: 32px !important;
+                    max-height: 32px !important;
+                    margin: 0 !important;
+                    padding: 6px 10px !important;
+                    position: static !important;
+                    transform: none !important;
+                    border-radius: 8px !important;
+                    box-shadow: none !important;
+                    font: inherit !important;
+                    line-height: 19px !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app button.input-btn.input-btn {
+                    appearance: none !important;
+                    -webkit-appearance: none !important;
+                    display: inline-flex !important;
+                    flex: 0 0 32px !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    width: 32px !important;
+                    min-width: 32px !important;
+                    max-width: 32px !important;
+                    height: 32px !important;
+                    min-height: 32px !important;
+                    max-height: 32px !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    position: static !important;
+                    inset: auto !important;
+                    overflow: visible !important;
+                    border: 0 !important;
+                    border-radius: 0 !important;
+                    background: transparent !important;
+                    background-image: none !important;
+                    box-shadow: none !important;
+                    filter: none !important;
+                    font: inherit !important;
+                    line-height: 1 !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app button.input-btn.input-btn > svg {
+                    display: block !important;
+                    flex: 0 0 auto !important;
+                    width: 20px !important;
+                    min-width: 20px !important;
+                    max-width: 20px !important;
+                    height: 20px !important;
+                    min-height: 20px !important;
+                    max-height: 20px !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    position: static !important;
+                    inset: auto !important;
+                    transform: none !important;
+                    overflow: visible !important;
+                    border: 0 !important;
+                    border-radius: 0 !important;
+                    background: transparent !important;
+                    box-shadow: none !important;
+                    filter: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app button#quick-reply-btn > svg {
+                    width: 22px !important;
+                    min-width: 22px !important;
+                    max-width: 22px !important;
+                    height: 22px !important;
+                    min-height: 22px !important;
+                    max-height: 22px !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .quick-reply-panel.quick-reply-panel {
+                    display: flex !important;
+                    flex: 0 0 auto !important;
+                    flex-direction: column !important;
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: none !important;
+                    height: auto !important;
+                    margin: 0 !important;
+                    padding: 6px 10px 7px !important;
+                    position: relative !important;
+                    inset: auto !important;
+                    transform: none !important;
+                    overflow: visible !important;
+                    gap: 9px !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app :is(.quick-reply-editor-card, .quick-reply-shortcut-card) {
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: none !important;
+                    height: auto !important;
+                    margin: 0 !important;
+                    position: relative !important;
+                    inset: auto !important;
+                    transform: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .quick-reply-shortcut-card.quick-reply-shortcut-card {
+                    display: grid !important;
+                    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+                    gap: 6px !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app button.quick-reply-item.quick-reply-item {
+                    appearance: none !important;
+                    -webkit-appearance: none !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    justify-content: flex-start !important;
+                    width: auto !important;
+                    min-width: 0 !important;
+                    max-width: none !important;
+                    height: auto !important;
+                    min-height: 0 !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    position: static !important;
+                    inset: auto !important;
+                    transform: none !important;
+                    border: 0 !important;
+                    border-radius: 0 !important;
+                    background: transparent !important;
+                    background-image: none !important;
+                    box-shadow: none !important;
+                    filter: none !important;
+                    line-height: normal !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-panel.more-panel {
+                    display: block !important;
+                    flex: 0 0 auto !important;
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: none !important;
+                    height: auto !important;
+                    max-height: 160px !important;
+                    margin: 0 !important;
+                    padding: 10px 0 6px !important;
+                    position: relative !important;
+                    inset: auto !important;
+                    transform: none !important;
+                    overflow-x: hidden !important;
+                    overflow-y: auto !important;
+                    background: transparent !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-grid.more-grid {
+                    display: flex !important;
+                    flex-wrap: wrap !important;
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    padding: 0 10px !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-item.more-item {
+                    display: flex !important;
+                    flex: 0 0 25% !important;
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    width: 25% !important;
+                    min-width: 0 !important;
+                    max-width: 25% !important;
+                    height: auto !important;
+                    margin: 0 0 10px !important;
+                    padding: 0 !important;
+                    position: static !important;
+                    transform: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-icon.more-icon {
+                    display: flex !important;
+                    flex: 0 0 36px !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    width: 36px !important;
+                    min-width: 36px !important;
+                    max-width: 36px !important;
+                    height: 36px !important;
+                    min-height: 36px !important;
+                    max-height: 36px !important;
+                    margin: 0 0 4px !important;
+                    padding: 0 !important;
+                    position: relative !important;
+                    inset: auto !important;
+                    transform: none !important;
+                    overflow: hidden !important;
+                    background: #eef9f2 !important;
+                    background-image: none !important;
+                    border: 1px solid #bfe8cf !important;
+                    box-shadow: 0 1px 5px rgba(7, 193, 96, 0.10) !important;
+                    color: #65c88a !important;
+                    -webkit-text-fill-color: #65c88a !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-icon.more-icon > i,
+                #phone-panel-content .phone-screen .wechat-app .more-icon.more-icon > svg {
+                    color: #65c88a !important;
+                    -webkit-text-fill-color: #65c88a !important;
+                    display: block !important;
+                    width: 20px !important;
+                    max-width: 22px !important;
+                    height: 20px !important;
+                    max-height: 22px !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    position: absolute !important;
+                    top: 50% !important;
+                    left: 50% !important;
+                    right: auto !important;
+                    bottom: auto !important;
+                    transform: translate(-50%, -50%) !important;
+                    background: transparent !important;
+                    border: 0 !important;
+                    box-shadow: none !important;
+                    fill: currentColor !important;
+                    stroke: currentColor !important;
+                    text-shadow: none !important;
+                    line-height: 1 !important;
+                    text-align: center !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-icon.more-icon > svg > path {
+                    color: #65c88a !important;
+                    fill: #65c88a !important;
+                    stroke: #65c88a !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-icon.more-icon > i {
+                    display: inline-flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    font-size: 14px !important;
+                    line-height: 20px !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-icon.more-icon > i::before {
+                    display: block !important;
+                    width: auto !important;
+                    height: auto !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    position: static !important;
+                    inset: auto !important;
+                    transform: none !important;
+                    font-size: inherit !important;
+                    line-height: 1 !important;
+                    vertical-align: middle !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-item[data-action="redpacket"] .more-icon > svg > circle {
+                    color: #eef9f2 !important;
+                    fill: #eef9f2 !important;
+                    stroke: #eef9f2 !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .more-name.more-name {
+                    color: #000000 !important;
+                    -webkit-text-fill-color: #000000 !important;
+                    text-shadow: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .wechat-image-source-sheet .wechat-image-source-btn,
+                #phone-panel-content .phone-screen .wechat-app .wechat-image-source-sheet .wechat-image-source-btn > span,
+                #phone-panel-content .phone-screen .wechat-app .wechat-image-source-sheet .wechat-image-source-btn > i,
+                #phone-panel-content .phone-screen .wechat-app .wechat-image-source-sheet .wechat-image-source-btn > i::before {
+                    color: #65c88a !important;
+                    -webkit-text-fill-color: #65c88a !important;
+                    text-shadow: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .contact-action-menu .contact-menu-item[data-action="edit"] {
+                    color: #07c160 !important;
+                    -webkit-text-fill-color: #07c160 !important;
+                    text-shadow: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .contact-action-menu .contact-menu-item[data-action="delete"] {
+                    color: #ff3b30 !important;
+                    -webkit-text-fill-color: #ff3b30 !important;
+                    text-shadow: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app .profile-functions .function-icon-wrapper > i,
+                #phone-panel-content .phone-screen .wechat-app .profile-functions .function-icon-wrapper > i::before {
+                    color: #65c88a !important;
+                    -webkit-text-fill-color: #65c88a !important;
+                    text-shadow: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app.wechat-chatlist-bg-enabled :is(
+                    .wechat-chat-list, .wechat-contacts, .contacts-scrollable,
+                    .contacts-functions, .contacts-list, .wechat-profile
+                ) {
+                    background: transparent !important;
+                    background-image: none !important;
+                }
+
+                #phone-panel-content .phone-screen .wechat-app.wechat-chatlist-bg-enabled :is(
+                    .chat-item, .function-item, .contact-item, .contact-group-item,
+                    .contacts-empty-row, .profile-card, .profile-functions, .profile-stats
+                ) {
+                    background: var(--wechat-glass-bg, rgba(255, 255, 255, 0.24)) !important;
+                    box-sizing: border-box !important;
+                }
+            `;
+        }
+
+        const restorePhoneStyleOrder = () => {
+            _phoneCssIsolationFrame = null;
+            const orderedIds = [
+                'st-phone-global-css',
+                'wechat-styles',
+                'wechat-custom-chat-style',
+                'st-phone-global-text-color-override',
+                'wechat-text-color-override',
+                'st-phone-css-isolation-guard'
+            ];
+            orderedIds.forEach((id) => {
+                const node = document.getElementById(id);
+                if (node?.parentNode === head) head.appendChild(node);
+            });
+        };
+
+        const scheduleRestore = () => {
+            if (_phoneCssIsolationFrame !== null) return;
+            _phoneCssIsolationFrame = window.requestAnimationFrame(restorePhoneStyleOrder);
+        };
+
+        if (guardStyle.parentNode !== head) head.appendChild(guardStyle);
+        restorePhoneStyleOrder();
+
+        if (!_phoneCssIsolationObserver) {
+            _phoneCssIsolationObserver = new MutationObserver((mutations) => {
+                const ownedStyleIds = new Set([
+                    'st-phone-global-css',
+                    'wechat-styles',
+                    'wechat-custom-chat-style',
+                    'st-phone-global-text-color-override',
+                    'wechat-text-color-override',
+                    'st-phone-css-isolation-guard'
+                ]);
+                const hasExternalStyleChange = mutations.some((mutation) => {
+                    if (mutation.type !== 'childList') return false;
+                    const changedStyle = mutation.target instanceof HTMLElement
+                        ? mutation.target.closest('style')
+                        : mutation.target.parentElement?.closest?.('style');
+                    if (changedStyle
+                        && !ownedStyleIds.has(changedStyle.id)
+                        && changedStyle.getAttribute('data-owner') !== 'yuzuki-phone') {
+                        return true;
+                    }
+                    return [...mutation.addedNodes].some((node) => {
+                        if (!(node instanceof HTMLElement)) return false;
+                        if (!node.matches('style, link[rel="stylesheet"]')) return false;
+                        return !ownedStyleIds.has(node.id) && node.getAttribute('data-owner') !== 'yuzuki-phone';
+                    });
+                });
+                if (hasExternalStyleChange) scheduleRestore();
+            });
+            _phoneCssIsolationObserver.observe(head, { childList: true, subtree: true });
+        }
     }
 
     // 初始化
