@@ -1532,7 +1532,7 @@ if (window.GGP_Loaded) {
             imageUploadModule
         ] = await Promise.all([
             import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261110-wechat-background`),
-            import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}`),
+            import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=20261114-home-refresh`),
             import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261108-original-background`)
         ]);
 
@@ -9067,7 +9067,7 @@ if (window.GGP_Loaded) {
             app.badge = (app.badge || 0) + increment;
             if (homeScreen && currentApp === null) {
                 homeScreen.apps = currentApps;
-                homeScreen.render();
+                homeScreen.updateAppBadges();
             }
             // 🔥 核心修复：更新全局徽章时必须持久化到 storage，防止刷新后死灰复燃
             saveData();
