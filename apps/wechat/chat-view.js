@@ -2694,9 +2694,20 @@ export class ChatView {
             '',
             '【当前聊天对象档案】',
             `好友昵称：${String(contact.nickname || contact.name || chatName).trim()}`,
-            `好友真名：${String(contact.realName || '').trim() || '未填写'}`,
-            `关系：${String(contact.relation || '').trim() || '未填写'}`
+            `好友真名：${String(contact.realName || '').trim()}`,
+            `关系：${String(contact.relation || '').trim()}`
         ].join('\n');
+    }
+
+    _buildSingleChatFinalInstruction({ chatName, userName, latestUserInput = '' }) {
+        const constraints = `【本轮最终执行约束】
+1. 【结构与朋友圈隔离】：本次输出由 \`<wechat>...</wechat>\` 微信回复块，以及（可选的）独立 \`{"moments":[...]}\` 朋友圈 JSON 组成。朋友圈 JSON 必须严格置于 \`</wechat>\` 标签外部之后，严禁混入聊天窗口内；若无新动态则直接省略该 JSON。
+2. 【视角与身份绝对锁定】：当前单聊窗口对象为“${chatName}”，手机主人（玩家）为“${userName}”。无论正文主角或角色卡是谁，本轮你必须且只能切换为“${chatName}”的第一人称视角与口吻，针对下方【用户最新输入】向“${userName}”发送回复。严禁替“${userName}”发言，严禁输出 \`${userName}:\`、\`用户:\`、\`玩家:\`，严禁把“${userName}”当成窗口名。
+3. 【纯文字与去叙事化】：消息内容必须是“${chatName}”真正在手机键盘上敲出来的纯文字（格式严格为 \`${chatName}: 内容\`，切勿模仿上方历史记录自带的 \`[HH:MM]\` 时间戳！）。严禁夹杂任何动作、神态、环境或打字过程描写（绝对禁止出现“顿了顿/指尖悬停/又补了一条/语气里”等小说叙事词）。
+4. 【增量推进与防复读】：仅输出当前窗口的全新回复！可自然承接正文或历史记录中的最新事件、时间线与情绪，但严禁复读上方“已有微信消息”的旧内容，也严禁把正文里已经发生过的面对面对白照搬重复成微信消息。`;
+        const parts = [constraints, '现在你处于微信单聊的模式，请根据以上所有信息，遵守回复格式，自然承接用户的消息进行回复。'];
+        if (latestUserInput) parts.push(`【用户最新输入】\n${latestUserInput}`);
+        return parts.join('\n\n');
     }
 
     _getOnlineOverridePrompt(promptManager, replacements = {}) {
@@ -12345,14 +12356,14 @@ renderChatRoom(chat) {
         // ========================================
         const userName = (lobbySelection.isLobby && primaryLobbyUser) ? primaryLobbyUser : (context.name1 || '用户');
         const wechatUserName = String(this.app?.wechatData?.getUserInfo?.()?.name || '').trim();
-        if (wechatUserName && wechatUserName !== userName) {
-            messages.push({
+        const userIdentityAliasMessage = wechatUserName && wechatUserName !== userName
+            ? {
                 role: 'system',
                 content: `【用户身份别名】酒馆正文中的“${userName}”与小手机微信昵称“${wechatUserName}”是同一个人，均指代{{user}}。微信聊天记录里“${wechatUserName}”发出的内容等同于“${userName}”发出的内容，不要把这两个名字当成两个人。`,
                 name: 'SYSTEM (用户身份别名)',
                 isPhoneMessage: true
-            });
-        }
+            }
+            : null;
         let charName = targetChat?.name || context.name2 || '角色';
 
         // 优先使用 characterId 获取真实角色名
@@ -13154,6 +13165,7 @@ renderChatRoom(chat) {
                 });
             }
 
+            if (userIdentityAliasMessage) messages.push(userIdentityAliasMessage);
             if (wechatTranscript) {
                 messages.push({
                     role: 'system',
@@ -13206,6 +13218,7 @@ renderChatRoom(chat) {
                     isPhoneMessage: true
                 });
             }
+            if (userIdentityAliasMessage) messages.push(userIdentityAliasMessage);
             if (wechatTranscript) {
                 messages.push({
                     role: 'system',
@@ -13235,7 +13248,16 @@ renderChatRoom(chat) {
         let finalUserContent = isProactive
             ? `现在你处于微信线上主动触发模式。线上主动触发时，微信好友或微信群需要主动联系${userName}。请根据以上所有信息、微信单聊规则和微信群聊规则，主动生成新的线上微信消息。`
             : `现在你处于${currentModeName}的模式，请根据以上所有信息，遵守回复格式，自然承接用户的消息进行回复。`;
-        if (!callMode) {
+        if (!callMode && !isProactive && !isGroupChat) {
+            const latestUserInput = String(formattedLatestUserInput || prompt || '').trim();
+            finalUserContent = this._buildSingleChatFinalInstruction({
+                chatName: targetChat?.name || charName,
+                userName,
+                latestUserInput: latestUserInput
+                    ? (formattedLatestUserInput ? latestUserInput : `${userName}: ${latestUserInput}`)
+                    : ''
+            });
+        } else if (!callMode) {
             if (isGroupChat) {
                 finalUserContent += '\n群聊场景下，通话前后的发言仍需使用“发送者: 内容”格式，且发送者必须是群成员。';
             }
@@ -13263,11 +13285,6 @@ renderChatRoom(chat) {
                 finalUserContent += useRealTimeForOnlineChat
                     ? '\n- 消息时间必须按当前现实时间或当前窗口最后一条已存在消息之后自然推进。'
                     : '\n- 消息时间必须按当前剧情时间或当前窗口最后一条已存在消息之后自然推进。';
-            } else if (!isGroupChat) {
-                finalUserContent += `\n- 【方向锁定】当前微信单聊窗口是“${targetChat?.name || charName}”；手机主人/用户本人是“${userName}”。你只能扮演“${targetChat?.name || charName}”给“${userName}”发新增微信消息。`;
-                finalUserContent += `\n- 即使角色卡主角、酒馆 assistant 或正文叙事视角不是“${targetChat?.name || charName}”，当前微信单聊也必须以“${targetChat?.name || charName}”的身份和口吻回复；角色卡和正文只作为背景参考。`;
-                finalUserContent += `\n- 【用户最新输入】是“${userName}”刚刚发出的消息，只能作为被回复的内容；禁止把“${userName}”当成聊天对象、联系人、窗口名或回复发送者，禁止输出“${userName}:”、用户:、玩家:。`;
-                finalUserContent += '\n- 微信消息内容必须是角色真实打进聊天框里的文字；禁止写动作、环境、神态、写字过程、语气说明，禁止出现“顿了顿/指尖悬停/又补了一条/语气里”等叙事句。';
             }
             finalUserContent += isProactive
                 ? '\n- 只输出新的主动微信消息；不得重复任何已有微信消息，也不得把正文里刚发生的对白原样复读成微信消息。'
