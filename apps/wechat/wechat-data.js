@@ -3128,6 +3128,33 @@ export class WechatData {
     /**
      * 🔥 懒加载：只在需要时才从单独存储加载该聊天的消息
      */
+    getRedPacketStatus(message) {
+        const status = String(message?.status || '').trim();
+        if (message?.type !== 'redpacket' || ['opened', 'refunded', 'expired'].includes(status)) return status;
+        const count = Number(message.count || message.packetCount || 0);
+        if (count > 0 && (message.claims?.length || 0) >= count) return 'opened';
+        const clock = globalThis.window?.VirtualPhone?.timeManager;
+        const now = clock?.getCurrentTime?.() || clock?.getCurrentStoryTime?.();
+        if (!now?.date || !now?.time || !message.date || !message.time) return status;
+        // The clock parser falls back to real time on invalid input. Never use that fallback for expiry.
+        const validTime = value => /^(?:[01]?\d|2[0-3])[:：][0-5]\d$/.test(String(value || '').trim());
+        if (!validTime(now.time) || !validTime(message.time)
+            || !clock._parseStoryDate?.(now.date, { allowUnknownEra: true })
+            || !clock._parseStoryDate?.(message.date, { allowUnknownEra: true })) return status;
+        if (clock._isSameStoryEra && !clock._isSameStoryEra(message, now)) return status;
+        const sentAt = clock.parseTimeToTimestamp?.({ date: message.date, time: message.time });
+        const nowAt = clock.parseTimeToTimestamp?.(now);
+        return Number.isFinite(sentAt) && Number.isFinite(nowAt) && nowAt - sentAt >= 24 * 60 * 60 * 1000
+            ? 'expired' : status;
+    }
+
+    getRedPacketStatusText(message) {
+        const status = this.getRedPacketStatus(message);
+        const partial = (message?.claims?.length || 0) > 0;
+        if (status === 'expired') return partial ? '部分领取，剩余已过期' : '未领取，已过期';
+        return status === 'opened' ? '已领取' : status === 'refunded' ? '已退回' : partial ? '部分领取' : '未领取';
+    }
+
     getMessages(chatId) {
         const isFirstRuntimeLoad = !this._messagesLoaded[chatId];
 

@@ -86,6 +86,14 @@ export function formatWechatTavernContextContent(content = '', { isUser = false,
 export class ChatView {
     constructor(wechatApp) {
         this.app = wechatApp;
+        window.addEventListener('phone:timeUpdated', () => {
+            if (this._redPacketTimeRefreshPending) return;
+            this._redPacketTimeRefreshPending = true;
+            queueMicrotask(() => {
+                try { this._refreshRedPacketExpiryCards(); }
+                finally { this._redPacketTimeRefreshPending = false; }
+            });
+        });
         this.inputText = '';
         this.showEmoji = false;
         this.showMore = false;
@@ -3923,7 +3931,7 @@ renderChatRoom(chat) {
         }
 
         const { isMe, senderName, senderAvatar } = this._resolveMessageAvatarIdentity(msg, userInfo);
-        const paymentStatus = String(msg.status || '').trim();
+        const paymentStatus = msg.type === 'redpacket' ? this._getRedPacketStatus(msg) : String(msg.status || '').trim();
         const isRedPacketOpened = paymentStatus === 'opened';
         const isPaymentRefunded = paymentStatus === 'refunded';
         const messageId = String(msg?.id || '').trim();
@@ -4177,13 +4185,15 @@ renderChatRoom(chat) {
                 const claimSummary = claims.length > 0
                     ? `<div class="rp-subtitle">${claims.length}人已领取</div>`
                     : '';
-                const statusSummary = isPaymentRefunded
+                const statusSummary = paymentStatus === 'expired'
+                    ? `<div class="rp-subtitle">${this._getRedPacketStatusText(msg)}</div>`
+                    : isPaymentRefunded
                     ? '<div class="rp-subtitle">已退回</div>'
                     : (isRedPacketOpened
                         ? `<div class="rp-subtitle">${isMe ? '已被领取' : '已领取'}</div>`
                         : claimSummary);
                 messageBody = `
-                <div class="message-redpacket ${(isRedPacketOpened || isPaymentRefunded) ? 'opened' : ''}" data-msg-id="${this._escapeHtml(msg.id || '')}">
+                <div class="message-redpacket ${(isRedPacketOpened || isPaymentRefunded || paymentStatus === 'expired') ? 'opened' : ''}" data-msg-id="${this._escapeHtml(msg.id || '')}">
                     <div class="rp-main">
                         <div class="rp-icon">
                             <svg viewBox="0 0 24 24" fill="none">
@@ -6015,6 +6025,43 @@ renderChatRoom(chat) {
         return lines.join('\n');
     }
 
+    _refreshRedPacketExpiryCards() {
+        const chatId = this.app.currentChat?.id;
+        if (!chatId) return;
+        const container = this._getVisibleChatMessagesContainer(chatId);
+        if (!container) return;
+        const messages = this.app.wechatData.getMessages(chatId);
+        const byId = new Map(messages.filter(message => message.type === 'redpacket').map(message => [String(message.id), message]));
+        container.querySelectorAll('.message-redpacket[data-msg-id]').forEach(card => {
+            const message = byId.get(card.dataset.msgId);
+            if (!message) return;
+            const status = this._getRedPacketStatus(message);
+            const subtitle = card.querySelector('.rp-subtitle');
+            const wasExpired = subtitle?.textContent?.includes('已过期');
+            if (status !== 'expired' && !wasExpired) return;
+            card.classList.toggle('opened', ['expired', 'opened', 'refunded'].includes(status));
+            const text = this._getRedPacketStatusText(message);
+            if (subtitle) subtitle.textContent = text;
+            else {
+                const label = document.createElement('div');
+                label.className = 'rp-subtitle';
+                label.textContent = text;
+                card.querySelector('.rp-content')?.appendChild(label);
+            }
+        });
+    }
+
+    _getRedPacketStatus(message) {
+        return this.app.wechatData.getRedPacketStatus?.(message) ?? String(message?.status || '').trim();
+    }
+
+    _getRedPacketStatusText(message) {
+        return this.app.wechatData.getRedPacketStatusText?.(message)
+            ?? (this._getRedPacketStatus(message) === 'expired'
+                ? ((message.claims?.length || 0) > 0 ? '部分领取，剩余已过期' : '未领取，已过期')
+                : message.status === 'opened' ? '已领取' : message.status === 'refunded' ? '已退回' : (message.claims?.length || 0) > 0 ? '部分领取' : '未领取');
+    }
+
     _formatMessageContentForPrompt(msg, targetChat = null) {
         if (!msg || typeof msg !== 'object') return '';
         if (msg.hiddenFromPrompt === true || msg.isTimeMarker === true || msg.type === 'time_marker') return '';
@@ -6132,9 +6179,8 @@ renderChatRoom(chat) {
             return `[转账 ¥${msg.amount}]（状态：${status}）`;
         }
         if (msg.type === 'redpacket') {
-            const rawStatus = String(msg.status || '').trim();
             const claims = Array.isArray(msg.claims) ? msg.claims : [];
-            const status = rawStatus === 'opened' ? '已领取' : (rawStatus === 'refunded' ? '已退回' : (claims.length > 0 ? '部分领取' : '未领取'));
+            const status = this._getRedPacketStatusText(msg);
             const isGroupChat = targetChat?.type === 'group';
             const packetMode = String(msg.packetMode || '').trim();
             const isGroupPacket = isGroupChat && (msg.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average');
@@ -7631,12 +7677,8 @@ renderChatRoom(chat) {
             const isGroupPacket = isGroupChat && (msg.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average');
             const claims = Array.isArray(msg.claims) ? msg.claims : [];
             const packetCount = Math.max(0, Number.parseInt(msg.count || msg.packetCount || 0, 10) || 0);
-            const rawStatus = String(msg.status || '').trim();
-            const redpacketStatus = rawStatus === 'opened'
-                ? '已领完'
-                : rawStatus === 'refunded'
-                    ? '已退回'
-                    : (claims.length > 0 ? '部分领取' : '未领取');
+            const rawStatus = this._getRedPacketStatus(msg);
+            const redpacketStatus = this._getRedPacketStatusText(msg);
 
             if (isGroupPacket) {
                 const packetType = packetMode === 'group_average' ? '均分红包' : '拼手气红包';
@@ -7653,7 +7695,7 @@ renderChatRoom(chat) {
                 return;
             }
 
-            const singleStatus = rawStatus === 'opened'
+            const singleStatus = rawStatus === 'expired' ? redpacketStatus : rawStatus === 'opened'
                 ? (isMe ? '已被领取' : '你已领取')
                 : rawStatus === 'refunded'
                     ? (isMe ? '已退回给你' : '你已退回')
@@ -8326,10 +8368,10 @@ renderChatRoom(chat) {
 
             const claims = Array.isArray(msg.claims) ? msg.claims : [];
             const packetCount = Math.max(0, Number.parseInt(msg.count || msg.packetCount || 0, 10) || 0);
-            const rawStatus = String(msg.status || '').trim();
+            const rawStatus = targetType === 'redpacket' ? this._getRedPacketStatus(msg) : String(msg.status || '').trim();
             const isPending = targetType === 'redpacket'
                 ? isGroupPacket
-                    ? rawStatus !== 'refunded' && rawStatus !== 'opened' && packetCount > 0 && claims.length < packetCount
+                    ? rawStatus !== 'expired' && rawStatus !== 'refunded' && rawStatus !== 'opened' && packetCount > 0 && claims.length < packetCount
                     : (rawStatus === '' || rawStatus === 'sent')
                 : rawStatus !== 'received' && rawStatus !== 'refunded';
             if (!isPending) continue;
@@ -12952,9 +12994,8 @@ renderChatRoom(chat) {
                     const status = rawStatus === 'received' ? '已收款' : (rawStatus === 'refunded' ? '已退回' : '未收款');
                     text += `${timeStr}${speaker}: ${quoteStr}[转账 ¥${msg.amount}]（状态：${status}）\n`;
                 } else if (msg.type === 'redpacket') {
-                    const rawStatus = String(msg.status || '').trim();
                     const claims = Array.isArray(msg.claims) ? msg.claims : [];
-                    const status = rawStatus === 'opened' ? '已领取' : (rawStatus === 'refunded' ? '已退回' : (claims.length > 0 ? '部分领取' : '未领取'));
+                    const status = this._getRedPacketStatusText(msg);
                     const transcriptIsGroup = chat?.type === 'group';
                     const packetMode = String(msg.packetMode || '').trim();
                     const isGroupPacket = transcriptIsGroup && (msg.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average');
@@ -12968,7 +13009,7 @@ renderChatRoom(chat) {
                         const amount = Number.parseFloat(msg.amount || 0);
                         const amountText = Number.isFinite(amount) ? `¥${amount.toFixed(2)}` : '金额未知';
                         const packetCount = Math.max(0, Number.parseInt(msg.count || msg.packetCount || 0, 10) || 0);
-                        const groupStatus = rawStatus === 'opened' ? '已领完' : (rawStatus === 'refunded' ? '已退回' : (claims.length > 0 ? '部分领取' : '未领取'));
+                        const groupStatus = status;
                         packetText = `[群红包｜类型：${packetType}｜总金额：${amountText}｜红包个数：${packetCount || '未记录'}]（状态：${groupStatus}${claimText}）`;
                     } else if (transcriptIsGroup && recipientName) {
                         packetText = `[给${recipientName}的红包 ¥${msg.amount}]（状态：${status}）`;
@@ -18127,8 +18168,8 @@ ${callTranscript}`;
         const safeChatId = String(chatId || '').trim();
         const packetMode = String(message.packetMode || '').trim();
         const isGroupPacket = message.isGroupPacket === true || packetMode === 'group_lucky' || packetMode === 'group_average';
-        const packetStatus = String(message.status || '').trim();
-        if (!safeChatId || !message?.id || !isGroupPacket || packetStatus === 'refunded' || packetStatus === 'opened') return null;
+        const packetStatus = this._getRedPacketStatus(message);
+        if (!safeChatId || !message?.id || !isGroupPacket || packetStatus === 'expired' || packetStatus === 'refunded' || packetStatus === 'opened') return null;
 
         const userInfo = this.app.wechatData.getUserInfo?.() || {};
         const userName = String(userInfo.name || '我').trim() || '我';
@@ -18245,13 +18286,14 @@ ${callTranscript}`;
 
         const initialPacketMode = String(message.packetMode || '').trim();
         const initialIsGroupPacket = message.isGroupPacket === true || initialPacketMode === 'group_lucky' || initialPacketMode === 'group_average';
-        const initialStatus = String(message.status || '').trim();
+        const initialStatus = this._getRedPacketStatus(message);
         const userInfo = this.app.wechatData.getUserInfo?.() || {};
         const userName = String(userInfo.name || '').trim();
         const isMeInitially = message.from === 'me' || message.from === userName;
         const hasCurrentUserClaimed = initialIsGroupPacket && Array.isArray(message.claims)
             && message.claims.some(claim => this._normalizeLookupName(claim?.name) === this._normalizeLookupName(userName));
         const canOpenIncomingPacket = !isMeInitially
+            && initialStatus !== 'expired'
             && initialStatus !== 'refunded'
             && (initialIsGroupPacket
                 ? initialStatus !== 'opened' && !hasCurrentUserClaimed
@@ -18280,12 +18322,12 @@ ${callTranscript}`;
             const amount = Number.parseFloat(claim?.amount || 0);
             return sum + (Number.isFinite(amount) ? amount : 0);
         }, 0);
-        let resolvedStatus = String(message.status || '').trim();
+        let resolvedStatus = this._getRedPacketStatus(message);
         let isOpened = resolvedStatus === 'opened';
         let isRefunded = resolvedStatus === 'refunded';
         const contact = this.app.wechatData.getContactByName(message.from);
 
-        if (!isMe && !isGroupPacket && !isOpened && !isRefunded) {
+        if (!isMe && !isGroupPacket && !isOpened && !isRefunded && resolvedStatus !== 'expired') {
             const updatedMessage = this.app.wechatData.updateMessageById(chatId, messageId, { status: 'opened' });
             resolvedStatus = String(updatedMessage?.status || 'opened').trim();
             isOpened = resolvedStatus === 'opened';
@@ -18317,7 +18359,7 @@ ${callTranscript}`;
         const av = contact?.avatar || (message.from === 'me' ? this.app.wechatData.getUserInfo().avatar : '👤');
         const avatarHtml = this.app.renderAvatar(av, '👤', senderName);
         const isFullyClaimed = isGroupPacket && packetCount > 0 && claims.length >= packetCount;
-        const redPacketStatusText = isGroupPacket
+        const redPacketStatusText = resolvedStatus === 'expired' ? this._getRedPacketStatusText(message) : isGroupPacket
             ? (isRefunded
                 ? (isMe ? '红包已退回' : '红包已被退回')
                 : (isFullyClaimed ? '红包已领完' : (claims.length > 0 ? `已领取 ${claims.length}/${packetCount || claims.length} 个` : '红包已发出')))

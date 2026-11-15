@@ -49,7 +49,7 @@ const ST_PHONE_VERSION = '1.6.9';
 const ST_PHONE_CSS_REVISION = '20261107-diary-colors-2';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261114-stable-picture-icons';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261114-wechat-tab-shell';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261115-redpacket-story-expiry';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -13612,7 +13612,7 @@ if (window.GGP_Loaded) {
                                                             'location': `[定位]（${String(msg.locationText || msg.locationAddress || msg.content || '未知位置').trim() || '未知位置'}）`,
                                                             'video': '[视频通话]',
                                                             'transfer': `[转账 ¥${msg.amount}]（状态：${paymentStatus === 'received' ? '已收款' : (paymentStatus === 'refunded' ? '已退回' : '未收款')}）`,
-                                                            'redpacket': `[红包 ¥${msg.amount}]（状态：${paymentStatus === 'opened' ? '已领取' : (paymentStatus === 'refunded' ? '已退回' : '未领取')}）`
+                                                            'redpacket': `[红包 ¥${msg.amount}]（状态：${wechatDataInstance?.getRedPacketStatusText?.(msg) || (paymentStatus === 'opened' ? '已领取' : (paymentStatus === 'refunded' ? '已退回' : '未领取'))}）`
                                                         };
                                                         content = typeMap[msg.type] || `[${msg.type}]`;
                                                     }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DiaryData } from '../apps/diary/diary-data.js';
+import { DiaryData, DEFAULT_DIARY_COVER_BG, DEFAULT_DIARY_TOC_BG } from '../apps/diary/diary-data.js';
 import { PhoneStorage } from '../config/storage.js';
 import { DIARY_TEXT_COLOR_KEY, DIARY_PAPER_COLOR_KEY } from '../apps/diary/diary-theme.js';
 import { parsePhoneHexColor, phoneHexToRgb, phoneRgbToHsv, phoneHsvToRgb, phoneRgbToHex } from '../config/phone-colors.js';
@@ -67,13 +67,17 @@ test('diary keeps cover and table-of-contents uploads while omitting page backgr
     globalThis.localStorage = { getItem: () => null, removeItem() {} };
     try {
         const data = new DiaryData(storage);
+        assert.equal(data.getCoverBg(), DEFAULT_DIARY_COVER_BG);
+        assert.equal(data.getTocBg(), DEFAULT_DIARY_TOC_BG);
+        assert.ok(fs.existsSync(new URL(DEFAULT_DIARY_COVER_BG)));
+        assert.ok(fs.existsSync(new URL(DEFAULT_DIARY_TOC_BG)));
         await data.setCoverBg('/backgrounds/phone_diary_cover_test.png');
         await data.setTocBg('/backgrounds/phone_diary_toc_test.png');
         assert.equal(data.getCoverBg(), '/backgrounds/phone_diary_cover_test.png');
         assert.equal(data.getTocBg(), '/backgrounds/phone_diary_toc_test.png');
         await data.resetDefaultBackgrounds();
-        assert.equal(data.getCoverBg(), null);
-        assert.equal(data.getTocBg(), null);
+        assert.equal(data.getCoverBg(), DEFAULT_DIARY_COVER_BG);
+        assert.equal(data.getTocBg(), DEFAULT_DIARY_TOC_BG);
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
         else globalThis.window = previousWindow;

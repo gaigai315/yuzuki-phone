@@ -3,6 +3,108 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 import { ChatView } from '../apps/wechat/chat-view.js';
+import { WechatData } from '../apps/wechat/wechat-data.js';
+import { TimeManager } from '../config/time-manager.js';
+
+function expiryHarness(t, now = { date: '2025年03月01日', time: '13:00' }) {
+    const previousWindow = globalThis.window;
+    const clock = Object.create(TimeManager.prototype);
+    clock.getCurrentStoryTime = () => now;
+    clock.getCurrentTime = () => now;
+    globalThis.window = { VirtualPhone: { timeManager: clock } };
+    t.after(() => { globalThis.window = previousWindow; });
+    const data = Object.create(WechatData.prototype);
+    const view = Object.create(ChatView.prototype);
+    view.app = { wechatData: data };
+    return { data, view, now };
+}
+
+test('unclaimed red packets expire at 24 story hours and recover when story time rewinds', t => {
+    const { data, now } = expiryHarness(t);
+    const packet = { type: 'redpacket', status: 'sent', date: '2025年02月28日', time: '13:01', timestamp: Date.now() };
+    assert.equal(data.getRedPacketStatus(packet), 'sent');
+    now.time = '13:01';
+    assert.equal(data.getRedPacketStatus(packet), 'expired');
+    assert.equal(data.getRedPacketStatusText(packet), '未领取，已过期');
+    now.time = '13:00';
+    assert.equal(data.getRedPacketStatus(packet), 'sent');
+    assert.equal(packet.status, 'sent');
+    now.date = '2025年03月02日';
+    assert.equal(data.getRedPacketStatus({ ...packet, status: 'opened' }), 'opened');
+    assert.equal(data.getRedPacketStatus({ ...packet, status: 'refunded' }), 'refunded');
+    assert.equal(data.getRedPacketStatus({ ...packet, type: 'transfer' }), 'sent');
+});
+
+test('missing or invalid story dates never use the real clock to expire a packet', t => {
+    const { data } = expiryHarness(t);
+    for (const patch of [{ date: '' }, { date: '未知日期' }, { time: '' }, { time: '25:90' }]) {
+        assert.equal(data.getRedPacketStatus({ type: 'redpacket', status: 'sent', date: '2020年01月01日', time: '13:00', ...patch }), 'sent');
+    }
+});
+
+test('ancient era clocks expire packets within the same era without mixing calendars', t => {
+    const { data, now } = expiryHarness(t, { date: '永乐十二年九月初九', time: '13:00' });
+    const packet = { type: 'redpacket', status: 'sent', date: '永乐十二年九月初八', time: '13:00' };
+    assert.equal(data.getRedPacketStatus(packet), 'expired');
+    now.date = '2025年03月01日';
+    assert.equal(data.getRedPacketStatus(packet), 'sent');
+});
+
+test('expired group packets keep claim details in context and cannot be claimed again', t => {
+    const { data, view } = expiryHarness(t);
+    const packet = { id: 'expired-group', type: 'redpacket', status: 'sent', date: '2025年02月28日', time: '12:00',
+        isGroupPacket: true, count: 3, amount: '30.00', claims: [{ name: '好友甲', amount: '10.00' }] };
+    assert.equal(data.getRedPacketStatusText(packet), '部分领取，剩余已过期');
+    const text = view._formatMessageContentForPrompt(packet, { type: 'group' });
+    assert.ok(text.includes('部分领取，剩余已过期') && text.includes('好友甲'));
+    assert.equal(view._claimGroupRedPacketForCurrentUser('group', packet), null);
+    assert.equal(packet.claims.length, 1);
+    assert.equal(data.getRedPacketStatus({ ...packet, count: 1 }), 'opened');
+});
+
+test('opening an expired packet only shows expiry details and never credits the wallet', t => {
+    const { data, view } = expiryHarness(t);
+    const previousDocument = globalThis.document;
+    globalThis.document = { getElementById: () => null };
+    t.after(() => { globalThis.document = previousDocument; });
+    const packet = { id: 'expired-single', type: 'redpacket', from: '好友甲', amount: '8.88',
+        status: 'sent', date: '2025年02月28日', time: '12:00' };
+    data.getMessages = () => [packet];
+    data.getUserInfo = () => ({ name: '用户' });
+    data.getContactByName = () => null;
+    data.updateWalletBalance = () => assert.fail('expired packet must not credit money');
+    data.updateMessageById = () => assert.fail('expired packet must not become opened');
+    view._showIncomingRedPacketOpenPrompt = () => assert.fail('expired packet must not show the open button');
+    let html = '';
+    Object.assign(view.app, {
+        currentChat: { id: 'friend', name: '好友甲' },
+        renderAvatar: () => '',
+        phoneShell: { setContent: content => { html = content; } }
+    });
+    view.openRedPacket(packet.id);
+    assert.ok(html.includes('未领取，已过期'));
+    assert.ok(!html.includes('已存入零钱'));
+    assert.equal(packet.status, 'sent');
+});
+
+test('story clock refresh updates only the packet subtitle and restores it after rewind', t => {
+    const { data, view, now } = expiryHarness(t);
+    const packet = { id: 'clock-card', type: 'redpacket', status: 'sent', date: '2025年02月28日', time: '12:00' };
+    const subtitle = { textContent: '未领取' };
+    let dimmed = false;
+    const card = { dataset: { msgId: packet.id }, querySelector: () => subtitle,
+        classList: { toggle: (_name, value) => { dimmed = value; } } };
+    view.app.currentChat = { id: 'friend' };
+    data.getMessages = () => [packet];
+    view._getVisibleChatMessagesContainer = () => ({ querySelectorAll: () => [card] });
+    view._refreshRedPacketExpiryCards();
+    assert.equal(subtitle.textContent, '未领取，已过期');
+    assert.equal(dimmed, true);
+    now.date = '2025年02月28日';
+    view._refreshRedPacketExpiryCards();
+    assert.equal(subtitle.textContent, '未领取');
+    assert.equal(dimmed, false);
+});
 
 const appSource = fs.readFileSync(new URL('../apps/wechat/wechat-app.js', import.meta.url), 'utf8');
 const chatViewSource = fs.readFileSync(new URL('../apps/wechat/chat-view.js', import.meta.url), 'utf8');

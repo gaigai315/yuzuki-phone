@@ -10,10 +10,10 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20261114-payment-interactions';
+import { ChatView } from './chat-view.js?v=20261115-redpacket-story-expiry';
 import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
 import { MomentsView } from './moments-view.js?v=20261109-readable-settings';
-import { WechatData } from './wechat-data.js?v=20261114-wallet-bank-transfer';
+import { WechatData } from './wechat-data.js?v=20261115-redpacket-story-expiry';
 import { normalizeWechatUserAvatar } from './user-avatar.js';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
 import { getWechatReadablePalette } from './readable-colors.js?v=20261109-readable-glass';
