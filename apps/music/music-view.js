@@ -14,6 +14,7 @@
 // ========================================
 
 import { PHONE_CONFIG } from '../../config/apps.js';
+import { bindPhoneColorPickers } from '../../phone/color-picker.js';
 
 const SVG_NOTE = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" opacity="0.4"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>`;
 const SVG_PLAY = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
@@ -30,6 +31,7 @@ const renderVolumeIcon = (percent = 50) => {
     return `<svg class="music-volume-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3.5 6 8H2v8h4l5 4.5v-17Z"/>${levelMark}</svg>`;
 };
 const MUSIC_FLOATING_POSITION_KEY = 'global_music_floating_position';
+const MUSIC_TEXT_COLOR_KEY = 'global_music_text_color';
 export class MusicView {
     constructor(musicApp) {
         this.app = musicApp;
@@ -67,7 +69,8 @@ export class MusicView {
     // ========== CSS 注入 ==========
 
     _injectCSS() {
-        const cssHref = new URL('./music.css?v=1.0.18', import.meta.url).href;
+        this._applyTextColor();
+        const cssHref = new URL('./music.css?v=1.0.19', import.meta.url).href;
         let link = document.getElementById('music-app-style');
 
         if (link) {
@@ -84,6 +87,17 @@ export class MusicView {
         link.href = cssHref;
         document.head.appendChild(link);
         this._cssInjected = true;
+    }
+
+    _getTextColor() {
+        const value = this.app.storage.get(MUSIC_TEXT_COLOR_KEY, '#000000');
+        return /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000';
+    }
+
+    _applyTextColor(color = this._getTextColor()) {
+        document.querySelectorAll('#music-floating-root, #phone-panel-content .music-app').forEach(root => {
+            root.style.setProperty('--music-text-color', color);
+        });
     }
 
     /**
@@ -117,6 +131,9 @@ export class MusicView {
             // 🔥 核心修复：挂载到 documentElement (html节点)，彻底逃离 body 容器的魔爪！
             document.documentElement.appendChild(container);
         }
+        container.style.setProperty('--music-text-color', this._getTextColor());
+        // 安全舱在 body 外，显式同步酒馆字体，不继承其文字颜色。
+        container.style.fontFamily = getComputedStyle(document.body).fontFamily;
         return container;
     }
 
@@ -195,6 +212,20 @@ export class MusicView {
                                 </div>
                                 <div class="music-toggle ${showFloating ? 'active' : ''}" id="music-toggle-floating"></div>
                             </div>
+                            <div class="music-settings-item">
+                                <div>
+                                    <label class="music-settings-item-label" for="music-text-color">音乐卡片字体颜色</label>
+                                    <div class="music-settings-item-desc">默认黑色，独立于酒馆文字颜色；字体仍跟随酒馆</div>
+                                </div>
+                                <button type="button" class="yzp-frame-color-control" id="music-text-color"
+                                    data-color="${this._getTextColor()}" data-color-storage-key="${MUSIC_TEXT_COLOR_KEY}"
+                                    data-color-default="#000000" data-color-preview-kind="text"
+                                    data-color-picker-title="选择音乐卡片字体颜色" data-color-picker-label="音乐卡片字体颜色"
+                                    aria-label="选择音乐卡片字体颜色">
+                                    <span class="yzp-frame-color-control-swatch" style="--yzp-frame-control-color: ${this._getTextColor()};" aria-hidden="true"></span>
+                                    <span class="yzp-frame-color-control-value">${this._getTextColor()}</span>
+                                </button>
+                            </div>
                         </div>
 
                         <div class="music-settings-group">
@@ -230,6 +261,7 @@ export class MusicView {
         `;
 
         this.app.phoneShell.setContent(html, 'music-settings');
+        this._applyTextColor();
         this._bindSettingsEvents();
     }
 
@@ -237,6 +269,11 @@ export class MusicView {
         const screen = this.app.phoneShell.screen;
         if (!screen) return;
         this._bindPromptFoldToggles(screen);
+        bindPhoneColorPickers(screen.querySelector('.music-app'), {
+            storage: this.app.storage,
+            previewColor: color => this._applyTextColor(color),
+            onError: label => this.app.phoneShell.showNotification('保存失败', `${label}未保存`, '⚠️')
+        });
         window.VirtualPhone?.promptManager?.bindPromptPresetControls?.(screen, 'music', 'recommend', '#music-prompt-textarea', {
             notify: (title, message, icon) => this.app.phoneShell.showNotification(title, message, icon)
         });

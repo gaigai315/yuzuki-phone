@@ -45,7 +45,7 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.9';
+const ST_PHONE_VERSION = '1.6.10';
 const ST_PHONE_CSS_REVISION = '20261107-diary-colors-2';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261114-stable-picture-icons';
@@ -157,10 +157,10 @@ const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-11-14',
+    date: '2026-11-17',
     items: [
-        "【优化】增强微信窗口样式隔离，减少角色卡内置手机及其他美化正则对微信背景、输入栏、功能面板、图标和布局的影响。",
-        "【优化】优化微信红包和转账功能，支持转账退回，并支持将银行卡余额转入微信零钱。"
+        "【优化】音乐卡片支持独立设置字体颜色，默认黑色，字体继续跟随酒馆。",
+        "【优化】表情管理面板扩大，表情下方显示名字，点击名字即可修改。"
     ]
 };
 

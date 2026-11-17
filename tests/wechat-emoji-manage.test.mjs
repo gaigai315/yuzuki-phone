@@ -42,3 +42,36 @@ for (const answer of [null, '新描述']) {
         }
     });
 }
+
+test('renaming from the label saves the name and updates only that sticker', async () => {
+    const previousWindow = globalThis.window;
+    const image = { alt: '旧名字' };
+    const item = { title: '旧名字', querySelector: () => image };
+    const attributes = {};
+    const button = {
+        textContent: '旧名字',
+        setAttribute: (key, value) => { attributes[key] = value; },
+        closest: () => item
+    };
+    let savedPatch;
+    const view = Object.create(ChatView.prototype);
+    view.app = {
+        wechatData: {
+            getCustomEmoji: () => ({ name: '旧名字', description: '旧描述' }),
+            updateCustomEmoji: (id, patch) => { assert.equal(id, 'emoji'); savedPatch = patch; }
+        },
+        phoneShell: { showNotification() {} },
+        render: () => assert.fail('renaming must preserve the chat input and panel scroll position')
+    };
+    globalThis.window = { prompt: () => '  新名字  ' };
+    try {
+        await view.manageCustomEmoji('emoji', { nameButton: button });
+        assert.deepEqual(savedPatch, { name: '新名字', description: '新名字' });
+        assert.equal(button.textContent, '新名字');
+        assert.equal(attributes['aria-label'], '修改表情名字：新名字');
+        assert.equal(item.title, '新名字');
+        assert.equal(image.alt, '新名字');
+    } finally {
+        globalThis.window = previousWindow;
+    }
+});

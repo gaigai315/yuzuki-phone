@@ -4878,7 +4878,7 @@ renderChatRoom(chat) {
         const allSelected = customIds.length > 0 && customIds.every(id => this.selectedCustomEmojiIds.has(id));
 
         return `
-        <div class="emoji-panel">
+        <div class="emoji-panel${customMode && (this.customEmojiManageMenuOpen || isSelectionMode) ? ' wechat-emoji-panel-expanded' : ''}">
             <!-- 🔥 新增：表情标签 -->
             <div class="emoji-tabs" role="tablist" aria-label="表情分类">
                 <div class="emoji-tab ${this.emojiTab !== 'custom' ? 'active' : ''}" data-tab="default" role="tab" tabindex="0" aria-selected="${this.emojiTab !== 'custom' ? 'true' : 'false'}">
@@ -4929,6 +4929,7 @@ renderChatRoom(chat) {
                         ${customEmojis.map(emoji => `
                             <span class="emoji-item custom-emoji-item ${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'is-selected' : ''}" data-emoji-type="custom" data-emoji-id="${this._escapeHtml(emoji.id || '')}" data-selection-mode="${isSelectionMode ? '1' : '0'}" title="${this._escapeHtml(String(emoji.description || emoji.name || '表情'))}" style="position:relative;${isSelectionMode && this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? 'outline:2px solid #07c160; outline-offset:1px; border-radius:10px;' : ''}">
                                 <img src="${this.escapeInlineStickerAttr(emoji.image || '')}" data-custom-emoji-src="${this.escapeInlineStickerAttr(emoji.image || '')}" alt="${this._escapeHtml(emoji.name || '')}" referrerpolicy="no-referrer">
+                                <button type="button" class="wechat-custom-emoji-name" title="点击修改表情名字" aria-label="修改表情名字：${this._escapeHtml(emoji.name || emoji.description || '未命名表情')}" ${isSelectionMode ? 'disabled' : ''}>${this._escapeHtml(emoji.name || emoji.description || '未命名表情')}</button>
                                 ${isSelectionMode ? `<span style="position:absolute; top:2px; right:2px; width:14px; height:14px; border-radius:50%; background:${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '#07c160' : 'rgba(255,255,255,0.9)'}; border:1px solid ${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '#07c160' : '#ccc'}; color:#fff; font-size:10px; line-height:12px; text-align:center;">${this.selectedCustomEmojiIds.has(String(emoji.id || '')) ? '✓' : ''}</span>` : ''}
                             </span>
                         `).join('')}
@@ -10230,6 +10231,7 @@ renderChatRoom(chat) {
             if (!menu) return;
             const isOpen = menu.classList.toggle('is-open');
             this.customEmojiManageMenuOpen = isOpen;
+            menu.closest('.emoji-panel')?.classList.toggle('wechat-emoji-panel-expanded', isOpen || this.customEmojiSelectionMode);
             menu.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
             trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         });
@@ -10295,6 +10297,7 @@ renderChatRoom(chat) {
                 }
             };
             const startManageGesture = (event) => {
+                if (event.target.closest?.('.wechat-custom-emoji-name')) return;
                 if (event.isPrimary === false || (event.button !== undefined && event.button !== 0)) return;
                 if (this.customEmojiSelectionMode || this._customEmojiManageBusy || Date.now() < (this._customEmojiManageSuppressUntil || 0)) return;
                 clearLongPressTimer();
@@ -10311,6 +10314,14 @@ renderChatRoom(chat) {
             item.addEventListener('pointerup', clearLongPressTimer);
             item.addEventListener('pointerleave', clearLongPressTimer);
             item.addEventListener('pointercancel', clearLongPressTimer);
+            const nameButton = item.querySelector('.wechat-custom-emoji-name');
+            nameButton?.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                clearLongPressTimer();
+                if (this.customEmojiSelectionMode) return;
+                this.manageCustomEmoji(item.dataset.emojiId, { nameButton });
+            });
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 clearLongPressTimer();
@@ -18088,16 +18099,16 @@ ${callTranscript}`;
         });
     }
 
-    async manageCustomEmoji(emojiId) {
+    async manageCustomEmoji(emojiId, { nameButton = null } = {}) {
         if (this._customEmojiManageBusy || Date.now() < (this._customEmojiManageSuppressUntil || 0)) return;
         this._customEmojiManageBusy = true;
         try {
             const emoji = this.app.wechatData.getCustomEmoji(emojiId);
             if (!emoji) return;
 
-            const currentDescription = String(emoji.description || emoji.name || '').trim();
+            const currentDescription = String(emoji.name || emoji.description || '').trim();
             const nextDescriptionRaw = window.prompt(
-                '修改这个自定义表情的线下描述。\n\n线上发送时仍然发图片；只有线下正文注入时会转成这个描述。\n\n输入 /delete 可删除该表情。',
+                '修改表情名字（最多20字）。\n\n这个名字也用于线下正文中的表情描述，线上仍发送图片。\n\n输入 /delete 可删除该表情。',
                 currentDescription
             );
 
@@ -18138,8 +18149,20 @@ ${callTranscript}`;
                 name: normalized,
                 description: normalized
             });
-            this.app.phoneShell.showNotification('已更新', '表情描述已保存', '✅');
-            this.app.render();
+            this.app.phoneShell.showNotification('已更新', '表情名字已保存', '✅');
+            if (nameButton) {
+                // 只更新当前表情，保留列表滚动位置和聊天输入框。
+                nameButton.textContent = normalized;
+                nameButton.setAttribute('aria-label', `修改表情名字：${normalized}`);
+                const item = nameButton.closest('.custom-emoji-item');
+                if (item) {
+                    item.title = normalized;
+                    const image = item.querySelector('img');
+                    if (image) image.alt = normalized;
+                }
+            } else {
+                this.app.render();
+            }
         } finally {
             this._customEmojiManageBusy = false;
             this._customEmojiManageSuppressUntil = Date.now() + 600;

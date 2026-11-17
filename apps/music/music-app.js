@@ -14,7 +14,7 @@
 // ========================================
 
 import { MusicData } from './music-data.js';
-import { MusicView } from './music-view.js';
+import { MusicView } from './music-view.js?v=20261117-card-text-color';
 
 export class MusicApp {
     constructor(phoneShell, storage) {

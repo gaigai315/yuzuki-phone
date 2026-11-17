@@ -10,7 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20261115-redpacket-story-expiry';
+import { ChatView } from './chat-view.js?v=20261117-emoji-manager';
 import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
 import { MomentsView } from './moments-view.js?v=20261109-readable-settings';
 import { WechatData } from './wechat-data.js?v=20261115-redpacket-story-expiry';
@@ -2739,6 +2739,25 @@ export class WechatApp {
     display: none;
 }
 
+#phone-panel-content .phone-screen .wechat-app .chat-input-area:has(.wechat-emoji-panel-expanded) {
+    height: 70%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+#phone-panel-content .phone-screen .wechat-app .wechat-emoji-panel-expanded {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    overscroll-behavior: contain;
+}
+
+#phone-panel-content .phone-screen .wechat-app .chat-input-area:has(.wechat-emoji-panel-expanded) > :not(.emoji-panel) {
+    flex-shrink: 0;
+}
+
 .wechat-app .emoji-scroll {
     flex: 1;
     min-height: 0;
@@ -2954,9 +2973,47 @@ export class WechatApp {
 }
 
 #phone-panel-content .phone-screen .wechat-app .custom-emoji-item img {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+#phone-panel-content .phone-screen .wechat-app .custom-emoji-item {
     width: 100%;
-    height: 100%;
-    object-fit: cover;
+    height: auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    overflow: visible;
+}
+
+#phone-panel-content .phone-screen .wechat-app .wechat-custom-emoji-name {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: 28px;
+    margin: 0;
+    padding: 2px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--wechat-text-primary, #333) !important;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 14px;
+    text-align: center;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+#phone-panel-content .phone-screen .wechat-app .wechat-custom-emoji-name:disabled {
+    opacity: 0.65;
+    pointer-events: none;
 }
 
 .wechat-app .custom-emoji-item.is-broken {
