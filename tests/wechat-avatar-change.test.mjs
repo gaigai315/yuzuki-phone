@@ -99,6 +99,77 @@ test('current avatars are sent every turn and gallery pictures are loaded only o
     } finally { globalThis.window = previousWindow; }
 });
 
+test('group requests attach each current member avatar with its name and deduplicate IDs and remarks', async () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = { VirtualPhone: {} };
+    const { view, data } = fixture();
+    data.data.contacts.push(
+        { id: 'second', name: '好友B', remark: 'B的备注', avatar: '/backgrounds/b.png' },
+        { id: 'departed', name: '退群好友', avatar: '/backgrounds/departed.png' },
+        { id: 'unrelated', name: '其他群好友', avatar: '/backgrounds/unrelated.png' },
+        { id: 'self', name: '用户', avatar: '/backgrounds/user.png' }
+    );
+    data.findContactByNameLoose = name => data.data.contacts.find(contact => [contact.id, contact.name, contact.remark].includes(name));
+    const group = { id: 'group', name: '当前群', type: 'group', avatar: '/backgrounds/group.png', members: ['用户', 'self', 'friend', '周倩', 'second', 'B的备注'] };
+    data.data.messages.group = [{ from: '退群好友', type: 'text', content: '历史消息' }];
+    view.app.currentChat = group;
+    const reads = [];
+    view._resolveWechatImageForAi = async (path, _cache, options) => {
+        reads.push({ path, limit: options.maxChars });
+        return `data:image/png;base64,${path}`;
+    };
+    try {
+        const text = await view._buildAvatarImageContext(group, [], {}, new Map(), 24000);
+        assert.deepEqual(reads.map(item => item.path), ['/backgrounds/user.png', '/backgrounds/old.png', '/backgrounds/b.png']);
+        assert.ok(reads.every(item => item.limit === 24000));
+        const pictures = Object.values(window.VirtualPhone._pendingImages);
+        assert.equal(pictures.length, 3);
+        assert.equal(pictures.find(item => item.label === '群友 周倩 的当前微信头像').url, 'data:image/png;base64,/backgrounds/old.png');
+        assert.equal(pictures.find(item => item.label === '群友 好友B 的当前微信头像').url, 'data:image/png;base64,/backgrounds/b.png');
+        assert.doesNotMatch(text, /退群好友|其他群好友|可用头像|头像分组/);
+    } finally { globalThis.window = previousWindow; }
+});
+
+test('group avatar failures leave other named portraits available and never substitute the group icon', async () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = { VirtualPhone: {} };
+    const { view, data } = fixture();
+    const group = { id: 'group', name: '当前群', type: 'group', avatar: '/backgrounds/group-icon.png', members: ['周倩', '无联系人群友'] };
+    view.app.currentChat = group;
+    const resolveAvatar = view._getCurrentFriendAvatarForAi.bind(view);
+    view._getCurrentFriendAvatarForAi = (owner, contact) => {
+        if (!contact) {
+            assert.equal(owner.name, '无联系人群友');
+            assert.equal(owner.avatar, '');
+            return '/backgrounds/fallback.png';
+        }
+        return resolveAvatar(owner, contact);
+    };
+    view._resolveWechatImageForAi = async path => {
+        if (path === '/backgrounds/old.png') throw new Error('image unavailable');
+        return `data:image/png;base64,${path}`;
+    };
+    try {
+        const text = await view._buildAvatarImageContext(group, [], {});
+        assert.match(text, /群友 周倩 的当前微信头像：图片读取失败/);
+        assert.match(text, /群友 无联系人群友 的当前微信头像 __ST_PHONE_IMAGE_/);
+        const pictures = Object.values(window.VirtualPhone._pendingImages);
+        assert.equal(pictures.length, 2);
+        assert.ok(!pictures.some(item => item.url.includes('group-icon')));
+    } finally { globalThis.window = previousWindow; }
+});
+
+test('legacy groups without a member list can resolve portraits from their own participants', () => {
+    const { view } = fixture();
+    const group = { id: 'legacy-group', name: '旧群', type: 'group' };
+    view._collectGroupParticipantsForFilter = actual => {
+        assert.equal(actual, group);
+        return ['用户', 'friend', '周倩'];
+    };
+    const sources = view._getCurrentChatAvatarSources(group);
+    assert.deepEqual(sources.map(item => item.label), ['用户 用户 的当前微信头像', '群友 周倩 的当前微信头像']);
+});
+
 test('an empty avatar gallery is mentioned only after lookup', async () => {
     const { view, data } = fixture();
     data.data.customEmojis = [];

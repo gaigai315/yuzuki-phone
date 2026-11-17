@@ -12537,7 +12537,38 @@ renderChatRoom(chat) {
         return raw;
     }
 
-    async _buildAvatarImageContext(chat, latestUserMessages, options, cache = new Map(), imageBudget = 48000) {
+    _getCurrentChatAvatarSources(chat, context = null) {
+        const data = this.app.wechatData;
+        const user = data.getUserInfo?.() || {};
+        const sources = [{ label: `用户 ${user.name || '用户'} 的当前微信头像`, image: user.avatar }];
+        if (chat.type !== 'group') {
+            const contact = data.getContact?.(chat.contactId) || data.getContactByName?.(chat.name);
+            sources.push({ label: `好友 ${chat.name} 的当前微信头像`, image: this._getCurrentFriendAvatarForAi(chat, contact) });
+            return sources;
+        }
+        // An explicit member list is authoritative; do not reintroduce departed members from old messages.
+        const members = Array.isArray(chat.members) && chat.members.length
+            ? chat.members
+            : this._collectGroupParticipantsForFilter(chat, context || this._safeGetContext());
+        const seen = new Set();
+        for (const member of members) {
+            const memberName = String(member || '').trim();
+            if (!memberName || memberName === 'me' || memberName === 'system' || this._isCurrentWechatUserName(memberName)) continue;
+            const contact = data.getContact?.(memberName)
+                || data.findContactByNameLoose?.(memberName, { includeChats: false })
+                || data.getContactByName?.(memberName);
+            const name = this._getContactDisplayName(contact || {}, memberName) || memberName;
+            if (this._isCurrentWechatUserName(name) || this._isCurrentWechatUserName(contact?.name)) continue;
+            const key = contact?.id || this._normalizeLookupName(name);
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            const avatarOwner = { name: contact?.name || name, avatar: contact?.avatar || '' };
+            sources.push({ label: `群友 ${name} 的当前微信头像`, image: this._getCurrentFriendAvatarForAi(avatarOwner, contact) });
+        }
+        return sources;
+    }
+
+    async _buildAvatarImageContext(chat, latestUserMessages, options, cache = new Map(), imageBudget = 48000, currentAvatarSources = null) {
         const data = this.app.wechatData;
         const isUserPhoto = item => item.from === 'me' && item.type === 'image' && item.hiddenFromPrompt !== true
             && (!item.customEmojiId || getEmojiGroup(data.getCustomEmoji?.(item.customEmojiId)) === 'avatar');
@@ -12553,13 +12584,8 @@ renderChatRoom(chat) {
                 .map(item => ({ id: String(item.id), name: String(item.name || ''), image: String(item.image || '') }));
         }
         const candidates = options.avatarRequest.candidates || [];
-        const user = data.getUserInfo?.() || {};
-        const contact = chat.type !== 'group'
-            ? (data.getContact?.(chat.contactId) || data.getContactByName?.(chat.name))
-            : null;
         const sources = [
-            { label: `用户 ${user.name || '用户'} 的当前微信头像`, image: user.avatar },
-            ...(chat.type !== 'group' ? [{ label: `好友 ${chat.name} 的当前微信头像`, image: this._getCurrentFriendAvatarForAi(chat, contact) }] : []),
+            ...(currentAvatarSources || this._getCurrentChatAvatarSources(chat)),
             ...(options.includeAvatarLibraryImages ? candidates.map(item => ({ label: `头像分组：名字=${item.name}；ID=${item.id}`, image: item.image })) : []),
             ...(!latestPhotos.length ? images.map(item => ({ label: `用户发送的图片；图片消息ID=${item.id}`, image: item.image })) : [])
         ];
@@ -13274,7 +13300,8 @@ renderChatRoom(chat) {
         const latestVisionImageCount = latestUserMessages
             .filter(message => message?.type === 'image' && message?.hiddenFromPrompt !== true)
             .length;
-        const avatarImageCount = !callMode ? 2 + (options.includeAvatarLibraryImages ? (this.app.wechatData.getCustomEmojis?.() || []).filter(item => getEmojiGroup(item) === 'avatar').length : 0) : 0;
+        const currentAvatarSources = !callMode ? this._getCurrentChatAvatarSources(targetChat, context) : [];
+        const avatarImageCount = !callMode ? currentAvatarSources.length + (options.includeAvatarLibraryImages ? (this.app.wechatData.getCustomEmojis?.() || []).filter(item => getEmojiGroup(item) === 'avatar').length : 0) : 0;
         const previousPhotoCount = !callMode && !isProactive && latestVisionImageCount === 0
             && wechatMessages.some(message => message?.from === 'me' && message?.type === 'image' && message?.hiddenFromPrompt !== true) ? 1 : 0;
         const aiImageCharLimit = getWechatAiImageCharLimit(latestVisionImageCount + avatarImageCount + previousPhotoCount);
@@ -13705,7 +13732,7 @@ renderChatRoom(chat) {
         }
 
         if (!callMode) {
-            const avatarContext = await this._buildAvatarImageContext(targetChat, latestUserMessages, options, aiImageDataCache, Math.min(48000, aiImageCharLimit));
+            const avatarContext = await this._buildAvatarImageContext(targetChat, latestUserMessages, options, aiImageDataCache, Math.min(48000, aiImageCharLimit), currentAvatarSources);
             if (avatarContext) finalUserContent += `\n\n${avatarContext}`;
         }
 
