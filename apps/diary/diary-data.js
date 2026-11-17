@@ -16,6 +16,9 @@ import { readDiaryAppearance } from './diary-theme.js';
 import { applyPhoneTagFilter } from '../../config/tag-filter.js';
 import { extractImagePromptItems, removeImagePromptItems } from '../../config/image-prompt-format.js';
 
+export const DEFAULT_DIARY_COVER_BG = new URL('../../phone/rjfm.jpg', import.meta.url).href;
+export const DEFAULT_DIARY_TOC_BG = new URL('../../phone/rjml.jpg', import.meta.url).href;
+
 export class DiaryData {
     constructor(storage) {
         this.storage = storage;
@@ -120,7 +123,7 @@ export class DiaryData {
     }
 
     getCoverBg() {
-        return this.storage.get('global_diary_bg_cover') || this._getLegacyBackground('diary_shared_bg_cover');
+        return this.storage.get('global_diary_bg_cover') || this._getLegacyBackground('diary_shared_bg_cover') || DEFAULT_DIARY_COVER_BG;
     }
 
     async setCoverBg(image) {
@@ -132,7 +135,7 @@ export class DiaryData {
     }
 
     getTocBg() {
-        return this.storage.get('global_diary_bg_toc') || this._getLegacyBackground('diary_shared_bg_toc');
+        return this.storage.get('global_diary_bg_toc') || this._getLegacyBackground('diary_shared_bg_toc') || DEFAULT_DIARY_TOC_BG;
     }
 
     async setTocBg(image) {

@@ -48,7 +48,7 @@ export class DiaryView {
         if (!existing) {
             link.id = 'diary-css';
             link.rel = 'stylesheet';
-            link.href = new URL('./diary.css?v=1.0.0&r=20261109-cover-ready', import.meta.url).href;
+            link.href = new URL('./diary.css?v=1.0.0&r=20261114-hidden-state', import.meta.url).href;
             document.head.appendChild(link);
         }
         this._cssLoaded = true;
@@ -271,7 +271,9 @@ export class DiaryView {
             item.style.right = 'auto';
             item.style.width = `${188 * scale}px`;
             item.style.setProperty('--diary-toc-connector', `${connector * scale}px`);
-            item.style.opacity = String(edgeOpacity);
+            // 隐藏状态与圆弧边缘淡出叠加，滚动或重新布局不能恢复隐藏卡片的亮度。
+            const hiddenOpacity = item.classList?.contains('diary-offline-hidden') ? 0.58 : 1;
+            item.style.opacity = String(edgeOpacity * hiddenOpacity);
             item.style.visibility = isVisible ? 'visible' : 'hidden';
             item.style.pointerEvents = isVisible ? '' : 'none';
         });
@@ -306,7 +308,7 @@ export class DiaryView {
                 const isHidden = entry.offlineHidden === true;
                 const isSelected = this.tocSelectedIds.has(String(entry.id));
                 return `
-                    <div class="diary-toc-item ${isHidden ? 'diary-offline-hidden' : ''} ${isSelected ? 'is-selected' : ''}" data-id="${entry.id}" style="${isHidden ? 'opacity:0.58;' : ''}">
+                    <div class="diary-toc-item ${isHidden ? 'diary-offline-hidden' : ''} ${isSelected ? 'is-selected' : ''}" data-id="${entry.id}">
                         <input type="checkbox" class="diary-toc-select" data-id="${entry.id}" ${isSelected ? 'checked' : ''} style="margin-right:8px; flex-shrink:0; accent-color:#5b6cff;">
                         <div class="diary-toc-item-date">
                             <div class="diary-toc-item-month">${monthLabel}</div>

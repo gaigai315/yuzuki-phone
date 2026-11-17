@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DiaryView } from '../apps/diary/diary-view.js';
+import { DiaryData } from '../apps/diary/diary-data.js';
 
 function setup(t) {
     const original = { document: globalThis.document, confirm: globalThis.confirm };
@@ -93,4 +94,62 @@ test('bulk hide is invoked once after repeated binding', t => {
     assert.equal(hidden.length, 1);
     assert.equal(hidden[0].ids.length, 8);
     assert.equal(hidden[0].value, true);
+});
+
+test('hide and show buttons persist diary injection exclusion across reloads', t => {
+    const { view, controls } = setup(t);
+    const saved = new Map();
+    const storage = { get: key => saved.get(key), set: (key, value) => saved.set(key, value) };
+    const data = new DiaryData(storage);
+    data._entries = [
+        { id: 'diary-0', content: '隐藏验证专属正文', title: '隐藏验证标题', date: '2026-11-14' },
+        { id: 'diary-1', content: '正常注入专属正文', title: '正常标题', date: '2026-11-13' }
+    ];
+    data.saveEntries();
+    view.app.diaryData = data;
+    view._bindTOCEvents();
+    assert.match(data.buildOfflineInjectionContent(), /隐藏验证专属正文/);
+
+    view.tocSelectedIds.add('diary-0');
+    controls['diary-toc-hide-selected'].click();
+    assert.equal(data.getEntry('diary-0').offlineHidden, true);
+    for (const source of [data, new DiaryData(storage)]) {
+        const prompt = source.buildOfflineInjectionContent();
+        assert.doesNotMatch(prompt, /隐藏验证专属正文|隐藏验证标题/);
+        assert.match(prompt, /正常注入专属正文/);
+    }
+
+    view.app.diaryData = new DiaryData(storage);
+    view.tocSelectedIds.add('diary-0');
+    controls['diary-toc-show-selected'].click();
+    assert.equal(view.app.diaryData.getEntry('diary-0').offlineHidden, false);
+    assert.match(new DiaryData(storage).buildOfflineInjectionContent(), /隐藏验证专属正文/);
+
+    controls['diary-toc-select-all'].click();
+    controls['diary-toc-hide-selected'].click();
+    assert.equal(new DiaryData(storage).buildOfflineInjectionContent(), '');
+});
+
+test('hidden diary stays dim through orbit layout and scrolling, and show restores opacity', () => {
+    let hidden = true;
+    const item = {
+        style: { setProperty() {} },
+        classList: { contains: name => name === 'diary-offline-hidden' && hidden }
+    };
+    const list = {
+        clientWidth: 360, clientHeight: 420, scrollTop: 0,
+        querySelectorAll: () => [item], querySelector: () => null
+    };
+    const view = new DiaryView({});
+    view._layoutTOCOrbitItems(list);
+    assert.equal(Number(item.style.opacity), 0.58);
+    list.scrollTop = 32;
+    view._layoutTOCOrbitItems(list);
+    assert.ok(Math.abs(Number(item.style.opacity) - 0.29) < 1e-10);
+    list.scrollTop = 0;
+    view._layoutTOCOrbitItems(list);
+    assert.equal(Number(item.style.opacity), 0.58);
+    hidden = false;
+    view._layoutTOCOrbitItems(list);
+    assert.equal(Number(item.style.opacity), 1);
 });

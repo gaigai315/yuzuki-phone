@@ -18,7 +18,7 @@ test('wechat system emoji picker includes named image emojis', () => {
 test('custom emoji manager switches away from the default tab before opening', () => {
     assert.match(
         chatViewSource,
-        /if \(this\.emojiTab !== 'custom'\) \{\s*this\.emojiTab = 'custom';\s*this\.customEmojiManageMenuOpen = true;\s*this\.app\.render\(\);\s*return;/
+        /if \(this\.emojiTab !== 'custom'\) \{\s*this\.emojiTab = 'custom';\s*this\.customEmojiManageMenuOpen = true;\s*this\._refreshEmojiPanel\(\);\s*return;/
     );
     assert.match(chatViewSource, /aria-expanded="\$\{this\.customEmojiManageMenuOpen \? 'true' : 'false'\}"/);
     assert.match(chatViewSource, /this\.customEmojiManageMenuOpen = isOpen;/);

@@ -931,7 +931,7 @@
 /* ------ 第一组：引言与爱心 ------ */
 .social-card-section {
     --music-ui-border-color: var(--SmartThemeBorderColor, var(--theme-border-color, rgba(0, 0, 0, 0.18)));
-    --music-main-text-color: var(--SmartThemeBodyColor, var(--phone-global-text, #333));
+    --music-main-text-color: var(--music-text-color, #000000);
 }
 .literary-box {
     border-top: 1px solid var(--music-ui-border-color);
@@ -1669,4 +1669,17 @@
     text-align: center;
     font-size: 12px;
     color: rgba(0, 0, 0, 0.46);
+}
+
+/* 卡片文字独立配色，防止酒馆主题覆盖；字体继续继承酒馆。 */
+#music-floating-root .social-card-section,
+#music-floating-root .social-card-section :where(*):not(.heart) {
+    color: var(--music-text-color, #000000) !important;
+    -webkit-text-fill-color: var(--music-text-color, #000000) !important;
+    text-shadow: none !important;
+}
+
+#music-floating-root .social-card-section .heart {
+    color: #ff5a6b !important;
+    -webkit-text-fill-color: #ff5a6b !important;
 }

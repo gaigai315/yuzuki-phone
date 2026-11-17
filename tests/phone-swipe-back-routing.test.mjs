@@ -52,12 +52,36 @@ test('app swipe-back handlers never disable the whole phone screen', () => {
     });
 });
 
-test('controller imports share one cache revision after swipe routing changes', () => {
+test('controller entry points use consistent versioned URLs and defined cache revisions', () => {
     const indexSource = readSource('../index.js');
-    assert.match(indexSource, /ST_PHONE_CSS_REVISION = '20261021-worldbook-entry-search'/);
-    assert.match(indexSource, /ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return'/);
-    assert.match(indexSource, /worldbook-manager\.js\?v=20261021-worldbook-lazy-load/);
-    assert.doesNotMatch(indexSource, /20261002-swipe-back-routing|20261002-x-compose-safe-area/);
+    const constants = new Map([...indexSource.matchAll(/const (ST_PHONE_\w+) = '([^']+)'/g)]
+        .map(([, name, value]) => [name, value]));
+    const resolveUrl = template => new URL(template.replace(/\$\{(ST_PHONE_\w+)\}/g, (_, name) => {
+        assert.ok(constants.has(name), `cache URL references undefined constant ${name}`);
+        return constants.get(name);
+    }), 'https://phone.test/');
+
+    const urlsByModule = new Map();
+    const controllerUrls = [...indexSource.matchAll(/`(\.\/apps\/[^`]+-app\.js\?[^`]+)`/g)];
+    assert.ok(controllerUrls.length > 0, 'controller cache URLs must be discoverable');
+    for (const [, template] of controllerUrls) {
+        const url = resolveUrl(template);
+        assert.equal(url.searchParams.get('v'), constants.get('ST_PHONE_VERSION'), `${url.pathname} uses the plugin version`);
+        assert.ok(url.searchParams.get('r'), `${url.pathname} needs a cache revision`);
+        const previous = urlsByModule.get(url.pathname);
+        if (previous) assert.equal(url.href, previous, `${url.pathname} entry points must load the same module instance`);
+        urlsByModule.set(url.pathname, url.href);
+    }
+    for (const id of controllers.keys()) {
+        assert.ok([...urlsByModule.keys()].some(path => path.endsWith(`/${id}-app.js`)), `${id} has a versioned entry point`);
+    }
+    assert.match(indexSource, /\.\/phone\.css\?v=\$\{ST_PHONE_VERSION\}&r=\$\{ST_PHONE_CSS_REVISION\}/);
+    const shellTemplate = indexSource.match(/import\(`(\.\/phone\/phone-shell\.js\?[^`]+)`\)/)?.[1];
+    assert.ok(shellTemplate, 'phone shell has a versioned import');
+    assert.ok(resolveUrl(shellTemplate).searchParams.get('r'));
+    const worldbookPath = indexSource.match(/import\('(\.\/config\/worldbook-manager\.js\?[^']+)'\)/)?.[1];
+    assert.ok(worldbookPath, 'lazy worldbook import has a cache version');
+    assert.ok(resolveUrl(worldbookPath).searchParams.get('v'));
 });
 
 test('swipe click guard allows programmatic app back clicks and blocks chat reopen', async () => {

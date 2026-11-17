@@ -1273,6 +1273,94 @@ test('story image generation uses the story provider route, uploads the result, 
     }
 });
 
+test('story image persistence repairs empty and generic MIME types from plugin blob URLs', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const { AlbumApp } = await import(`../apps/album/album-app.js?test=plugin-blob-${Date.now()}`);
+    const app = Object.create(AlbumApp.prototype);
+    const pngBytes = Uint8Array.from([
+        0x89, 0x50, 0x4e, 0x47,
+        0x0d, 0x0a, 0x1a, 0x0a
+    ]);
+    const uploaded = [];
+
+    globalThis.window = {
+        VirtualPhone: {
+            imageManager: {
+                async uploadBlob(blob, prefix, options) {
+                    uploaded.push({ blob, prefix, options });
+                    return `/backgrounds/phone_${prefix}.png`;
+                }
+            }
+        }
+    };
+
+    try {
+        for (const contentType of ['', 'application/octet-stream']) {
+            globalThis.fetch = async () => new Response(pngBytes, {
+                status: 200,
+                headers: contentType ? { 'Content-Type': contentType } : undefined
+            });
+
+            const signal = new AbortController().signal;
+            const storedUrl = await app._persistStoryGeneratedImage(
+                `blob:http://127.0.0.1:8000/${contentType || 'empty'}`,
+                7,
+                { signal }
+            );
+
+            assert.match(storedUrl, /^\/backgrounds\/phone_story_image_7_/);
+            const current = uploaded.at(-1);
+            assert.equal(current.blob.type, 'image/png');
+            assert.equal(current.blob.size, pngBytes.length);
+            assert.deepEqual(current.options, {
+                skipExistenceCheck: true,
+                signal
+            });
+        }
+        assert.equal(uploaded.length, 2);
+    } finally {
+        globalThis.fetch = originalFetch;
+        if (originalWindow === undefined) delete globalThis.window;
+        else globalThis.window = originalWindow;
+    }
+});
+
+test('story image persistence rejects successful HTML responses instead of uploading them', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const { AlbumApp } = await import(`../apps/album/album-app.js?test=html-image-${Date.now()}`);
+    const app = Object.create(AlbumApp.prototype);
+    let uploadCount = 0;
+
+    globalThis.window = {
+        VirtualPhone: {
+            imageManager: {
+                async uploadBlob() {
+                    uploadCount += 1;
+                    return '/backgrounds/phone_should_not_exist.png';
+                }
+            }
+        }
+    };
+    globalThis.fetch = async () => new Response('<!doctype html><title>expired image</title>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+    });
+
+    try {
+        await assert.rejects(
+            app._persistStoryGeneratedImage('https://images.example/expired', 7),
+            /不是有效图片（Content-Type: text\/html）/
+        );
+        assert.equal(uploadCount, 0);
+    } finally {
+        globalThis.fetch = originalFetch;
+        if (originalWindow === undefined) delete globalThis.window;
+        else globalThis.window = originalWindow;
+    }
+});
+
 
 test('story fixed-character tags expand before editing and saved edits reach the provider unchanged', async () => {
     const originalWindow = globalThis.window;

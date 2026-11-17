@@ -8,6 +8,7 @@ import { WechatData } from '../apps/wechat/wechat-data.js';
 const rawFile = formatWechatFile('项目说明.txt', '一、周三开会\n二、保留多行内容');
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 const viewSource = fs.readFileSync(new URL('../apps/wechat/chat-view.js', import.meta.url), 'utf8');
+const appSource = fs.readFileSync(new URL('../apps/wechat/wechat-app.js', import.meta.url), 'utf8');
 
 test('file protocol accepts paired identical tags and conventional closing tags', () => {
     for (const raw of [rawFile, rawFile.replace(/<文件>$/, '</文件>')]) {
@@ -127,6 +128,12 @@ test('file cards render compact titles and open the full escaped text', () => {
         if (previous === undefined) delete globalThis.document;
         else globalThis.document = previous;
     }
+});
+
+test('file card text stays black when the global WeChat text color is light', () => {
+    assert.match(appSource, /\.wechat-file-card,[\s\S]*?\.wechat-file-card-title,[\s\S]*?\.wechat-file-card \.wechat-forward-record-footer span \{[\s\S]*?color: #000 !important;[\s\S]*?-webkit-text-fill-color: #000 !important;/);
+    assert.match(appSource, /\.wechat-file-card,[\s\S]*?\.wechat-file-card \*/);
+    assert.match(appSource, /\.wechat-file-card \.wechat-file-card-icon \{[\s\S]*?color: #fff !important;[\s\S]*?-webkit-text-fill-color: #fff !important;/);
 });
 
 test('complete offline WeChat parser keeps group file sender, time and multiline content', () => {

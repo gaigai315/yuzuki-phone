@@ -48,7 +48,7 @@ function shellFixture(t, src) {
         viewHistory: [{ id: 'home' }],
         syncHomeLayoutChromeClass() {}, _syncChromeThemeForView() {}, _scopePhoneFormControls() {},
         screen: { querySelector: selector => selector === '.view-stack-container'
-            ? stack : views.find(v => !v.removed && v.className.includes('phone-view-current')) }
+            ? stack : views.find(v => !v.removed && v.className.includes(selector.slice(1))) }
     });
     return { shell, home, wechat, settings };
 }
@@ -89,6 +89,7 @@ test('opening wechat keeps the old page painted, including while the pending pag
     assert.equal(wechat.style.opacity, '0');
     assert.equal(home.style.opacity, '1');
     assert.equal(home.style.display, 'block');
+    assert.equal(home.style.visibility, 'visible');
     shell.setContent('page', 'wechat-main');
     assert.equal(wechat.style.opacity, '0');
     assert.equal(images.length, 1);
@@ -96,6 +97,23 @@ test('opening wechat keeps the old page painted, including while the pending pag
     await Promise.resolve();
     assert.equal(wechat.style.opacity, '1');
     assert.equal(wechat.style.pointerEvents, '');
+    assert.equal(home.style.visibility, 'hidden');
+});
+
+test('ready transparent pages hide previous content and reveal it only for swipe back', t => {
+    const { shell, home, settings } = shellFixture(t, '');
+    shell.setContent('page', 'settings');
+    assert.equal(settings.style.visibility, 'visible');
+    assert.equal(home.style.visibility, 'hidden');
+    shell._showSwipePreviousLayer(settings);
+    assert.equal(home.style.visibility, 'visible');
+    assert.equal(settings._phoneSwipePreviousLayer, home);
+    settings.isConnected = true;
+    home.classList = { contains: name => home.className.split(' ').includes(name) };
+    shell._resetSwipeLayer(settings);
+    assert.equal(home.style.visibility, 'hidden');
+    assert.equal(shell.restoreView('home'), true);
+    assert.equal(home.style.visibility, 'visible');
 });
 
 test('late background completion cannot replace another page', async t => {

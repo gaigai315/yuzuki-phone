@@ -566,6 +566,10 @@
     background: color-mix(in srgb, var(--diary-paper-color) 70%, var(--diary-text-primary) 12%);
 }
 
+#phone-panel-content .phone-screen .diary-app .diary-toc-item.diary-offline-hidden {
+    filter: brightness(0.72);
+}
+
 #phone-panel-content .phone-screen .diary-app .diary-toc-item-date {
     flex: 0 0 calc(54px * var(--diary-toc-card-scale));
     min-width: calc(54px * var(--diary-toc-card-scale));

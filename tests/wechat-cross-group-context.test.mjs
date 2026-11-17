@@ -6,6 +6,51 @@ import { ChatView } from '../apps/wechat/chat-view.js';
 
 const chatViewSource = fs.readFileSync(new URL('../apps/wechat/chat-view.js', import.meta.url), 'utf8');
 
+test('single chat final instructions put all four constraints before the latest user input', () => {
+    const view = Object.create(ChatView.prototype);
+    const input = '[13:16] 陆栀之: 好的，知道啦';
+    const text = view._buildSingleChatFinalInstruction({ chatName: '周倩', userName: '陆栀之', latestUserInput: input });
+    assert.ok(text.startsWith('【本轮最终执行约束】\n1. 【结构与朋友圈隔离】'));
+    assert.ok(text.includes('2. 【视角与身份绝对锁定】：当前单聊窗口对象为“周倩”'));
+    assert.ok(text.includes('`陆栀之:`、`用户:`、`玩家:`'));
+    assert.ok(text.includes('3. 【纯文字与去叙事化】'));
+    assert.ok(text.includes('`周倩: 内容`') && text.includes('`[HH:MM]`'));
+    assert.ok(text.includes('4. 【增量推进与防复读】'));
+    const modeIndex = text.indexOf('现在你处于微信单聊的模式');
+    const inputIndex = text.lastIndexOf('【用户最新输入】');
+    assert.ok(text.indexOf('4. 【增量推进与防复读】') < modeIndex && modeIndex < inputIndex);
+    assert.ok(text.includes('针对下方【用户最新输入】'));
+    assert.ok(text.endsWith(input));
+    assert.ok(!text.includes('{{chatName}}') && !text.includes('{{user}}'));
+    assert.ok(!text.includes('【本轮约束】'));
+});
+
+test('single chat final instructions do not invent user input when it is empty', () => {
+    const view = Object.create(ChatView.prototype);
+    const text = view._buildSingleChatFinalInstruction({ chatName: '周倩', userName: '陆栀之' });
+    assert.ok(!text.includes('【用户最新输入】\n'));
+    assert.ok(text.endsWith('自然承接用户的消息进行回复。'));
+});
+
+test('single chat profile separates the window remark, friend nickname and real name', () => {
+    const view = Object.create(ChatView.prototype);
+    const text = view._buildSingleChatContactProfileHeader({
+        name: '旧昵称', nickname: '夜航', remark: '周倩', realName: '周倩真名', relation: '统战部同事'
+    }, { userName: '陆栀之', chatName: '周倩', commonGroupList: '工作群(周倩、陆栀之)' });
+    assert.ok(text.startsWith('陆栀之正在手机微信上和周倩聊天'));
+    assert.ok(text.includes('【当前聊天窗口名】：周倩'));
+    assert.ok(text.includes('【与当前好友共同所在群聊】：工作群(周倩、陆栀之)'));
+    assert.ok(text.includes('【当前聊天对象档案】\n好友昵称：夜航\n好友真名：周倩真名\n关系：统战部同事'));
+    assert.ok(text.indexOf('【与当前好友共同所在群聊】') < text.indexOf('【当前聊天对象档案】'));
+});
+
+test('single chat profile leaves missing real names explicit and works without a saved contact', () => {
+    const view = Object.create(ChatView.prototype);
+    const text = view._buildSingleChatContactProfileHeader({}, { userName: '用户', chatName: '朋友' });
+    assert.ok(text.includes('【与当前好友共同所在群聊】：无'));
+    assert.ok(text.includes('好友昵称：朋友\n好友真名：\n关系：'));
+});
+
 function normalizeName(value = '') {
     return String(value || '')
         .trim()

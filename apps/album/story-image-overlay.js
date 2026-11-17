@@ -6,6 +6,8 @@
  * ======================================================== */
 
 const STORY_OVERLAY_ROOT_ID = 'phone-story-image-overlay-root';
+// 图片占位与生成按钮共用固定 SVG，避免移动端字体图标被宿主题切换或替换。
+const STORY_IMAGE_ICON = '<svg class="phone-story-image-picture-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg>';
 const STORY_PROVIDER_LABELS = Object.freeze({
     novelai: 'NovelAI',
     openai: 'OpenAI',
@@ -278,7 +280,7 @@ export class StoryImageOverlay {
                                     ${floor.imageUrl ? `
                                         <img src="${this.escapeAttr(floor.imageUrl)}" alt="#${floor.floor} 正文生图">
                                     ` : `
-                                        <span class="phone-story-image-empty-icon" aria-hidden="true"><i class="fa-regular fa-image"></i></span>
+                                        <span class="phone-story-image-empty-icon" aria-hidden="true">${STORY_IMAGE_ICON}</span>
                                         <strong>这一楼还没有图片</strong>
                                     `}
                                 </div>
@@ -329,7 +331,7 @@ export class StoryImageOverlay {
                             </button>
                             <button type="button" class="phone-story-image-action is-image" ${anyBusy || !hasTags ? 'disabled' : ''}>
                                 <span class="phone-story-image-action-icon">
-                                    <i class="${imageBusy ? 'fa-solid fa-spinner fa-spin' : 'fa-regular fa-image'}" aria-hidden="true"></i>
+                                    ${imageBusy ? '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>' : STORY_IMAGE_ICON}
                                 </span>
                                 <span>${imageBusy ? '正在生成图片' : '生成图片'}</span>
                             </button>

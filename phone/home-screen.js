@@ -136,8 +136,17 @@ export class HomeScreen {
     }
 
     preloadHomeCustomCss() {
-        document.getElementById(HOME_CUSTOM_STYLE_ID)?.remove();
+        const existing = document.getElementById(HOME_CUSTOM_STYLE_ID);
         const cssText = this.getActiveHomeCssText();
+        if (!cssText) {
+            existing?.remove();
+            return;
+        }
+        // 桌面刷新时保留相同样式节点，避免字体、背景和入场动画反复失效再应用。
+        if (existing) {
+            if (existing.textContent !== cssText) existing.textContent = cssText;
+            return;
+        }
         if (cssText) {
             const style = document.createElement('style');
             style.id = HOME_CUSTOM_STYLE_ID;
