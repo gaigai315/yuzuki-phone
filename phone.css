@@ -7959,9 +7959,20 @@ input:checked + .toggle-slider:before {
     -webkit-backdrop-filter: none !important;
 }
 
-/* 微信表单底色跟随酒馆主题；文字仍由微信字体颜色设置控制。 */
+/* 微信表单复用字体颜色对应的对比色毛玻璃底色，与个人资料页保持一致。 */
 #phone-panel-content .wechat-app {
-    --phone-form-background: var(--SmartThemeBlurTintColor, var(--SmartThemeChatTintColor, #f5f5f5));
+    --phone-form-background: var(--wechat-readable-surface, #ffffff);
+}
+
+/* 钱包、支付页面及还款弹窗保留黑字浅底，避免被微信自选字体配色反向影响。 */
+#phone-panel-content .wechat-app:is(
+    .wechat-wallet-ledger-page,
+    .wechat-wallet-transfer-page,
+    .wechat-payment-fixed-page,
+    .wechat-payment-compose-page
+),
+#phone-panel-content .wechat-app .wechat-wallet-repayment-overlay {
+    --phone-form-background: #ffffff;
 }
 
 #phone-panel-content .wechat-app :is(
@@ -10087,4 +10098,174 @@ input:checked + .toggle-slider:before {
 #phone-panel-content .wechat-app .wechat-emoji-move-group {
     align-self: flex-start;
     margin: 3px 12px;
+}
+
+
+/* 个人资料音色折叠：独立布局、单层玻璃，避免主题压缩和展开时反复合成。 */
+#phone-panel-content .phone-screen .wechat-app .wechat-profile-edit-content {
+    display: block !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-fold {
+    display: block !important;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 58px !important;
+    max-height: none !important;
+    margin: 0 0 16px !important;
+    padding: 0 !important;
+    overflow: hidden;
+    border: 1px solid var(--wechat-readable-border, rgba(0,0,0,.18));
+    border-radius: 12px;
+    box-sizing: border-box;
+    background: var(--wechat-readable-surface, #fff) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: none !important;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-toggle {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 10px;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 58px !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 10px 12px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-sizing: border-box;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: var(--wechat-text-color, #000) !important;
+    font-family: inherit;
+    line-height: 1.4 !important;
+    text-align: left !important;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    touch-action: manipulation;
+    transform: none !important;
+    transition: none !important;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-heading {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-title i {
+    margin-right: 6px;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-description {
+    margin-top: 3px;
+    font-size: 11px;
+    font-weight: 400;
+    white-space: normal;
+    opacity: .7;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-arrow {
+    flex: 0 0 auto;
+    font-size: 12px;
+    transition: none;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-fold.is-open .wechat-user-tts-arrow {
+    transform: rotate(90deg);
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-content {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 0 12px 12px;
+    box-sizing: border-box;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-content[hidden] {
+    display: none !important;
+}
+#phone-panel-content .phone-screen .wechat-app .wechat-user-tts-fold :is(button, input, select, option, textarea) {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+
+/* 群聊邀请复用好友申请弹窗；成员仅为群内名单，不代表自动添加微信好友。 */
+#st-phone-wechat-friend-request-modal .st-phone-wechat-group-invitation-members {
+    margin-top: 12px !important;
+    font-size: 12px !important;
+    line-height: 1.6 !important;
+    color: #666 !important;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+#st-phone-wechat-friend-request-modal .st-phone-wechat-friend-request-panel {
+    touch-action: pan-y;
+}
+
+
+/* 私聊中的入群邀请卡片，入群前不创建群聊。 */
+#phone-panel-content .wechat-app .wechat-group-invitation-card {
+    width: 240px;
+    max-width: 100%;
+    min-width: 0;
+    padding: 12px;
+    box-sizing: border-box;
+    border: 1px solid var(--wechat-readable-border, #ddd);
+    border-radius: 12px;
+    background: var(--wechat-readable-surface, #fff);
+}
+#phone-panel-content .wechat-app .wechat-group-invitation-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+#phone-panel-content .wechat-app .wechat-group-invitation-members,
+#phone-panel-content .wechat-app .wechat-group-invitation-status {
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    opacity: .75;
+}
+#phone-panel-content .wechat-app .wechat-group-invitation-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+#phone-panel-content .wechat-app .wechat-group-invitation-action {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    height: auto;
+    min-height: 32px;
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--wechat-readable-border, #ddd);
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    font-size: 12px;
+    line-height: 1.5;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+#phone-panel-content .wechat-app .wechat-group-invitation-action.is-accept {
+    border-color: #07c160;
+    background: rgba(7,193,96,.18);
 }

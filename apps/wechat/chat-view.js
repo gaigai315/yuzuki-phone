@@ -1,3 +1,4 @@
+import { acceptWechatGroupInvitation, findWechatInvitationFriend, ONLINE_GROUP_INVITATION_PATTERN, parseWechatOnlineGroupInvitation } from './group-invitation.js?v=20261118-online-group-invitation';
 import { avatarCommandPattern, parseAvatarCommand, getEmojiGroup, resolveAvatarSource } from './avatar-change.js';
 import { CALL_HANGUP_RULE, parseCallHangupReply } from '../../config/call-hangup.js';
 /* ========================================================
@@ -3227,6 +3228,11 @@ renderChatRoom(chat) {
         `;
     }
 
+    _isRedundantPrivateGroupJoinNotice(message) {
+        return this.app.currentChat?.type !== 'group' && message?.type === 'system'
+            && !!message.joinedGroupChatId && !!message.groupInvitationMessageId;
+    }
+
     // 🔥 渲染消息列表（常规2分钟时间胶囊 + AI首条>1分钟强制显示）
     renderMessagesWithDateDividers(messages, userInfo, options = {}) {
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -3240,6 +3246,7 @@ renderChatRoom(chat) {
         const startIndex = Math.max(0, Number(options.startIndex) || 0);
         messages.forEach((msg, index) => {
             try {
+                if (this._isRedundantPrivateGroupJoinNotice(msg)) return;
                 const messageIndex = startIndex + index;
                 const msgTimestamp = msg.timestamp || 0;
                 const msgDate = msg.date ? this._normalizeWechatDateDisplay(msg.date) : null;
@@ -4010,6 +4017,7 @@ renderChatRoom(chat) {
 
     // 渲染单条消息（全新红包样式）
     renderMessage(msg, userInfo, messageIndex = -1) {
+        if (this._isRedundantPrivateGroupJoinNotice(msg)) return '';
         if (msg?.isTimeMarker === true || msg?.type === 'time_marker') {
             return '';
         }
@@ -4094,6 +4102,9 @@ renderChatRoom(chat) {
                     const photoClass = isCustomEmojiImage ? '' : 'wechat-chat-photo';
                     messageBody = `<div class="message-image-box ${photoBoxClass}" style="position: relative; display: inline-block; line-height: 0; ${customEmojiBoxStyle}"><img src="${safeImageContent}" class="message-image ${photoClass}" style="${customEmojiImgStyle}"></div>`;
                 }
+                break;
+            case 'group_invitation':
+                messageBody = this._renderGroupInvitationCard(msg);
                 break;
             case 'image_prompt':
                 messageBody = this.renderImagePromptCard(msg);
@@ -6159,6 +6170,114 @@ renderChatRoom(chat) {
                 : message.status === 'opened' ? '已领取' : message.status === 'refunded' ? '已退回' : (message.claims?.length || 0) > 0 ? '部分领取' : '未领取');
     }
 
+    _renderGroupInvitationCard(message) {
+        const status = message.groupInvitationStatus || 'pending';
+        const chatId = this.app.currentChat?.id || '';
+        const group = message.groupInvitationChatId ? this.app.wechatData.getChat?.(message.groupInvitationChatId) : null;
+        const userName = this.app.wechatData.getUserInfo?.()?.name || '用户';
+        const attributes = `data-chat-id="${this._escapeHtml(chatId)}" data-message-id="${this._escapeHtml(message.id || '')}"`;
+        const statusText = status === 'accepted' ? `${userName} 已加入群聊` : status === 'declined' ? '已拒绝邀请' : '邀请你加入群聊';
+        return `<div class="wechat-group-invitation-card">
+            <div class="wechat-group-invitation-heading"><i class="fa-solid fa-user-group" aria-hidden="true"></i><strong>${this._escapeHtml(message.groupInvitationName || '群聊邀请')}</strong></div>
+            <div class="wechat-group-invitation-members">${this._escapeHtml((message.groupInvitationMembers || []).join('、'))}</div>
+            <div class="wechat-group-invitation-status">${this._escapeHtml(statusText)}</div>
+            <div class="wechat-group-invitation-actions">${status === 'pending' ? `
+                <button type="button" class="wechat-group-invitation-action" data-action="decline" ${attributes}>暂不加入</button>
+                <button type="button" class="wechat-group-invitation-action is-accept" data-action="accept" ${attributes}>同意入群</button>
+            ` : status === 'accepted' && group ? `<button type="button" class="wechat-group-invitation-action" data-action="open" ${attributes}>进入群聊</button>` : ''}</div>
+        </div>`;
+    }
+
+    async _handleOnlineGroupInvitation(chatId, messageId, action) {
+        const data = this.app.wechatData;
+        const sourceChat = data.getChat(chatId);
+        const message = (data.getMessages(chatId) || []).find(item => String(item.id) === String(messageId));
+        if (!sourceChat || sourceChat.type === 'group' || message?.type !== 'group_invitation') return false;
+        if (action === 'open') {
+            if (message.groupInvitationStatus === 'accepted' && data.getChat(message.groupInvitationChatId)) this.app.openChat?.(message.groupInvitationChatId);
+            return true;
+        }
+        const key = `${chatId}:${messageId}`;
+        if (!this._groupInvitationLocks) this._groupInvitationLocks = new Set();
+        if ((message.groupInvitationStatus || 'pending') !== 'pending' || this._groupInvitationLocks.has(key)) return false;
+        if (!['accept', 'decline'].includes(action)) return false;
+        this._groupInvitationLocks.add(key);
+        try {
+            if (action === 'decline') {
+                data.updateMessageById(chatId, messageId, { groupInvitationStatus: 'declined' });
+                this._refreshVisibleChatMessages(chatId);
+                return true;
+            }
+            const inviter = data.getContact?.(sourceChat.contactId) || findWechatInvitationFriend(data, sourceChat.name);
+            const sender = findWechatInvitationFriend(data, message.from);
+            if (!inviter || sender?.id !== inviter.id || message.from === 'me') throw new Error('邀请发送者不是当前私聊好友');
+            const conversationId = this._getCurrentTavernChatId();
+            const result = acceptWechatGroupInvitation(data, {
+                groupName: message.groupInvitationName, inviter: inviter.name,
+                members: message.groupInvitationMembers, reason: ''
+            }, { mode: 'online', invitationChatId: chatId, invitationMessageId: messageId, conversationId });
+            data.updateMessageById(chatId, messageId, { groupInvitationStatus: 'accepted', groupInvitationChatId: result.chat.id });
+            this._refreshVisibleChatMessages(chatId);
+            this.app.phoneShell?.showNotification?.('微信', result.status === 'joined' ? `已加入群聊：${result.chat.name}` : `你已在群聊：${result.chat.name}`, '👥');
+            if (result.status === 'joined') this._scheduleGroupWelcomeFlush();
+            return result;
+        } catch (error) {
+            console.warn('[微信群聊邀请] 入群失败:', error);
+            this.app.phoneShell?.showNotification?.('入群失败', error?.message || '请稍后重试', '⚠️');
+            return false;
+        } finally {
+            this._groupInvitationLocks.delete(key);
+        }
+    }
+
+    _scheduleGroupWelcomeFlush() {
+        if (!(this.app.wechatData.getChatList?.() || []).some(chat => chat.groupInvitation?.onlineWelcomeState === 'pending')) return;
+        queueMicrotask(() => {
+            void this._flushPendingGroupWelcomes().catch(error => console.warn('[微信群聊邀请] 入群互动失败:', error));
+        });
+    }
+
+    async _flushPendingGroupWelcomes() {
+        if (this._groupWelcomeFlushBusy || this.isSending || this._isFlushingPending || !this.isOnlineMode()) return;
+        if (typeof window !== 'undefined' && window.VirtualPhone?.wechatApp && window.VirtualPhone.wechatApp !== this.app) return;
+        this._groupWelcomeFlushBusy = true;
+        const data = this.app.wechatData;
+        try {
+            while (!this.isSending && !this._isFlushingPending && this.isOnlineMode()) {
+                const conversationId = this._getCurrentTavernChatId();
+                const group = (data.getChatList() || []).find(chat => chat.type === 'group'
+                    && chat.groupInvitation?.mode === 'online' && chat.groupInvitation.onlineWelcomeState === 'pending'
+                    && chat.groupInvitation.welcomeConversationId === conversationId);
+                if (!group) break;
+                const event = group.groupInvitation;
+                // Persist the claim before requesting: failed or interrupted attempts are never retried automatically.
+                event.onlineWelcomeState = 'started';
+                data.saveData();
+                let success = false;
+                try {
+                    success = await this.sendToAI('', group.id, {
+                        sourceTavernChatId: conversationId,
+                        groupJoinWelcome: { userName: data.getUserInfo?.()?.name || '用户', inviterName: event.inviterName },
+                        latestUserMessageIds: []
+                    });
+                } catch (error) {
+                    console.warn('[微信群聊邀请] 群内互动请求失败:', error);
+                }
+                if (this.app.wechatData !== data || conversationId !== this._getCurrentTavernChatId()) break;
+                event.onlineWelcomeState = success ? 'completed' : 'failed';
+                data.saveData();
+                if (!success) this.app.phoneShell?.showNotification?.('已加入群聊', '群内互动未完成，可进入群聊继续聊天', '⚠️');
+            }
+        } finally {
+            this._groupWelcomeFlushBusy = false;
+            if (this.pendingChatIds?.size && !this.isSending) this._restartPendingTimerIfNeeded?.(this.app.currentChat?.id);
+        }
+    }
+
+    _buildGroupJoinWelcomeInstruction(group, event) {
+        return `【群聊入群事件】${event.userName} 刚刚接受了 ${event.inviterName} 的邀请，已加入“${group.name}”。这是系统入群事件，用户尚未发送消息。请只让本群现有成员围绕新人入群主动互动一轮，结合成员性格和已有关系自然招呼或接话。不得替 ${event.userName} 发言，不得重复已有消息、重新发送邀请或生成其他私聊窗口；继续使用当前微信群聊的发送者格式。`;
+    }
+
     _formatMessageContentForPrompt(msg, targetChat = null) {
         if (!msg || typeof msg !== 'object') return '';
         if (msg.hiddenFromPrompt === true || msg.isTimeMarker === true || msg.type === 'time_marker') return '';
@@ -6191,6 +6310,7 @@ renderChatRoom(chat) {
             return '图片';
         };
 
+        if (msg.type === 'group_invitation') return `${msg.content || '[群聊邀请]'}（状态：${msg.groupInvitationStatus === 'accepted' ? '已加入' : msg.groupInvitationStatus === 'declined' ? '已拒绝' : '待确认'}）`;
         if (msg.type === 'file_card') return formatWechatFile(msg.fileTitle, msg.fileText);
         if (msg.type === 'forward_card' || msg.type === 'text') return String(msg.content || '');
         if (msg.type === 'image') {
@@ -8007,6 +8127,8 @@ renderChatRoom(chat) {
 
     // 🔥 解析AI返回的特殊消息格式（转账/红包/定位/微博新闻/来电）
     parseSpecialMessage(content) {
+        const groupInvitation = parseWechatOnlineGroupInvitation(content);
+        if (groupInvitation) return groupInvitation;
         const avatarCommand = parseAvatarCommand(content);
         if (avatarCommand) return avatarCommand;
         const file = parseWechatFile(content);
@@ -8304,6 +8426,9 @@ renderChatRoom(chat) {
         const inlineSpecialRegex = /\[确认派发任务[：:]\s*[^\]\r\n]+\]|\[(?:同意收养|拒绝收养)\]|\[使用[：:]\s*[^x×\]\s]+\s*[x×]\s*\d+\]\s*(?:[（(][\s\S]*?[）)])?|\[(?:收款|领取(?:拼手气|均分|平均|群)?红包|退回转账|退回红包)\s*(?:[¥￥]\s*\d+(?:\.\d+)?)?\](?:\s*[（(]\s*[^）)]*\s*[）)])?|\[\s*转账\s*[¥￥]\s*[\d,]+(?:\.\d+)?\s*元?\s*\]\s*(?:[（(]\s*状态\s*[：:]\s*(?:未收款|待收款|已收款|已退回)\s*[）)])?|\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[给[^\[\]\r\n]+?的红包\s*[¥￥]\s*\d+(?:\.\d+)?\]|\[群红包\s*[｜|]\s*类型[：:]\s*(?:拼手气红包|均分红包|平均分红包)\s*[｜|]\s*总金额[：:]\s*[¥￥]?\s*\d+(?:\.\d+)?\s*[｜|]\s*红包个数[：:]\s*\d+\s*\](?:\s*[（(]\s*状态[：:]\s*(?:未领取|部分领取|已领取|已领完|已退回)[^）)]*[）)])?|\[群红包\]|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*蜜语\s*\]|【\s*蜜语\s*】)\s*(?:[（(]\s*[^）)]*\s*[）)])?|(?:\[\s*音乐\s*\]|【\s*音乐\s*】)\s*[（(]\s*[^，,）)]+?(?:\s*[，,]\s*[^）)]+?)?\s*[）)]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
         const inlineMatches = [];
         this._collectInlineImagePromptMatches(rawContent).forEach(item => inlineMatches.push(item));
+        for (const match of rawContent.matchAll(new RegExp(ONLINE_GROUP_INVITATION_PATTERN.source, 'g'))) {
+            if (parseWechatOnlineGroupInvitation(match[0])) inlineMatches.push({ index: match.index, raw: match[0] });
+        }
         for (const match of rawContent.matchAll(new RegExp(avatarCommandPattern.source, 'g'))) {
             inlineMatches.push({ index: match.index, raw: match[0] });
         }
@@ -8670,6 +8795,16 @@ renderChatRoom(chat) {
     // 🔥 绑定红包/转账气泡的点击事件
     bindSpecialMessageEvents(rootOverride = null) {
         const currentView = rootOverride || this.getCurrentWechatView();
+        currentView.querySelectorAll('.wechat-group-invitation-action').forEach(button => {
+            if (button._wechatGroupInvitationBound) return;
+            button._wechatGroupInvitationBound = true;
+            button.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (this._isMessageSelectionActiveForCurrentChat()) return;
+                void this._handleOnlineGroupInvitation(button.dataset.chatId, button.dataset.messageId, button.dataset.action);
+            });
+        });
         currentView.querySelectorAll('.wechat-file-card').forEach(card => {
             if (card.dataset.fileBound === '1') return;
             card.dataset.fileBound = '1';
@@ -10231,6 +10366,7 @@ renderChatRoom(chat) {
     }
 
     bindEvents() {
+        this._scheduleGroupWelcomeFlush();
         const currentView = this.getCurrentWechatView();
         const input = currentView.querySelector('#chat-input');
         const sendBtn = currentView.querySelector('#send-btn');
@@ -11183,7 +11319,7 @@ renderChatRoom(chat) {
 
     // 🔥 智能连发：触发AI回复
     async triggerAI(targetChatId = null, options = {}) {
-        if (this._isFlushingPending) return;
+        if (this._isFlushingPending || this.isSending) return;
         this._isFlushingPending = true;
         clearTimeout(this.batchTimer);
 
@@ -11263,11 +11399,12 @@ renderChatRoom(chat) {
             }
         } finally {
             this._isFlushingPending = false;
+            this._scheduleGroupWelcomeFlush();
         }
     }
 
     async sendToAI(message, targetChatId = null, options = {}) {
-        if (!this.isOnlineMode()) {
+        if (this.isSending || !this.isOnlineMode()) {
             return false;
         }
 
@@ -11388,6 +11525,8 @@ renderChatRoom(chat) {
                 if (this.abortController?.signal.aborted) {
                     throw new Error('已中断发送');
                 }
+
+                if (options.groupJoinWelcome && !this.app.wechatData.getChat(savedChatId)) return false;
 
                 const sourceTavernChatId = String(options?.sourceTavernChatId || '').trim();
                 if (sourceTavernChatId) {
@@ -11741,7 +11880,7 @@ renderChatRoom(chat) {
                         fallbackText = weiboTokenResult.text;
                         const lines = fallbackText.split('\n').map(l => l.trim()).filter(l => l);
 
-                        const isGroupChat = this.app.currentChat?.type === 'group';
+                        const isGroupChat = savedChatType === 'group';
                         let pendingSender = '';
                         let deferredQuote = null; // { sender: string, quote: {sender, content} }
                         const consumeDeferredQuote = (sender, quote) => {
@@ -11864,7 +12003,7 @@ renderChatRoom(chat) {
                     triggerOffline = isWechatInteropModeEnabledForOfflineTransfer() && parsedMessages.some(messageHasOfflineTransferTag);
                 } else {
                     parsedMessages = this._filterGroupMessagesByParticipants(parsedMessages, currentGroupParticipants, savedChatName, {
-                        keepAllWhenAllDropped: keepLobbyGroupRepliesOnMismatch
+                        keepAllWhenAllDropped: !options.groupJoinWelcome && keepLobbyGroupRepliesOnMismatch
                     })
                         .map(message => this._normalizeGeneratedUserReply(message, savedChatName || '当前群聊'))
                         .filter(Boolean);
@@ -11872,6 +12011,10 @@ renderChatRoom(chat) {
                 parsedMessages = parsedMessages
                     .map(stripOfflineTransferTagFromMessage)
                     .filter(item => String(item?.content || item?.specialMessage?.content || '').trim() || item?.specialMessage);
+                if (options.groupJoinWelcome) {
+                    parsedMessages = parsedMessages.filter(item => item.sender !== 'me' && !this._isCurrentWechatUserName(item.sender));
+                    backgroundMessages = {};
+                }
                 Object.keys(backgroundMessages).forEach(chatName => {
                     backgroundMessages[chatName] = (backgroundMessages[chatName] || [])
                         .map(message => this._normalizeGeneratedUserReply(message, chatName))
@@ -12030,6 +12173,7 @@ renderChatRoom(chat) {
                                 m
                             );
                         }
+                        if (special?.type === 'group_invitation' && (isBgGroupChat || isGeneratedUserSender)) continue;
                         if (special?.type === 'avatar_change') {
                             await this._applyAvatarCommand(bgChat.id, canonicalSender, special, replyOptions.avatarRequest, { ...m, replyBatchId: responseBatchId });
                             continue;
@@ -12121,6 +12265,8 @@ renderChatRoom(chat) {
                         });
                     }
 
+                    if (options.groupJoinWelcome && !this.app.wechatData.getChat(savedChatId)) return false;
+
                     // 存入数据库
                     const senderContact = this.app.wechatData.getContactByName(msg.sender);
                     const cleanContent = this.cleanAbnormalSpaces(msg.content);
@@ -12179,6 +12325,7 @@ renderChatRoom(chat) {
                             msg
                         );
                     }
+                    if (special?.type === 'group_invitation' && (isGroupChat || isGeneratedUserSender)) continue;
                     if (special?.type === 'avatar_change') {
                         await this._applyAvatarCommand(savedChatId, msg.sender, special, replyOptions.avatarRequest, { ...msg, replyBatchId: responseBatchId });
                         if (isViewingThisChat) {
@@ -12364,6 +12511,7 @@ renderChatRoom(chat) {
                 this._syncChatSendButton(input);
             }
         }
+        this._scheduleGroupWelcomeFlush();
         return success;
     }
 
@@ -12495,6 +12643,11 @@ renderChatRoom(chat) {
 
     async *_sendWechatReplyWithAvatarLookup(message, context, signal, chatId, options) {
         const firstResponse = await this.sendToAIHidden(message, context, null, signal, chatId, options);
+        if (options.groupJoinWelcome) {
+            const reply = this._stripAvatarLookupCommands(firstResponse);
+            if (this._hasAvatarLookupReplyContent(reply)) yield reply;
+            return;
+        }
         const lookupRequested = /\[查看头像分组\]/.test(String(firstResponse || ''));
         if (!lookupRequested) {
             yield firstResponse;
@@ -13734,6 +13887,10 @@ renderChatRoom(chat) {
         if (!callMode) {
             const avatarContext = await this._buildAvatarImageContext(targetChat, latestUserMessages, options, aiImageDataCache, Math.min(48000, aiImageCharLimit), currentAvatarSources);
             if (avatarContext) finalUserContent += `\n\n${avatarContext}`;
+        }
+
+        if (options.groupJoinWelcome && isGroupChat && !callMode) {
+            finalUserContent += `\n\n${this._buildGroupJoinWelcomeInstruction(targetChat, options.groupJoinWelcome)}`;
         }
 
         if (options.avatarLookupContinuation) {

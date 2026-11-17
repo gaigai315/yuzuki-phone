@@ -10,10 +10,10 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20261117-group-avatar-context';
+import { ChatView } from './chat-view.js?v=20261118-online-group-invitation';
 import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
 import { MomentsView } from './moments-view.js?v=20261109-readable-settings';
-import { WechatData } from './wechat-data.js?v=20261117-avatar-id-and-paint';
+import { WechatData } from './wechat-data.js?v=20261118-online-group-invitation';
 import { normalizeWechatUserAvatar } from './user-avatar.js';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
 import { getWechatReadablePalette } from './readable-colors.js?v=20261109-readable-glass';
@@ -187,7 +187,7 @@ export class WechatApp {
                 button:not(.yzp-frame-color-control):not(.wechat-back-btn), input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
                 textarea, select, option, .phone-prompt-fold, .phone-prompt-fold-header,
                 .yzp-frame-color-control-value
-            ):not(.yzp-frame-color-picker-overlay, .yzp-frame-color-picker-overlay *) {
+            ):not(.yzp-frame-color-picker-overlay, .yzp-frame-color-picker-overlay *, .wechat-user-tts-fold, .wechat-user-tts-fold *) {
                 background: var(--wechat-readable-surface) !important;
                 border-color: var(--wechat-readable-border) !important;
                 color: var(--wechat-text-color, #000000) !important;
@@ -9018,6 +9018,26 @@ export class WechatApp {
         this.wechatData.saveData();
     }
 
+    _bindUserTtsFold(root) {
+        if (!root || root._wechatUserTtsBound) return;
+        const toggle = root.querySelector('#edit-user-tts-fold-header');
+        const content = root.querySelector('#edit-user-tts-fold-content');
+        if (!toggle || !content) return;
+        root._wechatUserTtsBound = true;
+        const setExpanded = expanded => {
+            root.classList.toggle('is-open', expanded);
+            toggle.setAttribute('aria-expanded', String(expanded));
+            content.hidden = !expanded;
+            content.setAttribute('aria-hidden', String(!expanded));
+        };
+        toggle.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            setExpanded(content.hidden);
+        });
+        setExpanded(false);
+    }
+
     /// ✅ 编辑个人资料（手机内部界面，不用弹窗）
     showEditProfile() {
         const userInfo = this.wechatData.getUserInfo();
@@ -9123,16 +9143,16 @@ export class WechatApp {
                     </div>
                 </div>
 
-                <div class="phone-prompt-fold wechat-user-tts-fold" data-default-open="false" style="margin-bottom: 16px;">
-                    <div class="phone-prompt-fold-header" id="edit-user-tts-fold-header" role="button" tabindex="0"
-                         aria-expanded="false" aria-controls="edit-user-tts-fold-content">
-                        <div class="phone-prompt-fold-main">
-                            <div class="phone-prompt-fold-title"><i class="fa-solid fa-microphone" aria-hidden="true" style="margin-right: 6px;"></i>专属语音音色</div>
-                            <div class="phone-prompt-fold-desc">点击展开查看各服务商音色</div>
-                        </div>
-                        <i class="fa-solid fa-chevron-right phone-prompt-fold-arrow" aria-hidden="true"></i>
-                    </div>
-                    <div class="phone-prompt-fold-content" id="edit-user-tts-fold-content" aria-hidden="true">
+                <div class="wechat-user-tts-fold">
+                    <button type="button" class="wechat-user-tts-toggle" id="edit-user-tts-fold-header"
+                            aria-expanded="false" aria-controls="edit-user-tts-fold-content">
+                        <span class="wechat-user-tts-heading">
+                            <span class="wechat-user-tts-title"><i class="fa-solid fa-microphone" aria-hidden="true"></i>专属语音音色</span>
+                            <span class="wechat-user-tts-description">点击展开查看各服务商音色</span>
+                        </span>
+                        <i class="fa-solid fa-chevron-right wechat-user-tts-arrow" aria-hidden="true"></i>
+                    </button>
+                    <div class="wechat-user-tts-content" id="edit-user-tts-fold-content" aria-hidden="true" hidden>
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
                             <div style="font-size: 11px; color: #666;">历史音色快速填入</div>
                             <select id="edit-user-tts-history-select" style="border: 1px solid #ddd; background: var(--wechat-readable-surface, #FFFFFF); border-radius: 4px; font-size: 11px; padding: 2px 4px; outline: none; max-width: 128px;">
@@ -9182,25 +9202,8 @@ export class WechatApp {
 
         this.phoneShell.setContent(html);
 
-        const userTtsFold = document.querySelector('.wechat-user-tts-fold');
-        const userTtsFoldHeader = document.getElementById('edit-user-tts-fold-header');
-        const userTtsFoldContent = document.getElementById('edit-user-tts-fold-content');
-        const setUserTtsFoldExpanded = (expanded) => {
-            const isExpanded = expanded === true;
-            userTtsFold?.classList.toggle('is-open', isExpanded);
-            userTtsFoldHeader?.setAttribute('aria-expanded', String(isExpanded));
-            userTtsFoldContent?.setAttribute('aria-hidden', String(!isExpanded));
-        };
-        const toggleUserTtsFold = () => {
-            setUserTtsFoldExpanded(!userTtsFold?.classList.contains('is-open'));
-        };
-        userTtsFoldHeader?.addEventListener('click', toggleUserTtsFold);
-        userTtsFoldHeader?.addEventListener('keydown', (event) => {
-            if (event.key !== 'Enter' && event.key !== ' ') return;
-            event.preventDefault();
-            toggleUserTtsFold();
-        });
-        setUserTtsFoldExpanded(false);
+        this._bindUserTtsFold(document.querySelector('.phone-view-current .wechat-user-tts-fold')
+            || document.querySelector('.wechat-user-tts-fold'));
 
         document.getElementById('edit-user-tts-history-select')?.addEventListener('change', (event) => {
             const selectedVoice = String(event.target?.value || '').trim();

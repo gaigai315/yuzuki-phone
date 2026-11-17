@@ -3778,6 +3778,8 @@ getMessagePreview(message) {
             return '[德州扑克分享]';
         case 'forward_card':
             return '[聊天记录]';
+        case 'group_invitation':
+            return `[群聊邀请] ${message.groupInvitationName || ''}`;
         case 'file_card':
             return `[文件] ${message.fileTitle || '文件'}`;
         case 'werewolf_card':
@@ -5422,6 +5424,16 @@ parseAIResponse(text) {
         return paymentTargetId !== '' && targetIds.has(paymentTargetId);
     }
      
+    _rollbackInvitedGroups(predicate) {
+        const groups = (this.data.chats || []).filter(chat => chat.type === 'group'
+            && chat.groupInvitation && predicate(chat.groupInvitation));
+        groups.forEach(chat => {
+            chat.unread = 0;
+            this.deleteChat(chat.id);
+        });
+        return groups.length > 0;
+    }
+
     // 精确替换某一酒馆楼层产出的微信正文消息，用于用户手动编辑正文 <wechat> 后重放该楼层。
     removeMainChatTagMessagesAtFloor(targetTavernIndex) {
         const targetIndex = Number.parseInt(targetTavernIndex, 10);
@@ -5439,6 +5451,7 @@ parseAIResponse(text) {
         const matchesTargetFloor = record => (record?.fromMainChatTag === true || record?.timelineLinked === true)
             && Number(record.tavernMessageIndex) === targetIndex;
         const rollbackPaymentTargetIds = this._collectRollbackPaymentTargetIds(matchesTargetFloor);
+        isDirty = this._rollbackInvitedGroups(matchesTargetFloor);
 
         for (const chatId in this.data.messages) {
             const messages = Array.isArray(this.data.messages[chatId]) ? this.data.messages[chatId] : [];
@@ -5527,6 +5540,7 @@ parseAIResponse(text) {
             && Number.isFinite(Number(record.tavernMessageIndex))
             && Number(record.tavernMessageIndex) >= Number(targetTavernIndex);
         const rollbackPaymentTargetIds = this._collectRollbackPaymentTargetIds(matchesRollbackRange);
+        isDirty = this._rollbackInvitedGroups(matchesRollbackRange);
 
         for (const chatId in this.data.messages) {
             const originalLen = this.data.messages[chatId].length;

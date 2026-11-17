@@ -2919,56 +2919,6 @@ export class SettingsApp {
                             </summary>
                             <div style="padding: 10px 10px 4px;">
 
-                            <div class="setting-item">
-                                <div class="setting-label">小手机整体大小</div>
-                                <div class="setting-desc">调整整个小手机外壳和内容区域尺寸，电脑端和移动端都会生效</div>
-                                <div class="phone-shell-scale-control">
-                                    <input type="range"
-                                           class="phone-gesture-control"
-                                           id="phone-shell-scale-slider"
-                                           min="${PHONE_SHELL_SCALE_MIN}"
-                                           max="${PHONE_SHELL_SCALE_MAX}"
-                                           step="1"
-                                           value="${phoneShellScale}">
-                                    <span id="phone-shell-scale-value" class="phone-shell-scale-value">${phoneShellScale}%</span>
-                                    <button type="button" id="phone-shell-scale-reset" class="setting-btn" style="padding: 4px 10px; min-height: 30px; background: #f8fafc; border: 1px solid rgba(18,24,38,0.12); color: #374151; border-radius: 9px;">默认</button>
-                                </div>
-                            </div>
-
-                            <div class="setting-item">
-                                <div class="setting-label">全局字号大小</div>
-                                <div class="setting-desc">调整所有 APP 的文字大小，不改变手机外壳和图标尺寸</div>
-                                <div class="phone-shell-scale-control">
-                                    <input type="range"
-                                           class="phone-gesture-control phone-theme-range"
-                                           id="phone-font-scale-slider"
-                                           min="${PHONE_FONT_SCALE_MIN}"
-                                           max="${PHONE_FONT_SCALE_MAX}"
-                                           step="1"
-                                           value="${phoneFontScale}">
-                                    <span id="phone-font-scale-value" class="phone-shell-scale-value">${phoneFontScale}%</span>
-                                    <button type="button" id="phone-font-scale-reset" class="setting-btn" style="padding: 4px 10px; min-height: 30px; background: #f8fafc; border: 1px solid rgba(18,24,38,0.12); color: #374151; border-radius: 9px;">默认</button>
-                                </div>
-                            </div>
-
-                            <!-- 壁纸设置 -->
-                            <div class="setting-item">
-                                <div class="setting-label">手机壁纸</div>
-                                <div class="setting-desc">原图上传，保留原始画质；支持 jpg/png/webp，最大20MB；HEIC请先转为JPG/PNG</div>
-                                <div style="margin-top: 10px; display: flex; gap: 8px;">
-                                    <button type="button" id="choose-wallpaper-btn" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
-                                        <i class="fa-regular fa-images"></i> 选择壁纸
-                                    </button>
-                                    <input type="file" id="upload-wallpaper" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0;">
-                                    <button id="delete-wallpaper" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); color: #999; border-radius: 6px;">
-                                        <i class="fa-solid fa-rotate-left"></i> 恢复默认
-                                    </button>
-                                </div>
-                                <div id="wallpaper-preview" style="margin-top: 10px; max-height: 100px; overflow: hidden; border-radius: 8px; ${wallpaper ? '' : 'display: none;'}">
-                                    <img src="${wallpaper || ''}" style="width: 100%; height: auto; display: ${wallpaper ? 'block' : 'none'};">
-                                </div>
-                            </div>
-
                             <details class="setting-item app-name-custom-fold yzp-settings-home-css">
                                 <summary>
                                     <span>
@@ -3008,6 +2958,56 @@ export class SettingsApp {
                                     <input type="file" id="import-home-css-presets-file" accept="application/json,.json" style="display:none;">
                                 </div>
                             </details>
+
+                            <!-- 壁纸设置 -->
+                            <div class="setting-item">
+                                <div class="setting-label">手机壁纸</div>
+                                <div class="setting-desc">原图上传，保留原始画质；支持 jpg/png/webp，最大20MB；HEIC请先转为JPG/PNG</div>
+                                <div style="margin-top: 10px; display: flex; gap: 8px;">
+                                    <button type="button" id="choose-wallpaper-btn" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); cursor: pointer; color: #333; border-radius: 6px;">
+                                        <i class="fa-regular fa-images"></i> 选择壁纸
+                                    </button>
+                                    <input type="file" id="upload-wallpaper" accept="image/png, image/jpeg, image/gif, image/webp, image/*" style="position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; opacity: 0;">
+                                    <button id="delete-wallpaper" class="setting-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(0,0,0,0.1); color: #999; border-radius: 6px;">
+                                        <i class="fa-solid fa-rotate-left"></i> 恢复默认
+                                    </button>
+                                </div>
+                                <div id="wallpaper-preview" style="margin-top: 10px; max-height: 100px; overflow: hidden; border-radius: 8px; ${wallpaper ? '' : 'display: none;'}">
+                                    <img src="${wallpaper || ''}" style="width: 100%; height: auto; display: ${wallpaper ? 'block' : 'none'};">
+                                </div>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-label">小手机整体大小</div>
+                                <div class="setting-desc">调整整个小手机外壳和内容区域尺寸，电脑端和移动端都会生效</div>
+                                <div class="phone-shell-scale-control">
+                                    <input type="range"
+                                           class="phone-gesture-control"
+                                           id="phone-shell-scale-slider"
+                                           min="${PHONE_SHELL_SCALE_MIN}"
+                                           max="${PHONE_SHELL_SCALE_MAX}"
+                                           step="1"
+                                           value="${phoneShellScale}">
+                                    <span id="phone-shell-scale-value" class="phone-shell-scale-value">${phoneShellScale}%</span>
+                                    <button type="button" id="phone-shell-scale-reset" class="setting-btn" style="padding: 4px 10px; min-height: 30px; background: #f8fafc; border: 1px solid rgba(18,24,38,0.12); color: #374151; border-radius: 9px;">默认</button>
+                                </div>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-label">全局字号大小</div>
+                                <div class="setting-desc">调整所有 APP 的文字大小，不改变手机外壳和图标尺寸</div>
+                                <div class="phone-shell-scale-control">
+                                    <input type="range"
+                                           class="phone-gesture-control phone-theme-range"
+                                           id="phone-font-scale-slider"
+                                           min="${PHONE_FONT_SCALE_MIN}"
+                                           max="${PHONE_FONT_SCALE_MAX}"
+                                           step="1"
+                                           value="${phoneFontScale}">
+                                    <span id="phone-font-scale-value" class="phone-shell-scale-value">${phoneFontScale}%</span>
+                                    <button type="button" id="phone-font-scale-reset" class="setting-btn" style="padding: 4px 10px; min-height: 30px; background: #f8fafc; border: 1px solid rgba(18,24,38,0.12); color: #374151; border-radius: 9px;">默认</button>
+                                </div>
+                            </div>
 
                             </div>
                         </details>

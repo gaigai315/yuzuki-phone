@@ -22,6 +22,13 @@ import {
     parseWechatFriendRequests
 } from './apps/wechat/friend-request.js?v=20261027-offline-friend-request';
 import {
+    acceptWechatGroupInvitation,
+    findWechatInvitationFriend,
+    findWechatInvitedGroup,
+    isWechatGroupInvitationCurrent,
+    parseWechatGroupInvitations
+} from './apps/wechat/group-invitation.js?v=20261118-offline-group-invitation';
+import {
     getPhoneFloatingEntryReceiptFile,
     PHONE_FLOATING_ENTRY_DEFAULT_STYLE,
     PhoneFloatingEntry
@@ -45,11 +52,11 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.6.10';
-const ST_PHONE_CSS_REVISION = '20261117-avatar-groups';
+const ST_PHONE_VERSION = '1.7.0';
+const ST_PHONE_CSS_REVISION = '20261118-online-group-invitation';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261114-stable-picture-icons';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261117-group-avatar-context';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261118-online-group-invitation';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -157,11 +164,12 @@ const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-11-17',
+    date: '2026-11-18',
     items: [
         "【优化】音乐卡片支持独立设置字体颜色，默认黑色，字体继续跟随酒馆。",
         "【优化】表情管理面板扩大，表情下方显示名字，点击名字即可修改。",
-        "【新增】char 可根据用户提供的图片，自行决定是否更换头像。"
+        "【新增】char 可根据用户提供的图片，自行决定是否更换头像。",
+        "【新增】支持线上或线下好友邀请用户加入群聊。"
     ]
 };
 
@@ -1483,7 +1491,7 @@ if (window.GGP_Loaded) {
             import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
             import('./config/api-manager.js?v=20261009-unified-sse-parser'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20261117-avatar-id-protocol'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20261118-online-group-invitation'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
         import('./config/image-generation-manager.js?v=20261114-public-image-api'),
             import('./config/worldbook-manager.js?v=20261021-worldbook-lazy-load')
@@ -1562,7 +1570,7 @@ if (window.GGP_Loaded) {
     // 🔥 按需加载设置模块
     async function loadSettingsModule() {
         if (!SettingsApp) {
-            const module = await import(`./apps/settings/settings-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}-20261108-original-background`);
+            const module = await import(`./apps/settings/settings-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}-20261118-desktop-settings-order`);
             SettingsApp = module.SettingsApp;
         }
         return SettingsApp;
@@ -2319,6 +2327,8 @@ if (window.GGP_Loaded) {
     const wechatFriendRequestPopupQueue = [];
     const seenWechatFriendRequestFingerprints = new Set();
     let wechatFriendRequestPopupActive = false;
+    let activeWechatRequestItem = null;
+    const acceptedWechatGroupInvitationIds = new Map();
 
     async function getWechatDataForFriendRequest() {
         if (!window.VirtualPhone) window.VirtualPhone = {};
@@ -2326,7 +2336,7 @@ if (window.GGP_Loaded) {
             || window.VirtualPhone.cachedWechatData
             || null;
         if (wechatData) return wechatData;
-        const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261118-online-group-invitation');
         wechatData = new module.WechatData(storage);
         window.VirtualPhone.cachedWechatData = wechatData;
         return wechatData;
@@ -2350,6 +2360,12 @@ if (window.GGP_Loaded) {
         if (wechatFriendRequestPopupActive || wechatFriendRequestPopupQueue.length === 0) return;
         const item = wechatFriendRequestPopupQueue.shift();
         const request = item.request || {};
+        const isGroupInvitation = item.kind === 'group-invitation';
+        if (isGroupInvitation && !isCurrentWechatGroupInvitation(item)) {
+            setTimeout(showNextWechatFriendRequestPopup, 0);
+            return;
+        }
+        activeWechatRequestItem = item;
         wechatFriendRequestPopupActive = true;
         document.getElementById('st-phone-wechat-friend-request-modal')?.remove();
 
@@ -2362,15 +2378,16 @@ if (window.GGP_Loaded) {
                     <span class="st-phone-wechat-friend-request-icon"><i class="fa-brands fa-weixin"></i></span>
                     <span>微信</span>
                 </div>
-                <div id="st-phone-wechat-friend-request-title" class="st-phone-wechat-friend-request-title">好友申请</div>
+                <div id="st-phone-wechat-friend-request-title" class="st-phone-wechat-friend-request-title">${isGroupInvitation ? '群聊邀请' : '好友申请'}</div>
                 <div class="st-phone-wechat-friend-request-profile">
                     <span class="st-phone-wechat-friend-request-avatar"><i class="fa-solid fa-user"></i></span>
                     <div class="st-phone-wechat-friend-request-identity">
-                        <strong>${escapePhoneHtml(request.nickname)}</strong>
-                        <span>${escapePhoneHtml(request.realName)} · ${escapePhoneHtml(request.gender)}</span>
+                        <strong>${escapePhoneHtml(isGroupInvitation ? request.groupName : request.nickname)}</strong>
+                        <span>${isGroupInvitation ? `邀请人：${escapePhoneHtml(request.inviter)}` : `${escapePhoneHtml(request.realName)} · ${escapePhoneHtml(request.gender)}`}</span>
                     </div>
                 </div>
-                <div class="st-phone-wechat-friend-request-reason">${request.reason ? escapePhoneHtml(request.reason) : '请求添加你为朋友'}</div>
+                ${isGroupInvitation ? `<div class="st-phone-wechat-group-invitation-members">群成员：${escapePhoneHtml((request.members || []).join('、'))}</div>` : ''}
+                <div class="st-phone-wechat-friend-request-reason">${request.reason ? escapePhoneHtml(request.reason) : (isGroupInvitation ? '邀请你加入群聊' : '请求添加你为朋友')}</div>
                 <div class="st-phone-wechat-friend-request-actions">
                     <button type="button" data-action="reject" class="st-phone-wechat-friend-request-button is-reject">拒绝</button>
                     <button type="button" data-action="accept" class="st-phone-wechat-friend-request-button is-accept">接受</button>
@@ -2383,15 +2400,32 @@ if (window.GGP_Loaded) {
 
         const finish = () => {
             overlay.remove();
+            if (activeWechatRequestItem !== item) return;
+            activeWechatRequestItem = null;
             wechatFriendRequestPopupActive = false;
             setTimeout(showNextWechatFriendRequestPopup, 80);
         };
         overlay.querySelector('[data-action="reject"]')?.addEventListener('click', finish);
+        let accepting = false;
         overlay.querySelector('[data-action="accept"]')?.addEventListener('click', async () => {
+            if (accepting) return;
+            accepting = true;
             const buttons = overlay.querySelectorAll('.st-phone-wechat-friend-request-button');
             buttons.forEach(button => { button.disabled = true; });
             try {
                 const wechatData = await getWechatDataForFriendRequest();
+                if (isGroupInvitation) {
+                    if (activeWechatRequestItem !== item || !isCurrentWechatGroupInvitation(item)) return;
+                    const result = acceptWechatGroupInvitation(wechatData, request, item.source);
+                    acceptedWechatGroupInvitationIds.set(item.fingerprint, result.chat.id);
+                    const wechatApp = window.VirtualPhone?.wechatApp;
+                    if (wechatApp && document.querySelector('.phone-view-current .wechat-app') && !wechatApp.currentChat) {
+                        refreshWechatAfterFriendRequest();
+                    }
+                    showUnifiedPhoneNotification('微信', result.status === 'joined'
+                        ? `已加入群聊：${result.chat.name}` : `你已在群聊：${result.chat.name}`, '💬');
+                    return;
+                }
                 const result = acceptWechatFriendRequest(wechatData, request);
                 if (window.VirtualPhone?.wechatApp && window.VirtualPhone.wechatApp.wechatData !== wechatData) {
                     window.VirtualPhone.wechatApp.wechatData = wechatData;
@@ -2410,8 +2444,8 @@ if (window.GGP_Loaded) {
                     showUnifiedPhoneNotification('微信', `${request.realName} 已经是你的好友`, '💬');
                 }
             } catch (error) {
-                console.error('[微信好友申请] 接受失败:', error);
-                showUnifiedPhoneNotification('微信', `接受好友申请失败：${error?.message || error}`, '⚠️');
+                console.error(isGroupInvitation ? '[微信群聊邀请] 接受失败:' : '[微信好友申请] 接受失败:', error);
+                showUnifiedPhoneNotification('微信', `${isGroupInvitation ? '接受群聊邀请' : '接受好友申请'}失败：${error?.message || error}`, '⚠️');
             } finally {
                 finish();
             }
@@ -2432,6 +2466,48 @@ if (window.GGP_Loaded) {
         });
         showNextWechatFriendRequestPopup();
         return requests.length;
+    }
+
+    function isCurrentWechatGroupInvitation(item) {
+        return isWechatGroupInvitationCurrent(item, window.SillyTavern?.getContext?.(), getCurrentTavernConversationIdentity());
+    }
+
+    async function processWechatGroupInvitationTags(text, source = {}) {
+        const conversationId = getCurrentTavernConversationIdentity();
+        const scopedSource = { ...source, conversationId };
+        const isSuperseded = item => item.kind === 'group-invitation'
+            && item.source?.conversationId === conversationId
+            && Number(item.source?.tavernMessageIndex) === Number(source.tavernMessageIndex)
+            && item.source?.batchId !== source.batchId;
+        for (let index = wechatFriendRequestPopupQueue.length - 1; index >= 0; index--) {
+            if (isSuperseded(wechatFriendRequestPopupQueue[index])) wechatFriendRequestPopupQueue.splice(index, 1);
+        }
+        if (activeWechatRequestItem && isSuperseded(activeWechatRequestItem)) {
+            document.getElementById('st-phone-wechat-friend-request-modal')?.remove();
+            activeWechatRequestItem = null;
+            wechatFriendRequestPopupActive = false;
+        }
+        const invitations = parseWechatGroupInvitations(text);
+        if (!invitations.length) { showNextWechatFriendRequestPopup(); return; }
+        const wechatData = await getWechatDataForFriendRequest();
+        if (conversationId !== getCurrentTavernConversationIdentity()) return;
+        invitations.forEach((request, index) => {
+            const item = { kind: 'group-invitation', request, source: scopedSource };
+            if (!isCurrentWechatGroupInvitation(item) || findWechatInvitedGroup(wechatData, request.groupName)
+                || !findWechatInvitationFriend(wechatData, request.inviter)) return;
+            const fingerprint = [conversationId, source.tavernMessageIndex, source.swipeId || 0,
+                source.batchId || '', 'group-invitation', index, JSON.stringify(request)].join('::');
+            const acceptedGroupId = acceptedWechatGroupInvitationIds.get(fingerprint);
+            if (acceptedGroupId && !(wechatData.getChatList?.() || []).some(chat => chat.id === acceptedGroupId)) {
+                // The group was removed by a timeline rollback; the same invitation can be offered again.
+                seenWechatFriendRequestFingerprints.delete(fingerprint);
+                acceptedWechatGroupInvitationIds.delete(fingerprint);
+            }
+            if (seenWechatFriendRequestFingerprints.has(fingerprint)) return;
+            seenWechatFriendRequestFingerprints.add(fingerprint);
+            wechatFriendRequestPopupQueue.push({ ...item, fingerprint });
+        });
+        showNextWechatFriendRequestPopup();
     }
 
     function compareSemver(a, b) {
@@ -3017,7 +3093,7 @@ if (window.GGP_Loaded) {
             const latestTime = currentTime || tm?.getCurrentStoryTime?.();
             if (!latestTime?.date) return [];
 
-            const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261118-online-group-invitation');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             const existingWechatData = window.VirtualPhone.wechatApp?.wechatData
                 || window.VirtualPhone.cachedWechatData
@@ -8466,7 +8542,7 @@ if (window.GGP_Loaded) {
         const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20261118-online-group-invitation').then(module => {
             let wechatData;
 
             if (getCurrentTavernConversationIdentity() !== conversationId) {
@@ -9513,7 +9589,7 @@ if (window.GGP_Loaded) {
             const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20261118-online-group-invitation').then(async module => {
                 let wechatData;
                 if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                     console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
@@ -9790,7 +9866,7 @@ if (window.GGP_Loaded) {
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
-            const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261118-online-group-invitation');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             const context = getContext();
@@ -9837,7 +9913,7 @@ if (window.GGP_Loaded) {
         if (payments.length === 0) return [];
 
         const sourceConversationId = getCurrentTavernConversationIdentity();
-        const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261118-online-group-invitation');
         if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
             console.warn('⚠️ [线上支付] 扣款前会话已切换，丢弃旧会话回调');
             return [];
@@ -10179,6 +10255,11 @@ if (window.GGP_Loaded) {
                         swipeId: swipeIndex,
                         batchId: currentBatchId
                     });
+                    processWechatGroupInvitationTags(text, {
+                        tavernMessageIndex: index,
+                        swipeId: swipeIndex,
+                        batchId: currentBatchId
+                    }).catch(error => console.warn('[微信群聊邀请] 处理失败:', error));
                     processWechatOfflinePaymentTags(text, {
                         tavernMessageIndex: index,
                         batchId: currentBatchId,
@@ -10568,6 +10649,8 @@ if (window.GGP_Loaded) {
     }
 
     function onChatChanged() {
+        activeWechatRequestItem = null;
+        acceptedWechatGroupInvitationIds.clear();
         wechatFriendRequestPopupQueue.length = 0;
         wechatFriendRequestPopupActive = false;
         seenWechatFriendRequestFingerprints.clear();
@@ -12388,7 +12471,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20261118-online-group-invitation');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -12618,7 +12701,7 @@ if (window.GGP_Loaded) {
                                     || window.VirtualPhone.cachedWechatData
                                     || null;
                                 if (!wechatDataInstance && storage) {
-                                    const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
+                                    const module = await import('./apps/wechat/wechat-data.js?v=20261118-online-group-invitation');
                                     if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                                         console.warn('⚠️ 微信删楼回滚期间会话已切换，丢弃旧会话回调');
                                         return;
@@ -12919,7 +13002,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20261118-online-group-invitation');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;

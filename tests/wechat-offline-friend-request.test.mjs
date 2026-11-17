@@ -142,17 +142,20 @@ test('accepting a new request creates a contact, direct chat, and gray system me
 });
 
 test('both default offline prompts expose the unique request format without hiding the tag', () => {
-    assert.equal((promptSource.match(/微信好友列表下显示的为当前\{\{user\}\}微信好友/g) || []).length, 2);
-    assert.equal((promptSource.match(/性别只可填写男\/女/g) || []).length, 2);
+    assert.equal((promptSource.match(/💡 微信好友认知与申请规则：/g) || []).length, 2);
+    assert.equal((promptSource.match(/性别：（仅限填写“男”或“女”）/g) || []).length, 2);
     assert.equal((promptSource.match(/<好友申请>/g) || []).length, 2);
     assert.equal((promptSource.match(/<\/好友申请>/g) || []).length, 2);
+    assert.equal((promptSource.match(/💡 微信群聊认知与入群邀请规则：/g) || []).length, 2);
+    assert.equal((promptSource.match(/<群聊邀请>/g) || []).length, 2);
+    assert.equal((promptSource.match(/<\/群聊邀请>/g) || []).length, 2);
     assert.doesNotMatch(indexSource, /replace\([^\n]*好友申请/);
     assert.doesNotMatch(indexSource, /scrubTagsFromChatHistory\(\[[\s\S]*?好友申请/);
 });
 
 test('rendered assistant messages queue a scoped WeChat accept-or-reject popup', () => {
     assert.match(indexSource, /processWechatFriendRequestTags\(text, \{/);
-    assert.match(indexSource, /st-phone-wechat-friend-request-title[^>]*>好友申请</);
+    assert.match(indexSource, /isGroupInvitation \? '群聊邀请' : '好友申请'/);
     assert.match(indexSource, /data-action="reject"[\s\S]*?>拒绝</);
     assert.match(indexSource, /data-action="accept"[\s\S]*?>接受</);
     assert.match(indexSource, /acceptWechatFriendRequest\(wechatData, request\)/);
