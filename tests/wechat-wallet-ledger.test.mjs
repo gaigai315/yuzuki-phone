@@ -66,7 +66,9 @@ test('wallet filters retain full native select hit areas inside the ledger heade
     assert.match(source, /\.wechat-wallet-ledger-filter-label \{[\s\S]*?padding: 0 24px 0 2px;[\s\S]*?pointer-events: none;/);
     assert.match(source, /\['shopping', '线下支付'\]/);
     assert.match(source, /shopping: '线下支付'/);
-    assert.match(indexSource, /ST_PHONE_WECHAT_MODULE_REVISION = '20261114-fixed-payment-text'/);
+    const revision = indexSource.match(/ST_PHONE_WECHAT_MODULE_REVISION = '(\d{8})[^']*'/);
+    assert.ok(revision, 'WeChat assets must have a cache revision');
+    assert.ok(revision[1] >= '20261114', 'cache revision must include the wallet fixes');
 });
 
 test('credit-card bills are clickable and use the in-phone repayment flow', () => {

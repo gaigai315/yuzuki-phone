@@ -46,10 +46,10 @@ import {
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
 const ST_PHONE_VERSION = '1.6.10';
-const ST_PHONE_CSS_REVISION = '20261107-diary-colors-2';
+const ST_PHONE_CSS_REVISION = '20261117-avatar-groups';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261114-stable-picture-icons';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261115-redpacket-story-expiry';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261117-avatar-id-and-paint';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -1483,7 +1483,7 @@ if (window.GGP_Loaded) {
             import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
             import('./config/api-manager.js?v=20261009-unified-sse-parser'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20261103-friend-request-closing-tag'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20261117-avatar-id-protocol'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
         import('./config/image-generation-manager.js?v=20261114-public-image-api'),
             import('./config/worldbook-manager.js?v=20261021-worldbook-lazy-load')
@@ -2326,7 +2326,7 @@ if (window.GGP_Loaded) {
             || window.VirtualPhone.cachedWechatData
             || null;
         if (wechatData) return wechatData;
-        const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
         wechatData = new module.WechatData(storage);
         window.VirtualPhone.cachedWechatData = wechatData;
         return wechatData;
@@ -3017,7 +3017,7 @@ if (window.GGP_Loaded) {
             const latestTime = currentTime || tm?.getCurrentStoryTime?.();
             if (!latestTime?.date) return [];
 
-            const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             const existingWechatData = window.VirtualPhone.wechatApp?.wechatData
                 || window.VirtualPhone.cachedWechatData
@@ -8466,7 +8466,7 @@ if (window.GGP_Loaded) {
         const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint').then(module => {
             let wechatData;
 
             if (getCurrentTavernConversationIdentity() !== conversationId) {
@@ -9513,7 +9513,7 @@ if (window.GGP_Loaded) {
             const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint').then(async module => {
                 let wechatData;
                 if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                     console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
@@ -9790,7 +9790,7 @@ if (window.GGP_Loaded) {
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
-            const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             const context = getContext();
@@ -9837,7 +9837,7 @@ if (window.GGP_Loaded) {
         if (payments.length === 0) return [];
 
         const sourceConversationId = getCurrentTavernConversationIdentity();
-        const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
         if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
             console.warn('⚠️ [线上支付] 扣款前会话已切换，丢弃旧会话回调');
             return [];
@@ -12388,7 +12388,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -12618,7 +12618,7 @@ if (window.GGP_Loaded) {
                                     || window.VirtualPhone.cachedWechatData
                                     || null;
                                 if (!wechatDataInstance && storage) {
-                                    const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
+                                    const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
                                     if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                                         console.warn('⚠️ 微信删楼回滚期间会话已切换，丢弃旧会话回调');
                                         return;
@@ -12919,7 +12919,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js?v=20261114-wallet-bank-transfer');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20261117-avatar-id-and-paint');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;
