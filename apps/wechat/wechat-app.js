@@ -12,7 +12,7 @@
 // 微信APP主程序
 import { ChatView } from './chat-view.js?v=20261118-online-group-invitation';
 import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
-import { MomentsView } from './moments-view.js?v=20261109-readable-settings';
+import { MomentsView } from './moments-view.js?v=20261118-compose-stable-surfaces';
 import { WechatData } from './wechat-data.js?v=20261118-online-group-invitation';
 import { normalizeWechatUserAvatar } from './user-avatar.js';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
@@ -235,6 +235,37 @@ export class WechatApp {
             #phone-panel-content .wechat-app.wechat-readable-settings input::placeholder,
             #phone-panel-content .wechat-app.wechat-readable-settings textarea::placeholder {
                 opacity: 1;
+            }
+            #phone-panel-content .wechat-app .moments-page :is(
+                .moment-action-btn,
+                .action-popup,
+                .moment-interactions,
+                .inline-comment-box,
+                .inline-comment-input
+            ) {
+                background: var(--wechat-readable-surface) !important;
+                border-color: var(--wechat-readable-border) !important;
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+            }
+            #phone-panel-content .wechat-app .moments-page :is(
+                .interaction-likes,
+                .action-popup-btn:first-child
+            ) {
+                border-color: var(--wechat-readable-border) !important;
+            }
+            /* 发圈编辑时避免标题、内容和控件的多层背景采样随光标刷新。 */
+            #phone-panel-content .wechat-app#wechat-moment-compose-page,
+            #phone-panel-content .wechat-app#wechat-moment-compose-page :is(
+                .wechat-header, .wechat-content, button, input, textarea, label
+            ) {
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                box-shadow: none !important;
+            }
+            #phone-panel-content .wechat-app.wechat-moment-compose-page :is(.wechat-header, #moment-text-input) {
+                transition: none !important;
+                animation: none !important;
             }
             #phone-panel-content .wechat-app .wechat-voice-transcript {
                 background: var(--wechat-readable-surface) !important;

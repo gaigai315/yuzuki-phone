@@ -2743,7 +2743,7 @@ ${memoryLines.slice(0, 10).join('\n')}
         const userInfo = this.app.wechatData.getUserInfo();
 
         const html = `
-            <div class="wechat-app wechat-readable-settings">
+            <div class="wechat-app wechat-readable-settings wechat-moment-compose-page" id="wechat-moment-compose-page">
                 <div class="wechat-header">
                     <div class="wechat-header-left">
                         <button class="wechat-back-btn" id="back-from-post">
