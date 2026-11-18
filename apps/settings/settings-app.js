@@ -5286,7 +5286,7 @@ export class SettingsApp {
             return `
                 <div class="upload-app-icon-item" data-app="${app.id}" data-upload-icon-target="upload-icon-${app.id}" role="button" tabindex="0" style="text-align: center; position: relative; touch-action: manipulation;">
                     <div style="display: block;">
-                        <div style="width: 40px; height: 40px; border-radius: 10px;
+                        <div class="settings-app-icon-preview" style="width: 40px; height: 40px; border-radius: 10px;
                                     ${iconImage ? `background-image: url('${iconImage}'); background-size: contain; background-position: center; background-repeat: no-repeat; background-color: transparent;` : `background: ${app.color};`}
                                     display: flex; align-items: center; justify-content: center; margin: 0 auto;
                                     font-size: 20px;">
@@ -6355,8 +6355,7 @@ export class SettingsApp {
                 if (!file) return;
 
                 const appId = e.target.id.replace('upload-icon-', '');
-                const settingsBodyBeforeUpload = document.querySelector('#yzp-settings-app .app-body');
-                const settingsScrollTop = settingsBodyBeforeUpload?.scrollTop || 0;
+                const iconPreview = e.target.closest('.upload-app-icon-item')?.querySelector('.settings-app-icon-preview');
 
                 // 重置input
                 e.target.value = '';
@@ -6389,18 +6388,20 @@ export class SettingsApp {
                         detail: { appId, icon: serverUrl }
                     }));
 
-                    alert('✅ 图标上传成功！');
+                    // 只替换当前图标预览，保留设置页的滚动、折叠及输入状态。
+                    // 上传期间切换页面时，旧节点已分离，无需再更新或打开设置页。
+                    if (iconPreview?.isConnected) {
+                        iconPreview.textContent = '';
+                        Object.assign(iconPreview.style, {
+                            backgroundImage: `url(${JSON.stringify(serverUrl)})`,
+                            backgroundSize: 'contain',
+                            backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundColor: 'transparent'
+                        });
+                    }
 
-                    // 重新渲染设置页面，并恢复上传前的滚动位置，方便继续上传下一个图标
-                    this.render();
-                    const restoreSettingsScroll = () => {
-                        const nextSettingsBody = document.querySelector('#yzp-settings-app .app-body');
-                        if (nextSettingsBody) nextSettingsBody.scrollTop = settingsScrollTop;
-                    };
-                    requestAnimationFrame(() => {
-                        restoreSettingsScroll();
-                        requestAnimationFrame(restoreSettingsScroll);
-                    });
+                    alert('✅ 图标上传成功！');
                 } catch (err) {
                     if (err.message !== '用户取消') {
                         alert('❌ 上传失败：' + formatImageUploadError(err));

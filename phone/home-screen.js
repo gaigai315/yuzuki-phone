@@ -36,7 +36,18 @@ export class HomeScreen {
     // 🔥 新增：判断当前是否为主屏幕
     isHomeScreenVisible() {
         const homeScreenElement = this.phoneShell.screen?.querySelector('.home-screen');
-        return !!homeScreenElement;
+        if (!homeScreenElement) return false;
+        const layer = homeScreenElement.closest('.phone-view-layer');
+        return !layer || layer.classList.contains('phone-view-current');
+    }
+
+    // 外观变更只刷新正在显示的桌面；其他 APP 打开时留到主动返回桌面再更新。
+    refreshAppearance() {
+        if (!this.isHomeScreenVisible()) {
+            this._homeNeedsRefresh = true;
+            return;
+        }
+        this.render({ forceDomRefresh: true });
     }
     
     render(options = {}) {
@@ -69,10 +80,15 @@ export class HomeScreen {
         `;
 
         this.phoneShell.setContent(html);
+        this._homeNeedsRefresh = false;
         this.bindEvents();
     }
 
     restore() {
+        if (this._homeNeedsRefresh) {
+            this.render({ forceDomRefresh: true });
+            return false;
+        }
         if (!this.phoneShell?.restoreView?.('home')) {
             this.render();
             return false;
@@ -716,7 +732,7 @@ export class HomeScreen {
         if (!this._wallpaperEventBound) {
             this._wallpaperEventBound = true;
             window.addEventListener('phone:updateWallpaper', (e) => {
-                this.render({ forceDomRefresh: true });
+                this.refreshAppearance();
             });
         }
 
@@ -724,7 +740,7 @@ export class HomeScreen {
         if (!this._appIconEventBound) {
             this._appIconEventBound = true;
             window.addEventListener('phone:updateAppIcon', () => {
-                this.render({ forceDomRefresh: true });
+                this.refreshAppearance();
             });
         }
 
@@ -732,7 +748,7 @@ export class HomeScreen {
             this._homeCssEventBound = true;
             window.addEventListener('phone:updateHomeCss', () => {
                 this.applyHomeCustomCss();
-                this.render({ forceDomRefresh: true });
+                this.refreshAppearance();
             });
         }
 

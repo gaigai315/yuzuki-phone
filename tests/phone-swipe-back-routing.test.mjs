@@ -189,7 +189,7 @@ test('every go-home event arms the shared home-return guard before rendering the
     assert.doesNotMatch(listenerSource, /homeScreen\.render\(\{ forceDomRefresh: true \}\)/);
 });
 
-test('returning home reuses the cached home layer and only refreshes dynamic desktop fields', () => {
+test('returning home reuses cached content unless a background appearance change needs rendering', () => {
     const homeScreenSource = readSource('../phone/home-screen.js');
     const restoreStart = homeScreenSource.indexOf('    restore() {');
     const restoreEnd = homeScreenSource.indexOf('\n    getHomeLayout()', restoreStart);
@@ -200,7 +200,8 @@ test('returning home reuses the cached home layer and only refreshes dynamic des
     assert.match(restoreSource, /this\.updateWallpaperDisplay\(\);/);
     assert.match(restoreSource, /this\.updateTimeDisplay\(\);/);
     assert.match(restoreSource, /this\.updateAppBadges\(\);/);
-    assert.doesNotMatch(restoreSource, /forceDomRefresh/);
+    assert.match(restoreSource, /if \(this\._homeNeedsRefresh\) \{\s*this\.render\(\{ forceDomRefresh: true \}\);\s*return false;\s*\}/);
+    assert.doesNotMatch(restoreSource.slice(restoreSource.indexOf("if (!this.phoneShell")), /forceDomRefresh/);
     assert.match(phoneShellSource, /restoreView\(viewId\) \{[\s\S]*this\.viewHistory = \[\{ id: safeViewId \}\];[\s\S]*if \(view !== targetView\) view\.remove\(\);/);
 });
 

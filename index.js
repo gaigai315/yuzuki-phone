@@ -169,7 +169,8 @@ const ST_PHONE_CURRENT_UPDATE = {
         "【优化】音乐卡片支持独立设置字体颜色，默认黑色，字体继续跟随酒馆。",
         "【优化】表情管理面板扩大，表情下方显示名字，点击名字即可修改。",
         "【新增】char 可根据用户提供的图片，自行决定是否更换头像。",
-        "【新增】支持线上或线下好友邀请用户加入群聊。"
+        "【新增】支持线上或线下好友邀请用户加入群聊。",
+        "【修复】上传 App 图标后保留设置页的滚动位置和展开状态，不再意外返回手机桌面。"
     ]
 };
 
@@ -1541,7 +1542,7 @@ if (window.GGP_Loaded) {
             imageUploadModule
         ] = await Promise.all([
             import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261115-view-layer-visibility`),
-            import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=20261114-home-refresh`),
+            import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=20261118-background-appearance-refresh`),
             import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261108-original-background`)
         ]);
 
@@ -1570,7 +1571,7 @@ if (window.GGP_Loaded) {
     // 🔥 按需加载设置模块
     async function loadSettingsModule() {
         if (!SettingsApp) {
-            const module = await import(`./apps/settings/settings-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}-20261118-desktop-settings-order`);
+            const module = await import(`./apps/settings/settings-app.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_APP_SWIPE_REVISION}-20261118-icon-upload-preview`);
             SettingsApp = module.SettingsApp;
         }
         return SettingsApp;
