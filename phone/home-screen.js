@@ -10,6 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 主屏幕
+import { getTavernUserAvatarCandidates, normalizeWechatUserAvatar } from '../apps/wechat/user-avatar.js';
 import { APPS, PHONE_CONFIG } from '../config/apps.js'; // 🔥🔥🔥 这一行必须改！
 
 const HOME_CSS_PRESETS_KEY = 'phone-home-css-presets';
@@ -538,21 +539,21 @@ export class HomeScreen {
         });
     }
 
-    getHomeCardAvatars() {
+    getHomeCardAvatars({ personas } = {}) {
         const context = window.VirtualPhone?.storage?.getContext?.() || window.SillyTavern?.getContext?.() || {};
-        const selected = document.querySelector('#user_avatar_block .avatar-container.selected img')
-            || document.querySelector('#rm_button_panel_persona img');
         const avatarUrl = (value, directory) => {
             const text = String(value || '').trim();
             if (!text || text === 'none') return '';
             return /^(?:https?:|blob:|\/)/i.test(text) ? text : `/${directory}/${encodeURIComponent(text)}`;
         };
+        const userCandidates = getTavernUserAvatarCandidates({ personas, context });
+        const contextAvatar = normalizeWechatUserAvatar(avatarUrl(context.user_avatar || context.userAvatar, 'User Avatars'));
+        const userAvatar = userCandidates[0] || contextAvatar;
         const characterId = context.characterId;
         const character = !context.groupId && characterId !== undefined && characterId !== null && characterId !== ''
             ? context.characters?.[characterId] : null;
         return {
-            user: String(selected?.currentSrc || selected?.src || '').trim()
-                || avatarUrl(context.user_avatar || context.userAvatar, 'User Avatars'),
+            user: userAvatar,
             char: avatarUrl(character?.avatar, 'characters'),
             userName: String(context.name1 || 'User'),
             charName: String(character?.name || context.name2 || 'Char')

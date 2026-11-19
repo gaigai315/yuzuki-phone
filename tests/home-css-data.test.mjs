@@ -33,7 +33,7 @@ test('desktop avatars follow the selected persona and character and clear the ch
         const home = Object.create(HomeScreen.prototype);
         assert.equal(home.getHomeCardAvatars().char, '/characters/' + encodeURIComponent('甲 #1.png'));
         user = '/User Avatars/two.png'; context.characterId = 1;
-        assert.equal(home.getHomeCardAvatars().user, user);
+        assert.equal(home.getHomeCardAvatars().user, user.replaceAll(' ', '%20'));
         assert.equal(home.getHomeCardAvatars().charName, '乙');
         context.groupId = 'group';
         assert.equal(home.getHomeCardAvatars().char, '');
@@ -69,4 +69,33 @@ test('clock decoration follows character and persona avatars while its random gr
     home.updateHomeCssData();
     assert.ok(clock.innerHTML.includes('yzp-home-clock-placeholder'));
     assert.ok(!clock.innerHTML.includes('<img'));
+});
+
+
+test('desktop user avatar is available after restart before persona DOM mounts', () => {
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    const context = { name1: '用户', name2: '角色' };
+    globalThis.window = { VirtualPhone: { storage: { getContext: () => context } } };
+    globalThis.document = { querySelector: () => null };
+    const home = Object.create(HomeScreen.prototype);
+    const personas = { user_avatar: '重启后 用户.png' };
+    try {
+        assert.equal(home.getHomeCardAvatars({ personas }).user, '/User%20Avatars/' + encodeURIComponent(personas.user_avatar));
+        personas.user_avatar = '新用户.png';
+        assert.equal(home.getHomeCardAvatars({ personas }).user, '/User%20Avatars/' + encodeURIComponent('新用户.png'));
+    } finally { globalThis.window = previousWindow; globalThis.document = previousDocument; }
+});
+
+test('desktop avatar ignores a blank or failed persona thumbnail and can use context fallback', () => {
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    globalThis.window = { VirtualPhone: { storage: { getContext: () => ({ user_avatar: '当前用户.png' }) } } };
+    globalThis.document = { querySelector: () => ({ src: '/img/user-default.png', complete: true, naturalWidth: 0 }) };
+    const home = Object.create(HomeScreen.prototype);
+    try {
+        assert.equal(home.getHomeCardAvatars().user, '/User%20Avatars/' + encodeURIComponent('当前用户.png'));
+        globalThis.document = { querySelector: () => ({ src: '/img/user-default.png' }) };
+        assert.equal(home.getHomeCardAvatars().user, '/User%20Avatars/' + encodeURIComponent('当前用户.png'));
+    } finally { globalThis.window = previousWindow; globalThis.document = previousDocument; }
 });

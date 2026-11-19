@@ -1545,7 +1545,7 @@ if (window.GGP_Loaded) {
             imageUploadModule
         ] = await Promise.all([
             import(`./phone/phone-shell.js?v=${ST_PHONE_VERSION}&r=${ST_PHONE_CSS_REVISION}-20261115-view-layer-visibility`),
-            import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=20261118-background-appearance-refresh`),
+            import(`./phone/home-screen.js?v=${ST_PHONE_VERSION}&r=20261119-home-persona-avatar`),
             import(`./apps/settings/image-upload.js?v=${ST_PHONE_VERSION}&r=20261108-original-background`)
         ]);
 
