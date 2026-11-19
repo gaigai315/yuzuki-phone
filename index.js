@@ -14,6 +14,7 @@
 // SillyTavern 扩展插件
 // ========================================
 
+import { captureWechatPaymentState, parseWechatPaymentAction } from './apps/wechat/payment-action.js';
 import { resolveOfflineWechatCallDecisions } from './apps/wechat/offline-call-decision.js?v=20261119-bidirectional-calls';
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data.js';
@@ -57,7 +58,7 @@ const ST_PHONE_VERSION = '1.7.1';
 const ST_PHONE_CSS_REVISION = '20261118-online-group-invitation';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261114-stable-picture-icons';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261120-debt-repayment';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261120-offline-payments';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -1495,7 +1496,7 @@ if (window.GGP_Loaded) {
             import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
             import('./config/api-manager.js?v=20261009-unified-sse-parser'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20261119-bidirectional-calls'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20261120-offline-payments'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
         import('./config/image-generation-manager.js?v=20261114-public-image-api'),
             import('./config/worldbook-manager.js?v=20261021-worldbook-lazy-load')
@@ -2340,7 +2341,7 @@ if (window.GGP_Loaded) {
             || window.VirtualPhone.cachedWechatData
             || null;
         if (wechatData) return wechatData;
-        const module = await import('./apps/wechat/wechat-data.js?v=20261120-debt-repayment');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261120-offline-payments');
         wechatData = new module.WechatData(storage);
         window.VirtualPhone.cachedWechatData = wechatData;
         return wechatData;
@@ -3097,7 +3098,7 @@ if (window.GGP_Loaded) {
             const latestTime = currentTime || tm?.getCurrentStoryTime?.();
             if (!latestTime?.date) return [];
 
-            const module = await import('./apps/wechat/wechat-data.js?v=20261120-debt-repayment');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261120-offline-payments');
             if (!window.VirtualPhone) window.VirtualPhone = {};
             const existingWechatData = window.VirtualPhone.wechatApp?.wechatData
                 || window.VirtualPhone.cachedWechatData
@@ -8305,6 +8306,8 @@ if (window.GGP_Loaded) {
     // 🔧 辅助函数：解析消息类型
     function parseMessageType(msgObj) {
         const content = msgObj.content;
+        const paymentAction = parseWechatPaymentAction(content);
+        if (paymentAction) { Object.assign(msgObj, paymentAction); return; }
         const file = parseWechatFile(content);
         if (file) { Object.assign(msgObj, file); return; }
 
@@ -8547,7 +8550,7 @@ if (window.GGP_Loaded) {
         const conversationId = getCurrentTavernConversationIdentity(context);
 
         // 导入 WechatData（使用单例模式，确保消息被存储）
-        import('./apps/wechat/wechat-data.js?v=20261120-debt-repayment').then(module => {
+        import('./apps/wechat/wechat-data.js?v=20261120-offline-payments').then(async module => {
             let wechatData;
 
             if (getCurrentTavernConversationIdentity() !== conversationId) {
@@ -8730,6 +8733,14 @@ if (window.GGP_Loaded) {
                 : [];
             const cleanUserReplyEnabled = isWechatOfflineUserReplyCleanEnabled();
 
+            let paymentView = null;
+            if (data.messages.some(message => message.type === 'payment_action')) {
+                const { ChatView } = await import('./apps/wechat/chat-view.js?v=20261120-offline-payments');
+                if (getCurrentTavernConversationIdentity() !== conversationId) return;
+                paymentView = Object.create(ChatView.prototype);
+                paymentView.app = { wechatData, currentChat: chat };
+            }
+
             data.messages.forEach((msg, index) => {
                 if (hasIncomingCall) {
                     const queuedLine = String(msg.content || '').trim();
@@ -8826,9 +8837,10 @@ if (window.GGP_Loaded) {
                 }
 
                 // 线下转线上用户发言清洗开关：
-                // 开启时丢弃 AI 伪造的用户发言；关闭时允许用户发言写入“我”。
+                // 仅过滤 assistant 代写的用户发言；用户本人输入的内容不受此开关影响。
                 if (msgSenderIsCurrentUser) {
-                    if (cleanUserReplyEnabled && !data.isHistoryReplay && !msg.offlineCallDecision && !msg.offlineCallUserReply) {
+                    if (cleanUserReplyEnabled && data.sourceRole !== 'user' && !data.isHistoryReplay
+                        && !msg.offlineCallDecision && !msg.offlineCallUserReply) {
                         console.warn('⚠️ [微信] 线下转线上已清洗用户发言:', {
                             contact: data.contact,
                             sender: rawMsgSender,
@@ -8839,6 +8851,27 @@ if (window.GGP_Loaded) {
                     messageSender = 'me';
                     const userInfo = wechatData.getUserInfo?.() || {};
                     senderAvatar = userInfo.avatar || '';
+                }
+
+                if (msg.type === 'payment_action') {
+                    if (msgSenderIsCurrentUser || !paymentView) return;
+                    const before = new Map(wechatData.getMessages(chat.id)
+                        .filter(message => message.type === 'transfer' || message.type === 'redpacket')
+                        .map(message => [message.id, captureWechatPaymentState(message)]));
+                    const updated = paymentView._applyWechatPaymentAction(chat.id, msg, messageSender, {
+                        fromMainChatTag: true, tavernMessageIndex: data.tavernMessageIndex, batchId: data.batchId,
+                        date: data.date || baseDate, time: finalTime
+                    });
+                    if (updated) {
+                        const receipt = [...wechatData.getMessages(chat.id)].reverse().find(message =>
+                            message.paymentTargetId === String(updated.id) && message.batchId === data.batchId
+                            && message.tavernMessageIndex === data.tavernMessageIndex);
+                        if (receipt) wechatData.updateMessageById(chat.id, receipt.id, {
+                            paymentStateBefore: before.get(updated.id), paymentStateAfter: captureWechatPaymentState(updated)
+                        });
+                        newMessagesAdded++;
+                    }
+                    return;
                 }
 
                 // 清理发送者前缀：用户署名块的正文已经确定归属，不能再剥离正文中的姓名和冒号。
@@ -8860,7 +8893,7 @@ if (window.GGP_Loaded) {
 
                 // 🔥 存储消息到数据层（带上 batchId 和历史标记）
                 const sourceOrder = Number.isFinite(Number(msg.sourceOrder)) ? Number(msg.sourceOrder) : index;
-                const added = wechatData.addMessage(chat.id, {
+                const messageData = {
                     from: messageSender,
                     content: cleanContent,
                     time: finalTime,
@@ -8896,7 +8929,18 @@ if (window.GGP_Loaded) {
                     quote: msg.quote,
                     wangxiangTaskData: msg.wangxiangTaskData,
                     taskInvitationStatus: msg.taskInvitationStatus
-                });
+                };
+                const isUserPayment = messageSender === 'me' && ['transfer', 'redpacket'].includes(messageData.type);
+                const paymentResult = isUserPayment ? wechatData.addStoryOutgoingPayment(chat.id, messageData) : null;
+                const added = isUserPayment ? paymentResult.success && !paymentResult.duplicate
+                    : wechatData.addMessage(chat.id, messageData);
+                if (isUserPayment && !paymentResult.success && !data.isHistoryReplay) {
+                    if (paymentResult.reason === 'insufficient_balance') {
+                        phoneShell?.showNotification?.('余额不足', '正文中的转账或红包未发送，请先补足零钱余额', '⚠️');
+                    } else if (paymentResult.reason === 'wallet_uninitialized') {
+                        phoneShell?.showNotification?.('钱包尚未初始化', '请先在微信零钱中完成资产评估，再同步发送款项', '⚠️');
+                    }
+                }
                 if (added) {
                     newMessagesAdded++;
                     if (msg.offlineCallDecision && msg.status === 'answered') {
@@ -9603,6 +9647,7 @@ if (window.GGP_Loaded) {
     //  新增：处理用户主动在正文发送的 <回复xxx> 标签 (兼顾转义、换行与终极防 F5 刷新复读)
     function processUserReplyTags(text, tavernIndex, batchId, options = {}) {
         if (!text) return;
+        if (options.sourceRole === 'assistant' && isWechatOfflineUserReplyCleanEnabled()) return;
 
         // 兼容酒馆原生 < > 和被转义的 &lt; &gt;，只还原 <回复> 标签边界，避免正文 HTML 污染微信窗口
         const replySource = decodePhoneTagBoundaryEntities(text, ['回复']);
@@ -9624,7 +9669,7 @@ if (window.GGP_Loaded) {
             const sourceConversationId = getCurrentTavernConversationIdentity();
 
             // 导入 WeChat 数据模块处理
-            import('./apps/wechat/wechat-data.js?v=20261120-debt-repayment').then(async module => {
+            import('./apps/wechat/wechat-data.js?v=20261120-offline-payments').then(async module => {
                 let wechatData;
                 if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                     console.warn('⚠️ 微信回复写入前会话已切换，丢弃旧会话回调');
@@ -9901,7 +9946,7 @@ if (window.GGP_Loaded) {
         if (!/"moments"\s*:/.test(sourceText)) return null;
 
         try {
-            const module = await import('./apps/wechat/wechat-data.js?v=20261120-debt-repayment');
+            const module = await import('./apps/wechat/wechat-data.js?v=20261120-offline-payments');
             if (!window.VirtualPhone) window.VirtualPhone = {};
 
             const context = getContext();
@@ -9948,7 +9993,7 @@ if (window.GGP_Loaded) {
         if (payments.length === 0) return [];
 
         const sourceConversationId = getCurrentTavernConversationIdentity();
-        const module = await import('./apps/wechat/wechat-data.js?v=20261120-debt-repayment');
+        const module = await import('./apps/wechat/wechat-data.js?v=20261120-offline-payments');
         if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
             console.warn('⚠️ [线上支付] 扣款前会话已切换，丢弃旧会话回调');
             return [];
@@ -10030,7 +10075,7 @@ if (window.GGP_Loaded) {
         return results;
     }
 
-    function processWechatLikeTagsInSourceOrder(text, tavernIndex, batchId, isHistoryReplay = false, exactReplayForMessage = false) {
+    function processWechatLikeTagsInSourceOrder(text, tavernIndex, batchId, isHistoryReplay = false, exactReplayForMessage = false, sourceRole = 'assistant') {
         const sourceText = maskPhoneParserReasoningBlocks(text);
         if (!sourceText) return;
 
@@ -10068,10 +10113,11 @@ if (window.GGP_Loaded) {
             .sort((a, b) => a.index - b.index)
             .forEach((task) => {
                 if (task.kind === 'reply') {
-                    processUserReplyTags(task.raw, tavernIndex, batchId, { sourceIndex: task.index });
+                    processUserReplyTags(task.raw, tavernIndex, batchId, { sourceIndex: task.index, sourceRole });
                     return;
                 }
                 if (task.kind === 'wechat' && task.data) {
+                    task.data.sourceRole = sourceRole;
                     task.data.isHistoryReplay = isHistoryReplay || exactReplayForMessage;
                     task.data.tavernMessageIndex = tavernIndex;
                     task.data.batchId = batchId;
@@ -10233,7 +10279,7 @@ if (window.GGP_Loaded) {
                 const listenUserMessages = isPhoneUserMessageListenerEnabled();
                 const explicitSmsTag = hasExplicitSmsTag(text);
                 if (isPhoneFeatureEnabled() && !isHistoryReplay && (listenUserMessages || hasExplicitUserReplyTag(text) || hasExplicitWechatTag(text))) {
-                    processWechatLikeTagsInSourceOrder(text, index, currentBatchId, true, false);
+                    processWechatLikeTagsInSourceOrder(text, index, currentBatchId, true, false, 'user');
                 }
                 if (isPhoneFeatureEnabled() && !isHistoryReplay && explicitSmsTag) {
                     processUserSmsTags(text, index, currentBatchId);
@@ -12525,7 +12571,7 @@ if (window.GGP_Loaded) {
 
                     let wechatData = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                     if (!wechatData) {
-                        const module = await import('./apps/wechat/wechat-data.js?v=20261120-debt-repayment');
+                        const module = await import('./apps/wechat/wechat-data.js?v=20261120-offline-payments');
                         wechatData = new module.WechatData(storage);
                     }
 
@@ -12755,7 +12801,7 @@ if (window.GGP_Loaded) {
                                     || window.VirtualPhone.cachedWechatData
                                     || null;
                                 if (!wechatDataInstance && storage) {
-                                    const module = await import('./apps/wechat/wechat-data.js?v=20261120-debt-repayment');
+                                    const module = await import('./apps/wechat/wechat-data.js?v=20261120-offline-payments');
                                     if (getCurrentTavernConversationIdentity() !== sourceConversationId) {
                                         console.warn('⚠️ 微信删楼回滚期间会话已切换，丢弃旧会话回调');
                                         return;
@@ -13056,7 +13102,7 @@ if (window.GGP_Loaded) {
                                     let wechatDataInstance = window.VirtualPhone?.wechatApp?.wechatData || window.VirtualPhone?.cachedWechatData;
                                     if (!wechatDataInstance && storage) {
                                         try {
-                                            const module = await import('./apps/wechat/wechat-data.js?v=20261120-debt-repayment');
+                                            const module = await import('./apps/wechat/wechat-data.js?v=20261120-offline-payments');
                                             if (!window.VirtualPhone) window.VirtualPhone = {};
                                             window.VirtualPhone.cachedWechatData = new module.WechatData(storage);
                                             wechatDataInstance = window.VirtualPhone.cachedWechatData;

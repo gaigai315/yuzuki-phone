@@ -1,3 +1,4 @@
+import { parseWechatPaymentAction } from './payment-action.js';
 import { excludeWechatGroupSelfMembers, acceptWechatGroupInvitation, findWechatInvitationFriend, ONLINE_GROUP_INVITATION_PATTERN, parseWechatOnlineGroupInvitation } from './group-invitation.js?v=20261118-online-group-invitation';
 import { avatarCommandPattern, parseAvatarCommand, getEmojiGroup, resolveAvatarSource } from './avatar-change.js';
 import { CALL_HANGUP_RULE, parseCallHangupReply } from '../../config/call-hangup.js';
@@ -8183,22 +8184,8 @@ renderChatRoom(chat) {
             };
         }
 
-        const paymentActionMatch = trimmedContent.match(/^\[(收款|领取(?:拼手气|均分|平均|群)?红包|退回转账|退回红包)\s*(?:[¥￥]\s*(\d+(?:\.\d+)?))?\](?:\s*[（(]\s*([^）)]*)\s*[）)])?$/);
-        if (paymentActionMatch) {
-            const marker = String(paymentActionMatch[1] || '').trim();
-            const claimMode = marker.includes('拼手气')
-                ? 'lucky'
-                : (marker.includes('均分') || marker.includes('平均') || marker.includes('群') ? 'average' : 'single');
-            return {
-                type: 'payment_action',
-                action: marker.includes('退回') ? 'refund' : 'accept',
-                targetType: marker.includes('红包') ? 'redpacket' : 'transfer',
-                claimMode,
-                amount: paymentActionMatch[2] ? parseFloat(paymentActionMatch[2]).toFixed(2) : '',
-                note: String(paymentActionMatch[3] || '').trim(),
-                content: `[${marker}${paymentActionMatch[2] ? `¥${parseFloat(paymentActionMatch[2]).toFixed(2)}` : ''}]`
-            };
-        }
+        const paymentAction = parseWechatPaymentAction(trimmedContent);
+        if (paymentAction) return paymentAction;
 
         // 群聊定向红包：只发给指定群成员。
         const targetedGroupRedPacketMatch = content.match(/\[给\s*([^\[\]：:]+?)的红包\s*[¥￥]\s*(\d+(?:\.\d+)?)\]/);
@@ -8423,7 +8410,7 @@ renderChatRoom(chat) {
             }];
         }
 
-        const inlineSpecialRegex = /\[确认派发任务[：:]\s*[^\]\r\n]+\]|\[(?:同意收养|拒绝收养)\]|\[使用[：:]\s*[^x×\]\s]+\s*[x×]\s*\d+\]\s*(?:[（(][\s\S]*?[）)])?|\[(?:收款|领取(?:拼手气|均分|平均|群)?红包|退回转账|退回红包)\s*(?:[¥￥]\s*\d+(?:\.\d+)?)?\](?:\s*[（(]\s*[^）)]*\s*[）)])?|\[\s*转账\s*[¥￥]\s*[\d,]+(?:\.\d+)?\s*元?\s*\]\s*(?:[（(]\s*状态\s*[：:]\s*(?:未收款|待收款|已收款|已退回)\s*[）)])?|\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[给[^\[\]\r\n]+?的红包\s*[¥￥]\s*\d+(?:\.\d+)?\]|\[群红包\s*[｜|]\s*类型[：:]\s*(?:拼手气红包|均分红包|平均分红包)\s*[｜|]\s*总金额[：:]\s*[¥￥]?\s*\d+(?:\.\d+)?\s*[｜|]\s*红包个数[：:]\s*\d+\s*\](?:\s*[（(]\s*状态[：:]\s*(?:未领取|部分领取|已领取|已领完|已退回)[^）)]*[）)])?|\[群红包\]|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*蜜语\s*\]|【\s*蜜语\s*】)\s*(?:[（(]\s*[^）)]*\s*[）)])?|(?:\[\s*音乐\s*\]|【\s*音乐\s*】)\s*[（(]\s*[^，,）)]+?(?:\s*[，,]\s*[^）)]+?)?\s*[）)]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
+        const inlineSpecialRegex = /\[确认派发任务[：:]\s*[^\]\r\n]+\]|\[(?:同意收养|拒绝收养)\]|\[使用[：:]\s*[^x×\]\s]+\s*[x×]\s*\d+\]\s*(?:[（(][\s\S]*?[）)])?|\[(?:领取转账|收款|领取(?:拼手气|均分|平均|群)?红包|退回转账|退回红包)\s*(?:[¥￥]\s*\d+(?:\.\d+)?)?\](?:\s*[（(]\s*[^）)]*\s*[）)])?|\[\s*转账\s*[¥￥]\s*[\d,]+(?:\.\d+)?\s*元?\s*\]\s*(?:[（(]\s*状态\s*[：:]\s*(?:未收款|待收款|已收款|已退回)\s*[）)])?|\[转账\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）]|[¥￥]\s*\d+(?:\.\d+)?)|\[给[^\[\]\r\n]+?的红包\s*[¥￥]\s*\d+(?:\.\d+)?\]|\[群红包\s*[｜|]\s*类型[：:]\s*(?:拼手气红包|均分红包|平均分红包)\s*[｜|]\s*总金额[：:]\s*[¥￥]?\s*\d+(?:\.\d+)?\s*[｜|]\s*红包个数[：:]\s*\d+\s*\](?:\s*[（(]\s*状态[：:]\s*(?:未领取|部分领取|已领取|已领完|已退回)[^）)]*[）)])?|\[群红包\]|\[红包\]\s*(?:[（(]\s*(?:金额[：:]?\s*)?\d+(?:\.\d+)?\s*元?\s*[)）])?|(?:\[\s*定位\s*\]|【\s*定位\s*】)\s*[（(]\s*[^)）]+?\s*[)）]|(?:\[\s*蜜语\s*\]|【\s*蜜语\s*】)\s*(?:[（(]\s*[^）)]*\s*[）)])?|(?:\[\s*音乐\s*\]|【\s*音乐\s*】)\s*[（(]\s*[^，,）)]+?(?:\s*[，,]\s*[^）)]+?)?\s*[）)]|(?:\[\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*\]|【\s*(?:拨打|发起)\s*(?:微信)?(?:群)?(?:语音|视频)(?:通话)?\s*】)/g;
         const inlineMatches = [];
         this._collectInlineImagePromptMatches(rawContent).forEach(item => inlineMatches.push(item));
         for (const match of rawContent.matchAll(new RegExp(ONLINE_GROUP_INVITATION_PATTERN.source, 'g'))) {
@@ -8638,7 +8625,7 @@ renderChatRoom(chat) {
             const claimedAmount = claims.reduce((sum, claim) => sum + Math.round((Number.parseFloat(claim?.amount || 0) || 0) * 100), 0) / 100;
             const isFullyClaimed = (packetCount > 0 && claims.length >= packetCount)
                 || (Number.isFinite(targetAmount) && claimedAmount >= targetAmount);
-            return this.app.wechatData.updateMessageById(safeChatId, target.id, {
+            const updated = this.app.wechatData.updateMessageById(safeChatId, target.id, {
                 status: isFullyClaimed ? 'opened' : 'sent',
                 claims,
                 packetClaimCount: claims.length,
@@ -8649,6 +8636,12 @@ renderChatRoom(chat) {
                 paymentHandledBy: actor,
                 paymentHandledAt: Date.now()
             });
+            if (updated && timelineSource.fromMainChatTag) {
+                this.app.wechatData.addMessage(safeChatId, this._buildPaymentStatusMessage(
+                    target, `${actor}领取了群红包`, targetType, 'accept', timelineSource
+                ));
+            }
+            return updated;
         }
 
         const nextStatus = isRefund ? 'refunded' : (targetType === 'redpacket' ? 'opened' : 'received');

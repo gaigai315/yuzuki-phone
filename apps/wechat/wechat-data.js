@@ -10,6 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信数据管理
+import { captureWechatPaymentState } from './payment-action.js';
 import { excludeWechatGroupSelfMembers } from './group-invitation.js';
 import { GlobalSocialStore } from '../../config/global-social-store.js';
 import { parseImagePromptDescriptionPair, readBalancedImagePromptGroup } from '../../config/image-prompt-format.js';
@@ -1615,8 +1616,28 @@ export class WechatData {
         return Array.from(paths);
     }
 
+    _restoreDeletedPaymentActions(messages = []) {
+        for (const event of [...messages].reverse()) {
+            if (!event.paymentStateBefore || !event.paymentStateAfter || !event.paymentTargetId) continue;
+            const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+            for (const [chatId, remaining] of Object.entries(this.data.messages || {})) {
+                for (const next of remaining) {
+                    if (next.paymentTargetId === event.paymentTargetId && same(next.paymentStateBefore, event.paymentStateAfter)) {
+                        next.paymentStateBefore = { ...event.paymentStateBefore };
+                        this._messagesDirty[chatId] = true;
+                    }
+                    if (String(next.id) === event.paymentTargetId && same(captureWechatPaymentState(next), event.paymentStateAfter)) {
+                        Object.assign(next, JSON.parse(JSON.stringify(event.paymentStateBefore)));
+                        this._messagesDirty[chatId] = true;
+                    }
+                }
+            }
+        }
+    }
+
     _cleanupManagedImagesForDeletedMessages(messages = []) {
         this._restoreDeletedAvatarChanges(messages);
+        this._restoreDeletedPaymentActions(messages);
         const paths = this._collectManagedImagePathsFromMessages(messages);
         if (paths.length === 0) return;
 
@@ -2523,6 +2544,36 @@ export class WechatData {
             balance = this.data.walletByChat[this.walletDefaultKey];
         }
         return balance === undefined ? null : balance;
+    }
+
+    addStoryOutgoingPayment(chatId, message) {
+        if (message.from !== 'me' || !message.fromMainChatTag || !['redpacket', 'transfer'].includes(message.type)) {
+            return { success: false, reason: 'invalid_payment' };
+        }
+        const amount = Math.round(Number(message.amount) * 100) / 100;
+        if (!Number.isFinite(amount) || amount <= 0) return { success: false, reason: 'invalid_amount' };
+        const referenceId = `wechat:story:send:${chatId}:${message.tavernMessageIndex}:${message.batchId}:${message.mainChatOrder}`;
+        if (this._findWalletTransactionDuplicate({ referenceId })) return { success: true, duplicate: true };
+        // A regenerated story replaces its previous spending rather than charging it again.
+        this._rollbackWalletTransactions(record => record.fromMainChatTag
+            && record.tavernMessageIndex === message.tavernMessageIndex && record.batchId
+            && record.batchId !== message.batchId);
+        const balance = this.getWalletBalance();
+        if (balance === null) return { success: false, reason: 'wallet_uninitialized' };
+        if (Number(balance) < amount) return { success: false, reason: 'insufficient_balance', amount, balanceBefore: balance };
+        const id = message.id || `story_payment_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+        if (!this.addMessage(chatId, { ...message, id })) return { success: false, reason: 'not_added' };
+        const chat = this.getChat(chatId);
+        const label = message.type === 'transfer' ? '转账' : '红包';
+        const result = this.spendWalletBalance(amount, null, {
+            type: message.type, title: `${label}-${chat?.name || '微信好友'}`,
+            detail: message.desc || message.wish || `正文同步发送${label}`, source: 'wechat_story_payment', sourceApp: 'wechat',
+            chatId, counterparty: chat?.name || '', messageId: id, referenceId,
+            fromMainChatTag: true, timelineLinked: true, tavernMessageIndex: message.tavernMessageIndex,
+            batchId: message.batchId, date: message.date, time: message.time
+        });
+        if (!result.success) this.deleteMessagesByIds(chatId, [id]);
+        return { ...result, messageId: id };
     }
 
     spendWalletBalance(amount, chatId = null, transaction = null) {

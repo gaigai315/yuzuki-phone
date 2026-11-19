@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { resolveOfflineWechatCallDecisions, parseOfflineWechatCallDecision } from '../apps/wechat/offline-call-decision.js';
 import { ChatView } from '../apps/wechat/chat-view.js';
 import { WechatData } from '../apps/wechat/wechat-data.js';
+import { captureWechatPaymentState, parseWechatPaymentAction } from '../apps/wechat/payment-action.js';
 import { PromptManager } from '../config/prompt-manager.js';
 
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
@@ -152,7 +153,7 @@ function parseStory(text) {
         isWechatSenderCurrentUser: name => ['测试玩家', 'me'].includes(name),
         normalizeWechatDateText: identity, getWechatKnownGroupByName: () => null,
         normalizeWechatRecipientOrFallback: identity, parseWechatDateTimeLine: () => ({}),
-        parseWechatFile: () => null, HONEY_INVITE_TAG_REGEX: /$^/
+        parseWechatPaymentAction, parseWechatFile: () => null, HONEY_INVITE_TAG_REGEX: /$^/
     };
     return Function(...Object.keys(env), `${indexSource.slice(start, end)};return parseLightweightWechatTag;`)(...Object.values(env))(text);
 }
@@ -173,13 +174,13 @@ date:2026年11月19日
 --></wechat>`;
 }
 
-async function dispatchStory(data, blocks, cleanUserReplies = false) {
+async function dispatchStory(data, blocks, cleanUserReplies = false, batchId = 'batch') {
     const incoming = [];
     const start = indexSource.indexOf('function handleWechatTagData(data) {');
     const end = indexSource.indexOf('// 🔥 处理联系人更新', start);
-    const body = indexSource.slice(start, end).replace(/import\('\.\/apps\/wechat\/wechat-data\.js[^']*'\)/g, 'Promise.resolve({ WechatData })');
+    const body = indexSource.slice(start, end).replace(/import\('\.\/apps\/wechat\/wechat-data\.js[^']*'\)/g, 'Promise.resolve({ WechatData })').replace(/import\('\.\/apps\/wechat\/chat-view\.js[^']*'\)/g, 'Promise.resolve({ ChatView: TestChatView })');
     const env = {
-        WechatData, shouldDiscardHallucinatedTwoPersonGroup: () => false,
+        captureWechatPaymentState, WechatData, TestChatView: ChatView, shouldDiscardHallucinatedTwoPersonGroup: () => false,
         loadTimeManager: () => Promise.resolve(null), phoneShell: null,
         checkCalendarScheduleReminders: () => {}, getContext: () => ({ characterId: 'character', chatId: 'story' }),
         getCurrentTavernConversationIdentity: () => 'story', _lastWechatConversationId: 'story',
@@ -191,7 +192,7 @@ async function dispatchStory(data, blocks, cleanUserReplies = false) {
         _resolveWechatNotificationAvatar: () => ''
     };
     const handle = Function(...Object.keys(env), `${body};return handleWechatTagData;`)(...Object.values(env));
-    blocks.forEach(block => handle({ ...block, tavernMessageIndex: 4, batchId: 'batch' }));
+    blocks.forEach(block => handle({ ...block, tavernMessageIndex: 4, batchId }));
     await new Promise(resolve => setImmediate(resolve));
     return incoming;
 }
@@ -248,7 +249,7 @@ test('offline refusal is attributed to the user in call history prompts', () => 
 });
 
 
-function planProductionStory(text, cleanUserReplies = true) {
+function planProductionStory(text, cleanUserReplies = true, sourceRole = 'assistant') {
     const start = indexSource.indexOf('function processWechatLikeTagsInSourceOrder(');
     const end = indexSource.indexOf('async function ensureWangxiangApp()', start);
     const planned = [];
@@ -259,7 +260,7 @@ function planProductionStory(text, cleanUserReplies = true) {
         isWechatSenderCurrentUser: name => name === 'me', normalizeWechatChatIdentityKey: value => value,
         handlePhoneTag: data => planned.push(data), processUserReplyTags: () => assert.fail('no reply tags expected')
     };
-    Function(...Object.keys(env), 'source', `${indexSource.slice(start, end)};processWechatLikeTagsInSourceOrder(source, 4, 'batch');`)(...Object.values(env), text);
+    Function(...Object.keys(env), 'source', 'sourceRole', `${indexSource.slice(start, end)};processWechatLikeTagsInSourceOrder(source, 4, 'batch', false, false, sourceRole);`)(...Object.values(env), text, sourceRole);
     return planned;
 }
 
@@ -516,4 +517,215 @@ date:2026年11月19日
         assert.equal(calls.length, 1);
         assert.equal(calls[0][4].outgoingPending, true);
     } finally { globalThis.window = previousWindow; }
+});
+
+
+for (const [marker, targetType, expectedStatus] of [
+    ['领取转账', 'transfer', 'received'], ['收款', 'transfer', 'received'], ['领取红包', 'redpacket', 'opened'],
+    ['退回转账', 'transfer', 'refunded'], ['退回红包', 'redpacket', 'refunded']
+]) {
+    test(`story [${marker}] updates the pending ${targetType}, never leaves a command bubble and is idempotent`, async () => {
+        const previousWindow = globalThis.window;
+        const values = new Map();
+        const data = new WechatData({ get: (key, fallback = null) => values.has(key) ? values.get(key) : fallback, set: (key, value) => values.set(key, value) });
+        data.data.userInfo.name = '测试玩家';
+        data.data.contacts.push({ id: 'friend', name: '好友A' });
+        data.createChat({ id: 'chat', name: '好友A', type: 'single', contactId: 'friend' });
+        data.data.walletByChat[data.walletDefaultKey] = 75;
+        data.addMessage('chat', { id: 'pending', from: 'me', type: targetType, amount: '25.00', status: 'sent', content: '', date: '', time: '12:00' });
+        // Missing story date is intentional: these tests exercise settlement, not 24-hour packet expiry.
+        data.getMessages('chat')[0].date = '';
+        globalThis.window = { VirtualPhone: { cachedWechatData: data }, dispatchEvent() {} };
+        try {
+            const text = `<wechat><!--
+---好友A---
+接收人：测试玩家
+date:2026年11月19日
+[12:01] [${marker}]
+--></wechat>`;
+            const planned = planProductionStory(text);
+            await dispatchStory(data, planned);
+            const messages = data.getMessages('chat');
+            assert.equal(messages.find(message => message.id === 'pending').status, expectedStatus);
+            assert.ok(messages.some(message => message.type === 'system' && message.paymentTargetId === 'pending'));
+            assert.ok(!messages.some(message => message.content === `[${marker}]`));
+            assert.equal(data.getWalletBalance(), expectedStatus === 'refunded' ? 100 : 75);
+            const length = messages.length;
+            await dispatchStory(data, planned);
+            assert.equal(data.getMessages('chat').length, length);
+            assert.equal(data.getWalletBalance(), expectedStatus === 'refunded' ? 100 : 75);
+            assert.equal(data.rollbackToFloor(4), true);
+            assert.equal(data.getMessages('chat').find(message => message.id === 'pending').status, 'sent');
+            assert.equal(data.getWalletBalance(), 75);
+        } finally { globalThis.window = previousWindow; }
+    });
+}
+
+test('online payment markers distinguish transfers from packets and both offline presets document all four actions', () => {
+    const view = Object.create(ChatView.prototype);
+    assert.equal(view.parseSpecialMessage('[收款]').targetType, 'transfer');
+    assert.equal(view.parseSpecialMessage('[领取红包]').targetType, 'redpacket');
+    const manager = new PromptManager({ get: (_key, fallback = null) => fallback });
+    const grab = manager._getDefaultWechatOfflineGrabPrompt();
+    const noGrab = manager._getDefaultWechatOfflineNoGrabPrompt();
+    for (const marker of ['领取转账', '领取红包', '退回转账', '退回红包']) {
+        assert.ok(grab.includes(`[HH:MM] [${marker}]`));
+        assert.ok(noGrab.includes(`[HH:MM] [${marker}]`));
+        assert.ok(manager.getDefaultPrompts().wechat.online.content.includes(`{{chatName}}: [${marker}]`));
+    }
+});
+
+
+test('story group packet claims use the named member, settle once and roll back', async () => {
+    const previousWindow = globalThis.window;
+    const values = new Map();
+    const data = new WechatData({ get: (key, fallback = null) => values.has(key) ? values.get(key) : fallback, set: (key, value) => values.set(key, value) });
+    data.data.userInfo.name = '测试玩家';
+    data.createChat({ id: 'group', name: '工作群', type: 'group', members: ['好友A', '好友B'] });
+    data.data.walletByChat[data.walletDefaultKey] = 75;
+    data.addMessage('group', { id: 'packet', from: 'me', type: 'redpacket', amount: '30.00', status: 'sent',
+        packetMode: 'group_average', isGroupPacket: true, count: 3, claims: [], date: '', time: '12:00' });
+    data.getMessages('group')[0].date = '';
+    globalThis.window = { VirtualPhone: { cachedWechatData: data }, dispatchEvent() {} };
+    try {
+        const planned = planProductionStory(`<wechat><!--
+---工作群---
+接收人：测试玩家
+type:group
+date:2026年11月19日
+[12:01] 好友A: [领取均分红包¥10.00]
+--></wechat>`);
+        await dispatchStory(data, planned);
+        assert.deepEqual(data.getMessages('group')[0].claims.map(claim => [claim.name, claim.amount]), [['好友A', '10.00']]);
+        await dispatchStory(data, planned);
+        assert.equal(data.getMessages('group')[0].claims.length, 1);
+        assert.equal(data.getWalletBalance(), 75);
+        data.rollbackToFloor(4);
+        assert.deepEqual(data.getMessages('group')[0].claims, []);
+        assert.equal(data.getMessages('group')[0].status, 'sent');
+    } finally { globalThis.window = previousWindow; }
+});
+
+
+test('online replies recognize transfer receipt commands alone and mixed with chat, retaining the legacy alias', () => {
+    const view = Object.create(ChatView.prototype);
+    for (const marker of ['领取转账', '收款']) {
+        const action = view.parseSpecialMessage(`[${marker}]`);
+        assert.equal(action.type, 'payment_action');
+        assert.equal(action.action, 'accept');
+        assert.equal(action.targetType, 'transfer');
+        const parts = view.splitMixedSpecialMessage({ sender: '好友A', content: `先收下[${marker}]谢谢` });
+        assert.equal(parts.length, 3);
+        assert.equal(parts[0].content, '先收下');
+        assert.equal(parts[1].specialMessage.targetType, 'transfer');
+        assert.equal(parts[2].content, '谢谢');
+    }
+    assert.equal(view.parseSpecialMessage('[领取红包]').targetType, 'redpacket');
+});
+
+test('both offline prompts use English tags for image examples', () => {
+    const manager = new PromptManager({ get: (_key, fallback = null) => fallback });
+    for (const prompt of [manager._getDefaultWechatOfflineGrabPrompt(), manager._getDefaultWechatOfflineNoGrabPrompt()]) {
+        assert.doesNotMatch(prompt, /English NovelAI tags/);
+        for (const marker of ['图片', '个人图片', '用户照片']) {
+            assert.ok(prompt.includes(`[${marker}]（中文图片描述）（English tags）`));
+        }
+        assert.ok(prompt.includes('[HH:MM] [领取转账]'));
+        assert.ok(!prompt.includes('[收款]'));
+    }
+});
+
+
+async function storyWalletFixture(balance, work) {
+    const previousWindow = globalThis.window;
+    const values = new Map();
+    const data = new WechatData({ get: (key, fallback = null) => values.has(key) ? values.get(key) : fallback, set: (key, value) => values.set(key, value) });
+    data.data.userInfo.name = '测试玩家';
+    data.data.contacts.push({ id: 'friend', name: '好友A' });
+    data.createChat({ id: 'chat', name: '好友A', type: 'single', contactId: 'friend' });
+    if (balance !== null) data.data.walletByChat[data.walletDefaultKey] = balance;
+    globalThis.window = { VirtualPhone: { cachedWechatData: data }, dispatchEvent() {} };
+    try { await work(data); } finally { globalThis.window = previousWindow; }
+}
+
+function outgoingFunds(transferAmount = 20) {
+    return `<wechat><!--
+---测试玩家---
+接收人：好友A
+date:2026年11月20日
+[12:00] [转账](金额：${transferAmount}元)
+[12:01] [红包](金额：10元)
+--></wechat>`;
+}
+
+test('story transfers and packets debit the wallet, create ledger entries once, replace regeneration and roll back', async () => {
+    await storyWalletFixture(100, async data => {
+        const planned = planProductionStory(outgoingFunds());
+        await dispatchStory(data, planned);
+        assert.equal(data.getWalletBalance(), 70);
+        assert.deepEqual(data.getWalletTransactions().map(record => [record.type, record.delta]), [['transfer', -20], ['redpacket', -10]]);
+        assert.equal(data.getMessages('chat').length, 2);
+        await dispatchStory(data, planned);
+        assert.equal(data.getWalletBalance(), 70);
+        assert.equal(data.getWalletTransactions().length, 2);
+        await dispatchStory(data, planProductionStory(outgoingFunds(30)), false, 'new-branch');
+        assert.equal(data.getWalletBalance(), 60);
+        assert.equal(data.getWalletTransactions().length, 2);
+        assert.deepEqual(data.getMessages('chat').map(message => Number(message.amount)), [30, 10]);
+        assert.equal(data.rollbackToFloor(4), true);
+        assert.equal(data.getWalletBalance(), 100);
+        assert.equal(data.getWalletTransactions().length, 0);
+        assert.equal(data.getMessages('chat').length, 0);
+    });
+});
+
+test('insufficient or uninitialized wallets never produce successful outgoing payment cards', async () => {
+    for (const balance of [5, null]) {
+        await storyWalletFixture(balance, async data => {
+            await dispatchStory(data, planProductionStory(outgoingFunds()));
+            assert.equal(data.getWalletBalance(), balance);
+            assert.equal(data.getMessages('chat').length, 0);
+            assert.equal(data.getWalletTransactions().length, 0);
+        });
+    }
+});
+
+test('friend refusal refunds a story-originated transfer once, without double credit on replay', async () => {
+    await storyWalletFixture(100, async data => {
+        const text = outgoingFunds(20).replace('[12:01] [红包](金额：10元)', '').replace('--></wechat>', `---好友A---
+接收人：测试玩家
+date:2026年11月20日
+[12:02] [退回转账]
+--></wechat>`);
+        const planned = planProductionStory(text);
+        await dispatchStory(data, planned);
+        assert.equal(data.getWalletBalance(), 100);
+        assert.deepEqual(data.getWalletTransactions().map(record => record.delta), [-20, 20]);
+        assert.equal(data.getMessages('chat').find(message => message.type === 'transfer').status, 'refunded');
+        await dispatchStory(data, planned);
+        assert.equal(data.getWalletBalance(), 100);
+        assert.equal(data.getWalletTransactions().length, 2);
+    });
+});
+
+
+test('cleanup never strips user-authored text, transfers or packets but still filters assistant-written user speech', async () => {
+    const text = outgoingFunds().replace('[12:00] [转账]', '[11:59] 这是用户自己输入的完整消息\n[12:00] [转账]');
+    for (const sourceRole of ['user', 'assistant']) {
+        await storyWalletFixture(100, async data => {
+            const planned = planProductionStory(text, true, sourceRole);
+            assert.ok(planned.every(block => block.sourceRole === sourceRole));
+            await dispatchStory(data, planned, true);
+            if (sourceRole === 'user') {
+                assert.equal(data.getMessages('chat').length, 3);
+                assert.equal(data.getMessages('chat')[0].content, '这是用户自己输入的完整消息');
+                assert.equal(data.getWalletBalance(), 70);
+                assert.equal(data.getWalletTransactions().length, 2);
+            } else {
+                assert.equal(data.getMessages('chat').length, 0);
+                assert.equal(data.getWalletBalance(), 100);
+                assert.equal(data.getWalletTransactions().length, 0);
+            }
+        });
+    }
 });
