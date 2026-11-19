@@ -13,7 +13,7 @@
 import { ChatView } from './chat-view.js?v=20261120-offline-payments';
 import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
 import { MomentsView } from './moments-view.js?v=20261118-compose-stable-surfaces';
-import { WechatData } from './wechat-data.js?v=20261120-offline-payments';
+import { WechatData } from './wechat-data.js?v=20261120-story-call-end';
 import { normalizeWechatUserAvatar } from './user-avatar.js';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
 import { getWechatReadablePalette } from './readable-colors.js?v=20261109-readable-glass';

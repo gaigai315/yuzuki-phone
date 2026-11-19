@@ -36,3 +36,24 @@ test('delayed ticks catch up and detached calls stop without writing to a replac
         globalThis.clearInterval = originalClear;
     }
 });
+
+
+test('story call timer starts at the existing duration before the first tick and continues from it', () => {
+    const originalSet = globalThis.setInterval;
+    const originalClear = globalThis.clearInterval;
+    let tick;
+    globalThis.setInterval = callback => { tick = callback; return 42; };
+    globalThis.clearInterval = () => {};
+    try {
+        let now = 1000;
+        let duration = -1;
+        const element = { isConnected: true, textContent: '00:00' };
+        startCallTimer(element, seconds => { duration = seconds; }, () => now, 180);
+        assert.equal(element.textContent, '03:00');
+        assert.equal(duration, 180, 'instant hangup already has the story duration');
+        now += 15000;
+        tick();
+        assert.equal(element.textContent, '03:15');
+        assert.equal(duration, 195);
+    } finally { globalThis.setInterval = originalSet; globalThis.clearInterval = originalClear; }
+});

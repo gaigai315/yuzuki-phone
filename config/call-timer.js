@@ -6,15 +6,20 @@ export function formatCallDuration(seconds) {
 }
 
 // Keep the original element: a later call may reuse its ID.
-export function startCallTimer(element, onTick, now = () => performance.now()) {
+export function startCallTimer(element, onTick, now = () => performance.now(), initialSeconds = 0) {
     const startedAt = now();
-    let elapsed = 0;
+    const initial = Math.max(0, Math.floor(Number(initialSeconds) || 0));
+    let elapsed = initial;
+    if (element?.isConnected) {
+        element.textContent = formatCallDuration(elapsed);
+        onTick(elapsed);
+    }
     const timer = setInterval(() => {
         if (!element?.isConnected) {
             clearInterval(timer);
             return;
         }
-        elapsed = Math.max(elapsed, Math.floor((now() - startedAt) / 1000));
+        elapsed = Math.max(elapsed, initial + Math.floor((now() - startedAt) / 1000));
         onTick(elapsed);
         element.textContent = formatCallDuration(elapsed);
     }, 1000);

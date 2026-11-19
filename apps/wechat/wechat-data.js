@@ -3651,6 +3651,7 @@ export class WechatData {
                 return String(existing?.from || '') === msgFrom
                     && String(existing?.content || '') === msgContent
                     && String(existing?.type || 'text') === msgType
+                    && (!message.offlineCallDecision || existing.mainChatOrder === message.mainChatOrder)
                     && hasSamePaymentTarget;
             };
 

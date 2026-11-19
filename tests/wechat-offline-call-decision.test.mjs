@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import { resolveOfflineWechatCallDecisions, parseOfflineWechatCallDecision } from '../apps/wechat/offline-call-decision.js';
 import { ChatView } from '../apps/wechat/chat-view.js';
 import { WechatData } from '../apps/wechat/wechat-data.js';
 import { captureWechatPaymentState, parseWechatPaymentAction } from '../apps/wechat/payment-action.js';
+import { TimeManager } from '../config/time-manager.js';
 import { PromptManager } from '../config/prompt-manager.js';
 
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
@@ -185,7 +187,7 @@ async function dispatchStory(data, blocks, cleanUserReplies = false, batchId = '
         checkCalendarScheduleReminders: () => {}, getContext: () => ({ characterId: 'character', chatId: 'story' }),
         getCurrentTavernConversationIdentity: () => 'story', _lastWechatConversationId: 'story',
         window: globalThis.window, storage: data.storage, document: { getElementById: () => null },
-        isWechatOfflineUserReplyCleanEnabled: () => cleanUserReplies, isWechatSenderCurrentUser: name => name === 'me',
+        isWechatOfflineUserReplyCleanEnabled: () => cleanUserReplies, isWechatSenderCurrentUser: name => name === 'me' || name === '测试玩家',
         normalizeWechatGroupSpeakerName: value => value,
         triggerWechatIncomingCall: (...args) => incoming.push(args), syncWechatHomeBadge: () => {}, currentApp: '',
         showUnifiedPhoneNotification: () => {}, playWechatMessageSound: () => {},
@@ -257,7 +259,7 @@ function planProductionStory(text, cleanUserReplies = true, sourceRole = 'assist
         maskPhoneParserReasoningBlocks: value => value, decodePhoneTagBoundaryEntities: value => value,
         parseLightweightWechatTag: parseStory, resolveOfflineWechatCallDecisions,
         isWechatOfflineUserReplyCleanEnabled: () => cleanUserReplies,
-        isWechatSenderCurrentUser: name => name === 'me', normalizeWechatChatIdentityKey: value => value,
+        isWechatSenderCurrentUser: name => name === 'me' || name === '测试玩家', normalizeWechatChatIdentityKey: value => value,
         handlePhoneTag: data => planned.push(data), processUserReplyTags: () => assert.fail('no reply tags expected')
     };
     Function(...Object.keys(env), 'source', 'sourceRole', `${indexSource.slice(start, end)};processWechatLikeTagsInSourceOrder(source, 4, 'batch', false, false, sourceRole);`)(...Object.values(env), text, sourceRole);
@@ -700,7 +702,7 @@ date:2026年11月20日
         const planned = planProductionStory(text);
         await dispatchStory(data, planned);
         assert.equal(data.getWalletBalance(), 100);
-        assert.deepEqual(data.getWalletTransactions().map(record => record.delta), [-20, 20]);
+        assert.deepEqual(data.getWalletTransactions().map(record => record.delta).sort((a, b) => a - b), [-20, 20]);
         assert.equal(data.getMessages('chat').find(message => message.type === 'transfer').status, 'refunded');
         await dispatchStory(data, planned);
         assert.equal(data.getWalletBalance(), 100);
@@ -729,3 +731,209 @@ test('cleanup never strips user-authored text, transfers or packets but still fi
         });
     }
 });
+
+
+for (const direction of ['incoming', 'outgoing']) {
+    for (const kind of ['Voice', 'Video']) {
+        test(`${direction} ${kind} call saves elapsed duration through the real hangup and storage paths`, async () => {
+            await storyWalletFixture(100, async data => {
+                const media = kind.toLowerCase();
+                const text = direction === 'outgoing' ? outgoingScenario('接听', media)
+                    : story('接听').replaceAll('语音', kind === 'Video' ? '视频' : '语音');
+                const events = await dispatchStory(data, planProductionStory(text));
+                const decision = events[0][4];
+                const view = Object.create(ChatView.prototype);
+                view.app = { currentChat: data.getChat('chat'), wechatData: data };
+                view._resolveCallEndStoryTime = () => ({ time: '21:40', date: '2026年11月20日' });
+                const source = fs.readFileSync(new URL('../apps/wechat/chat-view.js', import.meta.url), 'utf8');
+                const section = source.slice(source.indexOf(`    show${kind}CallInterface(`));
+                const low = kind.toLowerCase();
+                const button = { remove() {}, setAttribute() {} };
+                const element = { isConnected: true, insertAdjacentHTML() {} };
+                const input = {};
+                const context = {
+                    callEnded: false, callMessagesElement: element,
+                    callOptions: { offlineRecordId: decision.recordId, offlineRecordSource: decision.recordSource },
+                    contact: { name: '好友A' }, callChatId: 'chat', callStartTime: {}, callStartEpoch: Date.now() - 125000,
+                    chatMessages: decision.transcript,
+                    document: { getElementById: () => button }, Date, Math,
+                    clearInterval() {}, stopWechatCallTTS() {},
+                    addCallRecord: (...args) => view.addCallRecord(...args),
+                    [`clear${kind}BatchTimer`]() {}, [`get${kind}Input`]: () => input, [`set${kind}CallStatus`]() {},
+                    [low + 'PendingUserLines']: [], [`is${kind}Sending`]: false,
+                    [kind === 'Video' ? 'videoTimer' : 'callTimer']: 1,
+                    [kind === 'Video' ? 'videoDuration' : 'callDuration']: 125
+                };
+                const start = section.indexOf('        const finishCall =');
+                const end = section.indexOf(`        const render${kind}AiLinesSequentially`, start);
+                vm.runInNewContext(section.slice(start, end) + "finishCall('user');", context);
+                const record = data.getMessages('chat').find(message => message.id === decision.recordId);
+                assert.equal(record.duration, '2分5秒');
+                assert.equal(record.callDirection, direction);
+                assert.equal(record.offlineCallFinalized, true);
+                await data.saveData();
+                const restored = new WechatData(data.storage);
+                assert.equal(restored.getMessages('chat').find(message => message.id === decision.recordId).duration, '2分5秒');
+            });
+        });
+    }
+}
+
+
+function completedStory({ outgoing = true, media = 'voice', group = false, userEnds = true,
+    start = '21:37', end = '21:40', startDate = '2026年11月20日', endDate = startDate } = {}) {
+    const label = `${group ? '群' : ''}${media === 'voice' ? '语音' : '视频'}`;
+    const block = (speaker, date, lines) => group
+        ? `---工作群---\n接收人：测试玩家\ntype:group\ndate:${date}\n${lines.map(line => line.replace('] ', `] ${speaker}: `)).join('\n')}`
+        : `---${speaker}---\n接收人：${speaker === '测试玩家' ? '好友A' : '测试玩家'}\ndate:${date}\n${lines.join('\n')}`;
+    return `<wechat><!--\n${[
+        block(outgoing ? '测试玩家' : '好友A', startDate, [`[${start}] [拨打微信${label}]`]),
+        block(outgoing ? '好友A' : '测试玩家', startDate, [`[${start}] ${label}通话-接听`, `[${start}] 喂，听到了。`]),
+        block(userEnds ? '测试玩家' : '好友A', endDate, [`[${end}] ${label}通话-结束`, `[${end}] 这是挂断后发送的微信文字。`])
+    ].join('\n')}\n--></wechat>`;
+}
+
+for (const outgoing of [false, true]) {
+    for (const media of ['voice', 'video']) {
+        for (const userEnds of [false, true]) {
+            test(`completed ${outgoing ? 'outgoing' : 'incoming'} ${media} story, ended by ${userEnds ? 'user' : 'character'}, saves 3 minutes and never opens the phone`, async () => {
+                await storyWalletFixture(100, async data => {
+                    const text = completedStory({ outgoing, media, userEnds });
+                    const planned = planProductionStory(text);
+                    const calls = await dispatchStory(data, planned);
+                    assert.equal(calls.length, 0);
+                    const record = data.getMessages('chat').find(message => message.type === 'call_record');
+                    assert.equal(record.duration, '3分0秒');
+                    assert.equal(record.time, '21:40');
+                    assert.equal(record.callStartTime, '21:37');
+                    assert.equal(record.callStartDate, '2026年11月20日');
+                    assert.equal(record.endedBy, userEnds ? 'user' : 'character');
+                    assert.equal(record.offlineCallCompleted, true);
+                    assert.equal(record.transcript.at(-1).type, 'call_hangup');
+                    assert.equal(record.transcript[0].text, '喂，听到了。');
+                    assert.ok(data.getMessages('chat').some(message => message.content === '这是挂断后发送的微信文字。'));
+                    assert.ok(!data.getMessages('chat').some(message => message.type === 'text' && /通话-/.test(message.content)));
+                    await dispatchStory(data, planned);
+                    assert.equal(data.getMessages('chat').filter(message => message.type === 'call_record').length, 1);
+                    await data.saveData();
+                    const restored = new WechatData(data.storage);
+                    assert.equal(restored.getMessages('chat').find(message => message.type === 'call_record').duration, '3分0秒');
+                    assert.equal(data.rollbackToFloor(4), true);
+                    assert.equal(data.getMessages('chat').length, 0);
+                });
+            });
+        }
+    }
+}
+
+test('completed story duration starts at acceptance rather than dialing, handles midnight and ancient numeric years', () => {
+    for (const dates of [
+        { startDate: '2026年11月20日', endDate: '2026年11月21日' },
+        { startDate: '117年12月31日', endDate: '118年01月01日' }
+    ]) {
+        const planned = planProductionStory(completedStory({ ...dates, start: '23:58', end: '00:03' }));
+        const record = planned.flatMap(block => block.messages).find(message => message.offlineCallCompleted);
+        assert.equal(record.duration, '5分0秒');
+        assert.equal(record.callEndDate, dates.endDate);
+    }
+    const text = completedStory().replace('[21:37] [拨打微信语音]', '[21:30] [拨打微信语音]');
+    const record = planProductionStory(text).flatMap(block => block.messages).find(message => message.offlineCallCompleted);
+    assert.equal(record.duration, '3分0秒');
+    const short = planProductionStory(completedStory({ start: '21:37', end: '21:37' })).flatMap(block => block.messages).find(message => message.offlineCallCompleted);
+    assert.equal(short.duration, '不足1分钟');
+});
+
+for (const media of ['voice', 'video']) {
+    test(`completed group ${media} call keeps member identities and ends without a popup`, async () => {
+        await storyWalletFixture(100, async data => {
+            data.createChat({ id: 'group', name: '工作群', type: 'group', members: ['好友A'] });
+            const calls = await dispatchStory(data, planProductionStory(completedStory({ group: true, media, userEnds: false })));
+            assert.equal(calls.length, 0);
+            const record = data.getMessages('group').find(message => message.type === 'call_record');
+            assert.equal(record.duration, '3分0秒');
+            assert.equal(record.isGroupCall, true);
+            assert.equal(record.endedByName, '好友A');
+            assert.equal(record.transcript[0].from, '好友A');
+        });
+    });
+}
+
+
+test('two completed calls in the same story tag remain separate records', async () => {
+    await storyWalletFixture(100, async data => {
+        const first = completedStory().replace('--></wechat>', '');
+        const second = completedStory({ start: '21:45', end: '21:48' }).replace('<wechat><!--', '');
+        const events = await dispatchStory(data, planProductionStory(first + second));
+        assert.equal(events.length, 0);
+        const records = data.getMessages('chat').filter(message => message.type === 'call_record');
+        assert.equal(records.length, 2);
+        assert.deepEqual(records.map(message => message.time), ['21:40', '21:48']);
+    });
+});
+
+test('invalid or missing story clocks do not fabricate a completed call duration from the real clock', () => {
+    const blocks = scenario();
+    blocks[1].messages.push({ sender: 'me', type: 'text', content: '语音通话-结束' });
+    const record = resolve(blocks)[0].messages.find(message => message.type === 'call_record');
+    assert.equal(record.offlineCallCompleted, true);
+    assert.equal(record.duration, '未记录');
+    assert.equal(record.elapsedSeconds, null);
+});
+
+test('grab preset includes all four end markers and explains the no-popup completed-call flow', () => {
+    const manager = new PromptManager({ get: (_key, fallback = null) => fallback });
+    const prompt = manager._getDefaultWechatOfflineGrabPrompt();
+    for (const kind of ['语音', '视频', '群语音', '群视频']) assert.ok(prompt.includes(`[HH:MM] ${kind}通话-结束`));
+    assert.ok(prompt.includes('不弹出来电或已接通手机面板'));
+    assert.ok(prompt.includes('通话时长从接听时刻算到结束时刻'));
+});
+
+
+for (const outgoing of [false, true]) {
+    for (const kind of ['Voice', 'Video']) {
+        test(`unfinished ${outgoing ? 'outgoing' : 'incoming'} ${kind} story carries its HH:MM duration into instant hangup`, async () => {
+            await storyWalletFixture(100, async data => {
+                const media = kind.toLowerCase();
+                const marker = `${media === 'voice' ? '语音' : '视频'}通话-结束`;
+                const text = completedStory({ outgoing, media }).replace(`[21:40] ${marker}`, '')
+                    .replace('这是挂断后发送的微信文字。', '我还在，继续说。');
+                const events = await dispatchStory(data, planProductionStory(text));
+                assert.equal(events.length, 1);
+                const decision = events[0][4];
+                assert.equal(decision.initialElapsedSeconds, 180);
+                assert.deepEqual(decision.storyCallStart, { time: '21:37', date: '2026年11月20日' });
+                const clock = Object.create(TimeManager.prototype);
+                let current = { time: '21:40', date: '2026年11月20日' };
+                clock.getCurrentStoryTime = () => current;
+                clock.setTime = (time, date) => { current = { time, date }; };
+                window.VirtualPhone.timeManager = clock;
+                const view = Object.create(ChatView.prototype);
+                view.app = { currentChat: data.getChat('chat'), wechatData: data };
+                view._shouldUseRealTimeForOnlineChat = () => true; // Explicit story clocks still control this handoff.
+                const source = fs.readFileSync(new URL('../apps/wechat/chat-view.js', import.meta.url), 'utf8');
+                const section = source.slice(source.indexOf(`    show${kind}CallInterface(`));
+                const button = { remove() {}, setAttribute() {} };
+                const input = {};
+                const context = {
+                    callEnded: false, callMessagesElement: { isConnected: true, insertAdjacentHTML() {} },
+                    callOptions: { offlineRecordId: decision.recordId, offlineRecordSource: decision.recordSource },
+                    contact: { name: '好友A' }, callChatId: 'chat', callStartTime: decision.storyCallStart,
+                    callStartEpoch: Date.now() - decision.initialElapsedSeconds * 1000,
+                    chatMessages: decision.transcript, document: { getElementById: () => button }, Date, Math,
+                    clearInterval() {}, stopWechatCallTTS() {}, addCallRecord: (...args) => view.addCallRecord(...args),
+                    [`clear${kind}BatchTimer`]() {}, [`get${kind}Input`]: () => input, [`set${kind}CallStatus`]() {},
+                    [kind.toLowerCase() + 'PendingUserLines']: [], [`is${kind}Sending`]: false,
+                    [kind === 'Video' ? 'videoTimer' : 'callTimer']: 1,
+                    [kind === 'Video' ? 'videoDuration' : 'callDuration']: decision.initialElapsedSeconds
+                };
+                const start = section.indexOf('        const finishCall =');
+                const end = section.indexOf(`        const render${kind}AiLinesSequentially`, start);
+                vm.runInNewContext(section.slice(start, end) + "finishCall('user');", context);
+                const record = data.getMessages('chat').find(message => message.id === decision.recordId);
+                assert.equal(record.duration, '3分0秒');
+                assert.equal(record.time, '21:40');
+                assert.equal(record.callStartTime, '21:37');
+            });
+        });
+    }
+}

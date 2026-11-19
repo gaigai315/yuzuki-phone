@@ -13,7 +13,7 @@ import { CALL_HANGUP_RULE, parseCallHangupReply } from '../../config/call-hangup
  * 
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
-import { startCallTimer } from '../../config/call-timer.js';
+import { startCallTimer } from '../../config/call-timer.js?v=20261120-story-offset';
 import { parseWechatFile, formatWechatFile, tokenizeWechatFiles, getWechatFileAppearance } from './file-message.js';
 import { ImageCropper } from '../settings/image-cropper.js';
 import { captureWechatChatSnapshot } from './chat-snapshot.js';
@@ -16136,12 +16136,13 @@ renderChatRoom(chat) {
         clearInterval(this._wechatCallTimer);
         // 🔥 记录通话开始的剧情时间
         const timeManager = window.VirtualPhone?.timeManager;
-        const callStartTime = this._shouldUseRealTimeForOnlineChat()
+        const initialElapsedSeconds = Math.max(0, Math.floor(Number(callOptions.initialElapsedSeconds) || 0));
+        const callStartTime = callOptions.storyCallStart || (this._shouldUseRealTimeForOnlineChat()
             ? this._buildWechatRealTimeFields()
             : (timeManager
             ? timeManager.getCurrentStoryTime()
-            : { time: '21:30', date: '2044年10月28日' });
-        const callStartEpoch = Date.now();
+            : { time: '21:30', date: '2044年10月28日' }));
+        const callStartEpoch = Date.now() - initialElapsedSeconds * 1000;
         const isGroupCall = contact?.type === 'group';
         const groupParticipants = this._getGroupChatParticipants(contact);
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
@@ -16529,10 +16530,10 @@ renderChatRoom(chat) {
         }
 
         // 计时器
-        let videoDuration = 0;
+        let videoDuration = initialElapsedSeconds;
         const videoTimer = startCallTimer(document.getElementById('video-timer'), seconds => {
             videoDuration = seconds;
-        });
+        }, undefined, initialElapsedSeconds);
         this._wechatCallTimer = videoTimer;
 
         const triggerVideoAI = async ({ allowOffline = false } = {}) => {
@@ -16921,10 +16922,10 @@ ${groupParticipants.join('、') || '暂无成员'}
             : new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     }
 
-    _resolveCallEndStoryTime(callStartTime = null, elapsedSeconds = 0, { forceAdvanceMinute = false } = {}) {
+    _resolveCallEndStoryTime(callStartTime = null, elapsedSeconds = 0, { forceAdvanceMinute = false, useStoryTime = false } = {}) {
         const timeManager = window.VirtualPhone?.timeManager;
         const safeElapsed = Math.max(0, Number(elapsedSeconds) || 0);
-        const useRealTime = this._shouldUseRealTimeForOnlineChat();
+        const useRealTime = !useStoryTime && this._shouldUseRealTimeForOnlineChat();
 
         const fallbackNow = () => {
             const now = new Date();
@@ -16947,7 +16948,7 @@ ${groupParticipants.join('、') || '暂无成员'}
             ? callStartTime
             : (timeManager?.getCurrentStoryTime?.() || fallbackNow());
 
-        const minutesElapsedRaw = Math.ceil(safeElapsed / 60);
+        const minutesElapsedRaw = useStoryTime ? Math.floor(safeElapsed / 60) : Math.ceil(safeElapsed / 60);
         const minutesElapsed = Math.max(forceAdvanceMinute ? 1 : 0, minutesElapsedRaw);
 
         let endTime = baseTime;
@@ -17045,7 +17046,7 @@ ${groupParticipants.join('、') || '暂无成员'}
         const callStartTime = options?.callStartTime || null;
         const shouldAdvance = String(status || '').trim() === 'answered';
         const storyTime = shouldAdvance
-            ? this._resolveCallEndStoryTime(callStartTime, elapsedSeconds, { forceAdvanceMinute: true })
+            ? this._resolveCallEndStoryTime(callStartTime, elapsedSeconds, { forceAdvanceMinute: !options.offlineRecordId, useStoryTime: !!options.offlineRecordId })
             : (this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : (window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || null));
         const currentTime = storyTime?.time || this._getCurrentStoryTimeText();
 
@@ -17609,12 +17610,13 @@ ${callTranscript}`;
         clearInterval(this._wechatCallTimer);
         // 🔥 记录通话开始的剧情时间
         const timeManager = window.VirtualPhone?.timeManager;
-        const callStartTime = this._shouldUseRealTimeForOnlineChat()
+        const initialElapsedSeconds = Math.max(0, Math.floor(Number(callOptions.initialElapsedSeconds) || 0));
+        const callStartTime = callOptions.storyCallStart || (this._shouldUseRealTimeForOnlineChat()
             ? this._buildWechatRealTimeFields()
             : (timeManager
             ? timeManager.getCurrentStoryTime()
-            : { time: '21:30', date: '2044年10月28日' });
-        const callStartEpoch = Date.now();
+            : { time: '21:30', date: '2044年10月28日' }));
+        const callStartEpoch = Date.now() - initialElapsedSeconds * 1000;
         const isGroupCall = contact?.type === 'group';
         const groupParticipants = this._getGroupChatParticipants(contact);
         const groupParticipantsStrip = isGroupCall ? this._renderGroupCallParticipantsStrip(contact) : '';
@@ -17949,10 +17951,10 @@ ${callTranscript}`;
         };
 
         // 计时器
-        let callDuration = 0;
+        let callDuration = initialElapsedSeconds;
         const callTimer = startCallTimer(document.getElementById('call-timer'), seconds => {
             callDuration = seconds;
-        });
+        }, undefined, initialElapsedSeconds);
         this._wechatCallTimer = callTimer;
 
         // 聊天消息记录
