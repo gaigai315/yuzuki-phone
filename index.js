@@ -15,6 +15,7 @@
 // ========================================
 
 import { captureWechatPaymentState, parseWechatPaymentAction } from './apps/wechat/payment-action.js';
+import { getTavernUserAvatarCandidates } from './apps/wechat/user-avatar.js';
 import { resolveOfflineWechatCallDecisions } from './apps/wechat/offline-call-decision.js?v=20261120-story-call-end';
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data.js';
@@ -2772,22 +2773,10 @@ if (window.GGP_Loaded) {
     }
 
     function getMofoUserAvatarUrl() {
-        const selectors = [
-            '#user_avatar_block .avatar-container.selected img',
-            '#rm_button_panel_persona img'
-        ];
+        // 优先读取当前 Persona 的实时绑定，不依赖头像列表是否已挂载。
         for (const doc of getMofoHostDocuments()) {
-            for (const selector of selectors) {
-                const image = doc.querySelector?.(selector);
-                const source = String(image?.currentSrc || image?.src || image?.getAttribute?.('src') || '').trim();
-                if (source) return source;
-            }
-            const userMessageAvatars = doc.querySelectorAll?.('.mes[is_user="true"] .mesAvatarWrapper .avatar img') || [];
-            for (let index = userMessageAvatars.length - 1; index >= 0; index -= 1) {
-                const image = userMessageAvatars[index];
-                const source = String(image?.currentSrc || image?.src || image?.getAttribute?.('src') || '').trim();
-                if (source) return source;
-            }
+            const candidates = getTavernUserAvatarCandidates({ document: doc, context: getContext?.() });
+            if (candidates.length) return candidates[0];
         }
         return '';
     }

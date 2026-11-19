@@ -218,14 +218,30 @@ test('Mofo templates receive the current SillyTavern Persona avatar at render ti
     const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 
     assert.match(source, /function getMofoUserAvatarUrl\(\)/);
-    assert.match(source, /#user_avatar_block \.avatar-container\.selected img/);
-    assert.match(source, /#rm_button_panel_persona img/);
-    assert.match(source, /\.mes\[is_user="true"\] \.mesAvatarWrapper \.avatar img/);
+    assert.match(source, /import \{ getTavernUserAvatarCandidates \} from '.\/apps\/wechat\/user-avatar\.js'/);
+    assert.match(source, /getTavernUserAvatarCandidates\(\{ document: doc, context: getContext\?\.\(\) \}\)/);
     assert.match(source, /function getMofoRuntimeTemplateState\(state = \{\}\)/);
     assert.match(source, /用户头像: userAvatar/);
     assert.match(source, /用户姓名: userName/);
     assert.match(source, /renderTemplate\([\s\S]*?getMofoRuntimeTemplateState\(rendered\.state\)/);
     assert.match(source, /renderTemplate\(htmlTemplate, getMofoRuntimeTemplateState\(state\)\)/);
+});
+
+test('Mofo resolves live Persona without mounted avatars and rejects blank DOM fallbacks', async () => {
+    const { getTavernUserAvatarCandidates } = await import('../apps/wechat/user-avatar.js');
+    const source = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+    const body = source.slice(source.indexOf('    function getMofoUserAvatarUrl()'),
+        source.indexOf('    function getMofoRuntimeTemplateState('));
+    const personas = { user_avatar: 'first.png' };
+    const doc = { querySelector: () => ({ src: '/img/user-default.png' }) };
+    const resolve = Function('getTavernUserAvatarCandidates', 'getMofoHostDocuments', 'getContext',
+        `${body}; return getMofoUserAvatarUrl;`)(
+        options => getTavernUserAvatarCandidates({ ...options, personas }), () => [doc], () => ({}));
+    assert.equal(resolve(), '/User%20Avatars/first.png');
+    personas.user_avatar = 'next avatar.png';
+    assert.equal(resolve(), '/User%20Avatars/next%20avatar.png');
+    personas.user_avatar = '';
+    assert.equal(resolve(), '');
 });
 
 test('Mofo supports simultaneous inline snapshots and a current-state bubble template', () => {
