@@ -402,3 +402,27 @@ test('hangup writes elapsed duration to the same source call after its message I
         assert.equal(data.getMessages('chat')[0].duration, '3分49秒');
     } finally { globalThis.window = previousWindow; }
 });
+
+
+test('offline user-authored group text preserves colon prefixes through parsing and storage', async () => {
+    const previousWindow = globalThis.window;
+    const values = new Map();
+    const data = new WechatData({ get: (key, fallback = null) => values.has(key) ? values.get(key) : fallback, set: (key, value) => values.set(key, value) });
+    data.data.userInfo.name = '测试玩家';
+    data.createChat({ id: 'group', name: '成人读书会', type: 'group', members: ['好友A', '好友B'] });
+    globalThis.window = { VirtualPhone: { cachedWechatData: data }, dispatchEvent() {} };
+    const sentences = ['测试玩家最讨厌之人：陈纪迟、许清让、沈涟、秦限！', 'me:这也是正文', '成人读书会：这整句都是内容'];
+    try {
+        const parsed = parseStory(`<wechat><!--
+---测试玩家---
+接收人：成人读书会
+type:group
+date:2018年10月02日14:38
+${sentences.join('\n')}
+--></wechat>`);
+        await dispatchStory(data, parsed);
+        assert.deepEqual(data.getMessages('group').map(message => message.content), sentences);
+        assert.ok(data.getMessages('group').every(message => message.from === 'me'));
+        assert.ok(!data.getChat('group').members.includes('测试玩家最讨厌之人'));
+    } finally { globalThis.window = previousWindow; }
+});

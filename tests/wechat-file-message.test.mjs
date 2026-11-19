@@ -153,6 +153,7 @@ test('complete offline WeChat parser keeps group file sender, time and multiline
         tokenizeWechatFiles,
         tokenizeWangxiangTaskTags: text => ({ text, tokenMap: new Map() }),
         normalizeWechatGroupSpeakerName: identity,
+        isWechatSenderCurrentUser: () => false,
         isWechatRecipientAllowed: name => name === '用户',
         normalizeWechatDateText: identity,
         getWechatKnownGroupByName: () => ({ members: ['群友C', '群友D'] }),

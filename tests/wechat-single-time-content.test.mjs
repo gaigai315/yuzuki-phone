@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const indexSource = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 
-function createParser() {
+function createParser({ userName = '宋清秋' } = {}) {
     const start = indexSource.indexOf('function parseLightweightWechatTag(text) {');
     const end = indexSource.indexOf('// 🔧 辅助函数：解析消息类型', start);
     const identity = value => value;
@@ -23,7 +23,8 @@ function createParser() {
         tokenizeWechatFiles: text => ({ text, tokenMap: new Map() }),
         tokenizeWangxiangTaskTags: text => ({ text, tokenMap: new Map() }),
         normalizeWechatGroupSpeakerName: identity,
-        isWechatRecipientAllowed: name => name === '宋清秋',
+        isWechatRecipientAllowed: name => name === userName,
+        isWechatSenderCurrentUser: name => name === userName || name === 'me',
         normalizeWechatDateText: identity,
         getWechatKnownGroupByName: name => name === '工作群' ? { members: ['群友C'] } : null,
         normalizeWechatRecipientOrFallback: identity,
@@ -63,3 +64,22 @@ date:117年12月07日
     assert.equal(chat.messages[0].sender, '群友C');
     assert.equal(chat.messages[0].content, '今日14:00的课程改期。');
 });
+
+
+for (const timePrefix of ['', '[14:38] ']) {
+    test(`user group message keeps the full colon-containing sentence (${timePrefix || 'no timestamp'})`, () => {
+        const parse = createParser({ userName: '月见里' });
+        const sentence = '月见里最讨厌之人：陈纪迟、许清让、沈涟、秦限！';
+        const [block] = parse(`<wechat><!--
+---月见里---
+接收人：成人读书会
+type:group
+date:2018年10月02日14:38
+${timePrefix}${sentence}
+--></wechat>`);
+        assert.equal(block.contact, '成人读书会');
+        assert.equal(block.chatType, 'group');
+        assert.equal(block.messages[0].sender, 'me');
+        assert.equal(block.messages[0].content, sentence);
+    });
+}

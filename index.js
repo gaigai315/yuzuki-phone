@@ -8095,7 +8095,7 @@ if (window.GGP_Loaded) {
                             if (recipientGroup) {
                                 knownGroupMembers = Array.isArray(recipientGroup.members) ? [...recipientGroup.members] : [];
                             }
-                            messagesToSave = messagesToSave.map(msg => ({ ...msg, sender: 'me' }));
+                            messagesToSave = messagesToSave.map(msg => ({ ...msg, sender: 'me', preserveContentPrefix: true }));
                         } else {
                             console.warn('⚠️ [微信] 跳过非用户接收人的线下微信消息:', {
                                 contact: currentContact,
@@ -8205,10 +8205,11 @@ if (window.GGP_Loaded) {
 
                 // 🔥🔥🔥 群聊格式：[21:30] 发送者: 消息内容 / 发送者: 消息内容
                 // 单聊格式没有发送者前缀，避免把“今日14:00...”中的冒号误判为姓名分隔符。
-                const senderMatch = currentChatType === 'group'
+                const parseGroupSenderPrefix = currentChatType === 'group' && !isWechatSenderCurrentUser(currentContact);
+                const senderMatch = parseGroupSenderPrefix
                     ? /^\[([0-9A-Za-z:：]+)\]\s*([^:：]{1,40})[：:]\s*(.+)$/.exec(trimmedLine)
                     : null;
-                const groupSimpleSenderMatch = !senderMatch && currentChatType === 'group'
+                const groupSimpleSenderMatch = !senderMatch && parseGroupSenderPrefix
                     ? /^([^:：]{1,40})[：:]\s*(.+)$/.exec(trimmedLine)
                     : null;
 
@@ -8838,19 +8839,21 @@ if (window.GGP_Loaded) {
                     senderAvatar = userInfo.avatar || '';
                 }
 
-                // 清理发送者前缀
-                if (cleanContent.startsWith(messageSender + ':')) {
-                    cleanContent = cleanContent.substring(messageSender.length + 1).trim();
-                } else if (cleanContent.startsWith(messageSender + '：')) {
-                    cleanContent = cleanContent.substring(messageSender.length + 1).trim();
-                } else if (rawMsgSender && cleanContent.startsWith(rawMsgSender + ':')) {
-                    cleanContent = cleanContent.substring(rawMsgSender.length + 1).trim();
-                } else if (rawMsgSender && cleanContent.startsWith(rawMsgSender + '：')) {
-                    cleanContent = cleanContent.substring(rawMsgSender.length + 1).trim();
-                } else if (cleanContent.startsWith(data.contact + ':')) {
-                    cleanContent = cleanContent.substring(data.contact.length + 1).trim();
-                } else if (cleanContent.startsWith(data.contact + '：')) {
-                    cleanContent = cleanContent.substring(data.contact.length + 1).trim();
+                // 清理发送者前缀：用户署名块的正文已经确定归属，不能再剥离正文中的姓名和冒号。
+                if (!msg.preserveContentPrefix) {
+                    if (cleanContent.startsWith(messageSender + ':')) {
+                        cleanContent = cleanContent.substring(messageSender.length + 1).trim();
+                    } else if (cleanContent.startsWith(messageSender + '：')) {
+                        cleanContent = cleanContent.substring(messageSender.length + 1).trim();
+                    } else if (rawMsgSender && cleanContent.startsWith(rawMsgSender + ':')) {
+                        cleanContent = cleanContent.substring(rawMsgSender.length + 1).trim();
+                    } else if (rawMsgSender && cleanContent.startsWith(rawMsgSender + '：')) {
+                        cleanContent = cleanContent.substring(rawMsgSender.length + 1).trim();
+                    } else if (cleanContent.startsWith(data.contact + ':')) {
+                        cleanContent = cleanContent.substring(data.contact.length + 1).trim();
+                    } else if (cleanContent.startsWith(data.contact + '：')) {
+                        cleanContent = cleanContent.substring(data.contact.length + 1).trim();
+                    }
                 }
 
                 // 🔥 存储消息到数据层（带上 batchId 和历史标记）
