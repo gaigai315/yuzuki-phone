@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
 import { WechatData } from '../apps/wechat/wechat-data.js';
+import { ChatView } from '../apps/wechat/chat-view.js';
 import {
     acceptWechatGroupInvitation, findWechatInvitationFriend, findWechatInvitedGroup,
     isWechatGroupInvitationCurrent, parseWechatGroupInvitations
@@ -49,7 +50,7 @@ test('accepting a group invite reuses known friends and keeps unknown members ou
     request.members.push('林予安', '小月', '用户');
     const result = acceptWechatGroupInvitation(data, request, { tavernMessageIndex: 4, batchId: 'batch' });
     assert.equal(result.status, 'joined');
-    assert.deepEqual(result.chat.members, ['阿年', '群友甲', '群友乙', '小月']);
+    assert.deepEqual(result.chat.members, ['阿年', '群友甲', '群友乙']);
     assert.deepEqual(data.data.contacts, contacts);
     assert.equal(data.data.chats.length, 1);
     assert.equal(data.data.chats[0].type, 'group');
@@ -92,11 +93,11 @@ test('strangers cannot invite the user, and parsing or rejection creates no grou
     assert.equal(data.data.contacts.length, 1);
 });
 
-test('inviter is always included and only one copy of the current user is inserted', () => {
+test('inviter is always included and current user aliases stay out of the member list', () => {
     const data = fixture();
     const request = { groupName: '聚会', inviter: '熟人', members: ['新群友', '我', '小月'], reason: '' };
     const { chat } = acceptWechatGroupInvitation(data, request);
-    assert.deepEqual(chat.members, ['新群友', '小月', '阿年']);
+    assert.deepEqual(chat.members, ['新群友', '阿年']);
 });
 
 test('a queued invitation becomes invalid after conversation switches, deletion, editing, swiping or a new batch', () => {
@@ -159,4 +160,39 @@ test('rendered assistant messages trigger the shared request queue and invitatio
     assert.match(source, /escapePhoneHtml\(\(request\.members \|\| \[\]\)\.join\('、'\)\)/);
     assert.match(source, /acceptWechatGroupInvitation\(wechatData, request, item\.source\)/);
     assert.match(source, /acceptedWechatGroupInvitationIds\.clear\(\)/);
+});
+
+
+test('reloading older invited groups removes the phone owner while preserving other members', async () => {
+    const values = new Map();
+    const storage = { get: (key, fallback = null) => values.has(key) ? values.get(key) : fallback, set: (key, value) => values.set(key, value) };
+    const data = new WechatData(storage);
+    data.data.userInfo.name = 'yuzuki';
+    data.data.userInfo.realName = '本名';
+    data.data.chats.push({ id: 'legacy-invitation', name: '线下联调测试组', type: 'group',
+        members: ['陆岩', 'Echo', 'K', 'Zero', 'Orion', 'yuzuki', 'user', '{{user}}', '我', '本名'],
+        groupInvitation: { inviterName: 'Orion' } });
+    await data.saveData();
+    const restored = new WechatData(storage);
+    assert.deepEqual(restored.getChat('legacy-invitation').members, ['陆岩', 'Echo', 'K', 'Zero', 'Orion']);
+});
+
+test('group settings hide legacy self entries and count the phone owner exactly once', () => {
+    const previousDocument = globalThis.document;
+    const view = Object.create(ChatView.prototype);
+    const group = { id: 'group', name: '测试群', type: 'group', members: ['陆岩', 'Echo', 'K', 'Zero', 'Orion', 'yuzuki'] };
+    let html = '';
+    view._escapeHtml = value => String(value);
+    view.app = { currentChat: group, wechatData: {
+        getChat: () => group, getUserInfo: () => ({ name: 'yuzuki' }), getContactByName: () => null
+    }, renderAvatar: () => '', phoneShell: { setContent: value => { html = value; } } };
+    const root = { querySelector: () => null, querySelectorAll: () => [] };
+    globalThis.document = { querySelector: () => root };
+    try {
+        view.showGroupSettings();
+        assert.match(html, /聊天信息\(6\)/);
+        assert.match(html, /群成员\(6人\)/);
+        assert.equal((html.match(/class="group-member-item"/g) || []).length, 5);
+        assert.doesNotMatch(html, /yuzuki/);
+    } finally { globalThis.document = previousDocument; }
 });

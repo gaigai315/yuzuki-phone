@@ -10,7 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20261118-online-group-invitation';
+import { ChatView } from './chat-view.js?v=20261119-call-duration';
 import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
 import { MomentsView } from './moments-view.js?v=20261118-compose-stable-surfaces';
 import { WechatData } from './wechat-data.js?v=20261118-online-group-invitation';
@@ -266,6 +266,18 @@ export class WechatApp {
             #phone-panel-content .wechat-app.wechat-moment-compose-page :is(.wechat-header, #moment-text-input) {
                 transition: none !important;
                 animation: none !important;
+            }
+            /* 通话双方文字、翻译及通话记录共用随微信字体调整的对比底色。 */
+            #phone-panel-content .phone-screen .wechat-app :is(
+                .call-msg-bubble,
+                .wechat-call-spoken-bubble,
+                .wechat-call-translation-target
+            ) {
+                background: var(--wechat-readable-surface) !important;
+                border: 1px solid var(--wechat-readable-border) !important;
+                color: var(--wechat-text-color, #000000) !important;
+                -webkit-text-fill-color: var(--wechat-text-color, #000000) !important;
+                box-sizing: border-box;
             }
             #phone-panel-content .wechat-app .wechat-voice-transcript {
                 background: var(--wechat-readable-surface) !important;
@@ -7280,7 +7292,9 @@ export class WechatApp {
     }
 
     renderAvatar(avatar, defaultEmoji = '👤', fallbackName = '') {
-        const avatarStr = String(avatar || '').trim();
+        const groupAvatar = this.currentChat?.type === 'group' && defaultEmoji === '👤'
+            ? this.wechatData.getGroupMemberAvatar?.(this.currentChat.id, fallbackName) : '';
+        const avatarStr = String(groupAvatar || avatar || '').trim();
         this._ensureWechatAvatarPoolLoaded();
 
         const pickFirstChar = (text) => {

@@ -10,6 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信数据管理
+import { excludeWechatGroupSelfMembers } from './group-invitation.js';
 import { GlobalSocialStore } from '../../config/global-social-store.js';
 import { parseImagePromptDescriptionPair, readBalancedImagePromptGroup } from '../../config/image-prompt-format.js';
 import { parseWechatVoiceContent } from './voice-text.js';
@@ -471,6 +472,9 @@ export class WechatData {
 
                     // 🔥 先构建 chats 数组（迁移需要用到）
                     const chats = this._normalizeChatList(data.chats || []);
+                    chats.forEach(chat => {
+                        if (chat.type === 'group') chat.members = excludeWechatGroupSelfMembers(chat.members, normalizedUserInfo);
+                    });
                     this._applyGlobalChatBackgroundSync(chats, normalizedUserInfo);
                     const contacts = (Array.isArray(data.contacts) ? data.contacts : [])
                         .filter(contact => contact && typeof contact === 'object')
@@ -4058,12 +4062,55 @@ getWeekday(date) {
         });
     }
 
+    getGroupMemberAvatar(chatId, memberName) {
+        const chat = this.getChat(chatId);
+        const key = this._normalizeLookupName(memberName);
+        const profiles = chat?.memberAvatarOverrides;
+        return profiles && Object.prototype.hasOwnProperty.call(profiles, key)
+            ? String(profiles[key]?.avatar || '') : '';
+    }
+
+    resolveAiAvatarTarget(chatId, senderName) {
+        const chat = this.getChat(chatId);
+        if (!chat) return null;
+        if (chat.type !== 'group') return this.getContact(chat.contactId) || this.getContactByName(chat.name);
+        const raw = String(senderName || '').trim();
+        const key = this._normalizeLookupName(raw);
+        const user = this.getUserInfo();
+        if (!key || raw === 'me' || key === this._normalizeLookupName(user.name)) return null;
+        const contact = this.getContact(raw) || this.findContactByAlias(raw);
+        const aliases = [raw, ...(contact ? this._getContactAliasValues(contact) : [])];
+        const members = Array.isArray(chat.members) && chat.members.length ? chat.members
+            : this.getMessages(chatId).map(message => message.from).filter(name => name && name !== 'system' && name !== 'me');
+        const member = members.find(name => name === contact?.id
+            || aliases.some(alias => this._normalizeLookupName(alias) === this._normalizeLookupName(name)));
+        if (!member) return null;
+        if (contact) return contact;
+        const memberKey = this._normalizeLookupName(member);
+        const profiles = chat.memberAvatarOverrides || {};
+        const profile = Object.prototype.hasOwnProperty.call(profiles, memberKey) ? profiles[memberKey] : {};
+        return {
+            ...profile,
+            id: `group-member:${chatId}:${memberKey}`, name: String(member).trim(),
+            groupAvatarChatId: chatId, groupAvatarMemberKey: memberKey
+        };
+    }
+
+    updateAiAvatarTarget(target, updates) {
+        if (!target.groupAvatarChatId) return this.updateContact(target.id, updates);
+        const chat = this.getChat(target.groupAvatarChatId);
+        if (!chat) return false;
+        const profiles = chat.memberAvatarOverrides || {};
+        // Computed properties also handle names such as "__proto__" as ordinary keys.
+        chat.memberAvatarOverrides = { ...profiles, [target.groupAvatarMemberKey]: { ...target, ...updates } };
+        this.saveData();
+        return true;
+    }
+
     applyAiAvatarChange(chatId, senderName, image, fields = {}) {
         const chat = this.getChat(chatId);
         if (!chat || !/^\/backgrounds\//i.test(String(image || '')) || String(image).includes('..')) return false;
-        const contact = chat.type === 'group'
-            ? this.getContactByName(senderName)
-            : (this.data.contacts.find(item => item.id === chat.contactId) || this.getContactByName(chat.name));
+        const contact = this.resolveAiAvatarTarget(chatId, senderName);
         if (!contact) return false;
         const previousAvatar = contact.avatar || (chat.type !== 'group' ? chat.avatar : '') || '';
         if (previousAvatar === image) return false;
@@ -4071,10 +4118,11 @@ getWeekday(date) {
             ...fields,
             from: 'system', type: 'system',
             content: `${this.getContactDisplayName(contact) || contact.name} 已更换头像`,
-            avatarChange: { contactId: contact.id, previousAvatar, nextAvatar: image }
+            avatarChange: { contactId: contact.id, previousAvatar, nextAvatar: image,
+                ...(contact.groupAvatarChatId ? { groupChatId: contact.groupAvatarChatId, memberKey: contact.groupAvatarMemberKey, memberName: contact.name } : {}) }
         });
         if (!event) return false;
-        this.updateContact(contact.id, { avatar: image });
+        this.updateAiAvatarTarget(contact, { avatar: image });
         this._syncAiAvatarToSocial(contact, image);
         return true;
     }
@@ -4092,9 +4140,12 @@ getWeekday(date) {
                     }
                 }
             });
-            const contact = this.data.contacts.find(item => item.id === change.contactId);
+            const group = change.groupChatId ? this.getChat(change.groupChatId) : null;
+            const contact = change.groupChatId
+                ? group?.memberAvatarOverrides?.[change.memberKey]
+                : this.data.contacts.find(item => item.id === change.contactId);
             if (!contact || contact.avatar !== change.nextAvatar) return;
-            this.updateContact(contact.id, { avatar: change.previousAvatar });
+            this.updateAiAvatarTarget(contact, { avatar: change.previousAvatar, aiAvatarSource: '', aiAvatarImagePath: '' });
             this._syncAiAvatarToSocial(contact, change.previousAvatar);
         });
     }
@@ -5915,6 +5966,18 @@ parseAIResponse(text) {
         });
         this._messagesDirty[chat.id] = true;
 
+        if (chat.memberAvatarOverrides && Object.prototype.hasOwnProperty.call(chat.memberAvatarOverrides, previousKey)) {
+            const profile = chat.memberAvatarOverrides[previousKey];
+            delete chat.memberAvatarOverrides[previousKey];
+            chat.memberAvatarOverrides = { ...chat.memberAvatarOverrides, [nextKey]: {
+                ...profile, id: `group-member:${chatId}:${nextKey}`, name: nextName, groupAvatarMemberKey: nextKey
+            } };
+            messages.forEach(message => {
+                if (message.avatarChange?.groupChatId === chatId && message.avatarChange.memberKey === previousKey) {
+                    Object.assign(message.avatarChange, { memberKey: nextKey, memberName: nextName, contactId: `group-member:${chatId}:${nextKey}` });
+                }
+            });
+        }
         const oldMapKey = this._getContactGenderMapKey(previousName);
         const genderMap = this.getContactGenderMap();
         const avatarGroupMap = this.getContactAvatarGroupMap();

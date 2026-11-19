@@ -1,6 +1,13 @@
 const normalize = value => String(value || '').trim().replace(/\s+/g, '').toLowerCase();
 const field = (block, name) => String(block).match(new RegExp(`^[ \\t]*${name}[ \\t]*[：:][ \\t]*(.*)$`, 'm'))?.[1]?.trim() || '';
 
+// Group member lists contain other people; the phone owner is counted separately.
+export function excludeWechatGroupSelfMembers(members, user = {}) {
+    const selfNames = new Set(['me', '我', '用户', '玩家', 'user', '{{user}}', user.name, user.realName]
+        .map(normalize).filter(Boolean));
+    return (Array.isArray(members) ? members : []).filter(member => !selfNames.has(normalize(member)));
+}
+
 export const ONLINE_GROUP_INVITATION_PATTERN = /\[群聊邀请\]\s*[（(][^\r\n）)]+[）)]/g;
 
 export function parseWechatOnlineGroupInvitation(text = '') {
@@ -73,10 +80,11 @@ export function acceptWechatGroupInvitation(data, invitation, source = {}) {
     if ([inviter.name, inviter.realName, rawInviter].some(name => selfNames.has(normalize(name)))) throw new Error('不能接受自己发起的入群邀请');
     const members = [];
     const seen = new Set();
-    for (const raw of [...memberNames, inviter.name, userName]) {
+    for (const raw of excludeWechatGroupSelfMembers([...memberNames, inviter.name], user)) {
         if (!normalize(raw)) continue;
         const contact = findWechatInvitationFriend(data, raw);
-        const member = selfNames.has(normalize(raw)) ? userName : (contact?.name || String(raw).trim());
+        const member = contact?.name || String(raw).trim();
+        if (selfNames.has(normalize(member))) continue;
         const key = normalize(member);
         if (seen.has(key)) continue;
         seen.add(key);

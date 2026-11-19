@@ -59,7 +59,7 @@ test('acceptance keeps the join notice in the group only, preserves nonfriends a
     assert.equal(accepted.status, 'joined');
     assert.equal(card.groupInvitationStatus, 'accepted');
     assert.equal(data.getChatList().length, 2);
-    assert.deepEqual(accepted.chat.members, ['阿年', '陌生群友', '小月']);
+    assert.deepEqual(accepted.chat.members, ['阿年', '陌生群友']);
     assert.equal(data.getContacts().length, 1);
     assert.equal(data.getMessages('private').length, 1, 'the invitation card already shows acceptance; do not add a second private notice');
     assert.equal(data.getMessages(accepted.chat.id)[0].fromMainChatTag, undefined, 'online acceptance is independent from story-floor rollback');

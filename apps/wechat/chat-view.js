@@ -1,4 +1,4 @@
-import { acceptWechatGroupInvitation, findWechatInvitationFriend, ONLINE_GROUP_INVITATION_PATTERN, parseWechatOnlineGroupInvitation } from './group-invitation.js?v=20261118-online-group-invitation';
+import { excludeWechatGroupSelfMembers, acceptWechatGroupInvitation, findWechatInvitationFriend, ONLINE_GROUP_INVITATION_PATTERN, parseWechatOnlineGroupInvitation } from './group-invitation.js?v=20261118-online-group-invitation';
 import { avatarCommandPattern, parseAvatarCommand, getEmojiGroup, resolveAvatarSource } from './avatar-change.js';
 import { CALL_HANGUP_RULE, parseCallHangupReply } from '../../config/call-hangup.js';
 /* ========================================================
@@ -174,7 +174,7 @@ export class ChatView {
         const callTypeName = message.callType === 'video' ? '视频通话' : '语音通话';
         if (message.status !== 'answered') {
             const statusText = (message.status === 'rejected' || message.status === 'declined')
-                ? '对方已拒绝'
+                ? (message.offlineCallDecision ? '用户已拒绝' : '对方已拒绝')
                 : message.status === 'cancelled'
                     ? '已取消'
                     : '未接听';
@@ -3886,7 +3886,7 @@ renderChatRoom(chat) {
             return {
                 isMe: false,
                 senderName,
-                senderAvatar: senderContact?.avatar || ''
+                senderAvatar: this.app.wechatData.getGroupMemberAvatar?.(this.app.currentChat.id, senderName) || senderContact?.avatar || ''
             };
         }
 
@@ -4250,7 +4250,7 @@ renderChatRoom(chat) {
                 const callStatusText = msg.status === 'answered'
                     ? `通话时长 ${msg.duration}`
                     : msg.status === 'rejected'
-                        ? '对方已拒绝'
+                        ? (msg.offlineCallDecision ? '已拒绝' : '对方已拒绝')
                         : msg.status === 'declined'
                             ? '对方已拒绝'
                             : msg.status === 'cancelled'
@@ -6340,7 +6340,7 @@ renderChatRoom(chat) {
             const statusText = status === 'answered'
                 ? `通话时长 ${msg.duration || '未知'}`
                 : (status === 'rejected' || status === 'declined')
-                    ? (isGroupCall ? '群成员未接听' : '对方已拒绝')
+                    ? (msg.offlineCallDecision ? '用户已拒绝' : (isGroupCall ? '群成员未接听' : '对方已拒绝'))
                     : status === 'cancelled'
                         ? '用户已取消'
                         : '未接听';
@@ -12594,8 +12594,10 @@ renderChatRoom(chat) {
 
     _stripAvatarLookupCommands(response) {
         return String(response || '').split('\n').map(line => {
-            if (!line.includes('[查看头像分组]')) return line;
-            const cleaned = line.replace(/\[查看头像分组\]/g, '').trim();
+            const internal = /\[(?:查看(?:头像分组|下一批头像|[^\]\r\n]+头像)|头像挑选记录[：:][^\]\r\n]*)\]/g;
+            if (!internal.test(line)) return line;
+            internal.lastIndex = 0;
+            const cleaned = line.replace(internal, '').trim();
             if (/^(?:\[\d{1,2}:\d{2}\]\s*)?[^:：\r\n]+[:：]\s*$/.test(cleaned)) return '';
             return cleaned;
         }).join('\n').trim();
@@ -12648,7 +12650,10 @@ renderChatRoom(chat) {
             if (this._hasAvatarLookupReplyContent(reply)) yield reply;
             return;
         }
-        const lookupRequested = /\[查看头像分组\]/.test(String(firstResponse || ''));
+        const libraryRequested = /\[查看头像分组\]/.test(String(firstResponse || ''));
+        const targets = [...new Set([...String(firstResponse || '').matchAll(/\[查看([^\]\r\n]+)头像\]/g)]
+            .map(match => match[1].trim()).filter(Boolean))].slice(0, 8);
+        const lookupRequested = libraryRequested || targets.length > 0;
         if (!lookupRequested) {
             yield firstResponse;
             return;
@@ -12662,16 +12667,28 @@ renderChatRoom(chat) {
             await this._waitForAvatarReplyPaint(chatId, signal);
         }
         if (signal?.aborted) throw new Error('已中断发送');
-        console.debug('[微信头像] 第一轮消息显示完成，开始查看头像分组', { chatId, batchId: options.avatarFlowBatchId });
-        options.includeAvatarLibraryImages = true;
+        console.debug('[微信头像] 第一轮消息处理完成，开始按需查看头像', { chatId, batchId: options.avatarFlowBatchId });
+        options.includeAvatarLibraryImages = libraryRequested;
+        options.avatarLookupTargets = targets;
         options.avatarLookupContinuation = true;
         try {
-            const secondResponse = await this.sendToAIHidden(message, context, null, signal, chatId, options);
-            console.debug('[微信头像][第2轮回复]', { chatId, batchId: options.avatarFlowBatchId, response: secondResponse });
-            if (signal?.aborted) throw new Error('已中断发送');
-            // At most one lookup per user turn, even if the model asks again.
-            const secondReply = this._stripAvatarLookupCommands(secondResponse);
-            if (this._hasAvatarLookupReplyContent(secondReply)) yield secondReply;
+            while (true) {
+                const secondResponse = await this.sendToAIHidden(message, context, null, signal, chatId, options);
+                console.debug('[微信头像][第2轮回复]', { chatId, batchId: options.avatarFlowBatchId, response: secondResponse });
+                if (signal?.aborted) throw new Error('已中断发送');
+                const notes = [...String(secondResponse || '').matchAll(/\[头像挑选记录[：:]([^\]\r\n]*)\]/g)]
+                    .map(match => match[1].trim()).filter(Boolean);
+                if (notes.length) options.avatarLookupNotes = [...(options.avatarLookupNotes || []), ...notes];
+                const secondReply = this._stripAvatarLookupCommands(secondResponse);
+                if (this._hasAvatarLookupReplyContent(secondReply)) yield secondReply;
+                const request = options.avatarRequest;
+                if (!/\[查看下一批头像\]/.test(String(secondResponse || ''))
+                    || !options.includeAvatarLibraryImages || !(request?.galleryRemaining > 0)
+                    || !(request.galleryNextOffset > (options.avatarGalleryOffset || 0))) break;
+                options.avatarGalleryOffset = request.galleryNextOffset;
+                if (signal?.aborted) throw new Error('已中断发送');
+            }
+
         } catch (error) {
             if (signal?.aborted || error?.name === 'AbortError' || error?.message === '已中断发送') throw error;
             console.warn('[Wechat] 头像查看续接失败，已保留前一轮消息:', error);
@@ -12690,7 +12707,7 @@ renderChatRoom(chat) {
         return raw;
     }
 
-    _getCurrentChatAvatarSources(chat, context = null) {
+    _getCurrentChatAvatarSources(chat, context = null, lookupTargets = []) {
         const data = this.app.wechatData;
         const user = data.getUserInfo?.() || {};
         const sources = [{ label: `用户 ${user.name || '用户'} 的当前微信头像`, image: user.avatar }];
@@ -12699,6 +12716,8 @@ renderChatRoom(chat) {
             sources.push({ label: `好友 ${chat.name} 的当前微信头像`, image: this._getCurrentFriendAvatarForAi(chat, contact) });
             return sources;
         }
+        if (!lookupTargets.length) return sources;
+        const requested = lookupTargets.map(name => this._normalizeLookupName(name));
         // An explicit member list is authoritative; do not reintroduce departed members from old messages.
         const members = Array.isArray(chat.members) && chat.members.length
             ? chat.members
@@ -12715,8 +12734,11 @@ renderChatRoom(chat) {
             const key = contact?.id || this._normalizeLookupName(name);
             if (!key || seen.has(key)) continue;
             seen.add(key);
-            const avatarOwner = { name: contact?.name || name, avatar: contact?.avatar || '' };
-            sources.push({ label: `群友 ${name} 的当前微信头像`, image: this._getCurrentFriendAvatarForAi(avatarOwner, contact) });
+            const aliases = [memberName, name, contact?.name, contact?.remark, ...(data._getContactAliasValues?.(contact || {}) || [])];
+            if (!aliases.some(alias => alias && requested.includes(this._normalizeLookupName(alias)))) continue;
+            const avatarOwner = { name: contact?.name || name, avatar: contact?.avatar || data.getGroupMemberAvatar?.(chat.id, memberName) || '' };
+            sources.push({ label: `群友 ${name} 的当前微信头像`, image: data.getGroupMemberAvatar?.(chat.id, memberName) || this._getCurrentFriendAvatarForAi(avatarOwner, contact) });
+            if (sources.length >= 9) break; // User avatar plus at most eight group members.
         }
         return sources;
     }
@@ -12731,21 +12753,40 @@ renderChatRoom(chat) {
             .map(item => ({ id: String(item.id), image: String(item.content || '') }));
         // Preserve the original user photos; load gallery candidates only after an explicit lookup.
         if (!options.avatarRequest) options.avatarRequest = { chatId: chat.id, images, appliedContacts: new Set() };
-        if (options.includeAvatarLibraryImages && !options.avatarRequest.candidates) {
-            options.avatarRequest.candidates = (data.getCustomEmojis?.() || [])
+        if (options.includeAvatarLibraryImages && !options.avatarRequest.galleryCandidates) {
+            options.avatarRequest.galleryCandidates = (data.getCustomEmojis?.() || [])
                 .filter(item => getEmojiGroup(item) === 'avatar')
                 .map(item => ({ id: String(item.id), name: String(item.name || ''), image: String(item.image || '') }));
         }
-        const candidates = options.avatarRequest.candidates || [];
+        const gallery = options.avatarRequest.galleryCandidates || [];
+        const offset = options.avatarGalleryOffset || 0;
+        const candidates = options.includeAvatarLibraryImages ? gallery.slice(offset, offset + 5) : [];
+        if (options.includeAvatarLibraryImages) {
+            const seen = new Map((options.avatarRequest.candidates || []).map(item => [item.id, item]));
+            candidates.forEach(item => seen.set(item.id, item));
+            options.avatarRequest.candidates = [...seen.values()];
+            options.avatarRequest.galleryNextOffset = offset + candidates.length;
+            options.avatarRequest.galleryRemaining = Math.max(0, gallery.length - offset - candidates.length);
+        }
         const sources = [
-            ...(currentAvatarSources || this._getCurrentChatAvatarSources(chat)),
+            ...(currentAvatarSources || this._getCurrentChatAvatarSources(chat, null, options.avatarLookupTargets)),
             ...(options.includeAvatarLibraryImages ? candidates.map(item => ({ label: `头像分组：名字=${item.name}；ID=${item.id}`, image: item.image })) : []),
             ...(!latestPhotos.length ? images.map(item => ({ label: `用户发送的图片；图片消息ID=${item.id}`, image: item.image })) : [])
         ];
         const rows = ['【微信头像资料】'];
+        if (chat.type === 'group') {
+            if (options.avatarLookupContinuation && options.avatarLookupTargets?.length && sources.length === 1) {
+                rows.push('所请求的群友头像未找到：目标不在当前群成员中或名字无法匹配，请确认完整微信名，不得编造头像内容。');
+            }
+        }
         if (options.includeAvatarLibraryImages) {
             if (!candidates.length) rows.push('头像分组查看结果：空');
-            else rows.push('头像分组查看结果：已加载可用图片。', ...candidates.map(item => `可用头像：名字=${item.name}；ID=${item.id}`));
+            else rows.push('头像分组查看结果：本批候选如下，是否读取成功以各图片后的结果为准。', ...candidates.map(item => `可用头像：名字=${item.name}；ID=${item.id}`));
+            rows.push(`头像库共${gallery.length}张，本批${candidates.length}张（每批最多5张候选，不含用户头像、好友当前头像及聊天图片），还有${options.avatarRequest.galleryRemaining}张未发送。`);
+            rows.push('若本批有喜欢的，可直接按真实ID更换；不想换则正常回复结束。只有需要继续看且还有未发送候选时，单独一行输出“实际发送者微信名: [查看下一批头像]”。这是查看新的一批，不是重复查看同一批。');
+            rows.push('请求下一批时，请另起一行输出“实际发送者微信名: [头像挑选记录：已看头像的真实ID、简短画面印象和喜好理由]”。记录仅后台保存供本次后续批次参考，不作为聊天气泡。未能读取的图片不得描述。后续批次不会重新附带此前原图，可以选本次已查看过的真实ID。');
+            if (offset > 0) rows.push('本次此前已提供的候选（仅ID与名称，原图未重发）：', ...options.avatarRequest.candidates.filter(item => !candidates.some(current => current.id === item.id)).map(item => `名字=${item.name}；ID=${item.id}`));
+            if (options.avatarLookupNotes?.length) rows.push('此前批次你留下的挑选记录（文字印象，不等同于重新看到原图）：', ...options.avatarLookupNotes);
         }
         if (images.length) rows.push(`本次请求可采用的用户图片消息ID：${images.map(item => item.id).join('、')}`);
         for (const source of sources) {
@@ -12774,9 +12815,7 @@ renderChatRoom(chat) {
         const data = this.app.wechatData;
         const chat = data.getChat(chatId);
         if (!chat) return false;
-        const contact = chat.type === 'group'
-            ? data.getContactByName(sender)
-            : (data.getContact?.(chat.contactId) || data.getContactByName(chat.name));
+        const contact = data.resolveAiAvatarTarget(chatId, sender);
         if (!contact || request.appliedContacts.has(contact.id)) return false;
         if (chat.type !== 'group') {
             const senderContact = data.getContactByName(sender);
@@ -12801,7 +12840,7 @@ renderChatRoom(chat) {
             if (!image || this.abortController?.signal.aborted) return false;
             const result = data.applyAiAvatarChange(chatId, sender, image, this._attachMessageTimelineFields({ replyBatchId: fields.replyBatchId }, fields));
             if (result) {
-                data.updateContact(contact.id, { aiAvatarSource: source.image, aiAvatarImagePath: image });
+                data.updateAiAvatarTarget(contact, { avatar: image, aiAvatarSource: source.image, aiAvatarImagePath: image });
                 request.appliedContacts.add(contact.id);
                 if (this.app.currentChat?.id === chatId && chat.type !== 'group') this.app.currentChat.avatar = image;
             }
@@ -13453,8 +13492,8 @@ renderChatRoom(chat) {
         const latestVisionImageCount = latestUserMessages
             .filter(message => message?.type === 'image' && message?.hiddenFromPrompt !== true)
             .length;
-        const currentAvatarSources = !callMode ? this._getCurrentChatAvatarSources(targetChat, context) : [];
-        const avatarImageCount = !callMode ? currentAvatarSources.length + (options.includeAvatarLibraryImages ? (this.app.wechatData.getCustomEmojis?.() || []).filter(item => getEmojiGroup(item) === 'avatar').length : 0) : 0;
+        const currentAvatarSources = !callMode ? this._getCurrentChatAvatarSources(targetChat, context, options.avatarLookupTargets) : [];
+        const avatarImageCount = !callMode ? currentAvatarSources.length + (options.includeAvatarLibraryImages ? Math.min(5, (this.app.wechatData.getCustomEmojis?.() || []).filter(item => getEmojiGroup(item) === 'avatar').length) : 0) : 0;
         const previousPhotoCount = !callMode && !isProactive && latestVisionImageCount === 0
             && wechatMessages.some(message => message?.from === 'me' && message?.type === 'image' && message?.hiddenFromPrompt !== true) ? 1 : 0;
         const aiImageCharLimit = getWechatAiImageCharLimit(latestVisionImageCount + avatarImageCount + previousPhotoCount);
@@ -13894,7 +13933,7 @@ renderChatRoom(chat) {
         }
 
         if (options.avatarLookupContinuation) {
-            finalUserContent += '\n\n【头像查看续接】这是上一轮 [查看头像分组] 的返回结果。上一轮普通聊天消息已发送并记入聊天记录，请基于本次头像图片与ID继续处理，不要重复发送已有消息或再次请求查看。';
+            finalUserContent += '\n\n【头像查看续接】这是上一轮头像查看指令的返回结果。上一轮普通聊天消息已发送并记入聊天记录，请基于本次头像图片与ID继续处理，不要重复发送已有消息或重复查看同一批；头像库仍有未发送图片时，可按本次资料中的分页指令查看下一批。';
         }
 
         messages.push({
@@ -16098,7 +16137,9 @@ renderChatRoom(chat) {
     }
 
     // 🔥 显示视频通话界面（接通后）- 白色玻璃风格
-    showVideoCallInterface(contact, aiFirstMessage) {
+    showVideoCallInterface(contact, aiFirstMessage = '', callOptions = {}) {
+        callOptions = this._captureOfflineCallOptions(contact.id, callOptions);
+        this._offlineCallRecord = callOptions.offlineRecordId ? { chatId: contact.id, recordId: callOptions.offlineRecordId } : null;
         clearInterval(this._wechatCallTimer);
         // 🔥 记录通话开始的剧情时间
         const timeManager = window.VirtualPhone?.timeManager;
@@ -16197,7 +16238,7 @@ renderChatRoom(chat) {
                 <!-- 底部：输入框和控制按钮 -->
                 <div style="background: rgba(255,255,255,0.24); padding: 10px; flex-shrink: 0; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.16);">
                     <div style="display: flex; gap: 8px; align-items: center;">
-                        <button id="video-hangup-btn" style="
+                        <button type="button" id="video-hangup-btn" style="
                             width: 30px;
                             height: 30px;
                             border-radius: 50%;
@@ -16351,6 +16392,8 @@ renderChatRoom(chat) {
 
         let callEnded = false;
         const callChatId = contact.id;
+        const isCallSourceCurrent = () => !callOptions.offlineRecordId
+            || !!this._findOfflineCallRecord(callChatId, callOptions);
         const callMessagesElement = getVideoMessages();
         const finishCall = (endedBy) => {
             if (callEnded || !callMessagesElement?.isConnected) return;
@@ -16368,10 +16411,15 @@ renderChatRoom(chat) {
             });
             const effectiveDurationSec = Math.max(videoDuration, Math.floor((Date.now() - callStartEpoch) / 1000));
             const durationText = `${Math.floor(effectiveDurationSec / 60)}分${effectiveDurationSec % 60}秒`;
-            this.addCallRecord('video', 'answered', durationText, {
-                chatId: callChatId, callStartTime, elapsedSeconds: effectiveDurationSec,
-                endedBy, transcript: chatMessages.filter(m => !m.isDeleted).map(m => ({ ...m }))
-            });
+            try {
+                this.addCallRecord('video', 'answered', durationText, {
+                    chatId: callChatId, callStartTime, elapsedSeconds: effectiveDurationSec,
+                    offlineRecordId: callOptions.offlineRecordId, offlineRecordSource: callOptions.offlineRecordSource,
+                    endedBy, transcript: chatMessages.filter(m => !m.isDeleted).map(m => ({ ...m }))
+                });
+            } catch (error) {
+                console.warn('[Wechat] 通话已结束，但保存通话记录失败:', error);
+            }
             callMessagesElement.insertAdjacentHTML('beforeend', '<div class="wechat-call-ended" style="text-align:center; color:#888; font-size:12px; padding:10px 0; flex-shrink:0;">已挂断</div>');
             callMessagesElement.scrollTop = callMessagesElement.scrollHeight;
             const input = getVideoInput();
@@ -16397,7 +16445,7 @@ renderChatRoom(chat) {
                         sender: String(renderLines[i]?.sender || contact.name).trim() || contact.name,
                         text: String(renderLines[i]?.text || '').trim()
                     };
-                if (callEnded || !callMessagesElement?.isConnected) break;
+                if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) break;
                 if (!entry.text) continue;
 
                 document.getElementById('video-typing-indicator')?.remove();
@@ -16411,7 +16459,7 @@ renderChatRoom(chat) {
 
                 await new Promise(resolve => setTimeout(resolve, getVideoCallTypingDelay(entry.text)));
                 document.getElementById('video-typing-indicator')?.remove();
-                if (callEnded || !callMessagesElement?.isConnected) break;
+                if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) break;
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
                 const senderLabelHtml = isGroupCall
@@ -16450,6 +16498,7 @@ renderChatRoom(chat) {
         this.bindInnerThoughtEvents(videoCallMessages);
 
         // 🔥 AI主动发第一句话（支持多条消息）
+        let greetingReady = Promise.resolve();
         if (aiFirstMessage && aiFirstMessage.trim()) {
             const messagesDiv = getVideoMessages();
             if (messagesDiv) {
@@ -16466,9 +16515,9 @@ renderChatRoom(chat) {
                     isGroupCall
                 });
                 const roundId = 'round_greeting_' + Date.now();
-                (async () => {
+                greetingReady = (async () => {
                     const bubbleMetas = await renderVideoAiLinesSequentially(msgLines, roundId);
-                    if (callEnded || !callMessagesElement?.isConnected) return;
+                    if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) return;
                     this.bindCallBubbleClickEvents(messagesDiv);
                     const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
                     this.currentTtsRound = roundId;
@@ -16493,10 +16542,10 @@ renderChatRoom(chat) {
         });
         this._wechatCallTimer = videoTimer;
 
-        const triggerVideoAI = async () => {
-            if (callEnded || !callMessagesElement?.isConnected || isVideoSending || videoPendingUserLines.length === 0) return;
+        const triggerVideoAI = async ({ allowOffline = false } = {}) => {
+            if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent() || isVideoSending || videoPendingUserLines.length === 0) return;
 
-            if (!this.isOnlineMode()) {
+            if (!allowOffline && !this.isOnlineMode()) {
                 this.app.phoneShell.showNotification('离线模式', '请在设置中开启在线模式', '⚠️');
                 clearVideoBatchTimer();
                 setVideoCallStatus('green');
@@ -16526,7 +16575,7 @@ renderChatRoom(chat) {
                 const aiReply = await this.sendCallMessageToAI(messageToSend, contact.name, chatMessages, 'video');
                 document.getElementById('video-typing-indicator')?.remove();
 
-                if (callEnded || !callMessagesElement?.isConnected) return;
+                if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) return;
                 const hangupReply = parseCallHangupReply(aiReply);
                 const roundId = 'round_' + Date.now();
                 const aiEntries = this._parseCallReplyEntries(hangupReply.text, {
@@ -16537,7 +16586,7 @@ renderChatRoom(chat) {
                 });
                 const renderLines = aiEntries.length > 0 ? aiEntries : (hangupReply.ended ? [] : [{ sender: contact.name, text: '...' }]);
                 const bubbleMetas = await renderVideoAiLinesSequentially(renderLines, roundId);
-                    if (callEnded || !callMessagesElement?.isConnected) return;
+                    if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) return;
 
                 this.bindCallBubbleClickEvents(messagesDiv);
                 const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
@@ -16567,7 +16616,7 @@ renderChatRoom(chat) {
 
         // 发送消息（复刻微信聊天的“连发等待”逻辑）
         const sendMessage = async () => {
-            if (callEnded || !callMessagesElement?.isConnected) return;
+            if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) return;
             this.stopWechatCallTTS(); // 发新消息时打断旧语音
             const input = getVideoInput();
             const messagesDiv = getVideoMessages();
@@ -16668,9 +16717,16 @@ renderChatRoom(chat) {
         });
 
         // 挂断
-        document.getElementById('video-hangup-btn')?.addEventListener('click', () => {
-            if (callEnded) this.app.render();
-            else finishCall('user');
+        const hangupButton = callMessagesElement?.closest?.('.wechat-app')?.querySelector('#video-hangup-btn')
+            || document.getElementById('video-hangup-btn');
+        this._bindWechatCallHangup(hangupButton, finishCall, () => callEnded);
+        this._resumeOfflineAcceptedCall({
+            options: callOptions, contact, greetingReady, history: chatMessages,
+            getMessages: getVideoMessages, isEnded: () => callEnded || !isCallSourceCurrent(),
+            send: async lines => {
+                videoPendingUserLines = lines;
+                await triggerVideoAI({ allowOffline: true });
+            }
         });
     }
 
@@ -16916,6 +16972,80 @@ ${groupParticipants.join('、') || '暂无成员'}
         return endTime;
     }
 
+    _findOfflineCallRecord(chatId, options = {}) {
+        const messages = this.app.wechatData.getMessages(chatId);
+        const byId = messages.find(message => String(message.id) === String(options.offlineRecordId));
+        if (byId) return byId;
+        const source = options.offlineRecordSource;
+        if (!source || !Number.isFinite(source.tavernMessageIndex) || !source.batchId
+            || !Number.isFinite(source.mainChatOrder)) return null;
+        // An ID can change during a redraw; never cross into a regenerated branch.
+        return messages.find(message => message.offlineCallDecision && message.type === 'call_record'
+            && message.status === 'answered' && message.callType === source.callType
+            && message.fromMainChatTag === true && message.tavernMessageIndex === source.tavernMessageIndex
+            && message.batchId === source.batchId && message.mainChatOrder === source.mainChatOrder) || null;
+    }
+
+    _captureOfflineCallOptions(chatId, options = {}) {
+        if (!options.offlineRecordId || options.offlineRecordSource) return options;
+        const record = this._findOfflineCallRecord(chatId, options);
+        return record ? { ...options, offlineRecordSource: {
+            tavernMessageIndex: record.tavernMessageIndex, batchId: record.batchId,
+            mainChatOrder: record.mainChatOrder, callType: record.callType
+        } } : options;
+    }
+
+    _bindWechatCallHangup(button, finishCall, isEnded) {
+        if (!button) return;
+        let suppressClickUntil = 0;
+        const activate = event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.type === 'click' && Date.now() < suppressClickUntil) return;
+            if (event.type === 'touchend') suppressClickUntil = Date.now() + 700;
+            if (isEnded()) this.app.render();
+            else finishCall('user');
+        };
+        button.addEventListener('touchstart', event => event.preventDefault(), { passive: false });
+        button.addEventListener('touchend', activate, { passive: false });
+        button.addEventListener('click', activate);
+    }
+
+    async _resumeOfflineAcceptedCall({ options, contact, greetingReady, history, getMessages, isEnded, send }) {
+        if (!options.offlineRecordId) return;
+        const recordId = options.offlineRecordId;
+        const isCurrent = () => !isEnded() && this._offlineCallRecord?.recordId === recordId
+            && this.app.currentChat?.id === contact.id
+            && !!this._findOfflineCallRecord(contact.id, options);
+        try {
+            await greetingReady;
+            if (!isCurrent()) return;
+            const messages = getMessages();
+            if (!messages?.isConnected) return;
+            const lines = (options.initialUserLines || []).map(line => String(line || '').trim()).filter(Boolean);
+            const transcript = Array.isArray(options.initialTranscript) ? options.initialTranscript
+                : lines.map(text => ({ from: 'me', text }));
+            for (const entry of transcript) {
+                const text = String(entry.text || '').trim();
+                if (!text) continue;
+                const mine = entry.from === 'me';
+                const body = mine
+                    ? `<div class="call-msg-bubble" data-msg-idx="${history.length}" style="max-width:75%;padding:8px 12px;border-radius:12px;font-size:13px;">${this._escapeHtml(text)}</div>`
+                    : this._renderWechatCallAiBubbleMarkup({
+                        text, messageIndex: history.length, callType: options.callType || 'voice',
+                        bubbleId: `wechat-call-seed-${recordId}-${history.length}`, roundId: `offline-${recordId}`, sender: entry.from
+                    });
+                messages.insertAdjacentHTML('beforeend', `<div class="call-msg-row" style="display:flex;justify-content:${mine ? 'flex-end' : 'flex-start'};">${body}</div>`);
+                history.push({ from: entry.from, text });
+            }
+            if (transcript.some(entry => entry.from !== 'me')) this.bindCallBubbleClickEvents(messages);
+            messages.scrollTop = messages.scrollHeight;
+            if (isCurrent()) await send(lines.length ? lines : ['用户已接听通话']);
+        } catch (error) {
+            console.warn('[Wechat] 承接线下已接听通话失败:', error);
+        }
+    }
+
     // 🔥 添加通话记录到聊天（使用剧情时间）
     addCallRecord(callType, status, duration, options = {}) {
         const elapsedSeconds = Math.max(0, Number(options?.elapsedSeconds) || 0);
@@ -16926,7 +17056,8 @@ ${groupParticipants.join('、') || '暂无成员'}
             : (this._shouldUseRealTimeForOnlineChat() ? this._buildWechatRealTimeFields() : (window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || null));
         const currentTime = storyTime?.time || this._getCurrentStoryTimeText();
 
-        this.app.wechatData.addMessage(options?.chatId || this.app.currentChat.id, {
+        const chatId = options?.chatId || this.app.currentChat.id;
+        const record = {
             from: 'me',
             type: 'call_record',
             callType: callType,
@@ -16940,7 +17071,16 @@ ${groupParticipants.join('、') || '暂无成员'}
             time: currentTime,  // ✅ 使用剧情时间
             date: storyTime?.date,
             weekday: storyTime?.weekday
-        });
+        };
+        const offlineRecordId = options.offlineRecordId;
+        if (offlineRecordId) {
+            const original = this._findOfflineCallRecord(chatId, options);
+            if (!original) return false; // The originating story floor was removed or replayed.
+            return this.app.wechatData.updateMessageById(chatId, original.id, {
+                ...record, offlineCallFinalized: true, elapsedSeconds
+            });
+        }
+        return this.app.wechatData.addMessage(chatId, record);
 
     }
 
@@ -17470,7 +17610,9 @@ ${callTranscript}`;
     }
 
     // 🔥 显示语音通话界面（接通后）- 简洁版
-    showVoiceCallInterface(contact, aiGreeting = '') {
+    showVoiceCallInterface(contact, aiGreeting = '', callOptions = {}) {
+        callOptions = this._captureOfflineCallOptions(contact.id, callOptions);
+        this._offlineCallRecord = callOptions.offlineRecordId ? { chatId: contact.id, recordId: callOptions.offlineRecordId } : null;
         clearInterval(this._wechatCallTimer);
         // 🔥 记录通话开始的剧情时间
         const timeManager = window.VirtualPhone?.timeManager;
@@ -17578,7 +17720,7 @@ ${callTranscript}`;
                         ">
                             <i class="fa-solid fa-paper-plane"></i>
                         </button>
-                        <button id="voice-hangup-btn" style="
+                        <button type="button" id="voice-hangup-btn" style="
                             width: 32px;
                             height: 32px;
                             background: transparent;
@@ -17715,6 +17857,8 @@ ${callTranscript}`;
 
         let callEnded = false;
         const callChatId = contact.id;
+        const isCallSourceCurrent = () => !callOptions.offlineRecordId
+            || !!this._findOfflineCallRecord(callChatId, callOptions);
         const callMessagesElement = getVoiceMessages();
         const finishCall = (endedBy) => {
             if (callEnded || !callMessagesElement?.isConnected) return;
@@ -17732,10 +17876,15 @@ ${callTranscript}`;
             });
             const effectiveDurationSec = Math.max(callDuration, Math.floor((Date.now() - callStartEpoch) / 1000));
             const durationText = `${Math.floor(effectiveDurationSec / 60)}分${effectiveDurationSec % 60}秒`;
-            this.addCallRecord('voice', 'answered', durationText, {
-                chatId: callChatId, callStartTime, elapsedSeconds: effectiveDurationSec,
-                endedBy, transcript: chatMessages.filter(m => !m.isDeleted).map(m => ({ ...m }))
-            });
+            try {
+                this.addCallRecord('voice', 'answered', durationText, {
+                    chatId: callChatId, callStartTime, elapsedSeconds: effectiveDurationSec,
+                    offlineRecordId: callOptions.offlineRecordId, offlineRecordSource: callOptions.offlineRecordSource,
+                    endedBy, transcript: chatMessages.filter(m => !m.isDeleted).map(m => ({ ...m }))
+                });
+            } catch (error) {
+                console.warn('[Wechat] 通话已结束，但保存通话记录失败:', error);
+            }
             callMessagesElement.insertAdjacentHTML('beforeend', '<div class="wechat-call-ended" style="text-align:center; color:#888; font-size:12px; padding:10px 0; flex-shrink:0;">已挂断</div>');
             callMessagesElement.scrollTop = callMessagesElement.scrollHeight;
             const input = getVoiceInput();
@@ -17761,7 +17910,7 @@ ${callTranscript}`;
                         sender: String(renderLines[i]?.sender || contact.name).trim() || contact.name,
                         text: String(renderLines[i]?.text || '').trim()
                     };
-                if (callEnded || !callMessagesElement?.isConnected) break;
+                if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) break;
                 if (!entry.text) continue;
 
                 document.getElementById('voice-typing-indicator')?.remove();
@@ -17775,7 +17924,7 @@ ${callTranscript}`;
 
                 await new Promise(resolve => setTimeout(resolve, getVoiceCallTypingDelay(entry.text)));
                 document.getElementById('voice-typing-indicator')?.remove();
-                if (callEnded || !callMessagesElement?.isConnected) break;
+                if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) break;
 
                 const bubbleId = 'wechat-call-ai-msg-' + Math.random().toString(36).slice(2, 8);
                 const senderLabelHtml = isGroupCall
@@ -17821,6 +17970,7 @@ ${callTranscript}`;
         this.bindInnerThoughtEvents(voiceCallMessages);
 
         // 🔥 如果有AI开场白，显示（支持多条消息）
+        let greetingReady = Promise.resolve();
         if (aiGreeting && aiGreeting.trim()) {
             const messagesDiv = getVoiceMessages();
             if (messagesDiv) {
@@ -17836,9 +17986,9 @@ ${callTranscript}`;
                     isGroupCall
                 });
                 const roundId = 'round_greeting_' + Date.now();
-                (async () => {
+                greetingReady = (async () => {
                     const bubbleMetas = await renderVoiceAiLinesSequentially(msgLines, roundId);
-                    if (callEnded || !callMessagesElement?.isConnected) return;
+                    if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) return;
                     this.bindCallBubbleClickEvents(messagesDiv);
                     const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
                     this.currentTtsRound = roundId;
@@ -17854,10 +18004,10 @@ ${callTranscript}`;
             }
         }
 
-        const triggerVoiceAI = async () => {
-            if (callEnded || !callMessagesElement?.isConnected || isVoiceSending || voicePendingUserLines.length === 0) return;
+        const triggerVoiceAI = async ({ allowOffline = false } = {}) => {
+            if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent() || isVoiceSending || voicePendingUserLines.length === 0) return;
 
-            if (!this.isOnlineMode()) {
+            if (!allowOffline && !this.isOnlineMode()) {
                 this.app.phoneShell.showNotification('离线模式', '请在设置中开启在线模式', '⚠️');
                 clearVoiceBatchTimer();
                 setVoiceCallStatus('green');
@@ -17887,7 +18037,7 @@ ${callTranscript}`;
                 const aiReply = await this.sendCallMessageToAI(messageToSend, contact.name, chatMessages, 'voice');
                 document.getElementById('voice-typing-indicator')?.remove();
 
-                if (callEnded || !callMessagesElement?.isConnected) return;
+                if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) return;
                 const hangupReply = parseCallHangupReply(aiReply);
                 const roundId = 'round_' + Date.now();
                 const aiEntries = this._parseCallReplyEntries(hangupReply.text, {
@@ -17898,7 +18048,7 @@ ${callTranscript}`;
                 });
                 const renderLines = aiEntries.length > 0 ? aiEntries : (hangupReply.ended ? [] : [{ sender: contact.name, text: '...' }]);
                 const bubbleMetas = await renderVoiceAiLinesSequentially(renderLines, roundId);
-                    if (callEnded || !callMessagesElement?.isConnected) return;
+                    if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) return;
 
                 this.bindCallBubbleClickEvents(messagesDiv);
                 const autoTTS = !!window.VirtualPhone?.storage?.get('wechat-call-auto-tts');
@@ -17926,7 +18076,7 @@ ${callTranscript}`;
 
         // 发送消息（复刻微信聊天的“连发等待”逻辑）
         const sendMessage = async () => {
-            if (callEnded || !callMessagesElement?.isConnected) return;
+            if (callEnded || !callMessagesElement?.isConnected || !isCallSourceCurrent()) return;
             this.stopWechatCallTTS();
             const input = getVoiceInput();
             const messagesDiv = getVoiceMessages();
@@ -18027,9 +18177,16 @@ ${callTranscript}`;
 
         // 挂断
         // 挂断
-        document.getElementById('voice-hangup-btn')?.addEventListener('click', () => {
-            if (callEnded) this.app.render();
-            else finishCall('user');
+        const hangupButton = callMessagesElement?.closest?.('.wechat-app')?.querySelector('#voice-hangup-btn')
+            || document.getElementById('voice-hangup-btn');
+        this._bindWechatCallHangup(hangupButton, finishCall, () => callEnded);
+        this._resumeOfflineAcceptedCall({
+            options: callOptions, contact, greetingReady, history: chatMessages,
+            getMessages: getVoiceMessages, isEnded: () => callEnded || !isCallSourceCurrent(),
+            send: async lines => {
+                voicePendingUserLines = lines;
+                await triggerVoiceAI({ allowOffline: true });
+            }
         });
     }
 
@@ -19262,8 +19419,9 @@ ${callTranscript}`;
         let isGroupMutating = false;
 
         // 🔥 群成员数量 +1，因为用户自己也在群里（但不加入白名单）
-        const memberCount = (liveChat.members?.length || 0) + 1;
         const userInfo = this.app.wechatData.getUserInfo();
+        const visibleMembers = excludeWechatGroupSelfMembers(liveChat.members, userInfo);
+        const memberCount = visibleMembers.length + 1;
 
         const html = `
         <div class="wechat-app wechat-readable-settings">
@@ -19317,7 +19475,7 @@ ${callTranscript}`;
                 <div style="background: #fff; padding: 15px 20px; margin-bottom: 10px;">
                     <div style="color: #999; font-size: 13px; margin-bottom: 12px;">群成员(${memberCount}人)</div>
                     <div id="group-members-grid" style="display: flex; flex-wrap: wrap; gap: 10px;">
-                        ${(liveChat.members || []).map(member => {
+                        ${visibleMembers.map(member => {
             const contact = this.app.wechatData.getContactByName(member);
             const avatar = contact?.avatar || '👤';
             const memberToken = this._encodeDataToken(member);
