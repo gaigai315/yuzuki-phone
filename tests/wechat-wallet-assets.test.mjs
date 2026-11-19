@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 import { WechatData } from '../apps/wechat/wechat-data.js';
+import { WechatApp } from '../apps/wechat/wechat-app.js';
 import {
     createWalletCreditBillingState,
     getWalletAssetTotals,
@@ -392,4 +393,109 @@ test('repayment rollback restores the source balance and credit-card billing sta
     assert.equal(data.getWalletAssetProfile().savingsAccounts[0].balance, 500);
     assert.equal(data.getWalletCreditCardStatuses(storyTime)[0].label, '待还款');
     assert.equal(data.getWalletTransactions().length, 0);
+});
+
+
+async function createDebtData(balance = 284.73) {
+    const data = await createRepaymentData({ walletBalance: balance });
+    data.data.walletAssetsByChat[data.walletDefaultKey].debts = [{
+        name: '支付宝花呗', amount: 146.8, detail: '九月购物账单', installmentStatus: '未分期', repaymentDay: ''
+    }];
+    return data;
+}
+
+for (const sourceId of ['wallet', 'bank:0:1000']) {
+    test(`debt repayment uses ${sourceId}, settles the balance, survives reload and rolls back`, async () => {
+        const data = await createDebtData();
+        const result = await data.repayDebt({ debtIndex: 0, sourceId });
+        assert.equal(result.success, true);
+        assert.equal(result.amount, 146.8);
+        assert.equal(data.getWalletAssetProfile().debts[0].amount, 0);
+        assert.equal(data.getWalletBalance(), sourceId === 'wallet' ? 137.93 : 284.73);
+        assert.equal(data.getWalletAssetProfile().savingsAccounts[0].balance, sourceId === 'wallet' ? 500 : 353.2);
+        assert.equal(data.getWalletTransactions()[0].title, '借贷还款');
+        assert.equal(data.getWalletTransactions()[0].delta, -146.8);
+        assert.equal(data.getWalletTransactions()[0].debtStateBefore.amount, 146.8);
+        assert.equal((await data.repayDebt({ debtIndex: 0, sourceId })).success, false);
+        assert.equal(data.getWalletTransactions().length, 1);
+        const restored = new WechatData(data.storage);
+        assert.equal(restored.getWalletAssetProfile().debts[0].amount, 0);
+        assert.equal(restored._rollbackWalletTransactions(record => record.type === 'repayment'), true);
+        assert.equal(restored.getWalletAssetProfile().debts[0].amount, 146.8);
+        assert.equal(restored.getWalletBalance(), 284.73);
+        assert.equal(restored.getWalletAssetProfile().savingsAccounts[0].balance, 500);
+    });
+}
+
+test('debt repayment rejects insufficient funds, stale bill identity and changed amounts without deducting', async () => {
+    const data = await createDebtData(10);
+    assert.equal((await data.repayDebt({ debtIndex: 0, sourceId: 'wallet' })).reason, 'insufficient_balance');
+    assert.equal((await data.repayDebt({ debtIndex: 0, sourceId: 'bank:0:1000', expectedName: '旧账单' })).success, false);
+    assert.equal((await data.repayDebt({ debtIndex: 0, sourceId: 'bank:0:1000', expectedAmount: 200 })).success, false);
+    assert.equal(data.getWalletBalance(), 10);
+    assert.equal(data.getWalletAssetProfile().savingsAccounts[0].balance, 500);
+    assert.equal(data.getWalletAssetProfile().debts[0].amount, 146.8);
+    assert.equal(data.getWalletTransactions().length, 0);
+});
+
+test('outstanding debts render as repayment buttons and settled debts do not', () => {
+    const app = Object.create(WechatApp.prototype);
+    app._escapeWalletHtml = text => String(text ?? '');
+    const html = app._renderWalletCreditPanel({ debts: [
+        { name: '花呗', amount: 146.8 }, { name: '已结清借款', amount: 0 }
+    ] }, { creditDue: 0, debtTotal: 146.8 });
+    assert.match(html, /<button[^>]*data-wallet-debt-index="0"/);
+    assert.doesNotMatch(html, /data-wallet-debt-index="1"/);
+    assert.match(html, /已结清/);
+});
+
+
+test('loan repayment modal shows the debt and confirms a real wallet payment', async () => {
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    const data = await createDebtData();
+    const app = Object.create(WechatApp.prototype);
+    app.wechatData = data;
+    const events = new Map();
+    const confirm = { isConnected: true, addEventListener: (name, callback) => events.set(name, callback) };
+    const error = { textContent: '' };
+    let markup = '';
+    let refreshed = false;
+    let closed = false;
+    const modal = {
+        querySelector: selector => selector === '[data-wallet-repayment-confirm]' ? confirm
+            : selector === '[data-wallet-repayment-error]' ? error : { value: 'wallet' },
+        querySelectorAll: () => [], addEventListener() {}, remove: () => { closed = true; }
+    };
+    const currentView = { insertAdjacentHTML: (_, html) => { markup = html; }, querySelector: () => modal };
+    globalThis.window = { VirtualPhone: {} };
+    globalThis.document = { querySelectorAll: () => [], querySelector: () => currentView };
+    app._escapeWalletHtml = text => String(text ?? '');
+    app.phoneShell = { showNotification() {} };
+    app.showWalletPage = () => { refreshed = true; };
+    data.repayCreditCard = () => assert.fail('loan confirmation must not repay a credit card');
+    try {
+        app.showWalletDebtRepaymentModal(0);
+        assert.match(markup, /借贷还款/);
+        assert.match(markup, /支付宝花呗/);
+        assert.match(markup, /146\.80/);
+        assert.match(markup, /未记录/);
+        await events.get('click')();
+        assert.equal(error.textContent, '');
+        assert.equal(data.getWalletBalance(), 137.93);
+        assert.equal(data.getWalletAssetProfile().debts[0].amount, 0);
+        assert.equal(closed, true);
+        assert.equal(refreshed, true);
+    } finally { globalThis.window = previousWindow; globalThis.document = previousDocument; }
+});
+
+test('overlapping debt confirmations deduct only once', async () => {
+    const data = await createDebtData();
+    const results = await Promise.all([
+        data.repayDebt({ debtIndex: 0, sourceId: 'wallet' }),
+        data.repayDebt({ debtIndex: 0, sourceId: 'wallet' })
+    ]);
+    assert.equal(results.filter(result => result.success).length, 1);
+    assert.equal(data.getWalletBalance(), 137.93);
+    assert.equal(data.getWalletTransactions().length, 1);
 });

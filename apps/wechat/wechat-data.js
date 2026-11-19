@@ -1932,6 +1932,9 @@ export class WechatData {
                 savingsBalanceAfter: Number.isFinite(Number(record.savingsBalanceAfter))
                     ? Number(record.savingsBalanceAfter)
                     : null,
+                debtIndex: Number.isInteger(record.debtIndex) ? record.debtIndex : undefined,
+                debtStateBefore: record.debtStateBefore && typeof record.debtStateBefore === 'object' ? { ...record.debtStateBefore } : null,
+                debtStateAfter: record.debtStateAfter && typeof record.debtStateAfter === 'object' ? { ...record.debtStateAfter } : null,
                 creditCardIndex: Number.isInteger(Number(record.creditCardIndex))
                     ? Number(record.creditCardIndex)
                     : undefined,
@@ -2064,6 +2067,49 @@ export class WechatData {
             }
         } catch (e) {}
         return undefined;
+    }
+
+    async repayDebt({ debtIndex, sourceId = '', chatId = null, storyTime = null,
+        expectedName, expectedDetail, expectedAmount } = {}) {
+        const entry = this._getMutableWalletAssetProfile(chatId);
+        const index = Number(debtIndex);
+        const debt = Number.isInteger(index) && index >= 0 ? entry?.profile?.debts?.[index] : null;
+        if (!debt) return { success: false, reason: 'debt_not_found' };
+        const amount = Math.max(0, Math.round(Number(debt.amount || 0) * 100) / 100);
+        if (!Number.isFinite(amount) || amount <= 0) return { success: false, reason: 'not_due' };
+        if ((expectedName !== undefined && debt.name !== expectedName)
+            || (expectedDetail !== undefined && String(debt.detail || '') !== String(expectedDetail || ''))
+            || (expectedAmount !== undefined && amount !== Math.round(Number(expectedAmount) * 100) / 100)) {
+            return { success: false, reason: 'not_due' };
+        }
+        const source = this.getWalletRepaymentSources(chatId).find(item => item.id === sourceId);
+        if (!source) return { success: false, reason: 'source_not_found' };
+        const balanceBefore = Math.round(Number(source.balance) * 100) / 100;
+        if (balanceBefore < amount) return { success: false, reason: 'insufficient_balance', amount, balanceBefore };
+        const balanceAfter = Math.round((balanceBefore - amount) * 100) / 100;
+        if (source.type === 'wallet') {
+            this.data.walletByChat[entry.key] = balanceAfter;
+            this._syncWalletAssetBalance(entry.key, balanceAfter);
+        } else {
+            const account = entry.profile.savingsAccounts?.[source.accountIndex];
+            if (!account || String(account.tailNumber || '') !== source.tailNumber) return { success: false, reason: 'source_not_found' };
+            account.balance = balanceAfter;
+        }
+        const debtStateBefore = { ...debt };
+        debt.amount = 0;
+        const when = storyTime || this._getStoryTimeFallback();
+        const transaction = this._appendWalletTransaction(-amount, {
+            type: 'repayment', title: '借贷还款', detail: `${debt.name} · ${source.label}${source.tailNumber ? ` 尾号${source.tailNumber}` : ''}`,
+            source: 'wallet_manual_debt_repayment', sourceApp: 'wechat',
+            referenceId: `wallet_debt_repayment:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+            date: when.date, time: when.time, timestamp: when.timestamp,
+            timelineLinked: true, tavernMessageIndex: this._getCurrentTavernMessageIndex(),
+            balanceScope: source.type, paymentSourceId: source.id,
+            savingsAccountIndex: source.accountIndex, savingsAccountTailNumber: source.tailNumber,
+            debtIndex: index, debtStateBefore, debtStateAfter: { ...debt }
+        }, { affectsBalance: true, balanceBefore, balanceAfter, walletKey: entry.key });
+        await this.saveData();
+        return { success: true, amount, balanceBefore, balanceAfter, source, transaction };
     }
 
     async repayCreditCard({
@@ -2344,6 +2390,9 @@ export class WechatData {
             savingsBalanceAfter: Number.isFinite(Number(meta.savingsBalanceAfter))
                 ? Number(meta.savingsBalanceAfter)
                 : null,
+            debtIndex: Number.isInteger(meta.debtIndex) ? meta.debtIndex : undefined,
+            debtStateBefore: meta.debtStateBefore && typeof meta.debtStateBefore === 'object' ? { ...meta.debtStateBefore } : null,
+            debtStateAfter: meta.debtStateAfter && typeof meta.debtStateAfter === 'object' ? { ...meta.debtStateAfter } : null,
             creditCardIndex: Number.isInteger(Number(meta.creditCardIndex))
                 ? Number(meta.creditCardIndex)
                 : undefined,
@@ -2435,6 +2484,15 @@ export class WechatData {
                 if (Number.isFinite(Number(this.data.walletByChat?.[key]))) {
                     this._syncWalletAssetBalance(key, this.data.walletByChat[key]);
                 }
+            }
+
+            if (record.type === 'repayment' && record.debtStateBefore && profile) {
+                const previous = record.debtStateBefore;
+                const debts = profile.debts || [];
+                const matches = item => item && item.name === previous.name && String(item.detail || '') === String(previous.detail || '');
+                const candidates = debts.filter(matches);
+                const debt = matches(debts[record.debtIndex]) ? debts[record.debtIndex] : candidates.length === 1 ? candidates[0] : null;
+                if (debt) debt.amount = previous.amount;
             }
 
             if (record.type === 'repayment' && record.billingStateBefore && profile) {

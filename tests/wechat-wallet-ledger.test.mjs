@@ -78,7 +78,7 @@ test('credit-card bills are clickable and use the in-phone repayment flow', () =
     assert.match(source, /name="wechat-wallet-repayment-source"/);
     assert.match(source, /repayCreditCard\(\{/);
     assert.match(source, /status\.state === 'overdue'/);
-    assert.match(source, /\['repayment', '信用卡还款'\]/);
+    assert.match(source, /\['repayment', '还款'\]/);
     assert.match(indexSource, /checkWalletCreditRepayments\(latestTime\)/);
     assert.match(indexSource, /phone:timeUpdated/);
     assert.match(phoneShellSource, /'\.wechat-wallet-repayment-body'/);

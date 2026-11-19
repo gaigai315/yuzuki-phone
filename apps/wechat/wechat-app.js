@@ -13,7 +13,7 @@
 import { ChatView } from './chat-view.js?v=20261119-bidirectional-calls';
 import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
 import { MomentsView } from './moments-view.js?v=20261118-compose-stable-surfaces';
-import { WechatData } from './wechat-data.js?v=20261118-online-group-invitation';
+import { WechatData } from './wechat-data.js?v=20261120-debt-repayment';
 import { normalizeWechatUserAvatar } from './user-avatar.js';
 import { getWalletAssetTotals, parseWalletAssetEvaluation } from './wallet-assets.js?v=20261011-wallet-credit-repayment';
 import { getWechatReadablePalette } from './readable-colors.js?v=20261109-readable-glass';
@@ -7792,7 +7792,7 @@ export class WechatApp {
                 redpacket: '微信红包',
                 honey: '蜜语',
                 shopping: '线下支付',
-                repayment: '信用卡还款',
+                repayment: '还款',
                 bank_transfer: '银行卡转入'
             }[record.type] || '微信零钱')).trim();
             return `${dateHeader}
@@ -7936,11 +7936,13 @@ export class WechatApp {
                 </${rowTag}>
             `;
         }).join('');
-        const debtRows = debts.map((debt) => {
+        const debtRows = debts.map((debt, debtIndex) => {
             const amount = Number(debt.amount || 0);
             const hasDue = amount > 0;
+            const rowTag = hasDue ? 'button' : 'div';
+            const attributes = hasDue ? `type="button" data-wallet-debt-index="${debtIndex}" aria-label="偿还${this._escapeWalletHtml(debt.name)}"` : '';
             return `
-                <div class="wechat-wallet-liability-row">
+                <${rowTag} class="wechat-wallet-liability-row" ${attributes}>
                     <div class="wechat-wallet-liability-top">
                         <span class="wechat-wallet-account-logo is-loan"><i class="fa-solid fa-hand-holding-dollar"></i></span>
                         <div class="wechat-wallet-account-copy">
@@ -7948,7 +7950,7 @@ export class WechatApp {
                             <div class="wechat-wallet-account-detail">${this._escapeWalletHtml(debt.detail || '借贷账户')}</div>
                         </div>
                         <span class="wechat-wallet-liability-status ${hasDue ? '' : 'is-clear'}">${hasDue ? '待还款' : '已结清'}</span>
-                        <i class="fa-solid fa-chevron-right wechat-wallet-liability-chevron" aria-hidden="true"></i>
+                        ${hasDue ? '<i class="fa-solid fa-chevron-right wechat-wallet-liability-chevron" aria-hidden="true"></i>' : '<span></span>'}
                     </div>
                     <div class="wechat-wallet-liability-metrics">
                         <div class="wechat-wallet-liability-metric">
@@ -7964,7 +7966,7 @@ export class WechatApp {
                             <strong class="wechat-wallet-liability-value">${this._escapeWalletHtml(debt.repaymentDay || '未记录')}</strong>
                         </div>
                     </div>
-                </div>
+                </${rowTag}>
             `;
         }).join('');
         return `
@@ -8044,7 +8046,7 @@ export class WechatApp {
             ['redpacket', '红包'],
             ['honey', '蜜语'],
             ['shopping', '线下支付'],
-            ['repayment', '信用卡还款'],
+            ['repayment', '还款'],
             ['bank_transfer', '银行卡转入']
         ];
         const typeOptions = typeOptionEntries
@@ -8144,6 +8146,12 @@ export class WechatApp {
         currentView.querySelector('#wechat-wallet-type-filter')?.addEventListener('change', (event) => {
             this._walletLedgerType = String(event.currentTarget.value || 'all');
             this.showWalletPage();
+        });
+        currentView.querySelectorAll('[data-wallet-debt-index]').forEach(button => {
+            button.addEventListener('click', () => {
+                const debtIndex = Number(button.dataset.walletDebtIndex);
+                if (Number.isInteger(debtIndex)) this.showWalletDebtRepaymentModal(debtIndex);
+            });
         });
         currentView.querySelectorAll('[data-wallet-credit-card-index]').forEach((button) => {
             button.addEventListener('click', () => {
@@ -8276,15 +8284,22 @@ export class WechatApp {
         });
     }
 
-    showWalletCreditRepaymentModal(cardIndex) {
+    showWalletDebtRepaymentModal(debtIndex) {
+        return this.showWalletCreditRepaymentModal(null, { debtIndex });
+    }
+
+    showWalletCreditRepaymentModal(cardIndex, { debtIndex = null } = {}) {
         document.querySelectorAll('#wechat-wallet-repayment-modal').forEach(el => el.remove());
 
         const storyTime = window.VirtualPhone?.timeManager?.getCurrentStoryTime?.() || {};
         const profile = this.wechatData.getWalletAssetProfile?.() || {};
-        const card = profile.creditCards?.[cardIndex];
-        const status = this.wechatData.getWalletCreditCardStatuses?.(storyTime)?.[cardIndex];
+        const isDebt = Number.isInteger(debtIndex);
+        const title = isDebt ? '借贷还款' : '信用卡还款';
+        const card = isDebt ? profile.debts?.[debtIndex] : profile.creditCards?.[cardIndex];
+        const status = isDebt ? { state: Number(card?.amount) > 0 ? 'pending' : 'clear', amountDue: Number(card?.amount || 0), label: '待还款' }
+            : this.wechatData.getWalletCreditCardStatuses?.(storyTime)?.[cardIndex];
         if (!card || !status || !['pending', 'overdue'].includes(status.state) || Number(status.amountDue) <= 0) {
-            this.phoneShell.showNotification('信用卡账单', '当前账单无需还款', '✓');
+            this.phoneShell.showNotification(title, '当前账单无需还款', '✓');
             this.showWalletPage({ section: 'credit' });
             return;
         }
@@ -8300,12 +8315,12 @@ export class WechatApp {
                 <span class="wechat-wallet-repayment-source-balance">¥${this._formatWalletNumber(source.balance)}</span>
             </label>
         `).join('');
-        const cardLabel = `${card.bankName}${card.tailNumber ? ` · 尾号${card.tailNumber}` : ''}`;
+        const cardLabel = isDebt ? card.name : `${card.bankName}${card.tailNumber ? ` · 尾号${card.tailNumber}` : ''}`;
         const modalHtml = `
             <div id="wechat-wallet-repayment-modal" class="wechat-wallet-repayment-overlay">
                 <section class="wechat-wallet-repayment-dialog" role="dialog" aria-modal="true" aria-labelledby="wechat-wallet-repayment-title">
                     <header class="wechat-wallet-repayment-header">
-                        <strong id="wechat-wallet-repayment-title">信用卡还款</strong>
+                        <strong id="wechat-wallet-repayment-title">${title}</strong>
                         <button type="button" class="wechat-wallet-repayment-close" data-wallet-repayment-close aria-label="关闭" title="关闭">
                             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                         </button>
@@ -8352,7 +8367,10 @@ export class WechatApp {
             confirmButton.disabled = true;
             errorEl.textContent = '';
             try {
-                const result = await this.wechatData.repayCreditCard({
+                const result = isDebt ? await this.wechatData.repayDebt({
+                    debtIndex, sourceId: selected.value, storyTime,
+                    expectedName: card.name, expectedDetail: card.detail, expectedAmount: status.amountDue
+                }) : await this.wechatData.repayCreditCard({
                     cardIndex,
                     sourceId: selected.value,
                     storyTime
