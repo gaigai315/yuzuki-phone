@@ -346,7 +346,9 @@ test('global wake opens an already connected voice/video interface and keeps ord
     const app = { wechatData: data, render() {}, openChat() { this.currentChat = chat; }, chatView: {
         showVoiceCallInterface: (...args) => calls.push(['voice', ...args]),
         showVideoCallInterface: (...args) => calls.push(['video', ...args]),
-        showIncomingVoiceCall: () => calls.push(['ring'])
+        showIncomingVoiceCall: () => calls.push(['ring']),
+        startVoiceCall: () => calls.push(['outgoing-voice']),
+        startVideoCall: () => calls.push(['outgoing-video'])
     } };
     const panel = { classList: { remove() {}, add() {} } };
     const content = { querySelector: () => ({}) };
@@ -366,6 +368,10 @@ test('global wake opens an already connected voice/video interface and keeps ord
         assert.deepEqual(call[3].initialTranscript, []);
     }
     assert.equal(calls.length, 2);
+    for (const kind of ['voice', 'video']) {
+        await wake('chat', '好友A', kind, [], { outgoingPending: true, conversationId: 'story' });
+        assert.deepEqual(calls.at(-1), ['outgoing-' + kind]);
+    }
     await wake('chat', '好友A', 'voice', []);
     assert.deepEqual(calls.at(-1), ['ring']);
 });
@@ -424,5 +430,90 @@ ${sentences.join('\n')}
         assert.deepEqual(data.getMessages('group').map(message => message.content), sentences);
         assert.ok(data.getMessages('group').every(message => message.from === 'me'));
         assert.ok(!data.getChat('group').members.includes('测试玩家最讨厌之人'));
+    } finally { globalThis.window = previousWindow; }
+});
+
+
+function outgoingScenario(status = '接听', media = 'voice') {
+    const label = media === 'voice' ? '语音' : '视频';
+    return `<wechat><!--
+---测试玩家---
+接收人：好友A
+date:2026年11月19日
+[21:37] [拨打微信${label}]
+---好友A---
+接收人：测试玩家
+date:2026年11月19日
+[21:37] ${label}通话-${status}
+[21:37] ${status === '接听' ? '喂？！姐姐？！' : '我现在不方便，晚点打给你。'}
+---测试玩家---
+接收人：好友A
+date:2026年11月19日
+[21:37] 是我。
+--></wechat>`;
+}
+
+for (const media of ['voice', 'video']) {
+    for (const status of ['接听', '已拒绝']) {
+        test(`user-originated ${media} call handles character ${status} through production parsing and storage`, async () => {
+            const previousWindow = globalThis.window;
+            const values = new Map();
+            const data = new WechatData({ get: (key, fallback = null) => values.has(key) ? values.get(key) : fallback, set: (key, value) => values.set(key, value) });
+            data.data.userInfo.name = '测试玩家';
+            data.data.contacts.push({ id: 'friend', name: '好友A' });
+            data.createChat({ id: 'chat', name: '好友A', type: 'single', contactId: 'friend' });
+            globalThis.window = { VirtualPhone: { cachedWechatData: data }, dispatchEvent() {} };
+            try {
+                const planned = planProductionStory(outgoingScenario(status, media));
+                const calls = await dispatchStory(data, planned, true);
+                const messages = data.getMessages('chat');
+                const record = messages.find(message => message.type === 'call_record');
+                assert.ok(record);
+                assert.equal(record.callDirection, 'outgoing');
+                assert.equal(record.callType, media);
+                assert.ok(!messages.some(message => message.type === 'text' && /通话-/.test(message.content)));
+                if (status === '接听') {
+                    assert.equal(calls.length, 1);
+                    assert.equal(calls[0][4].recordId, record.id);
+                    assert.deepEqual(calls[0][4].transcript.map(entry => entry.from), ['好友A', 'me']);
+                    assert.equal(calls[0][4].transcript[0].text, '喂？！姐姐？！');
+                    assert.equal(messages.filter(message => message.type === 'text').length, 0);
+                } else {
+                    assert.equal(calls.length, 0);
+                    assert.equal(record.status, 'rejected');
+                    const view = Object.create(ChatView.prototype);
+                    assert.match(view._formatCallRecordForPrompt(record), /对方已拒绝/);
+                    assert.ok(messages.some(message => message.from !== 'me' && /晚点打给你/.test(message.content)));
+                }
+            } finally { globalThis.window = previousWindow; }
+        });
+    }
+}
+
+test('a caller cannot answer their own outgoing call', () => {
+    const [userBlock] = parseStory(outgoingScenario());
+    userBlock.messages.push({ sender: 'me', content: '语音通话-接听', type: 'text' });
+    assert.equal(resolve([userBlock])[0].messages[0].type, 'incoming_call');
+});
+
+
+test('outgoing dial without a result is routed as outgoing rather than inviting the user to answer', async () => {
+    const previousWindow = globalThis.window;
+    const values = new Map();
+    const data = new WechatData({ get: (key, fallback = null) => values.has(key) ? values.get(key) : fallback, set: (key, value) => values.set(key, value) });
+    data.data.userInfo.name = '测试玩家';
+    data.data.contacts.push({ id: 'friend', name: '好友A' });
+    data.createChat({ id: 'chat', name: '好友A', type: 'single', contactId: 'friend' });
+    globalThis.window = { VirtualPhone: { cachedWechatData: data }, dispatchEvent() {} };
+    try {
+        const text = `<wechat><!--
+---测试玩家---
+接收人：好友A
+date:2026年11月19日
+[21:37] [拨打微信语音]
+--></wechat>`;
+        const calls = await dispatchStory(data, planProductionStory(text), true);
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0][4].outgoingPending, true);
     } finally { globalThis.window = previousWindow; }
 });

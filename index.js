@@ -14,7 +14,7 @@
 // SillyTavern 扩展插件
 // ========================================
 
-import { resolveOfflineWechatCallDecisions } from './apps/wechat/offline-call-decision.js?v=20261119-call-transcript';
+import { resolveOfflineWechatCallDecisions } from './apps/wechat/offline-call-decision.js?v=20261119-bidirectional-calls';
 import { tokenizeWangxiangTaskTags } from './apps/wangxiang/wangxiang-task-parser.js';
 import { PhoneCallData, parseSmsMessagesFromText } from './apps/phone/phone-data.js';
 import { showIncomingSmsPopup } from './apps/phone/sms-popup.js';
@@ -57,7 +57,7 @@ const ST_PHONE_VERSION = '1.7.1';
 const ST_PHONE_CSS_REVISION = '20261118-online-group-invitation';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261114-stable-picture-icons';
-const ST_PHONE_WECHAT_MODULE_REVISION = '20261119-call-duration';
+const ST_PHONE_WECHAT_MODULE_REVISION = '20261119-bidirectional-calls';
 const ST_PHONE_WEIBO_MODULE_REVISION = '20261002-first-return-guard';
 const ST_PHONE_X_MODULE_REVISION = '20261010-publish-guard';
 const ST_PHONE_HONEY_ASSET_REVISION = '20261003-theme-media-recovery';
@@ -1495,7 +1495,7 @@ if (window.GGP_Loaded) {
             import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
             import('./config/api-manager.js?v=20261009-unified-sse-parser'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20261119-offline-call-handoff'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20261119-bidirectional-calls'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
         import('./config/image-generation-manager.js?v=20261114-public-image-api'),
             import('./config/worldbook-manager.js?v=20261021-worldbook-lazy-load')
@@ -8692,6 +8692,7 @@ if (window.GGP_Loaded) {
             let hasIncomingCall = false;
             let resolvedOfflineCall = null;
             let incomingCallType = 'voice';
+            let outgoingCallPending = false;
             let queuedAiLines = [];
 
             // 🔥 先获取全局最新时间作为基准（跨所有会话）
@@ -8741,6 +8742,7 @@ if (window.GGP_Loaded) {
                 if (msg.type === 'incoming_call') {
                     hasIncomingCall = true;
                     incomingCallType = msg.callType === 'video' ? 'video' : 'voice';
+                    outgoingCallPending = isWechatSenderCurrentUser(msg.sender);
                     return;
                 }
 
@@ -8880,6 +8882,7 @@ if (window.GGP_Loaded) {
                     status: msg.status,
                     transcript: msg.transcript,
                     offlineCallDecision: msg.offlineCallDecision,
+                    callDirection: msg.callDirection,
                     innerThought: msg.innerThought,
                     tavernMessageIndex: data.tavernMessageIndex,
                     batchId: data.batchId,                 // 🔥 传入批次ID
@@ -8933,7 +8936,8 @@ if (window.GGP_Loaded) {
             }
 
             if (hasIncomingCall && !data.isHistoryReplay) {
-                triggerWechatIncomingCall(chat.id, displayContactName, incomingCallType, queuedAiLines);
+                triggerWechatIncomingCall(chat.id, displayContactName, incomingCallType, queuedAiLines,
+                    outgoingCallPending ? { outgoingPending: true, conversationId } : null);
                 return;
             }
 
@@ -10636,6 +10640,11 @@ if (window.GGP_Loaded) {
 
             if (offlineDecision) {
                 if (getCurrentTavernConversationIdentity() !== offlineDecision.conversationId) return;
+                if (offlineDecision.outgoingPending) {
+                    if (callType === 'video') wechatApp.chatView?.startVideoCall();
+                    else wechatApp.chatView?.startVoiceCall();
+                    return;
+                }
                 if (!wechatApp.wechatData.getMessages(chatId).some(message => message.id === offlineDecision.recordId)) return;
                 const options = { initialUserLines: offlineDecision.userLines, initialTranscript: offlineDecision.transcript,
                     offlineRecordId: offlineDecision.recordId, offlineRecordSource: offlineDecision.recordSource, callType };

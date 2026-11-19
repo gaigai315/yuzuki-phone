@@ -5,7 +5,7 @@ export function parseOfflineWechatCallDecision(content) {
     return match ? { callType: match[1] === '视频' ? 'video' : 'voice', status: /拒绝/.test(match[2]) ? 'rejected' : 'answered' } : null;
 }
 
-// Only pair an actual incoming call with an explicit user decision in the same tag/window.
+// Pair a dial command with the other party's explicit decision in the same tag/window.
 export function resolveOfflineWechatCallDecisions(results, { enabled = false, isUserSender = name => name === 'me' } = {}) {
     if (!enabled) return results;
     const copies = results.map(block => ({ ...block, messages: (block.messages || []).map(message => ({ ...message })) }));
@@ -21,13 +21,13 @@ export function resolveOfflineWechatCallDecisions(results, { enabled = false, is
         let pending = null;
         for (let index = 0; index < entries.length; index++) {
             const { block, message } = entries[index];
-            if (message.type === 'incoming_call' && !isUserSender(message.sender)) {
-                pending = { index, message };
+            if (message.type === 'incoming_call') {
+                pending = { index, message, callerIsUser: isUserSender(message.sender) };
                 continue;
             }
-            if (!isUserSender(message.sender)) continue;
             const decision = parseOfflineWechatCallDecision(message.content);
-            if (!decision || !pending || pending.message.callType !== decision.callType) continue;
+            if (!decision || !pending || pending.message.callType !== decision.callType
+                || isUserSender(message.sender) === pending.callerIsUser) continue;
             let end = index + 1;
             while (end < entries.length && entries[end].message.type !== 'incoming_call'
                 && !parseOfflineWechatCallDecision(entries[end].message.content)) end++;
@@ -39,7 +39,7 @@ export function resolveOfflineWechatCallDecisions(results, { enabled = false, is
             Object.assign(pending.message, {
                 type: 'call_record', sender: 'me', callType: decision.callType, status: decision.status,
                 duration: '0分0秒', content: `${decision.callType === 'video' ? '视频' : '语音'}通话-${decision.status === 'answered' ? '已接听' : '已拒绝'}`,
-                offlineCallDecision: true,
+                offlineCallDecision: true, callDirection: pending.callerIsUser ? 'outgoing' : 'incoming',
                 offlineCallUserLines: decision.status === 'answered' ? transcript.filter(entry => entry.from === 'me').map(entry => entry.text) : [],
                 offlineCallAiLines: decision.status === 'answered' ? transcript.filter(entry => entry.from !== 'me').map(entry => entry.text) : [],
                 transcript: decision.status === 'answered' ? transcript : undefined

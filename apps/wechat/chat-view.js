@@ -174,7 +174,7 @@ export class ChatView {
         const callTypeName = message.callType === 'video' ? '视频通话' : '语音通话';
         if (message.status !== 'answered') {
             const statusText = (message.status === 'rejected' || message.status === 'declined')
-                ? (message.offlineCallDecision ? '用户已拒绝' : '对方已拒绝')
+                ? (message.offlineCallDecision && message.callDirection !== 'outgoing' ? '用户已拒绝' : '对方已拒绝')
                 : message.status === 'cancelled'
                     ? '已取消'
                     : '未接听';
@@ -4250,7 +4250,7 @@ renderChatRoom(chat) {
                 const callStatusText = msg.status === 'answered'
                     ? `通话时长 ${msg.duration}`
                     : msg.status === 'rejected'
-                        ? (msg.offlineCallDecision ? '已拒绝' : '对方已拒绝')
+                        ? (msg.offlineCallDecision && msg.callDirection !== 'outgoing' ? '已拒绝' : '对方已拒绝')
                         : msg.status === 'declined'
                             ? '对方已拒绝'
                             : msg.status === 'cancelled'
@@ -6340,7 +6340,7 @@ renderChatRoom(chat) {
             const statusText = status === 'answered'
                 ? `通话时长 ${msg.duration || '未知'}`
                 : (status === 'rejected' || status === 'declined')
-                    ? (msg.offlineCallDecision ? '用户已拒绝' : (isGroupCall ? '群成员未接听' : '对方已拒绝'))
+                    ? (msg.offlineCallDecision && msg.callDirection !== 'outgoing' ? '用户已拒绝' : (isGroupCall ? '群成员未接听' : '对方已拒绝'))
                     : status === 'cancelled'
                         ? '用户已取消'
                         : '未接听';
@@ -17040,7 +17040,7 @@ ${groupParticipants.join('、') || '暂无成员'}
             }
             if (transcript.some(entry => entry.from !== 'me')) this.bindCallBubbleClickEvents(messages);
             messages.scrollTop = messages.scrollHeight;
-            if (isCurrent()) await send(lines.length ? lines : ['用户已接听通话']);
+            if (isCurrent()) await send(lines.length ? lines : ['通话已接通']);
         } catch (error) {
             console.warn('[Wechat] 承接线下已接听通话失败:', error);
         }

@@ -10,7 +10,7 @@
  * Copyright (c) yuzuki. All rights reserved.
  * ======================================================== */
 // 微信APP主程序
-import { ChatView } from './chat-view.js?v=20261119-call-duration';
+import { ChatView } from './chat-view.js?v=20261119-bidirectional-calls';
 import { ContactsView } from './contacts-view.js?v=20261109-readable-settings';
 import { MomentsView } from './moments-view.js?v=20261118-compose-stable-surfaces';
 import { WechatData } from './wechat-data.js?v=20261118-online-group-invitation';
