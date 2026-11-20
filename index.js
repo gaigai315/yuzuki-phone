@@ -3245,11 +3245,6 @@ if (window.GGP_Loaded) {
             const chat = Array.isArray(ctx?.chat) ? ctx.chat : [];
             if (chat.length === 0) return item || null;
 
-            const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const tagRegex = new RegExp(
-                `(?:<|&lt;)\\s*${escapeRegex(tagName)}\\s*(?:>|&gt;)[\\s\\S]*?(?:<|&lt;)\\s*\\/\\s*${escapeRegex(tagName)}\\s*(?:>|&gt;)`,
-                'i'
-            );
             for (let index = chat.length - 1; index >= 0; index -= 1) {
                 const message = chat[index] || {};
                 const swipeIndex = Number.isInteger(message.swipe_id) ? message.swipe_id : null;
@@ -3261,7 +3256,8 @@ if (window.GGP_Loaded) {
 
                 const text = candidates
                     .map(value => String(value || ''))
-                    .find(value => value && tagRegex.test(value));
+                    .find(value => value && mofoData.findTagBlocksFromText(value)
+                        .some(block => block.item.id === item.id));
                 if (!text) continue;
 
                 mofoData.applyTagUpdatesFromText(text, { source: 'current_chat_preview', messageIndex: index });

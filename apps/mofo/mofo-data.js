@@ -14,6 +14,7 @@
 // ========================================
 
 import { parseForumPayload, parseStructuredPayload, renderMofoTemplate } from './mofo-renderer.js';
+import { findMofoTagBlocks } from './mofo-tag-parser.js';
 
 export class MofoData {
     constructor(storage) {
@@ -1636,17 +1637,9 @@ export class MofoData {
             const safeTag = this._normalizeTagName(item.tagName || item.name, item.name);
             if (!safeTag) return;
 
-            const regex = new RegExp(
-                `(?:<|&lt;)\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)([\\s\\S]*?)(?:<|&lt;)\\s*\\/\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)`,
-                'gi'
-            );
-            let match = null;
-            while ((match = regex.exec(sourceText)) !== null) {
+            for (const block of findMofoTagBlocks(sourceText, safeTag)) {
                 blocks.push({
-                    index: match.index,
-                    length: match[0].length,
-                    fullMatch: match[0],
-                    payload: String(match[1] || ''),
+                    ...block,
                     item: this._clone(item)
                 });
             }
@@ -1694,18 +1687,12 @@ export class MofoData {
             const messageIndex = isObjectEntry && Number.isInteger(entry.messageIndex)
                 ? entry.messageIndex
                 : fallbackIndex;
-            const regex = new RegExp(
-                `(?:<|&lt;)\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)([\\s\\S]*?)(?:<|&lt;)\\s*\\/\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)`,
-                'gi'
-            );
-
-            let match = null;
             let matched = false;
             let latestPayload = '';
             let transactionIndex = 0;
-            while ((match = regex.exec(text)) !== null) {
+            for (const block of findMofoTagBlocks(text, safeTag)) {
                 matched = true;
-                latestPayload = String(match[1] || '');
+                latestPayload = block.payload;
                 const parsedPatch = this._parsePayloadForItem(item, latestPayload, {});
                 nextState = this._applyParsedPatchToState(item, nextState, parsedPatch, {
                     messageIndex,
@@ -1767,12 +1754,6 @@ export class MofoData {
             const safeTag = this._normalizeTagName(item.tagName || item.name, item.name);
             if (!safeTag) return;
 
-            const regex = new RegExp(
-                `(?:<|&lt;)\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)([\\s\\S]*?)(?:<|&lt;)\\s*\\/\\s*${this._escapeRegex(safeTag)}\\s*(?:>|&gt;)`,
-                'gi'
-            );
-
-            let match = null;
             let matched = false;
             let latestPayload = '';
             let transactionIndex = 0;
@@ -1783,9 +1764,9 @@ export class MofoData {
             );
             let nextState = this._clone(currentRuntime.state || {});
 
-            while ((match = regex.exec(sourceText)) !== null) {
+            for (const block of findMofoTagBlocks(sourceText, safeTag)) {
                 matched = true;
-                latestPayload = String(match[1] || '');
+                latestPayload = block.payload;
                 const parsedPatch = this._parsePayloadForItem(item, latestPayload, {});
                 nextState = this._applyParsedPatchToState(item, nextState, parsedPatch, {
                     ...meta,
