@@ -1497,7 +1497,7 @@ if (window.GGP_Loaded) {
             import('./config/storage.js?v=20261006-story-upload-console-cleanup'),
             import('./config/api-manager.js?v=20261009-unified-sse-parser'),
             import('./config/time-manager.js'),    // 👈 取消懒加载
-        import('./config/prompt-manager.js?v=20261120-story-call-end'),  // 👈 取消懒加载
+        import('./config/prompt-manager.js?v=20261120-call-end-example'),  // 👈 取消懒加载
             import('./config/tts-manager.js?v=20260607-mimo-relay-worker'),
         import('./config/image-generation-manager.js?v=20261114-public-image-api'),
             import('./config/worldbook-manager.js?v=20261021-worldbook-lazy-load')

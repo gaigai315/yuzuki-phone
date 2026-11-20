@@ -301,14 +301,15 @@ test('grab prompt mirrors a complete alternating call and production planning pr
     const values = new Map([['phone-prompt-active-presets', JSON.stringify({ wechat: { offline: 'builtin:wechat:offline:grab' } })]]);
     const manager = new PromptManager({ get: (key, fallback = null) => values.has(key) ? values.get(key) : fallback, set: (key, value) => values.set(key, value) });
     const prompt = manager.getPromptForFeature('wechat', 'offline');
-    assert.match(prompt, /双方全部已发生的通话对白/);
-    assert.match(prompt, /正文没有发生的对白不得/);
-    const example = prompt.slice(prompt.indexOf('【接听并完整同步双方已有通话对白示例】'));
+    const example = prompt.slice(prompt.indexOf('【本轮正文剧情中明确通话结束'));
     const tag = example.match(/<wechat>[\s\S]*?<\/wechat>/)[0].replaceAll('{{user}}', '测试玩家').replaceAll('[HH:MM]', '[19:01]');
     const planned = planProductionStory(tag);
     const record = planned.flatMap(block => block.messages).find(message => message.offlineCallDecision);
-    assert.deepEqual(record.transcript.map(message => message.from), ['me', '好友A', 'me', '好友A']);
-    assert.equal(record.transcript.length, 4);
+    const spoken = record.transcript.filter(message => message.type !== 'call_hangup');
+    assert.deepEqual(spoken.map(message => message.from), ['好友A', 'me']);
+    assert.equal(spoken.length, 2);
+    assert.equal(record.transcript.at(-1).type, 'call_hangup');
+    assert.equal(record.offlineCallCompleted, true);
     assert.equal(planned.flatMap(block => block.messages).length, 1, 'spoken lines must not leak into regular WeChat text messages');
     assert.doesNotMatch(manager._getDefaultWechatOfflineNoGrabPrompt(), /抢话版：微信来电结果与通话对白同步/);
 });
@@ -880,12 +881,13 @@ test('invalid or missing story clocks do not fabricate a completed call duration
     assert.equal(record.elapsedSeconds, null);
 });
 
-test('grab preset includes all four end markers and explains the no-popup completed-call flow', () => {
+test('grab preset includes all four end markers and a story-timed completed-call example', () => {
     const manager = new PromptManager({ get: (_key, fallback = null) => fallback });
     const prompt = manager._getDefaultWechatOfflineGrabPrompt();
     for (const kind of ['语音', '视频', '群语音', '群视频']) assert.ok(prompt.includes(`[HH:MM] ${kind}通话-结束`));
-    assert.ok(prompt.includes('不弹出来电或已接通手机面板'));
-    assert.ok(prompt.includes('通话时长从接听时刻算到结束时刻'));
+    assert.ok(prompt.includes('本轮正文剧情中明确通话结束'));
+    assert.ok(prompt.includes('[21:37] 语音通话-接听'));
+    assert.ok(prompt.includes('[21:40] 语音通话-结束'));
 });
 
 
