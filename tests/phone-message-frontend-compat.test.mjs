@@ -26,10 +26,11 @@ test('raw protocol detection requires a real tag boundary instead of frontend id
     assert.ok(regexMatch);
     const protocolRegex = Function(`return ${regexMatch[1]}`)();
 
-    assert.match('<phone>payload</phone>', protocolRegex);
+    assert.doesNotMatch('<phone>payload</phone>', protocolRegex);
+    assert.doesNotMatch('&lt;phone&gt;payload&lt;/phone&gt;', protocolRegex);
     assert.match('&lt;wechat&gt;payload&lt;/wechat&gt;', protocolRegex);
     assert.match('＜线上支付＞payload＜/线上支付＞', protocolRegex);
-    assert.match('[手机来电通话] 呼叫方：测试', protocolRegex);
+    assert.doesNotMatch('[手机来电通话] 呼叫方：测试', protocolRegex);
     assert.match('PHONE_CHAT_MODE', protocolRegex);
     assert.doesNotMatch('.phone-entry { display: block; }', protocolRegex);
     assert.doesNotMatch('const phoneEntry = document.querySelector(".phone-entry");', protocolRegex);
@@ -114,7 +115,9 @@ test('frontend-safe cleanup recognizes current phone protocol suffixes', () => {
 
     assert.match('<wechat>payload</wechat>', protocolRegex);
     assert.match('＜任务进度＞payload', protocolRegex);
-    assert.match('[手机来电通话] 呼叫方：测试', protocolRegex);
+    assert.doesNotMatch('<phone>payload</phone>后续正文', protocolRegex);
+    assert.doesNotMatch('＜phone＞payload＜/phone＞后续正文', protocolRegex);
+    assert.doesNotMatch('[手机来电通话] 呼叫方：测试', protocolRegex);
     assert.match('PHONE_CHAT_MODE', protocolRegex);
     assert.doesNotMatch('普通正文里提到 phone，但没有协议标签。', protocolRegex);
 });

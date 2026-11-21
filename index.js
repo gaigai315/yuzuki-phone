@@ -9298,8 +9298,9 @@ if (window.GGP_Loaded) {
         'embed',
         '.st-phone-payment-receipt'
     ].join(',');
-    const PHONE_RAW_PROTOCOL_BOUNDARY_REGEX = /(?:(?:<|＜|&lt;)\s*\/?\s*(?:wechat|music|phone|weibo|短信|任务进度|线上支付)(?=[\s/>＞]|&gt;)[^>＞]*?(?:>|＞|&gt;))|\[\s*手机来电通话\s*\]|PHONE_CHAT_MODE/i;
-    const PHONE_PROTOCOL_SUFFIX_TEXT_REGEX = /(?:<|＜)\s*\/?\s*(?:wechat|music|phone|weibo|短信|任务进度|线上支付)(?=[\s/>＞])[^>＞]*(?:>|＞)|\[\s*手机来电通话\s*\]|PHONE_CHAT_MODE/i;
+    // <phone> 和来电标记的显示由酒馆导入正则控制，不参与插件的隐藏或尾部裁剪。
+    const PHONE_RAW_PROTOCOL_BOUNDARY_REGEX = /(?:(?:<|＜|&lt;)\s*\/?\s*(?:wechat|music|weibo|短信|任务进度|线上支付)(?=[\s/>＞]|&gt;)[^>＞]*?(?:>|＞|&gt;))|PHONE_CHAT_MODE/i;
+    const PHONE_PROTOCOL_SUFFIX_TEXT_REGEX = /(?:<|＜)\s*\/?\s*(?:wechat|music|weibo|短信|任务进度|线上支付)(?=[\s/>＞])[^>＞]*(?:>|＞)|PHONE_CHAT_MODE/i;
     function shouldPreservePhoneMessageDom(root) {
         return !!root?.querySelector?.(PHONE_STATEFUL_MESSAGE_SELECTOR);
     }
@@ -9516,7 +9517,7 @@ if (window.GGP_Loaded) {
     function hidePhoneTags() {
         // 1. 注入 CSS (保证底线隐藏，防止闪烁)
         if (!document.getElementById('st-phone-hide-style')) {
-            $('<style id="st-phone-hide-style">phone, wechat, music, weibo, 短信, 任务进度 { display: none !important; }</style>').appendTo('head');
+            $('<style id="st-phone-hide-style">wechat, music, weibo, 短信, 任务进度 { display: none !important; }</style>').appendTo('head');
         }
 
         const receiptStyleId = phoneFloatingEntry?.getStyle?.() || PHONE_FLOATING_ENTRY_DEFAULT_STYLE;
@@ -9558,7 +9559,7 @@ if (window.GGP_Loaded) {
             const preserveMessageDom = shouldPreservePhoneMessageDom(root);
 
             // 隐藏那些被解析为真实 DOM 元素的孤立标签
-            $(root).find('phone, wechat, music, weibo, 短信, 任务进度, 线上支付').hide();
+            $(root).find('wechat, music, weibo, 短信, 任务进度, 线上支付').hide();
 
             // 酒馆前端通常依赖 iframe、脚本或已绑定事件的表单控件。重写整个 .mes_text.innerHTML
             // 会销毁这些运行时对象，表现为“编辑后恢复，下一条消息渲染时再次失效”。
@@ -9576,7 +9577,7 @@ if (window.GGP_Loaded) {
                 changed = true;
             }
 
-            const tags = ['music', 'phone', 'weibo', '短信', '任务进度'];
+            const tags = ['music', 'weibo', '短信', '任务进度'];
             tags.forEach(tag => {
                 const rx = new RegExp(`(?:<p>|<br>\\s*)*(?:<pre><code[^>]*>)?(?:<|&lt;)\\s*${tag}\\s*(?:>|&gt;)[\\s\\S]*?(?:<|&lt;)\\s*\\/\\s*${tag}\\s*(?:>|&gt;)(?:<\\/code><\\/pre>)?(?:<\\/p>)?`, 'gi');
                 const replaced = html.replace(rx, '');
@@ -9602,16 +9603,9 @@ if (window.GGP_Loaded) {
                 changed = true;
             }
 
-            // 单独处理来电标签
-            const phoneCallRx = /\[手机来电通话\][^\n<]*/gi;
-            if (phoneCallRx.test(html)) {
-                html = html.replace(phoneCallRx, '');
-                changed = true;
-            }
-
             // 策略 B: 只处理独立行开始的尾部协议块，避免正文里提到标签名时误删后文。
             // 微信额外要求标准注释头，残缺的字面量 <wechat> 不参与兜底截断。
-            const fallbackRegex = /(?:^|<p>|<br>\s*)(?:<pre><code[^>]*>)?(?:<|&lt;)(?:music|phone|weibo|任务进度|线上支付)(?:>|&gt;)[\s\S]*$/i;
+            const fallbackRegex = /(?:^|<p>|<br>\s*)(?:<pre><code[^>]*>)?(?:<|&lt;)(?:music|weibo|任务进度|线上支付)(?:>|&gt;)[\s\S]*$/i;
             const fallbackReplaced = html.replace(fallbackRegex, '');
             if (fallbackReplaced !== html) {
                 html = fallbackReplaced;
@@ -10875,8 +10869,7 @@ if (window.GGP_Loaded) {
         setTimeout(hidePhoneTags, 500);
     }
 
-    // 🔥 hidePhoneTags 已移除，改用酒馆正则隐藏
-    // 正则：((?:<wechat>|^)[\s\S]*?<\/wechat>)
+    // <phone> 和来电标记由酒馆正则隐藏；其他协议仍由 hidePhoneTags 兼容处理。
 
     function getContext() {
         return (typeof SillyTavern !== 'undefined' && SillyTavern.getContext)
