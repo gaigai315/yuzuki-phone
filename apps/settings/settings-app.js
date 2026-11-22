@@ -3224,15 +3224,15 @@ export class SettingsApp {
                                 <div class="phone-api-field">
                                     <div class="phone-api-field-label"><i class="fa-solid fa-cube" aria-hidden="true"></i><span>API 提供商</span></div>
                                     <select id="phone-api-provider" class="phone-api-control" style="border: 1px solid #e0e0e0; background: #fff;">
+                                        <option value="proxy_only">自定义（兼容OpenAI）</option>
                                         <option value="openai">OpenAI 官方</option>
-                                        <option value="proxy_only">OpenAI 兼容反代 / Build 本地</option>
-                                        <option value="compatible">OP兼容端点 / 中转站（推荐）</option>
                                         <option value="opencode_go">OpenCode Go</option>
                                         <option value="deepseek">DeepSeek 官方</option>
                                         <option value="claude">Claude 官方</option>
                                         <option value="gemini">Google Gemini 官方</option>
                                         <option value="siliconflow">硅基流动</option>
                                         <option value="local">本地/内网</option>
+                                        <option value="compatible">OP兼容端点 / 中转站</option>
                                     </select>
                                 </div>
 
