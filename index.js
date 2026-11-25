@@ -2361,6 +2361,12 @@ if (window.GGP_Loaded) {
         const item = wechatFriendRequestPopupQueue.shift();
         const request = item.request || {};
         const isGroupInvitation = item.kind === 'group-invitation';
+        const isOutgoingResult = !isGroupInvitation && Boolean(request.verification);
+        const isRejected = isOutgoingResult && request.verification === '拒绝';
+        const title = isGroupInvitation ? '群聊邀请' : '好友申请';
+        const description = isOutgoingResult
+            ? (isRejected ? '对方已拒绝你的好友申请' : '对方已通过你的好友申请')
+            : (request.reason || (isGroupInvitation ? '邀请你加入群聊' : '请求添加你为朋友'));
         if (isGroupInvitation && !isCurrentWechatGroupInvitation(item)) {
             setTimeout(showNextWechatFriendRequestPopup, 0);
             return;
@@ -2378,7 +2384,7 @@ if (window.GGP_Loaded) {
                     <span class="st-phone-wechat-friend-request-icon"><i class="fa-brands fa-weixin"></i></span>
                     <span>微信</span>
                 </div>
-                <div id="st-phone-wechat-friend-request-title" class="st-phone-wechat-friend-request-title">${isGroupInvitation ? '群聊邀请' : '好友申请'}</div>
+                <div id="st-phone-wechat-friend-request-title" class="st-phone-wechat-friend-request-title">${isOutgoingResult ? '好友申请结果' : title}</div>
                 <div class="st-phone-wechat-friend-request-profile">
                     <span class="st-phone-wechat-friend-request-avatar"><i class="fa-solid fa-user"></i></span>
                     <div class="st-phone-wechat-friend-request-identity">
@@ -2387,10 +2393,10 @@ if (window.GGP_Loaded) {
                     </div>
                 </div>
                 ${isGroupInvitation ? `<div class="st-phone-wechat-group-invitation-members">群成员：${escapePhoneHtml((request.members || []).join('、'))}</div>` : ''}
-                <div class="st-phone-wechat-friend-request-reason">${request.reason ? escapePhoneHtml(request.reason) : (isGroupInvitation ? '邀请你加入群聊' : '请求添加你为朋友')}</div>
+                <div class="st-phone-wechat-friend-request-reason">${escapePhoneHtml(description)}</div>
                 <div class="st-phone-wechat-friend-request-actions">
-                    <button type="button" data-action="reject" class="st-phone-wechat-friend-request-button is-reject">拒绝</button>
-                    <button type="button" data-action="accept" class="st-phone-wechat-friend-request-button is-accept">接受</button>
+                    ${isOutgoingResult ? '' : '<button type="button" data-action="reject" class="st-phone-wechat-friend-request-button is-reject">拒绝</button>'}
+                    <button type="button" data-action="accept" class="st-phone-wechat-friend-request-button is-accept">${isOutgoingResult ? '确定' : '接受'}</button>
                 </div>
             </div>
         `;
@@ -2409,6 +2415,10 @@ if (window.GGP_Loaded) {
         let accepting = false;
         overlay.querySelector('[data-action="accept"]')?.addEventListener('click', async () => {
             if (accepting) return;
+            if (isRejected) {
+                finish();
+                return;
+            }
             accepting = true;
             const buttons = overlay.querySelectorAll('.st-phone-wechat-friend-request-button');
             buttons.forEach(button => { button.disabled = true; });
@@ -2434,7 +2444,7 @@ if (window.GGP_Loaded) {
                 if (result.status === 'created') {
                     showUnifiedPhoneNotification('微信', `已添加好友：${request.nickname}`, '💬', {
                         name: '微信',
-                        content: `你已通过 ${request.nickname} 的好友申请`,
+                        content: isOutgoingResult ? description : `你已通过 ${request.nickname} 的好友申请`,
                         timeText: '刚刚',
                         senderKey: `wechat:friend-request:${result.contact?.id || request.realName}`
                     });

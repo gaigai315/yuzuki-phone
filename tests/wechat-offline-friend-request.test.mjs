@@ -141,11 +141,11 @@ test('accepting a new request creates a contact, direct chat, and gray system me
     assert.equal(data.state.globalContacts.length, 1);
 });
 
-test('both default offline prompts expose the unique request format without hiding the tag', () => {
+test('both default offline prompts expose both request formats without hiding the tag', () => {
     assert.equal((promptSource.match(/💡 微信好友认知与申请规则：/g) || []).length, 2);
-    assert.equal((promptSource.match(/性别：（仅限填写“男”或“女”）/g) || []).length, 2);
-    assert.equal((promptSource.match(/<好友申请>/g) || []).length, 2);
-    assert.equal((promptSource.match(/<\/好友申请>/g) || []).length, 2);
+    assert.equal((promptSource.match(/性别：（仅限填写“男”或“女”）/g) || []).length, 4);
+    assert.equal((promptSource.match(/<好友申请>/g) || []).length, 4);
+    assert.equal((promptSource.match(/<\/好友申请>/g) || []).length, 4);
     assert.equal((promptSource.match(/💡 微信群聊认知与入群邀请规则：/g) || []).length, 2);
     assert.equal((promptSource.match(/<群聊邀请>/g) || []).length, 2);
     assert.equal((promptSource.match(/<\/群聊邀请>/g) || []).length, 2);
@@ -159,9 +159,25 @@ test('rendered assistant messages queue a scoped WeChat accept-or-reject popup',
     assert.match(indexSource, /data-action="reject"[\s\S]*?>拒绝</);
     assert.match(indexSource, /data-action="accept"[\s\S]*?>接受</);
     assert.match(indexSource, /acceptWechatFriendRequest\(wechatData, request\)/);
+    assert.match(indexSource, /isOutgoingResult \? '确定' : '接受'/);
     assert.match(indexSource, /document\.documentElement \|\| document\.body\)\.appendChild\(overlay\)/);
     assert.match(phoneShellSource, /#st-phone-wechat-friend-request-modal/);
     assert.match(cssSource, /#st-phone-wechat-friend-request-modal\.st-phone-wechat-friend-request-modal/);
     assert.match(cssSource, /st-phone-wechat-friend-request-reason[\s\S]*?text-align: center/);
 });
 
+
+for (const verification of ['已同意', '拒绝']) {
+    test(`outgoing friend result ${verification} takes precedence over incoming tags`, () => {
+        const incoming = '<好友申请>\n好友昵称：阿年\n真实姓名：陆泽年\n性别：男\n申请理由：你好\n</好友申请>';
+        const outgoing = `<好友申请>\n好友昵称: Soma_50\n真实姓名: 五十嵐 蒼真\n性别: 男\n验证: ${verification}\n</好友申请>`;
+        const parsed = parseWechatFriendRequests(`${incoming}\n${outgoing}`);
+        assert.deepEqual(parsed, [{ nickname: 'Soma_50', realName: '五十嵐 蒼真', gender: '男', verification }]);
+        assert.deepEqual(parseWechatFriendRequests(outgoing.replace(verification, '等待中')), []);
+        if (verification === '已同意') {
+            const result = acceptWechatFriendRequest(createWechatData(), parsed[0]);
+            assert.equal(result.status, 'created');
+            assert.match(result.systemText, /Soma_50已通过你的好友申请/);
+        }
+    });
+}

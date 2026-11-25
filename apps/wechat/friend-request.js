@@ -24,9 +24,17 @@ export function parseWechatFriendRequests(text = '') {
         const gender = readField(match[1], '性别');
         const reason = readField(match[1], '申请理由');
         if (!nickname || !realName || !['男', '女'].includes(gender)) continue;
-        requests.push({ nickname, realName, gender, reason });
+        const verification = readField(match[1], '验证');
+        const hasVerification = /^\s*验证\s*[：:]/m.test(match[1]);
+        if (hasVerification) {
+            if (!['已同意', '拒绝'].includes(verification)) continue;
+            requests.push({ nickname, realName, gender, verification });
+        } else {
+            requests.push({ nickname, realName, gender, reason });
+        }
     }
-    return requests;
+    const results = requests.filter(request => request.verification);
+    return results.length ? results : requests;
 }
 
 export function findWechatContactByExactRealName(wechatData, realName = '') {
@@ -98,7 +106,9 @@ export function acceptWechatFriendRequest(wechatData, request = {}) {
         type: 'single',
         avatar: contact.avatar || '👤'
     });
-    const systemText = `您已通过${nickname}的好友申请，你们已经是好友了，可以聊天了。`;
+    const systemText = request.verification === '已同意'
+        ? `${nickname}已通过你的好友申请，你们已经是好友了，可以聊天了。`
+        : `您已通过${nickname}的好友申请，你们已经是好友了，可以聊天了。`;
     wechatData.addMessage(chat.id, {
         id: `msg_friend_request_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         from: 'system',
