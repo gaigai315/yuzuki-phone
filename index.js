@@ -55,7 +55,7 @@ import {
 } from './apps/mofo/mofo-renderer.js';
 
 const ST_PHONE_BASE_URL = new URL('./', import.meta.url).href;
-const ST_PHONE_VERSION = '1.7.1';
+const ST_PHONE_VERSION = '1.7.2';
 const ST_PHONE_CSS_REVISION = '20261118-online-group-invitation';
 const ST_PHONE_APP_SWIPE_REVISION = '20261002-wechat-chat-return';
 const ST_PHONE_ALBUM_MODULE_REVISION = '20261114-stable-picture-icons';
@@ -167,15 +167,9 @@ const WECHAT_OFFLINE_INTEROP_PREFERENCE_SUFFIX = '-interop-preference';
 const WECHAT_MESSAGE_SOUND_URL = new URL('./assets/sounds/iphone-message-notification.mp3', ST_PHONE_BASE_URL).href;
 const ST_PHONE_CURRENT_UPDATE = {
     version: ST_PHONE_VERSION,
-    date: '2026-11-19',
+    date: '2026-11-26',
     items: [
-        "【优化】音乐卡片支持独立设置字体颜色，默认黑色，字体继续跟随酒馆。",
-        "【优化】表情管理面板扩大，表情下方显示名字，点击名字即可修改。",
-        "【新增】char 可根据用户提供的图片，自行决定是否更换头像。",
-        "【新增】支持线上或线下好友邀请用户加入群聊。",
-        "【修复】上传 App 图标后保留设置页的滚动位置和展开状态，不再意外返回手机桌面。",
-        "【修复】微信群聊天的头像发送逻辑。",
-        "【修复】抢话版正文的通话逻辑。"
+        "【优化】正文同步到微信时，金额相同的红包和转账会逐笔保留，同一条消息重复解析时只记录一次。"
     ]
 };
 
@@ -2656,6 +2650,7 @@ if (window.GGP_Loaded) {
     async function showLocalUpdateAnnouncementIfNeeded(options = {}) {
         if (!storage?.get || !storage?.set) return;
         const notes = await fetchLocalUpdateNotes(ST_PHONE_VERSION);
+        if (!notes?.items?.length) return false;
         const announcementId = `${ST_PHONE_VERSION}@${String(notes?.date || '').trim()}`;
         const seenAnnouncement = String(storage.get('phone-update-announcement-seen-release') || '');
         if (seenAnnouncement === announcementId) return false;

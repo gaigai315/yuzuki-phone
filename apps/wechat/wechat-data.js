@@ -3637,7 +3637,18 @@ export class WechatData {
 
         // 🔥 防重复检测：仅用于正文标签同步，避免 AI 流式/重算导致消息重影
         // 注意：手动发送（from=me）也可能出现同内容连发，不能被这里吞掉。
-        if (message.fromMainChatTag) {
+        const isPayment = message.type === 'transfer' || message.type === 'redpacket';
+        if (message.fromMainChatTag && isPayment) {
+            // Each payment line is distinct, even with the same amount and timestamp.
+            const hasSourcePosition = message.tavernMessageIndex != null && Number.isInteger(message.mainChatOrder);
+            if (hasSourcePosition && this.data.messages[chatId].some(existing =>
+                existing.fromMainChatTag
+                && existing.type === message.type
+                && existing.from === message.from
+                && existing.tavernMessageIndex === message.tavernMessageIndex
+                && existing.mainChatOrder === message.mainChatOrder
+            )) return false;
+        } else if (message.fromMainChatTag) {
             const recentMessages = this.data.messages[chatId].slice(-30);
             const msgType = String(message.type || 'text');
             const msgFrom = String(message.from || '');

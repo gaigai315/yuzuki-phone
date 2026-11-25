@@ -141,3 +141,21 @@ test('timeline ordering stays scoped to one floor and batch', () => {
         ['上一楼层的晚间消息', '下一楼层的清晨消息']
     );
 });
+
+for (const [type, label] of [['transfer', '转账'], ['redpacket', '红包']]) {
+    test(`story ${type} keeps distinct payments and deduplicates replay by source position`, () => {
+        const data = createWechatData();
+        const addPayment = (tavernMessageIndex, mainChatOrder, time) => data.addMessage('chat_friend', {
+            from: '曜', type, amount: 200, content: `[${label}]（金额：200元）`,
+            time, date: '2025年09月10日', fromMainChatTag: true,
+            tavernMessageIndex, mainChatOrder, batchId: `batch_${tavernMessageIndex}`
+        });
+
+        assert.equal(addPayment(12, 0, '22:25'), true);
+        assert.equal(addPayment(12, 1, '22:26'), true);
+        assert.equal(addPayment(12, 2, '22:26'), true);
+        assert.equal(addPayment(13, 0, '22:26'), true);
+        assert.equal(addPayment(12, 1, '22:26'), false);
+        assert.equal(data.getMessages('chat_friend').length, 4);
+    });
+}

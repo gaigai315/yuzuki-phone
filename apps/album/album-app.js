@@ -601,11 +601,6 @@ export class AlbumApp {
             content: overridePrompt,
             name: 'SYSTEM (正文生图破限词)',
             isPhoneMessage: true
-        }, {
-            role: 'system',
-            content: generationPrompt,
-            name: 'SYSTEM (正文生图提示词)',
-            isPhoneMessage: true
         }];
         messages.push(this._buildStoryCharacterMessage(context, variables.char));
         messages.push(this._buildStoryPersonaMessage(context, variables.user));
@@ -623,8 +618,13 @@ export class AlbumApp {
         const memoryMessages = await this._buildStoryMemoryMessages(`${contextLines}\n${storyMessageText}`);
         messages.push(...memoryMessages);
         messages.push({
+            role: 'assistant',
+            content: `Selected story floor ${targetFloor}:\n<story>\n${contextLines}\n</story>`,
+            isPhoneMessage: true
+        });
+        messages.push({
             role: 'user',
-            content: `Selected story floor ${targetFloor}:\n<story>\n${contextLines}\n</story>\n\nGenerate the final image prompt now.`,
+            content: generationPrompt,
             isPhoneMessage: true
         });
         return messages;

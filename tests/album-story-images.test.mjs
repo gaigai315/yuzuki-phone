@@ -1043,21 +1043,21 @@ test('story tag generation uses the phone LLM API and stores returned tags', asy
         assert.equal(worldbookAppKey, 'story');
         assert.deepEqual(requestMessages.map(item => item.name || item.role), [
             'SYSTEM (正文生图破限词)',
-            'SYSTEM (正文生图提示词)',
             'SYSTEM (角色卡)',
             'SYSTEM (用户Persona)',
             'SYSTEM (世界书)',
+            'assistant',
             'user'
         ]);
         assert.equal(requestMessages[0].content, 'STORY OVERRIDE PROMPT');
-        assert.equal(requestMessages[1].content, 'STORY GENERATION PROMPT');
-        assert.match(requestMessages[2].content, /Character description\./);
-        assert.match(requestMessages[3].content, /User persona details\./);
-        assert.equal(requestMessages[4].content, 'SELECTED STORY WORLDBOOK');
-        assert.match(requestMessages[5].content, /Selected story floor 7/);
-        assert.match(requestMessages[5].content, /Look back\./);
-        assert.match(requestMessages[5].content, /A rainy scene\./);
-        assert.doesNotMatch(requestMessages[5].content, /PHONE HIDDEN|USER HIDDEN|MEMORY HIDDEN/);
+        assert.equal(requestMessages.at(-1).content, 'STORY GENERATION PROMPT');
+        assert.match(requestMessages[1].content, /Character description\./);
+        assert.match(requestMessages[2].content, /User persona details\./);
+        assert.equal(requestMessages[3].content, 'SELECTED STORY WORLDBOOK');
+        assert.match(requestMessages[4].content, /Selected story floor 7/);
+        assert.match(requestMessages[4].content, /Look back\./);
+        assert.match(requestMessages[4].content, /A rainy scene\./);
+        assert.doesNotMatch(requestMessages[4].content, /PHONE HIDDEN|USER HIDDEN|MEMORY HIDDEN/);
         assert.equal(memoryFilterCallCount, 2);
         assert.equal(savedTags, '女性, 雨夜街道, looking back');
         assert.equal(app.storyImageOverlay.tagBackFloors.has(7), true);
